@@ -11,7 +11,8 @@
         "build:all": "bun run build:frontend && bun run build:backend",
         "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun run start\" \"cd backend && bun run start:prod\"",
         "lint": "cd frontend && bun run lint && cd ../backend && bun run lint",
-        "install:all": "bun install"
+        "install:all": "bun install",
+        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
     "devDependencies": {
       "concurrently": "^9.2.1"
