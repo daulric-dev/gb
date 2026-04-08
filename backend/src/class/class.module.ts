@@ -6,5 +6,6 @@ import { ClassTeacherGuard } from './class-teacher.guard';
 @Module({
   controllers: [ClassController],
   providers: [ClassService, ClassTeacherGuard],
+  exports: [ClassTeacherGuard],
 })
 export class ClassModule {}
