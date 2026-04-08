@@ -1,0 +1,280 @@
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { SupabaseService } from '@/supabase/supabase.service';
+import { CreateClassDto } from './dto/create-class.dto';
+import { UpdateClassDto } from './dto/update-class.dto';
+import { AddTeacherDto } from './dto/add-teacher.dto';
+
+@Injectable()
+export class ClassService {
+  private readonly logger = new Logger(ClassService.name);
+
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async createClass(userId: string, dto: CreateClassDto) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: group, error: groupError } = await supabase
+      .from('student_group')
+      .insert({
+        name: dto.name,
+        academic_year_id: dto.academicYearId,
+        created_by: userId,
+      })
+      .select()
+      .single();
+
+    if (groupError || !group) {
+      this.logger.error(`Failed to create class: ${groupError?.message}`);
+      throw new BadRequestException('Failed to create class');
+    }
+
+    const { error: assignmentError } = await supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .insert({
+        user_profile_id: userId,
+        student_group_id: group.id,
+        academic_year_id: dto.academicYearId,
+        is_class_teacher: true,
+      });
+
+    if (assignmentError) {
+      this.logger.error(
+        `Class ${group.id} created but teacher assignment failed: ${assignmentError.message}`,
+      );
+    }
+
+    if (dto.subjectIds?.length) {
+      const subjectRows = dto.subjectIds.map((subjectId) => ({
+        user_profile_id: userId,
+        subject_id: subjectId,
+        student_group_id: group.id,
+        academic_year_id: dto.academicYearId,
+      }));
+
+      const { error: subjectError } = await supabase
+        .schema('staff')
+        .from('teacher_subject_assignment')
+        .insert(subjectRows);
+
+      if (subjectError) {
+        this.logger.error(
+          `Class ${group.id} created but subject assignment failed: ${subjectError.message}`,
+        );
+      }
+    }
+
+    return group;
+  }
+
+  async getMyClasses(userId: string, academicYearId?: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    let query = supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .select('*, student_group:student_group_id(*)')
+      .eq('user_profile_id', userId);
+
+    if (academicYearId) {
+      query = query.eq('academic_year_id', academicYearId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      this.logger.error(`Failed to fetch classes for ${userId}: ${error.message}`);
+      return [];
+    }
+
+    return data.map((row: any) => ({
+      id: row.student_group?.id,
+      name: row.student_group?.name,
+      academicYearId: row.academic_year_id,
+      isClassTeacher: row.is_class_teacher,
+      createdAt: row.student_group?.created_at,
+    }));
+  }
+
+  async getClassById(classId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .from('student_group')
+      .select('*')
+      .eq('id', classId)
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Class not found ${classId}: ${error?.message}`);
+      throw new NotFoundException('Class not found');
+    }
+
+    return data;
+  }
+
+  async updateClass(classId: string, dto: UpdateClassDto) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .from('student_group')
+      .update({ name: dto.name })
+      .eq('id', classId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Failed to update class ${classId}: ${error?.message}`);
+      throw new BadRequestException('Failed to update class');
+    }
+
+    return data;
+  }
+
+  async deleteClass(classId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { error } = await supabase
+      .from('student_group')
+      .delete()
+      .eq('id', classId);
+
+    if (error) {
+      this.logger.error(`Failed to delete class ${classId}: ${error.message}`);
+      throw new BadRequestException('Failed to delete class');
+    }
+
+    return 'Class deleted';
+  }
+
+  async getTeachers(classId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: assignments, error: assignError } = await supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .select('*, teacher:user_profile_id(id, first_name, last_name, email)')
+      .eq('student_group_id', classId);
+
+    if (assignError) {
+      this.logger.error(`Failed to fetch teachers for class ${classId}: ${assignError.message}`);
+      return [];
+    }
+
+    const { data: subjectAssignments, error: subjectError } = await supabase
+      .schema('staff')
+      .from('teacher_subject_assignment')
+      .select('*, subject:subject_id(id, name)')
+      .eq('student_group_id', classId);
+
+    if (subjectError) {
+      this.logger.error(`Failed to fetch subject assignments for class ${classId}: ${subjectError.message}`);
+    }
+
+    const subjectsByTeacher = new Map<string, any[]>();
+    for (const sa of subjectAssignments ?? []) {
+      const tid = sa.user_profile_id;
+      if (!subjectsByTeacher.has(tid)) subjectsByTeacher.set(tid, []);
+      if (sa.subject) subjectsByTeacher.get(tid)!.push(sa.subject);
+    }
+
+    return assignments.map((row: any) => ({
+      teacherId: row.teacher?.id,
+      firstName: row.teacher?.first_name,
+      lastName: row.teacher?.last_name,
+      email: row.teacher?.email,
+      isClassTeacher: row.is_class_teacher,
+      subjects: subjectsByTeacher.get(row.teacher?.id) ?? [],
+    }));
+  }
+
+  async addTeacher(classId: string, dto: AddTeacherDto) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: group, error: groupError } = await supabase
+      .from('student_group')
+      .select('academic_year_id')
+      .eq('id', classId)
+      .single();
+
+    if (groupError || !group) {
+      this.logger.error(`Class not found for addTeacher ${classId}: ${groupError?.message}`);
+      throw new NotFoundException('Class not found');
+    }
+
+    const academicYearId = group.academic_year_id;
+
+    const { error: assignError } = await supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .upsert(
+        {
+          user_profile_id: dto.teacherId,
+          student_group_id: classId,
+          academic_year_id: academicYearId,
+          is_class_teacher: false,
+        },
+        { onConflict: 'user_profile_id, student_group_id' },
+      );
+
+    if (assignError) {
+      this.logger.error(`Failed to add teacher ${dto.teacherId} to class ${classId}: ${assignError.message}`);
+      throw new BadRequestException('Failed to add teacher to class');
+    }
+
+    const subjectRows = dto.subjectIds.map((subjectId) => ({
+      user_profile_id: dto.teacherId,
+      subject_id: subjectId,
+      student_group_id: classId,
+      academic_year_id: academicYearId,
+    }));
+
+    const { error: subjectError } = await supabase
+      .schema('staff')
+      .from('teacher_subject_assignment')
+      .upsert(subjectRows, { onConflict: 'user_profile_id, subject_id, student_group_id' });
+
+    if (subjectError) {
+      this.logger.error(`Teacher added but subject assignment failed: ${subjectError.message}`);
+    }
+
+    return { teacherId: dto.teacherId, classId, subjectIds: dto.subjectIds };
+  }
+
+  async removeTeacher(classId: string, teacherId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: assignment } = await supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .select('is_class_teacher')
+      .eq('user_profile_id', teacherId)
+      .eq('student_group_id', classId)
+      .single();
+
+    if (assignment?.is_class_teacher) {
+      throw new ForbiddenException('Cannot remove the class teacher');
+    }
+
+    await supabase
+      .schema('staff')
+      .from('teacher_subject_assignment')
+      .delete()
+      .eq('user_profile_id', teacherId)
+      .eq('student_group_id', classId);
+
+    const { error } = await supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .delete()
+      .eq('user_profile_id', teacherId)
+      .eq('student_group_id', classId);
+
+    if (error) {
+      this.logger.error(`Failed to remove teacher ${teacherId} from class ${classId}: ${error.message}`);
+      throw new BadRequestException('Failed to remove teacher');
+    }
+
+    return 'Teacher removed from class';
+  }
+}

@@ -15,6 +15,11 @@
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
     "devDependencies": {
-      "concurrently": "^9.2.1"
+        "concurrently": "^9.2.1"
+    },
+    "dependencies": {
+        "@fastify/swagger": "^9.7.0",
+        "@fastify/swagger-ui": "^5.2.5",
+        "@nestjs/swagger": "^11.2.6"
     }
 }

@@ -1,9 +1,24 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { FastifyAdapter } from '@nestjs/platform-fastify';
+import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger"
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(
+    AppModule,
+    new FastifyAdapter(),
+  );
+
+  const config = new DocumentBuilder()
+    .setTitle('gbv2 api')
+    .setDescription('api doc')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('docs', app, document);
 
   app.setGlobalPrefix('api/v1');
 

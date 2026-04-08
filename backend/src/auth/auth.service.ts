@@ -27,7 +27,7 @@ export class AuthService {
         throw new BadRequestException('Failed to send OTP');
       }
 
-      return { message: 'OTP sent to email' };
+      return 'OTP sent to email';
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
       this.logger.error(`Unexpected error sending OTP: ${err}`);
@@ -50,31 +50,33 @@ export class AuthService {
         throw new UnauthorizedException('Invalid or expired OTP');
       }
 
-      const { data: profile, error: profileError } = await supabase
+      const userId = data.session.user.id;
+      const userEmail = data.session.user.email;
+
+      let { data: profile } = await supabase
         .from('user_profile')
         .select('*, school:school_id(*)')
-        .eq('id', data.session.user.id)
+        .eq('id', userId)
         .single();
 
-      if (profileError) {
-        this.logger.error(`Failed to fetch profile for ${data.session.user.id}: ${profileError.message}`);
+      if (!profile) {
+        this.logger.log(`Creating new user_profile for ${userId}`);
+        const { data: newProfile, error: insertError } = await supabase
+          .from('user_profile')
+          .insert({ id: userId, email: userEmail })
+          .select('*, school:school_id(*)')
+          .single();
+
+        if (insertError) {
+          this.logger.error(`Failed to create user_profile for ${userId}: ${insertError.message}`);
+        }
+        profile = newProfile;
       }
 
       return {
-        session: {
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-          expires_in: data.session.expires_in,
-          expires_at: data.session.expires_at,
-        },
-        user: {
-          id: data.session.user.id,
-          email: data.session.user.email,
-          first_name: profile?.first_name ?? null,
-          last_name: profile?.last_name ?? null,
-          role: profile?.role ?? null,
-          school: profile?.school ?? null,
-        },
+        session: data.session,
+        user: data.session.user,
+        profile,
       };
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
@@ -106,6 +108,38 @@ export class AuthService {
     }
   }
 
+  async onboard(userId: string, dto: { firstName: string; lastName: string; schoolId: string }) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: profile } = await supabase
+      .from('user_profile')
+      .select('first_name, school_id')
+      .eq('id', userId)
+      .single();
+
+    if (profile?.first_name && profile?.school_id) {
+      throw new BadRequestException('User has already been onboarded');
+    }
+
+    const { data, error } = await supabase
+      .from('user_profile')
+      .update({
+        first_name: dto.firstName,
+        last_name: dto.lastName,
+        school_id: dto.schoolId,
+      })
+      .eq('id', userId)
+      .select('*, school:school_id(*)')
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Failed to onboard user ${userId}: ${error?.message}`);
+      throw new BadRequestException('Failed to complete onboarding');
+    }
+
+    return data;
+  }
+
   async refreshToken(refreshToken: string) {
     try {
       const supabase = this.supabaseService.getServiceClient();
@@ -119,12 +153,7 @@ export class AuthService {
         throw new UnauthorizedException('Invalid or expired refresh token');
       }
 
-      return {
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_in: data.session.expires_in,
-        expires_at: data.session.expires_at,
-      };
+      return data.session;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
       this.logger.error(`Unexpected error refreshing token: ${err}`);
