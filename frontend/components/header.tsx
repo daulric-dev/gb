@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { GraduationCap, Users, LayoutDashboard, LogOut, UserRoundSearch } from "lucide-react";
+import { GraduationCap, Users, LayoutDashboard, LogOut, UserRoundSearch, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { clearTokens } from "@/lib/auth";
@@ -22,6 +22,7 @@ const navItems = [
   { title: "Academic Years", href: "/dashboard/academic-years", icon: GraduationCap },
   { title: "Classes", href: "/dashboard/classes", icon: Users },
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
+  { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
 ];
 
 function getInitials(profile: UserProfile | null) {
