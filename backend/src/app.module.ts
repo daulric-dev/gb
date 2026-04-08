@@ -8,6 +8,7 @@ import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
 import { SchoolModule } from '@/school/school.module';
 import { StudentModule } from '@/student/student.module';
+import { SubjectModule } from '@/subject/subject.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { StudentModule } from '@/student/student.module';
     AcademicYearModule,
     SchoolModule,
     StudentModule,
+    SubjectModule,
   ],
   controllers: [AppController],
   providers: [AppService],
