@@ -3,17 +3,23 @@
     "private": true,
     "workspaces": ["backend"],
     "scripts": {
-      "dev": "concurrently -n fe,be -c blue,green \"bun run dev:frontend\" \"bun run dev:backend\"",
-      "dev:frontend": "cd frontend && bun run dev",
-      "dev:backend": "cd backend && bun run start:dev",
-      "build:frontend": "cd frontend && bun run build",
-      "build:backend": "cd backend && bun run build",
-      "build:all": "bun run build:frontend && bun run build:backend",
-      "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun run start\" \"cd backend && bun run start:prod\"",
-      "lint": "cd frontend && bun run lint && cd ../backend && bun run lint",
-      "install:all": "bun install"
+        "dev": "concurrently -n fe,be -c blue,green \"bun run dev:frontend\" \"bun run dev:backend\"",
+        "dev:frontend": "cd frontend && bun run dev",
+        "dev:backend": "cd backend && bun run start:dev",
+        "build:frontend": "cd frontend && bun run build",
+        "build:backend": "cd backend && bun run build",
+        "build:all": "bun run build:frontend && bun run build:backend",
+        "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun run start\" \"cd backend && bun run start:prod\"",
+        "lint": "cd frontend && bun run lint && cd ../backend && bun run lint",
+        "install:all": "bun install",
+        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
     "devDependencies": {
-      "concurrently": "^9.2.1"
+        "concurrently": "^9.2.1"
+    },
+    "dependencies": {
+        "@fastify/swagger": "^9.7.0",
+        "@fastify/swagger-ui": "^5.2.5",
+        "@nestjs/swagger": "^11.2.6"
     }
-  }
+}
