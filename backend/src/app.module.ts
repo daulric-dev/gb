@@ -10,6 +10,7 @@ import { SchoolModule } from '@/school/school.module';
 import { StudentModule } from '@/student/student.module';
 import { SubjectModule } from '@/subject/subject.module';
 import { TermModule } from '@/term/term.module';
+import { EnrollmentModule } from '@/enrollment/enrollment.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TermModule } from '@/term/term.module';
     StudentModule,
     SubjectModule,
     TermModule,
+    EnrollmentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
