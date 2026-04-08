@@ -9,6 +9,7 @@ import { AcademicYearModule } from '@/academic-year/academic-year.module';
 import { SchoolModule } from '@/school/school.module';
 import { StudentModule } from '@/student/student.module';
 import { SubjectModule } from '@/subject/subject.module';
+import { TermModule } from '@/term/term.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SubjectModule } from '@/subject/subject.module';
     SchoolModule,
     StudentModule,
     SubjectModule,
+    TermModule,
   ],
   controllers: [AppController],
   providers: [AppService],
