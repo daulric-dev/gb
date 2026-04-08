@@ -111,24 +111,14 @@ export class AuthService {
   async onboard(userId: string, dto: { firstName: string; lastName: string; schoolId: string }) {
     const supabase = this.supabaseService.getServiceClient();
 
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('first_name, school_id')
-      .eq('id', userId)
-      .single();
-
-    if (profile?.first_name && profile?.school_id) {
-      throw new BadRequestException('User has already been onboarded');
-    }
-
     const { data, error } = await supabase
       .from('user_profile')
-      .update({
+      .upsert({
+        id: userId,
         first_name: dto.firstName,
         last_name: dto.lastName,
         school_id: dto.schoolId,
       })
-      .eq('id', userId)
       .select('*, school:school_id(*)')
       .single();
 
