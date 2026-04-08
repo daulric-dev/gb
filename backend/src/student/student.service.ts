@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -21,6 +21,20 @@ export class StudentService {
     if (profileError || !profile?.school_id) {
       this.logger.error(`Failed to get school for user ${userId}: ${profileError?.message}`);
       throw new BadRequestException('Could not determine your school');
+    }
+
+    const { data: existing } = await supabase
+      .schema('student')
+      .from('student')
+      .select('id')
+      .eq('school_id', profile.school_id)
+      .ilike('first_name', dto.firstName)
+      .ilike('last_name', dto.lastName)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      throw new ConflictException('A student with the same first and last name already exists in this school');
     }
 
     const { data: student, error } = await supabase
