@@ -93,9 +93,16 @@ export function Header({ profile }: { profile: UserProfile | null }) {
                   {getInitials(profile)}
                 </AvatarFallback>
               </Avatar>
-              <span className="hidden sm:inline text-sm font-medium">
-                {displayName}
-              </span>
+              <div className="hidden sm:flex flex-col items-start">
+                <span className="text-sm font-medium leading-tight">
+                  {displayName}
+                </span>
+                {profile?.school?.name && (
+                  <span className="text-xs text-muted-foreground leading-tight">
+                    {profile.school.name}
+                  </span>
+                )}
+              </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={handleLogout}>

@@ -9,6 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus } from "lucide-react";
+import { Plus, Users, BookOpen } from "lucide-react";
 
 interface ClassItem {
   id: string;
@@ -37,6 +44,39 @@ interface ClassItem {
 interface AcademicYear {
   id: string;
   name: string;
+}
+
+function ClassTable({ classes, emptyMessage }: { classes: ClassItem[]; emptyMessage: string }) {
+  if (classes.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Created</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {classes.map((cls) => (
+            <TableRow key={cls.id}>
+              <TableCell className="font-medium">{cls.name}</TableCell>
+              <TableCell>
+                {new Date(cls.createdAt).toLocaleDateString()}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
 }
 
 export default function ClassesPage() {
@@ -55,8 +95,11 @@ export default function ClassesPage() {
     fetchClasses();
   }, [fetchClasses]);
 
+  const myClasses = classes.filter((c) => c.isClassTeacher);
+  const subjectClasses = classes.filter((c) => !c.isClassTeacher);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between animate-fade-in-up">
         <div>
           <h1 className="text-3xl font-bold">classes</h1>
@@ -87,44 +130,52 @@ export default function ClassesPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
+        <div className="space-y-4">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
         </div>
       ) : classes.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No classes yet. Create your first one.
         </div>
       ) : (
-        <div className="rounded-md border animate-fade-in-up-delay-1">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {classes.map((cls) => (
-                <TableRow key={cls.id}>
-                  <TableCell className="font-medium">{cls.name}</TableCell>
-                  <TableCell>
-                    {cls.isClassTeacher ? (
-                      <Badge>Class Teacher</Badge>
-                    ) : (
-                      <Badge variant="secondary">Subject Teacher</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {new Date(cls.createdAt).toLocaleDateString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <>
+          <Card className="animate-fade-in-up-delay-1">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Users className="size-4 text-muted-foreground" />
+                <CardTitle>My Classes</CardTitle>
+              </div>
+              <CardDescription>
+                Classes where you are the class teacher
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ClassTable
+                classes={myClasses}
+                emptyMessage="You are not a class teacher for any class yet"
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="animate-fade-in-up-delay-2">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <BookOpen className="size-4 text-muted-foreground" />
+                <CardTitle>Subjects</CardTitle>
+              </div>
+              <CardDescription>
+                Classes where you teach subjects
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ClassTable
+                classes={subjectClasses}
+                emptyMessage="You are not assigned to teach subjects in any other class"
+              />
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );
