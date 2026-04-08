@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 
 interface AcademicYear {
   id: string;
@@ -41,6 +41,7 @@ export default function AcademicYearsPage() {
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editYear, setEditYear] = useState<AcademicYear | null>(null);
 
   const fetchYears = useCallback(() => {
     api<AcademicYear[]>("/academic-years")
@@ -160,7 +161,14 @@ export default function AcademicYearsPage() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditYear(year)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
                     {year.is_active ? (
                       <Button
                         variant="outline"
@@ -185,6 +193,31 @@ export default function AcademicYearsPage() {
           </Table>
         </div>
       )}
+
+      <Dialog
+        open={editYear !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditYear(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Academic Year</DialogTitle>
+            <DialogDescription>
+              Update academic year details
+            </DialogDescription>
+          </DialogHeader>
+          {editYear && (
+            <EditYearForm
+              year={editYear}
+              onSuccess={() => {
+                setEditYear(null);
+                fetchYears();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -309,6 +342,141 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
       )}
       <Button type="submit" className="w-full" disabled={loading}>
         {loading ? "Creating..." : "Create Academic Year"}
+      </Button>
+    </form>
+  );
+}
+
+function EditYearForm({
+  year,
+  onSuccess,
+}: {
+  year: AcademicYear;
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState(year.name);
+  const [startDate, setStartDate] = useState(year.start_date);
+  const [endDate, setEndDate] = useState(year.end_date);
+  const [gradingModel, setGradingModel] = useState<
+    "term_based" | "year_based"
+  >(year.grading_model);
+  const [examWeight, setExamWeight] = useState(year.year_exam_weight ?? 60);
+  const [courseworkWeight, setCourseworkWeight] = useState(
+    year.year_coursework_weight ?? 40,
+  );
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+
+    const body: Record<string, unknown> = {
+      name,
+      startDate,
+      endDate,
+      gradingModel,
+    };
+
+    if (gradingModel === "year_based") {
+      body.yearExamWeight = examWeight;
+      body.yearCourseworkWeight = courseworkWeight;
+    } else {
+      body.yearExamWeight = null;
+      body.yearCourseworkWeight = null;
+    }
+
+    try {
+      await api(`/academic-years/${year.id}`, { method: "PATCH", body });
+      toast.success("Academic year updated");
+      onSuccess();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to update";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="editName">Name</Label>
+        <Input
+          id="editName"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="editStartDate">Start Date</Label>
+          <Input
+            id="editStartDate"
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="editEndDate">End Date</Label>
+          <Input
+            id="editEndDate"
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            required
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="editGradingModel">Grading Model</Label>
+        <select
+          id="editGradingModel"
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          value={gradingModel}
+          onChange={(e) =>
+            setGradingModel(e.target.value as "term_based" | "year_based")
+          }
+        >
+          <option value="term_based">Term Based</option>
+          <option value="year_based">Year Based</option>
+        </select>
+      </div>
+      {gradingModel === "year_based" && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="editExamWeight">Exam Weight (%)</Label>
+            <Input
+              id="editExamWeight"
+              type="number"
+              min={0}
+              max={100}
+              value={examWeight}
+              onChange={(e) => setExamWeight(Number(e.target.value))}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editCwWeight">Coursework Weight (%)</Label>
+            <Input
+              id="editCwWeight"
+              type="number"
+              min={0}
+              max={100}
+              value={courseworkWeight}
+              onChange={(e) => setCourseworkWeight(Number(e.target.value))}
+              required
+            />
+          </div>
+          <p className="col-span-2 text-xs text-muted-foreground">
+            Weights must add up to 100%
+          </p>
+        </div>
+      )}
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );
