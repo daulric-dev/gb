@@ -55,12 +55,24 @@ export default function AcademicYearsPage() {
 
   async function handleActivate(id: string) {
     try {
-      await api(`/academic-years/${id}/activate`, { method: "PATCH" });
+      await api(`/academic-years/${id}/activate`, { method: "PATCH", body: {} });
       toast.success("Academic year activated");
       fetchYears();
     } catch (err) {
       const msg =
         err instanceof ApiError ? err.message : "Failed to activate";
+      toast.error(msg);
+    }
+  }
+
+  async function handleDeactivate(id: string) {
+    try {
+      await api(`/academic-years/${id}/deactivate`, { method: "PATCH", body: {} });
+      toast.success("Academic year deactivated");
+      fetchYears();
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : "Failed to deactivate";
       toast.error(msg);
     }
   }
@@ -149,7 +161,15 @@ export default function AcademicYearsPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    {!year.is_active && (
+                    {year.is_active ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeactivate(year.id)}
+                      >
+                        Deactivate
+                      </Button>
+                    ) : (
                       <Button
                         variant="outline"
                         size="sm"

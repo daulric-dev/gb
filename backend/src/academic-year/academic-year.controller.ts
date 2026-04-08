@@ -41,4 +41,9 @@ export class AcademicYearController {
   async setActive(@Req() req: any, @Param('id') id: string) {
     return this.academicYearService.setActive(req.user.id, id);
   }
+
+  @Patch(':id/deactivate')
+  async deactivate(@Param('id') id: string) {
+    return this.academicYearService.deactivate(id);
+  }
 }

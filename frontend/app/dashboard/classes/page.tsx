@@ -46,7 +46,7 @@ interface AcademicYear {
   name: string;
 }
 
-function ClassTable({ classes, emptyMessage }: { classes: ClassItem[]; emptyMessage: string }) {
+function ClassTable({ classes, yearMap, emptyMessage }: { classes: ClassItem[]; yearMap: Map<string, string>; emptyMessage: string }) {
   if (classes.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -61,6 +61,7 @@ function ClassTable({ classes, emptyMessage }: { classes: ClassItem[]; emptyMess
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
+            <TableHead>Academic Year</TableHead>
             <TableHead>Created</TableHead>
           </TableRow>
         </TableHeader>
@@ -68,6 +69,11 @@ function ClassTable({ classes, emptyMessage }: { classes: ClassItem[]; emptyMess
           {classes.map((cls) => (
             <TableRow key={cls.id}>
               <TableCell className="font-medium">{cls.name}</TableCell>
+              <TableCell>
+                <Badge variant="outline">
+                  {yearMap.get(cls.academicYearId) ?? "—"}
+                </Badge>
+              </TableCell>
               <TableCell>
                 {new Date(cls.createdAt).toLocaleDateString()}
               </TableCell>
@@ -81,19 +87,24 @@ function ClassTable({ classes, emptyMessage }: { classes: ClassItem[]; emptyMess
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [yearMap, setYearMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const fetchClasses = useCallback(() => {
-    api<ClassItem[]>("/classes")
-      .then(setClasses)
-      .catch(() => toast.error("Failed to load classes"))
-      .finally(() => setLoading(false));
+  const fetchData = useCallback(() => {
+    Promise.all([
+      api<ClassItem[]>("/classes").catch(() => []),
+      api<(AcademicYear & { is_active?: boolean })[]>("/academic-years").catch(() => []),
+    ]).then(([cls, years]) => {
+      setClasses(cls);
+      setYearMap(new Map(years.map((y) => [y.id, y.name])));
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
-    fetchClasses();
-  }, [fetchClasses]);
+    fetchData();
+  }, [fetchData]);
 
   const myClasses = classes.filter((c) => c.isClassTeacher);
   const subjectClasses = classes.filter((c) => !c.isClassTeacher);
@@ -122,7 +133,7 @@ export default function ClassesPage() {
             <CreateClassForm
               onSuccess={() => {
                 setDialogOpen(false);
-                fetchClasses();
+                fetchData();
               }}
             />
           </DialogContent>
@@ -153,6 +164,7 @@ export default function ClassesPage() {
             <CardContent>
               <ClassTable
                 classes={myClasses}
+                yearMap={yearMap}
                 emptyMessage="You are not a class teacher for any class yet"
               />
             </CardContent>
@@ -171,6 +183,7 @@ export default function ClassesPage() {
             <CardContent>
               <ClassTable
                 classes={subjectClasses}
+                yearMap={yearMap}
                 emptyMessage="You are not assigned to teach subjects in any other class"
               />
             </CardContent>
@@ -189,15 +202,12 @@ function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
   const [yearsLoading, setYearsLoading] = useState(true);
 
   useEffect(() => {
-    api<AcademicYear[]>("/academic-years")
+    api<(AcademicYear & { is_active?: boolean })[]>("/academic-years")
       .then((data) => {
-        setAcademicYears(data);
-        if (data.length > 0) {
-          const active = data.find(
-            (y: AcademicYear & { is_active?: boolean }) =>
-              (y as AcademicYear & { is_active?: boolean }).is_active,
-          );
-          setAcademicYearId(active?.id || data[0].id);
+        const active = data.filter((y) => y.is_active);
+        setAcademicYears(active);
+        if (active.length > 0) {
+          setAcademicYearId(active[0].id);
         }
       })
       .catch(() => toast.error("Failed to load academic years"))

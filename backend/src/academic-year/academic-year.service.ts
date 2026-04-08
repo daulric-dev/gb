@@ -184,4 +184,22 @@ export class AcademicYearService {
 
     return data;
   }
+
+  async deactivate(yearId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .from('academic_year')
+      .update({ is_active: false })
+      .eq('id', yearId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Failed to deactivate academic year ${yearId}: ${error?.message}`);
+      throw new BadRequestException('Failed to deactivate academic year');
+    }
+
+    return data;
+  }
 }
