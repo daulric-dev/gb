@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -8,29 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Users, BookOpen } from "lucide-react";
 
 interface ClassItem {
@@ -47,6 +29,8 @@ interface AcademicYear {
 }
 
 function ClassTable({ classes, yearMap, emptyMessage }: { classes: ClassItem[]; yearMap: Map<string, string>; emptyMessage: string }) {
+  const router = useRouter();
+
   if (classes.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -67,7 +51,11 @@ function ClassTable({ classes, yearMap, emptyMessage }: { classes: ClassItem[]; 
         </TableHeader>
         <TableBody>
           {classes.map((cls) => (
-            <TableRow key={cls.id}>
+            <TableRow
+              key={cls.id}
+              className="cursor-pointer"
+              onClick={() => router.push(`/dashboard/classes/${cls.id}`)}
+            >
               <TableCell className="font-medium">{cls.name}</TableCell>
               <TableCell>
                 <Badge variant="outline">

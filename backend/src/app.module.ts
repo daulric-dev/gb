@@ -7,6 +7,7 @@ import { AuthModule } from '@/auth/auth.module';
 import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
 import { SchoolModule } from '@/school/school.module';
+import { StudentModule } from '@/student/student.module';
 
 @Module({
   imports: [
@@ -16,9 +17,9 @@ import { SchoolModule } from '@/school/school.module';
     ClassModule,
     AcademicYearModule,
     SchoolModule,
+    StudentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-
 export class AppModule {}
