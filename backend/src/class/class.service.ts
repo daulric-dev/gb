@@ -73,27 +73,42 @@ export class ClassService {
     let query = supabase
       .schema('staff')
       .from('teacher_group_assignment')
-      .select('*, student_group:student_group_id(*)')
+      .select('id, student_group_id, academic_year_id, is_class_teacher')
       .eq('user_profile_id', userId);
 
     if (academicYearId) {
       query = query.eq('academic_year_id', academicYearId);
     }
 
-    const { data, error } = await query;
+    const { data: assignments, error } = await query;
 
     if (error) {
       this.logger.error(`Failed to fetch classes for ${userId}: ${error.message}`);
       return [];
     }
 
-    return data.map((row: any) => ({
-      id: row.student_group?.id,
-      name: row.student_group?.name,
-      academicYearId: row.academic_year_id,
-      isClassTeacher: row.is_class_teacher,
-      createdAt: row.student_group?.created_at,
-    }));
+    if (!assignments || assignments.length === 0) {
+      return [];
+    }
+
+    const groupIds = assignments.map((a: any) => a.student_group_id);
+    const { data: groups } = await supabase
+      .from('student_group')
+      .select('*')
+      .in('id', groupIds);
+
+    const groupMap = new Map((groups || []).map((g: any) => [g.id, g]));
+
+    return assignments.map((row: any) => {
+      const group = groupMap.get(row.student_group_id);
+      return {
+        id: row.student_group_id,
+        name: group?.name ?? null,
+        academicYearId: row.academic_year_id,
+        isClassTeacher: row.is_class_teacher,
+        createdAt: group?.created_at ?? null,
+      };
+    });
   }
 
   async getClassById(classId: string) {

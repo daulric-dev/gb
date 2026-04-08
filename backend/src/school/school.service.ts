@@ -1,0 +1,52 @@
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { SupabaseService } from '@/supabase/supabase.service';
+import { CreateSchoolDto } from './dto/create-school.dto';
+
+@Injectable()
+export class SchoolService {
+  private readonly logger = new Logger(SchoolService.name);
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async findAll() {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .from('school')
+      .select('id, name, parish, school_type')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      this.logger.error(`Failed to fetch schools: ${error.message}`);
+      return [];
+    }
+
+    return data;
+  }
+
+  async create(dto: CreateSchoolDto) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .from('school')
+      .insert({
+        name: dto.name,
+        code: dto.code ?? null,
+        school_type: dto.schoolType,
+        parish: dto.parish,
+        address: dto.address ?? null,
+        email: dto.email ?? null,
+        phone: dto.phone ?? null,
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      this.logger.error(`Failed to create school: ${error?.message}`);
+      throw new BadRequestException('Failed to create school');
+    }
+
+    return data;
+  }
+}
