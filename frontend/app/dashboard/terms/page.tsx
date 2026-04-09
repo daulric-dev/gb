@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -54,38 +56,39 @@ const termLabel: Record<string, string> = {
 };
 
 export default function TermsPage() {
-  const [years, setYears] = useState<AcademicYear[]>([]);
-  const [selectedYearId, setSelectedYearId] = useState("");
-  const [terms, setTerms] = useState<Term[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [termsLoading, setTermsLoading] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editTerm, setEditTerm] = useState<Term | null>(null);
+  useSignals();
+  const years = useSignal<AcademicYear[]>([]);
+  const selectedYearId = useSignal("");
+  const terms = useSignal<Term[]>([]);
+  const loading = useSignal(true);
+  const termsLoading = useSignal(false);
+  const createOpen = useSignal(false);
+  const editTerm = useSignal<Term | null>(null);
 
   useEffect(() => {
     api<AcademicYear[]>("/academic-years")
       .then((data) => {
-        setYears(data);
+        years.value = data;
         const active = data.find((y) => y.is_active);
-        if (active) setSelectedYearId(active.id);
-        else if (data.length > 0) setSelectedYearId(data[0].id);
+        if (active) selectedYearId.value = active.id;
+        else if (data.length > 0) selectedYearId.value = data[0].id;
       })
       .catch(() => toast.error("Failed to load academic years"))
-      .finally(() => setLoading(false));
+      .finally(() => (loading.value = false));
   }, []);
 
   const fetchTerms = useCallback((yearId: string) => {
     if (!yearId) return;
-    setTermsLoading(true);
+    termsLoading.value = true;
     api<Term[]>(`/terms?yearId=${yearId}`)
-      .then(setTerms)
+      .then((data) => (terms.value = data))
       .catch(() => toast.error("Failed to load terms"))
-      .finally(() => setTermsLoading(false));
+      .finally(() => (termsLoading.value = false));
   }, []);
 
   useEffect(() => {
-    if (selectedYearId) fetchTerms(selectedYearId);
-  }, [selectedYearId, fetchTerms]);
+    if (selectedYearId.value) fetchTerms(selectedYearId.value);
+  }, [selectedYearId.value, fetchTerms]);
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`Delete ${termLabel[name]} term? This cannot be undone.`)) return;
@@ -93,14 +96,14 @@ export default function TermsPage() {
     try {
       await api(`/terms/${id}`, { method: "DELETE" });
       toast.success("Term deleted");
-      fetchTerms(selectedYearId);
+      fetchTerms(selectedYearId.value);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to delete";
       toast.error(msg);
     }
   }
 
-  const existingTermNames = terms.map((t) => t.name);
+  const existingTermNames = terms.value.map((t) => t.name);
 
   return (
     <div className="space-y-6">
@@ -111,10 +114,10 @@ export default function TermsPage() {
             manage terms for each academic year
           </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
           <DialogTrigger
             render={
-              <Button disabled={!selectedYearId || existingTermNames.length >= 3} />
+              <Button disabled={!selectedYearId.value || existingTermNames.length >= 3} />
             }
           >
             <Plus className="mr-2 size-4" />
@@ -128,20 +131,20 @@ export default function TermsPage() {
               </DialogDescription>
             </DialogHeader>
             <CreateTermForm
-              academicYearId={selectedYearId}
+              academicYearId={selectedYearId.value}
               existingNames={existingTermNames}
               onSuccess={() => {
-                setCreateOpen(false);
-                fetchTerms(selectedYearId);
+                createOpen.value = false;
+                fetchTerms(selectedYearId.value);
               }}
             />
           </DialogContent>
         </Dialog>
       </div>
 
-      {loading ? (
+      {loading.value ? (
         <Skeleton className="h-9 w-full" />
-      ) : years.length === 0 ? (
+      ) : years.value.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No academic years yet. Create one first.
         </div>
@@ -152,10 +155,10 @@ export default function TermsPage() {
             <select
               id="yearSelect"
               className={selectClass}
-              value={selectedYearId}
-              onChange={(e) => setSelectedYearId(e.target.value)}
+              value={selectedYearId.value}
+              onChange={(e) => (selectedYearId.value = e.target.value)}
             >
-              {years.map((y) => (
+              {years.value.map((y) => (
                 <option key={y.id} value={y.id}>
                   {y.name} {y.is_active ? "(Active)" : ""}
                 </option>
@@ -163,13 +166,13 @@ export default function TermsPage() {
             </select>
           </div>
 
-          {termsLoading ? (
+          {termsLoading.value ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : terms.length === 0 ? (
+          ) : terms.value.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No terms for this academic year yet.
             </div>
@@ -187,7 +190,7 @@ export default function TermsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {terms.map((term) => (
+                  {terms.value.map((term) => (
                     <TableRow key={term.id}>
                       <TableCell className="font-medium">
                         {termLabel[term.name]}
@@ -214,7 +217,7 @@ export default function TermsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setEditTerm(term)}
+                          onClick={() => (editTerm.value = term)}
                         >
                           <Pencil className="size-4" />
                         </Button>
@@ -236,9 +239,9 @@ export default function TermsPage() {
       )}
 
       <Dialog
-        open={editTerm !== null}
+        open={editTerm.value !== null}
         onOpenChange={(open) => {
-          if (!open) setEditTerm(null);
+          if (!open) editTerm.value = null;
         }}
       >
         <DialogContent>
@@ -246,12 +249,12 @@ export default function TermsPage() {
             <DialogTitle>Edit Term</DialogTitle>
             <DialogDescription>Update term details</DialogDescription>
           </DialogHeader>
-          {editTerm && (
+          {editTerm.value && (
             <EditTermForm
-              term={editTerm}
+              term={editTerm.value}
               onSuccess={() => {
-                setEditTerm(null);
-                fetchTerms(selectedYearId);
+                editTerm.value = null;
+                fetchTerms(selectedYearId.value);
               }}
             />
           )}
@@ -270,32 +273,33 @@ function CreateTermForm({
   existingNames: string[];
   onSuccess: () => void;
 }) {
+  useSignals();
   const availableNames = (["michaelmas", "hilary", "trinity"] as const).filter(
     (n) => !existingNames.includes(n),
   );
-  const [name, setName] = useState(availableNames[0] ?? "michaelmas");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [examWeight, setExamWeight] = useState(60);
-  const [courseworkWeight, setCourseworkWeight] = useState(40);
-  const [isMinistryReporting, setIsMinistryReporting] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const name = useSignal(availableNames[0] ?? "michaelmas");
+  const startDate = useSignal("");
+  const endDate = useSignal("");
+  const examWeight = useSignal(60);
+  const courseworkWeight = useSignal(40);
+  const isMinistryReporting = useSignal(false);
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     try {
       await api("/terms", {
         method: "POST",
         body: {
           academicYearId,
-          name,
-          startDate,
-          endDate,
-          examWeight,
-          courseworkWeight,
-          isMinistryReporting,
+          name: name.value,
+          startDate: startDate.value,
+          endDate: endDate.value,
+          examWeight: examWeight.value,
+          courseworkWeight: courseworkWeight.value,
+          isMinistryReporting: isMinistryReporting.value,
         },
       });
       toast.success("Term created");
@@ -304,7 +308,7 @@ function CreateTermForm({
       const msg = err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -315,8 +319,8 @@ function CreateTermForm({
         <select
           id="termName"
           className={selectClass}
-          value={name}
-          onChange={(e) => setName(e.target.value as typeof name)}
+          value={name.value}
+          onChange={(e) => (name.value = e.target.value as "michaelmas" | "hilary" | "trinity")}
           required
         >
           {availableNames.map((n) => (
@@ -332,8 +336,8 @@ function CreateTermForm({
           <Input
             id="startDate"
             type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            value={startDate.value}
+            onChange={(e) => (startDate.value = e.target.value)}
             required
           />
         </div>
@@ -342,8 +346,8 @@ function CreateTermForm({
           <Input
             id="endDate"
             type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            value={endDate.value}
+            onChange={(e) => (endDate.value = e.target.value)}
             required
           />
         </div>
@@ -356,8 +360,8 @@ function CreateTermForm({
             type="number"
             min={0}
             max={100}
-            value={examWeight}
-            onChange={(e) => setExamWeight(Number(e.target.value))}
+            value={examWeight.value}
+            onChange={(e) => (examWeight.value = Number(e.target.value))}
             required
           />
         </div>
@@ -368,8 +372,8 @@ function CreateTermForm({
             type="number"
             min={0}
             max={100}
-            value={courseworkWeight}
-            onChange={(e) => setCourseworkWeight(Number(e.target.value))}
+            value={courseworkWeight.value}
+            onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
             required
           />
         </div>
@@ -381,8 +385,8 @@ function CreateTermForm({
         <input
           id="ministry"
           type="checkbox"
-          checked={isMinistryReporting}
-          onChange={(e) => setIsMinistryReporting(e.target.checked)}
+          checked={isMinistryReporting.value}
+          onChange={(e) => (isMinistryReporting.value = e.target.checked)}
           className="size-4 rounded border-input"
         />
         <Label htmlFor="ministry">Ministry Reporting Term</Label>
@@ -390,9 +394,9 @@ function CreateTermForm({
       <Button
         type="submit"
         className="w-full"
-        disabled={loading || availableNames.length === 0}
+        disabled={loading.value || availableNames.length === 0}
       >
-        {loading ? "Creating..." : "Create Term"}
+        {loading.value ? "Creating..." : "Create Term"}
       </Button>
     </form>
   );
@@ -405,28 +409,27 @@ function EditTermForm({
   term: Term;
   onSuccess: () => void;
 }) {
-  const [startDate, setStartDate] = useState(term.start_date);
-  const [endDate, setEndDate] = useState(term.end_date);
-  const [examWeight, setExamWeight] = useState(term.exam_weight);
-  const [courseworkWeight, setCourseworkWeight] = useState(term.coursework_weight);
-  const [isMinistryReporting, setIsMinistryReporting] = useState(
-    term.is_ministry_reporting,
-  );
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const startDate = useSignal(term.start_date);
+  const endDate = useSignal(term.end_date);
+  const examWeight = useSignal(term.exam_weight);
+  const courseworkWeight = useSignal(term.coursework_weight);
+  const isMinistryReporting = useSignal(term.is_ministry_reporting);
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     try {
       await api(`/terms/${term.id}`, {
         method: "PATCH",
         body: {
-          startDate,
-          endDate,
-          examWeight,
-          courseworkWeight,
-          isMinistryReporting,
+          startDate: startDate.value,
+          endDate: endDate.value,
+          examWeight: examWeight.value,
+          courseworkWeight: courseworkWeight.value,
+          isMinistryReporting: isMinistryReporting.value,
         },
       });
       toast.success("Term updated");
@@ -435,7 +438,7 @@ function EditTermForm({
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -451,8 +454,8 @@ function EditTermForm({
           <Input
             id="editStartDate"
             type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            value={startDate.value}
+            onChange={(e) => (startDate.value = e.target.value)}
             required
           />
         </div>
@@ -461,8 +464,8 @@ function EditTermForm({
           <Input
             id="editEndDate"
             type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            value={endDate.value}
+            onChange={(e) => (endDate.value = e.target.value)}
             required
           />
         </div>
@@ -475,8 +478,8 @@ function EditTermForm({
             type="number"
             min={0}
             max={100}
-            value={examWeight}
-            onChange={(e) => setExamWeight(Number(e.target.value))}
+            value={examWeight.value}
+            onChange={(e) => (examWeight.value = Number(e.target.value))}
             required
           />
         </div>
@@ -487,8 +490,8 @@ function EditTermForm({
             type="number"
             min={0}
             max={100}
-            value={courseworkWeight}
-            onChange={(e) => setCourseworkWeight(Number(e.target.value))}
+            value={courseworkWeight.value}
+            onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
             required
           />
         </div>
@@ -500,14 +503,14 @@ function EditTermForm({
         <input
           id="editMinistry"
           type="checkbox"
-          checked={isMinistryReporting}
-          onChange={(e) => setIsMinistryReporting(e.target.checked)}
+          checked={isMinistryReporting.value}
+          onChange={(e) => (isMinistryReporting.value = e.target.checked)}
           className="size-4 rounded border-input"
         />
         <Label htmlFor="editMinistry">Ministry Reporting Term</Label>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Saving..." : "Save Changes"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );

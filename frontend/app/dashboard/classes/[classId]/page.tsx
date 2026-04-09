@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ClassInfo {
   id: string;
@@ -114,26 +116,31 @@ interface YearResultRow {
 const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export default function ClassDetailPage() {
+  useSignals();
   const params = useParams();
   const router = useRouter();
   const classId = params.classId as string;
 
-  const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
-  const [enrolled, setEnrolled] = useState<EnrolledStudent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [enrollOpen, setEnrollOpen] = useState(false);
-  const [subjectStudent, setSubjectStudent] = useState<EnrolledStudent | null>(null);
-  const [teachers, setTeachers] = useState<TeacherAssignment[]>([]);
-  const [assignTeacherOpen, setAssignTeacherOpen] = useState(false);
-  const [editingTeacher, setEditingTeacher] = useState<TeacherAssignment | null>(null);
-  const [terms, setTerms] = useState<Term[]>([]);
-  const [selectedTermId, setSelectedTermId] = useState("");
-  const [summaryData, setSummaryData] = useState<SummaryRow[]>([]);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryView, setSummaryView] = useState<"term" | "year">("term");
-  const [yearData, setYearData] = useState<YearResultRow[]>([]);
-  const [yearLoading, setYearLoading] = useState(false);
-  const [gradingModel, setGradingModel] = useState<string>("term_based");
+  const classInfo = useSignal<ClassInfo | null>(null);
+  const enrolled = useSignal<EnrolledStudent[]>([]);
+  const loading = useSignal(true);
+  const enrollOpen = useSignal(false);
+  const subjectStudent = useSignal<EnrolledStudent | null>(null);
+  const teachers = useSignal<TeacherAssignment[]>([]);
+  const assignTeacherOpen = useSignal(false);
+  const editingTeacher = useSignal<TeacherAssignment | null>(null);
+  const terms = useSignal<Term[]>([]);
+  const selectedTermId = useSignal("");
+  const summaryData = useSignal<SummaryRow[]>([]);
+  const summaryLoading = useSignal(false);
+  const summaryView = useSignal<"term" | "year">("term");
+  const yearData = useSignal<YearResultRow[]>([]);
+  const yearLoading = useSignal(false);
+  const gradingModel = useSignal<string>("term_based");
+  const summaryPage = useSignal(0);
+  const summaryPageSize = useSignal(10);
+  const yearPage = useSignal(0);
+  const yearPageSize = useSignal(10);
 
   const fetchData = useCallback(() => {
     Promise.all([
@@ -141,18 +148,18 @@ export default function ClassDetailPage() {
       api<EnrolledStudent[]>(`/classes/${classId}/students`).catch(() => []),
       api<TeacherAssignment[]>(`/classes/${classId}/teachers`).catch(() => []),
     ]).then(([info, students, teacherList]) => {
-      setClassInfo(info);
-      setEnrolled(students);
-      setTeachers(teacherList);
-      setLoading(false);
+      classInfo.value = info;
+      enrolled.value = students;
+      teachers.value = teacherList;
+      loading.value = false;
 
       if (info?.academicYearId) {
         api<Term[]>(`/terms?yearId=${info.academicYearId}`)
           .then((t) => {
             const sorted = t.sort((a, b) => a.sort_order - b.sort_order);
-            setTerms(sorted);
-            if (sorted.length > 0 && !selectedTermId) {
-              setSelectedTermId(sorted[0].id);
+            terms.value = sorted;
+            if (sorted.length > 0 && !selectedTermId.value) {
+              selectedTermId.value = sorted[0].id;
             }
           })
           .catch(() => []);
@@ -160,39 +167,42 @@ export default function ClassDetailPage() {
         api<{ grading_model?: string }>(`/academic-years/${info.academicYearId}`)
           .then((ay) => {
             const model = ay.grading_model ?? "term_based";
-            setGradingModel(model);
-            if (model === "term_based") setSummaryView("term");
+            gradingModel.value = model;
+            if (model === "term_based") summaryView.value = "term";
           })
           .catch(() => {});
       }
     });
-  }, [classId, selectedTermId]);
+  }, [classId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   useEffect(() => {
-    if (summaryView !== "term" || !selectedTermId || !classId) return;
-    setSummaryLoading(true);
+    if (summaryView.value !== "term" || !selectedTermId.value || !classId) return;
+    summaryLoading.value = true;
+    summaryPage.value = 0;
+
     api<SummaryRow[]>(
-      `/calculations/class-summary?termId=${selectedTermId}&studentGroupId=${classId}`,
+      `/calculations/class-summary?termId=${selectedTermId.value}&studentGroupId=${classId}`,
     )
-      .then(setSummaryData)
-      .catch(() => setSummaryData([]))
-      .finally(() => setSummaryLoading(false));
-  }, [selectedTermId, classId, summaryView]);
+      .then((data) => (summaryData.value = data))
+      .catch(() => (summaryData.value = []))
+      .finally(() => (summaryLoading.value = false));
+  }, [selectedTermId.value, classId, summaryView.value]);
 
   useEffect(() => {
-    if (summaryView !== "year" || !classInfo?.academicYearId || !classId) return;
-    setYearLoading(true);
+    if (summaryView.value !== "year" || !classInfo.value?.academicYearId || !classId) return;
+    yearLoading.value = true;
+    yearPage.value = 0;
     api<YearResultRow[]>(
-      `/calculations/class-year?academicYearId=${classInfo.academicYearId}&studentGroupId=${classId}`,
+      `/calculations/class-year?academicYearId=${classInfo.value.academicYearId}&studentGroupId=${classId}`,
     )
-      .then(setYearData)
-      .catch(() => setYearData([]))
-      .finally(() => setYearLoading(false));
-  }, [summaryView, classInfo?.academicYearId, classId]);
+      .then((data) => (yearData.value = data))
+      .catch(() => (yearData.value = []))
+      .finally(() => (yearLoading.value = false));
+  }, [summaryView.value, classInfo.value?.academicYearId, classId]);
 
   async function handleUnenroll(studentId: string, name: string) {
     if (!confirm(`Unenroll ${name}? This will also remove their subject assignments.`)) return;
@@ -207,7 +217,7 @@ export default function ClassDetailPage() {
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-48" />
@@ -216,7 +226,7 @@ export default function ClassDetailPage() {
     );
   }
 
-  if (!classInfo) {
+  if (!classInfo.value) {
     return (
       <div className="space-y-4">
         <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/classes")}>
@@ -229,6 +239,8 @@ export default function ClassDetailPage() {
     );
   }
 
+  const info = classInfo.value;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between animate-fade-in-up">
@@ -237,9 +249,9 @@ export default function ClassDetailPage() {
             <ArrowLeft className="size-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">{classInfo.name}</h1>
+            <h1 className="text-3xl font-bold">{info.name}</h1>
             <p className="text-muted-foreground mt-1">
-              {classInfo.isClassTeacher ? "You are the class teacher" : "You teach subjects in this class"}
+              {info.isClassTeacher ? "You are the class teacher" : "You teach subjects in this class"}
             </p>
           </div>
         </div>
@@ -252,8 +264,8 @@ export default function ClassDetailPage() {
             <ClipboardList className="mr-2 size-4" />
             Grading
           </Button>
-          {classInfo.isClassTeacher && (
-          <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
+          {info.isClassTeacher && (
+          <Dialog open={enrollOpen.value} onOpenChange={(v) => (enrollOpen.value = v)}>
             <DialogTrigger render={<Button />}>
               <UserPlus className="mr-2 size-4" />
               Enroll Students
@@ -262,14 +274,14 @@ export default function ClassDetailPage() {
               <DialogHeader>
                 <DialogTitle>Enroll Students</DialogTitle>
                 <DialogDescription>
-                  Select students to enroll in {classInfo.name}
+                  Select students to enroll in {info.name}
                 </DialogDescription>
               </DialogHeader>
               <EnrollForm
                 classId={classId}
-                enrolledIds={enrolled.map((e) => e.student.id)}
+                enrolledIds={enrolled.value.map((e) => e.student.id)}
                 onSuccess={() => {
-                  setEnrollOpen(false);
+                  enrollOpen.value = false;
                   fetchData();
                 }}
               />
@@ -291,8 +303,8 @@ export default function ClassDetailPage() {
                 Teachers assigned to subjects in this class
               </CardDescription>
             </div>
-            {classInfo.isClassTeacher && (
-              <Dialog open={assignTeacherOpen} onOpenChange={setAssignTeacherOpen}>
+            {info.isClassTeacher && (
+              <Dialog open={assignTeacherOpen.value} onOpenChange={(v) => (assignTeacherOpen.value = v)}>
                 <DialogTrigger render={<Button size="sm" />}>
                   <Plus className="mr-2 size-4" />
                   Assign Teacher
@@ -301,14 +313,14 @@ export default function ClassDetailPage() {
                   <DialogHeader>
                     <DialogTitle>Assign Teacher to Subjects</DialogTitle>
                     <DialogDescription>
-                      Select a teacher and the subjects they will teach in {classInfo.name}
+                      Select a teacher and the subjects they will teach in {info.name}
                     </DialogDescription>
                   </DialogHeader>
                   <AssignTeacherForm
                     classId={classId}
-                    existingTeacherIds={teachers.map((t) => t.teacherId)}
+                    existingTeacherIds={teachers.value.map((t) => t.teacherId)}
                     onSuccess={() => {
-                      setAssignTeacherOpen(false);
+                      assignTeacherOpen.value = false;
                       fetchData();
                     }}
                   />
@@ -318,13 +330,13 @@ export default function ClassDetailPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {teachers.length === 0 ? (
+          {teachers.value.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
               No teachers assigned yet.
             </div>
           ) : (
             <div className="rounded-md border divide-y">
-              {teachers.map((t) => (
+              {teachers.value.map((t) => (
                 <div key={t.teacherId} className="flex items-center justify-between px-4 py-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -347,12 +359,12 @@ export default function ClassDetailPage() {
                       <p className="text-xs text-muted-foreground mt-0.5">No subjects assigned</p>
                     )}
                   </div>
-                  {classInfo.isClassTeacher && (
+                  {info.isClassTeacher && (
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setEditingTeacher(t)}
+                        onClick={() => (editingTeacher.value = t)}
                         title="Edit subjects"
                       >
                         <Pencil className="size-4" />
@@ -391,15 +403,15 @@ export default function ClassDetailPage() {
             <div>
               <CardTitle>Enrolled Students</CardTitle>
               <CardDescription>
-                {enrolled.length} student{enrolled.length !== 1 ? "s" : ""} enrolled
+                {enrolled.value.length} student{enrolled.value.length !== 1 ? "s" : ""} enrolled
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {enrolled.length === 0 ? (
+          {enrolled.value.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              No students enrolled yet. {classInfo.isClassTeacher ? "Click \"Enroll Students\" to add some." : ""}
+              No students enrolled yet. {info.isClassTeacher ? "Click \"Enroll Students\" to add some." : ""}
             </div>
           ) : (
             <div className="rounded-md border">
@@ -410,13 +422,13 @@ export default function ClassDetailPage() {
                     <TableHead>Gender</TableHead>
                     <TableHead>Enrolled</TableHead>
                     <TableHead>Subjects</TableHead>
-                    {classInfo.isClassTeacher && (
+                    {info.isClassTeacher && (
                       <TableHead className="text-right">Actions</TableHead>
                     )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {enrolled.map((e) => (
+                  {enrolled.value.map((e) => (
                     <TableRow key={e.id}>
                       <TableCell className="font-medium">
                         {e.student.first_name} {e.student.last_name}
@@ -433,13 +445,13 @@ export default function ClassDetailPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setSubjectStudent(e)}
+                          onClick={() => (subjectStudent.value = e)}
                         >
                           <BookOpen className="mr-1 size-3" />
                           Manage
                         </Button>
                       </TableCell>
-                      {classInfo.isClassTeacher && (
+                      {info.isClassTeacher && (
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
@@ -473,37 +485,37 @@ export default function ClassDetailPage() {
                 <CardTitle>Class Summary</CardTitle>
               </div>
               <CardDescription>
-                {summaryView === "term" ? "Term results and class rankings" : "Year-end results across all terms"}
+                {summaryView.value === "term" ? "Term results and class rankings" : "Year-end results across all terms"}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              {gradingModel === "year_based" && (
+              {gradingModel.value === "year_based" && (
                 <div className="flex rounded-md border">
                   <Button
-                    variant={summaryView === "term" ? "default" : "ghost"}
+                    variant={summaryView.value === "term" ? "default" : "ghost"}
                     size="sm"
                     className="rounded-r-none"
-                    onClick={() => setSummaryView("term")}
+                    onClick={() => (summaryView.value = "term")}
                   >
                     Term
                   </Button>
                   <Button
-                    variant={summaryView === "year" ? "default" : "ghost"}
+                    variant={summaryView.value === "year" ? "default" : "ghost"}
                     size="sm"
                     className="rounded-l-none"
-                    onClick={() => setSummaryView("year")}
+                    onClick={() => (summaryView.value = "year")}
                   >
                     Year
                   </Button>
                 </div>
               )}
-              {summaryView === "term" && (
+              {summaryView.value === "term" && (
                 <select
                   className={`${selectClass} w-auto min-w-[140px]`}
-                  value={selectedTermId}
-                  onChange={(e) => setSelectedTermId(e.target.value)}
+                  value={selectedTermId.value}
+                  onChange={(e) => (selectedTermId.value = e.target.value)}
                 >
-                  {terms.map((t) => (
+                  {terms.value.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
                     </option>
@@ -514,14 +526,14 @@ export default function ClassDetailPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {summaryView === "term" ? (
-            summaryLoading ? (
+          {summaryView.value === "term" ? (
+            summaryLoading.value ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
-            ) : summaryData.length === 0 ? (
+            ) : summaryData.value.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                 No grades recorded for this term yet.
               </div>
@@ -529,7 +541,7 @@ export default function ClassDetailPage() {
               (() => {
                 const seen = new Set<string>();
                 const subjectCols: { id: string; name: string }[] = [];
-                for (const row of summaryData) {
+                for (const row of summaryData.value) {
                   for (const s of row.subjects) {
                     if (!seen.has(s.subjectId)) {
                       seen.add(s.subjectId);
@@ -538,71 +550,107 @@ export default function ClassDetailPage() {
                   }
                 }
 
-                return (
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12 text-center">#</TableHead>
-                          <TableHead>Student</TableHead>
-                          {subjectCols.map((c) => (
-                            <TableHead key={c.id} className="text-center min-w-[80px]">
-                              {c.name}
-                            </TableHead>
-                          ))}
-                          <TableHead className="text-center min-w-[80px]">Overall</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {summaryData.map((row) => {
-                          const subjectMap = new Map(
-                            row.subjects.map((s) => [s.subjectId, s.average]),
-                          );
+                const total = summaryData.value.length;
+                const ps = summaryPageSize.value;
+                const pageCount = Math.ceil(total / ps);
+                const start = summaryPage.value * ps;
+                const pageRows = summaryData.value.slice(start, start + ps);
 
-                          return (
-                            <TableRow key={row.student.id}>
-                              <TableCell className="text-center">
-                                <Badge variant="outline" className="text-xs font-mono">
-                                  {row.position}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="font-medium whitespace-nowrap">
-                                {row.student.firstName} {row.student.lastName}
-                              </TableCell>
-                              {subjectCols.map((c) => {
-                                const avg = subjectMap.get(c.id);
-                                return (
-                                  <TableCell key={c.id} className="text-center tabular-nums">
-                                    {avg != null ? avg.toFixed(1) : "—"}
-                                  </TableCell>
-                                );
-                              })}
-                              <TableCell className="text-center font-semibold tabular-nums">
-                                {row.overallAverage != null ? row.overallAverage.toFixed(1) : "—"}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
+                return (
+                  <div className="space-y-3">
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12 text-center">#</TableHead>
+                            <TableHead>Student</TableHead>
+                            {subjectCols.map((c) => (
+                              <TableHead key={c.id} className="text-center min-w-[80px]">
+                                {c.name}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pageRows.map((row) => {
+                            const subjectMap = new Map(
+                              row.subjects.map((s) => [s.subjectId, s.average]),
+                            );
+
+                            return (
+                              <TableRow key={row.student.id}>
+                                <TableCell className="text-center">
+                                  <Badge variant="outline" className="text-xs font-mono">
+                                    {row.position}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="font-medium whitespace-nowrap">
+                                  <span className="mr-2">{row.student.firstName} {row.student.lastName}</span>
+                                  {row.overallAverage != null && (
+                                    <Badge className="font-semibold tabular-nums text-xs">
+                                      Overall - {row.overallAverage.toFixed(1)}%
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                {subjectCols.map((c) => {
+                                  const avg = subjectMap.get(c.id);
+                                  return (
+                                    <TableCell key={c.id} className="text-center tabular-nums">
+                                      {avg != null ? avg.toFixed(1) : "\u2014"}
+                                    </TableCell>
+                                  );
+                                })}
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {total > ps && (
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <span>Rows per page</span>
+                          <select
+                            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                            value={ps}
+                            onChange={(e) => { summaryPageSize.value = Number(e.target.value); summaryPage.value = 0; }}
+                          >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">
+                            {start + 1}-{Math.min(start + ps, total)} of {total}
+                          </span>
+                          <Button variant="outline" size="icon" className="size-8" disabled={summaryPage.value === 0} onClick={() => (summaryPage.value -= 1)}>
+                            <ChevronLeft className="size-4" />
+                          </Button>
+                          <Button variant="outline" size="icon" className="size-8" disabled={summaryPage.value >= pageCount - 1} onClick={() => (summaryPage.value += 1)}>
+                            <ChevronRight className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()
             )
           ) : (
-            yearLoading ? (
+            yearLoading.value ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
-            ) : yearData.length === 0 ? (
+            ) : yearData.value.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                 No year data available yet.
               </div>
             ) : (
               (() => {
-                const termNames = terms.map((t) => ({
+                const termNames = terms.value.map((t) => ({
                   id: t.id,
                   label: t.name.charAt(0).toUpperCase() + t.name.slice(1),
                   short: t.name.substring(0, 3).toUpperCase(),
@@ -610,7 +658,7 @@ export default function ClassDetailPage() {
 
                 const seen = new Set<string>();
                 const subjectCols: { id: string; name: string }[] = [];
-                for (const row of yearData) {
+                for (const row of yearData.value) {
                   for (const s of row.yearEnd.subjects) {
                     if (!seen.has(s.subjectId)) {
                       seen.add(s.subjectId);
@@ -619,85 +667,119 @@ export default function ClassDetailPage() {
                   }
                 }
 
-                return (
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead rowSpan={2} className="w-12 text-center align-bottom">#</TableHead>
-                          <TableHead rowSpan={2} className="align-bottom">Student</TableHead>
-                          {subjectCols.map((c) => (
-                            <TableHead
-                              key={c.id}
-                              colSpan={termNames.length + 1}
-                              className="text-center border-l"
-                            >
-                              {c.name}
-                            </TableHead>
-                          ))}
-                          <TableHead rowSpan={2} className="text-center align-bottom min-w-[70px]">Overall</TableHead>
-                        </TableRow>
-                        <TableRow>
-                          {subjectCols.flatMap((c) => [
-                            ...termNames.map((t) => (
-                              <TableHead key={`${c.id}-${t.id}`} className="text-center text-xs px-2 border-l min-w-[50px]">
-                                {t.short}
-                              </TableHead>
-                            )),
-                            <TableHead key={`${c.id}-year`} className="text-center text-xs font-semibold px-2 min-w-[50px]">
-                              YR
-                            </TableHead>,
-                          ])}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {yearData.map((row) => {
-                          const yearSubjectMap = new Map(
-                            row.yearEnd.subjects.map((s) => [s.subjectId, s]),
-                          );
+                const total = yearData.value.length;
+                const ps = yearPageSize.value;
+                const pageCount = Math.ceil(total / ps);
+                const start = yearPage.value * ps;
+                const pageRows = yearData.value.slice(start, start + ps);
 
-                          return (
-                            <TableRow key={row.studentId}>
-                              <TableCell className="text-center">
-                                <Badge variant="outline" className="text-xs font-mono">
-                                  {row.position}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="font-medium whitespace-nowrap">
-                                {row.firstName} {row.lastName}
-                              </TableCell>
-                              {subjectCols.flatMap((c) => {
-                                const yearSubj = yearSubjectMap.get(c.id);
-                                return [
-                                  ...termNames.map((t) => {
-                                    const termGrade = yearSubj?.termGrades.find(
-                                      (tg) => tg.termId === t.id,
-                                    );
-                                    return (
-                                      <TableCell key={`${row.studentId}-${c.id}-${t.id}`} className="text-center tabular-nums text-sm px-2 border-l">
-                                        {termGrade?.termComposite != null
-                                          ? termGrade.termComposite.toFixed(1)
-                                          : "—"}
-                                      </TableCell>
-                                    );
-                                  }),
-                                  <TableCell key={`${row.studentId}-${c.id}-year`} className="text-center tabular-nums text-sm font-semibold px-2">
-                                    {yearSubj?.yearGrade != null
-                                      ? yearSubj.yearGrade.toFixed(1)
-                                      : "—"}
-                                  </TableCell>,
-                                ];
-                              })}
-                              <TableCell className="text-center font-semibold tabular-nums">
-                                {row.yearEnd.overallAverage != null
-                                  ? row.yearEnd.overallAverage.toFixed(1)
-                                  : "—"}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
+                return (
+                  <div className="space-y-3">
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead rowSpan={2} className="w-12 text-center align-bottom">#</TableHead>
+                            <TableHead rowSpan={2} className="align-bottom">Student</TableHead>
+                            {subjectCols.map((c) => (
+                              <TableHead
+                                key={c.id}
+                                colSpan={termNames.length + 1}
+                                className="text-center border-l"
+                              >
+                                {c.name}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                          <TableRow>
+                            {subjectCols.flatMap((c) => [
+                              ...termNames.map((t) => (
+                                <TableHead key={`${c.id}-${t.id}`} className="text-center text-xs px-2 border-l min-w-[50px]">
+                                  {t.short}
+                                </TableHead>
+                              )),
+                              <TableHead key={`${c.id}-year`} className="text-center text-xs font-semibold px-2 min-w-[50px]">
+                                YR
+                              </TableHead>,
+                            ])}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pageRows.map((row) => {
+                            const yearSubjectMap = new Map(
+                              row.yearEnd.subjects.map((s) => [s.subjectId, s]),
+                            );
+
+                            return (
+                              <TableRow key={row.studentId}>
+                                <TableCell className="text-center">
+                                  <Badge variant="outline" className="text-xs font-mono">
+                                    {row.position}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="font-medium whitespace-nowrap">
+                                  <span className="mr-2">{row.firstName} {row.lastName}</span>
+                                  {row.yearEnd.overallAverage != null && (
+                                    <Badge className="font-semibold tabular-nums text-xs">
+                                      Overall - {row.yearEnd.overallAverage.toFixed(1)}%
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                {subjectCols.flatMap((c) => {
+                                  const yearSubj = yearSubjectMap.get(c.id);
+                                  return [
+                                    ...termNames.map((t) => {
+                                      const termGrade = yearSubj?.termGrades.find(
+                                        (tg) => tg.termId === t.id,
+                                      );
+                                      return (
+                                        <TableCell key={`${row.studentId}-${c.id}-${t.id}`} className="text-center tabular-nums text-sm px-2 border-l">
+                                          {termGrade?.termComposite != null
+                                            ? termGrade.termComposite.toFixed(1)
+                                            : "\u2014"}
+                                        </TableCell>
+                                      );
+                                    }),
+                                    <TableCell key={`${row.studentId}-${c.id}-year`} className="text-center tabular-nums text-sm font-semibold px-2">
+                                      {yearSubj?.yearGrade != null
+                                        ? yearSubj.yearGrade.toFixed(1)
+                                        : "\u2014"}
+                                    </TableCell>,
+                                  ];
+                                })}
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {total > ps && (
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <span>Rows per page</span>
+                          <select
+                            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                            value={ps}
+                            onChange={(e) => { yearPageSize.value = Number(e.target.value); yearPage.value = 0; }}
+                          >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">
+                            {start + 1}-{Math.min(start + ps, total)} of {total}
+                          </span>
+                          <Button variant="outline" size="icon" className="size-8" disabled={yearPage.value === 0} onClick={() => (yearPage.value -= 1)}>
+                            <ChevronLeft className="size-4" />
+                          </Button>
+                          <Button variant="outline" size="icon" className="size-8" disabled={yearPage.value >= pageCount - 1} onClick={() => (yearPage.value += 1)}>
+                            <ChevronRight className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()
@@ -707,26 +789,26 @@ export default function ClassDetailPage() {
       </Card>
 
       <Dialog
-        open={editingTeacher !== null}
+        open={editingTeacher.value !== null}
         onOpenChange={(open) => {
-          if (!open) setEditingTeacher(null);
+          if (!open) editingTeacher.value = null;
         }}
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              Edit Subjects for {editingTeacher?.firstName} {editingTeacher?.lastName}
+              Edit Subjects for {editingTeacher.value?.firstName} {editingTeacher.value?.lastName}
             </DialogTitle>
             <DialogDescription>
-              Select the subjects this teacher will teach in {classInfo.name}
+              Select the subjects this teacher will teach in {info.name}
             </DialogDescription>
           </DialogHeader>
-          {editingTeacher && (
+          {editingTeacher.value && (
             <EditTeacherSubjectsForm
               classId={classId}
-              teacher={editingTeacher}
+              teacher={editingTeacher.value}
               onSuccess={() => {
-                setEditingTeacher(null);
+                editingTeacher.value = null;
                 fetchData();
               }}
             />
@@ -735,25 +817,25 @@ export default function ClassDetailPage() {
       </Dialog>
 
       <Dialog
-        open={subjectStudent !== null}
+        open={subjectStudent.value !== null}
         onOpenChange={(open) => {
-          if (!open) setSubjectStudent(null);
+          if (!open) subjectStudent.value = null;
         }}
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              Subjects - {subjectStudent?.student.first_name} {subjectStudent?.student.last_name}
+              Subjects - {subjectStudent.value?.student.first_name} {subjectStudent.value?.student.last_name}
             </DialogTitle>
             <DialogDescription>
               Manage subject assignments for this student
             </DialogDescription>
           </DialogHeader>
-          {subjectStudent && (
+          {subjectStudent.value && (
             <ManageSubjects
               classId={classId}
-              studentId={subjectStudent.student.id}
-              studentName={`${subjectStudent.student.first_name} ${subjectStudent.student.last_name}`}
+              studentId={subjectStudent.value.student.id}
+              studentName={`${subjectStudent.value.student.first_name} ${subjectStudent.value.student.last_name}`}
             />
           )}
         </DialogContent>
@@ -771,38 +853,37 @@ function EnrollForm({
   enrolledIds: string[];
   onSuccess: () => void;
 }) {
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  useSignals();
+  const allStudents = useSignal<Student[]>([]);
+  const selected = useSignal<Set<string>>(new Set());
+  const loading = useSignal(true);
+  const submitting = useSignal(false);
 
   useEffect(() => {
     api<Student[]>("/students")
       .then((students) => {
-        setAllStudents(students.filter((s) => s.is_active));
+        allStudents.value = students.filter((s) => s.is_active);
       })
       .catch(() => toast.error("Failed to load students"))
-      .finally(() => setLoading(false));
+      .finally(() => (loading.value = false));
   }, []);
 
-  const available = allStudents.filter((s) => !enrolledIds.includes(s.id));
+  const available = allStudents.value.filter((s) => !enrolledIds.includes(s.id));
 
   function toggleStudent(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selected.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selected.value = next;
   }
 
   async function handleEnroll() {
-    if (selected.size === 0) return;
-    setSubmitting(true);
+    if (selected.value.size === 0) return;
+    submitting.value = true;
 
     try {
-      if (selected.size === 1) {
-        const [studentId] = selected;
+      if (selected.value.size === 1) {
+        const [studentId] = selected.value;
         await api(`/classes/${classId}/enroll`, {
           method: "POST",
           body: { studentId },
@@ -810,20 +891,20 @@ function EnrollForm({
       } else {
         await api(`/classes/${classId}/enroll/bulk`, {
           method: "POST",
-          body: { studentIds: [...selected] },
+          body: { studentIds: [...selected.value] },
         });
       }
-      toast.success(`${selected.size} student${selected.size > 1 ? "s" : ""} enrolled`);
+      toast.success(`${selected.value.size} student${selected.value.size > 1 ? "s" : ""} enrolled`);
       onSuccess();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to enroll";
       toast.error(msg);
     } finally {
-      setSubmitting(false);
+      submitting.value = false;
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -851,7 +932,7 @@ function EnrollForm({
           >
             <input
               type="checkbox"
-              checked={selected.has(s.id)}
+              checked={selected.value.has(s.id)}
               onChange={() => toggleStudent(s.id)}
               className="size-4 rounded border-input"
             />
@@ -866,12 +947,12 @@ function EnrollForm({
       </div>
       <Button
         className="w-full"
-        disabled={selected.size === 0 || submitting}
+        disabled={selected.value.size === 0 || submitting.value}
         onClick={handleEnroll}
       >
-        {submitting
+        {submitting.value
           ? "Enrolling..."
-          : `Enroll ${selected.size} Student${selected.size !== 1 ? "s" : ""}`}
+          : `Enroll ${selected.value.size} Student${selected.value.size !== 1 ? "s" : ""}`}
       </Button>
     </div>
   );
@@ -886,19 +967,20 @@ function ManageSubjects({
   studentId: string;
   studentName: string;
 }) {
-  const [assigned, setAssigned] = useState<StudentSubject[]>([]);
-  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [addOpen, setAddOpen] = useState(false);
+  useSignals();
+  const assigned = useSignal<StudentSubject[]>([]);
+  const allSubjects = useSignal<Subject[]>([]);
+  const loading = useSignal(true);
+  const addOpen = useSignal(false);
 
   const fetchSubjects = useCallback(() => {
     Promise.all([
       api<StudentSubject[]>(`/classes/${classId}/students/${studentId}/subjects`).catch(() => []),
       api<Subject[]>("/subjects").catch(() => []),
     ]).then(([studentSubjects, subjects]) => {
-      setAssigned(studentSubjects);
-      setAllSubjects(subjects);
-      setLoading(false);
+      assigned.value = studentSubjects;
+      allSubjects.value = subjects;
+      loading.value = false;
     });
   }, [classId, studentId]);
 
@@ -921,7 +1003,7 @@ function ManageSubjects({
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -932,21 +1014,21 @@ function ManageSubjects({
   }
 
   const assignedSubjectIds = new Set(
-    assigned.map((a) => a.subject?.id).filter(Boolean),
+    assigned.value.map((a) => a.subject?.id).filter(Boolean),
   );
-  const availableSubjects = allSubjects.filter(
+  const availableSubjects = allSubjects.value.filter(
     (s) => !assignedSubjectIds.has(s.id),
   );
 
   return (
     <div className="space-y-4">
-      {assigned.length === 0 ? (
+      {assigned.value.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           No subjects assigned yet
         </div>
       ) : (
         <div className="rounded-md border divide-y">
-          {assigned.map((a) =>
+          {assigned.value.map((a) =>
             a.subject ? (
               <div
                 key={a.id}
@@ -978,23 +1060,23 @@ function ManageSubjects({
         </div>
       )}
 
-      {addOpen ? (
+      {addOpen.value ? (
         <AddSubjectsForm
           classId={classId}
           studentId={studentId}
           available={availableSubjects}
           onSuccess={() => {
-            setAddOpen(false);
+            addOpen.value = false;
             fetchSubjects();
           }}
-          onCancel={() => setAddOpen(false)}
+          onCancel={() => (addOpen.value = false)}
         />
       ) : (
         <Button
           variant="outline"
           className="w-full"
           disabled={availableSubjects.length === 0}
-          onClick={() => setAddOpen(true)}
+          onClick={() => (addOpen.value = true)}
         >
           <Plus className="mr-2 size-4" />
           {availableSubjects.length === 0 ? "All subjects assigned" : "Add Subjects"}
@@ -1017,34 +1099,33 @@ function AddSubjectsForm({
   onSuccess: () => void;
   onCancel: () => void;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [submitting, setSubmitting] = useState(false);
+  useSignals();
+  const selected = useSignal<Set<string>>(new Set());
+  const submitting = useSignal(false);
 
   function toggleSubject(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selected.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selected.value = next;
   }
 
   async function handleAssign() {
-    if (selected.size === 0) return;
-    setSubmitting(true);
+    if (selected.value.size === 0) return;
+    submitting.value = true;
 
     try {
       await api(`/classes/${classId}/subjects`, {
         method: "POST",
-        body: { studentId, subjectIds: [...selected] },
+        body: { studentId, subjectIds: [...selected.value] },
       });
-      toast.success(`${selected.size} subject${selected.size > 1 ? "s" : ""} assigned`);
+      toast.success(`${selected.value.size} subject${selected.value.size > 1 ? "s" : ""} assigned`);
       onSuccess();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to assign";
       toast.error(msg);
     } finally {
-      setSubmitting(false);
+      submitting.value = false;
     }
   }
 
@@ -1058,7 +1139,7 @@ function AddSubjectsForm({
           >
             <input
               type="checkbox"
-              checked={selected.has(s.id)}
+              checked={selected.value.has(s.id)}
               onChange={() => toggleSubject(s.id)}
               className="size-4 rounded border-input"
             />
@@ -1077,11 +1158,11 @@ function AddSubjectsForm({
         </Button>
         <Button
           size="sm"
-          disabled={selected.size === 0 || submitting}
+          disabled={selected.value.size === 0 || submitting.value}
           onClick={handleAssign}
           className="flex-1"
         >
-          {submitting ? "Assigning..." : `Assign ${selected.size}`}
+          {submitting.value ? "Assigning..." : `Assign ${selected.value.size}`}
         </Button>
       </div>
     </div>
@@ -1097,37 +1178,36 @@ function EditTeacherSubjectsForm({
   teacher: TeacherAssignment;
   onSuccess: () => void;
 }) {
-  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
-  const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(
+  useSignals();
+  const allSubjects = useSignal<Subject[]>([]);
+  const selectedSubjects = useSignal<Set<string>>(
     new Set(teacher.subjects.map((s) => s.id)),
   );
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const loading = useSignal(true);
+  const submitting = useSignal(false);
 
   useEffect(() => {
     api<Subject[]>("/subjects")
-      .then(setAllSubjects)
+      .then((data) => (allSubjects.value = data))
       .catch(() => [])
-      .finally(() => setLoading(false));
+      .finally(() => (loading.value = false));
   }, []);
 
   function toggleSubject(id: string) {
-    setSelectedSubjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selectedSubjects.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selectedSubjects.value = next;
   }
 
   async function handleSubmit() {
-    setSubmitting(true);
+    submitting.value = true;
     try {
       await api(`/classes/${classId}/teachers`, {
         method: "POST",
         body: {
           teacherId: teacher.teacherId,
-          subjectIds: [...selectedSubjects],
+          subjectIds: [...selectedSubjects.value],
         },
       });
       toast.success("Subjects updated");
@@ -1136,11 +1216,11 @@ function EditTeacherSubjectsForm({
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
     } finally {
-      setSubmitting(false);
+      submitting.value = false;
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -1155,14 +1235,14 @@ function EditTeacherSubjectsForm({
       <div className="space-y-2">
         <label className="text-sm font-medium">Subjects</label>
         <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
-          {allSubjects.map((s) => (
+          {allSubjects.value.map((s) => (
             <label
               key={s.id}
               className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
             >
               <input
                 type="checkbox"
-                checked={selectedSubjects.has(s.id)}
+                checked={selectedSubjects.value.has(s.id)}
                 onChange={() => toggleSubject(s.id)}
                 className="size-4 rounded border-input"
               />
@@ -1179,53 +1259,52 @@ function EditTeacherSubjectsForm({
 
       <Button
         className="w-full"
-        disabled={submitting}
+        disabled={submitting.value}
         onClick={handleSubmit}
       >
-        {submitting ? "Saving..." : "Save Subjects"}
+        {submitting.value ? "Saving..." : "Save Subjects"}
       </Button>
     </div>
   );
 }
 
 function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: string; existingTeacherIds: string[]; onSuccess: () => void}) {
-  const [schoolTeachers, setSchoolTeachers] = useState<SchoolTeacher[]>([]);
-  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
-  const [selectedTeacher, setSelectedTeacher] = useState("");
-  const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  useSignals();
+  const schoolTeachers = useSignal<SchoolTeacher[]>([]);
+  const allSubjects = useSignal<Subject[]>([]);
+  const selectedTeacher = useSignal("");
+  const selectedSubjects = useSignal<Set<string>>(new Set());
+  const loading = useSignal(true);
+  const submitting = useSignal(false);
 
   useEffect(() => {
     Promise.all([
       api<SchoolTeacher[]>("/classes/school-teachers").catch(() => []),
       api<Subject[]>("/subjects").catch(() => []),
     ]).then(([teachers, subjects]) => {
-      setSchoolTeachers(teachers.filter((t) => !existingTeacherIds.includes(t.id)));
-      setAllSubjects(subjects);
-      setLoading(false);
+      schoolTeachers.value = teachers.filter((t) => !existingTeacherIds.includes(t.id));
+      allSubjects.value = subjects;
+      loading.value = false;
     });
   }, [existingTeacherIds]);
 
   function toggleSubject(id: string) {
-    setSelectedSubjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selectedSubjects.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selectedSubjects.value = next;
   }
 
   async function handleSubmit() {
-    if (!selectedTeacher || selectedSubjects.size === 0) return;
-    setSubmitting(true);
+    if (!selectedTeacher.value || selectedSubjects.value.size === 0) return;
+    submitting.value = true;
 
     try {
       await api(`/classes/${classId}/teachers`, {
         method: "POST",
         body: {
-          teacherId: selectedTeacher,
-          subjectIds: [...selectedSubjects],
+          teacherId: selectedTeacher.value,
+          subjectIds: [...selectedSubjects.value],
         },
       });
       toast.success("Teacher assigned");
@@ -1234,11 +1313,11 @@ function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: s
       const msg = err instanceof ApiError ? err.message : "Failed to assign";
       toast.error(msg);
     } finally {
-      setSubmitting(false);
+      submitting.value = false;
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -1248,7 +1327,7 @@ function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: s
     );
   }
 
-  if (schoolTeachers.length === 0) {
+  if (schoolTeachers.value.length === 0) {
     return (
       <div className="text-center py-6 text-sm text-muted-foreground">
         No available teachers to assign.
@@ -1262,11 +1341,11 @@ function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: s
         <label className="text-sm font-medium">Teacher</label>
         <select
           className={selectClass}
-          value={selectedTeacher}
-          onChange={(e) => setSelectedTeacher(e.target.value)}
+          value={selectedTeacher.value}
+          onChange={(e) => (selectedTeacher.value = e.target.value)}
         >
           <option value="">Select a teacher...</option>
-          {schoolTeachers.map((t) => (
+          {schoolTeachers.value.map((t) => (
             <option key={t.id} value={t.id}>
               {t.first_name} {t.last_name}
             </option>
@@ -1277,14 +1356,14 @@ function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: s
       <div className="space-y-2">
         <label className="text-sm font-medium">Subjects</label>
         <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
-          {allSubjects.map((s) => (
+          {allSubjects.value.map((s) => (
             <label
               key={s.id}
               className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
             >
               <input
                 type="checkbox"
-                checked={selectedSubjects.has(s.id)}
+                checked={selectedSubjects.value.has(s.id)}
                 onChange={() => toggleSubject(s.id)}
                 className="size-4 rounded border-input"
               />
@@ -1301,10 +1380,10 @@ function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: s
 
       <Button
         className="w-full"
-        disabled={!selectedTeacher || selectedSubjects.size === 0 || submitting}
+        disabled={!selectedTeacher.value || selectedSubjects.value.size === 0 || submitting.value}
         onClick={handleSubmit}
       >
-        {submitting ? "Assigning..." : "Assign Teacher"}
+        {submitting.value ? "Assigning..." : "Assign Teacher"}
       </Button>
     </div>
   );

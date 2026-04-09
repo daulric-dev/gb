@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,16 +40,17 @@ interface AcademicYear {
 }
 
 export default function AcademicYearsPage() {
-  const [years, setYears] = useState<AcademicYear[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editYear, setEditYear] = useState<AcademicYear | null>(null);
+  useSignals();
+  const years = useSignal<AcademicYear[]>([]);
+  const loading = useSignal(true);
+  const dialogOpen = useSignal(false);
+  const editYear = useSignal<AcademicYear | null>(null);
 
   const fetchYears = useCallback(() => {
     api<AcademicYear[]>("/academic-years")
-      .then(setYears)
+      .then((data) => (years.value = data))
       .catch(() => toast.error("Failed to load academic years"))
-      .finally(() => setLoading(false));
+      .finally(() => (loading.value = false));
   }, []);
 
   useEffect(() => {
@@ -87,7 +90,7 @@ export default function AcademicYearsPage() {
             manage your school&apos;s academic years
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
           <DialogTrigger render={<Button />}>
             <Plus className="mr-2 size-4" />
             New Academic Year
@@ -101,7 +104,7 @@ export default function AcademicYearsPage() {
             </DialogHeader>
             <CreateYearForm
               onSuccess={() => {
-                setDialogOpen(false);
+                dialogOpen.value = false;
                 fetchYears();
               }}
             />
@@ -109,13 +112,13 @@ export default function AcademicYearsPage() {
         </Dialog>
       </div>
 
-      {loading ? (
+      {loading.value ? (
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : years.length === 0 ? (
+      ) : years.value.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No academic years yet. Create your first one.
         </div>
@@ -133,7 +136,7 @@ export default function AcademicYearsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {years.map((year) => (
+              {years.value.map((year) => (
                 <TableRow key={year.id}>
                   <TableCell className="font-medium">{year.name}</TableCell>
                   <TableCell>
@@ -165,7 +168,7 @@ export default function AcademicYearsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setEditYear(year)}
+                      onClick={() => (editYear.value = year)}
                     >
                       <Pencil className="size-4" />
                     </Button>
@@ -195,9 +198,9 @@ export default function AcademicYearsPage() {
       )}
 
       <Dialog
-        open={editYear !== null}
+        open={editYear.value !== null}
         onOpenChange={(open) => {
-          if (!open) setEditYear(null);
+          if (!open) editYear.value = null;
         }}
       >
         <DialogContent>
@@ -207,11 +210,11 @@ export default function AcademicYearsPage() {
               Update academic year details
             </DialogDescription>
           </DialogHeader>
-          {editYear && (
+          {editYear.value && (
             <EditYearForm
-              year={editYear}
+              year={editYear.value}
               onSuccess={() => {
-                setEditYear(null);
+                editYear.value = null;
                 fetchYears();
               }}
             />
@@ -223,30 +226,29 @@ export default function AcademicYearsPage() {
 }
 
 function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
-  const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [gradingModel, setGradingModel] = useState<
-    "term_based" | "year_based"
-  >("term_based");
-  const [examWeight, setExamWeight] = useState(60);
-  const [courseworkWeight, setCourseworkWeight] = useState(40);
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const name = useSignal("");
+  const startDate = useSignal("");
+  const endDate = useSignal("");
+  const gradingModel = useSignal<"term_based" | "year_based">("term_based");
+  const examWeight = useSignal(60);
+  const courseworkWeight = useSignal(40);
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     const body: Record<string, unknown> = {
-      name,
-      startDate,
-      endDate,
-      gradingModel,
+      name: name.value,
+      startDate: startDate.value,
+      endDate: endDate.value,
+      gradingModel: gradingModel.value,
     };
 
-    if (gradingModel === "year_based") {
-      body.yearExamWeight = examWeight;
-      body.yearCourseworkWeight = courseworkWeight;
+    if (gradingModel.value === "year_based") {
+      body.yearExamWeight = examWeight.value;
+      body.yearCourseworkWeight = courseworkWeight.value;
     }
 
     try {
@@ -257,7 +259,7 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
       const msg = err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -268,8 +270,8 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
         <Input
           id="name"
           placeholder="2025/2026"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={name.value}
+          onChange={(e) => (name.value = e.target.value)}
           required
         />
       </div>
@@ -279,8 +281,8 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             id="startDate"
             type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            value={startDate.value}
+            onChange={(e) => (startDate.value = e.target.value)}
             required
           />
         </div>
@@ -289,8 +291,8 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             id="endDate"
             type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            value={endDate.value}
+            onChange={(e) => (endDate.value = e.target.value)}
             required
           />
         </div>
@@ -300,16 +302,16 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
         <select
           id="gradingModel"
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={gradingModel}
+          value={gradingModel.value}
           onChange={(e) =>
-            setGradingModel(e.target.value as "term_based" | "year_based")
+            (gradingModel.value = e.target.value as "term_based" | "year_based")
           }
         >
           <option value="term_based">Term Based</option>
           <option value="year_based">Year Based</option>
         </select>
       </div>
-      {gradingModel === "year_based" && (
+      {gradingModel.value === "year_based" && (
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="examWeight">Exam Weight (%)</Label>
@@ -318,8 +320,8 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
               type="number"
               min={0}
               max={100}
-              value={examWeight}
-              onChange={(e) => setExamWeight(Number(e.target.value))}
+              value={examWeight.value}
+              onChange={(e) => (examWeight.value = Number(e.target.value))}
               required
             />
           </div>
@@ -330,8 +332,8 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
               type="number"
               min={0}
               max={100}
-              value={courseworkWeight}
-              onChange={(e) => setCourseworkWeight(Number(e.target.value))}
+              value={courseworkWeight.value}
+              onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
               required
             />
           </div>
@@ -340,8 +342,8 @@ function CreateYearForm({ onSuccess }: { onSuccess: () => void }) {
           </p>
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Creating..." : "Create Academic Year"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Creating..." : "Create Academic Year"}
       </Button>
     </form>
   );
@@ -354,32 +356,29 @@ function EditYearForm({
   year: AcademicYear;
   onSuccess: () => void;
 }) {
-  const [name, setName] = useState(year.name);
-  const [startDate, setStartDate] = useState(year.start_date);
-  const [endDate, setEndDate] = useState(year.end_date);
-  const [gradingModel, setGradingModel] = useState<
-    "term_based" | "year_based"
-  >(year.grading_model);
-  const [examWeight, setExamWeight] = useState(year.year_exam_weight ?? 60);
-  const [courseworkWeight, setCourseworkWeight] = useState(
-    year.year_coursework_weight ?? 40,
-  );
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const name = useSignal(year.name);
+  const startDate = useSignal(year.start_date);
+  const endDate = useSignal(year.end_date);
+  const gradingModel = useSignal<"term_based" | "year_based">(year.grading_model);
+  const examWeight = useSignal(year.year_exam_weight ?? 60);
+  const courseworkWeight = useSignal(year.year_coursework_weight ?? 40);
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     const body: Record<string, unknown> = {
-      name,
-      startDate,
-      endDate,
-      gradingModel,
+      name: name.value,
+      startDate: startDate.value,
+      endDate: endDate.value,
+      gradingModel: gradingModel.value,
     };
 
-    if (gradingModel === "year_based") {
-      body.yearExamWeight = examWeight;
-      body.yearCourseworkWeight = courseworkWeight;
+    if (gradingModel.value === "year_based") {
+      body.yearExamWeight = examWeight.value;
+      body.yearCourseworkWeight = courseworkWeight.value;
     } else {
       body.yearExamWeight = null;
       body.yearCourseworkWeight = null;
@@ -393,7 +392,7 @@ function EditYearForm({
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -403,8 +402,8 @@ function EditYearForm({
         <Label htmlFor="editName">Name</Label>
         <Input
           id="editName"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={name.value}
+          onChange={(e) => (name.value = e.target.value)}
           required
         />
       </div>
@@ -414,8 +413,8 @@ function EditYearForm({
           <Input
             id="editStartDate"
             type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            value={startDate.value}
+            onChange={(e) => (startDate.value = e.target.value)}
             required
           />
         </div>
@@ -424,8 +423,8 @@ function EditYearForm({
           <Input
             id="editEndDate"
             type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            value={endDate.value}
+            onChange={(e) => (endDate.value = e.target.value)}
             required
           />
         </div>
@@ -435,16 +434,16 @@ function EditYearForm({
         <select
           id="editGradingModel"
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={gradingModel}
+          value={gradingModel.value}
           onChange={(e) =>
-            setGradingModel(e.target.value as "term_based" | "year_based")
+            (gradingModel.value = e.target.value as "term_based" | "year_based")
           }
         >
           <option value="term_based">Term Based</option>
           <option value="year_based">Year Based</option>
         </select>
       </div>
-      {gradingModel === "year_based" && (
+      {gradingModel.value === "year_based" && (
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="editExamWeight">Exam Weight (%)</Label>
@@ -453,8 +452,8 @@ function EditYearForm({
               type="number"
               min={0}
               max={100}
-              value={examWeight}
-              onChange={(e) => setExamWeight(Number(e.target.value))}
+              value={examWeight.value}
+              onChange={(e) => (examWeight.value = Number(e.target.value))}
               required
             />
           </div>
@@ -465,8 +464,8 @@ function EditYearForm({
               type="number"
               min={0}
               max={100}
-              value={courseworkWeight}
-              onChange={(e) => setCourseworkWeight(Number(e.target.value))}
+              value={courseworkWeight.value}
+              onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
               required
             />
           </div>
@@ -475,8 +474,8 @@ function EditYearForm({
           </p>
         </div>
       )}
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Saving..." : "Save Changes"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );

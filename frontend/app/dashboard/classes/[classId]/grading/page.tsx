@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -69,24 +71,24 @@ interface ClassInfo {
 }
 
 export default function GradingPage() {
+  useSignals();
   const params = useParams();
   const router = useRouter();
   const classId = params.classId as string;
 
-  const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
-  const [terms, setTerms] = useState<Term[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [selectedTermId, setSelectedTermId] = useState("");
-  const [selectedSubjectId, setSelectedSubjectId] = useState("");
-  const [assessments, setAssessments] = useState<Assessment[]>([]);
-  const [selectedAssessment, setSelectedAssessment] =
-    useState<Assessment | null>(null);
-  const [grades, setGrades] = useState<GradeRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [assessmentsLoading, setAssessmentsLoading] = useState(false);
-  const [gradesLoading, setGradesLoading] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editAssessment, setEditAssessment] = useState<Assessment | null>(null);
+  const classInfo = useSignal<ClassInfo | null>(null);
+  const terms = useSignal<Term[]>([]);
+  const subjects = useSignal<Subject[]>([]);
+  const selectedTermId = useSignal("");
+  const selectedSubjectId = useSignal("");
+  const assessments = useSignal<Assessment[]>([]);
+  const selectedAssessment = useSignal<Assessment | null>(null);
+  const grades = useSignal<GradeRow[]>([]);
+  const loading = useSignal(true);
+  const assessmentsLoading = useSignal(false);
+  const gradesLoading = useSignal(false);
+  const createOpen = useSignal(false);
+  const editAssessment = useSignal<Assessment | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -95,58 +97,58 @@ export default function GradingPage() {
       ),
       api<Subject[]>("/subjects").catch(() => []),
       api<AcademicYear[]>("/academic-years").catch(() => []),
-    ]).then(([info, subs, years]) => {
-      setClassInfo(info);
-      setSubjects(subs);
+    ]).then(([info, subs]) => {
+      classInfo.value = info;
+      subjects.value = subs;
       if (info?.academicYearId) {
         api<Term[]>(`/terms?yearId=${info.academicYearId}`)
           .then((t) => {
-            setTerms(t);
-            if (t.length > 0) setSelectedTermId(t[0].id);
+            terms.value = t;
+            if (t.length > 0) selectedTermId.value = t[0].id;
           })
           .catch(() => {});
       }
-      if (subs.length > 0) setSelectedSubjectId(subs[0].id);
-      setLoading(false);
+      if (subs.length > 0) selectedSubjectId.value = subs[0].id;
+      loading.value = false;
     });
   }, [classId]);
 
   const fetchAssessments = useCallback(() => {
-    if (!selectedTermId || !selectedSubjectId) return;
-    setAssessmentsLoading(true);
+    if (!selectedTermId.value || !selectedSubjectId.value) return;
+    assessmentsLoading.value = true;
     api<Assessment[]>(
-      `/assessments?termId=${selectedTermId}&subjectId=${selectedSubjectId}`,
+      `/assessments?termId=${selectedTermId.value}&subjectId=${selectedSubjectId.value}`,
     )
       .then((data) => {
-        setAssessments(data);
-        if (data.length > 0 && !selectedAssessment) {
-          setSelectedAssessment(data[0]);
-        } else if (data.length > 0 && selectedAssessment) {
-          const still = data.find((a) => a.id === selectedAssessment.id);
-          setSelectedAssessment(still ?? data[0]);
+        assessments.value = data;
+        if (data.length > 0 && !selectedAssessment.value) {
+          selectedAssessment.value = data[0];
+        } else if (data.length > 0 && selectedAssessment.value) {
+          const still = data.find((a) => a.id === selectedAssessment.value!.id);
+          selectedAssessment.value = still ?? data[0];
         } else {
-          setSelectedAssessment(null);
+          selectedAssessment.value = null;
         }
       })
       .catch(() => toast.error("Failed to load assessments"))
-      .finally(() => setAssessmentsLoading(false));
-  }, [selectedTermId, selectedSubjectId]);
+      .finally(() => (assessmentsLoading.value = false));
+  }, [selectedTermId.value, selectedSubjectId.value]);
 
   useEffect(() => {
     fetchAssessments();
   }, [fetchAssessments]);
 
   const fetchGrades = useCallback(() => {
-    if (!selectedAssessment) {
-      setGrades([]);
+    if (!selectedAssessment.value) {
+      grades.value = [];
       return;
     }
-    setGradesLoading(true);
-    api<GradeRow[]>(`/grades?assessmentId=${selectedAssessment.id}`)
-      .then(setGrades)
+    gradesLoading.value = true;
+    api<GradeRow[]>(`/grades?assessmentId=${selectedAssessment.value.id}`)
+      .then((data) => (grades.value = data))
       .catch(() => toast.error("Failed to load grades"))
-      .finally(() => setGradesLoading(false));
-  }, [selectedAssessment]);
+      .finally(() => (gradesLoading.value = false));
+  }, [selectedAssessment.value]);
 
   useEffect(() => {
     fetchGrades();
@@ -162,7 +164,7 @@ export default function GradingPage() {
     try {
       await api(`/assessments/${a.id}`, { method: "DELETE" });
       toast.success("Assessment deleted");
-      setSelectedAssessment(null);
+      selectedAssessment.value = null;
       fetchAssessments();
     } catch (err) {
       const msg =
@@ -194,7 +196,7 @@ export default function GradingPage() {
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-48" />
@@ -223,7 +225,7 @@ export default function GradingPage() {
           <div>
             <h1 className="text-3xl font-bold">grading</h1>
             <p className="text-muted-foreground mt-1">
-              {classInfo?.name} - enter and manage grades
+              {classInfo.value?.name} - enter and manage grades
             </p>
           </div>
         </div>
@@ -234,13 +236,13 @@ export default function GradingPage() {
           <Label className="text-xs text-muted-foreground">Term</Label>
           <select
             className={selectClass}
-            value={selectedTermId}
+            value={selectedTermId.value}
             onChange={(e) => {
-              setSelectedTermId(e.target.value);
-              setSelectedAssessment(null);
+              selectedTermId.value = e.target.value;
+              selectedAssessment.value = null;
             }}
           >
-            {terms.map((t) => (
+            {terms.value.map((t) => (
               <option key={t.id} value={t.id}>
                 {termLabel[t.name] ?? t.name}
               </option>
@@ -251,13 +253,13 @@ export default function GradingPage() {
           <Label className="text-xs text-muted-foreground">Subject</Label>
           <select
             className={selectClass}
-            value={selectedSubjectId}
+            value={selectedSubjectId.value}
             onChange={(e) => {
-              setSelectedSubjectId(e.target.value);
-              setSelectedAssessment(null);
+              selectedSubjectId.value = e.target.value;
+              selectedAssessment.value = null;
             }}
           >
-            {subjects.map((s) => (
+            {subjects.value.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} {s.code ? `(${s.code})` : ""}
               </option>
@@ -272,16 +274,16 @@ export default function GradingPage() {
             <div>
               <CardTitle>Assessments</CardTitle>
               <CardDescription>
-                {assessments.length} assessment
-                {assessments.length !== 1 ? "s" : ""}
+                {assessments.value.length} assessment
+                {assessments.value.length !== 1 ? "s" : ""}
               </CardDescription>
             </div>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
               <DialogTrigger
                 render={
                   <Button
                     size="sm"
-                    disabled={!selectedTermId || !selectedSubjectId}
+                    disabled={!selectedTermId.value || !selectedSubjectId.value}
                   />
                 }
               >
@@ -296,10 +298,10 @@ export default function GradingPage() {
                   </DialogDescription>
                 </DialogHeader>
                 <CreateAssessmentForm
-                  termId={selectedTermId}
-                  subjectId={selectedSubjectId}
+                  termId={selectedTermId.value}
+                  subjectId={selectedSubjectId.value}
                   onSuccess={() => {
-                    setCreateOpen(false);
+                    createOpen.value = false;
                     fetchAssessments();
                   }}
                 />
@@ -308,20 +310,20 @@ export default function GradingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {assessmentsLoading ? (
+          {assessmentsLoading.value ? (
             <Skeleton className="h-24 w-full" />
-          ) : assessments.length === 0 ? (
+          ) : assessments.value.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
               No assessments yet. Create one to start entering grades.
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {assessments.map((a) => (
+              {assessments.value.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => setSelectedAssessment(a)}
+                  onClick={() => (selectedAssessment.value = a)}
                   className={`group relative rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    selectedAssessment?.id === a.id
+                    selectedAssessment.value?.id === a.id
                       ? "border-primary bg-accent"
                       : "hover:bg-accent/50"
                   } ${a.is_excluded ? "opacity-50" : ""}`}
@@ -350,21 +352,21 @@ export default function GradingPage() {
         </CardContent>
       </Card>
 
-      {selectedAssessment && (
+      {selectedAssessment.value && (
         <Card className="animate-fade-in-up">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>{selectedAssessment.title}</CardTitle>
+                <CardTitle>{selectedAssessment.value.title}</CardTitle>
                 <CardDescription>
                   <Badge
                     variant="outline"
                     className="capitalize mr-2"
                   >
-                    {selectedAssessment.assessment_type}
+                    {selectedAssessment.value.assessment_type}
                   </Badge>
-                  Max score: {selectedAssessment.max_score} - Weight:{" "}
-                  {selectedAssessment.weight}
+                  Max score: {selectedAssessment.value.max_score} - Weight:{" "}
+                  {selectedAssessment.value.weight}
                 </CardDescription>
               </div>
               <div className="flex gap-1">
@@ -372,15 +374,15 @@ export default function GradingPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    handleToggleExcludeAssessment(selectedAssessment)
+                    handleToggleExcludeAssessment(selectedAssessment.value!)
                   }
                   title={
-                    selectedAssessment.is_excluded
+                    selectedAssessment.value.is_excluded
                       ? "Include in calculations"
                       : "Exclude from calculations"
                   }
                 >
-                  {selectedAssessment.is_excluded ? (
+                  {selectedAssessment.value.is_excluded ? (
                     <Eye className="size-4" />
                   ) : (
                     <EyeOff className="size-4" />
@@ -389,7 +391,7 @@ export default function GradingPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setEditAssessment(selectedAssessment)}
+                  onClick={() => (editAssessment.value = selectedAssessment.value)}
                 >
                   <Pencil className="size-4" />
                 </Button>
@@ -397,7 +399,7 @@ export default function GradingPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    handleDeleteAssessment(selectedAssessment)
+                    handleDeleteAssessment(selectedAssessment.value!)
                   }
                 >
                   <Trash2 className="size-4 text-destructive" />
@@ -406,13 +408,13 @@ export default function GradingPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {gradesLoading ? (
+            {gradesLoading.value ? (
               <Skeleton className="h-48 w-full" />
             ) : (
               <GradeEntryTable
-                assessmentId={selectedAssessment.id}
-                maxScore={selectedAssessment.max_score}
-                existingGrades={grades}
+                assessmentId={selectedAssessment.value.id}
+                maxScore={selectedAssessment.value.max_score}
+                existingGrades={grades.value}
                 classId={classId}
                 onSaved={fetchGrades}
               />
@@ -422,9 +424,9 @@ export default function GradingPage() {
       )}
 
       <Dialog
-        open={editAssessment !== null}
+        open={editAssessment.value !== null}
         onOpenChange={(open) => {
-          if (!open) setEditAssessment(null);
+          if (!open) editAssessment.value = null;
         }}
       >
         <DialogContent>
@@ -432,11 +434,11 @@ export default function GradingPage() {
             <DialogTitle>Edit Assessment</DialogTitle>
             <DialogDescription>Update assessment details</DialogDescription>
           </DialogHeader>
-          {editAssessment && (
+          {editAssessment.value && (
             <EditAssessmentForm
-              assessment={editAssessment}
+              assessment={editAssessment.value}
               onSuccess={() => {
-                setEditAssessment(null);
+                editAssessment.value = null;
                 fetchAssessments();
               }}
             />
@@ -460,23 +462,24 @@ function GradeEntryTable({
   classId: string;
   onSaved: () => void;
 }) {
-  const [enrolled, setEnrolled] = useState<
+  useSignals();
+  const enrolled = useSignal<
     { id: string; student: { id: string; first_name: string; last_name: string } }[]
   >([]);
-  const [scores, setScores] = useState<
+  const scores = useSignal<
     Map<string, { score: string; remarks: string }>
   >(new Map());
-  const [saving, setSaving] = useState(false);
-  const [excluding, setExcluding] = useState<string | null>(null);
-  const [loadingStudents, setLoadingStudents] = useState(true);
+  const saving = useSignal(false);
+  const excluding = useSignal<string | null>(null);
+  const loadingStudents = useSignal(true);
 
   useEffect(() => {
     api<{ id: string; student: { id: string; first_name: string; last_name: string } }[]>(
       `/classes/${classId}/students`,
     )
-      .then(setEnrolled)
+      .then((data) => (enrolled.value = data))
       .catch(() => {})
-      .finally(() => setLoadingStudents(false));
+      .finally(() => (loadingStudents.value = false));
   }, [classId]);
 
   useEffect(() => {
@@ -487,23 +490,21 @@ function GradeEntryTable({
         remarks: g.remarks ?? "",
       });
     }
-    setScores(map);
+    scores.value = map;
   }, [existingGrades]);
 
   function updateScore(studentId: string, field: "score" | "remarks", value: string) {
-    setScores((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(studentId) ?? { score: "", remarks: "" };
-      next.set(studentId, { ...existing, [field]: value });
-      return next;
-    });
+    const next = new Map(scores.value);
+    const existing = next.get(studentId) ?? { score: "", remarks: "" };
+    next.set(studentId, { ...existing, [field]: value });
+    scores.value = next;
   }
 
   async function handleSave() {
     const gradeEntries: { studentId: string; score: number; remarks?: string }[] = [];
 
-    for (const e of enrolled) {
-      const entry = scores.get(e.student.id);
+    for (const e of enrolled.value) {
+      const entry = scores.value.get(e.student.id);
       if (entry?.score !== undefined && entry.score !== "") {
         let numScore = Number(entry.score);
         if (isNaN(numScore)) continue;
@@ -522,7 +523,7 @@ function GradeEntryTable({
       return;
     }
 
-    setSaving(true);
+    saving.value = true;
     try {
       await api("/grades/bulk", {
         method: "POST",
@@ -534,12 +535,12 @@ function GradeEntryTable({
       const msg = err instanceof ApiError ? err.message : "Failed to save";
       toast.error(msg);
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
   async function handleToggleExclude(grade: GradeRow) {
-    setExcluding(grade.id);
+    excluding.value = grade.id;
     try {
       await api(`/grades/${grade.id}/exclude`, {
         method: "PATCH",
@@ -556,15 +557,15 @@ function GradeEntryTable({
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
     } finally {
-      setExcluding(null);
+      excluding.value = null;
     }
   }
 
-  if (loadingStudents) {
+  if (loadingStudents.value) {
     return <Skeleton className="h-48 w-full" />;
   }
 
-  if (enrolled.length === 0) {
+  if (enrolled.value.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
         No students enrolled in this class.
@@ -572,7 +573,7 @@ function GradeEntryTable({
     );
   }
 
-  const sortedStudents = [...enrolled].sort((a, b) =>
+  const sortedStudents = [...enrolled.value].sort((a, b) =>
     a.student.last_name.localeCompare(b.student.last_name),
   );
 
@@ -592,7 +593,7 @@ function GradeEntryTable({
           </TableHeader>
           <TableBody>
             {sortedStudents.map((e) => {
-              const entry = scores.get(e.student.id) ?? {
+              const entry = scores.value.get(e.student.id) ?? {
                 score: "",
                 remarks: "",
               };
@@ -654,7 +655,7 @@ function GradeEntryTable({
                       <Button
                         variant="ghost"
                         size="sm"
-                        disabled={excluding === existingGrade.id}
+                        disabled={excluding.value === existingGrade.id}
                         onClick={() => handleToggleExclude(existingGrade)}
                         title={
                           existingGrade.is_excluded
@@ -676,9 +677,9 @@ function GradeEntryTable({
           </TableBody>
         </Table>
       </div>
-      <Button onClick={handleSave} disabled={saving} className="w-full">
+      <Button onClick={handleSave} disabled={saving.value} className="w-full">
         <Save className="mr-2 size-4" />
-        {saving ? "Saving..." : "Save All Grades"}
+        {saving.value ? "Saving..." : "Save All Grades"}
       </Button>
     </div>
   );
@@ -693,28 +694,27 @@ function CreateAssessmentForm({
   subjectId: string;
   onSuccess: () => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [assessmentType, setAssessmentType] = useState<"exam" | "coursework">(
-    "exam",
-  );
-  const [maxScore, setMaxScore] = useState(100);
-  const [weight, setWeight] = useState(1);
-  const [assessmentDate, setAssessmentDate] = useState("");
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const title = useSignal("");
+  const assessmentType = useSignal<"exam" | "coursework">("exam");
+  const maxScore = useSignal(100);
+  const weight = useSignal(1);
+  const assessmentDate = useSignal("");
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     const body: Record<string, unknown> = {
       termId,
       subjectId,
-      title,
-      assessmentType,
-      maxScore,
-      weight,
+      title: title.value,
+      assessmentType: assessmentType.value,
+      maxScore: maxScore.value,
+      weight: weight.value,
     };
-    if (assessmentDate) body.assessmentDate = assessmentDate;
+    if (assessmentDate.value) body.assessmentDate = assessmentDate.value;
 
     try {
       await api("/assessments", { method: "POST", body });
@@ -725,7 +725,7 @@ function CreateAssessmentForm({
         err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -736,8 +736,8 @@ function CreateAssessmentForm({
         <Input
           id="title"
           placeholder="Mid-term Exam"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={title.value}
+          onChange={(e) => (title.value = e.target.value)}
           required
         />
       </div>
@@ -746,9 +746,9 @@ function CreateAssessmentForm({
         <select
           id="type"
           className={selectClass}
-          value={assessmentType}
+          value={assessmentType.value}
           onChange={(e) =>
-            setAssessmentType(e.target.value as "exam" | "coursework")
+            (assessmentType.value = e.target.value as "exam" | "coursework")
           }
         >
           <option value="exam">Exam</option>
@@ -763,8 +763,8 @@ function CreateAssessmentForm({
             type="number"
             min={1}
             max={1000}
-            value={maxScore}
-            onChange={(e) => setMaxScore(Number(e.target.value))}
+            value={maxScore.value}
+            onChange={(e) => (maxScore.value = Number(e.target.value))}
             required
           />
         </div>
@@ -775,8 +775,8 @@ function CreateAssessmentForm({
             type="number"
             min={0}
             step="any"
-            value={weight}
-            onChange={(e) => setWeight(Number(e.target.value))}
+            value={weight.value}
+            onChange={(e) => (weight.value = Number(e.target.value))}
             required
           />
         </div>
@@ -786,12 +786,12 @@ function CreateAssessmentForm({
         <Input
           id="date"
           type="date"
-          value={assessmentDate}
-          onChange={(e) => setAssessmentDate(e.target.value)}
+          value={assessmentDate.value}
+          onChange={(e) => (assessmentDate.value = e.target.value)}
         />
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Creating..." : "Create Assessment"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Creating..." : "Create Assessment"}
       </Button>
     </form>
   );
@@ -804,26 +804,25 @@ function EditAssessmentForm({
   assessment: Assessment;
   onSuccess: () => void;
 }) {
-  const [title, setTitle] = useState(assessment.title);
-  const [maxScore, setMaxScore] = useState(assessment.max_score);
-  const [weight, setWeight] = useState(assessment.weight);
-  const [assessmentDate, setAssessmentDate] = useState(
-    assessment.assessment_date ?? "",
-  );
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const title = useSignal(assessment.title);
+  const maxScore = useSignal(assessment.max_score);
+  const weight = useSignal(assessment.weight);
+  const assessmentDate = useSignal(assessment.assessment_date ?? "");
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     try {
       await api(`/assessments/${assessment.id}`, {
         method: "PATCH",
         body: {
-          title,
-          maxScore,
-          weight,
-          assessmentDate: assessmentDate || undefined,
+          title: title.value,
+          maxScore: maxScore.value,
+          weight: weight.value,
+          assessmentDate: assessmentDate.value || undefined,
         },
       });
       toast.success("Assessment updated");
@@ -833,7 +832,7 @@ function EditAssessmentForm({
         err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -843,8 +842,8 @@ function EditAssessmentForm({
         <Label htmlFor="editTitle">Title</Label>
         <Input
           id="editTitle"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={title.value}
+          onChange={(e) => (title.value = e.target.value)}
           required
         />
       </div>
@@ -862,8 +861,8 @@ function EditAssessmentForm({
             type="number"
             min={1}
             max={1000}
-            value={maxScore}
-            onChange={(e) => setMaxScore(Number(e.target.value))}
+            value={maxScore.value}
+            onChange={(e) => (maxScore.value = Number(e.target.value))}
             required
           />
         </div>
@@ -874,8 +873,8 @@ function EditAssessmentForm({
             type="number"
             min={0}
             step="any"
-            value={weight}
-            onChange={(e) => setWeight(Number(e.target.value))}
+            value={weight.value}
+            onChange={(e) => (weight.value = Number(e.target.value))}
             required
           />
         </div>
@@ -885,12 +884,12 @@ function EditAssessmentForm({
         <Input
           id="editDate"
           type="date"
-          value={assessmentDate}
-          onChange={(e) => setAssessmentDate(e.target.value)}
+          value={assessmentDate.value}
+          onChange={(e) => (assessmentDate.value = e.target.value)}
         />
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Saving..." : "Save Changes"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );

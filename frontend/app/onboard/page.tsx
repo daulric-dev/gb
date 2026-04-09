@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import {
   Card,
   CardContent,
@@ -34,38 +36,39 @@ interface School {
 }
 
 export default function OnboardPage() {
+  useSignals();
   const router = useRouter();
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [schoolId, setSchoolId] = useState("");
-  const [loading, setLoading] = useState(false);
+  const firstName = useSignal("");
+  const lastName = useSignal("");
+  const schoolId = useSignal("");
+  const loading = useSignal(false);
 
-  const [schools, setSchools] = useState<School[]>([]);
-  const [schoolsLoading, setSchoolsLoading] = useState(true);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const schools = useSignal<School[]>([]);
+  const schoolsLoading = useSignal(true);
+  const createDialogOpen = useSignal(false);
 
   useEffect(() => {
     api<School[]>("/schools")
       .then((data) => {
-        setSchools(data);
-        if (data.length > 0) setSchoolId(data[0].id);
+        schools.value = data;
+        if (data.length > 0) schoolId.value = data[0].id;
       })
       .catch(() => toast.error("Failed to load schools"))
-      .finally(() => setSchoolsLoading(false));
+      .finally(() => (schoolsLoading.value = false));
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!schoolId) {
+    if (!schoolId.value) {
       toast.error("Please select a school");
       return;
     }
-    setLoading(true);
+    loading.value = true;
 
     try {
       await api("/auth/onboard", {
         method: "PATCH",
-        body: { firstName, lastName, schoolId },
+        body: { firstName: firstName.value, lastName: lastName.value, schoolId: schoolId.value },
       });
       toast.success("Welcome aboard!");
       router.push("/dashboard");
@@ -74,14 +77,14 @@ export default function OnboardPage() {
       const message = err instanceof ApiError ? err.message : "Onboarding Failed";
       toast.error(message);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
   function handleSchoolCreated(school: School) {
-    setSchools((prev) => [...prev, school].sort((a, b) => a.name.localeCompare(b.name)));
-    setSchoolId(school.id);
-    setCreateDialogOpen(false);
+    schools.value = [...schools.value, school].sort((a, b) => a.name.localeCompare(b.name));
+    schoolId.value = school.id;
+    createDialogOpen.value = false;
     toast.success("School created");
   }
 
@@ -105,8 +108,8 @@ export default function OnboardPage() {
                 <Input
                   id="firstName"
                   placeholder="John"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
+                  value={firstName.value}
+                  onChange={(e) => (firstName.value = e.target.value)}
                   required
                   autoFocus
                 />
@@ -116,8 +119,8 @@ export default function OnboardPage() {
                 <Input
                   id="lastName"
                   placeholder="Doe"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
+                  value={lastName.value}
+                  onChange={(e) => (lastName.value = e.target.value)}
                   required
                 />
               </div>
@@ -125,7 +128,7 @@ export default function OnboardPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="school">School</Label>
-                <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <Dialog open={createDialogOpen.value} onOpenChange={(v) => (createDialogOpen.value = v)}>
                   <DialogTrigger
                     render={
                       <button
@@ -148,9 +151,9 @@ export default function OnboardPage() {
                   </DialogContent>
                 </Dialog>
               </div>
-              {schoolsLoading ? (
+              {schoolsLoading.value ? (
                 <Skeleton className="h-9 w-full" />
-              ) : schools.length === 0 ? (
+              ) : schools.value.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No schools found. Create one using the button above.
                 </p>
@@ -158,11 +161,11 @@ export default function OnboardPage() {
                 <select
                   id="school"
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  value={schoolId}
-                  onChange={(e) => setSchoolId(e.target.value)}
+                  value={schoolId.value}
+                  onChange={(e) => (schoolId.value = e.target.value)}
                   required
                 >
-                  {schools.map((s) => (
+                  {schools.value.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                       {s.parish ? ` - ${s.parish}` : ""}
@@ -174,9 +177,9 @@ export default function OnboardPage() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading || !schoolId}
+              disabled={loading.value || !schoolId.value}
             >
-              {loading ? "Saving..." : "Get started"}
+              {loading.value ? "Saving..." : "Get started"}
             </Button>
           </form>
         </CardContent>
@@ -190,24 +193,23 @@ function CreateSchoolForm({
 }: {
   onSuccess: (school: School) => void;
 }) {
-  const [name, setName] = useState("");
-  const [schoolType, setSchoolType] = useState<"primary" | "secondary">(
-    "secondary",
-  );
-  const [parish, setParish] = useState("");
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const name = useSignal("");
+  const schoolType = useSignal<"primary" | "secondary">("secondary");
+  const parish = useSignal("");
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     try {
       const school = await api<School>("/schools", {
         method: "POST",
         body: {
-          name,
-          schoolType,
-          parish: parish || undefined,
+          name: name.value,
+          schoolType: schoolType.value,
+          parish: parish.value || undefined,
         },
       });
       onSuccess(school);
@@ -215,7 +217,7 @@ function CreateSchoolForm({
       const msg = err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -226,8 +228,8 @@ function CreateSchoolForm({
         <Input
           id="schoolName"
           placeholder="St. Andrew Anglican Secondary"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={name.value}
+          onChange={(e) => (name.value = e.target.value)}
           required
         />
       </div>
@@ -236,9 +238,9 @@ function CreateSchoolForm({
         <select
           id="schoolType"
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={schoolType}
+          value={schoolType.value}
           onChange={(e) =>
-            setSchoolType(e.target.value as "primary" | "secondary")
+            (schoolType.value = e.target.value as "primary" | "secondary")
           }
         >
           <option value="primary">Primary</option>
@@ -250,8 +252,8 @@ function CreateSchoolForm({
         <select
           id="parish"
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={parish}
-          onChange={(e) => setParish(e.target.value)}
+          value={parish.value}
+          onChange={(e) => (parish.value = e.target.value)}
           required
         >
           <option value="">Select a parish</option>
@@ -264,8 +266,8 @@ function CreateSchoolForm({
           <option value="Carriacou and Petite Martinique">Carriacou and Petite Martinique</option>
         </select>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Creating..." : "Create School"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Creating..." : "Create School"}
       </Button>
     </form>
   );
