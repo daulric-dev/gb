@@ -145,7 +145,7 @@ export default function StudentsPage() {
                   <TableCell>
                     {student.date_of_birth
                       ? new Date(student.date_of_birth).toLocaleDateString()
-                      : "—"}
+                      : "-"}
                   </TableCell>
                   <TableCell>
                     {student.is_active ? (

@@ -59,7 +59,7 @@ function ClassTable({ classes, yearMap, emptyMessage }: { classes: ClassItem[]; 
               <TableCell className="font-medium">{cls.name}</TableCell>
               <TableCell>
                 <Badge variant="outline">
-                  {yearMap.get(cls.academicYearId) ?? "—"}
+                  {yearMap.get(cls.academicYearId) ?? "-"}
                 </Badge>
               </TableCell>
               <TableCell>

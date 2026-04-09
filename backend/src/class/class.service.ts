@@ -168,7 +168,7 @@ export class ClassService {
     const { data: assignments, error: assignError } = await supabase
       .schema('staff')
       .from('teacher_group_assignment')
-      .select('*, teacher:user_profile_id(id, first_name, last_name, email)')
+      .select('user_profile_id, is_class_teacher')
       .eq('student_group_id', classId);
 
     if (assignError) {
@@ -176,31 +176,76 @@ export class ClassService {
       return [];
     }
 
-    const { data: subjectAssignments, error: subjectError } = await supabase
+    if (!assignments?.length) return [];
+
+    const teacherIds = assignments.map((a: any) => a.user_profile_id);
+
+    const { data: profiles } = await supabase
+      .from('user_profile')
+      .select('id, first_name, last_name')
+      .in('id', teacherIds);
+
+    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+    const { data: subjectAssignments } = await supabase
       .schema('staff')
       .from('teacher_subject_assignment')
-      .select('*, subject:subject_id(id, name)')
+      .select('user_profile_id, subject_id')
       .eq('student_group_id', classId);
 
-    if (subjectError) {
-      this.logger.error(`Failed to fetch subject assignments for class ${classId}: ${subjectError.message}`);
+    const subjectIds = [...new Set((subjectAssignments ?? []).map((sa: any) => sa.subject_id))];
+    let subjectMap = new Map<string, { id: string; name: string; code: string }>();
+
+    if (subjectIds.length > 0) {
+      const { data: subjects } = await supabase
+        .from('subject')
+        .select('id, name, code')
+        .in('id', subjectIds);
+      subjectMap = new Map((subjects ?? []).map((s: any) => [s.id, s]));
     }
 
     const subjectsByTeacher = new Map<string, any[]>();
     for (const sa of subjectAssignments ?? []) {
       const tid = sa.user_profile_id;
       if (!subjectsByTeacher.has(tid)) subjectsByTeacher.set(tid, []);
-      if (sa.subject) subjectsByTeacher.get(tid)!.push(sa.subject);
+      const subject = subjectMap.get(sa.subject_id);
+      if (subject) subjectsByTeacher.get(tid)!.push(subject);
     }
 
-    return assignments.map((row: any) => ({
-      teacherId: row.teacher?.id,
-      firstName: row.teacher?.first_name,
-      lastName: row.teacher?.last_name,
-      email: row.teacher?.email,
-      isClassTeacher: row.is_class_teacher,
-      subjects: subjectsByTeacher.get(row.teacher?.id) ?? [],
-    }));
+    return assignments.map((row: any) => {
+      const profile = profileMap.get(row.user_profile_id);
+      return {
+        teacherId: row.user_profile_id,
+        firstName: profile?.first_name ?? null,
+        lastName: profile?.last_name ?? null,
+        isClassTeacher: row.is_class_teacher,
+        subjects: subjectsByTeacher.get(row.user_profile_id) ?? [],
+      };
+    });
+  }
+
+  async getSchoolTeachers(userId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: profile } = await supabase
+      .from('user_profile')
+      .select('school_id')
+      .eq('id', userId)
+      .single();
+
+    if (!profile?.school_id) return [];
+
+    const { data: teachers, error } = await supabase
+      .from('user_profile')
+      .select('id, first_name, last_name')
+      .eq('school_id', profile.school_id);
+
+    if (error) {
+      this.logger.error(`Failed to fetch school teachers: ${error.message}`);
+      return [];
+    }
+
+    return teachers ?? [];
   }
 
   async addTeacher(classId: string, dto: AddTeacherDto) {
@@ -219,38 +264,55 @@ export class ClassService {
 
     const academicYearId = group.academic_year_id;
 
-    const { error: assignError } = await supabase
+    const { data: existingAssignment } = await supabase
       .schema('staff')
       .from('teacher_group_assignment')
-      .upsert(
-        {
+      .select('id')
+      .eq('user_profile_id', dto.teacherId)
+      .eq('student_group_id', classId)
+      .maybeSingle();
+
+    if (!existingAssignment) {
+      const { error: assignError } = await supabase
+        .schema('staff')
+        .from('teacher_group_assignment')
+        .insert({
           user_profile_id: dto.teacherId,
           student_group_id: classId,
           academic_year_id: academicYearId,
           is_class_teacher: false,
-        },
-        { onConflict: 'user_profile_id, student_group_id' },
-      );
+        });
 
-    if (assignError) {
-      this.logger.error(`Failed to add teacher ${dto.teacherId} to class ${classId}: ${assignError.message}`);
-      throw new BadRequestException('Failed to add teacher to class');
+      if (assignError) {
+        this.logger.error(`Failed to add teacher ${dto.teacherId} to class ${classId}: ${assignError.message}`);
+        throw new BadRequestException('Failed to add teacher to class');
+      }
     }
 
-    const subjectRows = dto.subjectIds.map((subjectId) => ({
-      user_profile_id: dto.teacherId,
-      subject_id: subjectId,
-      student_group_id: classId,
-      academic_year_id: academicYearId,
-    }));
-
-    const { error: subjectError } = await supabase
+    await supabase
       .schema('staff')
       .from('teacher_subject_assignment')
-      .upsert(subjectRows, { onConflict: 'user_profile_id, subject_id, student_group_id' });
+      .delete()
+      .eq('user_profile_id', dto.teacherId)
+      .eq('student_group_id', classId);
 
-    if (subjectError) {
-      this.logger.error(`Teacher added but subject assignment failed: ${subjectError.message}`);
+    if (dto.subjectIds.length > 0) {
+      const subjectRows = dto.subjectIds.map((subjectId) => ({
+        user_profile_id: dto.teacherId,
+        subject_id: subjectId,
+        student_group_id: classId,
+        academic_year_id: academicYearId,
+      }));
+
+      const { error: subjectError } = await supabase
+        .schema('staff')
+        .from('teacher_subject_assignment')
+        .insert(subjectRows);
+
+      if (subjectError) {
+        this.logger.error(`Teacher added but subject assignment failed: ${subjectError.message}`);
+        throw new BadRequestException('Failed to assign subjects');
+      }
     }
 
     return { teacherId: dto.teacherId, classId, subjectIds: dto.subjectIds };
