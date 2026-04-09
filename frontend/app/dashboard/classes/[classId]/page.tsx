@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3 } from "lucide-react";
 
 interface ClassInfo {
   id: string;
@@ -67,8 +67,51 @@ interface SchoolTeacher {
   last_name: string;
 }
 
-const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+interface Term {
+  id: string;
+  name: string;
+  sort_order: number;
+}
+
+interface SummarySubject {
+  subjectId: string;
+  subjectName: string;
+  average: number | null;
+}
+
+interface SummaryRow {
+  student: { id: string; firstName: string; lastName: string };
+  subjects: SummarySubject[];
+  overallAverage: number | null;
+  position: number;
+}
+
+interface YearEndSubject {
+  subjectId: string;
+  subjectName: string;
+  yearGrade: number | null;
+  termGrades: { termId: string; termName: string; termComposite: number | null }[];
+}
+
+interface YearResultRow {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  gradingModel: string;
+  terms: {
+    termId: string;
+    termName: string;
+    subjects: { subjectId: string; termComposite: number | null }[];
+    overallAverage: number | null;
+  }[];
+  yearEnd: {
+    subjects: YearEndSubject[];
+    overallAverage: number | null;
+  };
+  position?: number;
+}
+
+const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export default function ClassDetailPage() {
   const params = useParams();
@@ -83,6 +126,14 @@ export default function ClassDetailPage() {
   const [teachers, setTeachers] = useState<TeacherAssignment[]>([]);
   const [assignTeacherOpen, setAssignTeacherOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherAssignment | null>(null);
+  const [terms, setTerms] = useState<Term[]>([]);
+  const [selectedTermId, setSelectedTermId] = useState("");
+  const [summaryData, setSummaryData] = useState<SummaryRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryView, setSummaryView] = useState<"term" | "year">("term");
+  const [yearData, setYearData] = useState<YearResultRow[]>([]);
+  const [yearLoading, setYearLoading] = useState(false);
+  const [gradingModel, setGradingModel] = useState<string>("term_based");
 
   const fetchData = useCallback(() => {
     Promise.all([
@@ -94,12 +145,54 @@ export default function ClassDetailPage() {
       setEnrolled(students);
       setTeachers(teacherList);
       setLoading(false);
+
+      if (info?.academicYearId) {
+        api<Term[]>(`/terms?yearId=${info.academicYearId}`)
+          .then((t) => {
+            const sorted = t.sort((a, b) => a.sort_order - b.sort_order);
+            setTerms(sorted);
+            if (sorted.length > 0 && !selectedTermId) {
+              setSelectedTermId(sorted[0].id);
+            }
+          })
+          .catch(() => []);
+
+        api<{ grading_model?: string }>(`/academic-years/${info.academicYearId}`)
+          .then((ay) => {
+            const model = ay.grading_model ?? "term_based";
+            setGradingModel(model);
+            if (model === "term_based") setSummaryView("term");
+          })
+          .catch(() => {});
+      }
     });
-  }, [classId]);
+  }, [classId, selectedTermId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (summaryView !== "term" || !selectedTermId || !classId) return;
+    setSummaryLoading(true);
+    api<SummaryRow[]>(
+      `/calculations/class-summary?termId=${selectedTermId}&studentGroupId=${classId}`,
+    )
+      .then(setSummaryData)
+      .catch(() => setSummaryData([]))
+      .finally(() => setSummaryLoading(false));
+  }, [selectedTermId, classId, summaryView]);
+
+  useEffect(() => {
+    if (summaryView !== "year" || !classInfo?.academicYearId || !classId) return;
+    setYearLoading(true);
+    api<YearResultRow[]>(
+      `/calculations/class-year?academicYearId=${classInfo.academicYearId}&studentGroupId=${classId}`,
+    )
+      .then(setYearData)
+      .catch(() => setYearData([]))
+      .finally(() => setYearLoading(false));
+  }, [summaryView, classInfo?.academicYearId, classId]);
 
   async function handleUnenroll(studentId: string, name: string) {
     if (!confirm(`Unenroll ${name}? This will also remove their subject assignments.`)) return;
@@ -367,6 +460,248 @@ export default function ClassDetailPage() {
                 </TableBody>
               </Table>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="animate-fade-in-up-delay-3">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="size-4 text-muted-foreground" />
+                <CardTitle>Class Summary</CardTitle>
+              </div>
+              <CardDescription>
+                {summaryView === "term" ? "Term results and class rankings" : "Year-end results across all terms"}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {gradingModel === "year_based" && (
+                <div className="flex rounded-md border">
+                  <Button
+                    variant={summaryView === "term" ? "default" : "ghost"}
+                    size="sm"
+                    className="rounded-r-none"
+                    onClick={() => setSummaryView("term")}
+                  >
+                    Term
+                  </Button>
+                  <Button
+                    variant={summaryView === "year" ? "default" : "ghost"}
+                    size="sm"
+                    className="rounded-l-none"
+                    onClick={() => setSummaryView("year")}
+                  >
+                    Year
+                  </Button>
+                </div>
+              )}
+              {summaryView === "term" && (
+                <select
+                  className={`${selectClass} w-auto min-w-[140px]`}
+                  value={selectedTermId}
+                  onChange={(e) => setSelectedTermId(e.target.value)}
+                >
+                  {terms.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {summaryView === "term" ? (
+            summaryLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : summaryData.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No grades recorded for this term yet.
+              </div>
+            ) : (
+              (() => {
+                const seen = new Set<string>();
+                const subjectCols: { id: string; name: string }[] = [];
+                for (const row of summaryData) {
+                  for (const s of row.subjects) {
+                    if (!seen.has(s.subjectId)) {
+                      seen.add(s.subjectId);
+                      subjectCols.push({ id: s.subjectId, name: s.subjectName });
+                    }
+                  }
+                }
+
+                return (
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12 text-center">#</TableHead>
+                          <TableHead>Student</TableHead>
+                          {subjectCols.map((c) => (
+                            <TableHead key={c.id} className="text-center min-w-[80px]">
+                              {c.name}
+                            </TableHead>
+                          ))}
+                          <TableHead className="text-center min-w-[80px]">Overall</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {summaryData.map((row) => {
+                          const subjectMap = new Map(
+                            row.subjects.map((s) => [s.subjectId, s.average]),
+                          );
+
+                          return (
+                            <TableRow key={row.student.id}>
+                              <TableCell className="text-center">
+                                <Badge variant="outline" className="text-xs font-mono">
+                                  {row.position}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium whitespace-nowrap">
+                                {row.student.firstName} {row.student.lastName}
+                              </TableCell>
+                              {subjectCols.map((c) => {
+                                const avg = subjectMap.get(c.id);
+                                return (
+                                  <TableCell key={c.id} className="text-center tabular-nums">
+                                    {avg != null ? avg.toFixed(1) : "—"}
+                                  </TableCell>
+                                );
+                              })}
+                              <TableCell className="text-center font-semibold tabular-nums">
+                                {row.overallAverage != null ? row.overallAverage.toFixed(1) : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()
+            )
+          ) : (
+            yearLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : yearData.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No year data available yet.
+              </div>
+            ) : (
+              (() => {
+                const termNames = terms.map((t) => ({
+                  id: t.id,
+                  label: t.name.charAt(0).toUpperCase() + t.name.slice(1),
+                  short: t.name.substring(0, 3).toUpperCase(),
+                }));
+
+                const seen = new Set<string>();
+                const subjectCols: { id: string; name: string }[] = [];
+                for (const row of yearData) {
+                  for (const s of row.yearEnd.subjects) {
+                    if (!seen.has(s.subjectId)) {
+                      seen.add(s.subjectId);
+                      subjectCols.push({ id: s.subjectId, name: s.subjectName });
+                    }
+                  }
+                }
+
+                return (
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead rowSpan={2} className="w-12 text-center align-bottom">#</TableHead>
+                          <TableHead rowSpan={2} className="align-bottom">Student</TableHead>
+                          {subjectCols.map((c) => (
+                            <TableHead
+                              key={c.id}
+                              colSpan={termNames.length + 1}
+                              className="text-center border-l"
+                            >
+                              {c.name}
+                            </TableHead>
+                          ))}
+                          <TableHead rowSpan={2} className="text-center align-bottom min-w-[70px]">Overall</TableHead>
+                        </TableRow>
+                        <TableRow>
+                          {subjectCols.flatMap((c) => [
+                            ...termNames.map((t) => (
+                              <TableHead key={`${c.id}-${t.id}`} className="text-center text-xs px-2 border-l min-w-[50px]">
+                                {t.short}
+                              </TableHead>
+                            )),
+                            <TableHead key={`${c.id}-year`} className="text-center text-xs font-semibold px-2 min-w-[50px]">
+                              YR
+                            </TableHead>,
+                          ])}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {yearData.map((row) => {
+                          const yearSubjectMap = new Map(
+                            row.yearEnd.subjects.map((s) => [s.subjectId, s]),
+                          );
+
+                          return (
+                            <TableRow key={row.studentId}>
+                              <TableCell className="text-center">
+                                <Badge variant="outline" className="text-xs font-mono">
+                                  {row.position}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium whitespace-nowrap">
+                                {row.firstName} {row.lastName}
+                              </TableCell>
+                              {subjectCols.flatMap((c) => {
+                                const yearSubj = yearSubjectMap.get(c.id);
+                                return [
+                                  ...termNames.map((t) => {
+                                    const termGrade = yearSubj?.termGrades.find(
+                                      (tg) => tg.termId === t.id,
+                                    );
+                                    return (
+                                      <TableCell key={`${row.studentId}-${c.id}-${t.id}`} className="text-center tabular-nums text-sm px-2 border-l">
+                                        {termGrade?.termComposite != null
+                                          ? termGrade.termComposite.toFixed(1)
+                                          : "—"}
+                                      </TableCell>
+                                    );
+                                  }),
+                                  <TableCell key={`${row.studentId}-${c.id}-year`} className="text-center tabular-nums text-sm font-semibold px-2">
+                                    {yearSubj?.yearGrade != null
+                                      ? yearSubj.yearGrade.toFixed(1)
+                                      : "—"}
+                                  </TableCell>,
+                                ];
+                              })}
+                              <TableCell className="text-center font-semibold tabular-nums">
+                                {row.yearEnd.overallAverage != null
+                                  ? row.yearEnd.overallAverage.toFixed(1)
+                                  : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()
+            )
           )}
         </CardContent>
       </Card>

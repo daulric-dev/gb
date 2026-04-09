@@ -12,6 +12,7 @@ import { SubjectModule } from '@/subject/subject.module';
 import { TermModule } from '@/term/term.module';
 import { EnrollmentModule } from '@/enrollment/enrollment.module';
 import { GradingModule } from '@/grading/grading.module';
+import { CalculationModule } from '@/calculation/calculation.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { GradingModule } from '@/grading/grading.module';
     TermModule,
     EnrollmentModule,
     GradingModule,
+    CalculationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
