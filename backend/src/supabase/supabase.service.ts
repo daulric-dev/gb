@@ -13,7 +13,7 @@ export class SupabaseService {
     createUserClient(user_token: string, schema: Schema) {
         return createClient(
             process.env.SUPABASE_URL!,
-            process.env.PUSHABLE_KEY!,
+            process.env.SUPABASE_PUSHABLE_KEY!,
             {
                 global: {
                     headers: {

@@ -132,7 +132,7 @@ export class SubjectService {
 
     if (error) {
       if (error.code === '23503') {
-        throw new ConflictException('Cannot delete subject — it has existing grades or assignments');
+        throw new ConflictException('Cannot delete subject - it has existing grades or assignments');
       }
       this.logger.error(`Failed to delete subject: ${error.message}`);
       throw new BadRequestException('Failed to delete subject');

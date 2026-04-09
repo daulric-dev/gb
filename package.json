@@ -4,14 +4,14 @@
     "workspaces": ["backend"],
     "scripts": {
         "dev": "concurrently -n fe,be -c blue,green \"bun run dev:frontend\" \"bun run dev:backend\"",
-        "dev:frontend": "cd frontend && bun run dev",
-        "dev:backend": "cd backend && bun run start:dev",
-        "build:frontend": "cd frontend && bun run build",
-        "build:backend": "cd backend && bun run build",
+        "dev:frontend": "cd frontend && bun --bun run dev",
+        "dev:backend": "cd backend && bun --bun run start:dev",
+        "build:frontend": "cd frontend && bun --bun run build",
+        "build:backend": "cd backend && bun --bun run build",
         "build:all": "bun run build:frontend && bun run build:backend",
-        "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun run start\" \"cd backend && bun run start:prod\"",
-        "lint": "cd frontend && bun run lint && cd ../backend && bun run lint",
-        "install:all": "bun install",
+        "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun --bun run start\" \"cd backend && bun --bun run start:prod\"",
+        "lint": "cd frontend && bun --bun run lint && cd ../backend && bun --bun run lint",
+        "install:all": "bun --bun install",
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
     "devDependencies": {

@@ -35,10 +35,13 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
   const { access } = getTokens();
 
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     "X-API-Version": "1",
     ...((customHeaders as Record<string, string>) || {}),
   };
+
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (access) {
     headers["Authorization"] = `Bearer ${access}`;
@@ -47,7 +50,7 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
   let res = await fetch(`${BASE_URL}${path}`, {
     ...rest,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (res.status === 401 && access) {
@@ -83,7 +86,14 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
     throw new ApiError(res.status, error.message || res.statusText, error);
   }
 
-  return res.json();
+  const text = await res.text();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text as T;
+  }
+
 }
 
 export class ApiError extends Error {

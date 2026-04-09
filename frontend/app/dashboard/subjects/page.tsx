@@ -129,7 +129,7 @@ export default function SubjectsPage() {
                     {subject.code ? (
                       <Badge variant="outline">{subject.code}</Badge>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )}
                   </TableCell>
                   <TableCell>

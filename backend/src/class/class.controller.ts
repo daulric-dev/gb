@@ -47,6 +47,11 @@ export class ClassController {
     return this.classService.deleteClass(classId);
   }
 
+  @Get('school-teachers')
+  async getSchoolTeachers(@Req() req: any) {
+    return this.classService.getSchoolTeachers(req.user.id);
+  }
+
   @Get(':classId/teachers')
   async getTeachers(@Param('classId') classId: string) {
     return this.classService.getTeachers(classId);

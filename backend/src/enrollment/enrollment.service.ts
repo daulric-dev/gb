@@ -254,7 +254,7 @@ export class EnrollmentService {
 
     if (error) {
       if (error.code === '23503') {
-        throw new ConflictException('Cannot remove subject — student has existing grades for this subject');
+        throw new ConflictException('Cannot remove subject - student has existing grades for this subject');
       }
       this.logger.error(`Failed to remove subject: ${error.message}`);
       throw new BadRequestException('Failed to remove subject');

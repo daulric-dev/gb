@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================
-# GGBv2 — Generate Supabase Database Types
+# GGBv2 - Generate Supabase Database Types
 # Run from the backend/ directory:
 #   chmod +x scripts/gen-types.sh
 #   ./scripts/gen-types.sh

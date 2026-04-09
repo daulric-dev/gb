@@ -131,7 +131,7 @@ export class TermService {
 
     if (error) {
       if (error.code === '23503') {
-        throw new ConflictException('Cannot delete term — it has existing assessments or grades');
+        throw new ConflictException('Cannot delete term - it has existing assessments or grades');
       }
       this.logger.error(`Failed to delete term: ${error.message}`);
       throw new BadRequestException('Failed to delete term');

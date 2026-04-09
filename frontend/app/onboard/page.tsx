@@ -165,7 +165,7 @@ export default function OnboardPage() {
                   {schools.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
-                      {s.parish ? ` — ${s.parish}` : ""}
+                      {s.parish ? ` - ${s.parish}` : ""}
                     </option>
                   ))}
                 </select>

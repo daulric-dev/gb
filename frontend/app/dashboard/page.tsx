@@ -71,7 +71,7 @@ export default function DashboardPage() {
                   <Skeleton className="h-7 w-20" />
                 ) : (
                   <p className="text-2xl font-bold">
-                    {activeYear ? activeYear.name : "—"}
+                    {activeYear ? activeYear.name : "-"}
                   </p>
                 )}
                 <p className="text-sm text-muted-foreground">Active Year</p>
@@ -106,7 +106,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <span>
-                {new Date(activeYear.start_date).toLocaleDateString()} —{" "}
+                {new Date(activeYear.start_date).toLocaleDateString()} -{" "}
                 {new Date(activeYear.end_date).toLocaleDateString()}
               </span>
               <Badge variant="secondary" className="capitalize">

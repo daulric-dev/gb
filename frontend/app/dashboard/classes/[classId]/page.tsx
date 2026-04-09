@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil } from "lucide-react";
 
 interface ClassInfo {
   id: string;
@@ -53,6 +53,20 @@ interface StudentSubject {
   subject: Subject | null;
 }
 
+interface TeacherAssignment {
+  teacherId: string;
+  firstName: string | null;
+  lastName: string | null;
+  isClassTeacher: boolean;
+  subjects: { id: string; name: string; code: string }[];
+}
+
+interface SchoolTeacher {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
@@ -66,14 +80,19 @@ export default function ClassDetailPage() {
   const [loading, setLoading] = useState(true);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [subjectStudent, setSubjectStudent] = useState<EnrolledStudent | null>(null);
+  const [teachers, setTeachers] = useState<TeacherAssignment[]>([]);
+  const [assignTeacherOpen, setAssignTeacherOpen] = useState(false);
+  const [editingTeacher, setEditingTeacher] = useState<TeacherAssignment | null>(null);
 
   const fetchData = useCallback(() => {
     Promise.all([
       api<ClassInfo[]>("/classes").then((cls) => cls.find((c) => c.id === classId) ?? null),
       api<EnrolledStudent[]>(`/classes/${classId}/students`).catch(() => []),
-    ]).then(([info, students]) => {
+      api<TeacherAssignment[]>(`/classes/${classId}/teachers`).catch(() => []),
+    ]).then(([info, students, teacherList]) => {
       setClassInfo(info);
       setEnrolled(students);
+      setTeachers(teacherList);
       setLoading(false);
     });
   }, [classId]);
@@ -132,7 +151,15 @@ export default function ClassDetailPage() {
           </div>
         </div>
 
-        {classInfo.isClassTeacher && (
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/dashboard/classes/${classId}/grading`)}
+          >
+            <ClipboardList className="mr-2 size-4" />
+            Grading
+          </Button>
+          {classInfo.isClassTeacher && (
           <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
             <DialogTrigger render={<Button />}>
               <UserPlus className="mr-2 size-4" />
@@ -155,10 +182,117 @@ export default function ClassDetailPage() {
               />
             </DialogContent>
           </Dialog>
-        )}
+          )}
+        </div>
       </div>
 
       <Card className="animate-fade-in-up-delay-1">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <GraduationCap className="size-4 text-muted-foreground" />
+                <CardTitle>Subject Teachers</CardTitle>
+              </div>
+              <CardDescription>
+                Teachers assigned to subjects in this class
+              </CardDescription>
+            </div>
+            {classInfo.isClassTeacher && (
+              <Dialog open={assignTeacherOpen} onOpenChange={setAssignTeacherOpen}>
+                <DialogTrigger render={<Button size="sm" />}>
+                  <Plus className="mr-2 size-4" />
+                  Assign Teacher
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Assign Teacher to Subjects</DialogTitle>
+                    <DialogDescription>
+                      Select a teacher and the subjects they will teach in {classInfo.name}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <AssignTeacherForm
+                    classId={classId}
+                    existingTeacherIds={teachers.map((t) => t.teacherId)}
+                    onSuccess={() => {
+                      setAssignTeacherOpen(false);
+                      fetchData();
+                    }}
+                  />
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {teachers.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              No teachers assigned yet.
+            </div>
+          ) : (
+            <div className="rounded-md border divide-y">
+              {teachers.map((t) => (
+                <div key={t.teacherId} className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {t.firstName} {t.lastName}
+                      </span>
+                      {t.isClassTeacher && (
+                        <Badge className="text-xs">Class Teacher</Badge>
+                      )}
+                    </div>
+                    {t.subjects.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {t.subjects.map((s) => (
+                          <Badge key={s.id} variant="secondary" className="text-xs">
+                            {s.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-0.5">No subjects assigned</p>
+                    )}
+                  </div>
+                  {classInfo.isClassTeacher && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingTeacher(t)}
+                        title="Edit subjects"
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      {!t.isClassTeacher && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            if (!confirm(`Remove ${t.firstName} ${t.lastName} from this class?`)) return;
+                            try {
+                              await api(`/classes/${classId}/teachers/${t.teacherId}`, { method: "DELETE" });
+                              toast.success("Teacher removed");
+                              fetchData();
+                            } catch (err) {
+                              const msg = err instanceof ApiError ? err.message : "Failed to remove";
+                              toast.error(msg);
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="animate-fade-in-up-delay-2">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -238,6 +372,34 @@ export default function ClassDetailPage() {
       </Card>
 
       <Dialog
+        open={editingTeacher !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingTeacher(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Edit Subjects for {editingTeacher?.firstName} {editingTeacher?.lastName}
+            </DialogTitle>
+            <DialogDescription>
+              Select the subjects this teacher will teach in {classInfo.name}
+            </DialogDescription>
+          </DialogHeader>
+          {editingTeacher && (
+            <EditTeacherSubjectsForm
+              classId={classId}
+              teacher={editingTeacher}
+              onSuccess={() => {
+                setEditingTeacher(null);
+                fetchData();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={subjectStudent !== null}
         onOpenChange={(open) => {
           if (!open) setSubjectStudent(null);
@@ -246,7 +408,7 @@ export default function ClassDetailPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              Subjects — {subjectStudent?.student.first_name} {subjectStudent?.student.last_name}
+              Subjects - {subjectStudent?.student.first_name} {subjectStudent?.student.last_name}
             </DialogTitle>
             <DialogDescription>
               Manage subject assignments for this student
@@ -587,6 +749,228 @@ function AddSubjectsForm({
           {submitting ? "Assigning..." : `Assign ${selected.size}`}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function EditTeacherSubjectsForm({
+  classId,
+  teacher,
+  onSuccess,
+}: {
+  classId: string;
+  teacher: TeacherAssignment;
+  onSuccess: () => void;
+}) {
+  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
+  const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(
+    new Set(teacher.subjects.map((s) => s.id)),
+  );
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    api<Subject[]>("/subjects")
+      .then(setAllSubjects)
+      .catch(() => [])
+      .finally(() => setLoading(false));
+  }, []);
+
+  function toggleSubject(id: string) {
+    setSelectedSubjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    try {
+      await api(`/classes/${classId}/teachers`, {
+        method: "POST",
+        body: {
+          teacherId: teacher.teacherId,
+          subjectIds: [...selectedSubjects],
+        },
+      });
+      toast.success("Subjects updated");
+      onSuccess();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to update";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Subjects</label>
+        <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
+          {allSubjects.map((s) => (
+            <label
+              key={s.id}
+              className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={selectedSubjects.has(s.id)}
+                onChange={() => toggleSubject(s.id)}
+                className="size-4 rounded border-input"
+              />
+              <span className="text-sm">{s.name}</span>
+              {s.code && (
+                <Badge variant="secondary" className="text-xs ml-auto">
+                  {s.code}
+                </Badge>
+              )}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <Button
+        className="w-full"
+        disabled={submitting}
+        onClick={handleSubmit}
+      >
+        {submitting ? "Saving..." : "Save Subjects"}
+      </Button>
+    </div>
+  );
+}
+
+function AssignTeacherForm({classId, existingTeacherIds, onSuccess}: {classId: string; existingTeacherIds: string[]; onSuccess: () => void}) {
+  const [schoolTeachers, setSchoolTeachers] = useState<SchoolTeacher[]>([]);
+  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
+  const [selectedTeacher, setSelectedTeacher] = useState("");
+  const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      api<SchoolTeacher[]>("/classes/school-teachers").catch(() => []),
+      api<Subject[]>("/subjects").catch(() => []),
+    ]).then(([teachers, subjects]) => {
+      setSchoolTeachers(teachers.filter((t) => !existingTeacherIds.includes(t.id)));
+      setAllSubjects(subjects);
+      setLoading(false);
+    });
+  }, [existingTeacherIds]);
+
+  function toggleSubject(id: string) {
+    setSelectedSubjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSubmit() {
+    if (!selectedTeacher || selectedSubjects.size === 0) return;
+    setSubmitting(true);
+
+    try {
+      await api(`/classes/${classId}/teachers`, {
+        method: "POST",
+        body: {
+          teacherId: selectedTeacher,
+          subjectIds: [...selectedSubjects],
+        },
+      });
+      toast.success("Teacher assigned");
+      onSuccess();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to assign";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (schoolTeachers.length === 0) {
+    return (
+      <div className="text-center py-6 text-sm text-muted-foreground">
+        No available teachers to assign.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Teacher</label>
+        <select
+          className={selectClass}
+          value={selectedTeacher}
+          onChange={(e) => setSelectedTeacher(e.target.value)}
+        >
+          <option value="">Select a teacher...</option>
+          {schoolTeachers.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.first_name} {t.last_name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Subjects</label>
+        <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
+          {allSubjects.map((s) => (
+            <label
+              key={s.id}
+              className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={selectedSubjects.has(s.id)}
+                onChange={() => toggleSubject(s.id)}
+                className="size-4 rounded border-input"
+              />
+              <span className="text-sm">{s.name}</span>
+              {s.code && (
+                <Badge variant="secondary" className="text-xs ml-auto">
+                  {s.code}
+                </Badge>
+              )}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <Button
+        className="w-full"
+        disabled={!selectedTeacher || selectedSubjects.size === 0 || submitting}
+        onClick={handleSubmit}
+      >
+        {submitting ? "Assigning..." : "Assign Teacher"}
+      </Button>
     </div>
   );
 }
