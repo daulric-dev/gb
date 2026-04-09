@@ -1,26 +1,29 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { setTokens } from "@/lib/auth";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; 
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";
 import { ModeToggle } from "@/components/mode-toggle";
 
 function VerifyForm() {
+  useSignals();
   const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
-  const [code, setCode] = useState("");
-  const [loading, setLoading] = useState(false);
+  const code = useSignal("");
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (code.length !== 8) return;
-    setLoading(true);
+    if (code.value.length !== 8) return;
+    loading.value = true;
 
     try {
       const data = await api<{
@@ -33,7 +36,7 @@ function VerifyForm() {
         };
       }>("/auth/otp/verify", {
         method: "POST",
-        body: { email, token: code },
+        body: { email, token: code.value },
       });
 
       setTokens(data.session.access_token, data.session.refresh_token);
@@ -48,7 +51,7 @@ function VerifyForm() {
         err instanceof ApiError ? err.message : "Verification failed";
       toast.error(message);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -73,7 +76,7 @@ function VerifyForm() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="flex justify-center">
-              <InputOTP maxLength={8} value={code} onChange={setCode}>
+              <InputOTP maxLength={8} value={code.value} onChange={(v) => (code.value = v)}>
                 <InputOTPGroup>
                   <InputOTPSlot index={0} />
                   <InputOTPSlot index={1} />
@@ -92,9 +95,9 @@ function VerifyForm() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading || code.length !== 8}
+              disabled={loading.value || code.value.length !== 8}
              >
-              {loading ? "Verifying..." : "Verify"}
+              {loading.value ? "Verifying..." : "Verify"}
             </Button>
             <Button
               type="button"

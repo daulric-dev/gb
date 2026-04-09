@@ -1,43 +1,39 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/mode-toggle";
 
 export default function LoginPage() {
+  useSignals();
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const email = useSignal("");
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     try {
       await api("/auth/otp/send", {
         method: "POST",
-        body: { email },
+        body: { email: email.value },
       });
       toast.success("OTP sent to your email");
-      router.push(`/login/verify?email=${encodeURIComponent(email)}`);
+      router.push(`/login/verify?email=${encodeURIComponent(email.value)}`);
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Failed to send OTP";
       toast.error(message);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -61,14 +57,14 @@ export default function LoginPage() {
                 id="email"
                 type="email"
                 placeholder="teacher@school.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={email.value}
+                onChange={(e) => (email.value = e.target.value)}
                 required
                 autoFocus
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Sending..." : "Send OTP"}
+            <Button type="submit" className="w-full" disabled={loading.value}>
+              {loading.value ? "Sending..." : "Send OTP"}
             </Button>
           </form>
         </CardContent>

@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -41,18 +43,19 @@ const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export default function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editStudent, setEditStudent] = useState<Student | null>(null);
+  useSignals();
+  const students = useSignal<Student[]>([]);
+  const loading = useSignal(true);
+  const search = useSignal("");
+  const createOpen = useSignal(false);
+  const editStudent = useSignal<Student | null>(null);
 
   const fetchStudents = useCallback((query?: string) => {
     const params = query ? `?search=${encodeURIComponent(query)}` : "";
     api<Student[]>(`/students${params}`)
-      .then(setStudents)
+      .then((data) => (students.value = data))
       .catch(() => toast.error("Failed to load students"))
-      .finally(() => setLoading(false));
+      .finally(() => (loading.value = false));
   }, []);
 
   useEffect(() => {
@@ -61,10 +64,10 @@ export default function StudentsPage() {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      fetchStudents(search);
+      fetchStudents(search.value);
     }, 300);
     return () => clearTimeout(timeout);
-  }, [search, fetchStudents]);
+  }, [search.value, fetchStudents]);
 
   return (
     <div className="space-y-6">
@@ -75,7 +78,7 @@ export default function StudentsPage() {
             manage students in your school
           </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
           <DialogTrigger render={<Button />}>
             <Plus className="mr-2 size-4" />
             New Student
@@ -89,8 +92,8 @@ export default function StudentsPage() {
             </DialogHeader>
             <CreateStudentForm
               onSuccess={() => {
-                setCreateOpen(false);
-                fetchStudents(search);
+                createOpen.value = false;
+                fetchStudents(search.value);
               }}
             />
           </DialogContent>
@@ -102,20 +105,20 @@ export default function StudentsPage() {
         <Input
           placeholder="Search by name..."
           className="pl-9"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={search.value}
+          onChange={(e) => (search.value = e.target.value)}
         />
       </div>
 
-      {loading ? (
+      {loading.value ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : students.length === 0 ? (
+      ) : students.value.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          {search
+          {search.value
             ? "No students match your search."
             : "No students yet. Add your first one."}
         </div>
@@ -132,7 +135,7 @@ export default function StudentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {students.map((student) => (
+              {students.value.map((student) => (
                 <TableRow key={student.id}>
                   <TableCell className="font-medium">
                     {student.first_name} {student.last_name}
@@ -158,7 +161,7 @@ export default function StudentsPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setEditStudent(student)}
+                      onClick={() => (editStudent.value = student)}
                     >
                       <Pencil className="size-4" />
                     </Button>
@@ -171,9 +174,9 @@ export default function StudentsPage() {
       )}
 
       <Dialog
-        open={editStudent !== null}
+        open={editStudent.value !== null}
         onOpenChange={(open) => {
-          if (!open) setEditStudent(null);
+          if (!open) editStudent.value = null;
         }}
       >
         <DialogContent>
@@ -183,12 +186,12 @@ export default function StudentsPage() {
               Update student information
             </DialogDescription>
           </DialogHeader>
-          {editStudent && (
+          {editStudent.value && (
             <EditStudentForm
-              student={editStudent}
+              student={editStudent.value}
               onSuccess={() => {
-                setEditStudent(null);
-                fetchStudents(search);
+                editStudent.value = null;
+                fetchStudents(search.value);
               }}
             />
           )}
@@ -199,24 +202,25 @@ export default function StudentsPage() {
 }
 
 function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [gender, setGender] = useState<"male" | "female">("male");
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [enrollementDate, setEnrolementDate] = useState("");
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const firstName = useSignal("");
+  const lastName = useSignal("");
+  const gender = useSignal<"male" | "female">("male");
+  const dateOfBirth = useSignal("");
+  const enrollementDate = useSignal("");
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     const body: Record<string, unknown> = {
-      firstName,
-      lastName,
-      gender,
+      firstName: firstName.value,
+      lastName: lastName.value,
+      gender: gender.value,
     };
-    if (dateOfBirth) body.dateOfBirth = dateOfBirth;
-    if (enrollementDate) body.enrollementDate = enrollementDate;
+    if (dateOfBirth.value) body.dateOfBirth = dateOfBirth.value;
+    if (enrollementDate.value) body.enrollementDate = enrollementDate.value;
 
     try {
       await api("/students", { method: "POST", body });
@@ -226,7 +230,7 @@ function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
       const msg = err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -238,8 +242,8 @@ function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             id="firstName"
             placeholder="James"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
+            value={firstName.value}
+            onChange={(e) => (firstName.value = e.target.value)}
             required
           />
         </div>
@@ -248,8 +252,8 @@ function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             id="lastName"
             placeholder="Thompson"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
+            value={lastName.value}
+            onChange={(e) => (lastName.value = e.target.value)}
             required
           />
         </div>
@@ -259,8 +263,8 @@ function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
         <select
           id="gender"
           className={selectClass}
-          value={gender}
-          onChange={(e) => setGender(e.target.value as "male" | "female")}
+          value={gender.value}
+          onChange={(e) => (gender.value = e.target.value as "male" | "female")}
           required
         >
           <option value="male">Male</option>
@@ -273,8 +277,8 @@ function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             id="dob"
             type="date"
-            value={dateOfBirth}
-            onChange={(e) => setDateOfBirth(e.target.value)}
+            value={dateOfBirth.value}
+            onChange={(e) => (dateOfBirth.value = e.target.value)}
           />
         </div>
         <div className="space-y-2">
@@ -282,13 +286,13 @@ function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             id="enrollDate"
             type="date"
-            value={enrollementDate}
-            onChange={(e) => setEnrolementDate(e.target.value)}
+            value={enrollementDate.value}
+            onChange={(e) => (enrollementDate.value = e.target.value)}
           />
         </div>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Creating..." : "Add Student"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Creating..." : "Add Student"}
       </Button>
     </form>
   );
@@ -301,27 +305,26 @@ function EditStudentForm({
   student: Student;
   onSuccess: () => void;
 }) {
-  const [firstName, setFirstName] = useState(student.first_name);
-  const [lastName, setLastName] = useState(student.last_name);
-  const [gender, setGender] = useState<"male" | "female">(student.gender);
-  const [dateOfBirth, setDateOfBirth] = useState(student.date_of_birth ?? "");
-  const [enrollementDate, setEnrolementDate] = useState(
-    student.enrollement_date ?? "",
-  );
-  const [isActive, setIsActive] = useState(student.is_active);
-  const [loading, setLoading] = useState(false);
+  useSignals();
+  const firstName = useSignal(student.first_name);
+  const lastName = useSignal(student.last_name);
+  const gender = useSignal<"male" | "female">(student.gender);
+  const dateOfBirth = useSignal(student.date_of_birth ?? "");
+  const enrollementDate = useSignal(student.enrollement_date ?? "");
+  const isActive = useSignal(student.is_active);
+  const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     const body: Record<string, unknown> = {
-      firstName,
-      lastName,
-      gender,
-      dateOfBirth: dateOfBirth || undefined,
-      enrollementDate: enrollementDate || undefined,
-      isActive,
+      firstName: firstName.value,
+      lastName: lastName.value,
+      gender: gender.value,
+      dateOfBirth: dateOfBirth.value || undefined,
+      enrollementDate: enrollementDate.value || undefined,
+      isActive: isActive.value,
     };
 
     try {
@@ -332,7 +335,7 @@ function EditStudentForm({
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -343,8 +346,8 @@ function EditStudentForm({
           <Label htmlFor="editFirstName">First Name</Label>
           <Input
             id="editFirstName"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
+            value={firstName.value}
+            onChange={(e) => (firstName.value = e.target.value)}
             required
           />
         </div>
@@ -352,8 +355,8 @@ function EditStudentForm({
           <Label htmlFor="editLastName">Last Name</Label>
           <Input
             id="editLastName"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
+            value={lastName.value}
+            onChange={(e) => (lastName.value = e.target.value)}
             required
           />
         </div>
@@ -363,8 +366,8 @@ function EditStudentForm({
         <select
           id="editGender"
           className={selectClass}
-          value={gender}
-          onChange={(e) => setGender(e.target.value as "male" | "female")}
+          value={gender.value}
+          onChange={(e) => (gender.value = e.target.value as "male" | "female")}
           required
         >
           <option value="male">Male</option>
@@ -377,8 +380,8 @@ function EditStudentForm({
           <Input
             id="editDob"
             type="date"
-            value={dateOfBirth}
-            onChange={(e) => setDateOfBirth(e.target.value)}
+            value={dateOfBirth.value}
+            onChange={(e) => (dateOfBirth.value = e.target.value)}
           />
         </div>
         <div className="space-y-2">
@@ -386,8 +389,8 @@ function EditStudentForm({
           <Input
             id="editEnrollDate"
             type="date"
-            value={enrollementDate}
-            onChange={(e) => setEnrolementDate(e.target.value)}
+            value={enrollementDate.value}
+            onChange={(e) => (enrollementDate.value = e.target.value)}
           />
         </div>
       </div>
@@ -395,14 +398,14 @@ function EditStudentForm({
         <input
           id="editActive"
           type="checkbox"
-          checked={isActive}
-          onChange={(e) => setIsActive(e.target.checked)}
+          checked={isActive.value}
+          onChange={(e) => (isActive.value = e.target.checked)}
           className="size-4 rounded border-input"
         />
         <Label htmlFor="editActive">Active</Label>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Saving..." : "Save Changes"}
+      <Button type="submit" className="w-full" disabled={loading.value}>
+        {loading.value ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );

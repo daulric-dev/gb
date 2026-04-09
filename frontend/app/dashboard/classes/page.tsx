@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -74,19 +76,20 @@ function ClassTable({ classes, yearMap, emptyMessage }: { classes: ClassItem[]; 
 }
 
 export default function ClassesPage() {
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [yearMap, setYearMap] = useState<Map<string, string>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  useSignals();
+  const classes = useSignal<ClassItem[]>([]);
+  const yearMap = useSignal<Map<string, string>>(new Map());
+  const loading = useSignal(true);
+  const dialogOpen = useSignal(false);
 
   const fetchData = useCallback(() => {
     Promise.all([
       api<ClassItem[]>("/classes").catch(() => []),
       api<(AcademicYear & { is_active?: boolean })[]>("/academic-years").catch(() => []),
     ]).then(([cls, years]) => {
-      setClasses(cls);
-      setYearMap(new Map(years.map((y) => [y.id, y.name])));
-      setLoading(false);
+      classes.value = cls;
+      yearMap.value = new Map(years.map((y) => [y.id, y.name]));
+      loading.value = false;
     });
   }, []);
 
@@ -94,8 +97,8 @@ export default function ClassesPage() {
     fetchData();
   }, [fetchData]);
 
-  const myClasses = classes.filter((c) => c.isClassTeacher);
-  const subjectClasses = classes.filter((c) => !c.isClassTeacher);
+  const myClasses = classes.value.filter((c) => c.isClassTeacher);
+  const subjectClasses = classes.value.filter((c) => !c.isClassTeacher);
 
   return (
     <div className="space-y-8">
@@ -106,7 +109,7 @@ export default function ClassesPage() {
             view and manage your assigned classes
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
           <DialogTrigger render={<Button />}>
             <Plus className="mr-2 size-4" />
             New Class
@@ -120,7 +123,7 @@ export default function ClassesPage() {
             </DialogHeader>
             <CreateClassForm
               onSuccess={() => {
-                setDialogOpen(false);
+                dialogOpen.value = false;
                 fetchData();
               }}
             />
@@ -128,12 +131,12 @@ export default function ClassesPage() {
         </Dialog>
       </div>
 
-      {loading ? (
+      {loading.value ? (
         <div className="space-y-4">
           <Skeleton className="h-48 w-full" />
           <Skeleton className="h-48 w-full" />
         </div>
-      ) : classes.length === 0 ? (
+      ) : classes.value.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No classes yet. Create your first one.
         </div>
@@ -152,7 +155,7 @@ export default function ClassesPage() {
             <CardContent>
               <ClassTable
                 classes={myClasses}
-                yearMap={yearMap}
+                yearMap={yearMap.value}
                 emptyMessage="You are not a class teacher for any class yet"
               />
             </CardContent>
@@ -171,7 +174,7 @@ export default function ClassesPage() {
             <CardContent>
               <ClassTable
                 classes={subjectClasses}
-                yearMap={yearMap}
+                yearMap={yearMap.value}
                 emptyMessage="You are not assigned to teach subjects in any other class"
               />
             </CardContent>
@@ -183,33 +186,34 @@ export default function ClassesPage() {
 }
 
 function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
-  const [name, setName] = useState("");
-  const [academicYearId, setAcademicYearId] = useState("");
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [yearsLoading, setYearsLoading] = useState(true);
+  useSignals();
+  const name = useSignal("");
+  const academicYearId = useSignal("");
+  const academicYears = useSignal<AcademicYear[]>([]);
+  const loading = useSignal(false);
+  const yearsLoading = useSignal(true);
 
   useEffect(() => {
     api<(AcademicYear & { is_active?: boolean })[]>("/academic-years")
       .then((data) => {
         const active = data.filter((y) => y.is_active);
-        setAcademicYears(active);
+        academicYears.value = active;
         if (active.length > 0) {
-          setAcademicYearId(active[0].id);
+          academicYearId.value = active[0].id;
         }
       })
       .catch(() => toast.error("Failed to load academic years"))
-      .finally(() => setYearsLoading(false));
+      .finally(() => (yearsLoading.value = false));
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    loading.value = true;
 
     try {
       await api("/classes", {
         method: "POST",
-        body: { name, academicYearId },
+        body: { name: name.value, academicYearId: academicYearId.value },
       });
       toast.success("Class created");
       onSuccess();
@@ -217,7 +221,7 @@ function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
       const msg = err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);
     } finally {
-      setLoading(false);
+      loading.value = false;
     }
   }
 
@@ -228,16 +232,16 @@ function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
         <Input
           id="className"
           placeholder="Class 3A"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={name.value}
+          onChange={(e) => (name.value = e.target.value)}
           required
         />
       </div>
       <div className="space-y-2">
         <Label htmlFor="academicYear">Academic Year</Label>
-        {yearsLoading ? (
+        {yearsLoading.value ? (
           <Skeleton className="h-9 w-full" />
-        ) : academicYears.length === 0 ? (
+        ) : academicYears.value.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No academic years found. Create one first.
           </p>
@@ -245,11 +249,11 @@ function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
           <select
             id="academicYear"
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            value={academicYearId}
-            onChange={(e) => setAcademicYearId(e.target.value)}
+            value={academicYearId.value}
+            onChange={(e) => (academicYearId.value = e.target.value)}
             required
           >
-            {academicYears.map((y) => (
+            {academicYears.value.map((y) => (
               <option key={y.id} value={y.id}>
                 {y.name}
               </option>
@@ -260,9 +264,9 @@ function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
       <Button
         type="submit"
         className="w-full"
-        disabled={loading || academicYears.length === 0}
+        disabled={loading.value || academicYears.value.length === 0}
       >
-        {loading ? "Creating..." : "Create Class"}
+        {loading.value ? "Creating..." : "Create Class"}
       </Button>
     </form>
   );
