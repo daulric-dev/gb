@@ -10,7 +10,6 @@ on:
       - Codecov Tests and Upload Coverage
       - Lines of Code
       - OSV-Scanner
-      - CodeQL Advanced
     types:
       - completed
 
@@ -44,7 +43,6 @@ jobs:
               "Codecov Tests and Upload Coverage",
               "Lines of Code",
               "OSV-Scanner",
-              "CodeQL Advanced",
             ]);
 
             const { owner, repo } = context.repo;
