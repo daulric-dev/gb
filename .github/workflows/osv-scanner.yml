@@ -30,4 +30,4 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run OSV-Scanner
-        run: osv-scanner --lockfile=package.json --lockfile=frontend/package.json --lockfile=backend/package.json
+        run: osv-scanner -r .
