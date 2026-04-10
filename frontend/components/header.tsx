@@ -9,7 +9,6 @@ import { clearTokens } from "@/lib/auth";
 import type { UserProfile } from "@/lib/use-profile";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -51,20 +51,12 @@ export class GradeController {
 
   @Post()
   create(@Body() dto: CreateGradeDto, @Req() req: any) {
-    return this.gradeService.create(
-      req.user.id,
-      dto,
-      this.getToken(req),
-    );
+    return this.gradeService.create(req.user.id, dto, this.getToken(req));
   }
 
   @Post('bulk')
   bulkCreate(@Body() dto: BulkGradeDto, @Req() req: any) {
-    return this.gradeService.bulkCreate(
-      req.user.id,
-      dto,
-      this.getToken(req),
-    );
+    return this.gradeService.bulkCreate(req.user.id, dto, this.getToken(req));
   }
 
   @Patch(':id')
@@ -73,25 +65,11 @@ export class GradeController {
     @Body() dto: UpdateGradeDto,
     @Req() req: any,
   ) {
-    return this.gradeService.update(
-      id,
-      req.user.id,
-      dto,
-      this.getToken(req),
-    );
+    return this.gradeService.update(id, req.user.id, dto, this.getToken(req));
   }
 
   @Patch(':id/exclude')
-  exclude(
-    @Param('id') id: string,
-    @Body() dto: ExcludeDto,
-    @Req() req: any,
-  ) {
-    return this.gradeService.exclude(
-      id,
-      req.user.id,
-      dto,
-      this.getToken(req),
-    );
+  exclude(@Param('id') id: string, @Body() dto: ExcludeDto, @Req() req: any) {
+    return this.gradeService.exclude(id, req.user.id, dto, this.getToken(req));
   }
 }

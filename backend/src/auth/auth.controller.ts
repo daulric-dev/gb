@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
@@ -39,8 +47,15 @@ export class AuthController {
 
   @Post('otp/verify')
   async verifyOtp(@Body() dto: VerifyOtpDto, @Req() req: any) {
-    const { session, user, profile } = await this.authService.verifyOtp(dto.email, dto.token);
-    return versionMap.verifyOtp[getVersion(req, versionMap.verifyOtp)](session, user, profile);
+    const { session, user, profile } = await this.authService.verifyOtp(
+      dto.email,
+      dto.token,
+    );
+    return versionMap.verifyOtp[getVersion(req, versionMap.verifyOtp)](
+      session,
+      user,
+      profile,
+    );
   }
 
   @ApiBearerAuth()
@@ -71,6 +86,8 @@ export class AuthController {
   async logout(@Req() req: any) {
     const supabase = this.supabaseService.getServiceClient();
     await supabase.auth.admin.signOut(req.user.access_token);
-    return versionMap.message[getVersion(req, versionMap.message)]('Logged out');
+    return versionMap.message[getVersion(req, versionMap.message)](
+      'Logged out',
+    );
   }
 }

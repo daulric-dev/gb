@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -19,7 +25,9 @@ export class StudentService {
       .single();
 
     if (profileError || !profile?.school_id) {
-      this.logger.error(`Failed to get school for user ${userId}: ${profileError?.message}`);
+      this.logger.error(
+        `Failed to get school for user ${userId}: ${profileError?.message}`,
+      );
       throw new BadRequestException('Could not determine your school');
     }
 
@@ -34,7 +42,9 @@ export class StudentService {
       .maybeSingle();
 
     if (existing) {
-      throw new ConflictException('A student with the same first and last name already exists in this school');
+      throw new ConflictException(
+        'A student with the same first and last name already exists in this school',
+      );
     }
 
     const { data: student, error } = await supabase
@@ -69,7 +79,9 @@ export class StudentService {
       .single();
 
     if (profileError || !profile?.school_id) {
-      this.logger.error(`Failed to get school for user ${userId}: ${profileError?.message}`);
+      this.logger.error(
+        `Failed to get school for user ${userId}: ${profileError?.message}`,
+      );
       throw new BadRequestException('Could not determine your school');
     }
 
@@ -121,8 +133,10 @@ export class StudentService {
     if (dto.firstName !== undefined) updateData.first_name = dto.firstName;
     if (dto.lastName !== undefined) updateData.last_name = dto.lastName;
     if (dto.gender !== undefined) updateData.gender = dto.gender;
-    if (dto.dateOfBirth !== undefined) updateData.date_of_birth = dto.dateOfBirth;
-    if (dto.enrollementDate !== undefined) updateData.enrollement_date = dto.enrollementDate;
+    if (dto.dateOfBirth !== undefined)
+      updateData.date_of_birth = dto.dateOfBirth;
+    if (dto.enrollementDate !== undefined)
+      updateData.enrollement_date = dto.enrollementDate;
     if (dto.isActive !== undefined) updateData.is_active = dto.isActive;
 
     const { data, error } = await supabase

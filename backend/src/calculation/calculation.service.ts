@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
-import { SubjectGradeSummary, AssessmentGrade, StudentTermResult, StudentYearResult, YearEndSubject } from './interfaces/calculation.interfaces'; 
+import {
+  SubjectGradeSummary,
+  AssessmentGrade,
+  StudentTermResult,
+  StudentYearResult,
+  YearEndSubject,
+} from './interfaces/calculation.interfaces';
 
 @Injectable()
 export class CalculationService {
@@ -35,7 +41,11 @@ export class CalculationService {
     return Math.round((sum / values.length) * 100) / 100;
   }
 
-  async calculateSubjectTermGrade(studentId: string, subjectId: string, termId: string): Promise<SubjectGradeSummary> {
+  async calculateSubjectTermGrade(
+    studentId: string,
+    subjectId: string,
+    termId: string,
+  ): Promise<SubjectGradeSummary> {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: subject } = await supabase
@@ -65,25 +75,41 @@ export class CalculationService {
     const { data: assessments, error: assessmentError } = await supabase
       .schema('grading')
       .from('assessment')
-      .select('id, title, assessment_type, max_score, weight, is_excluded, sort_order')
+      .select(
+        'id, title, assessment_type, max_score, weight, is_excluded, sort_order',
+      )
       .eq('term_id', termId)
       .eq('subject_id', subjectId)
       .order('sort_order', { ascending: true });
 
     if (assessmentError) {
-      this.logger.error(`Failed to fetch assessments: ${assessmentError.message}`);
+      this.logger.error(
+        `Failed to fetch assessments: ${assessmentError.message}`,
+      );
       return {
-        subjectId, subjectName, subjectCode, isGraded: true,
-        courseworkAverage: null, examAverage: null, termComposite: null,
-        gradeCount: 0, assessments: [],
+        subjectId,
+        subjectName,
+        subjectCode,
+        isGraded: true,
+        courseworkAverage: null,
+        examAverage: null,
+        termComposite: null,
+        gradeCount: 0,
+        assessments: [],
       };
     }
 
     if (!assessments?.length) {
       return {
-        subjectId, subjectName, subjectCode, isGraded: true,
-        courseworkAverage: null, examAverage: null, termComposite: null,
-        gradeCount: 0, assessments: [],
+        subjectId,
+        subjectName,
+        subjectCode,
+        isGraded: true,
+        courseworkAverage: null,
+        examAverage: null,
+        termComposite: null,
+        gradeCount: 0,
+        assessments: [],
       };
     }
 
@@ -113,9 +139,10 @@ export class CalculationService {
       const excluded = assessmentExcluded || gradeExcluded;
 
       const score = grade?.score ?? null;
-      const percentage = score !== null && a.max_score > 0
-        ? this.normalizeScore(score, a.max_score)
-        : null;
+      const percentage =
+        score !== null && a.max_score > 0
+          ? this.normalizeScore(score, a.max_score)
+          : null;
 
       assessmentGrades.push({
         assessmentId: a.id,
@@ -124,10 +151,12 @@ export class CalculationService {
         maxScore: a.max_score,
         weight: a.weight,
         score,
-        percentage: percentage !== null ? Math.round(percentage * 100) / 100 : null,
+        percentage:
+          percentage !== null ? Math.round(percentage * 100) / 100 : null,
         isExcluded: excluded,
         exclusionReason: excluded
-          ? (grade?.exclusion_reason || (assessmentExcluded ? 'Assessment excluded' : null))
+          ? grade?.exclusion_reason ||
+            (assessmentExcluded ? 'Assessment excluded' : null)
           : null,
       });
 
@@ -157,7 +186,8 @@ export class CalculationService {
 
     let termComposite: number | null = null;
     if (courseworkAverage !== null && examAverage !== null) {
-      termComposite = (courseworkAverage * cwWeight / 100) + (examAverage * exWeight / 100);
+      termComposite =
+        (courseworkAverage * cwWeight) / 100 + (examAverage * exWeight) / 100;
       termComposite = Math.round(termComposite * 100) / 100;
     } else if (courseworkAverage !== null) {
       termComposite = courseworkAverage;
@@ -170,15 +200,23 @@ export class CalculationService {
       subjectName,
       subjectCode,
       isGraded: true,
-      courseworkAverage: courseworkAverage !== null ? Math.round(courseworkAverage * 100) / 100 : null,
-      examAverage: examAverage !== null ? Math.round(examAverage * 100) / 100 : null,
+      courseworkAverage:
+        courseworkAverage !== null
+          ? Math.round(courseworkAverage * 100) / 100
+          : null,
+      examAverage:
+        examAverage !== null ? Math.round(examAverage * 100) / 100 : null,
       termComposite,
       gradeCount,
       assessments: assessmentGrades,
     };
   }
 
-  async calculateStudentTermResult(studentId: string, termId: string, studentGroupId: string): Promise<StudentTermResult> {
+  async calculateStudentTermResult(
+    studentId: string,
+    termId: string,
+    studentGroupId: string,
+  ): Promise<StudentTermResult> {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: student } = await supabase
@@ -208,7 +246,9 @@ export class CalculationService {
 
     const academicYearId = group?.academic_year_id;
     if (!academicYearId) {
-      this.logger.error(`Student group not found or missing academic year: ${studentGroupId}`);
+      this.logger.error(
+        `Student group not found or missing academic year: ${studentGroupId}`,
+      );
       return {
         studentId,
         firstName: student.first_name,
@@ -263,7 +303,11 @@ export class CalculationService {
         continue;
       }
 
-      const result = await this.calculateSubjectTermGrade(studentId, subj.id, termId);
+      const result = await this.calculateSubjectTermGrade(
+        studentId,
+        subj.id,
+        termId,
+      );
       subjectResults.push(result);
     }
 
@@ -283,7 +327,11 @@ export class CalculationService {
     };
   }
 
-  async calculateStudentYearResult(studentId: string, academicYearId: string, studentGroupId: string): Promise<StudentYearResult> {
+  async calculateStudentYearResult(
+    studentId: string,
+    academicYearId: string,
+    studentGroupId: string,
+  ): Promise<StudentYearResult> {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: student } = await supabase
@@ -314,7 +362,11 @@ export class CalculationService {
 
     if (!terms?.length) {
       return {
-        studentId, firstName, lastName, academicYearId, gradingModel,
+        studentId,
+        firstName,
+        lastName,
+        academicYearId,
+        gradingModel,
         terms: [],
         yearEnd: { subjects: [], overallAverage: null },
       };
@@ -328,7 +380,11 @@ export class CalculationService {
     }[] = [];
 
     for (const term of terms) {
-      const result = await this.calculateStudentTermResult(studentId, term.id, studentGroupId);
+      const result = await this.calculateStudentTermResult(
+        studentId,
+        term.id,
+        studentGroupId,
+      );
       termResults.push({
         termId: term.id,
         termName: term.name,
@@ -347,7 +403,11 @@ export class CalculationService {
     const yearEndSubjects: YearEndSubject[] = [];
 
     for (const subjectId of allSubjectIds) {
-      const termGrades: { termId: string; termName: string; termComposite: number | null }[] = [];
+      const termGrades: {
+        termId: string;
+        termName: string;
+        termComposite: number | null;
+      }[] = [];
       let subjectName = '';
 
       for (const tr of termResults) {
@@ -372,11 +432,15 @@ export class CalculationService {
         const termsAvg = this.simpleAverage(validComposites);
 
         const lastTerm = termResults[termResults.length - 1];
-        const lastTermSubject = lastTerm?.subjects.find((s) => s.subjectId === subjectId);
+        const lastTermSubject = lastTerm?.subjects.find(
+          (s) => s.subjectId === subjectId,
+        );
         const finalExamAvg = lastTermSubject?.examAverage ?? null;
 
         if (termsAvg !== null && finalExamAvg !== null) {
-          yearGrade = (termsAvg * yearCourseworkWeight / 100) + (finalExamAvg * yearExamWeight / 100);
+          yearGrade =
+            (termsAvg * yearCourseworkWeight) / 100 +
+            (finalExamAvg * yearExamWeight) / 100;
           yearGrade = Math.round(yearGrade * 100) / 100;
         } else if (termsAvg !== null) {
           yearGrade = termsAvg;
@@ -408,7 +472,10 @@ export class CalculationService {
     };
   }
 
-  async calculateClassTermResults(termId: string, studentGroupId: string): Promise<StudentTermResult[]> {
+  async calculateClassTermResults(
+    termId: string,
+    studentGroupId: string,
+  ): Promise<StudentTermResult[]> {
     const supabase = this.supabaseService.getServiceClient();
 
     // 1. Enrolled student IDs
@@ -433,15 +500,47 @@ export class CalculationService {
     if (!academicYearId) return [];
 
     // 3. Bulk-fetch all shared data in parallel
-    const [studentsRes, termRes, subjectProfilesRes, allSubjectsRes, assessmentsRes] = await Promise.all([
-      supabase.schema('student').from('student').select('id, first_name, last_name').in('id', studentIds),
-      supabase.from('term').select('coursework_weight, exam_weight').eq('id', termId).single(),
-      supabase.schema('student').from('student_subject_profile').select('student_id, subject_id').in('student_id', studentIds).eq('academic_year_id', academicYearId),
-      supabase.from('subject').select('id, name, code, is_graded, sort_order').order('sort_order', { ascending: true }),
-      supabase.schema('grading').from('assessment').select('id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id').eq('term_id', termId).order('sort_order', { ascending: true }),
+    const [
+      studentsRes,
+      termRes,
+      subjectProfilesRes,
+      allSubjectsRes,
+      assessmentsRes,
+    ] = await Promise.all([
+      supabase
+        .schema('student')
+        .from('student')
+        .select('id, first_name, last_name')
+        .in('id', studentIds),
+      supabase
+        .from('term')
+        .select('coursework_weight, exam_weight')
+        .eq('id', termId)
+        .single(),
+      supabase
+        .schema('student')
+        .from('student_subject_profile')
+        .select('student_id, subject_id')
+        .in('student_id', studentIds)
+        .eq('academic_year_id', academicYearId),
+      supabase
+        .from('subject')
+        .select('id, name, code, is_graded, sort_order')
+        .order('sort_order', { ascending: true }),
+      supabase
+        .schema('grading')
+        .from('assessment')
+        .select(
+          'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id',
+        )
+        .eq('term_id', termId)
+        .order('sort_order', { ascending: true }),
     ]);
 
-    const studentMap = new Map<string, { id: string; first_name: string; last_name: string }>();
+    const studentMap = new Map<
+      string,
+      { id: string; first_name: string; last_name: string }
+    >();
     for (const s of studentsRes.data ?? []) studentMap.set(s.id, s);
 
     const cwWeight = termRes.data?.coursework_weight ?? 50;
@@ -453,7 +552,8 @@ export class CalculationService {
     // Map: studentId -> Set<subjectId>
     const studentSubjects = new Map<string, Set<string>>();
     for (const sp of subjectProfilesRes.data ?? []) {
-      if (!studentSubjects.has(sp.student_id)) studentSubjects.set(sp.student_id, new Set());
+      if (!studentSubjects.has(sp.student_id))
+        studentSubjects.set(sp.student_id, new Set());
       studentSubjects.get(sp.student_id)!.add(sp.subject_id);
     }
 
@@ -466,7 +566,9 @@ export class CalculationService {
       const { data: grades } = await supabase
         .schema('grading')
         .from('grade')
-        .select('id, assessment_id, student_id, score, is_excluded, exclusion_reason')
+        .select(
+          'id, assessment_id, student_id, score, is_excluded, exclusion_reason',
+        )
         .in('assessment_id', assessmentIds)
         .in('student_id', studentIds);
       allGrades = grades ?? [];
@@ -481,7 +583,8 @@ export class CalculationService {
     // Group assessments by subject_id
     const assessmentsBySubject = new Map<string, any[]>();
     for (const a of allAssessments) {
-      if (!assessmentsBySubject.has(a.subject_id)) assessmentsBySubject.set(a.subject_id, []);
+      if (!assessmentsBySubject.has(a.subject_id))
+        assessmentsBySubject.set(a.subject_id, []);
       assessmentsBySubject.get(a.subject_id)!.push(a);
     }
 
@@ -495,7 +598,14 @@ export class CalculationService {
       const mySubjectIds = studentSubjects.get(studentId);
 
       if (!mySubjectIds || mySubjectIds.size === 0) {
-        results.push({ studentId, firstName, lastName, termId, subjects: [], overallAverage: null });
+        results.push({
+          studentId,
+          firstName,
+          lastName,
+          termId,
+          subjects: [],
+          overallAverage: null,
+        });
         continue;
       }
 
@@ -507,9 +617,15 @@ export class CalculationService {
 
         if (!subj.is_graded) {
           subjectResults.push({
-            subjectId, subjectName: subj.name, subjectCode: subj.code,
-            isGraded: false, courseworkAverage: null, examAverage: null,
-            termComposite: null, gradeCount: 0, assessments: [],
+            subjectId,
+            subjectName: subj.name,
+            subjectCode: subj.code,
+            isGraded: false,
+            courseworkAverage: null,
+            examAverage: null,
+            termComposite: null,
+            gradeCount: 0,
+            assessments: [],
           });
           continue;
         }
@@ -527,16 +643,25 @@ export class CalculationService {
           const excluded = assessmentExcluded || gradeExcluded;
 
           const score = grade?.score ?? null;
-          const percentage = score !== null && a.max_score > 0
-            ? this.normalizeScore(score, a.max_score)
-            : null;
+          const percentage =
+            score !== null && a.max_score > 0
+              ? this.normalizeScore(score, a.max_score)
+              : null;
 
           assessmentGrades.push({
-            assessmentId: a.id, title: a.title, assessmentType: a.assessment_type,
-            maxScore: a.max_score, weight: a.weight, score,
-            percentage: percentage !== null ? Math.round(percentage * 100) / 100 : null,
+            assessmentId: a.id,
+            title: a.title,
+            assessmentType: a.assessment_type,
+            maxScore: a.max_score,
+            weight: a.weight,
+            score,
+            percentage:
+              percentage !== null ? Math.round(percentage * 100) / 100 : null,
             isExcluded: excluded,
-            exclusionReason: excluded ? (grade?.exclusion_reason || (assessmentExcluded ? 'Assessment excluded' : null)) : null,
+            exclusionReason: excluded
+              ? grade?.exclusion_reason ||
+                (assessmentExcluded ? 'Assessment excluded' : null)
+              : null,
           });
 
           if (score !== null && !excluded) {
@@ -550,12 +675,15 @@ export class CalculationService {
           }
         }
 
-        const courseworkAverage = this.calculateWeightedAverage(courseworkItems);
+        const courseworkAverage =
+          this.calculateWeightedAverage(courseworkItems);
         const examAverage = this.calculateWeightedAverage(examItems);
 
         let termComposite: number | null = null;
         if (courseworkAverage !== null && examAverage !== null) {
-          termComposite = (courseworkAverage * cwWeight / 100) + (examAverage * exWeight / 100);
+          termComposite =
+            (courseworkAverage * cwWeight) / 100 +
+            (examAverage * exWeight) / 100;
           termComposite = Math.round(termComposite * 100) / 100;
         } else if (courseworkAverage !== null) {
           termComposite = courseworkAverage;
@@ -564,11 +692,19 @@ export class CalculationService {
         }
 
         subjectResults.push({
-          subjectId, subjectName: subj.name, subjectCode: subj.code,
+          subjectId,
+          subjectName: subj.name,
+          subjectCode: subj.code,
           isGraded: true,
-          courseworkAverage: courseworkAverage !== null ? Math.round(courseworkAverage * 100) / 100 : null,
-          examAverage: examAverage !== null ? Math.round(examAverage * 100) / 100 : null,
-          termComposite, gradeCount, assessments: assessmentGrades,
+          courseworkAverage:
+            courseworkAverage !== null
+              ? Math.round(courseworkAverage * 100) / 100
+              : null,
+          examAverage:
+            examAverage !== null ? Math.round(examAverage * 100) / 100 : null,
+          termComposite,
+          gradeCount,
+          assessments: assessmentGrades,
         });
       }
 
@@ -583,7 +719,10 @@ export class CalculationService {
         .map((s) => s.termComposite!);
 
       results.push({
-        studentId, firstName, lastName, termId,
+        studentId,
+        firstName,
+        lastName,
+        termId,
         subjects: subjectResults,
         overallAverage: this.simpleAverage(gradedComposites),
       });
@@ -602,7 +741,10 @@ export class CalculationService {
     return results;
   }
 
-  async calculateClassYearResults(academicYearId: string, studentGroupId: string): Promise<StudentYearResult[]> {
+  async calculateClassYearResults(
+    academicYearId: string,
+    studentGroupId: string,
+  ): Promise<StudentYearResult[]> {
     const supabase = this.supabaseService.getServiceClient();
 
     // 1. Enrolled students
@@ -617,20 +759,50 @@ export class CalculationService {
     const studentIds = enrollments.map((e: any) => e.student_id);
 
     // 2. Bulk-fetch shared data in parallel
-    const [studentsRes, academicYearRes, termsRes, subjectProfilesRes, allSubjectsRes] = await Promise.all([
-      supabase.schema('student').from('student').select('id, first_name, last_name').in('id', studentIds),
-      supabase.from('academic_year').select('id, grading_model, year_exam_weight, year_coursework_weight').eq('id', academicYearId).single(),
-      supabase.from('term').select('id, name, sort_order, coursework_weight, exam_weight').eq('academic_year_id', academicYearId).order('sort_order', { ascending: true }),
-      supabase.schema('student').from('student_subject_profile').select('student_id, subject_id').in('student_id', studentIds).eq('academic_year_id', academicYearId),
-      supabase.from('subject').select('id, name, code, is_graded, sort_order').order('sort_order', { ascending: true }),
+    const [
+      studentsRes,
+      academicYearRes,
+      termsRes,
+      subjectProfilesRes,
+      allSubjectsRes,
+    ] = await Promise.all([
+      supabase
+        .schema('student')
+        .from('student')
+        .select('id, first_name, last_name')
+        .in('id', studentIds),
+      supabase
+        .from('academic_year')
+        .select('id, grading_model, year_exam_weight, year_coursework_weight')
+        .eq('id', academicYearId)
+        .single(),
+      supabase
+        .from('term')
+        .select('id, name, sort_order, coursework_weight, exam_weight')
+        .eq('academic_year_id', academicYearId)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .schema('student')
+        .from('student_subject_profile')
+        .select('student_id, subject_id')
+        .in('student_id', studentIds)
+        .eq('academic_year_id', academicYearId),
+      supabase
+        .from('subject')
+        .select('id, name, code, is_graded, sort_order')
+        .order('sort_order', { ascending: true }),
     ]);
 
-    const studentMap = new Map<string, { id: string; first_name: string; last_name: string }>();
+    const studentMap = new Map<
+      string,
+      { id: string; first_name: string; last_name: string }
+    >();
     for (const s of studentsRes.data ?? []) studentMap.set(s.id, s);
 
     const gradingModel = academicYearRes.data?.grading_model ?? 'term_based';
     const yearExamWeight = academicYearRes.data?.year_exam_weight ?? 50;
-    const yearCourseworkWeight = academicYearRes.data?.year_coursework_weight ?? 50;
+    const yearCourseworkWeight =
+      academicYearRes.data?.year_coursework_weight ?? 50;
 
     const terms = termsRes.data ?? [];
     if (terms.length === 0) return [];
@@ -640,7 +812,8 @@ export class CalculationService {
 
     const studentSubjects = new Map<string, Set<string>>();
     for (const sp of subjectProfilesRes.data ?? []) {
-      if (!studentSubjects.has(sp.student_id)) studentSubjects.set(sp.student_id, new Set());
+      if (!studentSubjects.has(sp.student_id))
+        studentSubjects.set(sp.student_id, new Set());
       studentSubjects.get(sp.student_id)!.add(sp.subject_id);
     }
 
@@ -650,7 +823,9 @@ export class CalculationService {
     const { data: allAssessmentsRaw } = await supabase
       .schema('grading')
       .from('assessment')
-      .select('id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id')
+      .select(
+        'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+      )
       .in('term_id', termIds)
       .order('sort_order', { ascending: true });
 
@@ -662,38 +837,57 @@ export class CalculationService {
       const { data: grades } = await supabase
         .schema('grading')
         .from('grade')
-        .select('id, assessment_id, student_id, score, is_excluded, exclusion_reason')
+        .select(
+          'id, assessment_id, student_id, score, is_excluded, exclusion_reason',
+        )
         .in('assessment_id', assessmentIds)
         .in('student_id', studentIds);
       allGrades = grades ?? [];
     }
 
     const gradeIndex = new Map<string, any>();
-    for (const g of allGrades) gradeIndex.set(`${g.student_id}:${g.assessment_id}`, g);
+    for (const g of allGrades)
+      gradeIndex.set(`${g.student_id}:${g.assessment_id}`, g);
 
     // Index assessments by term+subject
     const assessmentsByTermSubject = new Map<string, any[]>();
     for (const a of allAssessments) {
       const key = `${a.term_id}:${a.subject_id}`;
-      if (!assessmentsByTermSubject.has(key)) assessmentsByTermSubject.set(key, []);
+      if (!assessmentsByTermSubject.has(key))
+        assessmentsByTermSubject.set(key, []);
       assessmentsByTermSubject.get(key)!.push(a);
     }
 
     const termWeightMap = new Map<string, { cw: number; ex: number }>();
-    for (const t of terms) termWeightMap.set(t.id, { cw: t.coursework_weight ?? 50, ex: t.exam_weight ?? 50 });
+    for (const t of terms)
+      termWeightMap.set(t.id, {
+        cw: t.coursework_weight ?? 50,
+        ex: t.exam_weight ?? 50,
+      });
 
     // 4. Compute per-student year results in-memory
-    const computeSubjectTerm = (studentId: string, subjectId: string, termId: string): SubjectGradeSummary => {
+    const computeSubjectTerm = (
+      studentId: string,
+      subjectId: string,
+      termId: string,
+    ): SubjectGradeSummary => {
       const subj = subjectMap.get(subjectId);
       if (!subj || !subj.is_graded) {
         return {
-          subjectId, subjectName: subj?.name ?? 'Unknown', subjectCode: subj?.code ?? null,
-          isGraded: false, courseworkAverage: null, examAverage: null,
-          termComposite: null, gradeCount: 0, assessments: [],
+          subjectId,
+          subjectName: subj?.name ?? 'Unknown',
+          subjectCode: subj?.code ?? null,
+          isGraded: false,
+          courseworkAverage: null,
+          examAverage: null,
+          termComposite: null,
+          gradeCount: 0,
+          assessments: [],
         };
       }
 
-      const subjectAssessments = assessmentsByTermSubject.get(`${termId}:${subjectId}`) ?? [];
+      const subjectAssessments =
+        assessmentsByTermSubject.get(`${termId}:${subjectId}`) ?? [];
       const courseworkItems: { score: number; weight: number }[] = [];
       const examItems: { score: number; weight: number }[] = [];
       const assessmentGrades: AssessmentGrade[] = [];
@@ -705,20 +899,32 @@ export class CalculationService {
         const gradeExcluded = grade?.is_excluded ?? false;
         const excluded = assessmentExcluded || gradeExcluded;
         const score = grade?.score ?? null;
-        const percentage = score !== null && a.max_score > 0 ? this.normalizeScore(score, a.max_score) : null;
+        const percentage =
+          score !== null && a.max_score > 0
+            ? this.normalizeScore(score, a.max_score)
+            : null;
 
         assessmentGrades.push({
-          assessmentId: a.id, title: a.title, assessmentType: a.assessment_type,
-          maxScore: a.max_score, weight: a.weight, score,
-          percentage: percentage !== null ? Math.round(percentage * 100) / 100 : null,
+          assessmentId: a.id,
+          title: a.title,
+          assessmentType: a.assessment_type,
+          maxScore: a.max_score,
+          weight: a.weight,
+          score,
+          percentage:
+            percentage !== null ? Math.round(percentage * 100) / 100 : null,
           isExcluded: excluded,
-          exclusionReason: excluded ? (grade?.exclusion_reason || (assessmentExcluded ? 'Assessment excluded' : null)) : null,
+          exclusionReason: excluded
+            ? grade?.exclusion_reason ||
+              (assessmentExcluded ? 'Assessment excluded' : null)
+            : null,
         });
 
         if (score !== null && !excluded) {
           gradeCount++;
           const normalized = this.normalizeScore(score, a.max_score);
-          if (a.assessment_type === 'coursework') courseworkItems.push({ score: normalized, weight: a.weight });
+          if (a.assessment_type === 'coursework')
+            courseworkItems.push({ score: normalized, weight: a.weight });
           else examItems.push({ score: normalized, weight: a.weight });
         }
       }
@@ -729,7 +935,11 @@ export class CalculationService {
 
       let termComposite: number | null = null;
       if (courseworkAverage !== null && examAverage !== null) {
-        termComposite = Math.round(((courseworkAverage * tw.cw / 100) + (examAverage * tw.ex / 100)) * 100) / 100;
+        termComposite =
+          Math.round(
+            ((courseworkAverage * tw.cw) / 100 + (examAverage * tw.ex) / 100) *
+              100,
+          ) / 100;
       } else if (courseworkAverage !== null) {
         termComposite = courseworkAverage;
       } else if (examAverage !== null) {
@@ -737,11 +947,19 @@ export class CalculationService {
       }
 
       return {
-        subjectId, subjectName: subj.name, subjectCode: subj.code,
+        subjectId,
+        subjectName: subj.name,
+        subjectCode: subj.code,
         isGraded: true,
-        courseworkAverage: courseworkAverage !== null ? Math.round(courseworkAverage * 100) / 100 : null,
-        examAverage: examAverage !== null ? Math.round(examAverage * 100) / 100 : null,
-        termComposite, gradeCount, assessments: assessmentGrades,
+        courseworkAverage:
+          courseworkAverage !== null
+            ? Math.round(courseworkAverage * 100) / 100
+            : null,
+        examAverage:
+          examAverage !== null ? Math.round(examAverage * 100) / 100 : null,
+        termComposite,
+        gradeCount,
+        assessments: assessmentGrades,
       };
     };
 
@@ -755,19 +973,35 @@ export class CalculationService {
 
       if (!mySubjectIds || mySubjectIds.size === 0) {
         results.push({
-          studentId, firstName, lastName, academicYearId, gradingModel,
-          terms: terms.map((t: any) => ({ termId: t.id, termName: t.name, subjects: [], overallAverage: null })),
+          studentId,
+          firstName,
+          lastName,
+          academicYearId,
+          gradingModel,
+          terms: terms.map((t: any) => ({
+            termId: t.id,
+            termName: t.name,
+            subjects: [],
+            overallAverage: null,
+          })),
           yearEnd: { subjects: [], overallAverage: null },
         });
         continue;
       }
 
-      const termResults: { termId: string; termName: string; subjects: SubjectGradeSummary[]; overallAverage: number | null }[] = [];
+      const termResults: {
+        termId: string;
+        termName: string;
+        subjects: SubjectGradeSummary[];
+        overallAverage: number | null;
+      }[] = [];
 
       for (const term of terms) {
         const subjectResults: SubjectGradeSummary[] = [];
         for (const subjectId of mySubjectIds) {
-          subjectResults.push(computeSubjectTerm(studentId, subjectId, term.id));
+          subjectResults.push(
+            computeSubjectTerm(studentId, subjectId, term.id),
+          );
         }
         subjectResults.sort((a, b) => {
           const sa = subjectMap.get(a.subjectId)?.sort_order ?? 0;
@@ -775,23 +1009,42 @@ export class CalculationService {
           return sa - sb;
         });
 
-        const gradedComposites = subjectResults.filter((s) => s.isGraded && s.termComposite !== null).map((s) => s.termComposite!);
-        termResults.push({ termId: term.id, termName: term.name, subjects: subjectResults, overallAverage: this.simpleAverage(gradedComposites) });
+        const gradedComposites = subjectResults
+          .filter((s) => s.isGraded && s.termComposite !== null)
+          .map((s) => s.termComposite!);
+        termResults.push({
+          termId: term.id,
+          termName: term.name,
+          subjects: subjectResults,
+          overallAverage: this.simpleAverage(gradedComposites),
+        });
       }
 
       const allSubjectIdSet = new Set<string>();
-      for (const tr of termResults) for (const s of tr.subjects) if (s.isGraded) allSubjectIdSet.add(s.subjectId);
+      for (const tr of termResults)
+        for (const s of tr.subjects)
+          if (s.isGraded) allSubjectIdSet.add(s.subjectId);
 
       const yearEndSubjects: YearEndSubject[] = [];
       for (const subjectId of allSubjectIdSet) {
-        const termGrades: { termId: string; termName: string; termComposite: number | null }[] = [];
+        const termGrades: {
+          termId: string;
+          termName: string;
+          termComposite: number | null;
+        }[] = [];
         let subjectName = '';
         for (const tr of termResults) {
           const subj = tr.subjects.find((s) => s.subjectId === subjectId);
           if (subj) subjectName = subj.subjectName;
-          termGrades.push({ termId: tr.termId, termName: tr.termName, termComposite: subj?.termComposite ?? null });
+          termGrades.push({
+            termId: tr.termId,
+            termName: tr.termName,
+            termComposite: subj?.termComposite ?? null,
+          });
         }
-        const validComposites = termGrades.map((tg) => tg.termComposite).filter((c): c is number => c !== null);
+        const validComposites = termGrades
+          .map((tg) => tg.termComposite)
+          .filter((c): c is number => c !== null);
 
         let yearGrade: number | null = null;
         if (gradingModel === 'term_based') {
@@ -799,26 +1052,43 @@ export class CalculationService {
         } else {
           const termsAvg = this.simpleAverage(validComposites);
           const lastTerm = termResults[termResults.length - 1];
-          const finalExamAvg = lastTerm?.subjects.find((s) => s.subjectId === subjectId)?.examAverage ?? null;
+          const finalExamAvg =
+            lastTerm?.subjects.find((s) => s.subjectId === subjectId)
+              ?.examAverage ?? null;
           if (termsAvg !== null && finalExamAvg !== null) {
-            yearGrade = Math.round(((termsAvg * yearCourseworkWeight / 100) + (finalExamAvg * yearExamWeight / 100)) * 100) / 100;
+            yearGrade =
+              Math.round(
+                ((termsAvg * yearCourseworkWeight) / 100 +
+                  (finalExamAvg * yearExamWeight) / 100) *
+                  100,
+              ) / 100;
           } else if (termsAvg !== null) yearGrade = termsAvg;
           else if (finalExamAvg !== null) yearGrade = finalExamAvg;
         }
         yearEndSubjects.push({ subjectId, subjectName, yearGrade, termGrades });
       }
 
-      const yearGrades = yearEndSubjects.map((s) => s.yearGrade).filter((g): g is number => g !== null);
+      const yearGrades = yearEndSubjects
+        .map((s) => s.yearGrade)
+        .filter((g): g is number => g !== null);
 
       results.push({
-        studentId, firstName, lastName, academicYearId, gradingModel,
+        studentId,
+        firstName,
+        lastName,
+        academicYearId,
+        gradingModel,
         terms: termResults,
-        yearEnd: { subjects: yearEndSubjects, overallAverage: this.simpleAverage(yearGrades) },
+        yearEnd: {
+          subjects: yearEndSubjects,
+          overallAverage: this.simpleAverage(yearGrades),
+        },
       });
     }
 
     results.sort((a, b) => {
-      const avgDiff = (b.yearEnd.overallAverage ?? -1) - (a.yearEnd.overallAverage ?? -1);
+      const avgDiff =
+        (b.yearEnd.overallAverage ?? -1) - (a.yearEnd.overallAverage ?? -1);
       if (avgDiff !== 0) return avgDiff;
       return (a.lastName ?? '').localeCompare(b.lastName ?? '');
     });

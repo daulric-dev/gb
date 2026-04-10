@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { UpdateAcademicYearDto } from './dto/update-academic-year.dto';
@@ -19,7 +24,9 @@ export class AcademicYearService {
       .single();
 
     if (error || !data?.school_id) {
-      this.logger.error(`Failed to get school_id for user ${userId}: ${error?.message}`);
+      this.logger.error(
+        `Failed to get school_id for user ${userId}: ${error?.message}`,
+      );
       throw new BadRequestException('Could not determine school');
     }
 
@@ -94,7 +101,9 @@ export class AcademicYearService {
       .maybeSingle();
 
     if (error) {
-      this.logger.error(`Failed to fetch active academic year: ${error.message}`);
+      this.logger.error(
+        `Failed to fetch active academic year: ${error.message}`,
+      );
       return null;
     }
 
@@ -132,13 +141,20 @@ export class AcademicYearService {
         updateData.year_coursework_weight = null;
       }
     }
-    if (dto.yearExamWeight !== undefined) updateData.year_exam_weight = dto.yearExamWeight;
-    if (dto.yearCourseworkWeight !== undefined) updateData.year_coursework_weight = dto.yearCourseworkWeight;
+    if (dto.yearExamWeight !== undefined)
+      updateData.year_exam_weight = dto.yearExamWeight;
+    if (dto.yearCourseworkWeight !== undefined)
+      updateData.year_coursework_weight = dto.yearCourseworkWeight;
 
-    if (updateData.grading_model === 'year_based' || dto.yearExamWeight !== undefined || dto.yearCourseworkWeight !== undefined) {
+    if (
+      updateData.grading_model === 'year_based' ||
+      dto.yearExamWeight !== undefined ||
+      dto.yearCourseworkWeight !== undefined
+    ) {
       const existing = await this.findOne(yearId);
       const examWeight = dto.yearExamWeight ?? existing.year_exam_weight ?? 0;
-      const courseworkWeight = dto.yearCourseworkWeight ?? existing.year_coursework_weight ?? 0;
+      const courseworkWeight =
+        dto.yearCourseworkWeight ?? existing.year_coursework_weight ?? 0;
       const model = dto.gradingModel ?? existing.grading_model;
 
       if (model === 'year_based' && examWeight + courseworkWeight !== 100) {
@@ -154,7 +170,9 @@ export class AcademicYearService {
       .single();
 
     if (error || !data) {
-      this.logger.error(`Failed to update academic year ${yearId}: ${error?.message}`);
+      this.logger.error(
+        `Failed to update academic year ${yearId}: ${error?.message}`,
+      );
       throw new BadRequestException('Failed to update academic year');
     }
 
@@ -178,7 +196,9 @@ export class AcademicYearService {
       .single();
 
     if (error || !data) {
-      this.logger.error(`Failed to activate academic year ${yearId}: ${error?.message}`);
+      this.logger.error(
+        `Failed to activate academic year ${yearId}: ${error?.message}`,
+      );
       throw new BadRequestException('Failed to activate academic year');
     }
 
@@ -196,7 +216,9 @@ export class AcademicYearService {
       .single();
 
     if (error || !data) {
-      this.logger.error(`Failed to deactivate academic year ${yearId}: ${error?.message}`);
+      this.logger.error(
+        `Failed to deactivate academic year ${yearId}: ${error?.message}`,
+      );
       throw new BadRequestException('Failed to deactivate academic year');
     }
 

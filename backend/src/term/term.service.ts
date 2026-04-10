@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateTermDto } from './dto/create-term.dto';
 import { UpdateTermDto } from './dto/update-term.dto';
@@ -11,7 +17,9 @@ export class TermService {
 
   async create(userId: string, dto: CreateTermDto) {
     if (dto.examWeight + dto.courseworkWeight !== 100) {
-      throw new BadRequestException('Exam weight and coursework weight must add up to 100');
+      throw new BadRequestException(
+        'Exam weight and coursework weight must add up to 100',
+      );
     }
 
     if (new Date(dto.startDate) >= new Date(dto.endDate)) {
@@ -40,7 +48,9 @@ export class TermService {
 
     if (error) {
       if (error.code === '23505') {
-        throw new ConflictException('This term already exists for the selected academic year');
+        throw new ConflictException(
+          'This term already exists for the selected academic year',
+        );
       }
       this.logger.error(`Failed to create term: ${error.message}`);
       throw new BadRequestException('Failed to create term');
@@ -90,7 +100,9 @@ export class TermService {
       const examW = dto.examWeight ?? current.exam_weight;
       const courseworkW = dto.courseworkWeight ?? current.coursework_weight;
       if (examW + courseworkW !== 100) {
-        throw new BadRequestException('Exam weight and coursework weight must add up to 100');
+        throw new BadRequestException(
+          'Exam weight and coursework weight must add up to 100',
+        );
       }
     }
 
@@ -98,8 +110,10 @@ export class TermService {
     if (dto.startDate !== undefined) updateData.start_date = dto.startDate;
     if (dto.endDate !== undefined) updateData.end_date = dto.endDate;
     if (dto.examWeight !== undefined) updateData.exam_weight = dto.examWeight;
-    if (dto.courseworkWeight !== undefined) updateData.coursework_weight = dto.courseworkWeight;
-    if (dto.isMinistryReporting !== undefined) updateData.is_ministry_reporting = dto.isMinistryReporting;
+    if (dto.courseworkWeight !== undefined)
+      updateData.coursework_weight = dto.courseworkWeight;
+    if (dto.isMinistryReporting !== undefined)
+      updateData.is_ministry_reporting = dto.isMinistryReporting;
     if (dto.sortOrder !== undefined) updateData.sort_order = dto.sortOrder;
 
     const { data, error } = await supabase
@@ -124,14 +138,13 @@ export class TermService {
   async delete(termId: string) {
     const supabase = this.supabaseService.getServiceClient();
 
-    const { error } = await supabase
-      .from('term')
-      .delete()
-      .eq('id', termId);
+    const { error } = await supabase.from('term').delete().eq('id', termId);
 
     if (error) {
       if (error.code === '23503') {
-        throw new ConflictException('Cannot delete term - it has existing assessments or grades');
+        throw new ConflictException(
+          'Cannot delete term - it has existing assessments or grades',
+        );
       }
       this.logger.error(`Failed to delete term: ${error.message}`);
       throw new BadRequestException('Failed to delete term');

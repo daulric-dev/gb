@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { EnrollStudentDto } from './dto/enroll-student.dto';
 import { BulkEnrollDto } from './dto/bulk-enroll.dto';
@@ -27,7 +32,9 @@ export class EnrollmentService {
 
     if (error) {
       if (error.code === '23505') {
-        throw new ConflictException('Student is already enrolled in this class');
+        throw new ConflictException(
+          'Student is already enrolled in this class',
+        );
       }
       this.logger.error(`Failed to enroll student: ${error.message}`);
       throw new BadRequestException('Failed to enroll student');
@@ -53,7 +60,9 @@ export class EnrollmentService {
 
     if (error) {
       if (error.code === '23505') {
-        throw new ConflictException('One or more students are already enrolled in this class');
+        throw new ConflictException(
+          'One or more students are already enrolled in this class',
+        );
       }
       this.logger.error(`Failed to bulk enroll: ${error.message}`);
       throw new BadRequestException('Failed to enroll students');
@@ -68,7 +77,8 @@ export class EnrollmentService {
     const { data, error } = await supabase
       .schema('student')
       .from('student_group_enrollment')
-      .select(`
+      .select(
+        `
         id,
         enrolled_at,
         student:student_id (
@@ -79,7 +89,8 @@ export class EnrollmentService {
           date_of_birth,
           is_active
         )
-      `)
+      `,
+      )
       .eq('student_group_id', classId)
       .order('enrolled_at', { ascending: true });
 
@@ -134,7 +145,9 @@ export class EnrollmentService {
       .single();
 
     if (error || !data?.academic_year_id) {
-      throw new BadRequestException('Could not determine academic year for this class');
+      throw new BadRequestException(
+        'Could not determine academic year for this class',
+      );
     }
 
     return data.academic_year_id;
@@ -158,7 +171,9 @@ export class EnrollmentService {
 
     if (error) {
       if (error.code === '23505') {
-        throw new ConflictException('One or more subjects are already assigned to this student');
+        throw new ConflictException(
+          'One or more subjects are already assigned to this student',
+        );
       }
       this.logger.error(`Failed to assign subjects: ${error.message}`);
       throw new BadRequestException('Failed to assign subjects');
@@ -171,7 +186,11 @@ export class EnrollmentService {
     const academicYearId = await this.getAcademicYearId(classId);
     const supabase = this.supabaseService.getServiceClient();
 
-    const rows: { student_id: string; subject_id: string; academic_year_id: string }[] = [];
+    const rows: {
+      student_id: string;
+      subject_id: string;
+      academic_year_id: string;
+    }[] = [];
     for (const studentId of dto.studentIds) {
       for (const subjectId of dto.subjectIds) {
         rows.push({
@@ -190,13 +209,18 @@ export class EnrollmentService {
 
     if (error) {
       if (error.code === '23505') {
-        throw new ConflictException('One or more subjects are already assigned to these students');
+        throw new ConflictException(
+          'One or more subjects are already assigned to these students',
+        );
       }
       this.logger.error(`Failed to bulk assign subjects: ${error.message}`);
       throw new BadRequestException('Failed to assign subjects to students');
     }
 
-    return { assigned: data?.length ?? 0, message: 'Subjects assigned to students' };
+    return {
+      assigned: data?.length ?? 0,
+      message: 'Subjects assigned to students',
+    };
   }
 
   async getStudentSubjects(classId: string, studentId: string) {
@@ -211,7 +235,9 @@ export class EnrollmentService {
       .eq('academic_year_id', academicYearId);
 
     if (profileError) {
-      this.logger.error(`Failed to get student subject profiles: ${profileError.message}`);
+      this.logger.error(
+        `Failed to get student subject profiles: ${profileError.message}`,
+      );
       throw new BadRequestException('Failed to get student subjects');
     }
 
@@ -254,7 +280,9 @@ export class EnrollmentService {
 
     if (error) {
       if (error.code === '23503') {
-        throw new ConflictException('Cannot remove subject - student has existing grades for this subject');
+        throw new ConflictException(
+          'Cannot remove subject - student has existing grades for this subject',
+        );
       }
       this.logger.error(`Failed to remove subject: ${error.message}`);
       throw new BadRequestException('Failed to remove subject');

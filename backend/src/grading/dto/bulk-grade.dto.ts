@@ -1,4 +1,14 @@
-import { IsUUID, IsNotEmpty, IsArray, ValidateNested, IsNumber, IsOptional, IsString, Min, ArrayMinSize } from 'class-validator';
+import {
+  IsUUID,
+  IsNotEmpty,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ArrayMinSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class GradeEntry {
