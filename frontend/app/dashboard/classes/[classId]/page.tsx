@@ -442,14 +442,18 @@ export default function ClassDetailPage() {
                         {new Date(e.enrolled_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => (subjectStudent.value = e)}
-                        >
-                          <BookOpen className="mr-1 size-3" />
-                          Manage
-                        </Button>
+                        {info.isClassTeacher ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => (subjectStudent.value = e)}
+                          >
+                            <BookOpen className="mr-1 size-3" />
+                            Manage
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       {info.isClassTeacher && (
                         <TableCell className="text-right">
@@ -476,6 +480,7 @@ export default function ClassDetailPage() {
         </CardContent>
       </Card>
 
+      {info.isClassTeacher && (
       <Card className="animate-fade-in-up-delay-3">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -787,6 +792,7 @@ export default function ClassDetailPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
       <Dialog
         open={editingTeacher.value !== null}

@@ -63,6 +63,14 @@ export class ClassController {
     return this.classService.getSchoolTeachers(req.user.id);
   }
 
+  @Get(':classId/my-subjects')
+  async getMySubjects(
+    @Req() req: any,
+    @Param('classId') classId: string,
+  ) {
+    return this.classService.getMySubjectsForClass(req.user.id, classId);
+  }
+
   @Get(':classId/teachers')
   async getTeachers(@Param('classId') classId: string) {
     return this.classService.getTeachers(classId);

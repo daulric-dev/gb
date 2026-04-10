@@ -1,12 +1,5 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
@@ -19,31 +12,17 @@ import { BulkAssignSubjectsDto } from './dto/bulk-assign-subjects.dto';
 @ApiTags('Enrollment')
 @ApiBearerAuth()
 @Controller('classes/:classId')
-@UseGuards(AuthGuard, ClassTeacherGuard)
+@UseGuards(AuthGuard)
 export class EnrollmentController {
   constructor(private readonly enrollmentService: EnrollmentService) {}
 
   @Get('students')
-  getEnrolledStudents(@Param('classId') classId: string) {
-    return this.enrollmentService.getEnrolledStudents(classId);
-  }
-
-  @Post('enroll')
-  enroll(@Param('classId') classId: string, @Body() dto: EnrollStudentDto) {
-    return this.enrollmentService.enroll(classId, dto);
-  }
-
-  @Post('enroll/bulk')
-  bulkEnroll(@Param('classId') classId: string, @Body() dto: BulkEnrollDto) {
-    return this.enrollmentService.bulkEnroll(classId, dto);
-  }
-
-  @Delete('enroll/:studentId')
-  unenroll(
+  getEnrolledStudents(
+    @Req() req: any,
     @Param('classId') classId: string,
-    @Param('studentId') studentId: string,
+    @Query('subjectId') subjectId?: string,
   ) {
-    return this.enrollmentService.unenroll(classId, studentId);
+    return this.enrollmentService.getEnrolledStudents(classId, req.user.id, subjectId);
   }
 
   @Get('students/:studentId/subjects')
@@ -54,6 +33,28 @@ export class EnrollmentController {
     return this.enrollmentService.getStudentSubjects(classId, studentId);
   }
 
+  @UseGuards(ClassTeacherGuard)
+  @Post('enroll')
+  enroll(@Param('classId') classId: string, @Body() dto: EnrollStudentDto) {
+    return this.enrollmentService.enroll(classId, dto);
+  }
+
+  @UseGuards(ClassTeacherGuard)
+  @Post('enroll/bulk')
+  bulkEnroll(@Param('classId') classId: string, @Body() dto: BulkEnrollDto) {
+    return this.enrollmentService.bulkEnroll(classId, dto);
+  }
+
+  @UseGuards(ClassTeacherGuard)
+  @Delete('enroll/:studentId')
+  unenroll(
+    @Param('classId') classId: string,
+    @Param('studentId') studentId: string,
+  ) {
+    return this.enrollmentService.unenroll(classId, studentId);
+  }
+
+  @UseGuards(ClassTeacherGuard)
   @Post('subjects')
   assignSubjects(
     @Param('classId') classId: string,
@@ -62,6 +63,7 @@ export class EnrollmentController {
     return this.enrollmentService.assignSubjects(classId, dto);
   }
 
+  @UseGuards(ClassTeacherGuard)
   @Post('subjects/bulk')
   bulkAssignSubjects(
     @Param('classId') classId: string,
@@ -70,6 +72,7 @@ export class EnrollmentController {
     return this.enrollmentService.bulkAssignSubjects(classId, dto);
   }
 
+  @UseGuards(ClassTeacherGuard)
   @Delete('students/:studentId/subjects/:subjectId')
   removeSubject(
     @Param('classId') classId: string,
