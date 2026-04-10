@@ -11,10 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BackTitleToolbar } from "@/components/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Pencil, Trash2, Save, EyeOff, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, EyeOff, Eye } from "lucide-react";
 
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -213,23 +214,11 @@ export default function GradingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push(`/dashboard/classes/${classId}`)}
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">grading</h1>
-            <p className="text-muted-foreground mt-1">
-              {classInfo.value?.name} - enter and manage grades
-            </p>
-          </div>
-        </div>
-      </div>
+      <BackTitleToolbar
+        title="grading"
+        description={`${classInfo.value?.name ?? ""} - enter and manage grades`}
+        onBack={() => router.push(`/dashboard/classes/${classId}`)}
+      />
 
       <div className="grid grid-cols-2 gap-4 animate-fade-in-up-delay-1">
         <div className="space-y-1">

@@ -10,22 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DashboardPageHeader } from "@/components/dashboard-page-header";
 import { Plus, Search, Pencil } from "lucide-react";
 
 interface Student {
@@ -41,6 +28,81 @@ interface Student {
 
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+function StudentsSearchField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="relative animate-fade-in-up-delay-1">
+      <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        placeholder="Search by name..."
+        className="pl-9"
+        value={value}
+        onChange={onChange}
+      />
+    </div>
+  );
+}
+
+function StudentsRosterTable({
+  students,
+  onEdit,
+}: {
+  students: Student[];
+  onEdit: (student: Student) => void;
+}) {
+  return (
+    <div className="animate-fade-in-up-delay-1 rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Gender</TableHead>
+            <TableHead>Date of Birth</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {students.map((student) => (
+            <TableRow key={student.id}>
+              <TableCell className="font-medium">
+                {student.first_name} {student.last_name}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className="capitalize">
+                  {student.gender}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                {student.date_of_birth
+                  ? new Date(student.date_of_birth).toLocaleDateString()
+                  : "-"}
+              </TableCell>
+              <TableCell>
+                {student.is_active ? (
+                  <Badge>Active</Badge>
+                ) : (
+                  <Badge variant="secondary">Inactive</Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-right">
+                <Button variant="ghost" size="sm" onClick={() => onEdit(student)}>
+                  <Pencil className="size-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
 export default function StudentsPage() {
   useSignals();
@@ -71,44 +133,37 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div>
-          <h1 className="text-3xl font-bold">students</h1>
-          <p className="text-muted-foreground mt-1">
-            manage students in your school
-          </p>
-        </div>
-        <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 size-4" />
-            New Student
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Student</DialogTitle>
-              <DialogDescription>
-                Create a new student record for your school
-              </DialogDescription>
-            </DialogHeader>
-            <CreateStudentForm
-              onSuccess={() => {
-                createOpen.value = false;
-                fetchStudents(search.value);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <DashboardPageHeader
+        title="students"
+        description="manage students in your school"
+        action={
+          <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
+            <DialogTrigger render={<Button />}>
+              <Plus className="mr-2 size-4" />
+              New Student
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Student</DialogTitle>
+                <DialogDescription>
+                  Create a new student record for your school
+                </DialogDescription>
+              </DialogHeader>
+              <CreateStudentForm
+                onSuccess={() => {
+                  createOpen.value = false;
+                  fetchStudents(search.value);
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
-      <div className="relative animate-fade-in-up-delay-1">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name..."
-          className="pl-9"
-          value={search.value}
-          onChange={(e) => (search.value = e.target.value)}
-        />
-      </div>
+      <StudentsSearchField
+        value={search.value}
+        onChange={(e) => (search.value = e.target.value)}
+      />
 
       {loading.value ? (
         <div className="space-y-2">
@@ -117,60 +172,16 @@ export default function StudentsPage() {
           ))}
         </div>
       ) : students.value.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
+        <div className="py-12 text-center text-muted-foreground">
           {search.value
             ? "No students match your search."
             : "No students yet. Add your first one."}
         </div>
       ) : (
-        <div className="rounded-md border animate-fade-in-up-delay-1">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Gender</TableHead>
-                <TableHead>Date of Birth</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {students.value.map((student) => (
-                <TableRow key={student.id}>
-                  <TableCell className="font-medium">
-                    {student.first_name} {student.last_name}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {student.gender}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {student.date_of_birth
-                      ? new Date(student.date_of_birth).toLocaleDateString()
-                      : "-"}
-                  </TableCell>
-                  <TableCell>
-                    {student.is_active ? (
-                      <Badge>Active</Badge>
-                    ) : (
-                      <Badge variant="secondary">Inactive</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => (editStudent.value = student)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <StudentsRosterTable
+          students={students.value}
+          onEdit={(student) => (editStudent.value = student)}
+        />
       )}
 
       <Dialog

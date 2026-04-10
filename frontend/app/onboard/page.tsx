@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ModeToggle } from "@/components/mode-toggle";
+import { AuthPageShell } from "@/components/auth-page-shell";
 import { Plus } from "lucide-react";
 
 interface School {
@@ -33,6 +33,122 @@ interface School {
   name: string;
   parish: string | null;
   school_type: string | null;
+}
+
+function OnboardProfileCard({
+  firstName,
+  lastName,
+  schoolId,
+  loading,
+  schools,
+  schoolsLoading,
+  createDialogOpen,
+  onSubmit,
+  onSchoolCreated,
+}: {
+  firstName: ReturnType<typeof useSignal<string>>;
+  lastName: ReturnType<typeof useSignal<string>>;
+  schoolId: ReturnType<typeof useSignal<string>>;
+  loading: ReturnType<typeof useSignal<boolean>>;
+  schools: ReturnType<typeof useSignal<School[]>>;
+  schoolsLoading: ReturnType<typeof useSignal<boolean>>;
+  createDialogOpen: ReturnType<typeof useSignal<boolean>>;
+  onSubmit: (e: React.FormEvent) => void;
+  onSchoolCreated: (school: School) => void;
+}) {
+  return (
+    <Card className="w-full max-w-md">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Complete your profile</CardTitle>
+        <CardDescription>
+          Tell us a bit about yourself to get started
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">First name</Label>
+              <Input
+                id="firstName"
+                placeholder="John"
+                value={firstName.value}
+                onChange={(e) => (firstName.value = e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Last name</Label>
+              <Input
+                id="lastName"
+                placeholder="Doe"
+                value={lastName.value}
+                onChange={(e) => (lastName.value = e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="school">School</Label>
+              <Dialog open={createDialogOpen.value} onOpenChange={(v) => (createDialogOpen.value = v)}>
+                <DialogTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    />
+                  }
+                >
+                  <Plus className="size-3" />
+                  Create school
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create a School</DialogTitle>
+                    <DialogDescription>
+                      Add a new school to the system
+                    </DialogDescription>
+                  </DialogHeader>
+                  <CreateSchoolForm onSuccess={onSchoolCreated} />
+                </DialogContent>
+              </Dialog>
+            </div>
+            {schoolsLoading.value ? (
+              <Skeleton className="h-9 w-full" />
+            ) : (schools.value ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No schools found. Create one using the button above.
+              </p>
+            ) : (
+              <select
+                id="school"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={schoolId.value}
+                onChange={(e) => (schoolId.value = e.target.value)}
+                required
+              >
+                {(schools.value ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.parish ? ` - ${s.parish}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={loading.value || !schoolId.value}
+          >
+            {loading.value ? "Saving..." : "Get started"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function OnboardPage() {
@@ -89,102 +205,19 @@ export default function OnboardPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 bg-background">
-      <div className="absolute top-4 right-4">
-        <ModeToggle />
-      </div>
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Complete your profile</CardTitle>
-          <CardDescription>
-            Tell us a bit about yourself to get started
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="firstName">First name</Label>
-                <Input
-                  id="firstName"
-                  placeholder="John"
-                  value={firstName.value}
-                  onChange={(e) => (firstName.value = e.target.value)}
-                  required
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName">Last name</Label>
-                <Input
-                  id="lastName"
-                  placeholder="Doe"
-                  value={lastName.value}
-                  onChange={(e) => (lastName.value = e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="school">School</Label>
-                <Dialog open={createDialogOpen.value} onOpenChange={(v) => (createDialogOpen.value = v)}>
-                  <DialogTrigger
-                    render={
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      />
-                    }
-                  >
-                    <Plus className="size-3" />
-                    Create school
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create a School</DialogTitle>
-                      <DialogDescription>
-                        Add a new school to the system
-                      </DialogDescription>
-                    </DialogHeader>
-                    <CreateSchoolForm onSuccess={handleSchoolCreated} />
-                  </DialogContent>
-                </Dialog>
-              </div>
-              {schoolsLoading.value ? (
-                <Skeleton className="h-9 w-full" />
-              ) : schools.value.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No schools found. Create one using the button above.
-                </p>
-              ) : (
-                <select
-                  id="school"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  value={schoolId.value}
-                  onChange={(e) => (schoolId.value = e.target.value)}
-                  required
-                >
-                  {schools.value.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                      {s.parish ? ` - ${s.parish}` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={loading.value || !schoolId.value}
-            >
-              {loading.value ? "Saving..." : "Get started"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthPageShell>
+      <OnboardProfileCard
+        firstName={firstName}
+        lastName={lastName}
+        schoolId={schoolId}
+        loading={loading}
+        schools={schools}
+        schoolsLoading={schoolsLoading}
+        createDialogOpen={createDialogOpen}
+        onSubmit={handleSubmit}
+        onSchoolCreated={handleSchoolCreated}
+      />
+    </AuthPageShell>
   );
 }
 

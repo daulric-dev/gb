@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DashboardPageHeader } from "@/components/dashboard-page-header";
 import { Plus, Pencil } from "lucide-react";
 
 interface AcademicYear {
@@ -83,34 +84,32 @@ export default function AcademicYearsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div>
-          <h1 className="text-3xl font-bold">academic years</h1>
-          <p className="text-muted-foreground mt-1">
-            manage your school&apos;s academic years
-          </p>
-        </div>
-        <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 size-4" />
-            New Academic Year
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Academic Year</DialogTitle>
-              <DialogDescription>
-                Add a new academic year for your school
-              </DialogDescription>
-            </DialogHeader>
-            <CreateYearForm
-              onSuccess={() => {
-                dialogOpen.value = false;
-                fetchYears();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <DashboardPageHeader
+        title="academic years"
+        description={"manage your school's academic years"}
+        action={
+          <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
+            <DialogTrigger render={<Button />}>
+              <Plus className="mr-2 size-4" />
+              New Academic Year
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Academic Year</DialogTitle>
+                <DialogDescription>
+                  Add a new academic year for your school
+                </DialogDescription>
+              </DialogHeader>
+              <CreateYearForm
+                onSuccess={() => {
+                  dialogOpen.value = false;
+                  fetchYears();
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {loading.value ? (
         <div className="space-y-2">

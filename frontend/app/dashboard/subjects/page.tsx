@@ -10,22 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DashboardPageHeader } from "@/components/dashboard-page-header";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 interface Subject {
@@ -73,34 +60,32 @@ export default function SubjectsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div>
-          <h1 className="text-3xl font-bold">subjects</h1>
-          <p className="text-muted-foreground mt-1">
-            manage subjects for your school
-          </p>
-        </div>
-        <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 size-4" />
-            New Subject
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Subject</DialogTitle>
-              <DialogDescription>
-                Add a new subject for your school
-              </DialogDescription>
-            </DialogHeader>
-            <CreateSubjectForm
-              onSuccess={() => {
-                createOpen.value = false;
-                fetchSubjects();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <DashboardPageHeader
+        title="subjects"
+        description="manage subjects for your school"
+        action={
+          <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
+            <DialogTrigger render={<Button />}>
+              <Plus className="mr-2 size-4" />
+              New Subject
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Subject</DialogTitle>
+                <DialogDescription>
+                  Add a new subject for your school
+                </DialogDescription>
+              </DialogHeader>
+              <CreateSubjectForm
+                onSuccess={() => {
+                  createOpen.value = false;
+                  fetchSubjects();
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {loading.value ? (
         <div className="space-y-2">

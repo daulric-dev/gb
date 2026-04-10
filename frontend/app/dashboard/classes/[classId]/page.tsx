@@ -9,6 +9,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BackTitleToolbar } from "@/components/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -244,53 +245,50 @@ export default function ClassDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/dashboard/classes")}>
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{info.name}</h1>
-            <p className="text-muted-foreground mt-1">
-              {info.isClassTeacher ? "You are the class teacher" : "You teach subjects in this class"}
-            </p>
+      <BackTitleToolbar
+        title={info.name}
+        description={
+          info.isClassTeacher
+            ? "You are the class teacher"
+            : "You teach subjects in this class"
+        }
+        onBack={() => router.push("/dashboard/classes")}
+        actions={
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/dashboard/classes/${classId}/grading`)}
+            >
+              <ClipboardList className="mr-2 size-4" />
+              Grading
+            </Button>
+            {info.isClassTeacher && (
+              <Dialog open={enrollOpen.value} onOpenChange={(v) => (enrollOpen.value = v)}>
+                <DialogTrigger render={<Button />}>
+                  <UserPlus className="mr-2 size-4" />
+                  Enroll Students
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Enroll Students</DialogTitle>
+                    <DialogDescription>
+                      Select students to enroll in {info.name}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <EnrollForm
+                    classId={classId}
+                    enrolledIds={enrolled.value.map((e) => e.student.id)}
+                    onSuccess={() => {
+                      enrollOpen.value = false;
+                      fetchData();
+                    }}
+                  />
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push(`/dashboard/classes/${classId}/grading`)}
-          >
-            <ClipboardList className="mr-2 size-4" />
-            Grading
-          </Button>
-          {info.isClassTeacher && (
-          <Dialog open={enrollOpen.value} onOpenChange={(v) => (enrollOpen.value = v)}>
-            <DialogTrigger render={<Button />}>
-              <UserPlus className="mr-2 size-4" />
-              Enroll Students
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Enroll Students</DialogTitle>
-                <DialogDescription>
-                  Select students to enroll in {info.name}
-                </DialogDescription>
-              </DialogHeader>
-              <EnrollForm
-                classId={classId}
-                enrolledIds={enrolled.value.map((e) => e.student.id)}
-                onSuccess={() => {
-                  enrollOpen.value = false;
-                  fetchData();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       <Card className="animate-fade-in-up-delay-1">
         <CardHeader>

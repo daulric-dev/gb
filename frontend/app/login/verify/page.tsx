@@ -7,12 +7,12 @@ import { api, ApiError } from "@/lib/api";
 import { setTokens } from "@/lib/auth";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; 
+import { AuthPageShell } from "@/components/auth-page-shell";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";
-import { ModeToggle } from "@/components/mode-toggle";
 
-function VerifyForm() {
+function VerifyOtpForm() {
   useSignals();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -61,63 +61,66 @@ function VerifyForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 bg-background">
-      <div className="absolute top-4 right-4">
-        <ModeToggle />
-      </div>
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Enter your code</CardTitle>
-          <CardDescription>
-            We sent an 8-digit code to{" "}
-            <span className="font-medium text-foreground">{email}</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex justify-center">
-              <InputOTP maxLength={8} value={code.value} onChange={(v) => (code.value = v)}>
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                </InputOTPGroup>
-                <InputOTPSeparator />
-                <InputOTPGroup>
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                  <InputOTPSlot index={6} />
-                  <InputOTPSlot index={7} />
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={loading.value || code.value.length !== 8}
-             >
-              {loading.value ? "Verifying..." : "Verify"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => router.push("/login")}
-            >
-              Back to login
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <Card className="w-full max-w-md">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Enter your code</CardTitle>
+        <CardDescription>
+          We sent an 8-digit code to{" "}
+          <span className="font-medium text-foreground">{email}</span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex justify-center">
+            <InputOTP maxLength={8} value={code.value} onChange={(v) => (code.value = v)}>
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+              </InputOTPGroup>
+              <InputOTPSeparator />
+              <InputOTPGroup>
+                <InputOTPSlot index={4} />
+                <InputOTPSlot index={5} />
+                <InputOTPSlot index={6} />
+                <InputOTPSlot index={7} />
+              </InputOTPGroup>
+            </InputOTP>
+          </div>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={loading.value || code.value.length !== 8}
+          >
+            {loading.value ? "Verifying..." : "Verify"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            onClick={() => router.push("/login")}
+          >
+            Back to login
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function VerifyContent() {
+  return (
+    <AuthPageShell>
+      <VerifyOtpForm />
+    </AuthPageShell>
   );
 }
 
 export default function VerifyPage() {
   return (
     <Suspense>
-      <VerifyForm />
+      <VerifyContent />
     </Suspense>
   );
 }
