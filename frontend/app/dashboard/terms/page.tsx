@@ -10,22 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DashboardPageHeader } from "@/components/dashboard-page-header";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 interface AcademicYear {
@@ -46,8 +33,7 @@ interface Term {
   sort_order: number;
 }
 
-const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 const termLabel: Record<string, string> = {
   michaelmas: "Michaelmas",
@@ -107,40 +93,38 @@ export default function TermsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div>
-          <h1 className="text-3xl font-bold">terms</h1>
-          <p className="text-muted-foreground mt-1">
-            manage terms for each academic year
-          </p>
-        </div>
-        <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-          <DialogTrigger
-            render={
-              <Button disabled={!selectedYearId.value || existingTermNames.length >= 3} />
-            }
-          >
-            <Plus className="mr-2 size-4" />
-            New Term
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Term</DialogTitle>
-              <DialogDescription>
-                Add a term to the selected academic year
-              </DialogDescription>
-            </DialogHeader>
-            <CreateTermForm
-              academicYearId={selectedYearId.value}
-              existingNames={existingTermNames}
-              onSuccess={() => {
-                createOpen.value = false;
-                fetchTerms(selectedYearId.value);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <DashboardPageHeader
+        title="terms"
+        description="manage terms for each academic year"
+        action={
+          <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
+            <DialogTrigger
+              render={
+                <Button disabled={!selectedYearId.value || existingTermNames.length >= 3} />
+              }
+            >
+              <Plus className="mr-2 size-4" />
+              New Term
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Term</DialogTitle>
+                <DialogDescription>
+                  Add a term to the selected academic year
+                </DialogDescription>
+              </DialogHeader>
+              <CreateTermForm
+                academicYearId={selectedYearId.value}
+                existingNames={existingTermNames}
+                onSuccess={() => {
+                  createOpen.value = false;
+                  fetchTerms(selectedYearId.value);
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {loading.value ? (
         <Skeleton className="h-9 w-full" />
@@ -264,15 +248,7 @@ export default function TermsPage() {
   );
 }
 
-function CreateTermForm({
-  academicYearId,
-  existingNames,
-  onSuccess,
-}: {
-  academicYearId: string;
-  existingNames: string[];
-  onSuccess: () => void;
-}) {
+function CreateTermForm({academicYearId, existingNames, onSuccess}: {academicYearId: string; existingNames: string[]; onSuccess: () => void}) {
   useSignals();
   const availableNames = (["michaelmas", "hilary", "trinity"] as const).filter(
     (n) => !existingNames.includes(n),
@@ -402,13 +378,7 @@ function CreateTermForm({
   );
 }
 
-function EditTermForm({
-  term,
-  onSuccess,
-}: {
-  term: Term;
-  onSuccess: () => void;
-}) {
+function EditTermForm({term, onSuccess}: {term: Term; onSuccess: () => void}) {
   useSignals();
   const startDate = useSignal(term.start_date);
   const endDate = useSignal(term.end_date);

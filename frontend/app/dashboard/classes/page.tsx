@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DashboardPageHeader } from "@/components/dashboard-page-header";
 import { Plus, Users, BookOpen } from "lucide-react";
 
 interface ClassItem {
@@ -102,34 +103,32 @@ export default function ClassesPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <div>
-          <h1 className="text-3xl font-bold">classes</h1>
-          <p className="text-muted-foreground mt-1">
-            view and manage your assigned classes
-          </p>
-        </div>
-        <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 size-4" />
-            New Class
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Class</DialogTitle>
-              <DialogDescription>
-                Add a new class for an academic year
-              </DialogDescription>
-            </DialogHeader>
-            <CreateClassForm
-              onSuccess={() => {
-                dialogOpen.value = false;
-                fetchData();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <DashboardPageHeader
+        title="classes"
+        description="view and manage your assigned classes"
+        action={
+          <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
+            <DialogTrigger render={<Button />}>
+              <Plus className="mr-2 size-4" />
+              New Class
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Class</DialogTitle>
+                <DialogDescription>
+                  Add a new class for an academic year
+                </DialogDescription>
+              </DialogHeader>
+              <CreateClassForm
+                onSuccess={() => {
+                  dialogOpen.value = false;
+                  fetchData();
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {loading.value ? (
         <div className="space-y-4">
