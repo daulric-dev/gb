@@ -170,6 +170,61 @@ export class ClassService {
     return 'Class deleted';
   }
 
+  async getMySubjectsForClass(userId: string, classId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: profile } = await supabase
+      .from('user_profile')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    const isAdmin = profile?.role === 'admin';
+
+    let isClassTeacher = false;
+    if (!isAdmin) {
+      const { data: groupAssignment } = await supabase
+        .schema('staff')
+        .from('teacher_group_assignment')
+        .select('is_class_teacher')
+        .eq('user_profile_id', userId)
+        .eq('student_group_id', classId)
+        .single();
+
+      isClassTeacher = !!groupAssignment?.is_class_teacher;
+    }
+
+    if (isAdmin || isClassTeacher) {
+      const { data: subjects } = await supabase
+        .from('subject')
+        .select('id, name, code, is_graded, sort_order')
+        .order('sort_order')
+        .order('name');
+
+      return subjects ?? [];
+    }
+
+    const { data: subjectAssignments } = await supabase
+      .schema('staff')
+      .from('teacher_subject_assignment')
+      .select('subject_id')
+      .eq('user_profile_id', userId)
+      .eq('student_group_id', classId);
+
+    if (!subjectAssignments?.length) return [];
+
+    const subjectIds = subjectAssignments.map((sa) => sa.subject_id);
+
+    const { data: subjects } = await supabase
+      .from('subject')
+      .select('id, name, code, is_graded, sort_order')
+      .in('id', subjectIds)
+      .order('sort_order')
+      .order('name');
+
+    return subjects ?? [];
+  }
+
   async getTeachers(classId: string) {
     const supabase = this.supabaseService.getServiceClient();
 

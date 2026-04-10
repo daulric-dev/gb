@@ -95,7 +95,7 @@ export default function GradingPage() {
       api<ClassInfo[]>("/classes").then(
         (cls) => cls.find((c) => c.id === classId) ?? null,
       ),
-      api<Subject[]>("/subjects").catch(() => []),
+      api<Subject[]>(`/classes/${classId}/my-subjects`).catch(() => []),
       api<AcademicYear[]>("/academic-years").catch(() => []),
     ]).then(([info, subs]) => {
       classInfo.value = info;
@@ -416,6 +416,7 @@ export default function GradingPage() {
                 maxScore={selectedAssessment.value.max_score}
                 existingGrades={grades.value}
                 classId={classId}
+                subjectId={selectedSubjectId.value}
                 onSaved={fetchGrades}
               />
             )}
@@ -454,12 +455,14 @@ function GradeEntryTable({
   maxScore,
   existingGrades,
   classId,
+  subjectId,
   onSaved,
 }: {
   assessmentId: string;
   maxScore: number;
   existingGrades: GradeRow[];
   classId: string;
+  subjectId: string;
   onSaved: () => void;
 }) {
   useSignals();
@@ -474,13 +477,15 @@ function GradeEntryTable({
   const loadingStudents = useSignal(true);
 
   useEffect(() => {
+    if (!subjectId) return;
+    loadingStudents.value = true;
     api<{ id: string; student: { id: string; first_name: string; last_name: string } }[]>(
-      `/classes/${classId}/students`,
+      `/classes/${classId}/students?subjectId=${subjectId}`,
     )
       .then((data) => (enrolled.value = data))
       .catch(() => {})
       .finally(() => (loadingStudents.value = false));
-  }, [classId]);
+  }, [classId, subjectId]);
 
   useEffect(() => {
     const map = new Map<string, { score: string; remarks: string }>();

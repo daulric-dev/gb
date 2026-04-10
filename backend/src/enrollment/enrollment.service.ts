@@ -71,10 +71,10 @@ export class EnrollmentService {
     return { enrolled: data?.length ?? 0, message: 'Students enrolled' };
   }
 
-  async getEnrolledStudents(classId: string) {
+  async getEnrolledStudents(classId: string, userId?: string, subjectId?: string) {
     const supabase = this.supabaseService.getServiceClient();
 
-    const { data, error } = await supabase
+    const { data: allEnrolled, error } = await supabase
       .schema('student')
       .from('student_group_enrollment')
       .select(
@@ -99,7 +99,73 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to get enrolled students');
     }
 
-    return data ?? [];
+    if (!allEnrolled?.length) return [];
+
+    let filtered = allEnrolled;
+
+    if (subjectId) {
+      const academicYearId = await this.getAcademicYearId(classId);
+      const studentIds = allEnrolled.map((e: any) => e.student.id);
+
+      const { data: profiles } = await supabase
+        .schema('student')
+        .from('student_subject_profile')
+        .select('student_id')
+        .in('student_id', studentIds)
+        .eq('subject_id', subjectId)
+        .eq('academic_year_id', academicYearId);
+
+      const assignedIds = new Set((profiles ?? []).map((p) => p.student_id));
+      filtered = filtered.filter((e: any) => assignedIds.has(e.student.id));
+    }
+
+    if (!userId) return filtered;
+
+    const { data: profile } = await supabase
+      .from('user_profile')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (profile?.role === 'admin') return filtered;
+
+    const { data: groupAssignment } = await supabase
+      .schema('staff')
+      .from('teacher_group_assignment')
+      .select('is_class_teacher')
+      .eq('user_profile_id', userId)
+      .eq('student_group_id', classId)
+      .single();
+
+    if (groupAssignment?.is_class_teacher) return filtered;
+
+    const { data: subjectAssignments } = await supabase
+      .schema('staff')
+      .from('teacher_subject_assignment')
+      .select('subject_id')
+      .eq('user_profile_id', userId)
+      .eq('student_group_id', classId);
+
+    if (!subjectAssignments?.length) return [];
+
+    const teacherSubjectIds = subjectAssignments.map((sa) => sa.subject_id);
+    const studentIds = filtered.map((e: any) => e.student.id);
+
+    const academicYearId = await this.getAcademicYearId(classId);
+
+    const { data: profiles } = await supabase
+      .schema('student')
+      .from('student_subject_profile')
+      .select('student_id, subject_id')
+      .in('student_id', studentIds)
+      .in('subject_id', teacherSubjectIds)
+      .eq('academic_year_id', academicYearId);
+
+    const studentIdsWithSubject = new Set(
+      (profiles ?? []).map((p) => p.student_id),
+    );
+
+    return filtered.filter((e: any) => studentIdsWithSubject.has(e.student.id));
   }
 
   async unenroll(classId: string, studentId: string) {
