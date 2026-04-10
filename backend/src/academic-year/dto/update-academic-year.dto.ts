@@ -1,4 +1,14 @@
-import {IsString, IsDateString, IsEnum, IsInt, IsBoolean, Min, Max, MaxLength, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsBoolean,
+  Min,
+  Max,
+  MaxLength,
+  IsOptional,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateAcademicYearDto {
@@ -18,7 +28,10 @@ export class UpdateAcademicYearDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiPropertyOptional({ example: 'term_based', enum: ['term_based', 'year_based'] })
+  @ApiPropertyOptional({
+    example: 'term_based',
+    enum: ['term_based', 'year_based'],
+  })
   @IsOptional()
   @IsEnum(['term_based', 'year_based'])
   gradingModel?: 'term_based' | 'year_based';

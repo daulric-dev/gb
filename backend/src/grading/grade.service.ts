@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
@@ -33,7 +39,10 @@ export class GradeService {
           'Grade already exists for this student and assessment',
         );
       }
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to enter grades for this subject',
         );
@@ -62,7 +71,10 @@ export class GradeService {
       .upsert(rows, { onConflict: 'assessment_id, student_id' });
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to enter grades for this subject',
         );
@@ -79,7 +91,9 @@ export class GradeService {
 
     const { data: grades, error } = await supabase
       .from('grade')
-      .select('id, assessment_id, student_id, score, letter_grade, remarks, is_excluded, exclusion_reason, created_at, updated_at')
+      .select(
+        'id, assessment_id, student_id, score, letter_grade, remarks, is_excluded, exclusion_reason, created_at, updated_at',
+      )
       .eq('assessment_id', assessmentId);
 
     if (error) {
@@ -98,9 +112,7 @@ export class GradeService {
       .select('id, first_name, last_name')
       .in('id', studentIds);
 
-    const studentMap = new Map(
-      (students ?? []).map((s) => [s.id, s]),
-    );
+    const studentMap = new Map((students ?? []).map((s) => [s.id, s]));
 
     return grades
       .map((g) => ({
@@ -119,7 +131,9 @@ export class GradeService {
 
     const { data: assessments, error: aErr } = await supabase
       .from('assessment')
-      .select('id, title, max_score, assessment_type, weight, is_excluded, sort_order')
+      .select(
+        'id, title, max_score, assessment_type, weight, is_excluded, sort_order',
+      )
       .eq('term_id', termId)
       .eq('subject_id', subjectId)
       .order('sort_order');
@@ -144,7 +158,10 @@ export class GradeService {
     }
 
     const studentIds = [...new Set((grades ?? []).map((g) => g.student_id))];
-    let studentMap = new Map<string, { id: string; first_name: string; last_name: string }>();
+    let studentMap = new Map<
+      string,
+      { id: string; first_name: string; last_name: string }
+    >();
 
     if (studentIds.length > 0) {
       const serviceClient = this.supabaseService.getServiceClient();
@@ -173,7 +190,12 @@ export class GradeService {
     }));
   }
 
-  async update(gradeId: string, userId: string, dto: UpdateGradeDto, token: string) {
+  async update(
+    gradeId: string,
+    userId: string,
+    dto: UpdateGradeDto,
+    token: string,
+  ) {
     const supabase = this.supabaseService.createUserClient(token, 'grading');
 
     const updateData: Record<string, unknown> = { updated_by: userId };
@@ -188,7 +210,10 @@ export class GradeService {
       .single();
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to update grades for this subject',
         );
@@ -200,7 +225,12 @@ export class GradeService {
     return data;
   }
 
-  async exclude(gradeId: string, userId: string, dto: ExcludeDto, token: string) {
+  async exclude(
+    gradeId: string,
+    userId: string,
+    dto: ExcludeDto,
+    token: string,
+  ) {
     const supabase = this.supabaseService.createUserClient(token, 'grading');
 
     const { data, error } = await supabase
@@ -215,7 +245,10 @@ export class GradeService {
       .single();
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to update grades for this subject',
         );

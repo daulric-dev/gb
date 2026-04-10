@@ -46,7 +46,9 @@ export class AuthService {
       });
 
       if (error || !data.session) {
-        this.logger.error(`OTP verification failed for ${email}: ${error?.message}`);
+        this.logger.error(
+          `OTP verification failed for ${email}: ${error?.message}`,
+        );
         throw new UnauthorizedException('Invalid or expired OTP');
       }
 
@@ -68,7 +70,9 @@ export class AuthService {
           .single();
 
         if (insertError) {
-          this.logger.error(`Failed to create user_profile for ${userId}: ${insertError.message}`);
+          this.logger.error(
+            `Failed to create user_profile for ${userId}: ${insertError.message}`,
+          );
         }
         profile = newProfile;
       }
@@ -108,7 +112,10 @@ export class AuthService {
     }
   }
 
-  async onboard(userId: string, dto: { firstName: string; lastName: string; schoolId: string }) {
+  async onboard(
+    userId: string,
+    dto: { firstName: string; lastName: string; schoolId: string },
+  ) {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase

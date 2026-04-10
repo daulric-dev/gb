@@ -2,13 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
-import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger"
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(
-    AppModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create(AppModule, new FastifyAdapter());
 
   const config = new DocumentBuilder()
     .setTitle('gbv2 api')
@@ -39,4 +36,5 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 3001);
 }
+
 bootstrap();

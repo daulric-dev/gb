@@ -233,7 +233,7 @@ export default function ClassDetailPage() {
           <ArrowLeft className="mr-2 size-4" /> Back to Classes
         </Button>
         <div className="text-center py-12 text-muted-foreground">
-          Class not found or you don't have access.
+          Class not found or you don&apos;t have access.
         </div>
       </div>
     );

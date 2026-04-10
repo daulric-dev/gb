@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AssessmentService } from './assessment.service';
@@ -37,11 +48,7 @@ export class AssessmentController {
 
   @Post()
   create(@Body() dto: CreateAssessmentDto, @Req() req: any) {
-    return this.assessmentService.create(
-      req.user.id,
-      dto,
-      this.getToken(req),
-    );
+    return this.assessmentService.create(req.user.id, dto, this.getToken(req));
   }
 
   @Patch(':id')
@@ -54,11 +61,7 @@ export class AssessmentController {
   }
 
   @Patch(':id/exclude')
-  exclude(
-    @Param('id') id: string,
-    @Body() dto: ExcludeDto,
-    @Req() req: any,
-  ) {
+  exclude(@Param('id') id: string, @Body() dto: ExcludeDto, @Req() req: any) {
     return this.assessmentService.exclude(id, dto, this.getToken(req));
   }
 

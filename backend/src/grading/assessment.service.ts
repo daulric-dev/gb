@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
@@ -29,7 +35,10 @@ export class AssessmentService {
       .single();
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to create assessments for this subject in this class',
         );
@@ -84,7 +93,8 @@ export class AssessmentService {
 
     const updateData: Record<string, unknown> = {};
     if (dto.title !== undefined) updateData.title = dto.title;
-    if (dto.assessmentDate !== undefined) updateData.assessment_date = dto.assessmentDate;
+    if (dto.assessmentDate !== undefined)
+      updateData.assessment_date = dto.assessmentDate;
     if (dto.maxScore !== undefined) updateData.max_score = dto.maxScore;
     if (dto.weight !== undefined) updateData.weight = dto.weight;
     if (dto.sortOrder !== undefined) updateData.sort_order = dto.sortOrder;
@@ -97,7 +107,10 @@ export class AssessmentService {
       .single();
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to update this assessment',
         );
@@ -123,7 +136,10 @@ export class AssessmentService {
       .single();
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to update this assessment',
         );
@@ -144,7 +160,10 @@ export class AssessmentService {
       .eq('id', assessmentId);
 
     if (error) {
-      if (error.code === '42501' || error.message?.includes('row-level security')) {
+      if (
+        error.code === '42501' ||
+        error.message?.includes('row-level security')
+      ) {
         throw new ForbiddenException(
           'You are not assigned to delete this assessment',
         );

@@ -1,4 +1,14 @@
-import { IsString, IsNotEmpty, IsDateString, IsEnum, IsInt, Min, Max, ValidateIf, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  Min,
+  Max,
+  ValidateIf,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAcademicYearDto {

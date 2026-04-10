@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
@@ -19,7 +25,9 @@ export class SubjectService {
       .single();
 
     if (profileError || !profile?.school_id) {
-      this.logger.error(`Failed to get school for user ${userId}: ${profileError?.message}`);
+      this.logger.error(
+        `Failed to get school for user ${userId}: ${profileError?.message}`,
+      );
       throw new BadRequestException('Could not determine your school');
     }
 
@@ -56,7 +64,9 @@ export class SubjectService {
       .single();
 
     if (profileError || !profile?.school_id) {
-      this.logger.error(`Failed to get school for user ${userId}: ${profileError?.message}`);
+      this.logger.error(
+        `Failed to get school for user ${userId}: ${profileError?.message}`,
+      );
       throw new BadRequestException('Could not determine your school');
     }
 
@@ -132,7 +142,9 @@ export class SubjectService {
 
     if (error) {
       if (error.code === '23503') {
-        throw new ConflictException('Cannot delete subject - it has existing grades or assignments');
+        throw new ConflictException(
+          'Cannot delete subject - it has existing grades or assignments',
+        );
       }
       this.logger.error(`Failed to delete subject: ${error.message}`);
       throw new BadRequestException('Failed to delete subject');

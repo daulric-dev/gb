@@ -19,7 +19,9 @@ export class ClassTeacherGuard implements CanActivate {
     const classId = request.params?.classId;
 
     if (!userId || !classId) {
-      throw new ForbiddenException('Only the class teacher can perform this action');
+      throw new ForbiddenException(
+        'Only the class teacher can perform this action',
+      );
     }
 
     const supabase = this.supabaseService.getServiceClient();
@@ -44,8 +46,12 @@ export class ClassTeacherGuard implements CanActivate {
       .single();
 
     if (error || !assignment) {
-      this.logger.warn(`User ${userId} denied class teacher access to ${classId}`);
-      throw new ForbiddenException('Only the class teacher can perform this action');
+      this.logger.warn(
+        `User ${userId} denied class teacher access to ${classId}`,
+      );
+      throw new ForbiddenException(
+        'Only the class teacher can perform this action',
+      );
     }
 
     return true;

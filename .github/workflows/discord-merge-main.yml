@@ -1,0 +1,59 @@
+name: Discord — PR merged to main
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+
+    steps:
+      - name: Ensure Discord webhook secret exists
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "Missing required secret: DISCORD_WEBHOOK_URL"
+            exit 1
+          fi
+
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          EMBED_TITLE: 'Merged into main · #${{ github.event.pull_request.number }}'
+          EMBED_DESCRIPTION: |
+            **${{ github.event.pull_request.title }}**
+
+            **Merged by:** `${{ github.event.pull_request.merged_by.login }}`
+            **PR author:** `${{ github.event.pull_request.user.login }}`
+
+            [View PR](${{ github.event.pull_request.html_url }}) · [Merge commit](https://github.com/${{ github.repository }}/commit/${{ github.event.pull_request.merge_commit_sha }})
+          EMBED_COLOR: "3066993"
+          CHANGES_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          payload=$(python - <<'PY'
+          import json, os
+          print(json.dumps({
+              "embeds": [{
+                  "title": os.environ["EMBED_TITLE"],
+                  "description": os.environ["EMBED_DESCRIPTION"],
+                  "url": os.environ["CHANGES_URL"],
+                  "color": int(os.environ["EMBED_COLOR"]),
+                  "footer": {"text": "GitHub Actions"},
+              }]
+          }))
+          PY
+          )
+          curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL"

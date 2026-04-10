@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CreateClassDto } from './dto/create-class.dto';
 import { UpdateClassDto } from './dto/update-class.dto';
@@ -83,7 +89,9 @@ export class ClassService {
     const { data: assignments, error } = await query;
 
     if (error) {
-      this.logger.error(`Failed to fetch classes for ${userId}: ${error.message}`);
+      this.logger.error(
+        `Failed to fetch classes for ${userId}: ${error.message}`,
+      );
       return [];
     }
 
@@ -172,7 +180,9 @@ export class ClassService {
       .eq('student_group_id', classId);
 
     if (assignError) {
-      this.logger.error(`Failed to fetch teachers for class ${classId}: ${assignError.message}`);
+      this.logger.error(
+        `Failed to fetch teachers for class ${classId}: ${assignError.message}`,
+      );
       return [];
     }
 
@@ -193,8 +203,13 @@ export class ClassService {
       .select('user_profile_id, subject_id')
       .eq('student_group_id', classId);
 
-    const subjectIds = [...new Set((subjectAssignments ?? []).map((sa: any) => sa.subject_id))];
-    let subjectMap = new Map<string, { id: string; name: string; code: string }>();
+    const subjectIds = [
+      ...new Set((subjectAssignments ?? []).map((sa: any) => sa.subject_id)),
+    ];
+    let subjectMap = new Map<
+      string,
+      { id: string; name: string; code: string }
+    >();
 
     if (subjectIds.length > 0) {
       const { data: subjects } = await supabase
@@ -258,7 +273,9 @@ export class ClassService {
       .single();
 
     if (groupError || !group) {
-      this.logger.error(`Class not found for addTeacher ${classId}: ${groupError?.message}`);
+      this.logger.error(
+        `Class not found for addTeacher ${classId}: ${groupError?.message}`,
+      );
       throw new NotFoundException('Class not found');
     }
 
@@ -284,7 +301,9 @@ export class ClassService {
         });
 
       if (assignError) {
-        this.logger.error(`Failed to add teacher ${dto.teacherId} to class ${classId}: ${assignError.message}`);
+        this.logger.error(
+          `Failed to add teacher ${dto.teacherId} to class ${classId}: ${assignError.message}`,
+        );
         throw new BadRequestException('Failed to add teacher to class');
       }
     }
@@ -310,7 +329,9 @@ export class ClassService {
         .insert(subjectRows);
 
       if (subjectError) {
-        this.logger.error(`Teacher added but subject assignment failed: ${subjectError.message}`);
+        this.logger.error(
+          `Teacher added but subject assignment failed: ${subjectError.message}`,
+        );
         throw new BadRequestException('Failed to assign subjects');
       }
     }
@@ -348,7 +369,9 @@ export class ClassService {
       .eq('student_group_id', classId);
 
     if (error) {
-      this.logger.error(`Failed to remove teacher ${teacherId} from class ${classId}: ${error.message}`);
+      this.logger.error(
+        `Failed to remove teacher ${teacherId} from class ${classId}: ${error.message}`,
+      );
       throw new BadRequestException('Failed to remove teacher');
     }
 
