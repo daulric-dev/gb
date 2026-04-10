@@ -20,7 +20,9 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install OSV-Scanner
-        run: go install github.com/google/osv-scanner/cmd/osv-scanner@latest
+        run: |
+          go install github.com/google/osv-scanner/cmd/osv-scanner@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run OSV-Scanner
         run: osv-scanner -r --skip-git ./
