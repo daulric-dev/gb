@@ -1,7 +1,7 @@
 {
     "name": "bgv2",
     "private": true,
-    "workspaces": ["backend"],
+    "workspaces": ["backend", "frontend"],
     "scripts": {
         "dev": "concurrently -n fe,be -c blue,green \"bun run dev:frontend\" \"bun run dev:backend\"",
         "dev:frontend": "cd frontend && bun --bun run dev",
@@ -17,9 +17,5 @@
     "devDependencies": {
         "concurrently": "^9.2.1"
     },
-    "dependencies": {
-        "@fastify/swagger": "^9.7.0",
-        "@fastify/swagger-ui": "^5.2.5",
-        "@nestjs/swagger": "^11.2.6"
-    }
+    "dependencies": {}
 }

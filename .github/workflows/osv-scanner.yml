@@ -19,10 +19,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
       - name: Install OSV-Scanner
         run: |
           go install github.com/google/osv-scanner/cmd/osv-scanner@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run OSV-Scanner
-        run: osv-scanner -r --skip-git ./
+        run: osv-scanner --lockfile=bun.lock --lockfile=frontend/bun.lock --lockfile=backend/package.json
