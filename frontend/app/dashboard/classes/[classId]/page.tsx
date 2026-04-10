@@ -32,6 +32,7 @@ interface EnrolledStudent {
     date_of_birth: string | null;
     is_active: boolean;
   };
+  subjects?: { id: string; name: string; code: string }[];
 }
 
 interface Student {
@@ -451,8 +452,16 @@ export default function ClassDetailPage() {
                             <BookOpen className="mr-1 size-3" />
                             Manage
                           </Button>
+                        ) : e.subjects?.length ? (
+                          <div className="flex flex-wrap gap-1">
+                            {e.subjects.map((s) => (
+                              <Badge key={s.id} variant="secondary" className="text-xs">
+                                {s.code || s.name}
+                              </Badge>
+                            ))}
+                          </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span className="text-xs text-muted-foreground">None</span>
                         )}
                       </TableCell>
                       {info.isClassTeacher && (

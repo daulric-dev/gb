@@ -101,17 +101,17 @@ export class EnrollmentService {
 
     if (!allEnrolled?.length) return [];
 
+    const academicYearId = await this.getAcademicYearId(classId);
+    const allStudentIds = allEnrolled.map((e: any) => e.student.id);
+
     let filtered = allEnrolled;
 
     if (subjectId) {
-      const academicYearId = await this.getAcademicYearId(classId);
-      const studentIds = allEnrolled.map((e: any) => e.student.id);
-
       const { data: profiles } = await supabase
         .schema('student')
         .from('student_subject_profile')
         .select('student_id')
-        .in('student_id', studentIds)
+        .in('student_id', allStudentIds)
         .eq('subject_id', subjectId)
         .eq('academic_year_id', academicYearId);
 
@@ -119,7 +119,7 @@ export class EnrollmentService {
       filtered = filtered.filter((e: any) => assignedIds.has(e.student.id));
     }
 
-    if (!userId) return filtered;
+    if (!userId) return this.attachSubjects(supabase, filtered, academicYearId);
 
     const { data: profile } = await supabase
       .from('user_profile')
@@ -127,7 +127,7 @@ export class EnrollmentService {
       .eq('id', userId)
       .single();
 
-    if (profile?.role === 'admin') return filtered;
+    if (profile?.role === 'admin') return this.attachSubjects(supabase, filtered, academicYearId);
 
     const { data: groupAssignment } = await supabase
       .schema('staff')
@@ -137,7 +137,7 @@ export class EnrollmentService {
       .eq('student_group_id', classId)
       .single();
 
-    if (groupAssignment?.is_class_teacher) return filtered;
+    if (groupAssignment?.is_class_teacher) return this.attachSubjects(supabase, filtered, academicYearId);
 
     const { data: subjectAssignments } = await supabase
       .schema('staff')
@@ -151,8 +151,6 @@ export class EnrollmentService {
     const teacherSubjectIds = subjectAssignments.map((sa) => sa.subject_id);
     const studentIds = filtered.map((e: any) => e.student.id);
 
-    const academicYearId = await this.getAcademicYearId(classId);
-
     const { data: profiles } = await supabase
       .schema('student')
       .from('student_subject_profile')
@@ -165,7 +163,60 @@ export class EnrollmentService {
       (profiles ?? []).map((p) => p.student_id),
     );
 
-    return filtered.filter((e: any) => studentIdsWithSubject.has(e.student.id));
+    const result = filtered.filter((e: any) => studentIdsWithSubject.has(e.student.id));
+    return this.attachSubjects(supabase, result, academicYearId, teacherSubjectIds);
+  }
+
+  private async attachSubjects(
+    supabase: any,
+    enrolled: any[],
+    academicYearId: string,
+    limitToSubjectIds?: string[],
+  ) {
+    if (!enrolled.length) return enrolled;
+
+    const studentIds = enrolled.map((e: any) => e.student.id);
+
+    let query = supabase
+      .schema('student')
+      .from('student_subject_profile')
+      .select('student_id, subject_id')
+      .in('student_id', studentIds)
+      .eq('academic_year_id', academicYearId);
+
+    if (limitToSubjectIds?.length) {
+      query = query.in('subject_id', limitToSubjectIds);
+    }
+
+    const { data: profiles } = await query;
+
+    const subjectIds = [...new Set((profiles ?? []).map((p: any) => p.subject_id))];
+    let subjectMap = new Map<string, { id: string; name: string; code: string }>();
+
+    if (subjectIds.length) {
+      const { data: subjects } = await supabase
+        .from('subject')
+        .select('id, name, code')
+        .in('id', subjectIds)
+        .order('sort_order')
+        .order('name');
+
+      subjectMap = new Map((subjects ?? []).map((s: any) => [s.id, s]));
+    }
+
+    const subjectsByStudent = new Map<string, { id: string; name: string; code: string }[]>();
+    for (const p of profiles ?? []) {
+      const subj = subjectMap.get(p.subject_id);
+      if (!subj) continue;
+      const list = subjectsByStudent.get(p.student_id) ?? [];
+      list.push(subj);
+      subjectsByStudent.set(p.student_id, list);
+    }
+
+    return enrolled.map((e: any) => ({
+      ...e,
+      subjects: subjectsByStudent.get(e.student.id) ?? [],
+    }));
   }
 
   async unenroll(classId: string, studentId: string) {
