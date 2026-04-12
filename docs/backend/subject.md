@@ -1,0 +1,82 @@
+# Subject Module
+
+**Location**: `backend/src/subject/`
+
+The subject module manages the catalog of subjects offered by a school (e.g., Mathematics, Language Arts, Science). Subjects are referenced throughout the system - in teacher assignments, student subject profiles, assessments, and grade calculations.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `subject.module.ts` | Module definition |
+| `subject.controller.ts` | API endpoints |
+| `subject.service.ts` | Business logic |
+| `dto/create-subject.dto.ts` | Validation for creation |
+| `dto/update-subject.dto.ts` | Validation for updates |
+
+## Data Model
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Primary key |
+| `name` | string | Subject name (e.g., "Mathematics") |
+| `code` | string? | Short code (e.g., "MATH") |
+| `school_id` | UUID | The school this subject belongs to |
+| `is_graded` | boolean | Whether grades are recorded for this subject (default: true) |
+| `sort_order` | number? | Display ordering |
+
+## Graded vs Non-Graded Subjects
+
+When `is_graded` is `false`, the subject won't appear in grade calculations. This is useful for subjects where only remarks are recorded (e.g., Physical Education, Art).
+
+## API Endpoints
+
+All endpoints require `AuthGuard`. Subjects are automatically scoped to the user's school.
+
+### `GET /api/v1/subjects`
+
+Returns all subjects for the user's school, ordered by `sort_order` then `name`.
+
+---
+
+### `GET /api/v1/subjects/:id`
+
+Returns a single subject by ID.
+
+---
+
+### `POST /api/v1/subjects`
+
+Creates a new subject.
+
+**Body:**
+```json
+{
+  "name": "Mathematics",
+  "code": "MATH",
+  "isGraded": true,
+  "sortOrder": 1
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `name` | Yes | |
+| `code` | No | |
+| `isGraded` | No | Defaults to true |
+| `sortOrder` | No | |
+
+**Error Handling:**
+- Duplicate name or code within the same school → `409 Conflict`
+
+---
+
+### `PATCH /api/v1/subjects/:id`
+
+Updates a subject. All fields optional.
+
+---
+
+### `DELETE /api/v1/subjects/:id`
+
+Deletes a subject. Fails with `409 Conflict` if the subject has existing assessments or student assignments (foreign key constraint).
