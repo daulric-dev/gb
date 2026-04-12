@@ -1,4 +1,4 @@
-name: Discord — PR merged to main
+name: Discord - PR merged to main
 
 on:
   pull_request:
