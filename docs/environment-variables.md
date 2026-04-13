@@ -17,6 +17,8 @@ No `.env` files are committed to the repository. You must create them manually i
 | `SUPABASE_PUSHABLE_KEY` | **Yes** | - | Supabase anon/public key. Used for user-context clients that respect RLS policies. |
 | `FRONTEND_URL` | No | `http://localhost:3000` | Allowed CORS origin. Set to your frontend's production URL in deployment. |
 | `PORT` | No | `3001` | Port the backend server listens on. |
+| `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching instead of in-memory. |
+| `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
 
 ### Example `backend/.env`
 
@@ -26,6 +28,8 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
 SUPABASE_PUSHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
 FRONTEND_URL=http://localhost:3000
 PORT=3001
+USE_REDIS=false
+# REDIS_URL=redis://localhost:6379
 ```
 
 ### Where Each Variable Is Used
@@ -37,6 +41,8 @@ PORT=3001
 | `SUPABASE_PUSHABLE_KEY` | `src/supabase/supabase.service.ts` | User client - respects RLS using the user's JWT |
 | `FRONTEND_URL` | `src/main.ts` | CORS `origin` configuration |
 | `PORT` | `src/main.ts` | Fastify listen port |
+| `USE_REDIS` | `src/cache/cache.service.ts` | Selects Redis store when `true` |
+| `REDIS_URL` | `src/cache/cache.service.ts` | Redis connection URL for `ioredis` |
 
 ---
 

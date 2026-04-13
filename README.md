@@ -10,6 +10,7 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 |-------|-----------|
 | **Frontend** | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Preact Signals |
 | **Backend** | NestJS 11, Fastify, Swagger |
+| **Caching** | Pluggable — in-memory (default) or Redis via ioredis |
 | **Database** | Supabase (PostgreSQL) with Row-Level Security |
 | **Auth** | Passwordless OTP via email |
 | **Runtime** | Bun |
@@ -31,6 +32,7 @@ gbv2/
 │       ├── student/
 │       ├── subject/
 │       ├── supabase/      # Supabase client service
+│       ├── cache/         # Pluggable caching (memory / Redis)
 │       └── term/
 ├── frontend/              # Next.js app
 │   └── app/
