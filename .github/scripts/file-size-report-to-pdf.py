@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 LINE_H = 4
@@ -24,11 +25,20 @@ def main() -> None:
     pdf.add_font("Mono", "", FONT)
     pdf.set_font("Mono", size=FONT_PT)
     text = src.read_text(encoding="utf-8", errors="replace")
+    # multi_cell defaults to new_x=RIGHT; the next line must start at LMARGIN or w=0 leaves no width.
+    width = pdf.epw
     for line in text.splitlines():
         if line == "":
+            pdf.set_x(pdf.l_margin)
             pdf.ln(LINE_H)
         else:
-            pdf.multi_cell(0, LINE_H, line)
+            pdf.multi_cell(
+                w=width,
+                h=LINE_H,
+                text=line,
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+            )
     pdf.output(str(dst))
 
 
