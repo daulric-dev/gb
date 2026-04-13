@@ -9,7 +9,8 @@ on:
       - App Build
       - Codecov Tests and Upload Coverage
       - Lines of Code
-      - OSV-Scanner
+      - Security Scanning
+      - Repository file sizes
     types:
       - completed
 
@@ -36,7 +37,8 @@ jobs:
               "App Build",
               "Codecov Tests and Upload Coverage",
               "Lines of Code",
-              "OSV-Scanner",
+              "Security Scanning",
+              "Repository file sizes",
             ]);
 
             const { owner, repo } = context.repo;
