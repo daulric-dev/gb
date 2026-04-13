@@ -5,14 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { UpdateAcademicYearDto } from './dto/update-academic-year.dto';
+
+const YEAR_TTL = 300;
 
 @Injectable()
 export class AcademicYearService {
   private readonly logger = new Logger(AcademicYearService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   private async getSchoolId(userId: string): Promise<string> {
     const supabase = this.supabaseService.getServiceClient();
@@ -68,11 +74,18 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to create academic year');
     }
 
+    await this.cache.delete(`academic-years:${schoolId}`);
+    await this.cache.delete(`academic-year-active:${schoolId}`);
     return data;
   }
 
   async findAll(userId: string) {
     const schoolId = await this.getSchoolId(userId);
+
+    const cacheKey = `academic-years:${schoolId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase
@@ -86,11 +99,17 @@ export class AcademicYearService {
       return [];
     }
 
+    await this.cache.set(cacheKey, data, YEAR_TTL);
     return data;
   }
 
   async findActive(userId: string) {
     const schoolId = await this.getSchoolId(userId);
+
+    const cacheKey = `academic-year-active:${schoolId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase
@@ -107,6 +126,7 @@ export class AcademicYearService {
       return null;
     }
 
+    if (data) await this.cache.set(cacheKey, data, YEAR_TTL);
     return data;
   }
 
@@ -176,6 +196,7 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to update academic year');
     }
 
+    await this.cache.deleteByPrefix('academic-year');
     return data;
   }
 
@@ -202,6 +223,7 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to activate academic year');
     }
 
+    await this.cache.deleteByPrefix('academic-year');
     return data;
   }
 
@@ -222,6 +244,7 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to deactivate academic year');
     }
 
+    await this.cache.deleteByPrefix('academic-year');
     return data;
   }
 }

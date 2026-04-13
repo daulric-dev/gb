@@ -6,14 +6,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateTermDto } from './dto/create-term.dto';
 import { UpdateTermDto } from './dto/update-term.dto';
+
+const TERM_TTL = 300;
 
 @Injectable()
 export class TermService {
   private readonly logger = new Logger(TermService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(userId: string, dto: CreateTermDto) {
     if (dto.examWeight + dto.courseworkWeight !== 100) {
@@ -56,10 +62,15 @@ export class TermService {
       throw new BadRequestException('Failed to create term');
     }
 
+    await this.cache.delete(`terms:${dto.academicYearId}`);
     return term;
   }
 
   async findByYear(academicYearId: string) {
+    const cacheKey = `terms:${academicYearId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase
@@ -73,7 +84,9 @@ export class TermService {
       throw new BadRequestException('Failed to fetch terms');
     }
 
-    return data ?? [];
+    const result = data ?? [];
+    await this.cache.set(cacheKey, result, TERM_TTL);
+    return result;
   }
 
   async findOne(termId: string) {
@@ -132,6 +145,7 @@ export class TermService {
       throw new NotFoundException('Term not found');
     }
 
+    await this.cache.deleteByPrefix('terms:');
     return data;
   }
 
@@ -150,6 +164,7 @@ export class TermService {
       throw new BadRequestException('Failed to delete term');
     }
 
+    await this.cache.deleteByPrefix('terms:');
     return { message: 'Term deleted' };
   }
 }

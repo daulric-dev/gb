@@ -1,19 +1,19 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+
+const PROFILE_TTL = 300;
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async sendOtp(email: string) {
     try {
@@ -79,6 +79,10 @@ export class AuthService {
         profile = newProfile;
       }
 
+      if (profile) {
+        await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
+      }
+
       return {
         session: data.session,
         user: data.session.user,
@@ -93,6 +97,9 @@ export class AuthService {
 
   async getProfile(userId: string) {
     try {
+      const cached = await this.cache.get(`profile:${userId}`);
+      if (cached) return cached;
+
       const supabase = this.supabaseService.getServiceClient();
 
       const { data: profile, error } = await supabase
@@ -106,6 +113,7 @@ export class AuthService {
         throw new NotFoundException('User profile not found');
       }
 
+      await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
       return profile;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
@@ -133,6 +141,7 @@ export class AuthService {
       throw new BadRequestException('Failed to complete onboarding');
     }
 
+    await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
     return data;
   }
 
@@ -157,6 +166,7 @@ export class AuthService {
       throw new BadRequestException('Failed to update profile');
     }
 
+    await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
     return data;
   }
 
@@ -184,6 +194,7 @@ export class AuthService {
       throw new BadRequestException('Failed to delete account');
     }
 
+    await this.cache.delete(`profile:${userId}`);
     this.logger.log(`Account deleted for user ${userId}`);
     return 'Account deleted successfully';
   }

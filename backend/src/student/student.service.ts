@@ -6,14 +6,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+
+const STUDENT_TTL = 300;
 
 @Injectable()
 export class StudentService {
   private readonly logger = new Logger(StudentService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(userId: string, dto: CreateStudentDto) {
     const supabase = this.supabaseService.getServiceClient();
@@ -66,6 +72,7 @@ export class StudentService {
       throw new BadRequestException('Failed to create student');
     }
 
+    await this.cache.delete(`students:${profile.school_id}`);
     return student;
   }
 
@@ -83,6 +90,12 @@ export class StudentService {
         `Failed to get school for user ${userId}: ${profileError?.message}`,
       );
       throw new BadRequestException('Could not determine your school');
+    }
+
+    const cacheKey = `students:${profile.school_id}`;
+    if (!search) {
+      const cached = await this.cache.get(cacheKey);
+      if (cached) return cached;
     }
 
     let query = supabase
@@ -106,7 +119,11 @@ export class StudentService {
       throw new BadRequestException('Failed to fetch students');
     }
 
-    return data ?? [];
+    const result = data ?? [];
+    if (!search) {
+      await this.cache.set(cacheKey, result, STUDENT_TTL);
+    }
+    return result;
   }
 
   async findOne(studentId: string) {
@@ -156,6 +173,7 @@ export class StudentService {
       throw new NotFoundException('Student not found');
     }
 
+    await this.cache.deleteByPrefix('students:');
     return data;
   }
 }

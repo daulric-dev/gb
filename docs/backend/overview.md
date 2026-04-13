@@ -72,7 +72,7 @@ AppModule
 ├── EnrollmentModule (imports ClassModule for guard)
 ├── GradingModule
 ├── CalculationModule
-└── CacheModule (exports CacheService - memory or Redis)
+└── CacheModule (global - exports CacheService with memory or Redis store)
 ```
 
 ## Supabase Integration

@@ -1,20 +1,20 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateClassDto } from './dto/create-class.dto';
 import { UpdateClassDto } from './dto/update-class.dto';
 import { AddTeacherDto } from './dto/add-teacher.dto';
+
+const CLASS_TTL = 300;
 
 @Injectable()
 export class ClassService {
   private readonly logger = new Logger(ClassService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async createClass(userId: string, dto: CreateClassDto) {
     const supabase = this.supabaseService.getServiceClient();
@@ -70,10 +70,18 @@ export class ClassService {
       }
     }
 
+    await this.cache.delete(`my-classes:${userId}`);
+    await this.cache.delete(`my-classes:${userId}:${dto.academicYearId}`);
     return group;
   }
 
   async getMyClasses(userId: string, academicYearId?: string) {
+    const cacheKey = academicYearId
+      ? `my-classes:${userId}:${academicYearId}`
+      : `my-classes:${userId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     let query = supabase
@@ -107,7 +115,7 @@ export class ClassService {
 
     const groupMap = new Map((groups || []).map((g: any) => [g.id, g]));
 
-    return assignments.map((row: any) => {
+    const result = assignments.map((row: any) => {
       const group = groupMap.get(row.student_group_id);
       return {
         id: row.student_group_id,
@@ -117,6 +125,9 @@ export class ClassService {
         createdAt: group?.created_at ?? null,
       };
     });
+
+    await this.cache.set(cacheKey, result, CLASS_TTL);
+    return result;
   }
 
   async getClassById(classId: string) {
@@ -151,6 +162,7 @@ export class ClassService {
       throw new BadRequestException('Failed to update class');
     }
 
+    await this.cache.delete(`class-teachers:${classId}`);
     return data;
   }
 
@@ -167,10 +179,15 @@ export class ClassService {
       throw new BadRequestException('Failed to delete class');
     }
 
+    await this.cache.delete(`class-teachers:${classId}`);
     return 'Class deleted';
   }
 
   async getMySubjectsForClass(userId: string, classId: string) {
+    const cacheKey = `my-subjects:${userId}:${classId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: profile } = await supabase
@@ -201,7 +218,9 @@ export class ClassService {
         .order('sort_order')
         .order('name');
 
-      return subjects ?? [];
+      const result = subjects ?? [];
+      await this.cache.set(cacheKey, result, CLASS_TTL);
+      return result;
     }
 
     const { data: subjectAssignments } = await supabase
@@ -222,10 +241,16 @@ export class ClassService {
       .order('sort_order')
       .order('name');
 
-    return subjects ?? [];
+    const result = subjects ?? [];
+    await this.cache.set(cacheKey, result, CLASS_TTL);
+    return result;
   }
 
   async getTeachers(classId: string) {
+    const cacheKey = `class-teachers:${classId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: assignments, error: assignError } = await supabase
@@ -282,7 +307,7 @@ export class ClassService {
       if (subject) subjectsByTeacher.get(tid)!.push(subject);
     }
 
-    return assignments
+    const result = assignments
       .filter((row: any) => profileMap.has(row.user_profile_id))
       .map((row: any) => {
         const profile = profileMap.get(row.user_profile_id);
@@ -294,6 +319,9 @@ export class ClassService {
           subjects: subjectsByTeacher.get(row.user_profile_id) ?? [],
         };
       });
+
+    await this.cache.set(cacheKey, result, CLASS_TTL);
+    return result;
   }
 
   async getSchoolTeachers(userId: string) {
@@ -307,6 +335,10 @@ export class ClassService {
 
     if (!profile?.school_id) return [];
 
+    const cacheKey = `school-teachers:${profile.school_id}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const { data: teachers, error } = await supabase
       .from('user_profile')
       .select('id, first_name, last_name')
@@ -317,7 +349,9 @@ export class ClassService {
       return [];
     }
 
-    return teachers ?? [];
+    const result = teachers ?? [];
+    await this.cache.set(cacheKey, result, CLASS_TTL);
+    return result;
   }
 
   async addTeacher(classId: string, dto: AddTeacherDto) {
@@ -393,6 +427,9 @@ export class ClassService {
       }
     }
 
+    await this.cache.delete(`class-teachers:${classId}`);
+    await this.cache.delete(`my-classes:${dto.teacherId}`);
+    await this.cache.delete(`my-subjects:${dto.teacherId}:${classId}`);
     return { teacherId: dto.teacherId, classId, subjectIds: dto.subjectIds };
   }
 
@@ -432,6 +469,9 @@ export class ClassService {
       throw new BadRequestException('Failed to remove teacher');
     }
 
+    await this.cache.delete(`class-teachers:${classId}`);
+    await this.cache.delete(`my-classes:${teacherId}`);
+    await this.cache.delete(`my-subjects:${teacherId}:${classId}`);
     return 'Teacher removed from class';
   }
 }

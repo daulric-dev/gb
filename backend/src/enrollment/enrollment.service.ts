@@ -5,16 +5,22 @@ import {
   Logger,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { EnrollStudentDto } from './dto/enroll-student.dto';
 import { BulkEnrollDto } from './dto/bulk-enroll.dto';
 import { AssignSubjectsDto } from './dto/assign-subjects.dto';
 import { BulkAssignSubjectsDto } from './dto/bulk-assign-subjects.dto';
 
+const ENROLLMENT_TTL = 300;
+
 @Injectable()
 export class EnrollmentService {
   private readonly logger = new Logger(EnrollmentService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async enroll(classId: string, dto: EnrollStudentDto) {
     const supabase = this.supabaseService.getServiceClient();
@@ -40,6 +46,7 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to enroll student');
     }
 
+    await this.cache.deleteByPrefix(`enrolled:${classId}`);
     return data;
   }
 
@@ -68,10 +75,15 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to enroll students');
     }
 
+    await this.cache.deleteByPrefix(`enrolled:${classId}`);
     return { enrolled: data?.length ?? 0, message: 'Students enrolled' };
   }
 
   async getEnrolledStudents(classId: string, userId?: string, subjectId?: string) {
+    const cacheKey = `enrolled:${classId}:${userId ?? 'all'}:${subjectId ?? 'all'}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: allEnrolled, error } = await supabase
@@ -119,7 +131,11 @@ export class EnrollmentService {
       filtered = filtered.filter((e: any) => assignedIds.has(e.student.id));
     }
 
-    if (!userId) return this.attachSubjects(supabase, filtered, academicYearId);
+    if (!userId) {
+      const result = await this.attachSubjects(supabase, filtered, academicYearId);
+      await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
+      return result;
+    }
 
     const { data: profile } = await supabase
       .from('user_profile')
@@ -127,7 +143,11 @@ export class EnrollmentService {
       .eq('id', userId)
       .single();
 
-    if (profile?.role === 'admin') return this.attachSubjects(supabase, filtered, academicYearId);
+    if (profile?.role === 'admin') {
+      const result = await this.attachSubjects(supabase, filtered, academicYearId);
+      await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
+      return result;
+    }
 
     const { data: groupAssignment } = await supabase
       .schema('staff')
@@ -137,7 +157,11 @@ export class EnrollmentService {
       .eq('student_group_id', classId)
       .single();
 
-    if (groupAssignment?.is_class_teacher) return this.attachSubjects(supabase, filtered, academicYearId);
+    if (groupAssignment?.is_class_teacher) {
+      const result = await this.attachSubjects(supabase, filtered, academicYearId);
+      await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
+      return result;
+    }
 
     const { data: subjectAssignments } = await supabase
       .schema('staff')
@@ -163,8 +187,10 @@ export class EnrollmentService {
       (profiles ?? []).map((p) => p.student_id),
     );
 
-    const result = filtered.filter((e: any) => studentIdsWithSubject.has(e.student.id));
-    return this.attachSubjects(supabase, result, academicYearId, teacherSubjectIds);
+    const filteredBySubject = filtered.filter((e: any) => studentIdsWithSubject.has(e.student.id));
+    const result = await this.attachSubjects(supabase, filteredBySubject, academicYearId, teacherSubjectIds);
+    await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
+    return result;
   }
 
   private async attachSubjects(
@@ -249,6 +275,8 @@ export class EnrollmentService {
         .eq('academic_year_id', group.academic_year_id);
     }
 
+    await this.cache.deleteByPrefix(`enrolled:${classId}`);
+    await this.cache.delete(`student-subjects:${classId}:${studentId}`);
     return { message: 'Student unenrolled' };
   }
 
@@ -296,6 +324,8 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to assign subjects');
     }
 
+    await this.cache.deleteByPrefix(`enrolled:${classId}`);
+    await this.cache.delete(`student-subjects:${classId}:${dto.studentId}`);
     return { assigned: data?.length ?? 0, message: 'Subjects assigned' };
   }
 
@@ -334,6 +364,10 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to assign subjects to students');
     }
 
+    await this.cache.deleteByPrefix(`enrolled:${classId}`);
+    for (const studentId of dto.studentIds) {
+      await this.cache.delete(`student-subjects:${classId}:${studentId}`);
+    }
     return {
       assigned: data?.length ?? 0,
       message: 'Subjects assigned to students',
@@ -341,6 +375,10 @@ export class EnrollmentService {
   }
 
   async getStudentSubjects(classId: string, studentId: string) {
+    const cacheKey = `student-subjects:${classId}:${studentId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const academicYearId = await this.getAcademicYearId(classId);
     const supabase = this.supabaseService.getServiceClient();
 
@@ -377,10 +415,13 @@ export class EnrollmentService {
 
     const subjectMap = new Map((subjects ?? []).map((s) => [s.id, s]));
 
-    return profiles.map((p) => ({
+    const result = profiles.map((p) => ({
       id: p.id,
       subject: subjectMap.get(p.subject_id) ?? null,
     }));
+
+    await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
+    return result;
   }
 
   async removeSubject(classId: string, studentId: string, subjectId: string) {
@@ -405,6 +446,8 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to remove subject');
     }
 
+    await this.cache.deleteByPrefix(`enrolled:${classId}`);
+    await this.cache.delete(`student-subjects:${classId}:${studentId}`);
     return { message: 'Subject removed from student' };
   }
 }
