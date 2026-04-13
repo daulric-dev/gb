@@ -85,8 +85,8 @@ export default function AcademicYearsPage() {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        title="academic years"
-        description={"manage your school's academic years"}
+        title="Academic Years"
+        description={"Manage Your School's Academic Years"}
         action={
           <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
             <DialogTrigger render={<Button />}>

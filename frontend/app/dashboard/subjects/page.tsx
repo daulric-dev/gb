@@ -61,8 +61,8 @@ export default function SubjectsPage() {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        title="subjects"
-        description="manage subjects for your school"
+        title="Subjects"
+        description="Manage Subjects for Your School"
         action={
           <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
             <DialogTrigger render={<Button />}>

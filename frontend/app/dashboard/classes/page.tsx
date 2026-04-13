@@ -104,8 +104,8 @@ export default function ClassesPage() {
   return (
     <div className="space-y-8">
       <DashboardPageHeader
-        title="classes"
-        description="view and manage your assigned classes"
+        title="Classes"
+        description="View and Manage Your Assigned Classes"
         action={
           <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
             <DialogTrigger render={<Button />}>

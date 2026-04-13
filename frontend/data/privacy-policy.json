@@ -1,0 +1,89 @@
+{
+  "title": "Privacy Policy",
+  "lastUpdated": "April 2026",
+  "crossLink": { "href": "/terms", "label": "Terms of Service" },
+  "sections": [
+    {
+      "heading": "Introduction",
+      "paragraphs": [
+        "GradeBook (\"we\", \"our\", or \"the Service\") is a school management platform designed to help educators manage academic records, student enrollment, grading, and class administration. GradeBook is not affiliated with or partnered with any specific school. Any educator can create an account and set up a school on the platform. This Privacy Policy explains what information we collect, how we use it, and your rights regarding your data."
+      ]
+    },
+    {
+      "heading": "Information We Collect",
+      "paragraphs": [
+        "We collect the following types of information when you use GradeBook:"
+      ],
+      "list": [
+        { "bold": "Account Information", "text": "your email address, first name, and last name, collected during registration and onboarding." },
+        { "bold": "School Information", "text": "school name, contact details, parish, and school type, provided when creating or joining a school." },
+        { "bold": "Student Records", "text": "student names, gender, date of birth, enrollment dates, class assignments, and subject profiles entered by teachers." },
+        { "bold": "Academic Data", "text": "assessments, grades, scores, remarks, and calculated results created through the grading system." },
+        { "bold": "Usage Data", "text": "authentication tokens and session information required to operate the Service." }
+      ]
+    },
+    {
+      "heading": "How We Use Your Information",
+      "paragraphs": [
+        "We use the collected information to:"
+      ],
+      "list": [
+        "Provide and operate the GradeBook service",
+        "Authenticate your identity and manage your account",
+        "Store and process academic records, grades, and reports",
+        "Associate you with your school and assigned classes",
+        "Improve the reliability and performance of the Service",
+        "Generate aggregated, anonymized analytics to understand usage patterns and improve the Service (see our Terms of Service for details)"
+      ]
+    },
+    {
+      "heading": "Data Storage and Security",
+      "paragraphs": [
+        "Your data is stored securely using Supabase, a managed PostgreSQL database platform. We implement row-level security policies to ensure that users can only access data they are authorized to view. Authentication is handled via secure one-time passwords (OTP) delivered to your email. We do not store passwords."
+      ]
+    },
+    {
+      "heading": "Data Sharing",
+      "paragraphs": [
+        "We do not sell, rent, or share your personal information or student data with third parties for marketing or advertising purposes. Data may be shared only in the following circumstances:"
+      ],
+      "list": [
+        "With other users within the same school on the platform who have been granted access to the same classes",
+        "With trusted third-party analytics providers who help us understand usage patterns, improve the Service, and generate aggregated insights - these providers are bound by confidentiality agreements and may only process data on our behalf",
+        "When required by law or to comply with a legal process",
+        "To protect the safety and security of our users or the public"
+      ]
+    },
+    {
+      "heading": "Your Rights",
+      "paragraphs": [
+        "You have the right to:"
+      ],
+      "list": [
+        "Access the personal information we hold about you",
+        "Request correction of inaccurate information",
+        "Delete your account and all associated data directly from the Settings page",
+        "Export your data in a standard format"
+      ],
+      "footer": "Account deletion is self-service and can be done at any time from your Settings page. For any other requests, please contact the GradeBook team."
+    },
+    {
+      "heading": "Children's Data",
+      "paragraphs": [
+        "GradeBook is used by educators to manage student records. Student data is entered and managed by the teachers who use the platform. Students do not create accounts or directly interact with the Service. Users who enter student data are responsible for ensuring they have the necessary authorization and consent to do so."
+      ]
+    },
+    {
+      "heading": "Changes to This Policy",
+      "paragraphs": [
+        "We may update this Privacy Policy from time to time. If we make significant changes, we will notify users through the Service. Continued use of GradeBook after changes constitutes acceptance of the updated policy."
+      ]
+    },
+    {
+      "heading": "Contact",
+      "paragraphs": [
+        "If you have questions about this Privacy Policy or how your data is handled, please contact the GradeBook team."
+      ]
+    }
+  ]
+}

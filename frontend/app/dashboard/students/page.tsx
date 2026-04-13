@@ -134,8 +134,8 @@ export default function StudentsPage() {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        title="students"
-        description="manage students in your school"
+        title="Students"
+        description="Manage Students in Your School"
         action={
           <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
             <DialogTrigger render={<Button />}>

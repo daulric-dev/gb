@@ -29,10 +29,10 @@ function DashboardGreeting({ profileLoading, displayName }: { profileLoading: bo
       {profileLoading ? (
         <Skeleton className="h-9 w-48" />
       ) : (
-        <h1 className="text-3xl font-bold">hello {displayName}</h1>
+        <h1 className="text-3xl font-bold">Hello {displayName}</h1>
       )}
       <p className="mt-1 text-muted-foreground">
-        here&apos;s an overview of your school
+        Here&apos;s an overview of your school
       </p>
     </div>
   );
@@ -127,7 +127,7 @@ export default function DashboardPage() {
   }, []);
 
   const displayName = profile?.first_name
-    ? profile.first_name.toLowerCase()
+    ? profile.first_name
     : "there";
 
   return (

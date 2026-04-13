@@ -1,7 +1,9 @@
 "use client";
 
-import { Header } from "@/components/header";
 import { useProfile } from "@/lib/use-profile";
+import { AppSidebar } from "@/components/app-sidebar";
+import { Header } from "@/components/header";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 export default function DashboardLayout({
   children,
@@ -11,11 +13,14 @@ export default function DashboardLayout({
   const { profile } = useProfile();
 
   return (
-    <>
-      <Header profile={profile} />
-      <main className="min-h-screen pt-8 p-4 bg-background">
-        <div className="max-w-6xl mx-auto">{children}</div>
-      </main>
-    </>
+    <SidebarProvider>
+      <AppSidebar profile={profile} />
+      <SidebarInset>
+        <Header />
+        <main className="flex-1 p-4 md:p-6">
+          <div className="mx-auto max-w-6xl">{children}</div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -14,6 +15,7 @@ import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
 import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
+import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { SupabaseService } from '@/supabase/supabase.service';
 import * as transform from './transformer';
 
@@ -78,6 +80,22 @@ export class AuthController {
   async onboard(@Req() req: any, @Body() dto: OnboardDto) {
     const raw = await this.authService.onboard(req.user.id, dto);
     return versionMap.profile[getVersion(req, versionMap.profile)](raw);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Patch('profile')
+  async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
+    const raw = await this.authService.updateProfile(req.user.id, dto);
+    return versionMap.profile[getVersion(req, versionMap.profile)](raw);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Delete('account')
+  async deleteAccount(@Req() req: any) {
+    const message = await this.authService.deleteAccount(req.user.id);
+    return versionMap.message[getVersion(req, versionMap.message)](message);
   }
 
   @ApiBearerAuth()

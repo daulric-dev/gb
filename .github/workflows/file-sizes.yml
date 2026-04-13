@@ -94,7 +94,7 @@ jobs:
             | sort -t $'\t' -k1,1nr \
             | while IFS=$'\t' read -r fbytes folder; do
                 fh="$(numfmt --to=iec-i --suffix=B "$fbytes" 2>/dev/null || echo "${fbytes} B")"
-                echo "### $folder — $fh ###" >> "$report_txt"
+                echo "### $folder - $fh ###" >> "$report_txt"
                 echo "" >> "$report_txt"
                 awk -F '\t' -v d="$folder" '$1 == d' "$tsv" | sort -t $'\t' -k2,2nr | awk -F '\t' '
                   function hum(b,   cmd, x) {
@@ -147,7 +147,7 @@ jobs:
 
           echo "## Repository file sizes" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Tracked files: **$file_count** — combined size: **$total_human**" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tracked files: **$file_count** - combined size: **$total_human**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### By top-level folder" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
