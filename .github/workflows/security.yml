@@ -106,6 +106,8 @@ jobs:
   snyk:
     name: Snyk Scan
     runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -118,18 +120,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Install Snyk CLI
+        run: bun add -g snyk
+
       - name: Run Snyk (backend)
-        uses: snyk/actions/node@master
         continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --file=backend/package.json --severity-threshold=high
+        run: snyk test --file=backend/package.json --severity-threshold=high
 
       - name: Run Snyk (frontend)
-        uses: snyk/actions/node@master
         continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --file=frontend/package.json --severity-threshold=high
+        run: snyk test --file=frontend/package.json --severity-threshold=high
