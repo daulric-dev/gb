@@ -34,7 +34,7 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
   });
 
-  await app.listen(process.env.PORT ?? 3001, "0.0.0.0");
+  await app.listen(process.env.PORT || 3001, "0.0.0.0");
 }
 
 bootstrap();
