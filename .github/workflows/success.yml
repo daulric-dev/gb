@@ -23,14 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Ensure Discord webhook secret exists
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
-            echo "Missing required secret: DISCORD_WEBHOOK_URL"
-            exit 1
-          fi
+      - name: Checkout code
+        uses: actions/checkout@v5
 
       - name: Check monitored workflow status for this commit
         if: ${{ github.event_name == 'workflow_run' }}
@@ -154,22 +148,4 @@ jobs:
             [View Changes](${{ steps.status.outputs.changes_url || steps.status_manual.outputs.changes_url }}) · [View Workflow Run](${{ steps.status.outputs.run_url || steps.status_manual.outputs.run_url }})
           EMBED_COLOR: "3066993"
           CHANGES_URL: ${{ steps.status.outputs.changes_url || steps.status_manual.outputs.changes_url }}
-        run: |
-          payload=$(python - <<'PY'
-          import json, os
-          print(json.dumps({
-              "embeds": [{
-                  "title": os.environ["EMBED_TITLE"],
-                  "description": os.environ["EMBED_DESCRIPTION"],
-                  "url": os.environ["CHANGES_URL"],
-                  "color": int(os.environ["EMBED_COLOR"]),
-                  "footer": {"text": "GitHub Actions"},
-              }]
-          }))
-          PY
-          )
-          curl --fail --silent --show-error \
-            -H "Content-Type: application/json" \
-            -X POST \
-            -d "$payload" \
-            "$DISCORD_WEBHOOK_URL"
+        run: python3 .github/scripts/discord-notify.py

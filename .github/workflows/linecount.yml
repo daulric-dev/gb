@@ -23,46 +23,10 @@ jobs:
         run: sudo apt-get install -y cloc
 
       - name: Count lines of code
-        run: |
-          echo "Lines of Code Report"
-          echo "========================"
-          cloc . --vcs=git --exclude-dir=node_modules,dist,.next --exclude-ext=lock | tee cloc-output.txt
-
-          echo "## Lines of Code Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat cloc-output.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: bash .github/scripts/linecount.sh
 
       - name: Frontend breakdown
-        run: |
-          echo ""
-          echo "Frontend Breakdown"
-          echo "==============="
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Frontend" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          for dir in frontend/app frontend/components frontend/lib; do
-            if [ -d "$dir" ]; then
-              echo "--- $dir/ ---"
-              cloc "$dir" --vcs=git --quiet
-            fi
-          done
+        run: bash .github/scripts/linecount-frontend.sh
 
       - name: Backend breakdown
-        run: |
-          echo ""
-          echo "Backend Breakdown"
-          echo "==============="
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Backend" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -d "backend/src" ]; then
-            cloc backend/src --vcs=git --quiet
-          else
-            echo "No backend/src directory yet"
-          fi
+        run: bash .github/scripts/linecount-backend.sh

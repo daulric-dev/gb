@@ -10,18 +10,12 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
-  # ──────────────────────────────────────────────
-  # 1. SAST — CodeQL static analysis
-  # ──────────────────────────────────────────────
+  # 1. SAST - CodeQL static analysis (log-only)
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +36,11 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+          upload: never
+          output: codeql-results
+
+      - name: Display results
+        run: python3 .github/scripts/codeql-display-results.py
 
   # 2. SCA - Dependency vulnerability scanning
   dependency-scan:
@@ -61,9 +60,7 @@ jobs:
 
       # OSV-Scanner (Google)
       - name: Install OSV-Scanner
-        run: |
-          go install github.com/google/osv-scanner/cmd/osv-scanner@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        run: bash .github/scripts/install-osv-scanner.sh
 
       - name: Run OSV-Scanner
         run: osv-scanner -r .
