@@ -1,11 +1,6 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
 import { BulkGradeDto } from './dto/bulk-grade.dto';
@@ -15,7 +10,14 @@ import { ExcludeDto } from './dto/exclude.dto';
 export class GradeService {
   private readonly logger = new Logger(GradeService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
+
+  private async invalidateCalcCaches() {
+    await this.cache.deleteByPrefix('calc:');
+  }
 
   async create(userId: string, dto: CreateGradeDto, token: string) {
     const supabase = this.supabaseService.createUserClient(token, 'grading');
@@ -51,6 +53,7 @@ export class GradeService {
       throw new BadRequestException('Failed to create grade');
     }
 
+    await this.invalidateCalcCaches();
     return data;
   }
 
@@ -83,6 +86,7 @@ export class GradeService {
       throw new BadRequestException('Failed to save grades');
     }
 
+    await this.invalidateCalcCaches();
     return { graded: dto.grades.length, message: 'Grades saved' };
   }
 
@@ -222,6 +226,7 @@ export class GradeService {
       throw new BadRequestException('Failed to update grade');
     }
 
+    await this.invalidateCalcCaches();
     return data;
   }
 
@@ -257,6 +262,7 @@ export class GradeService {
       throw new BadRequestException('Failed to exclude grade');
     }
 
+    await this.invalidateCalcCaches();
     return data;
   }
 }

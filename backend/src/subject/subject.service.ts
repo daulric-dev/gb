@@ -6,14 +6,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
+
+const SUBJECT_TTL = 300;
 
 @Injectable()
 export class SubjectService {
   private readonly logger = new Logger(SubjectService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(userId: string, dto: CreateSubjectDto) {
     const supabase = this.supabaseService.getServiceClient();
@@ -51,6 +57,7 @@ export class SubjectService {
       throw new BadRequestException('Failed to create subject');
     }
 
+    await this.cache.delete(`subjects:${profile.school_id}`);
     return subject;
   }
 
@@ -70,6 +77,10 @@ export class SubjectService {
       throw new BadRequestException('Could not determine your school');
     }
 
+    const cacheKey = `subjects:${profile.school_id}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached;
+
     const { data, error } = await supabase
       .from('subject')
       .select('*')
@@ -82,7 +93,9 @@ export class SubjectService {
       throw new BadRequestException('Failed to fetch subjects');
     }
 
-    return data ?? [];
+    const result = data ?? [];
+    await this.cache.set(cacheKey, result, SUBJECT_TTL);
+    return result;
   }
 
   async findOne(subjectId: string) {
@@ -129,6 +142,7 @@ export class SubjectService {
       throw new NotFoundException('Subject not found');
     }
 
+    await this.cache.deleteByPrefix('subjects:');
     return data;
   }
 
@@ -150,6 +164,7 @@ export class SubjectService {
       throw new BadRequestException('Failed to delete subject');
     }
 
+    await this.cache.deleteByPrefix('subjects:');
     return { message: 'Subject deleted' };
   }
 }

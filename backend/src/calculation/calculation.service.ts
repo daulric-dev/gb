@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import {
   SubjectGradeSummary,
   AssessmentGrade,
@@ -8,11 +9,16 @@ import {
   YearEndSubject,
 } from './interfaces/calculation.interfaces';
 
+const CALC_TTL = 600;
+
 @Injectable()
 export class CalculationService {
   private readonly logger = new Logger(CalculationService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   private calculateWeightedAverage(
     items: { score: number; weight: number }[],
@@ -476,6 +482,10 @@ export class CalculationService {
     termId: string,
     studentGroupId: string,
   ): Promise<StudentTermResult[]> {
+    const cacheKey = `calc:class-term:${studentGroupId}:${termId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached as StudentTermResult[];
+
     const supabase = this.supabaseService.getServiceClient();
 
     // 1. Enrolled student IDs
@@ -738,6 +748,7 @@ export class CalculationService {
       r.position = i + 1;
     });
 
+    await this.cache.set(cacheKey, results, CALC_TTL);
     return results;
   }
 
@@ -745,6 +756,10 @@ export class CalculationService {
     academicYearId: string,
     studentGroupId: string,
   ): Promise<StudentYearResult[]> {
+    const cacheKey = `calc:class-year:${studentGroupId}:${academicYearId}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return cached as StudentYearResult[];
+
     const supabase = this.supabaseService.getServiceClient();
 
     // 1. Enrolled students
@@ -1097,6 +1112,7 @@ export class CalculationService {
       r.position = i + 1;
     });
 
+    await this.cache.set(cacheKey, results, CALC_TTL);
     return results;
   }
 }

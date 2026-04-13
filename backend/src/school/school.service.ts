@@ -1,13 +1,22 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
+
+const SCHOOL_TTL = 600;
 
 @Injectable()
 export class SchoolService {
   private readonly logger = new Logger(SchoolService.name);
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
 
   async findAll() {
+    const cached = await this.cache.get('schools:all');
+    if (cached) return cached;
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase
@@ -21,6 +30,7 @@ export class SchoolService {
       return [];
     }
 
+    await this.cache.set('schools:all', data, SCHOOL_TTL);
     return data;
   }
 
@@ -47,6 +57,7 @@ export class SchoolService {
       throw new BadRequestException('Failed to create school');
     }
 
+    await this.cache.delete('schools:all');
     return data;
   }
 }

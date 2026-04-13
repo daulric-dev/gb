@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
 import { ExcludeDto } from './dto/exclude.dto';
@@ -14,7 +15,14 @@ import { ExcludeDto } from './dto/exclude.dto';
 export class AssessmentService {
   private readonly logger = new Logger(AssessmentService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {}
+
+  private async invalidateCalcCaches() {
+    await this.cache.deleteByPrefix('calc:');
+  }
 
   async create(userId: string, dto: CreateAssessmentDto, token: string) {
     const supabase = this.supabaseService.createUserClient(token, 'grading');
@@ -47,6 +55,7 @@ export class AssessmentService {
       throw new BadRequestException('Failed to create assessment');
     }
 
+    await this.invalidateCalcCaches();
     return data;
   }
 
@@ -119,6 +128,7 @@ export class AssessmentService {
       throw new BadRequestException('Failed to update assessment');
     }
 
+    await this.invalidateCalcCaches();
     return data;
   }
 
@@ -148,6 +158,7 @@ export class AssessmentService {
       throw new BadRequestException('Failed to exclude assessment');
     }
 
+    await this.invalidateCalcCaches();
     return data;
   }
 
@@ -172,6 +183,7 @@ export class AssessmentService {
       throw new BadRequestException('Failed to delete assessment');
     }
 
+    await this.invalidateCalcCaches();
     return { message: 'Assessment deleted' };
   }
 }

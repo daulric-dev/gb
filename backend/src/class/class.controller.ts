@@ -1,15 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ClassService } from './class.service';
 import { AuthGuard } from '@/auth/auth.guard';
@@ -64,10 +53,7 @@ export class ClassController {
   }
 
   @Get(':classId/my-subjects')
-  async getMySubjects(
-    @Req() req: any,
-    @Param('classId') classId: string,
-  ) {
+  async getMySubjects(@Req() req: any, @Param('classId') classId: string) {
     return this.classService.getMySubjectsForClass(req.user.id, classId);
   }
 

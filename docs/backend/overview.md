@@ -34,7 +34,8 @@ backend/src/
 ├── class/                     # Class (student group) management
 ├── enrollment/                # Student enrollment and subject assignment
 ├── grading/                   # Assessments and grades
-└── calculation/               # Grade calculations and summaries
+├── calculation/               # Grade calculations and summaries
+└── cache/                     # Pluggable caching (memory or Redis)
 ```
 
 ## Application Bootstrap (`main.ts`)
@@ -70,7 +71,8 @@ AppModule
 ├── ClassModule (exports ClassTeacherGuard)
 ├── EnrollmentModule (imports ClassModule for guard)
 ├── GradingModule
-└── CalculationModule
+├── CalculationModule
+└── CacheModule (global - exports CacheService with memory or Redis store)
 ```
 
 ## Supabase Integration
@@ -110,6 +112,8 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | `SUPABASE_PUSHABLE_KEY` | Yes | Anon/public key for user-context clients |
 | `FRONTEND_URL` | No | CORS origin (defaults to `http://localhost:3000`) |
 | `PORT` | No | Server port (defaults to `3001`) |
+| `USE_REDIS` | No | Set to `true` to use Redis for caching (defaults to in-memory) |
+| `REDIS_URL` | Only if `USE_REDIS=true` | Redis connection URL (e.g., `redis://localhost:6379`) |
 
 ## Running the Backend
 

@@ -15,6 +15,7 @@ import { TermModule } from '@/term/term.module';
 import { EnrollmentModule } from '@/enrollment/enrollment.module';
 import { GradingModule } from '@/grading/grading.module';
 import { CalculationModule } from '@/calculation/calculation.module';
+import { CacheModule } from '@/cache/cache.module';
 
 @Module({
   imports: [
@@ -34,9 +35,12 @@ import { CalculationModule } from '@/calculation/calculation.module';
         throttlerName: string,
       ) => `${throttlerName}:${tracker}`,
     }),
+
     SupabaseModule,
     AuthModule,
+    CacheModule,
     ClassModule,
+
     AcademicYearModule,
     SchoolModule,
     StudentModule,

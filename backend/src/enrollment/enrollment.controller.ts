@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
@@ -22,7 +21,11 @@ export class EnrollmentController {
     @Param('classId') classId: string,
     @Query('subjectId') subjectId?: string,
   ) {
-    return this.enrollmentService.getEnrolledStudents(classId, req.user.id, subjectId);
+    return this.enrollmentService.getEnrolledStudents(
+      classId,
+      req.user.id,
+      subjectId,
+    );
   }
 
   @Get('students/:studentId/subjects')
