@@ -6,6 +6,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { OnboardDto } from './dto/onboard.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class AuthService {
@@ -112,10 +114,7 @@ export class AuthService {
     }
   }
 
-  async onboard(
-    userId: string,
-    dto: { firstName: string; lastName: string; schoolId: string },
-  ) {
+  async onboard(userId: string, dto: OnboardDto) {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase
@@ -135,6 +134,58 @@ export class AuthService {
     }
 
     return data;
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .from('user_profile')
+      .update({
+        first_name: dto.firstName,
+        last_name: dto.lastName,
+        school_id: dto.schoolId,
+      })
+      .eq('id', userId)
+      .select('*, school:school_id(*)')
+      .single();
+
+    if (error || !data) {
+      this.logger.error(
+        `Failed to update profile for ${userId}: ${error?.message}`,
+      );
+      throw new BadRequestException('Failed to update profile');
+    }
+
+    return data;
+  }
+
+  async deleteAccount(userId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { error: profileError } = await supabase
+      .from('user_profile')
+      .delete()
+      .eq('id', userId);
+
+    if (profileError) {
+      this.logger.error(
+        `Failed to delete user_profile for ${userId}: ${profileError.message}`,
+      );
+      throw new BadRequestException('Failed to delete account');
+    }
+
+    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+
+    if (authError) {
+      this.logger.error(
+        `Failed to delete auth user ${userId}: ${authError.message}`,
+      );
+      throw new BadRequestException('Failed to delete account');
+    }
+
+    this.logger.log(`Account deleted for user ${userId}`);
+    return 'Account deleted successfully';
   }
 
   async refreshToken(refreshToken: string) {

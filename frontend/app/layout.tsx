@@ -10,12 +10,8 @@ const inter = Inter({ subsets: ["latin"], display: "swap" });
 export const metadata: Metadata = {
   title: "GradeBook",
   description: "School management platform",
-
-  icons: {
-    icon: "/icons/logo2.png",
-    apple: "/icons/logo2.png",
-    shortcut: "/icons/logo2.png",
-  },
+  authors: [{ name: "daulric.dev", url: "https://daulric.dev" }],
+  creator: "daulric.dev",
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {

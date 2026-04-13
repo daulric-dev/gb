@@ -1,7 +1,21 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, GraduationCap, Users, LogOut } from "lucide-react";
+import {
+  BookOpen,
+  Calendar,
+  ChevronsUpDown,
+  FileText,
+  GraduationCap,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  Shield,
+  UserRoundSearch,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { clearTokens } from "@/lib/auth";
@@ -17,6 +31,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -30,6 +46,9 @@ const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { title: "Academic Years", href: "/dashboard/academic-years", icon: GraduationCap },
   { title: "Classes", href: "/dashboard/classes", icon: Users },
+  { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
+  { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
+  { title: "Terms", href: "/dashboard/terms", icon: Calendar },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -39,15 +58,22 @@ function getInitials(profile: UserProfile | null) {
   return `${first}${last}`.toUpperCase();
 }
 
+function navItemActive(pathname: string, href: string) {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname.startsWith(href);
+}
+
 export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
 
   async function handleLogout() {
     try {
       await api("/auth/logout", { method: "POST" });
     } catch {
-      // proceed even if api call fails
+      toast.error("Failed to logout");
     }
     clearTokens();
     router.push("/login");
@@ -59,13 +85,32 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     : profile?.email || "User";
 
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b px-4 py-3">
-        <span className="text-lg font-semibold tracking-tight">GradeBook</span>
-        {profile?.school && (
-          <span className="text-xs text-muted-foreground truncate">
-            {profile.school.name}
-          </span>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="border-b px-3 py-3">
+        <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+          <Image
+            src="/icons/logo2.png"
+            alt=""
+            width={24}
+            height={24}
+            className="size-6 shrink-0"
+          />
+          {!collapsed && (
+            <div className="min-w-0">
+              <span className="text-lg font-bold tracking-tight truncate block">GradeBook</span>
+              <span className="text-[10px] text-muted-foreground/60 -mt-1 block">
+                by daulric.dev
+              </span>
+            </div>
+          )}
+        </Link>
+        {!collapsed && profile?.school?.name && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <GraduationCap className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground truncate">
+              {profile.school.name}
+            </span>
+          </div>
         )}
       </SidebarHeader>
 
@@ -74,21 +119,48 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    render={<a href={item.href} />}
-                    isActive={
-                      item.href === "/dashboard"
-                        ? pathname === "/dashboard"
-                        : pathname.startsWith(item.href)
-                    }
-                  >
-                    <item.icon className="size-4" />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = navItemActive(pathname, item.href);
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      render={<Link href={item.href} />}
+                      isActive={isActive}
+                      tooltip={item.title}
+                    >
+                      <Icon className="size-4" />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Legal</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={<Link href="/terms" target="_blank" />}
+                  tooltip="Terms of Service"
+                >
+                  <FileText className="size-4" />
+                  <span>Terms of Service</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={<Link href="/privacy" target="_blank" />}
+                  tooltip="Privacy Policy"
+                >
+                  <Shield className="size-4" />
+                  <span>Privacy Policy</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -98,24 +170,43 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <button className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm hover:bg-accent transition-colors" />
+              <button className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent transition-colors overflow-hidden" />
             }
           >
-            <Avatar className="size-8">
+            <Avatar className="size-8 shrink-0">
               <AvatarFallback className="text-xs">
                 {getInitials(profile)}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 text-left truncate">
-              <p className="font-medium truncate">{displayName}</p>
-              {profile?.role && (
-                <p className="text-xs text-muted-foreground capitalize">
-                  {profile.role}
-                </p>
+            {!collapsed && (
+              <>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="font-medium truncate text-sm leading-tight">{displayName}</p>
+                  {profile?.role && (
+                    <p className="text-xs text-muted-foreground capitalize leading-tight">
+                      {profile.role}
+                    </p>
+                  )}
+                </div>
+                <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+              </>
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align={collapsed ? "center" : "start"}
+            side={collapsed ? "right" : "top"}
+            className="w-56"
+          >
+            <div className="px-2 py-1.5">
+              <p className="text-sm font-medium">{displayName}</p>
+              {profile?.email && (
+                <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
               )}
             </div>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
+              <Settings className="mr-2 size-4" />
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 size-4" />
               Log out
@@ -123,6 +214,8 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>
+
+      <SidebarRail />
     </Sidebar>
   );
 }

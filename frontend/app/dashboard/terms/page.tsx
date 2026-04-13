@@ -94,8 +94,8 @@ export default function TermsPage() {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        title="terms"
-        description="manage terms for each academic year"
+        title="Terms"
+        description="Manage Terms for Each Academic Year"
         action={
           <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
             <DialogTrigger

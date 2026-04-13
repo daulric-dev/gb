@@ -152,7 +152,7 @@ export default function ClassDetailPage() {
     ]).then(([info, students, teacherList]) => {
       classInfo.value = info;
       enrolled.value = students;
-      teachers.value = teacherList;
+      teachers.value = teacherList.filter((t) => t.firstName !== null);
       loading.value = false;
 
       if (info?.academicYearId) {

@@ -282,16 +282,18 @@ export class ClassService {
       if (subject) subjectsByTeacher.get(tid)!.push(subject);
     }
 
-    return assignments.map((row: any) => {
-      const profile = profileMap.get(row.user_profile_id);
-      return {
-        teacherId: row.user_profile_id,
-        firstName: profile?.first_name ?? null,
-        lastName: profile?.last_name ?? null,
-        isClassTeacher: row.is_class_teacher,
-        subjects: subjectsByTeacher.get(row.user_profile_id) ?? [],
-      };
-    });
+    return assignments
+      .filter((row: any) => profileMap.has(row.user_profile_id))
+      .map((row: any) => {
+        const profile = profileMap.get(row.user_profile_id);
+        return {
+          teacherId: row.user_profile_id,
+          firstName: profile?.first_name ?? null,
+          lastName: profile?.last_name ?? null,
+          isClassTeacher: row.is_class_teacher,
+          subjects: subjectsByTeacher.get(row.user_profile_id) ?? [],
+        };
+      });
   }
 
   async getSchoolTeachers(userId: string) {

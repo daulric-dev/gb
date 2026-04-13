@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -62,6 +63,17 @@ function LoginEmailForm() {
           <Button type="submit" className="w-full" disabled={loading.value}>
             {loading.value ? "Sending..." : "Send OTP"}
           </Button>
+          <p className="text-xs text-center text-muted-foreground mt-3">
+            By continuing, you agree to our{" "}
+            <Link href="/terms" className="underline underline-offset-4 hover:text-foreground">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline underline-offset-4 hover:text-foreground">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       </CardContent>
     </Card>
