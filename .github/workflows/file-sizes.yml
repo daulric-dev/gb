@@ -23,56 +23,172 @@ jobs:
         run: |
           set -euo pipefail
 
-          list_path="file-size-list.txt"
-          report_path="file-size-report.txt"
-          : > "$list_path"
+          sudo apt-get update -y
+          sudo apt-get install -y python3-pip fonts-dejavu-core
+          python3 -m pip install --quiet --break-system-packages fpdf2
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          tsv="$tmpdir/files.tsv"
+          report_txt="file-size-report.txt"
+          report_pdf="file-size-report.pdf"
+          : > "$tsv"
+
+          render_pdf() {
+            python3 .github/scripts/file-size-report-to-pdf.py "$report_txt" "$report_pdf"
+          }
 
           if ! git ls-files -z | grep -q .; then
-            echo "No tracked files in this checkout." | tee "$report_path"
+            echo "No tracked files in this checkout." | tee "$report_txt"
+            render_pdf
             echo "## Repository file sizes" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "No tracked files in this checkout." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          git ls-files -z | xargs -0 stat -c '%s %n' 2>/dev/null | sort -nr | while read -r bytes path; do
-            human="$(numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B")"
-            printf "%12s  %s\n" "$human" "$path"
-          done > "$list_path"
+          git ls-files -z | xargs -0 stat -c '%s %n' 2>/dev/null | awk '
+            {
+              sz = $1
+              $1 = ""
+              sub(/^ /, "")
+              path = $0
+              if (path ~ /\//) {
+                split(path, a, "/")
+                top = a[1] "/"
+              } else {
+                top = "(root)"
+              }
+              print top "\t" sz "\t" path
+            }
+          ' > "$tsv"
 
-          total_bytes="$(git ls-files -z | xargs -0 stat -c '%s' 2>/dev/null | awk '{s+=$1} END {print s+0}')"
+          total_bytes="$(awk -F '\t' '{s+=$2} END {print s+0}' "$tsv")"
           total_human="$(numfmt --to=iec-i --suffix=B "$total_bytes" 2>/dev/null || echo "${total_bytes} B")"
-          file_count="$(git ls-files | wc -l | tr -d ' ')"
+          file_count="$(wc -l < "$tsv" | tr -d " ")"
 
           {
             echo "Repository file sizes (git-tracked files)"
             echo "==========================================="
             echo ""
-            cat "$list_path"
+            echo "By top-level folder (total bytes in tree)"
+            echo "-------------------------------------------"
+          } > "$report_txt"
+
+          awk -F '\t' '{ s[$1] += $2 } END { for (k in s) print s[k] "\t" k }' "$tsv" \
+            | sort -t $'\t' -k1,1nr \
+            | while IFS=$'\t' read -r bytes folder; do
+                human="$(numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B")"
+                printf "%12s  %s\n" "$human" "$folder" >> "$report_txt"
+              done
+
+          {
+            echo ""
+            echo "Files by folder (under each top-level directory, folders by size)"
+            echo "----------------------------------------------------------------"
+            echo ""
+          } >> "$report_txt"
+
+          awk -F '\t' '{ s[$1] += $2 } END { for (k in s) print s[k] "\t" k }' "$tsv" \
+            | sort -t $'\t' -k1,1nr \
+            | while IFS=$'\t' read -r fbytes folder; do
+                fh="$(numfmt --to=iec-i --suffix=B "$fbytes" 2>/dev/null || echo "${fbytes} B")"
+                echo "### $folder — $fh ###" >> "$report_txt"
+                echo "" >> "$report_txt"
+                awk -F '\t' -v d="$folder" '$1 == d' "$tsv" | sort -t $'\t' -k2,2nr | awk -F '\t' '
+                  function hum(b,   cmd, x) {
+                    cmd = "numfmt --to=iec-i --suffix=B " b " 2>/dev/null"
+                    cmd | getline x
+                    close(cmd)
+                    return x
+                  }
+                  {
+                    path = $3
+                    for (i = 4; i <= NF; i++) {
+                      path = path "\t" $i
+                    }
+                    printf "%12s  %s\n", hum($2), path
+                  }
+                ' >> "$report_txt"
+                echo "" >> "$report_txt"
+              done
+
+          {
+            echo ""
+            echo "All files (flat, largest first)"
+            echo "-------------------------------"
+            echo ""
+          } >> "$report_txt"
+
+          sort -t $'\t' -k2,2nr "$tsv" | awk -F '\t' '
+            function hum(b,   cmd, x) {
+              cmd = "numfmt --to=iec-i --suffix=B " b " 2>/dev/null"
+              cmd | getline x
+              close(cmd)
+              return x
+            }
+            {
+              path = $3
+              for (i = 4; i <= NF; i++) {
+                path = path "\t" $i
+              }
+              printf "%12s  %s\n", hum($2), path
+            }
+          ' >> "$report_txt"
+
+          {
             echo ""
             echo "-------------------------------------------"
             printf "Files: %s  |  Total size: %s\n" "$file_count" "$total_human"
-          } > "$report_path"
+          } >> "$report_txt"
+
+          render_pdf
 
           echo "## Repository file sizes" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Tracked files: **$file_count** — combined size: **$total_human**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Largest files (top 50):" >> "$GITHUB_STEP_SUMMARY"
+          echo "### By top-level folder" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          head -n 50 "$list_path" >> "$GITHUB_STEP_SUMMARY"
+          awk -F '\t' '{ s[$1] += $2 } END { for (k in s) print s[k] "\t" k }' "$tsv" \
+            | sort -t $'\t' -k1,1nr \
+            | while IFS=$'\t' read -r bytes folder; do
+                human="$(numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B")"
+                printf "%12s  %s\n" "$human" "$folder" >> "$GITHUB_STEP_SUMMARY"
+              done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Full sorted list is attached as a workflow artifact and printed in the job log." >> "$GITHUB_STEP_SUMMARY"
+          echo "### Largest files (overall)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          sort -t $'\t' -k2,2nr "$tsv" | head -n 30 | awk -F '\t' '
+            function hum(b,   cmd, x) {
+              cmd = "numfmt --to=iec-i --suffix=B " b " 2>/dev/null"
+              cmd | getline x
+              close(cmd)
+              return x
+            }
+            {
+              path = $3
+              for (i = 4; i <= NF; i++) {
+                path = path "\t" $i
+              }
+              printf "%12s  %s\n", hum($2), path
+            }
+          ' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Full report (by folder + flat list) is in the job log and attached as **file-size-report.pdf**." >> "$GITHUB_STEP_SUMMARY"
 
           echo ""
-          echo "----- Full report -----"
-          cat "$report_path"
+          echo "----- Full report (text) -----"
+          cat "$report_txt"
 
       - name: Upload full report
         uses: actions/upload-artifact@v4
         with:
           name: file-size-report
-          path: file-size-report.txt
+          path: file-size-report.pdf
           if-no-files-found: warn
