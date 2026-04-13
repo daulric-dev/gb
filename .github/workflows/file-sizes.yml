@@ -1,0 +1,78 @@
+name: Repository file sizes
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  file-sizes:
+    name: File size report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Build file size report (tracked files only)
+        run: |
+          set -euo pipefail
+
+          list_path="file-size-list.txt"
+          report_path="file-size-report.txt"
+          : > "$list_path"
+
+          if ! git ls-files -z | grep -q .; then
+            echo "No tracked files in this checkout." | tee "$report_path"
+            echo "## Repository file sizes" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No tracked files in this checkout." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git ls-files -z | xargs -0 stat -c '%s %n' 2>/dev/null | sort -nr | while read -r bytes path; do
+            human="$(numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B")"
+            printf "%12s  %s\n" "$human" "$path"
+          done > "$list_path"
+
+          total_bytes="$(git ls-files -z | xargs -0 stat -c '%s' 2>/dev/null | awk '{s+=$1} END {print s+0}')"
+          total_human="$(numfmt --to=iec-i --suffix=B "$total_bytes" 2>/dev/null || echo "${total_bytes} B")"
+          file_count="$(git ls-files | wc -l | tr -d ' ')"
+
+          {
+            echo "Repository file sizes (git-tracked files)"
+            echo "==========================================="
+            echo ""
+            cat "$list_path"
+            echo ""
+            echo "-------------------------------------------"
+            printf "Files: %s  |  Total size: %s\n" "$file_count" "$total_human"
+          } > "$report_path"
+
+          echo "## Repository file sizes" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tracked files: **$file_count** — combined size: **$total_human**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Largest files (top 50):" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          head -n 50 "$list_path" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Full sorted list is attached as a workflow artifact and printed in the job log." >> "$GITHUB_STEP_SUMMARY"
+
+          echo ""
+          echo "----- Full report -----"
+          cat "$report_path"
+
+      - name: Upload full report
+        uses: actions/upload-artifact@v4
+        with:
+          name: file-size-report
+          path: file-size-report.txt
+          if-no-files-found: warn
