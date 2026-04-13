@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { EnrollStudentDto } from './dto/enroll-student.dto';
@@ -79,7 +74,11 @@ export class EnrollmentService {
     return { enrolled: data?.length ?? 0, message: 'Students enrolled' };
   }
 
-  async getEnrolledStudents(classId: string, userId?: string, subjectId?: string) {
+  async getEnrolledStudents(
+    classId: string,
+    userId?: string,
+    subjectId?: string,
+  ) {
     const cacheKey = `enrolled:${classId}:${userId ?? 'all'}:${subjectId ?? 'all'}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
@@ -132,7 +131,11 @@ export class EnrollmentService {
     }
 
     if (!userId) {
-      const result = await this.attachSubjects(supabase, filtered, academicYearId);
+      const result = await this.attachSubjects(
+        supabase,
+        filtered,
+        academicYearId,
+      );
       await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
       return result;
     }
@@ -144,7 +147,11 @@ export class EnrollmentService {
       .single();
 
     if (profile?.role === 'admin') {
-      const result = await this.attachSubjects(supabase, filtered, academicYearId);
+      const result = await this.attachSubjects(
+        supabase,
+        filtered,
+        academicYearId,
+      );
       await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
       return result;
     }
@@ -158,7 +165,11 @@ export class EnrollmentService {
       .single();
 
     if (groupAssignment?.is_class_teacher) {
-      const result = await this.attachSubjects(supabase, filtered, academicYearId);
+      const result = await this.attachSubjects(
+        supabase,
+        filtered,
+        academicYearId,
+      );
       await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
       return result;
     }
@@ -187,8 +198,15 @@ export class EnrollmentService {
       (profiles ?? []).map((p) => p.student_id),
     );
 
-    const filteredBySubject = filtered.filter((e: any) => studentIdsWithSubject.has(e.student.id));
-    const result = await this.attachSubjects(supabase, filteredBySubject, academicYearId, teacherSubjectIds);
+    const filteredBySubject = filtered.filter((e: any) =>
+      studentIdsWithSubject.has(e.student.id),
+    );
+    const result = await this.attachSubjects(
+      supabase,
+      filteredBySubject,
+      academicYearId,
+      teacherSubjectIds,
+    );
     await this.cache.set(cacheKey, result, ENROLLMENT_TTL);
     return result;
   }
@@ -216,8 +234,13 @@ export class EnrollmentService {
 
     const { data: profiles } = await query;
 
-    const subjectIds = [...new Set((profiles ?? []).map((p: any) => p.subject_id))];
-    let subjectMap = new Map<string, { id: string; name: string; code: string }>();
+    const subjectIds = [
+      ...new Set((profiles ?? []).map((p: any) => p.subject_id)),
+    ];
+    let subjectMap = new Map<
+      string,
+      { id: string; name: string; code: string }
+    >();
 
     if (subjectIds.length) {
       const { data: subjects } = await supabase
@@ -230,7 +253,10 @@ export class EnrollmentService {
       subjectMap = new Map((subjects ?? []).map((s: any) => [s.id, s]));
     }
 
-    const subjectsByStudent = new Map<string, { id: string; name: string; code: string }[]>();
+    const subjectsByStudent = new Map<
+      string,
+      { id: string; name: string; code: string }[]
+    >();
     for (const p of profiles ?? []) {
       const subj = subjectMap.get(p.subject_id);
       if (!subj) continue;

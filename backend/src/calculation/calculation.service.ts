@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
-import { SubjectGradeSummary, AssessmentGrade, StudentTermResult, StudentYearResult, YearEndSubject } from './interfaces/calculation.interfaces';
+import {
+  SubjectGradeSummary,
+  AssessmentGrade,
+  StudentTermResult,
+  StudentYearResult,
+  YearEndSubject,
+} from './interfaces/calculation.interfaces';
 
 const CALC_TTL = 600;
 
@@ -746,7 +752,10 @@ export class CalculationService {
     return results;
   }
 
-  async calculateClassYearResults(academicYearId: string, studentGroupId: string): Promise<StudentYearResult[]> {
+  async calculateClassYearResults(
+    academicYearId: string,
+    studentGroupId: string,
+  ): Promise<StudentYearResult[]> {
     const cacheKey = `calc:class-year:${studentGroupId}:${academicYearId}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached as StudentYearResult[];
