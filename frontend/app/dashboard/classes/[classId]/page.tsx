@@ -13,7 +13,7 @@ import { BackTitleToolbar } from "@/components/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ScrollText } from "lucide-react";
 
 interface ClassInfo {
   id: string;
@@ -261,6 +261,13 @@ export default function ClassDetailPage() {
             >
               <ClipboardList className="mr-2 size-4" />
               Grading
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/dashboard/classes/${classId}/reports`)}
+            >
+              <ScrollText className="mr-2 size-4" />
+              Reports
             </Button>
             {info.isClassTeacher && (
               <Dialog open={enrollOpen.value} onOpenChange={(v) => (enrollOpen.value = v)}>

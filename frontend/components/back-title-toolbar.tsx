@@ -2,17 +2,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function BackTitleToolbar({
-  title,
-  description,
-  onBack,
-  actions,
-}: {
-  title: string;
-  description: string;
-  onBack: () => void;
-  actions?: ReactNode;
-}) {
+export function BackTitleToolbar({ title, description, onBack, actions }: { title: string; description: ReactNode; onBack: () => void; actions?: ReactNode }) { 
   return (
     <div className="flex animate-fade-in-up items-center justify-between">
       <div className="flex items-center gap-4">
