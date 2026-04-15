@@ -1,0 +1,11 @@
+name = "gbv2-api"
+main = "dist/main.js"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+node_compat = true
+
+[build]
+command = "bun run build"
+
+[dev]
+port = 8787
