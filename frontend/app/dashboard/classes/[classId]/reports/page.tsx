@@ -6,23 +6,17 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import {
-  generateReports,
-  listReportsForClassTerm,
-  type ReportBookListItem,
   type ReportType,
-} from "@/lib/reports";
-import {
   getClassTermResults,
   getClassYearResults,
   type StudentTermResult,
   type StudentYearReport,
-} from "@/lib/year-report";
+} from "@/lib/reports";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BackTitleToolbar } from "@/components/back-title-toolbar";
+import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import {
   Card,
   CardContent,
@@ -53,31 +47,16 @@ interface Term {
   sort_order: number;
 }
 
-interface MergedStudent {
+interface StudentRow {
   studentId: string;
   firstName: string;
   lastName: string;
   overallAverage: number | null;
   position: number | undefined;
-  reportId: string | null;
-  reportStatus: string | null;
 }
 
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
-
-function statusBadge(status: string | null) {
-  switch (status) {
-    case "published":
-      return <Badge variant="default">Published</Badge>;
-    case "sent_to_ministry":
-      return <Badge variant="secondary">Sent to ministry</Badge>;
-    case "draft":
-      return <Badge variant="outline">Draft</Badge>;
-    default:
-      return null;
-  }
-}
 
 export default function ClassReportsPage() {
   useSignals();
@@ -90,10 +69,9 @@ export default function ClassReportsPage() {
   const selectedTermId = useSignal("");
   const gradingModel = useSignal<"term_based" | "year_based">("term_based");
   const reportType = useSignal<ReportType>("term");
-  const students = useSignal<MergedStudent[]>([]);
+  const students = useSignal<StudentRow[]>([]);
   const loading = useSignal(true);
   const dataLoading = useSignal(false);
-  const generating = useSignal(false);
 
   const loadClass = useCallback(() => {
     loading.value = true;
@@ -154,58 +132,37 @@ export default function ClassReportsPage() {
       ? getClassYearResults(classInfo.value.academicYearId, classId)
       : getClassTermResults(selectedTermId.value, classId);
 
-    const reportsPromise = listReportsForClassTerm(
-      classId,
-      selectedTermId.value,
-      reportType.value,
-    ).catch(() => [] as ReportBookListItem[]);
-
-    Promise.all([calcPromise, reportsPromise])
-      .then(([calcData, reports]) => {
-        const reportMap = new Map<string, ReportBookListItem>();
-        for (const r of reports) {
-          if (r.student_id) reportMap.set(r.student_id, r);
-        }
-
-        let merged: MergedStudent[];
+    calcPromise
+      .then((calcData) => {
+        let rows: StudentRow[];
 
         if (isYearEnd) {
           const yearData = calcData as StudentYearReport[];
-          merged = yearData.map((yr) => {
-            const existing = reportMap.get(yr.studentId);
-            return {
-              studentId: yr.studentId,
-              firstName: yr.firstName,
-              lastName: yr.lastName,
-              overallAverage: yr.yearEnd.overallAverage,
-              position: yr.position,
-              reportId: existing?.id ?? null,
-              reportStatus: existing?.status ?? null,
-            };
-          });
+          rows = yearData.map((yr) => ({
+            studentId: yr.studentId,
+            firstName: yr.firstName,
+            lastName: yr.lastName,
+            overallAverage: yr.yearEnd.overallAverage,
+            position: yr.position,
+          }));
         } else {
           const termData = calcData as StudentTermResult[];
-          merged = termData.map((tr) => {
-            const existing = reportMap.get(tr.studentId);
-            return {
-              studentId: tr.studentId,
-              firstName: tr.firstName,
-              lastName: tr.lastName,
-              overallAverage: tr.overallAverage,
-              position: tr.position,
-              reportId: existing?.id ?? null,
-              reportStatus: existing?.status ?? null,
-            };
-          });
+          rows = termData.map((tr) => ({
+            studentId: tr.studentId,
+            firstName: tr.firstName,
+            lastName: tr.lastName,
+            overallAverage: tr.overallAverage,
+            position: tr.position,
+          }));
         }
 
-        merged.sort((a, b) => {
+        rows.sort((a, b) => {
           const pa = a.position ?? 9999;
           const pb = b.position ?? 9999;
           return pa - pb;
         });
 
-        students.value = merged;
+        students.value = rows;
       })
       .catch((e) => {
         students.value = [];
@@ -227,28 +184,6 @@ export default function ClassReportsPage() {
   useEffect(() => {
     fetchGrades();
   }, [fetchGrades]);
-
-  const handleGenerate = async () => {
-    if (!selectedTermId.value) {
-      toast.error("Select a term");
-      return;
-    }
-    generating.value = true;
-    try {
-      const res = await generateReports({
-        termId: selectedTermId.value,
-        studentGroupId: classId,
-        reportType: reportType.value,
-      });
-      toast.success(res.message || `Generated ${res.generated} report(s)`);
-      fetchGrades();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Generation failed";
-      toast.error(msg);
-    } finally {
-      generating.value = false;
-    }
-  };
 
   if (loading.value) {
     return (
@@ -279,13 +214,21 @@ export default function ClassReportsPage() {
   }
 
   const info = classInfo.value;
-  const hasAnyReports = students.value.some((s) => s.reportId);
+
+  const studentDetailQuery = (studentId: string) => {
+    const q = new URLSearchParams({
+      studentId,
+      termId: selectedTermId.value,
+      reportType: reportType.value,
+    });
+    return `/dashboard/classes/${classId}/reports/student?${q.toString()}`;
+  };
 
   return (
     <div className="space-y-6">
       <BackTitleToolbar
         title={`${info.name} · Reports`}
-        description="Live calculated grades and report management"
+        description="Live calculated grades from assessments"
         onBack={() => router.push(`/dashboard/classes/${classId}`)}
         actions={
           <div className="flex gap-2">
@@ -320,25 +263,9 @@ export default function ClassReportsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-          <div className="space-y-1.5 min-w-[180px]">
-            <label className="text-sm font-medium">Term</label>
-            <select
-              className={selectClass}
-              value={selectedTermId.value}
-              onChange={(e) => {
-                selectedTermId.value = e.target.value;
-              }}
-            >
-              {terms.value.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
           {gradingModel.value === "year_based" && (
             <div className="space-y-1.5 min-w-[160px]">
-              <label className="text-sm font-medium">Report type</label>
+              <label className="text-sm font-medium">Report Type</label>
               <select
                 className={selectClass}
                 value={reportType.value}
@@ -351,18 +278,23 @@ export default function ClassReportsPage() {
               </select>
             </div>
           )}
-          {info.isClassTeacher && (
-            <Button
-              variant="outline"
-              onClick={handleGenerate}
-              disabled={generating.value || !selectedTermId.value}
-            >
-              {generating.value
-                ? "Generating…"
-                : hasAnyReports
-                  ? "Regenerate Reports"
-                  : "Generate Reports"}
-            </Button>
+          {!(gradingModel.value === "year_based" && reportType.value === "year_end") && (
+            <div className="space-y-1.5 min-w-[180px]">
+              <label className="text-sm font-medium">Term</label>
+              <select
+                className={selectClass}
+                value={selectedTermId.value}
+                onChange={(e) => {
+                  selectedTermId.value = e.target.value;
+                }}
+              >
+                {terms.value.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -371,8 +303,7 @@ export default function ClassReportsPage() {
         <CardHeader>
           <CardTitle>Students</CardTitle>
           <CardDescription>
-            Grades are calculated live. Generate reports to enable remarks, PDF
-            export, and ministry submission.
+            Click a student to view detailed grades and download their report as PDF.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -389,8 +320,7 @@ export default function ClassReportsPage() {
                   <TableHead className="w-12">#</TableHead>
                   <TableHead>Student</TableHead>
                   <TableHead className="text-right">Average</TableHead>
-                  <TableHead>Report</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -407,26 +337,13 @@ export default function ClassReportsPage() {
                         ? s.overallAverage.toFixed(2)
                         : "-"}
                     </TableCell>
-                    <TableCell>
-                      {s.reportId ? (
-                        statusBadge(s.reportStatus)
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          Not generated
-                        </span>
-                      )}
-                    </TableCell>
                     <TableCell className="text-right">
-                      {s.reportId ? (
-                        <Link
-                          href={`/dashboard/classes/${classId}/reports/${s.reportId}`}
-                          className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted"
-                        >
-                          Open
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                      <Link
+                        href={studentDetailQuery(s.studentId)}
+                        className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted"
+                      >
+                        View
+                      </Link>
                     </TableCell>
                   </TableRow>
                 ))}

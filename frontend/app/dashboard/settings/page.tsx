@@ -7,7 +7,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api, ApiError } from "@/lib/api";
 import { clearTokens } from "@/lib/auth";
-import { DashboardPageHeader } from "@/components/dashboard-page-header";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

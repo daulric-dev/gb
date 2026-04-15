@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import type { ClassSummary } from "./reports";
+import type { ClassSummary } from "./api";
 
 function collectSubjectCols(summary: ClassSummary) {
   const seen = new Set<string>();

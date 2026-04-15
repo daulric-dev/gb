@@ -11,8 +11,10 @@ export class CacheService implements CacheStore {
     if (process.env.USE_REDIS === 'true') {
       const redis = new Redis(process.env.REDIS_URL!);
       this.store = new RedisStore(redis);
+      this.logger.log('Using Redis Store');
     } else {
       this.store = new MemoryStore();
+      this.logger.log('Using Memory Store');
     }
   }
 

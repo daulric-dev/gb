@@ -1,6 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import multipart from '@fastify/multipart';
 
@@ -72,7 +75,10 @@ export default {
     const responseHeaders = new Headers();
     for (const [key, value] of Object.entries(res.headers)) {
       if (value != null)
-        responseHeaders.set(key, Array.isArray(value) ? value.join(', ') : String(value));
+        responseHeaders.set(
+          key,
+          Array.isArray(value) ? value.join(', ') : String(value),
+        );
     }
 
     return new Response(res.body, {

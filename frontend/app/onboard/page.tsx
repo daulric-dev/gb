@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AuthPageShell } from "@/components/auth-page-shell";
+import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { Plus } from "lucide-react";
 
 interface School {

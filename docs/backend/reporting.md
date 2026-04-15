@@ -2,7 +2,7 @@
 
 **Location**: `backend/src/reporting/`
 
-The reporting module handles the persistence layer for student reports — generating report books, managing report status workflows, and storing/serving exported files (PDFs, CSVs, Excel). It works alongside the [Calculation Module](./calculation.md), which provides the live grade data.
+The reporting module handles the persistence layer for student reports -generating report books, managing report status workflows, and storing/serving exported files (PDFs, CSVs, Excel). It works alongside the [Calculation Module](./calculation.md), which provides the live grade data.
 
 ## Files
 
@@ -30,7 +30,7 @@ A `report_book` row represents a single student's report for a specific term. It
 
 ### Report Book Entries
 
-Each report book has multiple `report_book_entry` rows — one per subject. Entries store the **persisted snapshot** of grades at generation time plus editable fields:
+Each report book has multiple `report_book_entry` rows -one per subject. Entries store the **persisted snapshot** of grades at generation time plus editable fields:
 
 | Field | Source | Editable |
 |-------|--------|----------|
@@ -156,7 +156,7 @@ Sets status to `published`.
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
-Sets status to `sent_to_ministry`. The report becomes **locked** — the `ReportGuard` blocks further edits.
+Sets status to `sent_to_ministry`. The report becomes **locked** -the `ReportGuard` blocks further edits.
 
 ### Report Entry Updates
 

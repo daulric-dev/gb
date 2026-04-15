@@ -18,10 +18,10 @@ export class ClassTeacherGuard implements CanActivate {
     const userId = request.user?.id;
 
     let classId =
-      request.params?.classId
-      ?? request.body?.studentGroupId
-      ?? request.query?.studentGroupId
-      ?? undefined;
+      request.params?.classId ??
+      request.body?.studentGroupId ??
+      request.query?.studentGroupId ??
+      undefined;
 
     if (!classId) {
       const url = String(request.url ?? '');

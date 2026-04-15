@@ -1,4 +1,4 @@
-import { PolicyPage } from "@/components/policy-page";
+import { PolicyPage } from "@/components/marketing/policy-page";
 import data from "@/data/privacy-policy.json";
 
 export default function PrivacyPolicyPage() {

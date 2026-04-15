@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { StudentYearReport, YearEndSubjectResult } from "./year-report";
+import type { StudentYearReport, YearEndSubjectResult } from "./calculations";
 
 function fmt(v: number | null): string {
   return v != null ? v.toFixed(1) : "-";
@@ -20,14 +20,6 @@ function computeLetterGrade(score: number | null): string {
   return "F";
 }
 
-/**
- * Build a year-based student report PDF.
- *
- * Columns: Subject | T1 | T2 | T3 | End of Yr Exam | Year Grade | Grade
- *
- * "End of Yr Exam" is the exam average from the last term for that subject.
- * "Year Grade" is the calculated yearGrade.
- */
 export function buildYearReportPdfBlob(
   yr: StudentYearReport,
   opts: {
@@ -174,11 +166,6 @@ export function yearReportPdfFilename(yr: StudentYearReport): string {
   return `${name}_year_report.pdf`;
 }
 
-/**
- * Build a year-based class summary PDF.
- *
- * Each student row shows per-subject term composites + year grade.
- */
 export function buildYearClassSummaryPdfBlob(
   students: StudentYearReport[],
   className: string,
@@ -228,7 +215,7 @@ export function buildYearClassSummaryPdfBlob(
   }
   if (opts.yearCwWeight != null && opts.yearExWeight != null) {
     doc.text(
-      `Year Weights — Coursework: ${opts.yearCwWeight}%  |  Exam: ${opts.yearExWeight}%`,
+      `Year Weights -Coursework: ${opts.yearCwWeight}%  |  Exam: ${opts.yearExWeight}%`,
       14,
       y,
     );

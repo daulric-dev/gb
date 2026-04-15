@@ -7,7 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { setTokens } from "@/lib/auth";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { AuthPageShell } from "@/components/auth-page-shell";
+import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";

@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsNumber, Min, Max, MaxLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateReportDto {
   @IsOptional()

@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DashboardPageHeader } from "@/components/dashboard-page-header";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Plus, Users, BookOpen } from "lucide-react";
 
 interface ClassItem {

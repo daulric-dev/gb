@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DashboardPageHeader } from "@/components/dashboard-page-header";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Plus, Pencil } from "lucide-react";
 
 interface AcademicYear {

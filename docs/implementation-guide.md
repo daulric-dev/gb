@@ -1,4 +1,4 @@
-# GGBv2 — Complete Implementation Guide
+# GGBv2 -Complete Implementation Guide
 
 ## Project Overview
 
@@ -15,7 +15,7 @@ Grade Book application for schools. Teachers create classes, enroll students, en
 
 ---
 
-# PART A — Database
+# PART A -Database
 
 ## 1. Schemas
 
@@ -303,7 +303,7 @@ UNIQUE: `(student_id, term_id, report_type)`
 
 ---
 
-# PART B — Security
+# PART B -Security
 
 ## 4. Security Architecture
 
@@ -333,7 +333,7 @@ is_assigned_to_subject_in_group(p_subject_id uuid, p_group_id uuid) RETURNS bool
 
 All use `SECURITY DEFINER STABLE`.
 
-## 6. RLS Policies — School Isolation (16 policies)
+## 6. RLS Policies -School Isolation (16 policies)
 
 Every table gets one `school_isolation` policy (`FOR ALL`):
 
@@ -356,7 +356,7 @@ Every table gets one `school_isolation` policy (`FOR ALL`):
 | reporting.report_book | → `academic_year.school_id` |
 | reporting.report_book_entry | → `report_book → academic_year.school_id` |
 
-## 7. RLS Policies — Assignment Scoping (12 policies)
+## 7. RLS Policies -Assignment Scoping (12 policies)
 
 ### Student tables (4 policies, `FOR SELECT`)
 Teachers see only students in their assigned groups. Admin sees all.
@@ -368,7 +368,7 @@ Teachers see only students in their assigned groups. Admin sees all.
 | student.student_subject_profile | `is_admin() OR is_assigned_to_group(enrollment.student_group_id)` |
 | student.parent_student_link | `is_admin() OR self OR is_assigned_to_group(enrollment.student_group_id)` |
 
-### Grading tables — split READ / WRITE (6 policies)
+### Grading tables -split READ / WRITE (6 policies)
 
 This is the most critical part. Subject teacher sees/edits own subject. Class teacher reads ALL subjects (for reports) but cannot edit other teachers' grades.
 
@@ -420,7 +420,7 @@ OR EXISTS (
 | Client | When to use | RLS |
 |---|---|---|
 | `serviceClient` (service role key) | Auth operations, class creation, enrollment, report generation, guard queries | BYPASSES |
-| `createUserClient` (user JWT) | Grade entry/read, assessment CRUD, report reading — any query where RLS should enforce subject+group | RESPECTS |
+| `createUserClient` (user JWT) | Grade entry/read, assessment CRUD, report reading -any query where RLS should enforce subject+group | RESPECTS |
 
 Rule: If the endpoint involves grading data, use the user client. For everything else, use serviceClient with NestJS guards.
 
@@ -447,22 +447,22 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA staff GRANT ALL ON TABLES TO service_role, au
 
 ---
 
-# PART C — Backend Modules
+# PART C -Backend Modules
 
 ## 11. Build Order
 
 ```
- 1. Auth              — OTP login, JWT validation
- 2. Academic Year     — create, activate, grading model
- 3. Subject           — school-level CRUD
- 4. Term              — 3 terms per year, weights
- 5. Student           — school-level CRUD
- 6. Class             — student groups, teacher assignment
- 7. Enrollment        — enroll students, assign subjects
- 8. Grading           — assessments, grades, bulk entry, exclusions
- 9. Calculation       — weighted averages, rankings
-10. Reporting         — report books, remarks, PDF, status flow
-11. Cache             — pluggable caching (memory or Redis)
+ 1. Auth              -OTP login, JWT validation
+ 2. Academic Year     -create, activate, grading model
+ 3. Subject           -school-level CRUD
+ 4. Term              -3 terms per year, weights
+ 5. Student           -school-level CRUD
+ 6. Class             -student groups, teacher assignment
+ 7. Enrollment        -enroll students, assign subjects
+ 8. Grading           -assessments, grades, bulk entry, exclusions
+ 9. Calculation       -weighted averages, rankings
+10. Reporting         -report books, remarks, PDF, status flow
+11. Cache             -pluggable caching (memory or Redis)
 ```
 
 ## 12. Project Structure
@@ -568,7 +568,7 @@ backend/src/
 
 ---
 
-# PART D — API Routes
+# PART D -API Routes
 
 ## 13. Auth
 
@@ -718,7 +718,7 @@ CT = ClassTeacherGuard, RG = ReportGuard
 
 ---
 
-# PART E — Grading Calculation
+# PART E -Grading Calculation
 
 ## 23. Term Grade Calculation
 
@@ -757,7 +757,7 @@ Maths exam:
 term_composite = (72.5 × 40%) + (78.0 × 60%) = 29.0 + 46.8 = 75.8%
 ```
 
-## 24. Year-End Calculation — TERM_BASED
+## 24. Year-End Calculation -TERM_BASED
 
 ```
 Year grade = simple average of 3 term composites
@@ -771,7 +771,7 @@ Maths:
 Ministry receives: Trinity term report (is_ministry_reporting = true)
 ```
 
-## 25. Year-End Calculation — YEAR_BASED
+## 25. Year-End Calculation -YEAR_BASED
 
 ```
 Year grade = terms_avg × year_coursework_weight% + yr_exam × year_exam_weight%
@@ -804,7 +804,7 @@ Ministry receives: Year-end report
 
 ---
 
-# PART F — Reporting
+# PART F -Reporting
 
 ## 27. Report Status Flow
 
@@ -823,7 +823,7 @@ sent_to_ministry: LOCKED FOREVER. No edits. No regenerate.
 | TERM_BASED | Trinity term report (type: 'term') | Primary schools report per term |
 | YEAR_BASED | Year-end report (type: 'year_end') | Secondary schools report annually |
 
-## 29. Report Card PDF — Term
+## 29. Report Card PDF -Term
 
 Portrait A4. One per student.
 
@@ -832,7 +832,7 @@ Portrait A4. One per student.
 SCHOOL NAME
 School Address
 
-STUDENT REPORT CARD — Michaelmas Term 2025/2026
+STUDENT REPORT CARD -Michaelmas Term 2025/2026
 
 Name: James Thompson          Reg: STU-2025-001
 Class: 3A                     Gender: Male
@@ -843,7 +843,7 @@ DOB: 15/03/2015               Position: 3rd out of 30
 ├────────────────┼──────┼──────┼───────┼───────┼─────────────┤
 │ Mathematics    │ 72.5 │ 78.0 │ 75.8  │ B+    │ Good effort │
 │ English Lang.  │ 80.0 │ 85.0 │ 83.0  │ A-    │ Excellent   │
-│ PE             │  —   │  —   │  —    │  —    │ Very active │
+│ PE             │  -  │  -  │  -   │  -   │ Very active │
 ├────────────────┼──────┼──────┼───────┼───────┼─────────────┤
 │ OVERALL        │      │      │ 75.1  │ B+    │             │
 └────────────────┴──────┴──────┴───────┴───────┴─────────────┘
@@ -855,7 +855,7 @@ Class Teacher: Mrs. Mary Johnson        Date: 15 Dec 2025
 Signature: ___________________
 ```
 
-## 30. Report Card PDF — Year-End TERM_BASED
+## 30. Report Card PDF -Year-End TERM_BASED
 
 ```
 ┌────────────────┬───────┬───────┬───────┬───────┬───────┐
@@ -868,9 +868,9 @@ Signature: ___________________
 Year = (T1 + T2 + T3) / 3
 ```
 
-## 31. Report Card PDF — Year-End YEAR_BASED
+## 31. Report Card PDF -Year-End YEAR_BASED
 
-Different table — two extra columns for Terms Avg and Yr Exam:
+Different table -two extra columns for Terms Avg and Yr Exam:
 
 ```
 ┌────────────────┬──────┬──────┬──────┬───────────┬──────────┬───────┬───────┐
@@ -893,7 +893,7 @@ The frontend checks `academic_year.grading_model` to pick the right layout.
 Landscape A4. All students × all graded subjects:
 
 ```
-CLASS SUMMARY — Class 3A — Michaelmas Term 2025/2026
+CLASS SUMMARY -Class 3A -Michaelmas Term 2025/2026
 
 ┌────┬──────────────────┬───────┬───────┬───────┬───────┬─────┐
 │ #  │ Student          │ Maths │ Eng   │ Sci   │ Art   │ Avg │
@@ -915,16 +915,16 @@ Ranked by overall average. Non-graded subjects (PE) excluded from grid.
 
 | Score | Grade | Description |
 |---|---|---|
-| 90 — 100 | A | Excellent |
-| 85 — 89 | A- | Very Good |
-| 80 — 84 | B+ | Good |
-| 75 — 79 | B | Above Average |
-| 70 — 74 | B- | Average |
-| 65 — 69 | C+ | Below Average |
-| 60 — 64 | C | Fair |
-| 55 — 59 | C- | Needs Improvement |
-| 50 — 54 | D | Poor |
-| 0 — 49 | F | Fail |
+| 90 -100 | A | Excellent |
+| 85 -89 | A- | Very Good |
+| 80 -84 | B+ | Good |
+| 75 -79 | B | Above Average |
+| 70 -74 | B- | Average |
+| 65 -69 | C+ | Below Average |
+| 60 -64 | C | Fair |
+| 55 -59 | C- | Needs Improvement |
+| 50 -54 | D | Poor |
+| 0 -49 | F | Fail |
 
 Use teacher's manual `letter_grade` if entered. Otherwise compute from score.
 
@@ -948,7 +948,7 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
 
 ---
 
-# PART G — Teacher Workflow
+# PART G -Teacher Workflow
 
 ## 35. Class Teacher Flow
 
