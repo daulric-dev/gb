@@ -11,26 +11,24 @@ import {
   type ClassSummary,
   type ClassReportFile,
   type ReportType,
-} from "@/lib/reports";
-import { buildClassSummaryPdfBlob, downloadBlob } from "@/lib/report-pdf";
-import { buildClassSummaryCsv, buildClassSummaryXlsx } from "@/lib/report-export";
-import {
+  buildClassSummaryPdfBlob,
+  downloadBlob,
+  buildClassSummaryCsv,
+  buildClassSummaryXlsx,
   getClassTermResults,
   getClassYearResults,
   termResultsToClassSummary,
   type StudentYearReport,
-} from "@/lib/year-report";
-import { buildYearClassSummaryPdfBlob } from "@/lib/report-year-pdf";
-import {
+  buildYearClassSummaryPdfBlob,
   buildYearClassSummaryCsv,
   buildYearClassSummaryXlsx,
-} from "@/lib/report-year-export";
+} from "@/lib/reports";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BackTitleToolbar } from "@/components/back-title-toolbar";
+import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import {
   Card,
   CardContent,
@@ -204,7 +202,7 @@ export default function ClassReportPage() {
         })
         .finally(() => { dataLoading.value = false; });
     }
-  }, [classId, selectedTermId.value, reportType.value, gradingModel.value]);
+  }, [classId, selectedTermId.value, reportType.value, gradingModel.value, classInfo.value?.academicYearId]);
 
   useEffect(() => {
     fetchSummary();

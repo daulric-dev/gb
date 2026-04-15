@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DashboardPageHeader } from "@/components/dashboard-page-header";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Plus, Search, Pencil } from "lucide-react";
 
 interface Student {

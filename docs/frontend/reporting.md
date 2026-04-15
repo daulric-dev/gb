@@ -1,6 +1,6 @@
 # Reporting Pages
 
-The reporting section provides three pages for viewing, managing, and exporting student grades. All reporting pages are **class-teacher only** — the buttons to access them are hidden from subject teachers, and the pages themselves verify class teacher status before rendering.
+The reporting section provides three pages for viewing, managing, and exporting student grades. All reporting pages are **class-teacher only** -the buttons to access them are hidden from subject teachers, and the pages themselves verify class teacher status before rendering.
 
 Grade data displayed on these pages comes from **live calculation endpoints** (`/calculations/`), not from the persisted reporting schema. The reporting schema is used only for metadata (remarks, letter grades, status) and file storage.
 
@@ -36,7 +36,7 @@ Displays all students in a class with their live calculated grades and the statu
 
 1. **Live grades** are fetched from `/calculations/class-term` (term reports) or `/calculations/class-year` (year-end reports)
 2. **Persisted reports** are fetched from `/reports?studentGroupId=&termId=` in parallel
-3. The two are merged into a `MergedStudent` list — live averages with report status overlaid
+3. The two are merged into a `MergedStudent` list -live averages with report status overlaid
 
 ### Student Table
 
@@ -51,7 +51,7 @@ Displays all students in a class with their live calculated grades and the statu
 
 - Label is **"Generate Reports"** if no persisted reports exist, **"Regenerate Reports"** if some exist
 - Calls `POST /api/v1/reports/generate` to persist current live calculations to the `report_book` table
-- This is optional — grades display immediately without generating
+- This is optional -grades display immediately without generating
 
 ---
 
@@ -195,9 +195,9 @@ Three download formats, all generated **client-side** from live calculation data
 
 | Format | Term-based | Year-based |
 |--------|-----------|------------|
-| **PDF** | `buildClassSummaryPdfBlob` — CW/EX/Final per subject, with subject separator lines | `buildYearClassSummaryPdfBlob` — term initials + End of Yr Exam + Year per subject |
-| **CSV** | `buildClassSummaryCsv` — same column structure as PDF | `buildYearClassSummaryCsv` — matches year PDF layout |
-| **XLSX** | `buildClassSummaryXlsx` — two sheets (Summary + Students) with merged subject headers | `buildYearClassSummaryXlsx` — matches year PDF layout |
+| **PDF** | `buildClassSummaryPdfBlob` -CW/EX/Final per subject, with subject separator lines | `buildYearClassSummaryPdfBlob` -term initials + End of Yr Exam + Year per subject |
+| **CSV** | `buildClassSummaryCsv` -same column structure as PDF | `buildYearClassSummaryCsv` -matches year PDF layout |
+| **XLSX** | `buildClassSummaryXlsx` -two sheets (Summary + Students) with merged subject headers | `buildYearClassSummaryXlsx` -matches year PDF layout |
 
 All exports include:
 - Class name and term name in the header

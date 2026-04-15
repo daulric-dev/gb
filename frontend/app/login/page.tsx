@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { AuthPageShell } from "@/components/auth-page-shell";
+import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

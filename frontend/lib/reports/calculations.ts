@@ -1,10 +1,10 @@
-import { api } from "./api";
+import { api } from "../api";
 import type {
   ClassSummary,
   ClassSummarySubjectAvg,
   ClassSummaryStudent,
   StudentSubjectGrade,
-} from "./reports";
+} from "./api";
 
 export interface YearTermGrade {
   termId: string;
@@ -110,10 +110,6 @@ export function getClassYearResults(
 
 const PASS_THRESHOLD = 50;
 
-/**
- * Build a ClassSummary from live StudentTermResult[] so the existing
- * PDF / CSV / XLSX export functions can consume it without change.
- */
 export function termResultsToClassSummary(
   results: StudentTermResult[],
   opts: { courseworkWeight: number; examWeight: number; gradingModel?: string },

@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import type { StudentYearReport } from "./year-report";
+import type { StudentYearReport } from "./calculations";
 
 function fmt(v: number | null): string {
   return v != null ? v.toFixed(1) : "";

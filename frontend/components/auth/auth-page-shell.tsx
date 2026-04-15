@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ModeToggle } from "@/components/mode-toggle";
+import { ModeToggle } from "@/components/layout/mode-toggle";
 
 export function AuthPageShell({ children }: { children: ReactNode }) {
   return (

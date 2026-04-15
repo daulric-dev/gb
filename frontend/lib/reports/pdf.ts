@@ -1,24 +1,14 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { ReportDetail, ClassSummary, ReportEntryRow } from "./reports";
-import type { StudentTermResult } from "./year-report";
+import type { ClassSummary } from "./api";
+import type { StudentTermResult } from "./calculations";
 
-/**
- * Build an individual student term report PDF from live calculation data.
- * `report` is optional and supplies persisted metadata (remarks, grades, status).
- */
 export function buildReportPdfBlob(
   termResult: StudentTermResult,
-  opts: {
-    termName?: string;
-    report?: ReportDetail | null;
-    entryMap?: Map<string, ReportEntryRow>;
-  } = {},
+  opts: { termName?: string } = {},
 ): Blob {
   const doc = new jsPDF({ format: "a4", unit: "mm" });
   const name = `${termResult.firstName} ${termResult.lastName}`.trim();
-  const r = opts.report;
-  const entryMap = opts.entryMap ?? new Map<string, ReportEntryRow>();
 
   doc.setFontSize(16);
   doc.text("Report card", 14, 18);
@@ -28,14 +18,6 @@ export function buildReportPdfBlob(
   y += 6;
   if (opts.termName) {
     doc.text(`Term: ${opts.termName}`, 14, y);
-    y += 6;
-  }
-  if (r?.report_type) {
-    doc.text(`Report Type: ${r.report_type}`, 14, y);
-    y += 6;
-  }
-  if (r?.status) {
-    doc.text(`Status: ${r.status}`, 14, y);
     y += 6;
   }
   if (termResult.overallAverage != null) {
@@ -43,108 +25,18 @@ export function buildReportPdfBlob(
     y += 6;
   }
   if (termResult.position != null) {
-    doc.text(`Position: ${termResult.position}${r?.total_students != null ? ` of ${r.total_students}` : ""}`, 14, y);
+    doc.text(`Position: ${termResult.position}`, 14, y);
     y += 6;
-  }
-  if (r?.conduct) {
-    doc.text(`Conduct: ${r.conduct}`, 14, y);
-    y += 6;
-  }
-  if (r?.attendance_percentage != null) {
-    doc.text(`Attendance: ${r.attendance_percentage}%`, 14, y);
-    y += 6;
-  }
-  if (r?.class_teacher_remark) {
-    const lines = doc.splitTextToSize(
-      `Class teacher remark: ${r.class_teacher_remark}`,
-      180,
-    );
-    doc.text(lines, 14, y);
-    y += lines.length * 5 + 4;
   }
 
   autoTable(doc, {
     startY: y + 4,
-    head: [["Subject", "Course", "Exam", "Term", "Grade", "Remark"]],
-    body: termResult.subjects.map((s) => {
-      const entry = entryMap.get(s.subjectId);
-      return [
-        s.subjectName,
-        s.courseworkAverage != null ? s.courseworkAverage.toFixed(1) : "-",
-        s.examAverage != null ? s.examAverage.toFixed(1) : "-",
-        s.termComposite != null ? s.termComposite.toFixed(1) : "-",
-        entry?.letter_grade ?? "-",
-        (entry?.teacher_remark ?? "").slice(0, 120),
-      ];
-    }),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [66, 66, 66] },
-  });
-
-  return doc.output("blob");
-}
-
-/** @deprecated Use the overload that takes StudentTermResult. */
-export function buildReportPdfBlobFromReport(
-  r: ReportDetail,
-  opts: { termName?: string } = {},
-): Blob {
-  const doc = new jsPDF({ format: "a4", unit: "mm" });
-  const st = r.student;
-  const name = st ? `${st.first_name} ${st.last_name}`.trim() : "Student";
-
-  doc.setFontSize(16);
-  doc.text("Report card", 14, 18);
-  doc.setFontSize(10);
-  let y = 28;
-  doc.text(`Student: ${name}`, 14, y);
-  y += 6;
-  if (opts.termName) {
-    doc.text(`Term: ${opts.termName}`, 14, y);
-    y += 6;
-  }
-  doc.text(`Report Type: ${r.report_type ?? "-"}`, 14, y);
-  y += 6;
-  doc.text(`Status: ${r.status ?? "-"}`, 14, y);
-  y += 6;
-  if (r.overall_average != null) {
-    doc.text(`Overall average: ${r.overall_average.toFixed(2)}`, 14, y);
-    y += 6;
-  }
-  if (r.position != null && r.total_students != null) {
-    doc.text(`Position: ${r.position} of ${r.total_students}`, 14, y);
-    y += 6;
-  }
-  if (r.conduct) {
-    doc.text(`Conduct: ${r.conduct}`, 14, y);
-    y += 6;
-  }
-  if (r.attendance_percentage != null) {
-    doc.text(`Attendance: ${r.attendance_percentage}%`, 14, y);
-    y += 6;
-  }
-  if (r.class_teacher_remark) {
-    const lines = doc.splitTextToSize(
-      `Class teacher remark: ${r.class_teacher_remark}`,
-      180,
-    );
-    doc.text(lines, 14, y);
-    y += lines.length * 5 + 4;
-  }
-
-  autoTable(doc, {
-    startY: y + 4,
-    head: [
-      ["Subject", "Course", "Exam", "Term", "Year", "Grade", "Remark"],
-    ],
-    body: r.entries.map((e) => [
-      e.subject?.name ?? "-",
-      e.coursework_average != null ? e.coursework_average.toFixed(1) : "-",
-      e.exam_average != null ? e.exam_average.toFixed(1) : "-",
-      e.term_composite != null ? e.term_composite.toFixed(1) : "-",
-      e.year_grade != null ? e.year_grade.toFixed(1) : "-",
-      e.letter_grade ?? "-",
-      (e.teacher_remark ?? "").slice(0, 120),
+    head: [["Subject", "Coursework", "Exam", "Term"]],
+    body: termResult.subjects.map((s) => [
+      s.subjectName,
+      s.courseworkAverage != null ? s.courseworkAverage.toFixed(1) : "-",
+      s.examAverage != null ? s.examAverage.toFixed(1) : "-",
+      s.termComposite != null ? s.termComposite.toFixed(1) : "-",
     ]),
     styles: { fontSize: 8 },
     headStyles: { fillColor: [66, 66, 66] },
@@ -153,7 +45,6 @@ export function buildReportPdfBlobFromReport(
   return doc.output("blob");
 }
 
-/** Trigger a browser file-save dialog from an in-memory blob. */
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -163,15 +54,6 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-/** Build a user-friendly filename for a report PDF. */
-export function pdfFilenameForReport(r: ReportDetail): string {
-  const st = r.student;
-  const name = st
-    ? `${st.first_name}_${st.last_name}`.replace(/\s+/g, "_")
-    : "report";
-  return `${name}_${r.report_type ?? "report"}.pdf`;
 }
 
 function collectSubjectColumns(summary: ClassSummary) {

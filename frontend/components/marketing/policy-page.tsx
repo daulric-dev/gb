@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ModeToggle } from "@/components/mode-toggle";
+import { ModeToggle } from "@/components/layout/mode-toggle";
 import { ArrowLeft } from "lucide-react";
 
 interface ListItem {

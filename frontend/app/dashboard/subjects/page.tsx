@@ -43,7 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DashboardPageHeader } from "@/components/dashboard-page-header";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Plus, Pencil, Trash2, GripVertical } from "lucide-react";
 
 interface Subject {
