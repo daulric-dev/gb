@@ -13,6 +13,7 @@ The subject module manages the catalog of subjects offered by a school (e.g., Ma
 | `subject.service.ts` | Business logic |
 | `dto/create-subject.dto.ts` | Validation for creation |
 | `dto/update-subject.dto.ts` | Validation for updates |
+| `dto/reorder-subjects.dto.ts` | Validation for batch reordering |
 
 ## Data Model
 
@@ -74,6 +75,25 @@ Creates a new subject.
 ### `PATCH /api/v1/subjects/:id`
 
 Updates a subject. All fields optional.
+
+---
+
+### `PATCH /api/v1/subjects/reorder`
+
+Batch-updates the `sort_order` for multiple subjects at once. Used by the drag-to-sort UI.
+
+**Body:**
+```json
+{
+  "items": [
+    { "id": "uuid-1", "sortOrder": 0 },
+    { "id": "uuid-2", "sortOrder": 1 },
+    { "id": "uuid-3", "sortOrder": 2 }
+  ]
+}
+```
+
+Clears the subject cache after updating.
 
 ---
 

@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 
 @Injectable()
@@ -36,7 +36,7 @@ export class ReportGuard implements CanActivate {
       .maybeSingle();
 
     if (!report) {
-      return true;
+      throw new NotFoundException('Report not found');
     }
 
     if (report.status === 'sent_to_ministry') {

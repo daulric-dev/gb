@@ -15,6 +15,9 @@ The frontend is a **Next.js 16** application using the **App Router**. It provid
 | sonner | Toast notifications |
 | lucide-react | Icons |
 | next-themes | Dark/light mode |
+| jsPDF + jspdf-autotable | Client-side PDF generation |
+| xlsx (SheetJS) | Client-side Excel/CSV generation |
+| @dnd-kit | Drag-and-drop for sortable lists |
 | input-otp | OTP input component |
 
 ## Project Structure
@@ -46,8 +49,14 @@ frontend/
 │           ├── page.tsx           # Class listing
 │           └── [classId]/
 │               ├── page.tsx       # Class detail (teachers, students, summary)
-│               └── grading/
-│                   └── page.tsx   # Grading sheet
+│               ├── grading/
+│               │   └── page.tsx   # Grading sheet
+│               ├── reports/
+│               │   ├── page.tsx   # Reports list (live grades + persisted status)
+│               │   └── [reportId]/
+│               │       └── page.tsx # Individual report detail
+│               └── class-report/
+│                   └── page.tsx   # Class summary with exports
 ├── components/
 │   ├── header.tsx                 # Top navigation bar
 │   ├── auth-page-shell.tsx        # Centered layout for auth pages
@@ -77,7 +86,14 @@ frontend/
 │   ├── api.ts                     # API client with auth and token refresh
 │   ├── auth.ts                    # Token storage (localStorage + cookie)
 │   ├── utils.ts                   # cn() utility for class merging
-│   └── use-profile.ts            # Profile fetching hook
+│   ├── use-profile.ts            # Profile fetching hook
+│   ├── reports.ts                 # Reporting schema API functions and types
+│   ├── reports.types.ts           # Shared report type definitions
+│   ├── year-report.ts             # Calculation endpoint API functions and types
+│   ├── report-pdf.ts              # PDF generation (individual + term class summary)
+│   ├── report-year-pdf.ts         # PDF generation (year-based reports)
+│   ├── report-export.ts           # CSV/XLSX export (term-based class summary)
+│   └── report-year-export.ts      # CSV/XLSX export (year-based class summary)
 ├── hooks/
 │   └── use-mobile.ts             # Mobile breakpoint detection
 ├── proxy.ts                       # Route protection (auth gating)

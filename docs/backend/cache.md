@@ -22,9 +22,9 @@ Client Request
 ```
 
 This pattern ensures:
-- **Reads are fast** — repeated requests for the same data don't hit Supabase.
-- **Writes stay consistent** — the cache is invalidated or updated immediately after a successful write to Supabase, so subsequent reads reflect the latest data.
-- **TTL provides a safety net** — even if a cache update is missed, stale data expires automatically.
+- **Reads are fast** - repeated requests for the same data don't hit Supabase.
+- **Writes stay consistent** - the cache is invalidated or updated immediately after a successful write to Supabase, so subsequent reads reflect the latest data.
+- **TTL provides a safety net** - even if a cache update is missed, stale data expires automatically.
 
 ## Architecture
 
@@ -81,7 +81,7 @@ All stores implement this interface:
 - Values are JSON-serialized on `set()` and JSON-parsed on `get()`.
 - TTL is set via `SET key value EX ttl` (seconds).
 - `deleteByPrefix()` uses `SCAN` with `MATCH` to find and delete matching keys without blocking.
-- `clear()` calls `FLUSHDB` — use with caution in shared Redis instances.
+- `clear()` calls `FLUSHDB` - use with caution in shared Redis instances.
 - Suitable for production and multi-instance deployments where cache must be shared.
 
 ## Environment Variables
@@ -89,7 +89,7 @@ All stores implement this interface:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `USE_REDIS` | No | `false` | Set to `true` to use Redis instead of in-memory cache |
-| `REDIS_URL` | Only if `USE_REDIS=true` | — | Redis connection URL (e.g., `redis://localhost:6379`) |
+| `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`) |
 
 ## Usage Pattern
 
@@ -195,7 +195,7 @@ async bulkCreate(userId: string, dto: BulkGradeDto, token: string) {
 | `verifyOtp` | Warm cache | `profile:{userId}` | 300s |
 | `onboard` | Write-through | `profile:{userId}` | 300s |
 | `updateProfile` | Write-through | `profile:{userId}` | 300s |
-| `deleteAccount` | Invalidate | `profile:{userId}` | — |
+| `deleteAccount` | Invalidate | `profile:{userId}` | - |
 
 ### ClassService
 
@@ -205,11 +205,11 @@ async bulkCreate(userId: string, dto: BulkGradeDto, token: string) {
 | `getTeachers` | Read-through | `class-teachers:{classId}` | 300s |
 | `getMySubjectsForClass` | Read-through | `my-subjects:{userId}:{classId}` | 300s |
 | `getSchoolTeachers` | Read-through | `school-teachers:{schoolId}` | 300s |
-| `createClass` | Invalidate | `my-classes:{userId}`, `my-classes:{userId}:{yearId}` | — |
-| `updateClass` | Invalidate | `class-teachers:{classId}` | — |
-| `deleteClass` | Invalidate | `class-teachers:{classId}` | — |
-| `addTeacher` | Invalidate | `class-teachers:{classId}`, `my-classes:{teacherId}`, `my-subjects:{teacherId}:{classId}` | — |
-| `removeTeacher` | Invalidate | `class-teachers:{classId}`, `my-classes:{teacherId}`, `my-subjects:{teacherId}:{classId}` | — |
+| `createClass` | Invalidate | `my-classes:{userId}`, `my-classes:{userId}:{yearId}` | - |
+| `updateClass` | Invalidate | `class-teachers:{classId}` | - |
+| `deleteClass` | Invalidate | `class-teachers:{classId}` | - |
+| `addTeacher` | Invalidate | `class-teachers:{classId}`, `my-classes:{teacherId}`, `my-subjects:{teacherId}:{classId}` | - |
+| `removeTeacher` | Invalidate | `class-teachers:{classId}`, `my-classes:{teacherId}`, `my-subjects:{teacherId}:{classId}` | - |
 
 ### EnrollmentService
 
@@ -217,12 +217,12 @@ async bulkCreate(userId: string, dto: BulkGradeDto, token: string) {
 |--------|----------|-----------|-----|
 | `getEnrolledStudents` | Read-through | `enrolled:{classId}:{userId\|all}:{subjectId\|all}` | 300s |
 | `getStudentSubjects` | Read-through | `student-subjects:{classId}:{studentId}` | 300s |
-| `enroll` | Prefix invalidate | `enrolled:{classId}*` | — |
-| `bulkEnroll` | Prefix invalidate | `enrolled:{classId}*` | — |
-| `unenroll` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` | — |
-| `assignSubjects` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` | — |
-| `bulkAssignSubjects` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` per student | — |
-| `removeSubject` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` | — |
+| `enroll` | Prefix invalidate | `enrolled:{classId}*` | - |
+| `bulkEnroll` | Prefix invalidate | `enrolled:{classId}*` | - |
+| `unenroll` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` | - |
+| `assignSubjects` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` | - |
+| `bulkAssignSubjects` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` per student | - |
+| `removeSubject` | Prefix invalidate | `enrolled:{classId}*`, `student-subjects:{classId}:{studentId}` | - |
 
 ### CalculationService
 
@@ -238,24 +238,24 @@ Calculation caches are invalidated by `GradeService` and `AssessmentService` via
 | Method | Strategy | Cache Key | TTL |
 |--------|----------|-----------|-----|
 | `findAll` | Read-through | `schools:all` | 600s |
-| `create` | Invalidate | `schools:all` | — |
+| `create` | Invalidate | `schools:all` | - |
 
 ### SubjectService
 
 | Method | Strategy | Cache Key | TTL |
 |--------|----------|-----------|-----|
 | `findAll` | Read-through | `subjects:{schoolId}` | 300s |
-| `create` | Invalidate | `subjects:{schoolId}` | — |
-| `update` | Prefix invalidate | `subjects:*` | — |
-| `delete` | Prefix invalidate | `subjects:*` | — |
+| `create` | Invalidate | `subjects:{schoolId}` | - |
+| `update` | Prefix invalidate | `subjects:*` | - |
+| `delete` | Prefix invalidate | `subjects:*` | - |
 
 ### StudentService
 
 | Method | Strategy | Cache Key | TTL |
 |--------|----------|-----------|-----|
 | `findAll` (no search) | Read-through | `students:{schoolId}` | 300s |
-| `create` | Invalidate | `students:{schoolId}` | — |
-| `update` | Prefix invalidate | `students:*` | — |
+| `create` | Invalidate | `students:{schoolId}` | - |
+| `update` | Prefix invalidate | `students:*` | - |
 
 Search queries bypass the cache entirely.
 
@@ -265,19 +265,19 @@ Search queries bypass the cache entirely.
 |--------|----------|-----------|-----|
 | `findAll` | Read-through | `academic-years:{schoolId}` | 300s |
 | `findActive` | Read-through | `academic-year-active:{schoolId}` | 300s |
-| `create` | Invalidate | `academic-years:{schoolId}`, `academic-year-active:{schoolId}` | — |
-| `update` | Prefix invalidate | `academic-year*` | — |
-| `setActive` | Prefix invalidate | `academic-year*` | — |
-| `deactivate` | Prefix invalidate | `academic-year*` | — |
+| `create` | Invalidate | `academic-years:{schoolId}`, `academic-year-active:{schoolId}` | - |
+| `update` | Prefix invalidate | `academic-year*` | - |
+| `setActive` | Prefix invalidate | `academic-year*` | - |
+| `deactivate` | Prefix invalidate | `academic-year*` | - |
 
 ### TermService
 
 | Method | Strategy | Cache Key | TTL |
 |--------|----------|-----------|-----|
 | `findByYear` | Read-through | `terms:{yearId}` | 300s |
-| `create` | Invalidate | `terms:{yearId}` | — |
-| `update` | Prefix invalidate | `terms:*` | — |
-| `delete` | Prefix invalidate | `terms:*` | — |
+| `create` | Invalidate | `terms:{yearId}` | - |
+| `update` | Prefix invalidate | `terms:*` | - |
+| `delete` | Prefix invalidate | `terms:*` | - |
 
 ### GradeService (write-only, no cached reads)
 

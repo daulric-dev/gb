@@ -35,6 +35,7 @@ backend/src/
 ├── enrollment/                # Student enrollment and subject assignment
 ├── grading/                   # Assessments and grades
 ├── calculation/               # Grade calculations and summaries
+├── reporting/                 # Report generation, status workflow, file storage
 └── cache/                     # Pluggable caching (memory or Redis)
 ```
 
@@ -72,6 +73,7 @@ AppModule
 ├── EnrollmentModule (imports ClassModule for guard)
 ├── GradingModule
 ├── CalculationModule
+├── ReportingModule
 └── CacheModule (global - exports CacheService with memory or Redis store)
 ```
 
@@ -94,6 +96,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | `student` | `student`, `student_group_enrollment`, `student_subject_profile` |
 | `staff` | `teacher_group_assignment`, `teacher_subject_assignment` |
 | `grading` | `assessment`, `grade` |
+| `reporting` | `report_book`, `report_book_entry`, `report_book_pdf`, `class_report_file` |
 
 ## Guards
 

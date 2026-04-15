@@ -17,21 +17,38 @@ export class ClassTeacherGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const userId = request.user?.id;
 
-    let classId = request.params?.classId ?? request.body?.studentGroupId ?? undefined;
+    let classId =
+      request.params?.classId
+      ?? request.body?.studentGroupId
+      ?? request.query?.studentGroupId
+      ?? undefined;
 
-    if (!classId && request.params?.id) {
+    if (!classId) {
       const url = String(request.url ?? '');
       const isReportScoped =
-        url.includes('/reports/') && !url.includes('/report-entries/');
+        url.includes('/reports') && !url.includes('/report-entries/');
+
       if (isReportScoped) {
         const supabase = this.supabaseService.getServiceClient();
-        const { data: report } = await supabase
-          .schema('reporting')
-          .from('report_book')
-          .select('student_group_id')
-          .eq('id', request.params.id)
-          .maybeSingle();
-        classId = report?.student_group_id ?? undefined;
+
+        if (request.params?.id) {
+          const { data: report } = await supabase
+            .schema('reporting')
+            .from('report_book')
+            .select('student_group_id')
+            .eq('id', request.params.id)
+            .maybeSingle();
+          classId = report?.student_group_id ?? undefined;
+        } else if (request.query?.studentId && request.query?.termId) {
+          const { data: report } = await supabase
+            .schema('reporting')
+            .from('report_book')
+            .select('student_group_id')
+            .eq('student_id', request.query.studentId)
+            .eq('term_id', request.query.termId)
+            .maybeSingle();
+          classId = report?.student_group_id ?? undefined;
+        }
       }
     }
 

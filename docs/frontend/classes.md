@@ -43,7 +43,9 @@ This is the most feature-rich page in the application, with multiple sections.
 
 - Class name (e.g., "Grade 3S")
 - Role indicator: "You are the class teacher" or "You teach subjects in this class"
-- **Grading** button → navigates to the grading page
+- **Grading** button → navigates to the grading page (all teachers)
+- **Reports** button → navigates to the reports list page (class teacher only)
+- **Class Report** button → navigates to the class summary page (class teacher only)
 - **Enroll Students** button (class teacher only)
 
 ### Subject Teachers Card

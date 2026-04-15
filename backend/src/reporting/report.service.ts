@@ -148,14 +148,21 @@ export class ReportService {
     studentGroupId: string,
     termId: string,
     token: string,
+    reportType?: string,
   ) {
     const supabase = this.supabaseService.createUserClient(token, 'reporting');
 
-    const { data: reports, error } = await supabase
+    let query = supabase
       .from('report_book')
       .select('*')
       .eq('student_group_id', studentGroupId)
-      .eq('term_id', termId)
+      .eq('term_id', termId);
+
+    if (reportType) {
+      query = query.eq('report_type', reportType);
+    }
+
+    const { data: reports, error } = await query
       .order('position', { ascending: true });
 
     if (error) {
@@ -449,7 +456,7 @@ export class ReportService {
     const { data: cohort, error: cohortError } = await serviceClient
       .schema('reporting')
       .from('report_book')
-      .select('id, student_id')
+      .select('id, student_id, status')
       .eq('student_group_id', student_group_id)
       .eq('term_id', term_id)
       .eq('report_type', report_type);
@@ -494,8 +501,16 @@ export class ReportService {
 
     const totalStudents = rankRows.length;
 
+    const lockedIds = new Set(
+      cohort
+        .filter((r: { status: string }) => r.status === 'sent_to_ministry')
+        .map((r: { id: string }) => r.id),
+    );
+
     for (let i = 0; i < rankRows.length; i++) {
       const { reportId: rid, overallAverage } = rankRows[i];
+      if (lockedIds.has(rid)) continue;
+
       const { error: rankError } = await serviceClient
         .schema('reporting')
         .from('report_book')
@@ -574,6 +589,86 @@ export class ReportService {
     return data;
   }
 
+  private static readonly PDF_BUCKET = 'report-books';
+
+  /** Upload a PDF buffer to Supabase Storage and record metadata. */
+  async uploadPdf(
+    reportId: string,
+    userId: string,
+    fileBuffer: Buffer,
+    objectPath: string,
+  ) {
+    const serviceClient = this.supabaseService.getServiceClient();
+
+    const { error: uploadError } = await serviceClient.storage
+      .from(ReportService.PDF_BUCKET)
+      .upload(objectPath, fileBuffer, {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      this.logger.error(`uploadPdf storage: ${uploadError.message}`);
+      throw new BadRequestException(`Storage upload failed: ${uploadError.message}`);
+    }
+
+    const { data, error } = await serviceClient
+      .schema('reporting')
+      .from('report_book_pdf')
+      .insert({
+        report_book_id: reportId,
+        file_path: objectPath,
+        file_size: fileBuffer.length,
+        generated_by: userId,
+        generated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      this.logger.error(`uploadPdf record: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
+
+    return data;
+  }
+
+  /** Download a PDF from Supabase Storage and return the raw bytes. */
+  async downloadPdf(pdfId: string) {
+    const serviceClient = this.supabaseService.getServiceClient();
+
+    const { data: pdfRow, error: fetchError } = await serviceClient
+      .schema('reporting')
+      .from('report_book_pdf')
+      .select('file_path')
+      .eq('id', pdfId)
+      .maybeSingle();
+
+    if (fetchError) {
+      this.logger.error(`downloadPdf fetch: ${fetchError.message}`);
+      throw new BadRequestException(fetchError.message);
+    }
+
+    if (!pdfRow) {
+      throw new NotFoundException('PDF record not found');
+    }
+
+    const { data, error: dlError } = await serviceClient.storage
+      .from(ReportService.PDF_BUCKET)
+      .download(pdfRow.file_path);
+
+    if (dlError) {
+      this.logger.error(`downloadPdf storage: ${dlError.message}`);
+      throw new BadRequestException(`Storage download failed: ${dlError.message}`);
+    }
+
+    const arrayBuffer = await data.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      filename: pdfRow.file_path.split('/').pop() ?? 'report.pdf',
+    };
+  }
+
   async getPdfHistory(reportId: string, token: string) {
     const supabase = this.supabaseService.createUserClient(token, 'reporting');
 
@@ -623,6 +718,347 @@ export class ReportService {
     }
 
     return data;
+  }
+
+  async getClassSummary(
+    studentGroupId: string,
+    termId: string,
+    reportType: string,
+    token: string,
+  ) {
+    const reporting = this.supabaseService.createUserClient(token, 'reporting');
+    const pub = this.supabaseService.createUserClient(token, 'public');
+
+    let query = reporting
+      .from('report_book')
+      .select('id, student_id, overall_average, position, total_students')
+      .eq('student_group_id', studentGroupId)
+      .eq('term_id', termId);
+
+    if (reportType) {
+      query = query.eq('report_type', reportType);
+    }
+
+    const { data: reports, error } = await query.order('position', { ascending: true });
+    if (error) {
+      this.logger.error(`getClassSummary reports: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
+
+    const list = reports ?? [];
+    if (list.length === 0) {
+      return {
+        classAverage: null,
+        highestAverage: null,
+        lowestAverage: null,
+        totalStudents: 0,
+        passCount: 0,
+        failCount: 0,
+        courseworkWeight: 50,
+        examWeight: 50,
+        gradingModel: 'term_based',
+        subjectAverages: [],
+        students: [],
+      };
+    }
+
+    const { data: termRow } = await pub
+      .from('term')
+      .select('coursework_weight, exam_weight, academic_year_id')
+      .eq('id', termId)
+      .single();
+
+    let courseworkWeight = termRow?.coursework_weight ?? 50;
+    let examWeight = termRow?.exam_weight ?? 50;
+    let gradingModel = 'term_based';
+
+    if (termRow?.academic_year_id) {
+      const { data: ayRow } = await pub
+        .from('academic_year')
+        .select('grading_model, year_coursework_weight, year_exam_weight')
+        .eq('id', termRow.academic_year_id)
+        .single();
+      gradingModel = ayRow?.grading_model ?? 'term_based';
+
+      if (reportType === 'year_end' && gradingModel === 'year_based') {
+        courseworkWeight = ayRow?.year_coursework_weight ?? 50;
+        examWeight = ayRow?.year_exam_weight ?? 50;
+      }
+    }
+
+    const studentIds = list
+      .map((r: { student_id: string | null }) => r.student_id)
+      .filter((id): id is string => Boolean(id));
+    const studentMap = await this.fetchStudentsByIdsForUser(
+      token, studentIds, 'id, first_name, last_name',
+    );
+
+    const reportIds = list.map((r: { id: string }) => r.id);
+    const { data: entryRows, error: entryErr } = await reporting
+      .from('report_book_entry')
+      .select('report_book_id, subject_id, coursework_average, exam_average, term_composite, year_grade, sort_order')
+      .in('report_book_id', reportIds)
+      .order('sort_order', { ascending: true });
+
+    if (entryErr) {
+      this.logger.error(`getClassSummary entries: ${entryErr.message}`);
+      throw new BadRequestException(entryErr.message);
+    }
+
+    const subjectIds = [
+      ...new Set(
+        (entryRows ?? [])
+          .map((e: { subject_id: string | null }) => e.subject_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const subjectMap = await this.fetchSubjectsByIdsForUser(token, subjectIds);
+
+    const averages = list
+      .map((r: { overall_average: number | null }) => r.overall_average)
+      .filter((a): a is number => a != null);
+
+    const classAverage = averages.length > 0
+      ? averages.reduce((s, v) => s + v, 0) / averages.length
+      : null;
+    const highestAverage = averages.length > 0 ? Math.max(...averages) : null;
+    const lowestAverage = averages.length > 0 ? Math.min(...averages) : null;
+    const passCount = averages.filter((a) => a >= 50).length;
+    const failCount = averages.filter((a) => a < 50).length;
+
+    type EntryShape = {
+      report_book_id: string;
+      subject_id: string;
+      coursework_average: number | null;
+      exam_average: number | null;
+      term_composite: number | null;
+      year_grade: number | null;
+    };
+
+    const isYearEnd = reportType === 'year_end' && gradingModel === 'year_based';
+    const subjectScores = new Map<string, number[]>();
+    for (const e of (entryRows ?? []) as EntryShape[]) {
+      const score = isYearEnd ? e.year_grade : e.term_composite;
+      if (score == null) continue;
+      const arr = subjectScores.get(e.subject_id) ?? [];
+      arr.push(score);
+      subjectScores.set(e.subject_id, arr);
+    }
+
+    const subjectAverages = [...subjectScores.entries()].map(([sid, scores]) => {
+      const sub = subjectMap.get(sid);
+      return {
+        subjectId: sid,
+        subjectName: (sub as { name?: string })?.name ?? 'Unknown',
+        average: scores.reduce((s, v) => s + v, 0) / scores.length,
+        highestMark: Math.max(...scores),
+        lowestMark: Math.min(...scores),
+      };
+    });
+
+    const entriesByReport = new Map<string, EntryShape[]>();
+    for (const e of (entryRows ?? []) as EntryShape[]) {
+      const arr = entriesByReport.get(e.report_book_id) ?? [];
+      arr.push(e);
+      entriesByReport.set(e.report_book_id, arr);
+    }
+
+    const students = list.map(
+      (r: { id: string; student_id: string | null; overall_average: number | null; position: number | null }) => {
+        const st = r.student_id ? studentMap.get(r.student_id) : null;
+        const entries = entriesByReport.get(r.id) ?? [];
+        return {
+          studentId: r.student_id,
+          firstName: (st as { first_name?: string })?.first_name ?? '',
+          lastName: (st as { last_name?: string })?.last_name ?? '',
+          overallAverage: r.overall_average,
+          position: r.position,
+          subjects: entries.map((e) => {
+            const sub = subjectMap.get(e.subject_id);
+            return {
+              subjectId: e.subject_id,
+              subjectName: (sub as { name?: string })?.name ?? 'Unknown',
+              courseworkAverage: e.coursework_average,
+              examAverage: e.exam_average,
+              termComposite: e.term_composite,
+              yearGrade: e.year_grade,
+            };
+          }),
+        };
+      },
+    );
+
+    return {
+      classAverage: classAverage != null ? Math.round(classAverage * 100) / 100 : null,
+      highestAverage,
+      lowestAverage,
+      totalStudents: list.length,
+      passCount,
+      failCount,
+      courseworkWeight,
+      examWeight,
+      gradingModel,
+      subjectAverages,
+      students,
+    };
+  }
+
+  async uploadClassSummaryFile(
+    studentGroupId: string,
+    termId: string,
+    reportType: string,
+    fileType: string,
+    userId: string,
+    fileBuffer: Buffer,
+  ) {
+    const serviceClient = this.supabaseService.getServiceClient();
+    const ext = fileType === 'xlsx' ? 'xlsx' : fileType === 'csv' ? 'csv' : 'pdf';
+    const objectPath = `${studentGroupId}/${termId}/class-summary.${ext}`;
+
+    const contentTypeMap: Record<string, string> = {
+      pdf: 'application/pdf',
+      csv: 'text/csv',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+
+    const { error: uploadError } = await serviceClient.storage
+      .from(ReportService.PDF_BUCKET)
+      .upload(objectPath, fileBuffer, {
+        contentType: contentTypeMap[ext] ?? 'application/octet-stream',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      this.logger.error(`uploadClassSummaryFile storage: ${uploadError.message}`);
+      throw new BadRequestException(`Storage upload failed: ${uploadError.message}`);
+    }
+
+    const { data: existing } = await serviceClient
+      .schema('reporting')
+      .from('class_report_file')
+      .select('id')
+      .eq('student_group_id', studentGroupId)
+      .eq('term_id', termId)
+      .eq('report_type', reportType)
+      .eq('file_type', ext)
+      .maybeSingle();
+
+    if (existing?.id) {
+      const { data, error } = await serviceClient
+        .schema('reporting')
+        .from('class_report_file')
+        .update({
+          file_path: objectPath,
+          file_size: fileBuffer.length,
+          generated_by: userId,
+          generated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+
+      if (error) {
+        this.logger.error(`uploadClassSummaryFile update: ${error.message}`);
+        throw new BadRequestException(error.message);
+      }
+      return data;
+    }
+
+    const { data, error } = await serviceClient
+      .schema('reporting')
+      .from('class_report_file')
+      .insert({
+        student_group_id: studentGroupId,
+        term_id: termId,
+        report_type: reportType,
+        file_type: ext,
+        file_path: objectPath,
+        file_size: fileBuffer.length,
+        generated_by: userId,
+        generated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      this.logger.error(`uploadClassSummaryFile insert: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
+    return data;
+  }
+
+  async downloadClassSummaryFile(
+    studentGroupId: string,
+    termId: string,
+    reportType: string,
+    fileType: string,
+  ) {
+    const serviceClient = this.supabaseService.getServiceClient();
+
+    const { data: fileRow, error: fetchError } = await serviceClient
+      .schema('reporting')
+      .from('class_report_file')
+      .select('file_path, file_type')
+      .eq('student_group_id', studentGroupId)
+      .eq('term_id', termId)
+      .eq('report_type', reportType)
+      .eq('file_type', fileType)
+      .maybeSingle();
+
+    if (fetchError) {
+      this.logger.error(`downloadClassSummaryFile fetch: ${fetchError.message}`);
+      throw new BadRequestException(fetchError.message);
+    }
+
+    if (!fileRow) {
+      throw new NotFoundException('File not found');
+    }
+
+    const { data, error: dlError } = await serviceClient.storage
+      .from(ReportService.PDF_BUCKET)
+      .download(fileRow.file_path);
+
+    if (dlError) {
+      this.logger.error(`downloadClassSummaryFile storage: ${dlError.message}`);
+      throw new BadRequestException(`Storage download failed: ${dlError.message}`);
+    }
+
+    const contentTypeMap: Record<string, string> = {
+      pdf: 'application/pdf',
+      csv: 'text/csv',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+
+    const arrayBuffer = await data.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      filename: fileRow.file_path.split('/').pop() ?? `class-summary.${fileType}`,
+      contentType: contentTypeMap[fileType] ?? 'application/octet-stream',
+    };
+  }
+
+  async getClassSummaryFiles(
+    studentGroupId: string,
+    termId: string,
+    reportType: string,
+    token: string,
+  ) {
+    const supabase = this.supabaseService.createUserClient(token, 'reporting');
+
+    const { data, error } = await supabase
+      .from('class_report_file')
+      .select('*')
+      .eq('student_group_id', studentGroupId)
+      .eq('term_id', termId)
+      .eq('report_type', reportType)
+      .order('generated_at', { ascending: false });
+
+    if (error) {
+      this.logger.error(`getClassSummaryFiles: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
+
+    return data ?? [];
   }
 
   private async loadFullReportWithServiceClient(reportId: string) {
@@ -801,7 +1237,6 @@ export class ReportService {
         .update({
           academic_year_id: row.academic_year_id,
           student_group_id: row.student_group_id,
-          status: row.status,
           overall_average: row.overall_average,
           position: row.position,
           total_students: row.total_students,
