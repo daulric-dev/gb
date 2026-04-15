@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CalculationService } from '@/calculation/calculation.service';
 import { StudentTermResult } from '@/calculation/interfaces/calculation.interfaces';
@@ -32,7 +38,9 @@ export class ReportService {
       this.logger.error(
         `Failed to load student group ${dto.studentGroupId}: ${groupError.message}`,
       );
-      throw new BadRequestException('Could not load class for report generation');
+      throw new BadRequestException(
+        'Could not load class for report generation',
+      );
     }
 
     const academicYearId = group?.academic_year_id;
@@ -53,13 +61,13 @@ export class ReportService {
         .eq('student_group_id', dto.studentGroupId);
 
       if (enrError) {
-        this.logger.error(
-          `Failed to load enrollments: ${enrError.message}`,
-        );
+        this.logger.error(`Failed to load enrollments: ${enrError.message}`);
         throw new BadRequestException('Could not load class enrollments');
       }
 
-      studentIds = (enrollments ?? []).map((e: { student_id: string }) => e.student_id);
+      studentIds = (enrollments ?? []).map(
+        (e: { student_id: string }) => e.student_id,
+      );
     }
 
     if (studentIds.length === 0) {
@@ -70,19 +78,21 @@ export class ReportService {
     const yearGradeMaps = new Map<string, Map<string, number | null>>();
 
     for (const studentId of studentIds) {
-      const termResult = await this.calculationService.calculateStudentTermResult(
-        studentId,
-        dto.termId,
-        dto.studentGroupId,
-      );
+      const termResult =
+        await this.calculationService.calculateStudentTermResult(
+          studentId,
+          dto.termId,
+          dto.studentGroupId,
+        );
       termResults.push(termResult);
 
       if (dto.reportType === 'year_end') {
-        const yearResult = await this.calculationService.calculateStudentYearResult(
-          studentId,
-          academicYearId,
-          dto.studentGroupId,
-        );
+        const yearResult =
+          await this.calculationService.calculateStudentYearResult(
+            studentId,
+            academicYearId,
+            dto.studentGroupId,
+          );
         const m = new Map<string, number | null>();
         for (const ys of yearResult.yearEnd.subjects) {
           m.set(ys.subjectId, ys.yearGrade);
@@ -108,19 +118,26 @@ export class ReportService {
       const rank = rankByStudentId.get(result.studentId)!;
       const yearMap = yearGradeMaps.get(result.studentId);
 
-      const reportBookId = await this.upsertReportBookNaturalKey(serviceClient, {
-        student_id: result.studentId,
-        academic_year_id: academicYearId,
-        term_id: dto.termId,
-        student_group_id: dto.studentGroupId,
-        report_type: dto.reportType,
-        status: 'draft',
-        overall_average: result.overallAverage,
-        position: rank,
-        total_students: totalStudents,
-      });
+      const reportBookId = await this.upsertReportBookNaturalKey(
+        serviceClient,
+        {
+          student_id: result.studentId,
+          academic_year_id: academicYearId,
+          term_id: dto.termId,
+          student_group_id: dto.studentGroupId,
+          report_type: dto.reportType,
+          status: 'draft',
+          overall_average: result.overallAverage,
+          position: rank,
+          total_students: totalStudents,
+        },
+      );
 
-      for (let subjectIndex = 0; subjectIndex < result.subjects.length; subjectIndex++) {
+      for (
+        let subjectIndex = 0;
+        subjectIndex < result.subjects.length;
+        subjectIndex++
+      ) {
         const subject = result.subjects[subjectIndex];
         const yearGrade =
           dto.reportType === 'year_end' && yearMap
@@ -162,8 +179,9 @@ export class ReportService {
       query = query.eq('report_type', reportType);
     }
 
-    const { data: reports, error } = await query
-      .order('position', { ascending: true });
+    const { data: reports, error } = await query.order('position', {
+      ascending: true,
+    });
 
     if (error) {
       this.logger.error(`findByClassAndTerm: ${error.message}`);
@@ -298,7 +316,11 @@ export class ReportService {
     return data;
   }
 
-  async updateReportEntry( entryId: string, dto: UpdateReportEntryDto, token: string ) {
+  async updateReportEntry(
+    entryId: string,
+    dto: UpdateReportEntryDto,
+    token: string,
+  ) {
     const supabase = this.supabaseService.createUserClient(token, 'reporting');
     const updateData: Record<string, unknown> = {};
     if (dto.teacherRemark !== undefined) {
@@ -320,9 +342,7 @@ export class ReportService {
         error.code === '42501' ||
         error.message?.includes('row-level security')
       ) {
-        throw new ForbiddenException(
-          'You cannot update this report entry',
-        );
+        throw new ForbiddenException('You cannot update this report entry');
       }
       this.logger.error(`updateReportEntry: ${error.message}`);
       throw new BadRequestException(error.message);
@@ -480,11 +500,12 @@ export class ReportService {
     const rankRows: RankRow[] = [];
 
     for (const row of cohort) {
-      const termResult = await this.calculationService.calculateStudentTermResult(
-        row.student_id,
-        term_id,
-        student_group_id,
-      );
+      const termResult =
+        await this.calculationService.calculateStudentTermResult(
+          row.student_id,
+          term_id,
+          student_group_id,
+        );
       rankRows.push({
         reportId: row.id,
         studentId: row.student_id,
@@ -535,17 +556,22 @@ export class ReportService {
 
     let yearGradeMap: Map<string, number | null> | null = null;
     if (report_type === 'year_end' && academic_year_id) {
-      const yearResult = await this.calculationService.calculateStudentYearResult(
-        student_id,
-        academic_year_id,
-        student_group_id,
-      );
+      const yearResult =
+        await this.calculationService.calculateStudentYearResult(
+          student_id,
+          academic_year_id,
+          student_group_id,
+        );
       yearGradeMap = new Map(
         yearResult.yearEnd.subjects.map((s) => [s.subjectId, s.yearGrade]),
       );
     }
 
-    for (let subjectIndex = 0; subjectIndex < termResult.subjects.length; subjectIndex++) {
+    for (
+      let subjectIndex = 0;
+      subjectIndex < termResult.subjects.length;
+      subjectIndex++
+    ) {
       const subject = termResult.subjects[subjectIndex];
       const yearGrade =
         report_type === 'year_end' && yearGradeMap
@@ -609,7 +635,9 @@ export class ReportService {
 
     if (uploadError) {
       this.logger.error(`uploadPdf storage: ${uploadError.message}`);
-      throw new BadRequestException(`Storage upload failed: ${uploadError.message}`);
+      throw new BadRequestException(
+        `Storage upload failed: ${uploadError.message}`,
+      );
     }
 
     const { data, error } = await serviceClient
@@ -659,7 +687,9 @@ export class ReportService {
 
     if (dlError) {
       this.logger.error(`downloadPdf storage: ${dlError.message}`);
-      throw new BadRequestException(`Storage download failed: ${dlError.message}`);
+      throw new BadRequestException(
+        `Storage download failed: ${dlError.message}`,
+      );
     }
 
     const arrayBuffer = await data.arrayBuffer();
@@ -739,7 +769,9 @@ export class ReportService {
       query = query.eq('report_type', reportType);
     }
 
-    const { data: reports, error } = await query.order('position', { ascending: true });
+    const { data: reports, error } = await query.order('position', {
+      ascending: true,
+    });
     if (error) {
       this.logger.error(`getClassSummary reports: ${error.message}`);
       throw new BadRequestException(error.message);
@@ -790,13 +822,17 @@ export class ReportService {
       .map((r: { student_id: string | null }) => r.student_id)
       .filter((id): id is string => Boolean(id));
     const studentMap = await this.fetchStudentsByIdsForUser(
-      token, studentIds, 'id, first_name, last_name',
+      token,
+      studentIds,
+      'id, first_name, last_name',
     );
 
     const reportIds = list.map((r: { id: string }) => r.id);
     const { data: entryRows, error: entryErr } = await reporting
       .from('report_book_entry')
-      .select('report_book_id, subject_id, coursework_average, exam_average, term_composite, year_grade, sort_order')
+      .select(
+        'report_book_id, subject_id, coursework_average, exam_average, term_composite, year_grade, sort_order',
+      )
       .in('report_book_id', reportIds)
       .order('sort_order', { ascending: true });
 
@@ -818,9 +854,10 @@ export class ReportService {
       .map((r: { overall_average: number | null }) => r.overall_average)
       .filter((a): a is number => a != null);
 
-    const classAverage = averages.length > 0
-      ? averages.reduce((s, v) => s + v, 0) / averages.length
-      : null;
+    const classAverage =
+      averages.length > 0
+        ? averages.reduce((s, v) => s + v, 0) / averages.length
+        : null;
     const highestAverage = averages.length > 0 ? Math.max(...averages) : null;
     const lowestAverage = averages.length > 0 ? Math.min(...averages) : null;
     const passCount = averages.filter((a) => a >= 50).length;
@@ -835,7 +872,8 @@ export class ReportService {
       year_grade: number | null;
     };
 
-    const isYearEnd = reportType === 'year_end' && gradingModel === 'year_based';
+    const isYearEnd =
+      reportType === 'year_end' && gradingModel === 'year_based';
     const subjectScores = new Map<string, number[]>();
     for (const e of (entryRows ?? []) as EntryShape[]) {
       const score = isYearEnd ? e.year_grade : e.term_composite;
@@ -845,16 +883,18 @@ export class ReportService {
       subjectScores.set(e.subject_id, arr);
     }
 
-    const subjectAverages = [...subjectScores.entries()].map(([sid, scores]) => {
-      const sub = subjectMap.get(sid);
-      return {
-        subjectId: sid,
-        subjectName: (sub as { name?: string })?.name ?? 'Unknown',
-        average: scores.reduce((s, v) => s + v, 0) / scores.length,
-        highestMark: Math.max(...scores),
-        lowestMark: Math.min(...scores),
-      };
-    });
+    const subjectAverages = [...subjectScores.entries()].map(
+      ([sid, scores]) => {
+        const sub = subjectMap.get(sid);
+        return {
+          subjectId: sid,
+          subjectName: (sub as { name?: string })?.name ?? 'Unknown',
+          average: scores.reduce((s, v) => s + v, 0) / scores.length,
+          highestMark: Math.max(...scores),
+          lowestMark: Math.min(...scores),
+        };
+      },
+    );
 
     const entriesByReport = new Map<string, EntryShape[]>();
     for (const e of (entryRows ?? []) as EntryShape[]) {
@@ -864,7 +904,12 @@ export class ReportService {
     }
 
     const students = list.map(
-      (r: { id: string; student_id: string | null; overall_average: number | null; position: number | null }) => {
+      (r: {
+        id: string;
+        student_id: string | null;
+        overall_average: number | null;
+        position: number | null;
+      }) => {
         const st = r.student_id ? studentMap.get(r.student_id) : null;
         const entries = entriesByReport.get(r.id) ?? [];
         return {
@@ -889,7 +934,8 @@ export class ReportService {
     );
 
     return {
-      classAverage: classAverage != null ? Math.round(classAverage * 100) / 100 : null,
+      classAverage:
+        classAverage != null ? Math.round(classAverage * 100) / 100 : null,
       highestAverage,
       lowestAverage,
       totalStudents: list.length,
@@ -912,7 +958,8 @@ export class ReportService {
     fileBuffer: Buffer,
   ) {
     const serviceClient = this.supabaseService.getServiceClient();
-    const ext = fileType === 'xlsx' ? 'xlsx' : fileType === 'csv' ? 'csv' : 'pdf';
+    const ext =
+      fileType === 'xlsx' ? 'xlsx' : fileType === 'csv' ? 'csv' : 'pdf';
     const objectPath = `${studentGroupId}/${termId}/class-summary.${ext}`;
 
     const contentTypeMap: Record<string, string> = {
@@ -929,8 +976,12 @@ export class ReportService {
       });
 
     if (uploadError) {
-      this.logger.error(`uploadClassSummaryFile storage: ${uploadError.message}`);
-      throw new BadRequestException(`Storage upload failed: ${uploadError.message}`);
+      this.logger.error(
+        `uploadClassSummaryFile storage: ${uploadError.message}`,
+      );
+      throw new BadRequestException(
+        `Storage upload failed: ${uploadError.message}`,
+      );
     }
 
     const { data: existing } = await serviceClient
@@ -1006,7 +1057,9 @@ export class ReportService {
       .maybeSingle();
 
     if (fetchError) {
-      this.logger.error(`downloadClassSummaryFile fetch: ${fetchError.message}`);
+      this.logger.error(
+        `downloadClassSummaryFile fetch: ${fetchError.message}`,
+      );
       throw new BadRequestException(fetchError.message);
     }
 
@@ -1020,7 +1073,9 @@ export class ReportService {
 
     if (dlError) {
       this.logger.error(`downloadClassSummaryFile storage: ${dlError.message}`);
-      throw new BadRequestException(`Storage download failed: ${dlError.message}`);
+      throw new BadRequestException(
+        `Storage download failed: ${dlError.message}`,
+      );
     }
 
     const contentTypeMap: Record<string, string> = {
@@ -1032,7 +1087,8 @@ export class ReportService {
     const arrayBuffer = await data.arrayBuffer();
     return {
       buffer: Buffer.from(arrayBuffer),
-      filename: fileRow.file_path.split('/').pop() ?? `class-summary.${fileType}`,
+      filename:
+        fileRow.file_path.split('/').pop() ?? `class-summary.${fileType}`,
       contentType: contentTypeMap[fileType] ?? 'application/octet-stream',
     };
   }
@@ -1085,17 +1141,14 @@ export class ReportService {
       const { data: st } = await serviceClient
         .schema('student')
         .from('student')
-        .select(
-          'id, first_name, last_name, gender, date_of_birth',
-        )
+        .select('id, first_name, last_name, gender, date_of_birth')
         .eq('id', report.student_id)
         .maybeSingle();
       student = st ?? null;
     }
 
-    const { entries, pdfs } = await this.loadReportEntriesAndPdfsServiceRole(
-      reportId,
-    );
+    const { entries, pdfs } =
+      await this.loadReportEntriesAndPdfsServiceRole(reportId);
 
     return { ...report, student, entries, pdfs };
   }
@@ -1123,15 +1176,13 @@ export class ReportService {
       .filter((id): id is string => Boolean(id));
     const subjectMap = await this.fetchSubjectsByIdsServiceRole(subjectIds);
 
-    const entries = rawEntries.map(
-      (e: { subject_id: string | null }) => ({
-        ...e,
-        subject:
-          e.subject_id && subjectMap.has(e.subject_id)
-            ? subjectMap.get(e.subject_id)
-            : null,
-      }),
-    );
+    const entries = rawEntries.map((e: { subject_id: string | null }) => ({
+      ...e,
+      subject:
+        e.subject_id && subjectMap.has(e.subject_id)
+          ? subjectMap.get(e.subject_id)
+          : null,
+    }));
 
     const { data: pdfs, error: pdfsError } = await serviceClient
       .schema('reporting')
@@ -1153,10 +1204,7 @@ export class ReportService {
     };
   }
 
-  private async loadReportEntriesAndPdfs(
-    reportBookId: string,
-    token: string,
-  ) {
+  private async loadReportEntriesAndPdfs(reportBookId: string, token: string) {
     const reporting = this.supabaseService.createUserClient(token, 'reporting');
 
     const { data: entryRows, error: entriesError } = await reporting
@@ -1166,7 +1214,9 @@ export class ReportService {
       .order('sort_order', { ascending: true });
 
     if (entriesError) {
-      this.logger.error(`loadReportEntriesAndPdfs entries: ${entriesError.message}`);
+      this.logger.error(
+        `loadReportEntriesAndPdfs entries: ${entriesError.message}`,
+      );
       throw new BadRequestException(entriesError.message);
     }
 
@@ -1176,15 +1226,13 @@ export class ReportService {
       .filter((id): id is string => Boolean(id));
     const subjectMap = await this.fetchSubjectsByIdsForUser(token, subjectIds);
 
-    const entries = rawEntries.map(
-      (e: { subject_id: string | null }) => ({
-        ...e,
-        subject:
-          e.subject_id && subjectMap.has(e.subject_id)
-            ? subjectMap.get(e.subject_id)
-            : null,
-      }),
-    );
+    const entries = rawEntries.map((e: { subject_id: string | null }) => ({
+      ...e,
+      subject:
+        e.subject_id && subjectMap.has(e.subject_id)
+          ? subjectMap.get(e.subject_id)
+          : null,
+    }));
 
     const { data: pdfs, error: pdfsError } = await reporting
       .from('report_book_pdf')
@@ -1416,7 +1464,9 @@ export class ReportService {
   private async fetchUserProfilesByIdsForUser(
     token: string,
     ids: string[],
-  ): Promise<Map<string, { id: string; first_name: string; last_name: string }>> {
+  ): Promise<
+    Map<string, { id: string; first_name: string; last_name: string }>
+  > {
     const unique = [...new Set(ids.filter(Boolean))];
     if (unique.length === 0) return new Map();
 

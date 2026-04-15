@@ -11,7 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "bun dist/main",
+    "start:prod": "bun --bun dist/main",
     "deploy": "wrangler deploy",
     "deploy:staging": "wrangler deploy --env staging",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",

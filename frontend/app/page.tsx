@@ -3,20 +3,12 @@
 import { useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import {
-  GraduationCap,
-  BarChart3,
-  FileSpreadsheet,
-  ListOrdered,
-  Building2,
-  ShieldCheck,
-  ArrowRight,
-  ChevronDown,
-} from "lucide-react";
+import { GraduationCap, BarChart3, FileSpreadsheet, ListOrdered, Building2, ShieldCheck, ArrowRight, ChevronDown } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 const features = [
   {
@@ -82,7 +74,7 @@ export default function LandingPage() {
       {/* Navbar */}
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-lg">
         <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <a href="/" className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <Image
               src="/icons/logo2.png"
               alt="GradeBook logo"
@@ -98,7 +90,7 @@ export default function LandingPage() {
                 by daulric.dev
               </span>
             </div>
-          </a>
+          </Link>
 
           <div className="flex items-center gap-2">
             <ModeToggle />

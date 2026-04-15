@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
@@ -24,7 +36,10 @@ export class ReportController {
 
   @Post('generate')
   @UseGuards(ClassTeacherGuard)
-  generate(@Req() req: { user: { id: string } }, @Body() dto: GenerateReportDto) {
+  generate(
+    @Req() req: { user: { id: string } },
+    @Body() dto: GenerateReportDto,
+  ) {
     return this.reportService.generateTermReports(req.user.id, dto);
   }
 
@@ -63,7 +78,11 @@ export class ReportController {
   @Post('class-summary/upload')
   @UseGuards(ClassTeacherGuard)
   async uploadClassSummaryFile(
-    @Req() req: { user: { id: string }; file: () => Promise<MultipartFile | undefined> },
+    @Req()
+    req: {
+      user: { id: string };
+      file: () => Promise<MultipartFile | undefined>;
+    },
   ) {
     const file = await req.file();
     if (!file) {
@@ -75,14 +94,19 @@ export class ReportController {
       throw new BadRequestException('Empty file');
     }
 
-    const fields = file.fields as Record<string, { value?: string } | undefined>;
+    const fields = file.fields as Record<
+      string,
+      { value?: string } | undefined
+    >;
     const studentGroupId = fields?.studentGroupId?.value;
     const termId = fields?.termId?.value;
     const reportType = fields?.reportType?.value;
     const fileType = fields?.fileType?.value;
 
     if (!studentGroupId || !termId || !reportType || !fileType) {
-      throw new BadRequestException('Missing required fields: studentGroupId, termId, reportType, fileType');
+      throw new BadRequestException(
+        'Missing required fields: studentGroupId, termId, reportType, fileType',
+      );
     }
 
     return this.reportService.uploadClassSummaryFile(
@@ -215,7 +239,11 @@ export class ReportController {
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async uploadPdf(
     @Param('id') id: string,
-    @Req() req: { user: { id: string }; file: () => Promise<MultipartFile | undefined> },
+    @Req()
+    req: {
+      user: { id: string };
+      file: () => Promise<MultipartFile | undefined>;
+    },
   ) {
     const file = await req.file();
     if (!file) {
@@ -228,18 +256,15 @@ export class ReportController {
     }
 
     const objectPath =
-      (file.fields?.objectPath as { value?: string } | undefined)?.value
-      ?? `${id}.pdf`;
+      (file.fields?.objectPath as { value?: string } | undefined)?.value ??
+      `${id}.pdf`;
 
     return this.reportService.uploadPdf(id, req.user.id, buffer, objectPath);
   }
 
   @Get(':id/pdf/:pdfId/download')
   @UseGuards(ClassTeacherGuard)
-  async downloadPdf(
-    @Param('pdfId') pdfId: string,
-    @Res() reply: FastifyReply,
-  ) {
+  async downloadPdf(@Param('pdfId') pdfId: string, @Res() reply: FastifyReply) {
     const { buffer, filename } = await this.reportService.downloadPdf(pdfId);
     reply
       .header('Content-Type', 'application/pdf')
