@@ -16,7 +16,41 @@ export class ClassTeacherGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const userId = request.user?.id;
-    const classId = request.params?.classId;
+
+    let classId =
+      request.params?.classId
+      ?? request.body?.studentGroupId
+      ?? request.query?.studentGroupId
+      ?? undefined;
+
+    if (!classId) {
+      const url = String(request.url ?? '');
+      const isReportScoped =
+        url.includes('/reports') && !url.includes('/report-entries/');
+
+      if (isReportScoped) {
+        const supabase = this.supabaseService.getServiceClient();
+
+        if (request.params?.id) {
+          const { data: report } = await supabase
+            .schema('reporting')
+            .from('report_book')
+            .select('student_group_id')
+            .eq('id', request.params.id)
+            .maybeSingle();
+          classId = report?.student_group_id ?? undefined;
+        } else if (request.query?.studentId && request.query?.termId) {
+          const { data: report } = await supabase
+            .schema('reporting')
+            .from('report_book')
+            .select('student_group_id')
+            .eq('student_id', request.query.studentId)
+            .eq('term_id', request.query.termId)
+            .maybeSingle();
+          classId = report?.student_group_id ?? undefined;
+        }
+      }
+    }
 
     if (!userId || !classId) {
       throw new ForbiddenException(

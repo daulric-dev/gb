@@ -215,8 +215,8 @@ export default function GradingPage() {
   return (
     <div className="space-y-6">
       <BackTitleToolbar
-        title="grading"
-        description={`${classInfo.value?.name ?? ""} - enter and manage grades`}
+        title="Grading"
+        description={`${classInfo.value?.name ?? ""} - Enter and Manage Grades`}
         onBack={() => router.push(`/dashboard/classes/${classId}`)}
       />
 

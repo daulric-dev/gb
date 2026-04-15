@@ -5,15 +5,46 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { DashboardPageHeader } from "@/components/dashboard-page-header";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, GripVertical } from "lucide-react";
 
 interface Subject {
   id: string;
@@ -33,6 +64,16 @@ export default function SubjectsPage() {
   const loading = useSignal(true);
   const createOpen = useSignal(false);
   const editSubject = useSignal<Subject | null>(null);
+  const reordering = useSignal(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   const fetchSubjects = useCallback(() => {
     api<Subject[]>("/subjects")
@@ -58,13 +99,42 @@ export default function SubjectsPage() {
     }
   }
 
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = subjects.value.findIndex((s) => s.id === active.id);
+    const newIndex = subjects.value.findIndex((s) => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(subjects.value, oldIndex, newIndex);
+    subjects.value = reordered;
+
+    const items = reordered.map((s, i) => ({ id: s.id, sortOrder: i }));
+
+    reordering.value = true;
+    try {
+      await api("/subjects/reorder", { method: "PATCH", body: { items } });
+      subjects.value = reordered.map((s, i) => ({ ...s, sort_order: i }));
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to reorder";
+      toast.error(msg);
+      fetchSubjects();
+    } finally {
+      reordering.value = false;
+    }
+  }
+
   return (
     <div className="space-y-6">
       <DashboardPageHeader
         title="Subjects"
         description="Manage Subjects for Your School"
         action={
-          <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
+          <Dialog
+            open={createOpen.value}
+            onOpenChange={(v) => (createOpen.value = v)}
+          >
             <DialogTrigger render={<Button />}>
               <Plus className="mr-2 size-4" />
               New Subject
@@ -98,59 +168,43 @@ export default function SubjectsPage() {
           No subjects yet. Create your first one.
         </div>
       ) : (
-        <div className="rounded-md border animate-fade-in-up-delay-1">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Graded</TableHead>
-                <TableHead>Order</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {subjects.value.map((subject) => (
-                <TableRow key={subject.id}>
-                  <TableCell className="font-medium">{subject.name}</TableCell>
-                  <TableCell>
-                    {subject.code ? (
-                      <Badge variant="outline">{subject.code}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {subject.is_graded ? (
-                      <Badge>Graded</Badge>
-                    ) : (
-                      <Badge variant="secondary">Not Graded</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {subject.sort_order}
-                  </TableCell>
-                  <TableCell className="text-right space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => (editSubject.value = subject)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(subject.id, subject.name)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={subjects.value.map((s) => s.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="rounded-md border animate-fade-in-up-delay-1">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10" />
+                    <TableHead>Name</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Graded</TableHead>
+                    <TableHead>Order</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {subjects.value.map((subject) => (
+                    <SortableSubjectRow
+                      key={subject.id}
+                      subject={subject}
+                      onEdit={() => (editSubject.value = subject)}
+                      onDelete={() =>
+                        handleDelete(subject.id, subject.name)
+                      }
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <Dialog
@@ -176,6 +230,72 @@ export default function SubjectsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function SortableSubjectRow({
+  subject,
+  onEdit,
+  onDelete,
+}: {
+  subject: Subject;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: subject.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-10 px-2">
+        <button
+          type="button"
+          className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
+      </TableCell>
+      <TableCell className="font-medium">{subject.name}</TableCell>
+      <TableCell>
+        {subject.code ? (
+          <Badge variant="outline">{subject.code}</Badge>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {subject.is_graded ? (
+          <Badge>Graded</Badge>
+        ) : (
+          <Badge variant="secondary">Not Graded</Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {subject.sort_order}
+      </TableCell>
+      <TableCell className="text-right space-x-1">
+        <Button variant="ghost" size="sm" onClick={onEdit}>
+          <Pencil className="size-4" />
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onDelete}>
+          <Trash2 className="size-4 text-destructive" />
+        </Button>
+      </TableCell>
+    </TableRow>
   );
 }
 

@@ -9,6 +9,7 @@ import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
+import { ReorderSubjectsDto } from './dto/reorder-subjects.dto';
 
 const SUBJECT_TTL = 300;
 
@@ -144,6 +145,27 @@ export class SubjectService {
 
     await this.cache.deleteByPrefix('subjects:');
     return data;
+  }
+
+  async reorder(dto: ReorderSubjectsDto) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    for (const item of dto.items) {
+      const { error } = await supabase
+        .from('subject')
+        .update({ sort_order: item.sortOrder })
+        .eq('id', item.id);
+
+      if (error) {
+        this.logger.error(
+          `Failed to update sort_order for subject ${item.id}: ${error.message}`,
+        );
+        throw new BadRequestException('Failed to reorder subjects');
+      }
+    }
+
+    await this.cache.deleteByPrefix('subjects:');
+    return { message: 'Subjects reordered' };
   }
 
   async delete(subjectId: string) {

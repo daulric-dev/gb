@@ -14,6 +14,7 @@ import { AuthGuard } from '@/auth/auth.guard';
 import { SubjectService } from './subject.service';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
+import { ReorderSubjectsDto } from './dto/reorder-subjects.dto';
 
 @ApiTags('Subjects')
 @ApiBearerAuth()
@@ -25,6 +26,11 @@ export class SubjectController {
   @Get()
   findAll(@Req() req) {
     return this.subjectService.findAll(req.user.id);
+  }
+
+  @Patch('reorder')
+  reorder(@Body() dto: ReorderSubjectsDto) {
+    return this.subjectService.reorder(dto);
   }
 
   @Get(':id')
