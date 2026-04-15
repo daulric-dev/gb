@@ -1,7 +1,9 @@
 {
     "name": "bgv2",
+    "devDependencies": {
+        "concurrently": "^9.2.1"
+    },
     "private": true,
-    "workspaces": ["backend", "frontend"],
     "scripts": {
         "dev": "concurrently -n fe,be -c blue,green \"bun run dev:frontend\" \"bun run dev:backend\"",
         "dev:frontend": "cd frontend && bun --bun run dev",
@@ -14,8 +16,5 @@
         "install:all": "bun --bun install",
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
-    "devDependencies": {
-        "concurrently": "^9.2.1"
-    },
-    "dependencies": {}
+    "workspaces": ["backend", "frontend"]
 }
