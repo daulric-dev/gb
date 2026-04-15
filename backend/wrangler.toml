@@ -1,11 +1,18 @@
-name = "gbv2-api"
-main = "dist/main.js"
+name = "gbv2-backend"
+main = "worker-entry.mjs"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
-nodejs_compat = true
 
 [build]
 command = "bun run build"
 
 [dev]
 port = 8787
+
+# Stub out optional NestJS dependencies that aren't installed
+[alias]
+"@nestjs/websockets/socket-module" = "./src/stubs/empty.js"
+"@nestjs/microservices/microservices-module" = "./src/stubs/empty.js"
+"@nestjs/microservices" = "./src/stubs/empty.js"
+"class-transformer/storage" = "./src/stubs/empty.js"
+"@fastify/view" = "./src/stubs/empty.js"
