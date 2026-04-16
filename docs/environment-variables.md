@@ -39,8 +39,8 @@ USE_REDIS=false
 | `SUPABASE_URL` | `src/supabase/supabase.service.ts` | Creating both service and user Supabase clients |
 | `SUPABASE_SERVICE_ROLE_KEY` | `src/supabase/supabase.service.ts` | Service client - bypasses RLS for admin operations |
 | `SUPABASE_PUSHABLE_KEY` | `src/supabase/supabase.service.ts` | User client - respects RLS using the user's JWT |
-| `FRONTEND_URL` | `src/main.ts` | CORS `origin` configuration |
-| `PORT` | `src/main.ts` | Fastify listen port |
+| `FRONTEND_URL` | `src/createApp.ts` | CORS `origin` configuration |
+| `PORT` | `src/main.ts` | Fastify listen port (local dev only; not used in serverless) |
 | `USE_REDIS` | `src/cache/cache.service.ts` | Selects Redis store when `true` |
 | `REDIS_URL` | `src/cache/cache.service.ts` | Redis connection URL for `ioredis` |
 

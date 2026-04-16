@@ -1,10 +1,23 @@
 # Components
 
-The frontend uses two categories of components: **app-level components** for layout and navigation, and **UI primitives** from shadcn (built on `@base-ui/react`).
+The frontend uses two categories of components: **app-level components** organized into logical subdirectories, and **UI primitives** from shadcn (built on `@base-ui/react`).
 
 ## App-Level Components
 
-### Header (`components/header.tsx`)
+Components are grouped by their domain:
+
+```
+components/
+├── layout/          # Core layout and navigation
+├── auth/            # Authentication page wrappers
+├── dashboard/       # Dashboard-specific utilities
+├── marketing/       # Public-facing / legal pages
+└── ui/              # shadcn primitives
+```
+
+### Layout (`components/layout/`)
+
+#### Header (`layout/header.tsx`)
 
 The main navigation bar displayed at the top of every dashboard page.
 
@@ -20,32 +33,48 @@ The main navigation bar displayed at the top of every dashboard page.
 
 **Props:** Receives the user profile from the dashboard layout.
 
-### AuthPageShell (`components/auth-page-shell.tsx`)
+#### ModeToggle (`layout/mode-toggle.tsx`)
+
+A ghost button that toggles between light and dark themes using `next-themes`. Displays a Sun or Moon icon based on the current theme.
+
+#### ThemeProvider (`layout/theme-provider.tsx`)
+
+Re-exports the `ThemeProvider` from `next-themes` with pre-configured settings (attribute-based theming, default system theme).
+
+#### AppSidebar (`layout/app-sidebar.tsx`)
+
+A sidebar navigation component with:
+- Logo + "GradeBook" branding with "by daulric.dev" subtitle
+- School name display
+- Navigation links (Dashboard, Academic Years, Classes, Students, Subjects, Terms)
+- Legal links (Terms of Service, Privacy Policy)
+- User dropdown with settings and logout
+- Collapsible icon mode
+
+### Auth (`components/auth/`)
+
+#### AuthPageShell (`auth/auth-page-shell.tsx`)
 
 A centered full-height container used by login and onboarding pages. Places the theme toggle in the top-right corner and centers its children.
 
-### DashboardPageHeader (`components/dashboard-page-header.tsx`)
+### Dashboard (`components/dashboard/`)
+
+#### DashboardPageHeader (`dashboard/dashboard-page-header.tsx`)
 
 A reusable page title component with:
 - Title text
 - Optional description
 - Optional action slot (right-aligned)
 
-### BackTitleToolbar (`components/back-title-toolbar.tsx`)
+#### BackTitleToolbar (`dashboard/back-title-toolbar.tsx`)
 
 A toolbar with a back button, title, description, and optional action buttons. Used on the class detail and grading pages.
 
-### ModeToggle (`components/mode-toggle.tsx`)
+### Marketing (`components/marketing/`)
 
-A ghost button that toggles between light and dark themes using `next-themes`. Displays a Sun or Moon icon based on the current theme.
+#### PolicyPage (`marketing/policy-page.tsx`)
 
-### ThemeProvider (`components/theme-provider.tsx`)
-
-Re-exports the `ThemeProvider` from `next-themes` with pre-configured settings (attribute-based theming, default system theme).
-
-### AppSidebar (`components/app-sidebar.tsx`)
-
-A sidebar navigation component. **Currently unused** - the dashboard layout uses the Header component instead. Kept for potential future use.
+A reusable page component for legal/policy pages (Terms of Service, Privacy Policy). Accepts structured `PolicyData` with sections, lists, and cross-links.
 
 ## UI Primitives (`components/ui/`)
 

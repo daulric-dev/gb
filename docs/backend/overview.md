@@ -17,36 +17,70 @@ The backend is a **NestJS** application running on the **Fastify** HTTP adapter.
 ## Project Structure
 
 ```
-backend/src/
-├── main.ts                    # App bootstrap
-├── app.module.ts              # Root module
-├── app.controller.ts          # Health check endpoint
-├── app.service.ts             # Health check service
-├── types/
-│   └── database.types.ts      # Generated Supabase schema types
-├── supabase/                  # Supabase client provider
-├── auth/                      # Authentication (OTP, JWT, onboarding)
-├── school/                    # School management
-├── academic-year/             # Academic year lifecycle
-├── term/                      # Term management within years
-├── student/                   # Student records
-├── subject/                   # Subject definitions
-├── class/                     # Class (student group) management
-├── enrollment/                # Student enrollment and subject assignment
-├── grading/                   # Assessments and grades
-├── calculation/               # Grade calculations and summaries
-├── reporting/                 # Report generation, status workflow, file storage
-└── cache/                     # Pluggable caching (memory or Redis)
+backend/
+├── api/
+│   └── index.ts               # Vercel serverless entry point
+├── vercel.json                # Vercel routing and build config
+├── src/
+│   ├── createApp.ts           # Shared app bootstrap (used by main.ts and api/index.ts)
+│   ├── main.ts                # Local dev entry point (calls createApp + listen)
+│   ├── worker.ts              # Cloudflare Workers entry point
+│   ├── app.module.ts          # Root module
+│   ├── app.controller.ts      # Health check endpoint
+│   ├── app.service.ts         # Health check service
+│   ├── stubs/
+│   │   └── empty.js           # Stub for optional NestJS deps during CF Workers bundling
+│   ├── types/
+│   │   └── database.types.ts  # Generated Supabase schema types
+│   ├── supabase/              # Supabase client provider
+│   ├── auth/                  # Authentication (OTP, JWT, onboarding)
+│   ├── school/                # School management
+│   ├── academic-year/         # Academic year lifecycle
+│   ├── term/                  # Term management within years
+│   ├── student/               # Student records
+│   ├── subject/               # Subject definitions
+│   ├── class/                 # Class (student group) management
+│   ├── enrollment/            # Student enrollment and subject assignment
+│   ├── grading/               # Assessments and grades
+│   ├── calculation/           # Grade calculations and summaries
+│   ├── reporting/             # Report generation, status workflow, file storage
+│   └── cache/                 # Pluggable caching (memory or Redis)
 ```
 
-## Application Bootstrap (`main.ts`)
+## Application Bootstrap
+
+The app bootstrap logic lives in `src/createApp.ts` and is shared between all entry points. It configures:
 
 - **Adapter**: Fastify
 - **Global prefix**: `api/v1` - all routes are prefixed with this
-- **Swagger**: Available at `/docs` in non-production environments
+- **Swagger**: Available at `/docs`
 - **Validation**: Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform` enabled
 - **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
-- **Port**: Reads from `PORT` environment variable (defaults to `3001`)
+- **Multipart**: `@fastify/multipart` with 10MB file size limit
+
+`createApp()` calls `app.init()` but does **not** call `app.listen()`. Each entry point handles the serving strategy:
+
+| Entry Point | File | Behavior |
+|-------------|------|----------|
+| **Local dev** | `src/main.ts` | Calls `createApp()` then `app.listen()` on `PORT` (default 3001) |
+| **Vercel** | `api/index.ts` | Calls `createApp()`, caches the app instance, pipes Node.js requests through Fastify |
+| **Cloudflare Workers** | `src/worker.ts` | Lazy init, transfers env to `process.env`, uses Fastify `.inject()` |
+
+## Deployment
+
+### Vercel (Serverless)
+
+The backend deploys to Vercel as a single serverless function:
+
+- `vercel.json` routes all requests (`/(.*)`) to `api/index.ts` via `@vercel/node`
+- The NestJS app is created once on cold start and cached for subsequent requests
+- Environment variables are configured in the Vercel dashboard
+
+### Cloudflare Workers
+
+- `wrangler.toml` configures the worker with `nodejs_compat` flag
+- `src/worker.ts` handles the `fetch` event and uses Fastify's `.inject()` method
+- Optional NestJS dependencies are stubbed via `[alias]` in `wrangler.toml`
 
 ## Root Module (`app.module.ts`)
 
@@ -128,4 +162,15 @@ bun run build        # Production build
 bun run start:prod   # Production server
 bun run lint         # ESLint check
 bun run test         # Jest tests
+```
+
+### Deploying
+
+```bash
+# Vercel
+vercel deploy              # Deploy to Vercel (uses vercel.json)
+
+# Cloudflare Workers
+bun run deploy             # Deploy via wrangler
+bun run deploy:staging     # Deploy to staging environment
 ```

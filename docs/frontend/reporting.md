@@ -6,15 +6,17 @@ Grade data displayed on these pages comes from **live calculation endpoints** (`
 
 ## Frontend Library Files
 
+All report-related utilities live in `lib/reports/` and are barrel-exported via `lib/reports/index.ts`.
+
 | File | Purpose |
 |------|---------|
-| `lib/reports.ts` | API functions and types for the reporting schema (report CRUD, PDF management, file uploads) |
-| `lib/reports.types.ts` | Shared type definitions |
-| `lib/year-report.ts` | API functions for calculation endpoints, types for term/year results, and `termResultsToClassSummary` converter |
-| `lib/report-pdf.ts` | PDF generation for individual student reports and term-based class summaries |
-| `lib/report-year-pdf.ts` | PDF generation for year-based student reports and year-based class summaries |
-| `lib/report-export.ts` | CSV and XLSX export for term-based class summaries |
-| `lib/report-year-export.ts` | CSV and XLSX export for year-based class summaries |
+| `lib/reports/index.ts` | Barrel re-export of all report modules |
+| `lib/reports/api.ts` | API functions and types for the reporting schema (file uploads, class summary files) |
+| `lib/reports/calculations.ts` | API functions for calculation endpoints, types for term/year results, and `termResultsToClassSummary` converter |
+| `lib/reports/pdf.ts` | PDF generation for individual student reports and term-based class summaries |
+| `lib/reports/year-pdf.ts` | PDF generation for year-based student reports and year-based class summaries |
+| `lib/reports/export.ts` | CSV and XLSX export for term-based class summaries |
+| `lib/reports/year-export.ts` | CSV and XLSX export for year-based class summaries |
 
 ---
 
@@ -55,12 +57,12 @@ Displays all students in a class with their live calculated grades and the statu
 
 ---
 
-## Report Detail Page
+## Student Report Detail Page
 
-**Route**: `/dashboard/classes/[classId]/reports/[reportId]`  
-**File**: `app/dashboard/classes/[classId]/reports/[reportId]/page.tsx`
+**Route**: `/dashboard/classes/[classId]/reports/student?studentId=&termId=&reportType=`  
+**File**: `app/dashboard/classes/[classId]/reports/student/page.tsx`
 
-Displays a single student's report with live grades, editable teacher fields, and PDF management.
+Displays a single student's report with live calculated grades and PDF download. Receives `studentId`, `termId`, and `reportType` via URL query parameters (no persisted report ID needed).
 
 ### Data Sources
 
@@ -68,33 +70,12 @@ Displays a single student's report with live grades, editable teacher fields, an
 |------|--------|---------|
 | Live term grades | `GET /api/v1/calculations/student-term` | CW, Exam, Term composite for each subject |
 | Live year grades | `GET /api/v1/calculations/student-year` | Year-end: per-term composites, year grade |
-| Persisted report | `GET /api/v1/reports/:id` | Status, remarks, conduct, attendance, letter grades, PDF history |
 
 ### Page Header
 
 - Student name
-- Status badge (Draft / Published / Sent to ministry)
 - Term name
 - Class ranking (from live data)
-- Lock indicator when sent to ministry
-
-### Actions (class teacher only, not locked)
-
-| Action | Description |
-|--------|-------------|
-| Regenerate grades | Re-fetches live data and updates persisted entries |
-| Publish | Sets status to `published` |
-| Send to ministry | Locks the report permanently |
-
-### Class Teacher Card
-
-Editable fields (disabled when locked):
-
-| Field | Description |
-|-------|-------------|
-| Class Teacher remark | Free text |
-| Conduct | e.g., "Excellent", "Good" |
-| Attendance % | 0–100 |
 
 ### Subject Results Table
 
@@ -102,34 +83,25 @@ Displays differently based on report type:
 
 #### Term Report
 
-| Column | Source | Description |
-|--------|--------|-------------|
-| Subject | Live | Subject name |
-| Coursework | Live | Coursework average |
-| Exam | Live | Exam average |
-| Term | Live | Term composite |
-| Letter | Persisted | Editable letter grade (e.g., "A") |
-| Remark | Persisted | Editable teacher remark |
+| Column | Description |
+|--------|-------------|
+| Subject | Subject name |
+| Coursework | Coursework average |
+| Exam | Exam average |
+| Term | Term composite |
 
 #### Year-End Report (year_based model)
 
-| Column | Source | Description |
-|--------|--------|-------------|
-| Subject | Live | Subject name |
-| M, H, T (term initials) | Live | Per-term composite grades |
-| End of Yr Exam | Live | Last term's exam average |
-| Year Grade | Live | Computed year grade |
-| Letter | Persisted | Editable letter grade |
-| Remark | Persisted | Editable teacher remark |
-
-### PDF Section
-
-| Action | Description |
+| Column | Description |
 |--------|-------------|
-| Download PDF | Generates PDF client-side from live data and downloads |
-| Generate & upload to storage | Generates PDF, downloads it, and uploads to Supabase Storage |
-| PDF history | Lists all previously uploaded PDFs with download links |
-| Register PDF manually | Advanced: manually record a storage path and file size |
+| Subject | Subject name |
+| M, H, T (term initials) | Per-term composite grades |
+| End of Yr Exam | Last term's exam average |
+| Year Grade | Computed year grade |
+
+### PDF Download
+
+- "Download PDF" button generates a PDF client-side from live data and downloads it directly
 
 ---
 

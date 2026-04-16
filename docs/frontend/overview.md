@@ -16,7 +16,7 @@ The frontend is a **Next.js 16** application using the **App Router**. It provid
 | lucide-react | Icons |
 | next-themes | Dark/light mode |
 | jsPDF + jspdf-autotable | Client-side PDF generation |
-| xlsx (SheetJS) | Client-side Excel/CSV generation |
+| xlsx (SheetJS 0.20.3) | Client-side Excel/CSV generation (installed from CDN tarball, not npm) |
 | @dnd-kit | Drag-and-drop for sortable lists |
 | input-otp | OTP input component |
 
@@ -26,8 +26,8 @@ The frontend is a **Next.js 16** application using the **App Router**. It provid
 frontend/
 ├── app/                           # Pages (App Router)
 │   ├── layout.tsx                 # Root layout (fonts, theme, toaster)
-│   ├── page.tsx                   # / → redirects to /dashboard
-│   ├── globals.css                # Tailwind v4 entry + design tokens
+│   ├── page.tsx                   # / → public landing page (unauthenticated users)
+│   ├── globals.css                # Tailwind v4 entry + design tokens + animations
 │   ├── login/
 │   │   ├── page.tsx               # Email input for OTP
 │   │   └── verify/
@@ -52,19 +52,24 @@ frontend/
 │               ├── grading/
 │               │   └── page.tsx   # Grading sheet
 │               ├── reports/
-│               │   ├── page.tsx   # Reports list (live grades + persisted status)
-│               │   └── [reportId]/
-│               │       └── page.tsx # Individual report detail
+│               │   ├── page.tsx   # Reports list (live grades)
+│               │   └── student/
+│               │       └── page.tsx # Individual student report (live data + PDF download)
 │               └── class-report/
 │                   └── page.tsx   # Class summary with exports
 ├── components/
-│   ├── header.tsx                 # Top navigation bar
-│   ├── auth-page-shell.tsx        # Centered layout for auth pages
-│   ├── mode-toggle.tsx            # Dark/light theme toggle
-│   ├── theme-provider.tsx         # next-themes provider
-│   ├── dashboard-page-header.tsx  # Page title + description component
-│   ├── back-title-toolbar.tsx     # Back button + title toolbar
-│   ├── app-sidebar.tsx            # Sidebar (currently unused)
+│   ├── layout/                    # Core layout components
+│   │   ├── theme-provider.tsx     # next-themes provider
+│   │   ├── mode-toggle.tsx        # Dark/light theme toggle
+│   │   ├── app-sidebar.tsx        # Sidebar navigation
+│   │   └── header.tsx             # Top navigation bar
+│   ├── auth/
+│   │   └── auth-page-shell.tsx    # Centered layout for auth pages
+│   ├── dashboard/
+│   │   ├── dashboard-page-header.tsx  # Page title + description
+│   │   └── back-title-toolbar.tsx     # Back button + title toolbar
+│   ├── marketing/
+│   │   └── policy-page.tsx        # Reusable policy/legal page component
 │   └── ui/                        # shadcn/base-ui primitives
 │       ├── button.tsx
 │       ├── card.tsx
@@ -87,13 +92,14 @@ frontend/
 │   ├── auth.ts                    # Token storage (localStorage + cookie)
 │   ├── utils.ts                   # cn() utility for class merging
 │   ├── use-profile.ts            # Profile fetching hook
-│   ├── reports.ts                 # Reporting schema API functions and types
-│   ├── reports.types.ts           # Shared report type definitions
-│   ├── year-report.ts             # Calculation endpoint API functions and types
-│   ├── report-pdf.ts              # PDF generation (individual + term class summary)
-│   ├── report-year-pdf.ts         # PDF generation (year-based reports)
-│   ├── report-export.ts           # CSV/XLSX export (term-based class summary)
-│   └── report-year-export.ts      # CSV/XLSX export (year-based class summary)
+│   └── reports/                   # Report-related utilities (barrel-exported via index.ts)
+│       ├── index.ts               # Re-exports all report modules
+│       ├── api.ts                 # Reporting schema API functions and types
+│       ├── calculations.ts        # Calculation endpoint API functions and types
+│       ├── pdf.ts                 # PDF generation (individual + term class summary)
+│       ├── year-pdf.ts            # PDF generation (year-based reports)
+│       ├── export.ts              # CSV/XLSX export (term-based class summary)
+│       └── year-export.ts         # CSV/XLSX export (year-based class summary)
 ├── hooks/
 │   └── use-mobile.ts             # Mobile breakpoint detection
 ├── proxy.ts                       # Route protection (auth gating)

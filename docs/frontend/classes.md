@@ -85,6 +85,15 @@ Shows students enrolled in the class:
 - Lists currently assigned subjects with remove buttons
 - "Add Subjects" expandable form with checkbox list
 
+**Bulk Assign Subjects dialog** (class teacher only):
+- Accessible via "Bulk Assign Subjects" button in the Enrolled Students card header (shown when students are enrolled)
+- Subject dropdown to select which subject to assign
+- Student list with checkboxes (shown after selecting a subject)
+- Search bar to filter students by name
+- "Select All / Deselect All" toggle that operates on unassigned students only
+- Students already assigned to the selected subject show an "Assigned" badge with a disabled checkbox
+- Calls `POST /api/v1/classes/:id/subjects/bulk` with the selected subject and student IDs
+
 **Enroll Students dialog** (class teacher only):
 - Lists all school students not already enrolled
 - Multi-select with bulk enrollment support
@@ -133,6 +142,7 @@ Available when the academic year uses the `year_based` grading model. Shows a to
 | Unenroll | `DELETE /api/v1/classes/:id/enroll/:studentId` |
 | Get student subjects | `GET /api/v1/classes/:id/students/:sid/subjects` |
 | Assign subjects | `POST /api/v1/classes/:id/subjects` |
+| Bulk assign subjects | `POST /api/v1/classes/:id/subjects/bulk` |
 | Remove subject | `DELETE /api/v1/classes/:id/students/:sid/subjects/:subjectId` |
 | Class summary (term) | `GET /api/v1/calculations/class-summary?termId=&studentGroupId=` |
 | Class summary (year) | `GET /api/v1/calculations/class-year?academicYearId=&studentGroupId=` |
