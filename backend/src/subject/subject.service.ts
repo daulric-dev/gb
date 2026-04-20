@@ -11,7 +11,7 @@ import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
 import { ReorderSubjectsDto } from './dto/reorder-subjects.dto';
 
-const SUBJECT_TTL = 300;
+const SUBJECT_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class SubjectService {
@@ -58,7 +58,14 @@ export class SubjectService {
       throw new BadRequestException('Failed to create subject');
     }
 
-    await this.cache.delete(`subjects:${profile.school_id}`);
+    await this.cache.update<any[]>(
+      `subjects:${profile.school_id}`,
+      (list) =>
+        [...list, subject].sort(
+          (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name),
+        ),
+      SUBJECT_TTL,
+    );
     return subject;
   }
 
@@ -143,7 +150,11 @@ export class SubjectService {
       throw new NotFoundException('Subject not found');
     }
 
-    await this.cache.deleteByPrefix('subjects:');
+    await this.cache.update<any[]>(
+      `subjects:${data.school_id}`,
+      (list) => list.map((s) => (s.id === subjectId ? data : s)),
+      SUBJECT_TTL,
+    );
     return data;
   }
 

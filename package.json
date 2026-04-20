@@ -14,7 +14,10 @@
         "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun --bun run start\" \"cd backend && bun --bun run start:prod\"",
         "lint": "cd frontend && bun --bun run lint && cd ../backend && bun --bun run lint",
         "install:all": "bun --bun install",
-        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
+        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh",
+        "test:frontend": "cd frontend && bun --bun run test",
+        "test:backend": "cd backend && bun --bun run test",
+        "test:all": "bun run test:frontend && bun run test:backend"
     },
     "workspaces": ["backend", "frontend"]
 }

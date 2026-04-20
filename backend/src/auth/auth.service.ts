@@ -10,7 +10,7 @@ import { CacheService } from '@/cache/cache.service';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
-const PROFILE_TTL = 300;
+const PROFILE_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class AuthService {

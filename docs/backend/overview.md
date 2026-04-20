@@ -10,7 +10,7 @@ The backend is a **NestJS** application running on the **Fastify** HTTP adapter.
 | Fastify | HTTP server (replaces Express for performance) |
 | Supabase | Database (PostgreSQL), authentication, and row-level security |
 | TypeScript 5 | Type safety |
-| Jest | Testing framework |
+| Bun Test | Testing framework (built-in `bun:test`) |
 | Swagger | API documentation (auto-generated at `/docs`) |
 | class-validator | DTO validation |
 
@@ -161,7 +161,7 @@ bun run start:dev    # Development with hot-reload
 bun run build        # Production build
 bun run start:prod   # Production server
 bun run lint         # ESLint check
-bun run test         # Jest tests
+bun run test         # Unit tests (Bun test runner)
 ```
 
 ### Deploying

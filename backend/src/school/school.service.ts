@@ -3,7 +3,7 @@ import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 
-const SCHOOL_TTL = 600;
+const SCHOOL_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class SchoolService {
@@ -57,7 +57,11 @@ export class SchoolService {
       throw new BadRequestException('Failed to create school');
     }
 
-    await this.cache.delete('schools:all');
+    await this.cache.update<any[]>(
+      'schools:all',
+      (list) => [...list, data].sort((a, b) => a.name.localeCompare(b.name)),
+      SCHOOL_TTL,
+    );
     return data;
   }
 }

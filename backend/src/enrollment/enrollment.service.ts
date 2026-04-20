@@ -11,7 +11,7 @@ import { BulkEnrollDto } from './dto/bulk-enroll.dto';
 import { AssignSubjectsDto } from './dto/assign-subjects.dto';
 import { BulkAssignSubjectsDto } from './dto/bulk-assign-subjects.dto';
 
-const ENROLLMENT_TTL = 300;
+const ENROLLMENT_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class EnrollmentService {

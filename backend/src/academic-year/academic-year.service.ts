@@ -9,7 +9,7 @@ import { CacheService } from '@/cache/cache.service';
 import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { UpdateAcademicYearDto } from './dto/update-academic-year.dto';
 
-const YEAR_TTL = 300;
+const YEAR_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class AcademicYearService {
@@ -74,8 +74,11 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to create academic year');
     }
 
-    await this.cache.delete(`academic-years:${schoolId}`);
-    await this.cache.delete(`academic-year-active:${schoolId}`);
+    await this.cache.update<any[]>(
+      `academic-years:${schoolId}`,
+      (list) => [data, ...list],
+      YEAR_TTL,
+    );
     return data;
   }
 
@@ -196,7 +199,16 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to update academic year');
     }
 
-    await this.cache.deleteByPrefix('academic-year');
+    await this.cache.update<any[]>(
+      `academic-years:${data.school_id}`,
+      (list) => list.map((y) => (y.id === yearId ? data : y)),
+      YEAR_TTL,
+    );
+    await this.cache.update(
+      `academic-year-active:${data.school_id}`,
+      (active: any) => (active?.id === yearId ? data : active),
+      YEAR_TTL,
+    );
     return data;
   }
 

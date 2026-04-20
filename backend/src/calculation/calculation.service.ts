@@ -9,7 +9,7 @@ import {
   YearEndSubject,
 } from './interfaces/calculation.interfaces';
 
-const CALC_TTL = 600;
+const CALC_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class CalculationService {

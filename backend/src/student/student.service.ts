@@ -10,7 +10,7 @@ import { CacheService } from '@/cache/cache.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 
-const STUDENT_TTL = 300;
+const STUDENT_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class StudentService {
@@ -72,7 +72,16 @@ export class StudentService {
       throw new BadRequestException('Failed to create student');
     }
 
-    await this.cache.delete(`students:${profile.school_id}`);
+    await this.cache.update<any[]>(
+      `students:${profile.school_id}`,
+      (list) =>
+        [...list, student].sort(
+          (a, b) =>
+            a.last_name.localeCompare(b.last_name) ||
+            a.first_name.localeCompare(b.first_name),
+        ),
+      STUDENT_TTL,
+    );
     return student;
   }
 
@@ -173,7 +182,11 @@ export class StudentService {
       throw new NotFoundException('Student not found');
     }
 
-    await this.cache.deleteByPrefix('students:');
+    await this.cache.update<any[]>(
+      `students:${data.school_id}`,
+      (list) => list.map((s) => (s.id === studentId ? data : s)),
+      STUDENT_TTL,
+    );
     return data;
   }
 }

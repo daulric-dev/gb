@@ -40,9 +40,18 @@ jobs:
           upload: never
           output: codeql-results
 
-      - name: Display results
+      - name: Generate CodeQL text report
         if: always()
-        run: python3 .github/scripts/codeql-display-results.py
+        run: |
+          python3 .github/scripts/codeql-display-results.py | tee codeql-report.txt
+
+      - name: Upload CodeQL report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-report
+          path: codeql-report.txt
+          retention-days: 30
 
   # 2. SCA - Dependency vulnerability scanning
   dependency-scan:
@@ -65,7 +74,7 @@ jobs:
         run: bash .github/scripts/install-osv-scanner.sh
 
       - name: Run OSV-Scanner
-        run: osv-scanner -r .
+        run: osv-scanner -r . --format table 2>&1 | tee osv-report.txt
         continue-on-error: true
 
       # Trivy filesystem scan
@@ -75,8 +84,19 @@ jobs:
           scan-type: fs
           scan-ref: .
           format: table
+          output: trivy-report.txt
           severity: CRITICAL,HIGH
           exit-code: "0"
+
+      - name: Upload dependency scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-report
+          path: |
+            osv-report.txt
+            trivy-report.txt
+          retention-days: 30
 
   # 3. Secret Detection
   secrets-scan:
@@ -102,6 +122,22 @@ jobs:
           extra_args: --only-verified
         continue-on-error: true
 
+      - name: Run TruffleHog (report file)
+        run: |
+          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest git file:///repo --only-verified 2>&1 | tee trufflehog-report.txt || true
+        continue-on-error: true
+
+      - name: Upload secret detection reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrets-scan-report
+          path: |
+            results.sarif
+            trufflehog-report.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
   # 4. Snyk - Open-source vulnerability scan
   snyk:
     name: Snyk Scan
@@ -125,8 +161,19 @@ jobs:
 
       - name: Run Snyk (backend)
         continue-on-error: true
-        run: snyk test --file=backend/package.json --severity-threshold=high
+        run: snyk test --file=backend/package.json --severity-threshold=high 2>&1 | tee snyk-backend-report.txt
 
       - name: Run Snyk (frontend)
         continue-on-error: true
-        run: snyk test --file=frontend/package.json --severity-threshold=high
+        run: snyk test --file=frontend/package.json --severity-threshold=high 2>&1 | tee snyk-frontend-report.txt
+
+      - name: Upload Snyk reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-report
+          path: |
+            snyk-backend-report.txt
+            snyk-frontend-report.txt
+          if-no-files-found: ignore
+          retention-days: 30
