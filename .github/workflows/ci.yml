@@ -32,6 +32,9 @@ jobs:
       - name: Lint
         run: bun --bun run lint
 
+      - name: Test
+        run: bun test
+
       - name: Build Next.js app
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
@@ -59,6 +62,9 @@ jobs:
 
       - name: Lint
         run: bun run lint
+
+      - name: Test
+        run: bun test
 
       - name: Build NestJS app
         run: bun --bun run build
