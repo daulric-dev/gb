@@ -10,9 +10,6 @@ jobs:
   test:
     name: Run tests and collect coverage
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -27,7 +24,12 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Run tests
+      - name: Run backend tests
+        working-directory: backend
+        run: bun test --coverage --coverage-reporter=lcov
+
+      - name: Run frontend tests
+        working-directory: frontend
         run: bun test --coverage --coverage-reporter=lcov
 
       - name: Upload results to Codecov

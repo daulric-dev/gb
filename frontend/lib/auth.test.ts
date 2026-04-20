@@ -22,7 +22,7 @@ import {
 
 describe("auth", () => {
   beforeEach(() => {
-    store.clear();
+    localStorage.clear();
     document.cookie = "";
   });
 

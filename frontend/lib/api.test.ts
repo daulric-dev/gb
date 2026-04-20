@@ -42,7 +42,7 @@ describe("api()", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
-    store.clear();
+    localStorage.clear();
     globalThis.fetch = mock(
       async () =>
         new Response(JSON.stringify({ ok: true }), { status: 200 }),
