@@ -29,7 +29,11 @@ describe('CacheService', () => {
 
   test('update works with async transformer function', async () => {
     await cache.set('count', 10, 60);
-    const result = await cache.update<number>('count', async (v) => v * 2, 60);
+    const result = await cache.update<number>(
+      'count',
+      async (v) => await Promise.resolve(v * 2),
+      60,
+    );
     expect(result).toBe(true);
     expect(await cache.get('count')).toBe(20);
   });

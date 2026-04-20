@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { TermService } from './term.service';
-import { createMockSupabaseService, createMockCacheService, createMockQueryBuilder } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+  createMockQueryBuilder,
+} from '@/test/mocks';
 
 const TERM_TTL = 60 * 60 * 24 * 30;
 const YEAR_ID = 'year-1';
@@ -43,7 +47,7 @@ describe('TermService', () => {
   });
 
   describe('create', () => {
-    test('validates weights sum to 100', async () => {
+    test('validates weights sum to 100', () => {
       mockSupabase = createMockSupabaseService();
       service = new TermService(mockSupabase as any, mockCache as any);
 
@@ -53,7 +57,7 @@ describe('TermService', () => {
       );
     });
 
-    test('validates start_date before end_date', async () => {
+    test('validates start_date before end_date', () => {
       mockSupabase = createMockSupabaseService();
       service = new TermService(mockSupabase as any, mockCache as any);
 
@@ -139,11 +143,7 @@ describe('TermService', () => {
       };
       service = new TermService(mockSupabase as any, mockCache as any);
 
-      await mockCache.set(
-        `terms:${YEAR_ID}`,
-        [original],
-        TERM_TTL,
-      );
+      await mockCache.set(`terms:${YEAR_ID}`, [original], TERM_TTL);
 
       await service.update('term-1', {
         examWeight: 70,

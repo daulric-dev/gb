@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { ConflictException } from '@nestjs/common';
 import { EnrollmentService } from './enrollment.service';
-import { createMockSupabaseService, createMockCacheService, createMockQueryBuilder } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+  createMockQueryBuilder,
+} from '@/test/mocks';
 
 const TTL = 60 * 60 * 24 * 30;
 
@@ -17,7 +21,7 @@ describe('EnrollmentService', () => {
   });
 
   describe('enroll', () => {
-    test('throws ConflictException on duplicate (error code 23505)', async () => {
+    test('throws ConflictException on duplicate (error code 23505)', () => {
       const builder = createMockQueryBuilder({
         data: null,
         error: { code: '23505', message: 'duplicate' },
@@ -25,9 +29,9 @@ describe('EnrollmentService', () => {
       mockSupabase._client.schema = () => ({ from: () => builder });
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
-      expect(
-        service.enroll('c1', { studentId: 's1' }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      expect(service.enroll('c1', { studentId: 's1' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
 
     test('uses deleteByPrefix for enrolled cache', async () => {
@@ -49,7 +53,7 @@ describe('EnrollmentService', () => {
   });
 
   describe('bulkEnroll', () => {
-    test('throws ConflictException on duplicate', async () => {
+    test('throws ConflictException on duplicate', () => {
       const builder = createMockQueryBuilder({
         data: null,
         error: { code: '23505', message: 'duplicate' },
@@ -101,7 +105,7 @@ describe('EnrollmentService', () => {
   });
 
   describe('assignSubjects', () => {
-    test('throws ConflictException on duplicate', async () => {
+    test('throws ConflictException on duplicate', () => {
       const okBuilder = createMockQueryBuilder({
         data: { academic_year_id: 'ay1' },
         error: null,
@@ -112,12 +116,8 @@ describe('EnrollmentService', () => {
       });
 
       mockSupabase._client.from = () => okBuilder;
-      let schemaCallCount = 0;
       mockSupabase._client.schema = () => ({
-        from: () => {
-          schemaCallCount++;
-          return errorBuilder;
-        },
+        from: () => errorBuilder,
       });
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
@@ -186,7 +186,7 @@ describe('EnrollmentService', () => {
   });
 
   describe('removeSubject', () => {
-    test('throws ConflictException on FK violation (23503)', async () => {
+    test('throws ConflictException on FK violation (23503)', () => {
       const okBuilder = createMockQueryBuilder({
         data: { academic_year_id: 'ay1' },
         error: null,
@@ -200,9 +200,9 @@ describe('EnrollmentService', () => {
       mockSupabase._client.schema = () => ({ from: () => errorBuilder });
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
-      expect(
-        service.removeSubject('c1', 's1', 'sub1'),
-      ).rejects.toBeInstanceOf(ConflictException);
+      expect(service.removeSubject('c1', 's1', 'sub1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
   });
 

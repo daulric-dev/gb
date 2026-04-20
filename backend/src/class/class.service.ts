@@ -83,8 +83,16 @@ export class ClassService {
       isClassTeacher: true,
       createdAt: group.created_at ?? null,
     };
-    await this.cache.update<any[]>(`my-classes:${userId}`, (list) => [...list, entry], CLASS_TTL);
-    await this.cache.update<any[]>(`my-classes:${userId}:${dto.academicYearId}`, (list) => [...list, entry], CLASS_TTL);
+    await this.cache.update<any[]>(
+      `my-classes:${userId}`,
+      (list) => [...list, entry],
+      CLASS_TTL,
+    );
+    await this.cache.update<any[]>(
+      `my-classes:${userId}:${dto.academicYearId}`,
+      (list) => [...list, entry],
+      CLASS_TTL,
+    );
     return group;
   }
 

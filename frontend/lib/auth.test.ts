@@ -9,8 +9,8 @@ globalThis.localStorage ??= {
   get length() { return store.size; },
   key: (i: number) => [...store.keys()][i] ?? null,
 } as Storage;
-globalThis.document ??= { cookie: "" } as any;
-globalThis.window ??= globalThis as any;
+globalThis.document ??= { cookie: "" } as unknown as Document;
+globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 
 import {
   getTokens,

@@ -57,7 +57,11 @@ export class SchoolService {
       throw new BadRequestException('Failed to create school');
     }
 
-    await this.cache.update<any[]>('schools:all', (list) => [...list, data].sort((a, b) => a.name.localeCompare(b.name)), SCHOOL_TTL);
+    await this.cache.update<any[]>(
+      'schools:all',
+      (list) => [...list, data].sort((a, b) => a.name.localeCompare(b.name)),
+      SCHOOL_TTL,
+    );
     return data;
   }
 }

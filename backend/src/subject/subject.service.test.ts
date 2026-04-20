@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { ConflictException } from '@nestjs/common';
 import { SubjectService } from './subject.service';
-import { createMockSupabaseService, createMockCacheService, createMockQueryBuilder } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+  createMockQueryBuilder,
+} from '@/test/mocks';
 
 const SUBJECT_TTL = 60 * 60 * 24 * 30;
 const USER_ID = 'user-1';
@@ -9,24 +13,7 @@ const SCHOOL_ID = 'school-1';
 
 const PROFILE = { school_id: SCHOOL_ID };
 
-const CLIENT_STUBS = {
-  schema: (_s: string) => ({ from: (_t: string) => createMockQueryBuilder() }),
-  auth: {
-    signInWithOtp: async () => ({ data: null, error: null }),
-    verifyOtp: async () => ({ data: null, error: null }),
-    refreshSession: async () => ({ data: null, error: null }),
-    admin: {
-      deleteUser: async () => ({ data: null, error: null }),
-      signOut: async () => ({ data: null, error: null }),
-    },
-  },
-  storage: {
-    from: () => ({
-      upload: async () => ({ data: null, error: null }),
-      download: async () => ({ data: null, error: null }),
-    }),
-  },
-};
+const CLIENT_STUBS = createMockSupabaseService()._client;
 
 function makeSubject(overrides: Record<string, any> = {}) {
   return {
@@ -60,7 +47,7 @@ describe('SubjectService', () => {
   });
 
   describe('create', () => {
-    test('throws ConflictException on duplicate (error code 23505)', async () => {
+    test('throws ConflictException on duplicate (error code 23505)', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: PROFILE, error: null },
       });
@@ -91,9 +78,9 @@ describe('SubjectService', () => {
       };
       service = new SubjectService(mockSupabase as any, mockCache as any);
 
-      expect(
-        service.create(USER_ID, makeDto() as any),
-      ).rejects.toBeInstanceOf(ConflictException);
+      expect(service.create(USER_ID, makeDto() as any)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
 
     test('uses cache.update to append and sort', async () => {
@@ -123,7 +110,9 @@ describe('SubjectService', () => {
       };
       service = new SubjectService(mockSupabase as any, mockCache as any);
 
-      const existing = [makeSubject({ id: 'subject-0', name: 'Art', sort_order: 0 })];
+      const existing = [
+        makeSubject({ id: 'subject-0', name: 'Art', sort_order: 0 }),
+      ];
       await mockCache.set(`subjects:${SCHOOL_ID}`, existing, SUBJECT_TTL);
 
       await service.create(USER_ID, makeDto() as any);
@@ -202,7 +191,7 @@ describe('SubjectService', () => {
       expect(cached[0].name).toBe('Maths');
     });
 
-    test('throws ConflictException on duplicate', async () => {
+    test('throws ConflictException on duplicate', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: {
           data: null,
@@ -224,7 +213,11 @@ describe('SubjectService', () => {
       });
       service = new SubjectService(mockSupabase as any, mockCache as any);
 
-      await mockCache.set(`subjects:${SCHOOL_ID}`, [makeSubject()], SUBJECT_TTL);
+      await mockCache.set(
+        `subjects:${SCHOOL_ID}`,
+        [makeSubject()],
+        SUBJECT_TTL,
+      );
 
       await service.reorder({
         items: [{ id: 'subject-1', sortOrder: 2 }],
@@ -241,7 +234,11 @@ describe('SubjectService', () => {
       });
       service = new SubjectService(mockSupabase as any, mockCache as any);
 
-      await mockCache.set(`subjects:${SCHOOL_ID}`, [makeSubject()], SUBJECT_TTL);
+      await mockCache.set(
+        `subjects:${SCHOOL_ID}`,
+        [makeSubject()],
+        SUBJECT_TTL,
+      );
       await mockCache.set('subjects:school-2', [makeSubject()], SUBJECT_TTL);
 
       await service.delete('subject-1');
@@ -250,7 +247,7 @@ describe('SubjectService', () => {
       expect(await mockCache.get('subjects:school-2')).toBeNull();
     });
 
-    test('throws ConflictException on FK violation (error code 23503)', async () => {
+    test('throws ConflictException on FK violation (error code 23503)', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: {
           data: null,

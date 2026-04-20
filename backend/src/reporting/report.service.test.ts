@@ -1,28 +1,33 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ReportService } from './report.service';
-import { createMockSupabaseService, createMockQueryBuilder } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockQueryBuilder,
+} from '@/test/mocks';
 
 const mockCalc = {
-  calculateStudentTermResult: async () => ({
-    studentId: '1',
-    firstName: 'A',
-    lastName: 'B',
-    termId: 't1',
-    subjects: [],
-    overallAverage: null,
-  }),
-  calculateStudentYearResult: async () => ({
-    studentId: '1',
-    firstName: 'A',
-    lastName: 'B',
-    academicYearId: 'y1',
-    gradingModel: 'term_based',
-    terms: [],
-    yearEnd: { subjects: [], overallAverage: null },
-  }),
-  calculateClassTermResults: async () => [],
-  calculateClassYearResults: async () => [],
+  calculateStudentTermResult: () =>
+    Promise.resolve({
+      studentId: '1',
+      firstName: 'A',
+      lastName: 'B',
+      termId: 't1',
+      subjects: [],
+      overallAverage: null,
+    }),
+  calculateStudentYearResult: () =>
+    Promise.resolve({
+      studentId: '1',
+      firstName: 'A',
+      lastName: 'B',
+      academicYearId: 'y1',
+      gradingModel: 'term_based',
+      terms: [],
+      yearEnd: { subjects: [], overallAverage: null },
+    }),
+  calculateClassTermResults: () => Promise.resolve([]),
+  calculateClassYearResults: () => Promise.resolve([]),
 };
 
 describe('ReportService', () => {
@@ -58,7 +63,8 @@ describe('ReportService', () => {
       return resolve(r);
     };
 
-    mockSupabase.getServiceClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.getServiceClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
     const result = await service.generateTermReports('user1', {
       termId: 't1',
@@ -69,33 +75,34 @@ describe('ReportService', () => {
     expect(result.generated).toBe(0);
   });
 
-  test('findOne throws NotFoundException for missing report', async () => {
+  test('findOne throws NotFoundException for missing report', () => {
     const builder = createMockQueryBuilder({ data: null, error: null });
-    mockSupabase.createUserClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.createUserClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    await expect(service.findOne('nonexistent', 'tok')).rejects.toBeInstanceOf(
+    expect(service.findOne('nonexistent', 'tok')).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
-  test('publish throws BadRequestException if already published', async () => {
+  test('publish throws BadRequestException if already published', () => {
     const fetchResult = { data: { status: 'published' }, error: null };
     const builder = createMockQueryBuilder(fetchResult);
     builder.maybeSingle = () => Promise.resolve(fetchResult);
-    mockSupabase.getServiceClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.getServiceClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    await expect(service.publish('r1')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    expect(service.publish('r1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  test('sendToMinistry throws BadRequestException if still draft', async () => {
+  test('sendToMinistry throws BadRequestException if still draft', () => {
     const fetchResult = { data: { status: 'draft' }, error: null };
     const builder = createMockQueryBuilder(fetchResult);
     builder.maybeSingle = () => Promise.resolve(fetchResult);
-    mockSupabase.getServiceClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.getServiceClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    await expect(service.sendToMinistry('r1')).rejects.toBeInstanceOf(
+    expect(service.sendToMinistry('r1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });
@@ -103,7 +110,8 @@ describe('ReportService', () => {
   test('updateReport returns updated data', async () => {
     const updated = { id: 'r1', class_teacher_remark: 'Good', conduct: 'A' };
     const builder = createMockQueryBuilder({ data: updated, error: null });
-    mockSupabase.getServiceClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.getServiceClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
     const result = await service.updateReport('r1', {
       classTeacherRemark: 'Good',

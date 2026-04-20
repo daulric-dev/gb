@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
@@ -69,7 +74,11 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to create academic year');
     }
 
-    await this.cache.update<any[]>(`academic-years:${schoolId}`, (list) => [data, ...list], YEAR_TTL);
+    await this.cache.update<any[]>(
+      `academic-years:${schoolId}`,
+      (list) => [data, ...list],
+      YEAR_TTL,
+    );
     return data;
   }
 
@@ -190,8 +199,16 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to update academic year');
     }
 
-    await this.cache.update<any[]>(`academic-years:${data.school_id}`, (list) => list.map((y) => (y.id === yearId ? data : y)), YEAR_TTL);
-    await this.cache.update(`academic-year-active:${data.school_id}`, (active: any) => (active?.id === yearId ? data : active), YEAR_TTL);
+    await this.cache.update<any[]>(
+      `academic-years:${data.school_id}`,
+      (list) => list.map((y) => (y.id === yearId ? data : y)),
+      YEAR_TTL,
+    );
+    await this.cache.update(
+      `academic-year-active:${data.school_id}`,
+      (active: any) => (active?.id === yearId ? data : active),
+      YEAR_TTL,
+    );
     return data;
   }
 

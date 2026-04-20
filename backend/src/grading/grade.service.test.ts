@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { GradeService } from './grade.service';
-import { createMockSupabaseService, createMockCacheService, createMockQueryBuilder } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+  createMockQueryBuilder,
+} from '@/test/mocks';
 
 describe('GradeService', () => {
   let service: GradeService;
@@ -22,60 +26,79 @@ describe('GradeService', () => {
   test('create invalidates calc caches', async () => {
     await mockCache.set('calc:a', 'b', 300);
 
-    await service.create(userId, {
-      assessmentId: 'a1',
-      studentId: 's1',
-      score: 85,
-    } as any, token);
+    await service.create(
+      userId,
+      {
+        assessmentId: 'a1',
+        studentId: 's1',
+        score: 85,
+      } as any,
+      token,
+    );
 
     expect(await mockCache.get('calc:a')).toBeNull();
   });
 
-  test('create throws ConflictException on duplicate (23505)', async () => {
+  test('create throws ConflictException on duplicate (23505)', () => {
     const builder = createMockQueryBuilder({
       data: null,
       error: { code: '23505', message: 'duplicate key' },
     });
-    mockSupabase.createUserClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.createUserClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    await expect(
-      service.create(userId, {
-        assessmentId: 'a1',
-        studentId: 's1',
-        score: 85,
-      } as any, token),
+    expect(
+      service.create(
+        userId,
+        {
+          assessmentId: 'a1',
+          studentId: 's1',
+          score: 85,
+        } as any,
+        token,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  test('create throws ForbiddenException on RLS error', async () => {
+  test('create throws ForbiddenException on RLS error', () => {
     const builder = createMockQueryBuilder({
       data: null,
       error: { code: '42501', message: 'row-level security' },
     });
-    mockSupabase.createUserClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.createUserClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    await expect(
-      service.create(userId, {
-        assessmentId: 'a1',
-        studentId: 's1',
-        score: 85,
-      } as any, token),
+    expect(
+      service.create(
+        userId,
+        {
+          assessmentId: 'a1',
+          studentId: 's1',
+          score: 85,
+        } as any,
+        token,
+      ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   test('bulkCreate invalidates calc caches', async () => {
     const builder = createMockQueryBuilder({ data: null, error: null });
-    mockSupabase.createUserClient = () => ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    mockSupabase.createUserClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
     await mockCache.set('calc:bulk', 'val', 300);
 
-    const result = await service.bulkCreate(userId, {
-      assessmentId: 'a1',
-      grades: [
-        { studentId: 's1', score: 90 },
-        { studentId: 's2', score: 80 },
-      ],
-    } as any, token);
+    const result = await service.bulkCreate(
+      userId,
+      {
+        assessmentId: 'a1',
+        grades: [
+          { studentId: 's1', score: 90 },
+          { studentId: 's2', score: 80 },
+        ],
+      } as any,
+      token,
+    );
 
     expect(result.graded).toBe(2);
     expect(await mockCache.get('calc:bulk')).toBeNull();
@@ -92,7 +115,12 @@ describe('GradeService', () => {
   test('exclude invalidates calc caches', async () => {
     await mockCache.set('calc:e', 'f', 300);
 
-    await service.exclude('g1', userId, { isExcluded: true, exclusionReason: 'cheating' } as any, token);
+    await service.exclude(
+      'g1',
+      userId,
+      { isExcluded: true, exclusionReason: 'cheating' } as any,
+      token,
+    );
 
     expect(await mockCache.get('calc:e')).toBeNull();
   });

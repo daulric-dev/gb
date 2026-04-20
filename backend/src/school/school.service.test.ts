@@ -1,7 +1,10 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
 import { SchoolService } from './school.service';
-import { createMockSupabaseService, createMockCacheService } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+} from '@/test/mocks';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
 
@@ -18,8 +21,18 @@ describe('SchoolService', () => {
 
   describe('findAll', () => {
     const schools = [
-      { id: '1', name: 'Alpha School', parish: 'Kingston', school_type: 'primary' },
-      { id: '2', name: 'Beta School', parish: 'Portland', school_type: 'secondary' },
+      {
+        id: '1',
+        name: 'Alpha School',
+        parish: 'Kingston',
+        school_type: 'primary',
+      },
+      {
+        id: '2',
+        name: 'Beta School',
+        parish: 'Portland',
+        school_type: 'secondary',
+      },
     ];
 
     test('returns cached data when available', async () => {
@@ -44,7 +57,12 @@ describe('SchoolService', () => {
   });
 
   describe('create', () => {
-    const newSchool = { id: '3', name: 'Gamma School', parish: 'St. Ann', school_type: 'primary' };
+    const newSchool = {
+      id: '3',
+      name: 'Gamma School',
+      parish: 'St. Ann',
+      school_type: 'primary',
+    };
 
     test('calls cache.update to append new school to list', async () => {
       const existing = [{ id: '1', name: 'Alpha School' }];
@@ -67,7 +85,7 @@ describe('SchoolService', () => {
       expect(cached.some((s: any) => s.id === '3')).toBe(true);
     });
 
-    test('throws on DB error', async () => {
+    test('throws on DB error', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: null, error: { message: 'duplicate key' } },
       });

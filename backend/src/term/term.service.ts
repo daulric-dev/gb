@@ -62,7 +62,11 @@ export class TermService {
       throw new BadRequestException('Failed to create term');
     }
 
-    await this.cache.update<any[]>(`terms:${dto.academicYearId}`, (list) => [...list, term].sort((a, b) => a.sort_order - b.sort_order), TERM_TTL);
+    await this.cache.update<any[]>(
+      `terms:${dto.academicYearId}`,
+      (list) => [...list, term].sort((a, b) => a.sort_order - b.sort_order),
+      TERM_TTL,
+    );
     return term;
   }
 
@@ -145,7 +149,11 @@ export class TermService {
       throw new NotFoundException('Term not found');
     }
 
-    await this.cache.update<any[]>(`terms:${data.academic_year_id}`, (list) => list.map((t) => (t.id === termId ? data : t)), TERM_TTL);
+    await this.cache.update<any[]>(
+      `terms:${data.academic_year_id}`,
+      (list) => list.map((t) => (t.id === termId ? data : t)),
+      TERM_TTL,
+    );
     return data;
   }
 

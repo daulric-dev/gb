@@ -1,15 +1,16 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
 import { AcademicYearService } from './academic-year.service';
-import { createMockSupabaseService, createMockCacheService } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+} from '@/test/mocks';
 
 const YEAR_TTL = 60 * 60 * 24 * 30;
 const SCHOOL_ID = 'school-abc';
 const USER_ID = 'user-123';
 
-function setupWithSchoolId(
-  overrides: Record<string, any> = {},
-) {
+function setupWithSchoolId(overrides: Record<string, any> = {}) {
   const profileResult = { data: { school_id: SCHOOL_ID }, error: null };
   const mockSupabase = createMockSupabaseService({
     queryResult: overrides.queryResult ?? profileResult,
@@ -38,7 +39,7 @@ describe('AcademicYearService', () => {
   });
 
   describe('create', () => {
-    test('validates year_based weights must sum to 100', async () => {
+    test('validates year_based weights must sum to 100', () => {
       mockSupabase = createMockSupabaseService();
       service = new AcademicYearService(mockSupabase as any, mockCache as any);
 
@@ -54,7 +55,7 @@ describe('AcademicYearService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    test('validates start_date before end_date', async () => {
+    test('validates start_date before end_date', () => {
       mockSupabase = createMockSupabaseService();
       service = new AcademicYearService(mockSupabase as any, mockCache as any);
 
@@ -129,17 +130,32 @@ describe('AcademicYearService', () => {
         { id: yearId, name: 'Old Name', school_id: SCHOOL_ID },
         { id: 'y2', name: '2024-2025', school_id: SCHOOL_ID },
       ];
-      const activeYear = { id: yearId, name: 'Old Name', school_id: SCHOOL_ID, is_active: true };
+      const activeYear = {
+        id: yearId,
+        name: 'Old Name',
+        school_id: SCHOOL_ID,
+        is_active: true,
+      };
 
-      await mockCache.set(`academic-years:${SCHOOL_ID}`, existingList, YEAR_TTL);
-      await mockCache.set(`academic-year-active:${SCHOOL_ID}`, activeYear, YEAR_TTL);
+      await mockCache.set(
+        `academic-years:${SCHOOL_ID}`,
+        existingList,
+        YEAR_TTL,
+      );
+      await mockCache.set(
+        `academic-year-active:${SCHOOL_ID}`,
+        activeYear,
+        YEAR_TTL,
+      );
 
       await service.update(yearId, { name: 'Renamed' } as any);
 
       const cachedList = await mockCache.get(`academic-years:${SCHOOL_ID}`);
       expect(cachedList[0]).toEqual(updatedYear);
 
-      const cachedActive = await mockCache.get(`academic-year-active:${SCHOOL_ID}`);
+      const cachedActive = await mockCache.get(
+        `academic-year-active:${SCHOOL_ID}`,
+      );
       expect(cachedActive).toEqual(updatedYear);
     });
   });
@@ -147,7 +163,12 @@ describe('AcademicYearService', () => {
   describe('setActive', () => {
     test('calls deleteByPrefix to invalidate all academic-year caches', async () => {
       const yearId = 'y1';
-      const activated = { id: yearId, name: '2025-2026', school_id: SCHOOL_ID, is_active: true };
+      const activated = {
+        id: yearId,
+        name: '2025-2026',
+        school_id: SCHOOL_ID,
+        is_active: true,
+      };
 
       mockSupabase = setupWithSchoolId({
         queryResult: { data: activated, error: null },
@@ -155,12 +176,18 @@ describe('AcademicYearService', () => {
       service = new AcademicYearService(mockSupabase as any, mockCache as any);
 
       await mockCache.set(`academic-years:${SCHOOL_ID}`, [activated], YEAR_TTL);
-      await mockCache.set(`academic-year-active:${SCHOOL_ID}`, activated, YEAR_TTL);
+      await mockCache.set(
+        `academic-year-active:${SCHOOL_ID}`,
+        activated,
+        YEAR_TTL,
+      );
 
       await service.setActive(USER_ID, yearId);
 
       const listCache = await mockCache.get(`academic-years:${SCHOOL_ID}`);
-      const activeCache = await mockCache.get(`academic-year-active:${SCHOOL_ID}`);
+      const activeCache = await mockCache.get(
+        `academic-year-active:${SCHOOL_ID}`,
+      );
       expect(listCache).toBeNull();
       expect(activeCache).toBeNull();
     });
@@ -169,20 +196,35 @@ describe('AcademicYearService', () => {
   describe('deactivate', () => {
     test('calls deleteByPrefix to invalidate all academic-year caches', async () => {
       const yearId = 'y1';
-      const deactivated = { id: yearId, name: '2025-2026', school_id: SCHOOL_ID, is_active: false };
+      const deactivated = {
+        id: yearId,
+        name: '2025-2026',
+        school_id: SCHOOL_ID,
+        is_active: false,
+      };
 
       mockSupabase = createMockSupabaseService({
         queryResult: { data: deactivated, error: null },
       });
       service = new AcademicYearService(mockSupabase as any, mockCache as any);
 
-      await mockCache.set(`academic-years:${SCHOOL_ID}`, [deactivated], YEAR_TTL);
-      await mockCache.set(`academic-year-active:${SCHOOL_ID}`, { id: yearId }, YEAR_TTL);
+      await mockCache.set(
+        `academic-years:${SCHOOL_ID}`,
+        [deactivated],
+        YEAR_TTL,
+      );
+      await mockCache.set(
+        `academic-year-active:${SCHOOL_ID}`,
+        { id: yearId },
+        YEAR_TTL,
+      );
 
       await service.deactivate(yearId);
 
       const listCache = await mockCache.get(`academic-years:${SCHOOL_ID}`);
-      const activeCache = await mockCache.get(`academic-year-active:${SCHOOL_ID}`);
+      const activeCache = await mockCache.get(
+        `academic-year-active:${SCHOOL_ID}`,
+      );
       expect(listCache).toBeNull();
       expect(activeCache).toBeNull();
     });

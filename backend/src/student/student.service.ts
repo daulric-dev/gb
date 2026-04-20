@@ -72,7 +72,16 @@ export class StudentService {
       throw new BadRequestException('Failed to create student');
     }
 
-    await this.cache.update<any[]>(`students:${profile.school_id}`, (list) => [...list, student].sort((a, b) => a.last_name.localeCompare(b.last_name) || a.first_name.localeCompare(b.first_name)), STUDENT_TTL);
+    await this.cache.update<any[]>(
+      `students:${profile.school_id}`,
+      (list) =>
+        [...list, student].sort(
+          (a, b) =>
+            a.last_name.localeCompare(b.last_name) ||
+            a.first_name.localeCompare(b.first_name),
+        ),
+      STUDENT_TTL,
+    );
     return student;
   }
 
@@ -173,7 +182,11 @@ export class StudentService {
       throw new NotFoundException('Student not found');
     }
 
-    await this.cache.update<any[]>(`students:${data.school_id}`, (list) => list.map((s) => (s.id === studentId ? data : s)), STUDENT_TTL);
+    await this.cache.update<any[]>(
+      `students:${data.school_id}`,
+      (list) => list.map((s) => (s.id === studentId ? data : s)),
+      STUDENT_TTL,
+    );
     return data;
   }
 }

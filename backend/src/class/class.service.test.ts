@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { ForbiddenException } from '@nestjs/common';
 import { ClassService } from './class.service';
-import { createMockSupabaseService, createMockCacheService, createMockQueryBuilder } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+  createMockQueryBuilder,
+} from '@/test/mocks';
 
 const TTL = 60 * 60 * 24 * 30;
 
@@ -127,7 +131,7 @@ describe('ClassService', () => {
   });
 
   describe('removeTeacher', () => {
-    test('throws ForbiddenException for class teacher', async () => {
+    test('throws ForbiddenException for class teacher', () => {
       const builder = createMockQueryBuilder({
         data: { is_class_teacher: true },
         error: null,

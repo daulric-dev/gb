@@ -1,7 +1,10 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { createMockSupabaseService, createMockCacheService } from '@/test/mocks';
+import {
+  createMockSupabaseService,
+  createMockCacheService,
+} from '@/test/mocks';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -20,7 +23,7 @@ describe('AuthService', () => {
       expect(result).toBe('OTP sent to email');
     });
 
-    test('throws BadRequestException on error', async () => {
+    test('throws BadRequestException on error', () => {
       mockSupabase = createMockSupabaseService({
         authResult: { data: null, error: { message: 'rate limited' } },
       });

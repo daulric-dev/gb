@@ -9,11 +9,13 @@ globalThis.localStorage ??= {
   get length() { return store.size; },
   key: (i: number) => [...store.keys()][i] ?? null,
 } as Storage;
-globalThis.document ??= { cookie: "" } as any;
-globalThis.window ??= globalThis as any;
+globalThis.document ??= { cookie: "" } as unknown as Document;
+globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 
 import { ApiError } from "@/lib/api";
 import { setTokens } from "@/lib/auth";
+
+type MockedFetch = typeof fetch & { mock: { calls: [string, Record<string, string | Record<string, string>>][] } };
 
 const BASE_URL = "http://localhost:3001/api/v1";
 
@@ -44,7 +46,7 @@ describe("api()", () => {
     globalThis.fetch = mock(
       async () =>
         new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    ) as any;
+    ) as typeof fetch;
   });
 
   afterEach(() => {
@@ -66,7 +68,7 @@ describe("api()", () => {
     const { api } = await import("@/lib/api");
     await api("/me");
 
-    const callArgs = (globalThis.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as MockedFetch).mock.calls[0];
     expect(callArgs[1].headers["Authorization"]).toBe("Bearer test-access");
   });
 
@@ -74,7 +76,7 @@ describe("api()", () => {
     const { api } = await import("@/lib/api");
     await api("/data", { method: "POST", body: { name: "test" } });
 
-    const callArgs = (globalThis.fetch as any).mock.calls[0];
+    const callArgs = (globalThis.fetch as MockedFetch).mock.calls[0];
     expect(callArgs[1].headers["Content-Type"]).toBe("application/json");
   });
 
@@ -85,7 +87,7 @@ describe("api()", () => {
           status: 403,
           statusText: "Forbidden",
         }),
-    ) as any;
+    ) as typeof fetch;
 
     const { api } = await import("@/lib/api");
     try {
@@ -103,7 +105,7 @@ describe("api()", () => {
         new Response(JSON.stringify({ id: 1, name: "Alice" }), {
           status: 200,
         }),
-    ) as any;
+    ) as typeof fetch;
 
     const { api } = await import("@/lib/api");
     const result = await api("/users/1");
