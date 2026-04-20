@@ -11,7 +11,7 @@ import { CreateClassDto } from './dto/create-class.dto';
 import { UpdateClassDto } from './dto/update-class.dto';
 import { AddTeacherDto } from './dto/add-teacher.dto';
 
-const CLASS_TTL = 300;
+const CLASS_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class ClassService {
@@ -76,8 +76,15 @@ export class ClassService {
       }
     }
 
-    await this.cache.delete(`my-classes:${userId}`);
-    await this.cache.delete(`my-classes:${userId}:${dto.academicYearId}`);
+    const entry = {
+      id: group.id,
+      name: group.name,
+      academicYearId: dto.academicYearId,
+      isClassTeacher: true,
+      createdAt: group.created_at ?? null,
+    };
+    await this.cache.update<any[]>(`my-classes:${userId}`, (list) => [...list, entry], CLASS_TTL);
+    await this.cache.update<any[]>(`my-classes:${userId}:${dto.academicYearId}`, (list) => [...list, entry], CLASS_TTL);
     return group;
   }
 

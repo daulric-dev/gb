@@ -28,6 +28,14 @@ export class CacheService implements CacheStore {
     return this.store.set(key, value, ttl);
   }
 
+  async update<T>(key: string, func: (value: T) => T | Promise<T>, ttl: number): Promise<boolean> {
+    this.logger.log(`Updating cache key: ${key}`);
+    const value = await this.store.get(key) as T | null;
+    if (value === null) return false;
+    await this.store.set(key, await func(value), ttl);
+    return true;
+  }
+
   async delete(key: string): Promise<void> {
     this.logger.log(`Deleting cache key: ${key}`);
     return this.store.delete(key);

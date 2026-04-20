@@ -10,7 +10,7 @@ import { CacheService } from '@/cache/cache.service';
 import { CreateTermDto } from './dto/create-term.dto';
 import { UpdateTermDto } from './dto/update-term.dto';
 
-const TERM_TTL = 300;
+const TERM_TTL = 60 * 60 * 24 * 30;
 
 @Injectable()
 export class TermService {
@@ -62,7 +62,7 @@ export class TermService {
       throw new BadRequestException('Failed to create term');
     }
 
-    await this.cache.delete(`terms:${dto.academicYearId}`);
+    await this.cache.update<any[]>(`terms:${dto.academicYearId}`, (list) => [...list, term].sort((a, b) => a.sort_order - b.sort_order), TERM_TTL);
     return term;
   }
 
@@ -145,7 +145,7 @@ export class TermService {
       throw new NotFoundException('Term not found');
     }
 
-    await this.cache.deleteByPrefix('terms:');
+    await this.cache.update<any[]>(`terms:${data.academic_year_id}`, (list) => list.map((t) => (t.id === termId ? data : t)), TERM_TTL);
     return data;
   }
 
