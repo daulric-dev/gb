@@ -5,6 +5,7 @@
     "": {
       "name": "bgv2",
       "devDependencies": {
+        "@types/bun": "^1.3.12",
         "concurrently": "^9.2.1",
       },
     },

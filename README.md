@@ -41,6 +41,7 @@ gbv2/
 │       ├── onboard/       # First-time setup
 │       ├── privacy/       # Privacy policy
 │       └── terms/         # Terms of service
+├── command/               # gb CLI tool
 ├── docs/                  # Project documentation
 └── .github/workflows/     # CI, coverage, security scanning
 ```
@@ -119,6 +120,54 @@ When the backend is running, Swagger docs are available at:
 ```
 http://localhost:3001/docs
 ```
+
+## CLI (`gb`)
+
+The project includes a monorepo-aware Git CLI at `command/index.ts`. It scopes git operations to individual services so you don't accidentally commit cross-service changes.
+
+### Setup
+
+```bash
+bun link        # registers the "gbsh" command globally
+```
+
+Or run directly:
+
+```bash
+bun run gb <command>
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `gb status` | Show `git status` grouped by service |
+| `gb affected [--base=main]` | List services with changes vs a base branch |
+| `gb commit [service]` | Stage and commit files for a service |
+| `gb diff [service]` | Show diff for a specific service or all |
+| `gb run <service> <script>` | Run a package.json script in a service directory |
+| `gb help` | Show help |
+
+### `gb commit`
+
+Interactive commit flow scoped to a single service.
+
+```bash
+gb commit                   # prompted to select a service
+gb commit frontend          # skip service selection
+gb commit frontend --topic "add auth" --type=feat
+gb commit backend --topic "fix query" -m "handle null joins" --type=fix
+```
+
+**Options:**
+
+- `--topic "..."` — commit subject (required, prompted if omitted, max 10 words)
+- `-m "..."` — optional extended commit body
+- `--type=<type>` — commit type prefix (default: `feat`). One of: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`
+
+When no service is provided, an interactive arrow-key selector is shown. When `--topic` is omitted, you're prompted with a live word counter (limit: 10 words).
+
+If you're on a protected branch (`main`/`master`), a new branch is auto-created (e.g. `frontend/feat/add-auth`) before committing.
 
 ## Scripts
 
