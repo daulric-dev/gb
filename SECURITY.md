@@ -1,5 +1,9 @@
 # Security Policy
 
+GradeBook's source code is publicly available to encourage community-driven security review. We welcome security researchers and developers to inspect the codebase, identify vulnerabilities, and report them responsibly.
+
+Please see [LICENSE.md](LICENSE.md) for what is and isn't permitted — the code is source-available for review and bug reporting only, not for use or redistribution.
+
 ## Supported Versions
 
 | Version | Supported          |
@@ -8,9 +12,9 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in GradeBook, please report it responsibly.
+If you discover a security vulnerability or bug in GradeBook, please report it responsibly.
 
-**Do not open a public issue.** Instead, please reach out directly to the GradeBook team:
+**Do not open a public issue.** Instead, please email the GradeBook team directly:
 
 - Email: **security@daulric.dev**
 

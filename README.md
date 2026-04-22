@@ -219,10 +219,12 @@ gb push --force    # force push with --force-with-lease
 | `bun run lint` | Lint both projects |
 | `bun run db:types` | Generate Supabase database types |
 
-## Security
+## Contributing
 
-See [SECURITY.md](SECURITY.md) for our security policy and how to report vulnerabilities.
+GradeBook is **source-available** — the code is public to encourage security review and bug discovery. If you find a vulnerability or bug, please report it to **security@daulric.dev**. Do not open a public issue for security findings.
+
+See [SECURITY.md](SECURITY.md) for full details on scope, expectations, and what to include in a report.
 
 ## License
 
-Proprietary - see [LICENSE.md](LICENSE.md) for details.
+Source-available, proprietary — see [LICENSE.md](LICENSE.md) for details. You may view and review the code, but use, modification, and redistribution are not permitted without authorization.
