@@ -1,7 +1,29 @@
 import { SERVICES } from "./constants";
 
+async function getRepoRoot(): Promise<string> {
+  const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const out = await new Response(proc.stdout).text();
+  const code = await proc.exited;
+  if (code !== 0) {
+    throw new Error("Not inside a git repository");
+  }
+  return out.trim();
+}
+
+let _repoRoot: string | null = null;
+
+async function repoRoot(): Promise<string> {
+  _repoRoot ??= await getRepoRoot();
+  return _repoRoot;
+}
+
 export async function git(...args: string[]): Promise<string> {
+  const cwd = await repoRoot();
   const proc = Bun.spawn(["git", ...args], {
+    cwd,
     stdout: "pipe",
     stderr: "pipe",
   });

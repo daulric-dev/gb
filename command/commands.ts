@@ -88,7 +88,7 @@ export async function commitCmd(
   const branch = await getCurrentBranch();
   if (PROTECTED_BRANCHES.includes(branch)) {
     const slug = slugify(topic);
-    const newBranch = `${service}/${type}/${slug}`;
+    const newBranch = `${type}(${service})/${slug}`;
     console.log(`On ${branch}, creating branch: \x1b[36m${newBranch}\x1b[0m`);
     await git("checkout", "-b", newBranch);
   }
@@ -122,6 +122,50 @@ export async function commitCmd(
   console.log(`\x1b[32mCommitted:\x1b[0m ${subject}`);
   if (message) console.log(`  ${message}`);
   console.log(`  ${serviceFiles.length} file${serviceFiles.length !== 1 ? "s" : ""} staged`);
+}
+
+export async function branchCmd(
+  positionals: string[],
+  flags: Record<string, string>,
+) {
+  let service = positionals[0];
+  let name = positionals[1] ?? flags["name"];
+  let type: string | undefined = flags["type"];
+
+  if (!service) {
+    const allServices = [...Object.values(SERVICES), "root"];
+    service = await select("Select a service:", allServices);
+  }
+
+  const allServices = [...Object.values(SERVICES), "root"];
+  if (!allServices.includes(service)) {
+    console.error(
+      `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
+    );
+    process.exit(1);
+  }
+
+  if (!type) {
+    const typeOptions = ["skip", ...COMMIT_TYPES];
+    const selected = await select("Select a type:", typeOptions);
+    type = selected === "skip" ? undefined : selected;
+  }
+
+  if (!name) {
+    name = await prompt("Branch name:");
+    if (!name) {
+      console.error("Branch name is required.");
+      process.exit(1);
+    }
+  }
+
+  const slug = slugify(name);
+  const branchName = type
+    ? `${type}(${service})/${slug}`
+    : `${service}(${slug})`;
+
+  await git("checkout", "-b", branchName);
+  console.log(`\x1b[32mCreated and switched to:\x1b[0m \x1b[36m${branchName}\x1b[0m`);
 }
 
 export async function diffCmd(positionals: string[]) {
@@ -185,29 +229,53 @@ export async function runCmd(positionals: string[]) {
   process.exit(code);
 }
 
+export async function pushCmd(flags: Record<string, string>) {
+  const branch = await getCurrentBranch();
+  const force = "force" in flags;
+
+  let hasUpstream = true;
+  try {
+    await git("rev-parse", "--abbrev-ref", `${branch}@{upstream}`);
+  } catch {
+    hasUpstream = false;
+  }
+
+  const args = hasUpstream
+    ? ["push", ...(force ? ["--force-with-lease"] : [])]
+    : ["push", "-u", "origin", branch];
+
+  console.log(`\x1b[36m${branch}\x1b[0m > git ${args.join(" ")}`);
+  await git(...args);
+  console.log(`\x1b[32mPushed\x1b[0m ${branch} to origin`);
+}
+
 export function helpCmd() {
-  console.log(`
-\x1b[1mgb\x1b[0m — monorepo git CLI
+  const help = JSON.parse(
+    require("fs").readFileSync(`${import.meta.dir}/help.json`, "utf-8"),
+  );
 
-\x1b[1mCommands:\x1b[0m
-  status                         Show git status grouped by service
-  affected [--base=main]         List services with changes vs a base branch
-  commit <service>                  Stage and commit files for a service
-         [--topic "topic"]         Commit topic (prompted if omitted)
-         [-m "message"]            Optional extended commit message
-         [--type=feat]             Commit type (feat, fix, refactor, test, docs, chore, ci, perf)
-  diff [service]                 Show diff for a service or all
-  run <service> <script>         Run a package.json script in a service
+  const COL = 35;
+  const lines: string[] = [];
 
-\x1b[1mServices:\x1b[0m ${[...Object.values(SERVICES), "root"].join(", ")}
+  lines.push(`\n\x1b[1m${help.name}\x1b[0m — ${help.description}\n`);
 
-\x1b[1mExamples:\x1b[0m
-  gb status
-  gb affected --base=dev
-  gb commit frontend
-  gb commit frontend --topic "add auth" --type=feat
-  gb commit frontend --topic "add auth" -m "supports OAuth and email"
-  gb diff backend
-  gb run backend test
-`);
+  lines.push(`\x1b[1mCommands:\x1b[0m`);
+  for (const cmd of help.commands) {
+    const label = cmd.args ? `${cmd.name} ${cmd.args}` : cmd.name;
+    lines.push(`  ${label.padEnd(COL)}${cmd.description}`);
+    if (cmd.options) {
+      for (const opt of cmd.options) {
+        lines.push(`  ${"".padEnd(cmd.name.length)}${opt.flag.padEnd(COL - cmd.name.length)}${opt.description}`);
+      }
+    }
+  }
+
+  lines.push(`\n\x1b[1mServices:\x1b[0m ${[...Object.values(SERVICES), "root"].join(", ")}\n`);
+
+  lines.push(`\x1b[1mExamples:\x1b[0m`);
+  for (const example of help.examples) {
+    lines.push(`  ${example}`);
+  }
+
+  console.log(lines.join("\n") + "\n");
 }
