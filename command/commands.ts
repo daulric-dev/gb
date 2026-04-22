@@ -130,7 +130,7 @@ export async function branchCmd(
 ) {
   let service = positionals[0];
   let name = positionals[1] ?? flags["name"];
-  const type = flags["type"];
+  let type: string | undefined = flags["type"];
 
   if (!service) {
     const allServices = [...Object.values(SERVICES), "root"];
@@ -145,6 +145,12 @@ export async function branchCmd(
     process.exit(1);
   }
 
+  if (!type) {
+    const typeOptions = ["skip", ...COMMIT_TYPES];
+    const selected = await select("Select a type:", typeOptions);
+    type = selected === "skip" ? undefined : selected;
+  }
+
   if (!name) {
     name = await prompt("Branch name:");
     if (!name) {
@@ -156,7 +162,7 @@ export async function branchCmd(
   const slug = slugify(name);
   const branchName = type
     ? `${type}(${service})/${slug}`
-    : `${service}/${slug}`;
+    : `${service}(${slug})`;
 
   await git("checkout", "-b", branchName);
   console.log(`\x1b[32mCreated and switched to:\x1b[0m \x1b[36m${branchName}\x1b[0m`);

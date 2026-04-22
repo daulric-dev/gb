@@ -49,6 +49,7 @@
     "gb status",
     "gb affected --base=dev",
     "gb branch",
+    "gb branch frontend \"add auth\"",
     "gb branch frontend \"add auth\" --type=feat",
     "gb commit frontend",
     "gb commit frontend --topic \"add auth\" --type=feat",
