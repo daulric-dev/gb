@@ -1,0 +1,61 @@
+{
+  "name": "gb",
+  "description": "monorepo git CLI",
+  "commands": [
+    {
+      "name": "status",
+      "description": "Show git status grouped by service"
+    },
+    {
+      "name": "affected",
+      "args": "[--base=main]",
+      "description": "List services with changes vs a base branch"
+    },
+    {
+      "name": "branch",
+      "args": "[service] [name]",
+      "description": "Create a service-scoped branch",
+      "options": [
+        { "flag": "--type=feat", "description": "Optional type prefix (e.g. feat, fix)" }
+      ]
+    },
+    {
+      "name": "commit",
+      "args": "[service]",
+      "description": "Stage and commit files for a service",
+      "options": [
+        { "flag": "--topic \"topic\"", "description": "Commit topic (prompted if omitted)" },
+        { "flag": "-m \"message\"", "description": "Optional extended commit message" },
+        { "flag": "--type=feat", "description": "Commit type (feat, fix, refactor, test, docs, chore, ci, perf)" }
+      ]
+    },
+    {
+      "name": "diff",
+      "args": "[service]",
+      "description": "Show diff for a service or all"
+    },
+    {
+      "name": "push",
+      "args": "[--force]",
+      "description": "Push current branch to origin"
+    },
+    {
+      "name": "run",
+      "args": "<service> <script>",
+      "description": "Run a package.json script in a service"
+    }
+  ],
+  "examples": [
+    "gb status",
+    "gb affected --base=dev",
+    "gb branch",
+    "gb branch frontend \"add auth\" --type=feat",
+    "gb commit frontend",
+    "gb commit frontend --topic \"add auth\" --type=feat",
+    "gb commit frontend --topic \"add auth\" -m \"supports OAuth and email\"",
+    "gb diff backend",
+    "gb push",
+    "gb push --force",
+    "gb run backend test"
+  ]
+}
