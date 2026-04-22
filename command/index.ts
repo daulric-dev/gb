@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "./utils";
+import { startTimer } from "./timer";
 import {
   statusCmd,
   affectedCmd,
@@ -12,6 +13,7 @@ import {
 } from "./commands";
 
 const { command, positionals, flags } = parseArgs(Bun.argv);
+const stop = startTimer();
 
 switch (command) {
   case "status":
@@ -31,7 +33,7 @@ switch (command) {
     break;
   case "run":
     await runCmd(positionals);
-    break;    
+    break;
   case "help":
   case "--help":
   case "-h":
@@ -42,3 +44,5 @@ switch (command) {
     helpCmd();
     process.exit(1);
 }
+
+stop();
