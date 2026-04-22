@@ -88,7 +88,7 @@ export async function commitCmd(
   const branch = await getCurrentBranch();
   if (PROTECTED_BRANCHES.includes(branch)) {
     const slug = slugify(topic);
-    const newBranch = `${service}/${type}/${slug}`;
+    const newBranch = `${type}(${service})/${slug}`;
     console.log(`On ${branch}, creating branch: \x1b[36m${newBranch}\x1b[0m`);
     await git("checkout", "-b", newBranch);
   }
@@ -122,6 +122,44 @@ export async function commitCmd(
   console.log(`\x1b[32mCommitted:\x1b[0m ${subject}`);
   if (message) console.log(`  ${message}`);
   console.log(`  ${serviceFiles.length} file${serviceFiles.length !== 1 ? "s" : ""} staged`);
+}
+
+export async function branchCmd(
+  positionals: string[],
+  flags: Record<string, string>,
+) {
+  let service = positionals[0];
+  let name = positionals[1] ?? flags["name"];
+  const type = flags["type"];
+
+  if (!service) {
+    const allServices = [...Object.values(SERVICES), "root"];
+    service = await select("Select a service:", allServices);
+  }
+
+  const allServices = [...Object.values(SERVICES), "root"];
+  if (!allServices.includes(service)) {
+    console.error(
+      `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
+    );
+    process.exit(1);
+  }
+
+  if (!name) {
+    name = await prompt("Branch name:");
+    if (!name) {
+      console.error("Branch name is required.");
+      process.exit(1);
+    }
+  }
+
+  const slug = slugify(name);
+  const branchName = type
+    ? `${type}(${service})/${slug}`
+    : `${service}/${slug}`;
+
+  await git("checkout", "-b", branchName);
+  console.log(`\x1b[32mCreated and switched to:\x1b[0m \x1b[36m${branchName}\x1b[0m`);
 }
 
 export async function diffCmd(positionals: string[]) {
@@ -192,7 +230,9 @@ export function helpCmd() {
 \x1b[1mCommands:\x1b[0m
   status                         Show git status grouped by service
   affected [--base=main]         List services with changes vs a base branch
-  commit <service>                  Stage and commit files for a service
+  branch [service] [name]        Create a service-scoped branch
+         [--type=feat]             Optional type prefix (e.g. feat, fix)
+  commit [service]               Stage and commit files for a service
          [--topic "topic"]         Commit topic (prompted if omitted)
          [-m "message"]            Optional extended commit message
          [--type=feat]             Commit type (feat, fix, refactor, test, docs, chore, ci, perf)
@@ -204,6 +244,8 @@ export function helpCmd() {
 \x1b[1mExamples:\x1b[0m
   gb status
   gb affected --base=dev
+  gb branch
+  gb branch frontend "add auth" --type=feat
   gb commit frontend
   gb commit frontend --topic "add auth" --type=feat
   gb commit frontend --topic "add auth" -m "supports OAuth and email"

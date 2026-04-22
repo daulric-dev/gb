@@ -4,6 +4,7 @@ import { parseArgs } from "./utils";
 import {
   statusCmd,
   affectedCmd,
+  branchCmd,
   commitCmd,
   diffCmd,
   runCmd,
@@ -19,6 +20,9 @@ switch (command) {
   case "affected":
     await affectedCmd(flags);
     break;
+  case "branch":
+    await branchCmd(positionals, flags);
+    break;
   case "commit":
     await commitCmd(positionals, flags);
     break;
@@ -27,7 +31,7 @@ switch (command) {
     break;
   case "run":
     await runCmd(positionals);
-    break;
+    break;    
   case "help":
   case "--help":
   case "-h":
