@@ -171,7 +171,7 @@ jobs:
           echo "### Largest files (overall)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          sort -t $'\t' -k2,2nr "$tsv" | head -n 30 | awk -F '\t' '
+          sort -t $'\t' -k2,2nr "$tsv" | awk -F '\t' 'NR>30{exit}
             function hum(b,   cmd, x) {
               cmd = "numfmt --to=iec-i --suffix=B " b " 2>/dev/null"
               cmd | getline x
