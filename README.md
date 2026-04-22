@@ -42,6 +42,13 @@ gbv2/
 │       ├── privacy/       # Privacy policy
 │       └── terms/         # Terms of service
 ├── command/               # gb CLI tool
+│   ├── index.ts           # Entrypoint
+│   ├── commands.ts        # Command implementations
+│   ├── constants.ts       # Services, commit types, config
+│   ├── prompts.ts         # Interactive terminal prompts
+│   ├── utils.ts           # Git helpers, arg parsing
+│   ├── timer.ts           # Execution timer
+│   └── help.json          # Help text data
 ├── docs/                  # Project documentation
 └── .github/workflows/     # CI, coverage, security scanning
 ```
@@ -143,10 +150,30 @@ bun run gb <command>
 |---------|-------------|
 | `gb status` | Show `git status` grouped by service |
 | `gb affected [--base=main]` | List services with changes vs a base branch |
+| `gb branch [service] [name]` | Create a service-scoped branch |
 | `gb commit [service]` | Stage and commit files for a service |
 | `gb diff [service]` | Show diff for a specific service or all |
+| `gb push [--force]` | Push current branch to origin |
 | `gb run <service> <script>` | Run a package.json script in a service directory |
 | `gb help` | Show help |
+
+All commands display execution time on completion.
+
+### `gb branch`
+
+Create a branch scoped to a service.
+
+```bash
+gb branch                                      # prompted to select service and enter name
+gb branch frontend "add auth"                  # creates frontend(add-auth)
+gb branch frontend "add auth" --type=feat      # creates feat(frontend)/add-auth
+```
+
+**Options:**
+
+- `--type=<type>` — optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
+
+When no service is provided, an interactive arrow-key selector is shown.
 
 ### `gb commit`
 
@@ -167,7 +194,18 @@ gb commit backend --topic "fix query" -m "handle null joins" --type=fix
 
 When no service is provided, an interactive arrow-key selector is shown. When `--topic` is omitted, you're prompted with a live word counter (limit: 10 words).
 
-If you're on a protected branch (`main`/`master`), a new branch is auto-created (e.g. `frontend/feat/add-auth`) before committing.
+If you're on a protected branch (`main`/`master`), a new branch is auto-created (e.g. `feat(frontend)/add-auth`) before committing.
+
+### `gb push`
+
+Push the current branch to origin.
+
+```bash
+gb push            # push (auto sets upstream on first push)
+gb push --force    # force push with --force-with-lease
+```
+
+**Services:** `frontend`, `backend`, `docs`, `.github`, `command`, `root`
 
 ## Scripts
 
