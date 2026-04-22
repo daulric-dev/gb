@@ -8,6 +8,7 @@ import {
   branchCmd,
   commitCmd,
   diffCmd,
+  pushCmd,
   runCmd,
   helpCmd,
 } from "./commands";
@@ -30,6 +31,9 @@ switch (command) {
     break;
   case "diff":
     await diffCmd(positionals);
+    break;
+  case "push":
+    await pushCmd(flags);
     break;
   case "run":
     await runCmd(positionals);

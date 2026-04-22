@@ -223,6 +223,26 @@ export async function runCmd(positionals: string[]) {
   process.exit(code);
 }
 
+export async function pushCmd(flags: Record<string, string>) {
+  const branch = await getCurrentBranch();
+  const force = "force" in flags;
+
+  let hasUpstream = true;
+  try {
+    await git("rev-parse", "--abbrev-ref", `${branch}@{upstream}`);
+  } catch {
+    hasUpstream = false;
+  }
+
+  const args = hasUpstream
+    ? ["push", ...(force ? ["--force-with-lease"] : [])]
+    : ["push", "-u", "origin", branch];
+
+  console.log(`\x1b[36m${branch}\x1b[0m > git ${args.join(" ")}`);
+  await git(...args);
+  console.log(`\x1b[32mPushed\x1b[0m ${branch} to origin`);
+}
+
 export function helpCmd() {
   console.log(`
 \x1b[1mgb\x1b[0m — monorepo git CLI
@@ -237,6 +257,7 @@ export function helpCmd() {
          [-m "message"]            Optional extended commit message
          [--type=feat]             Commit type (feat, fix, refactor, test, docs, chore, ci, perf)
   diff [service]                 Show diff for a service or all
+  push [--force]                 Push current branch to origin
   run <service> <script>         Run a package.json script in a service
 
 \x1b[1mServices:\x1b[0m ${[...Object.values(SERVICES), "root"].join(", ")}
@@ -250,6 +271,8 @@ export function helpCmd() {
   gb commit frontend --topic "add auth" --type=feat
   gb commit frontend --topic "add auth" -m "supports OAuth and email"
   gb diff backend
+  gb push
+  gb push --force
   gb run backend test
 `);
 }
