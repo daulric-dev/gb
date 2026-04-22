@@ -17,15 +17,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Build file size report (tracked files only)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y fonts-dejavu-core
+          pip install --quiet fpdf2
+
+      - name: Build file size report
         run: |
           set -euo pipefail
-
-          sudo apt-get update -y
-          sudo apt-get install -y python3-pip fonts-dejavu-core
-          python3 -m pip install --quiet --break-system-packages fpdf2
 
           tmpdir="$(mktemp -d)"
           trap 'rm -rf "$tmpdir"' EXIT
@@ -39,7 +46,8 @@ jobs:
             python3 .github/scripts/file-size-report-to-pdf.py "$report_txt" "$report_pdf"
           }
 
-          if ! git ls-files -z | grep -q .; then
+          tracked="$(git ls-files)"
+          if [ -z "$tracked" ]; then
             echo "No tracked files in this checkout." | tee "$report_txt"
             render_pdf
             echo "## Repository file sizes" >> "$GITHUB_STEP_SUMMARY"
