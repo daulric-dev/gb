@@ -257,7 +257,7 @@ export function helpCmd() {
   const COL = 35;
   const lines: string[] = [];
 
-  lines.push(`\n\x1b[1m${help.name}\x1b[0m — ${help.description}\n`);
+  lines.push(`\n\x1b[1m${help.name}\x1b[0m - ${help.description}\n`);
 
   lines.push(`\x1b[1mCommands:\x1b[0m`);
   for (const cmd of help.commands) {

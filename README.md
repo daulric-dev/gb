@@ -171,7 +171,7 @@ gb branch frontend "add auth" --type=feat      # creates feat(frontend)/add-auth
 
 **Options:**
 
-- `--type=<type>` — optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
+- `--type=<type>` - optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
 
 When no service is provided, an interactive arrow-key selector is shown.
 
@@ -188,9 +188,9 @@ gb commit backend --topic "fix query" -m "handle null joins" --type=fix
 
 **Options:**
 
-- `--topic "..."` — commit subject (required, prompted if omitted, max 10 words)
-- `-m "..."` — optional extended commit body
-- `--type=<type>` — commit type prefix (default: `feat`). One of: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`
+- `--topic "..."` - commit subject (required, prompted if omitted, max 10 words)
+- `-m "..."` - optional extended commit body
+- `--type=<type>` - commit type prefix (default: `feat`). One of: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`
 
 When no service is provided, an interactive arrow-key selector is shown. When `--topic` is omitted, you're prompted with a live word counter (limit: 10 words).
 
@@ -221,10 +221,10 @@ gb push --force    # force push with --force-with-lease
 
 ## Contributing
 
-GradeBook is **source-available** — the code is public to encourage security review and bug discovery. If you find a vulnerability or bug, please report it to **security@daulric.dev**. Do not open a public issue for security findings.
+GradeBook is **source-available** - the code is public to encourage security review and bug discovery. If you find a vulnerability or bug, please report it to **security@daulric.dev**. Do not open a public issue for security findings.
 
 See [SECURITY.md](SECURITY.md) for full details on scope, expectations, and what to include in a report.
 
 ## License
 
-Source-available, proprietary — see [LICENSE.md](LICENSE.md) for details. You may view and review the code, but use, modification, and redistribution are not permitted without authorization.
+Source-available, proprietary - see [LICENSE.md](LICENSE.md) for details. You may view and review the code, but use, modification, and redistribution are not permitted without authorization.
