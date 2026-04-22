@@ -1,4 +1,4 @@
-# Proprietary License — Source Available
+# Proprietary License - Source Available
 
 Copyright (c) 2026 daulric. All rights reserved.
 
