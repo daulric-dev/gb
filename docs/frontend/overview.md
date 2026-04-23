@@ -15,8 +15,10 @@ The frontend is a **Next.js 16** application using the **App Router**. It provid
 | sonner | Toast notifications |
 | lucide-react | Icons |
 | next-themes | Dark/light mode |
-| jsPDF + jspdf-autotable | Client-side PDF generation |
+| jsPDF + jspdf-autotable | Client-side PDF generation (class summaries) |
+| @react-pdf/renderer | React-based PDF generation (student report cards, exam broadsheets) |
 | xlsx (SheetJS 0.20.3) | Client-side Excel/CSV generation (installed from CDN tarball, not npm) |
+| web-haptics | Global haptic feedback on all buttons/interactive elements (mobile) |
 | @dnd-kit | Drag-and-drop for sortable lists |
 | input-otp | OTP input component |
 
@@ -62,6 +64,7 @@ frontend/
 │   │   ├── theme-provider.tsx     # next-themes provider
 │   │   ├── mode-toggle.tsx        # Dark/light theme toggle
 │   │   ├── app-sidebar.tsx        # Sidebar navigation
+│   │   ├── haptics-provider.tsx   # Global haptic feedback listener
 │   │   └── header.tsx             # Top navigation bar
 │   ├── auth/
 │   │   └── auth-page-shell.tsx    # Centered layout for auth pages
@@ -96,8 +99,10 @@ frontend/
 │       ├── index.ts               # Re-exports all report modules
 │       ├── api.ts                 # Reporting schema API functions and types
 │       ├── calculations.ts        # Calculation endpoint API functions and types
-│       ├── pdf.ts                 # PDF generation (individual + term class summary)
-│       ├── year-pdf.ts            # PDF generation (year-based reports)
+│       ├── pdf.ts                 # PDF generation (individual + term class summary) [jsPDF]
+│       ├── year-pdf.ts            # PDF generation (year-based reports) [jsPDF]
+│       ├── exam-report-pdf.tsx    # Class exam broadsheet PDF [react-pdf/renderer]
+│       ├── student-report-pdf.tsx # Individual student report card PDF [react-pdf/renderer]
 │       ├── export.ts              # CSV/XLSX export (term-based class summary)
 │       └── year-export.ts         # CSV/XLSX export (year-based class summary)
 ├── hooks/

@@ -105,35 +105,36 @@ Used extensively in all components for dynamic styling.
 
 ### `useProfile()`
 
-A React hook that fetches the current user's profile from the backend.
+A React hook that fetches the current user's profile from the backend. Uses **Preact Signals** for reactive state.
 
 **Returns:**
 ```typescript
 {
-  profile: UserProfile | null;  // null while loading or on error
-  loading: boolean;
+  profile: Signal<UserProfile | null>;  // null while loading or on error
+  loading: Signal<boolean>;
 }
 ```
+
+Values are accessed via `.value` (e.g. `profile.value?.email`).
 
 **`UserProfile` type:**
 ```typescript
 {
   id: string;
   email: string;
-  first_name: string;
-  last_name: string;
-  role: string;
+  first_name: string | null;
+  last_name: string | null;
+  role: string | null;
   school: {
     id: string;
     name: string;
-    // ... other school fields
   } | null;
 }
 ```
 
 **Behavior:**
 - Calls `GET /api/v1/auth/me` on mount
-- Used by the dashboard layout to populate the Header with user info
+- Used by the dashboard layout to populate the sidebar and header with user info
 
 ---
 

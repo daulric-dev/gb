@@ -45,11 +45,24 @@ Re-exports the `ThemeProvider` from `next-themes` with pre-configured settings (
 
 A sidebar navigation component with:
 - Logo + "GradeBook" branding with "by daulric.dev" subtitle
-- School name display
+- School name display with inline change-school dialog trigger
 - Navigation links (Dashboard, Academic Years, Classes, Students, Subjects, Terms)
 - Legal links (Terms of Service, Privacy Policy)
 - User dropdown with settings and logout
 - Collapsible icon mode
+
+Includes an embedded `ChangeSchoolDialog` component that opens a modal with a searchable list of schools. The dialog trigger uses Base UI's `DialogTrigger` with a `<span>` child (not a `<button>`) to avoid nested button hydration errors.
+
+#### HapticsProvider (`layout/haptics-provider.tsx`)
+
+A global haptic feedback component mounted in the root layout. Attaches a single document-level click listener that triggers a `"nudge"` vibration via `web-haptics` whenever the user taps:
+
+- `<button>` elements
+- Elements with `role="button"`
+- `<a>` links
+- `input[type="submit"]` elements
+
+To opt out a specific element, add the `data-no-haptic` attribute. On devices without vibration support, calls are silently ignored.
 
 ### Auth (`components/auth/`)
 

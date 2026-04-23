@@ -13,8 +13,10 @@ All report-related utilities live in `lib/reports/` and are barrel-exported via 
 | `lib/reports/index.ts` | Barrel re-export of all report modules |
 | `lib/reports/api.ts` | API functions and types for the reporting schema (file uploads, class summary files) |
 | `lib/reports/calculations.ts` | API functions for calculation endpoints, types for term/year results, and `termResultsToClassSummary` converter |
-| `lib/reports/pdf.ts` | PDF generation for individual student reports and term-based class summaries |
-| `lib/reports/year-pdf.ts` | PDF generation for year-based student reports and year-based class summaries |
+| `lib/reports/pdf.ts` | PDF generation for individual student reports and term-based class summaries (jsPDF) |
+| `lib/reports/year-pdf.ts` | PDF generation for year-based student reports and year-based class summaries (jsPDF) |
+| `lib/reports/exam-report-pdf.tsx` | Class exam broadsheet PDF matching physical school form (`@react-pdf/renderer`) |
+| `lib/reports/student-report-pdf.tsx` | Individual student report card PDF matching physical school form (`@react-pdf/renderer`) |
 | `lib/reports/export.ts` | CSV and XLSX export for term-based class summaries |
 | `lib/reports/year-export.ts` | CSV and XLSX export for year-based class summaries |
 
@@ -99,9 +101,21 @@ Displays differently based on report type:
 | End of Yr Exam | Last term's exam average |
 | Year Grade | Computed year grade |
 
-### PDF Download
+### PDF Downloads
 
-- "Download PDF" button generates a PDF client-side from live data and downloads it directly
+Two PDF options:
+
+| Button | Library | Description |
+|--------|---------|-------------|
+| **Download PDF** | jsPDF | Simple tabular PDF (Subject / CW / Exam / Term columns) |
+| **Report Card** | `@react-pdf/renderer` | Styled report card matching physical school form (header info block + grades table + signature lines) |
+
+The report card PDF (`buildStudentReportPdfBlob`) includes:
+- Student name, term (uppercased), class, position, overall average
+- Attendance fields (possible attendance, times absent)
+- Grades table: SUBJECT / COURSE WORK % / Final Exam % / Total / GRADE (letter)
+- Summary row with total and overall average
+- Signature lines for Class Teacher and Principal
 
 ---
 
@@ -163,11 +177,12 @@ Class-level summary with statistics, rankings, and export capabilities.
 
 ### Export Section
 
-Three download formats, all generated **client-side** from live calculation data:
+Four download formats, all generated **client-side** from live calculation data:
 
 | Format | Term-based | Year-based |
 |--------|-----------|------------|
 | **PDF** | `buildClassSummaryPdfBlob` -CW/EX/Final per subject, with subject separator lines | `buildYearClassSummaryPdfBlob` -term initials + End of Yr Exam + Year per subject |
+| **Exam Report Card** | `buildEndOfYearExamPdfBlob` -class broadsheet matching physical school exam form (`@react-pdf/renderer`) | Same, with `scoreField: "yearGrade"` |
 | **CSV** | `buildClassSummaryCsv` -same column structure as PDF | `buildYearClassSummaryCsv` -matches year PDF layout |
 | **XLSX** | `buildClassSummaryXlsx` -two sheets (Summary + Students) with merged subject headers | `buildYearClassSummaryXlsx` -matches year PDF layout |
 
@@ -223,6 +238,43 @@ Takes `StudentYearReport[]`. Includes:
 - Student table with term initials + E (End of Yr Exam) + Year per subject
 - Smaller text (5pt) and condensed layout to fit more columns
 - Legend for term initials
+
+### Exam Broadsheet PDF (`buildEndOfYearExamPdfBlob`) - `@react-pdf/renderer`
+
+Takes a `ClassSummary` and `ExamReportOptions`. Generates a landscape A4 PDF matching the physical school exam form. Includes:
+
+- Title: "END OF YEAR EXAMINATIONS" (configurable)
+- Subtitle: "SUBJECTS : Marks out of 100%"
+- Optional metadata line (class, academic year, term)
+- Grid table with full borders:
+  - **Student's Name** column (wide, sorted by position)
+  - **Subject columns** with vertical/rotated header text (dynamically sized)
+  - **TOTAL** - sum of all subject scores
+  - **AVE.** - overall average
+  - **Position** - student ranking
+- Configurable `scoreField`: `termComposite`, `yearGrade`, or `examAverage`
+
+Also available as a React component (`EndOfYearExamDocument`) for use with `<PDFViewer>`.
+
+### Student Report Card PDF (`buildStudentReportPdfBlob`) - `@react-pdf/renderer`
+
+Takes a `StudentTermResult` and `StudentReportOptions`. Generates a portrait A4 PDF matching the physical school report card. Includes:
+
+- Student name
+- Info header block with bordered field pairs: TERM / YEAR, CLASS / NO. IN CLASS, POSITION / OVERALL AVERAGE, POSSIBLE ATTENDANCE / TIMES ABSENT
+- Grades table: SUBJECT / COURSE WORK % / Final Exam % / Total / GRADE (letter grade A–F)
+- Summary row with total and overall average
+- Signature lines for Class Teacher and Principal
+
+Also available as a React component (`StudentReportDocument`).
+
+### Class Detail Page - Generate Report Button
+
+The Class Summary card on the class detail page (`[classId]/page.tsx`) includes a **Generate Report** button that produces the exam broadsheet PDF:
+
+- **Term view**: generates using `termComposite` scores for the selected term
+- **Year view**: generates using `yearGrade` scores
+- Disabled when no data is available or while generating
 
 ## API Calls Summary
 
