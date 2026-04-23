@@ -128,17 +128,54 @@ export async function branchCmd(
   positionals: string[],
   flags: Record<string, string>,
 ) {
+  const currentBranch = await getCurrentBranch();
+  if (!PROTECTED_BRANCHES.includes(currentBranch)) {
+    console.warn(
+      `\x1b[33mWarning:\x1b[0m You are on \x1b[36m${currentBranch}\x1b[0m, which is not a protected branch.`,
+    );
+    const answer = await select("Continue creating a new branch?", ["yes", "no"]);
+    if (answer === "no") {
+      console.log("Aborted.");
+      process.exit(0);
+    }
+  }
+
   let service = positionals[0];
   let name = positionals[1] ?? flags["name"];
   let type: string | undefined = flags["type"];
+  const isCustom = "custom" in flags;
 
-  if (!service) {
-    const allServices = [...Object.values(SERVICES), "root"];
-    service = await select("Select a service:", allServices);
+  if (!service && !isCustom) {
+    const options = ["custom", ...Object.values(SERVICES), "root"];
+    const selected = await select("Select a service:", options);
+    if (selected === "custom") {
+      let customName = await prompt("Branch name:");
+      if (!customName) {
+        console.error("Branch name is required.");
+        process.exit(1);
+      }
+      const branchName = slugify(customName);
+      await git("checkout", "-b", branchName);
+      console.log(`\x1b[32mCreated and switched to:\x1b[0m \x1b[36m${branchName}\x1b[0m`);
+      return;
+    }
+    service = selected;
+  }
+
+  if (isCustom) {
+    let customName = name ?? await prompt("Branch name:");
+    if (!customName) {
+      console.error("Branch name is required.");
+      process.exit(1);
+    }
+    const branchName = slugify(customName);
+    await git("checkout", "-b", branchName);
+    console.log(`\x1b[32mCreated and switched to:\x1b[0m \x1b[36m${branchName}\x1b[0m`);
+    return;
   }
 
   const allServices = [...Object.values(SERVICES), "root"];
-  if (!allServices.includes(service)) {
+  if (!allServices.includes(service!)) {
     console.error(
       `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
     );

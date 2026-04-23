@@ -16,7 +16,8 @@
       "args": "[service] [name]",
       "description": "Create a service-scoped branch",
       "options": [
-        { "flag": "--type=feat", "description": "Optional type prefix (e.g. feat, fix)" }
+        { "flag": "--type=feat", "description": "Optional type prefix (e.g. feat, fix)" },
+        { "flag": "--custom", "description": "Create a branch with a custom name (no service/type)" }
       ]
     },
     {
@@ -51,6 +52,7 @@
     "gb branch",
     "gb branch frontend \"add auth\"",
     "gb branch frontend \"add auth\" --type=feat",
+    "gb branch --custom \"best branch of them all\"",
     "gb commit frontend",
     "gb commit frontend --topic \"add auth\" --type=feat",
     "gb commit frontend --topic \"add auth\" -m \"supports OAuth and email\"",
