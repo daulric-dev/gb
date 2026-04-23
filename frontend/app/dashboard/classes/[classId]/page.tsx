@@ -13,7 +13,13 @@ import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ScrollText, FileBarChart, ListChecks, CheckSquare, Search } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, X, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ScrollText, FileBarChart, ListChecks, CheckSquare, Search, Download } from "lucide-react";
+import {
+  buildEndOfYearExamPdfBlob,
+  downloadBlob,
+  type ClassSummary,
+  type StudentSubjectGrade,
+} from "@/lib/reports";
 
 interface ClassInfo {
   id: string;
@@ -144,6 +150,101 @@ export default function ClassDetailPage() {
   const summaryPageSize = useSignal(10);
   const yearPage = useSignal(0);
   const yearPageSize = useSignal(10);
+  const generatingReport = useSignal(false);
+
+  const generateReport = async () => {
+    const info = classInfo.value;
+    if (!info) return;
+    generatingReport.value = true;
+    try {
+      const className = info.name;
+      const selectedTerm = terms.value.find((t) => t.id === selectedTermId.value);
+      const termLabel = selectedTerm?.name ?? "";
+
+      if (summaryView.value === "year" && yearData.value.length > 0) {
+        const students: ClassSummary["students"] = yearData.value.map((row) => ({
+          studentId: row.studentId,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          overallAverage: row.yearEnd.overallAverage,
+          position: row.position ?? null,
+          subjects: row.yearEnd.subjects.map((sub): StudentSubjectGrade => ({
+            subjectId: sub.subjectId,
+            subjectName: sub.subjectName,
+            courseworkAverage: null,
+            examAverage: null,
+            termComposite: null,
+            yearGrade: sub.yearGrade,
+          })),
+        }));
+
+        const summary: ClassSummary = {
+          classAverage: null,
+          highestAverage: null,
+          lowestAverage: null,
+          totalStudents: students.length,
+          passCount: 0,
+          failCount: 0,
+          courseworkWeight: 0,
+          examWeight: 0,
+          gradingModel: "year_based",
+          subjectAverages: [],
+          students,
+        };
+
+        const blob = await buildEndOfYearExamPdfBlob(summary, {
+          title: "END OF YEAR EXAMINATIONS",
+          className,
+          scoreField: "yearGrade",
+        });
+        downloadBlob(blob, `${className}_year_exam_report.pdf`);
+      } else if (summaryData.value.length > 0) {
+        const students: ClassSummary["students"] = summaryData.value.map((row) => ({
+          studentId: row.student.id,
+          firstName: row.student.firstName,
+          lastName: row.student.lastName,
+          overallAverage: row.overallAverage,
+          position: row.position,
+          subjects: row.subjects.map((sub): StudentSubjectGrade => ({
+            subjectId: sub.subjectId,
+            subjectName: sub.subjectName,
+            courseworkAverage: null,
+            examAverage: null,
+            termComposite: sub.average,
+            yearGrade: null,
+          })),
+        }));
+
+        const summary: ClassSummary = {
+          classAverage: null,
+          highestAverage: null,
+          lowestAverage: null,
+          totalStudents: students.length,
+          passCount: 0,
+          failCount: 0,
+          courseworkWeight: 0,
+          examWeight: 0,
+          gradingModel: "term_based",
+          subjectAverages: [],
+          students,
+        };
+
+        const blob = await buildEndOfYearExamPdfBlob(summary, {
+          className,
+          termName: termLabel,
+          scoreField: "termComposite",
+        });
+        downloadBlob(blob, `${className}_${termLabel || "term"}_report.pdf`);
+      } else {
+        toast.error("No data available to generate report");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to generate report";
+      toast.error(msg);
+    } finally {
+      generatingReport.value = false;
+    }
+  };
 
   const fetchData = useCallback(() => {
     Promise.all([
@@ -577,6 +678,15 @@ export default function ClassDetailPage() {
                   ))}
                 </select>
               )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={generatingReport.value || (summaryView.value === "term" ? summaryData.value.length === 0 : yearData.value.length === 0)}
+                onClick={generateReport}
+              >
+                <Download className="mr-2 size-4" />
+                {generatingReport.value ? "Generating…" : "Generate Report"}
+              </Button>
             </div>
           </div>
         </CardHeader>

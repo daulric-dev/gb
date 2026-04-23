@@ -22,6 +22,7 @@ import {
   buildYearClassSummaryPdfBlob,
   buildYearClassSummaryCsv,
   buildYearClassSummaryXlsx,
+  buildEndOfYearExamPdfBlob,
 } from "@/lib/reports";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -235,6 +236,23 @@ export default function ClassReportPage() {
     if (!s) return;
     const blob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName);
     downloadBlob(blob, `${className}_summary.pdf`);
+  };
+
+  const downloadExamReportPdf = async () => {
+    const s = summary.value;
+    if (!s) return;
+    try {
+      const blob = await buildEndOfYearExamPdfBlob(s, {
+        className,
+        termName: selectedTermName || undefined,
+        academicYear: academicYearName.value || undefined,
+        scoreField: isYearEnd ? "yearGrade" : "termComposite",
+      });
+      downloadBlob(blob, `${className}_exam_report.pdf`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to generate exam report PDF";
+      toast.error(msg);
+    }
   };
 
   const downloadCsv = () => {
@@ -632,6 +650,10 @@ export default function ClassReportPage() {
                 <Button size="sm" variant="outline" onClick={downloadPdf}>
                   <FileText className="mr-2 size-4" />
                   Download PDF
+                </Button>
+                <Button size="sm" variant="outline" onClick={downloadExamReportPdf}>
+                  <FileText className="mr-2 size-4" />
+                  Exam Report Card
                 </Button>
                 <Button size="sm" variant="outline" onClick={downloadCsv}>
                   <FileSpreadsheet className="mr-2 size-4" />

@@ -126,13 +126,13 @@ export default function DashboardPage() {
     });
   }, []);
 
-  const displayName = profile?.first_name
-    ? profile.first_name
+  const displayName = profile.value?.first_name
+    ? profile.value.first_name
     : "there";
 
   return (
     <div className="space-y-8">
-      <DashboardGreeting profileLoading={profileLoading} displayName={displayName} />
+      <DashboardGreeting profileLoading={profileLoading.value} displayName={displayName} />
 
       <OverviewStatCards
         loading={loading.value}

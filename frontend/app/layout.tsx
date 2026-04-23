@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { HapticsProvider } from "@/components/layout/haptics-provider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -25,6 +26,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
           disableTransitionOnChange
         >
           <TooltipProvider delay={0}>
+            <HapticsProvider />
             {children}
             <Toaster richColors position="top-right" />
           </TooltipProvider>
