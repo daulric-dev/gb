@@ -25,7 +25,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Check monitored workflow status for this commit
         if: ${{ github.event_name == 'workflow_run' }}
