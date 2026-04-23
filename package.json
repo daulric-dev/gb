@@ -21,6 +21,7 @@
         "test": "turbo run test",
         "test:frontend": "turbo run test --filter=frontend",
         "test:backend": "turbo run test --filter=backend",
+        "preview": "turbo run build && cd frontend && bun --bun run start & cd backend && bun --bun run start:prod",
         "install:all": "bun --bun install",
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
