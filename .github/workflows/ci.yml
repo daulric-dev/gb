@@ -39,6 +39,11 @@ jobs:
       - name: Lint & Test
         run: bunx turbo run lint test
 
+      - name: Notify Vercel
+        uses: vercel/repository-dispatch/actions/status@v1
+        with:
+          name: "Vercel - gbv2-frontend: lint"
+
       - name: Build
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
