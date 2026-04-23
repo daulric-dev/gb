@@ -3,6 +3,9 @@ dist
 node_modules
 build
 
+# turbo
+.turbo
+
 # Logs
 logs
 *.log

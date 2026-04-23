@@ -13,6 +13,7 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 | **Caching** | Pluggable - in-memory (default) or Redis via ioredis |
 | **Database** | Supabase (PostgreSQL) with Row-Level Security |
 | **Auth** | Passwordless OTP via email |
+| **Monorepo** | Turborepo |
 | **Runtime** | Bun |
 | **CI/CD** | GitHub Actions |
 
@@ -92,7 +93,7 @@ See [`docs/environment-variables.md`](docs/environment-variables.md) for full de
 bun run dev
 ```
 
-This starts both the frontend (port 3000) and backend (port 3001) concurrently.
+This starts both the frontend (port 3000) and backend (port 3001) in parallel via Turborepo.
 
 ### Individual servers
 
@@ -104,8 +105,9 @@ bun run dev:backend    # NestJS on :3001
 ### Build
 
 ```bash
-bun run build:all      # Build both frontend and backend
-bun run preview        # Build and run production locally
+bun run build            # Build both frontend and backend (cached)
+bun run build:frontend   # Build frontend only
+bun run build:backend    # Build backend only
 ```
 
 ## Features
@@ -209,15 +211,29 @@ gb push --force    # force push with --force-with-lease
 
 ## Scripts
 
+All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and parallel execution.
+
 | Command | Description |
 |---------|-------------|
-| `bun run dev` | Start both servers in development |
+| `bun run dev` | Start both servers in development (parallel) |
 | `bun run dev:frontend` | Start frontend only |
 | `bun run dev:backend` | Start backend only |
-| `bun run build:all` | Build both projects |
-| `bun run preview` | Build and run production |
-| `bun run lint` | Lint both projects |
+| `bun run build` | Build both projects (cached) |
+| `bun run build:frontend` | Build frontend only |
+| `bun run build:backend` | Build backend only |
+| `bun run lint` | Lint both projects (parallel) |
+| `bun run test` | Run all tests (parallel) |
+| `bun run test:frontend` | Run frontend tests only |
+| `bun run test:backend` | Run backend tests only |
 | `bun run db:types` | Generate Supabase database types |
+
+You can also use `turbo` directly for more control:
+
+```bash
+turbo run build --filter=frontend    # build a specific package
+turbo run lint test --parallel       # run multiple tasks
+turbo run build --dry-run            # see what would run
+```
 
 ## Contributing
 
