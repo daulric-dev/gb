@@ -2,27 +2,28 @@
     "name": "gbv2",
     "devDependencies": {
         "@types/bun": "^1.3.12",
-        "concurrently": "^9.2.1"
+        "turbo": "^2.9.6"
     },
     "private": true,
+    "packageManager": "bun@1.3.12",
     "bin": {
         "gb": "./command/index.ts"
     },
     "scripts": {
         "gb": "bun ./command/index.ts",
-        "dev": "concurrently -n fe,be -c blue,green \"bun run dev:frontend\" \"bun run dev:backend\"",
-        "dev:frontend": "cd frontend && bun --bun run dev",
-        "dev:backend": "cd backend && bun --bun run start:dev",
-        "build:frontend": "cd frontend && bun --bun run build",
-        "build:backend": "cd backend && bun --bun run build",
-        "build:all": "bun run build:frontend && bun run build:backend",
-        "preview": "bun run build:all && concurrently -n fe,be -c blue,green \"cd frontend && bun --bun run start\" \"cd backend && bun --bun run start:prod\"",
-        "lint": "cd frontend && bun --bun run lint && cd ../backend && bun --bun run lint",
+        "dev": "turbo run dev start:dev",
+        "dev:frontend": "turbo run dev --filter=frontend",
+        "dev:backend": "turbo run start:dev --filter=backend",
+        "build": "turbo run build",
+        "build:frontend": "turbo run build --filter=frontend",
+        "build:backend": "turbo run build --filter=backend",
+        "lint": "turbo run lint",
+        "test": "turbo run test",
+        "test:frontend": "turbo run test --filter=frontend",
+        "test:backend": "turbo run test --filter=backend",
+        "preview": "turbo run build && cd frontend && bun --bun run start & cd backend && bun --bun run start:prod",
         "install:all": "bun --bun install",
-        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh",
-        "test:frontend": "cd frontend && bun --bun run test",
-        "test:backend": "cd backend && bun --bun run test",
-        "test:all": "bun run test:frontend && bun run test:backend"
+        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh"
     },
     "workspaces": ["backend", "frontend"]
 }

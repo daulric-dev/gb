@@ -19,4 +19,4 @@ export const COMMIT_TYPES = [
 
 export type CommitType = (typeof COMMIT_TYPES)[number];
 
-export const PROTECTED_BRANCHES = ["main", "master"];
+export const PROTECTED_BRANCHES = ["main", "master", "staging"];
