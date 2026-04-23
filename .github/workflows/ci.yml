@@ -37,10 +37,10 @@ jobs:
             turbo-${{ runner.os }}-
 
       - name: Lint & Test
-        run: turbo run lint test
+        run: bunx turbo run lint test
 
       - name: Build
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "supabase-anon-key"
-        run: turbo run build
+        run: bunx turbo run build
