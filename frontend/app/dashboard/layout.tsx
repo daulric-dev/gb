@@ -14,7 +14,7 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <AppSidebar profile={profile} />
+      <AppSidebar profile={profile.value} />
       <SidebarInset>
         <Header />
         <main className="flex-1 p-4 md:p-6">

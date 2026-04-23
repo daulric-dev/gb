@@ -14,6 +14,7 @@ import {
   getStudentYearResult,
   type StudentTermResult,
   type StudentYearReport,
+  buildStudentReportPdfBlob,
 } from "@/lib/reports";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -173,6 +174,25 @@ export default function StudentReportPage() {
       }
     } else {
       toast.error("No calculated grades available for PDF");
+    }
+  };
+
+  const downloadReportCard = async () => {
+    if (!tr) {
+      toast.error("No calculated grades available");
+      return;
+    }
+    try {
+      const blob = await buildStudentReportPdfBlob(tr, {
+        termName: termName.value || undefined,
+        className: classInfo.value?.name,
+      });
+      const safeName = `${tr.firstName}_${tr.lastName}`.replace(/\s+/g, "_");
+      downloadBlob(blob, `${safeName}_report_card.pdf`);
+      toast.success("Report card downloaded");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not generate report card";
+      toast.error(msg);
     }
   };
 
@@ -369,11 +389,17 @@ export default function StudentReportPage() {
               Download this student&apos;s report as a PDF.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button size="sm" onClick={downloadPdf}>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={downloadPdf}>
               <Download className="mr-2 size-4" />
               Download PDF
             </Button>
+            {tr && (
+              <Button size="sm" onClick={downloadReportCard}>
+                <FileText className="mr-2 size-4" />
+                Report Card
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

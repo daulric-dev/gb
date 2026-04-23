@@ -120,7 +120,7 @@ function ChangeSchoolDialog({
 
   return (
     <Dialog open={open.value} onOpenChange={(v) => (open.value = v)}>
-      <DialogTrigger render={<span />}>{children}</DialogTrigger>
+      <DialogTrigger className="inline-flex appearance-none border-0 bg-transparent p-0">{children}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Change School</DialogTitle>
@@ -255,13 +255,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
               {profile.school.name}
             </span>
             <ChangeSchoolDialog currentSchoolId={profile.school.id}>
-              <button
-                type="button"
+              <span
                 title="Change school"
-                className="shrink-0 rounded-md p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors"
+                className="shrink-0 rounded-md p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
               >
                 <ArrowLeftRight className="size-3" />
-              </button>
+              </span>
             </ChangeSchoolDialog>
           </div>
         )}
