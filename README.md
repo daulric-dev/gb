@@ -8,7 +8,7 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Preact Signals |
+| **Frontend** | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Preact Signals, @react-pdf/renderer |
 | **Backend** | NestJS 11, Fastify, Swagger |
 | **Caching** | Pluggable - in-memory (default) or Redis via ioredis |
 | **Database** | Supabase (PostgreSQL) with Row-Level Security |
@@ -42,6 +42,7 @@ gbv2/
 │       ├── onboard/       # First-time setup
 │       ├── privacy/       # Privacy policy
 │       └── terms/         # Terms of service
+│   └── lib/reports/       # PDF, CSV, XLSX report generation
 ├── command/               # gb CLI tool
 │   ├── index.ts           # Entrypoint
 │   ├── commands.ts        # Command implementations
@@ -51,7 +52,8 @@ gbv2/
 │   ├── timer.ts           # Execution timer
 │   └── help.json          # Help text data
 ├── docs/                  # Project documentation
-└── .github/workflows/     # CI, coverage, security scanning
+├── .github/workflows/     # CI, coverage, security scanning
+└── .github/scripts/       # Discord notify, workflow status checker
 ```
 
 ## Getting Started
@@ -120,6 +122,8 @@ bun run build:backend    # Build backend only
 - **Grade calculations** - automatic term and year result computation with configurable weighting
 - **Role-based access control** - admins, class teachers, and subject teachers each see only what they should
 - **Settings** - update profile, change school, delete account (GDPR)
+- **PDF report cards** - student report cards and class exam broadsheets via `@react-pdf/renderer`, matching physical school forms
+- **Haptic feedback** - global haptic feedback on all interactive elements via `web-haptics` (mobile devices)
 - **Dark mode** - system-aware theme switching
 
 ## API Documentation
@@ -174,8 +178,8 @@ gb branch --custom "best branch of them all"   # creates best-branch-of-them-all
 
 **Options:**
 
-- `--type=<type>` — optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
-- `--custom` — skip service and type selection, create a branch with a freeform name.
+- `--type=<type>` - optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
+- `--custom` - skip service and type selection, create a branch with a freeform name.
 
 When no service is provided, an interactive arrow-key selector is shown with `custom` as the first option.
 
