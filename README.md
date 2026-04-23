@@ -163,19 +163,23 @@ All commands display execution time on completion.
 
 ### `gb branch`
 
-Create a branch scoped to a service.
+Create a branch scoped to a service, or a custom freeform branch.
 
 ```bash
-gb branch                                      # prompted to select service and enter name
+gb branch                                      # prompted to select service (or custom) and enter name
 gb branch frontend "add auth"                  # creates frontend(add-auth)
 gb branch frontend "add auth" --type=feat      # creates feat(frontend)/add-auth
+gb branch --custom "best branch of them all"   # creates best-branch-of-them-all
 ```
 
 **Options:**
 
-- `--type=<type>` - optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
+- `--type=<type>` — optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
+- `--custom` — skip service and type selection, create a branch with a freeform name.
 
-When no service is provided, an interactive arrow-key selector is shown.
+When no service is provided, an interactive arrow-key selector is shown with `custom` as the first option.
+
+If you're on a non-protected branch, a warning is shown asking you to confirm before creating a new branch.
 
 ### `gb commit`
 
@@ -196,7 +200,7 @@ gb commit backend --topic "fix query" -m "handle null joins" --type=fix
 
 When no service is provided, an interactive arrow-key selector is shown. When `--topic` is omitted, you're prompted with a live word counter (limit: 10 words).
 
-If you're on a protected branch (`main`/`master`), a new branch is auto-created (e.g. `feat(frontend)/add-auth`) before committing.
+If you're on a protected branch (`main`/`master`/`staging`), a new branch is auto-created (e.g. `feat(frontend)/add-auth`) before committing.
 
 ### `gb push`
 
@@ -225,6 +229,7 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 | `bun run test` | Run all tests (parallel) |
 | `bun run test:frontend` | Run frontend tests only |
 | `bun run test:backend` | Run backend tests only |
+| `bun run preview` | Build and run both in production mode |
 | `bun run db:types` | Generate Supabase database types |
 
 You can also use `turbo` directly for more control:
