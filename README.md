@@ -15,7 +15,7 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 | **Auth** | Passwordless OTP via email |
 | **Monorepo** | Turborepo |
 | **Runtime** | Bun |
-| **CI/CD** | GitHub Actions |
+| **CI/CD** | GitHub Actions (with CI Gate required status check) |
 
 ## Project Structure
 
@@ -34,6 +34,7 @@ gbv2/
 │       ├── subject/
 │       ├── supabase/      # Supabase client service
 │       ├── cache/         # Pluggable caching (memory / Redis)
+│       ├── images/        # Image upload service (avatar, resumable TUS uploads)
 │       └── term/
 ├── frontend/              # Next.js app
 │   └── app/
@@ -121,7 +122,7 @@ bun run build:backend    # Build backend only
 - **Grading system** - create assessments, enter grades, exclude/include students
 - **Grade calculations** - automatic term and year result computation with configurable weighting
 - **Role-based access control** - admins, class teachers, and subject teachers each see only what they should
-- **Settings** - update profile, change school, delete account (GDPR)
+- **Settings** - update profile, change school, upload profile picture with image cropping, delete account (GDPR)
 - **PDF report cards** - student report cards and class exam broadsheets via `@react-pdf/renderer`, matching physical school forms
 - **Haptic feedback** - global haptic feedback on all interactive elements via `web-haptics` (mobile devices)
 - **Dark mode** - system-aware theme switching
