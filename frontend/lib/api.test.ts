@@ -17,7 +17,7 @@ import { setTokens } from "@/lib/auth";
 
 type MockedFetch = typeof fetch & { mock: { calls: [string, Record<string, string | Record<string, string>>][] } };
 
-const BASE_URL = "http://localhost:3001/api/v1";
+const BASE_URL = "http://localhost:3001/api";
 
 describe("ApiError", () => {
   test("sets status, message, and data", () => {

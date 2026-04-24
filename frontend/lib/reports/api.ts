@@ -88,7 +88,7 @@ export async function uploadClassSummaryFile(
   form.append("reportType", reportType);
   form.append("fileType", fileType);
 
-  const base = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/v1`;
+  const base = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
   const res = await fetch(`${base}/reports/class-summary/upload`, {
     method: "POST",
     headers: {
@@ -115,7 +115,7 @@ export async function downloadClassSummaryFile(
   const { getTokens } = await import("../auth");
   const { access } = getTokens();
   const q = new URLSearchParams({ studentGroupId, termId, reportType, fileType });
-  const base = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/v1`;
+  const base = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
   const res = await fetch(`${base}/reports/class-summary/download?${q.toString()}`, {
     headers: {
       Authorization: access ? `Bearer ${access}` : "",

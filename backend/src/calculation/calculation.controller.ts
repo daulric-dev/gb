@@ -9,8 +9,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { VersioningService } from '@/versioning/versioning.service';
 import { CalculationService } from './calculation.service';
-
 @ApiTags('Calculations')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
@@ -19,6 +19,7 @@ export class CalculationController {
   constructor(
     private readonly calculationService: CalculationService,
     private readonly supabaseService: SupabaseService,
+    private readonly versioning: VersioningService,
   ) {}
 
   private async verifyClassTeacher(userId: string, studentGroupId: string) {
@@ -50,28 +51,32 @@ export class CalculationController {
 
   @Get('student-term')
   async getStudentTermResult(
+    @Req() req: any,
     @Query('studentId') studentId: string,
     @Query('termId') termId: string,
     @Query('studentGroupId') studentGroupId: string,
   ) {
-    return this.calculationService.calculateStudentTermResult(
+    const raw = await this.calculationService.calculateStudentTermResult(
       studentId,
       termId,
       studentGroupId,
     );
+    return this.versioning.resolve(req, 'calculation.studentTerm')(raw);
   }
 
   @Get('student-year')
   async getStudentYearResult(
+    @Req() req: any,
     @Query('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('studentGroupId') studentGroupId: string,
   ) {
-    return this.calculationService.calculateStudentYearResult(
+    const raw = await this.calculationService.calculateStudentYearResult(
       studentId,
       academicYearId,
       studentGroupId,
     );
+    return this.versioning.resolve(req, 'calculation.studentYear')(raw);
   }
 
   @Get('class-term')
@@ -81,10 +86,11 @@ export class CalculationController {
     @Query('studentGroupId') studentGroupId: string,
   ) {
     await this.verifyClassTeacher(req.user.id, studentGroupId);
-    return this.calculationService.calculateClassTermResults(
+    const raw = await this.calculationService.calculateClassTermResults(
       termId,
       studentGroupId,
     );
+    return this.versioning.resolve(req, 'calculation.classTerm')(raw);
   }
 
   @Get('class-year')
@@ -94,10 +100,11 @@ export class CalculationController {
     @Query('studentGroupId') studentGroupId: string,
   ) {
     await this.verifyClassTeacher(req.user.id, studentGroupId);
-    return this.calculationService.calculateClassYearResults(
+    const raw = await this.calculationService.calculateClassYearResults(
       academicYearId,
       studentGroupId,
     );
+    return this.versioning.resolve(req, 'calculation.classYear')(raw);
   }
 
   @Get('class-summary')
@@ -113,7 +120,7 @@ export class CalculationController {
       studentGroupId,
     );
 
-    return results.map((r) => ({
+    const raw = results.map((r) => ({
       student: {
         id: r.studentId,
         firstName: r.firstName,
@@ -127,5 +134,7 @@ export class CalculationController {
       overallAverage: r.overallAverage,
       position: r.position,
     }));
+
+    return this.versioning.resolve(req, 'calculation.classSummary')(raw);
   }
 }

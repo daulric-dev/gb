@@ -37,6 +37,8 @@ backend/
 │   ├── school/                # School management
 │   ├── academic-year/         # Academic year lifecycle
 │   ├── term/                  # Term management within years
+│   ├── pagination/            # Reusable pagination service (offset + cursor)
+│   ├── versioning/            # Header-based response versioning service
 │   ├── student/               # Student records
 │   ├── subject/               # Subject definitions
 │   ├── class/                 # Class (student group) management
@@ -52,7 +54,7 @@ backend/
 The app bootstrap logic lives in `src/createApp.ts` and is shared between all entry points. It configures:
 
 - **Adapter**: Fastify
-- **Global prefix**: `api/v1` - all routes are prefixed with this
+- **Global prefix**: `api` - all routes are prefixed with this
 - **Swagger**: Available at `/docs`
 - **Validation**: Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform` enabled
 - **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
@@ -89,6 +91,7 @@ Imports all feature modules and configures global providers:
 - `ConfigModule.forRoot({ isGlobal: true })` - environment variable access
 - `ThrottlerModule` - rate limiting (100 requests per 60 seconds per client)
 - `APP_GUARD` → `ThrottlerGuard` - applied globally to all endpoints
+- `APP_GUARD` → `VersioningGuard` - validates `X-API-Version` header globally before handlers run
 
 ### Module Dependency Tree
 
@@ -108,8 +111,12 @@ AppModule
 ├── GradingModule
 ├── CalculationModule
 ├── ReportingModule
+├── PaginationModule (global - exports PaginationService for offset/cursor pagination)
+├── VersioningModule (global - exports VersioningService; includes TransformerRegistry and VersioningGuard)
 └── CacheModule (global - exports CacheService with memory or Redis store)
 ```
+
+> See [versioning.md](./versioning.md) for how API versioning and pagination work.
 
 ## Supabase Integration
 
@@ -137,6 +144,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | Guard | Location | Behavior |
 |-------|----------|----------|
 | `ThrottlerGuard` | Global (APP_GUARD) | Rate limits all endpoints |
+| `VersioningGuard` | Global (APP_GUARD) | Validates `X-API-Version` header; rejects invalid/non-existent versions with 400 |
 | `AuthGuard` | `auth/auth.guard.ts` | Validates Bearer JWT via Supabase `getUser`; populates `request.user` with `{ id, email, access_token }` |
 | `ClassTeacherGuard` | `class/class-teacher.guard.ts` | Checks if the user is an admin or the class teacher for the `:classId` route parameter |
 

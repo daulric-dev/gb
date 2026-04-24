@@ -12,61 +12,72 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { VersioningService } from '@/versioning/versioning.service';
 import { AssessmentService } from './assessment.service';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
 import { ExcludeDto } from './dto/exclude.dto';
+
 
 @ApiTags('Assessments')
 @ApiBearerAuth()
 @Controller('assessments')
 @UseGuards(AuthGuard)
 export class AssessmentController {
-  constructor(private readonly assessmentService: AssessmentService) {}
+  constructor(
+    private readonly assessmentService: AssessmentService,
+    private readonly versioning: VersioningService,
+  ) {}
 
   private getToken(req: any): string {
     return req.headers.authorization?.replace('Bearer ', '') ?? '';
   }
 
   @Get()
-  findByTermAndSubject(
+  async findByTermAndSubject(
     @Query('termId') termId: string,
     @Query('subjectId') subjectId: string,
     @Req() req: any,
   ) {
-    return this.assessmentService.findByTermAndSubject(
+    const raw = await this.assessmentService.findByTermAndSubject(
       termId,
       subjectId,
       this.getToken(req),
     );
+    return this.versioning.resolve(req, 'assessment.list')(raw);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @Req() req: any) {
-    return this.assessmentService.findOne(id, this.getToken(req));
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    const raw = await this.assessmentService.findOne(id, this.getToken(req));
+    return this.versioning.resolve(req, 'assessment.detail')(raw);
   }
 
   @Post()
-  create(@Body() dto: CreateAssessmentDto, @Req() req: any) {
-    return this.assessmentService.create(req.user.id, dto, this.getToken(req));
+  async create(@Body() dto: CreateAssessmentDto, @Req() req: any) {
+    const raw = await this.assessmentService.create(req.user.id, dto, this.getToken(req));
+    return this.versioning.resolve(req, 'assessment.created')(raw);
   }
 
   @Patch(':id')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateAssessmentDto,
     @Req() req: any,
   ) {
-    return this.assessmentService.update(id, dto, this.getToken(req));
+    const raw = await this.assessmentService.update(id, dto, this.getToken(req));
+    return this.versioning.resolve(req, 'assessment.updated')(raw);
   }
 
   @Patch(':id/exclude')
-  exclude(@Param('id') id: string, @Body() dto: ExcludeDto, @Req() req: any) {
-    return this.assessmentService.exclude(id, dto, this.getToken(req));
+  async exclude(@Param('id') id: string, @Body() dto: ExcludeDto, @Req() req: any) {
+    const raw = await this.assessmentService.exclude(id, dto, this.getToken(req));
+    return this.versioning.resolve(req, 'assessment.excluded')(raw);
   }
 
   @Delete(':id')
-  delete(@Param('id') id: string, @Req() req: any) {
-    return this.assessmentService.delete(id, this.getToken(req));
+  async delete(@Param('id') id: string, @Req() req: any) {
+    const raw = await this.assessmentService.delete(id, this.getToken(req));
+    return this.versioning.resolve(req, 'assessment.deleted')(raw);
   }
 }

@@ -26,7 +26,7 @@ async function ensureApp(env: Record<string, string>) {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api');
 
   app.useGlobalPipes(
     new ValidationPipe({

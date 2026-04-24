@@ -17,21 +17,8 @@ import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { SupabaseService } from '@/supabase/supabase.service';
-import * as transform from './transformer';
+import { VersioningService } from '@/versioning/versioning.service';
 
-const LATEST_VERSION = 1;
-
-const versionMap = {
-  verifyOtp: { 1: transform.v1VerifyOtp },
-  profile: { 1: transform.v1Profile },
-  session: { 1: transform.v1Session },
-  message: { 1: transform.v1Message },
-};
-
-function getVersion(req: any, map: Record<number, Function>): number {
-  const v = Number(req.headers['x-api-version']) || LATEST_VERSION;
-  return map[v] ? v : LATEST_VERSION;
-}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -39,12 +26,13 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly supabaseService: SupabaseService,
+    private readonly versioning: VersioningService,
   ) {}
 
   @Post('otp/send')
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
     const message = await this.authService.sendOtp(dto.email);
-    return versionMap.message[getVersion(req, versionMap.message)](message);
+    return this.versioning.resolve(req, 'auth.message')(message);
   }
 
   @Post('otp/verify')
@@ -53,7 +41,7 @@ export class AuthController {
       dto.email,
       dto.token,
     );
-    return versionMap.verifyOtp[getVersion(req, versionMap.verifyOtp)](
+    return this.versioning.resolve(req, 'auth.verifyOtp')(
       session,
       user,
       profile,
@@ -65,13 +53,13 @@ export class AuthController {
   @Get('me')
   async me(@Req() req: any) {
     const raw = await this.authService.getProfile(req.user.id);
-    return versionMap.profile[getVersion(req, versionMap.profile)](raw);
+    return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
   @Post('refresh')
   async refresh(@Body() dto: RefreshTokenDto, @Req() req: any) {
     const session = await this.authService.refreshToken(dto.refresh_token);
-    return versionMap.session[getVersion(req, versionMap.session)](session);
+    return this.versioning.resolve(req, 'auth.session')(session);
   }
 
   @ApiBearerAuth()
@@ -79,7 +67,7 @@ export class AuthController {
   @Patch('onboard')
   async onboard(@Req() req: any, @Body() dto: OnboardDto) {
     const raw = await this.authService.onboard(req.user.id, dto);
-    return versionMap.profile[getVersion(req, versionMap.profile)](raw);
+    return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
   @ApiBearerAuth()
@@ -87,7 +75,7 @@ export class AuthController {
   @Patch('profile')
   async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     const raw = await this.authService.updateProfile(req.user.id, dto);
-    return versionMap.profile[getVersion(req, versionMap.profile)](raw);
+    return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
   @ApiBearerAuth()
@@ -95,7 +83,7 @@ export class AuthController {
   @Delete('account')
   async deleteAccount(@Req() req: any) {
     const message = await this.authService.deleteAccount(req.user.id);
-    return versionMap.message[getVersion(req, versionMap.message)](message);
+    return this.versioning.resolve(req, 'auth.message')(message);
   }
 
   @ApiBearerAuth()
@@ -104,8 +92,6 @@ export class AuthController {
   async logout(@Req() req: any) {
     const supabase = this.supabaseService.getServiceClient();
     await supabase.auth.admin.signOut(req.user.access_token);
-    return versionMap.message[getVersion(req, versionMap.message)](
-      'Logged out',
-    );
+    return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 }
