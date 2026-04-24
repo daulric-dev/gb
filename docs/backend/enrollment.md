@@ -65,7 +65,7 @@ Additionally, the response includes a `subjects` array on each student showing t
 
 All endpoints are nested under `classes/:classId` and require `AuthGuard`.
 
-### `GET /api/v1/classes/:classId/students`
+### `GET /api/classes/:classId/students`
 
 Returns enrolled students with their assigned subjects.
 
@@ -100,13 +100,13 @@ The `subjectId` parameter is used by the grading page to only show students who 
 
 ---
 
-### `GET /api/v1/classes/:classId/students/:studentId/subjects`
+### `GET /api/classes/:classId/students/:studentId/subjects`
 
 Returns the subjects assigned to a specific student, with full subject details.
 
 ---
 
-### `POST /api/v1/classes/:classId/enroll`
+### `POST /api/classes/:classId/enroll`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -121,7 +121,7 @@ Enrolls a single student.
 
 ---
 
-### `POST /api/v1/classes/:classId/enroll/bulk`
+### `POST /api/classes/:classId/enroll/bulk`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -134,7 +134,7 @@ Enrolls multiple students at once.
 
 ---
 
-### `DELETE /api/v1/classes/:classId/enroll/:studentId`
+### `DELETE /api/classes/:classId/enroll/:studentId`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -142,7 +142,7 @@ Unenrolls a student. **Also deletes all their subject assignments** for the acad
 
 ---
 
-### `POST /api/v1/classes/:classId/subjects`
+### `POST /api/classes/:classId/subjects`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -158,7 +158,7 @@ Assigns subjects to a student.
 
 ---
 
-### `POST /api/v1/classes/:classId/subjects/bulk`
+### `POST /api/classes/:classId/subjects/bulk`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -176,7 +176,7 @@ Creates a subject profile for every combination of student × subject.
 
 ---
 
-### `DELETE /api/v1/classes/:classId/students/:studentId/subjects/:subjectId`
+### `DELETE /api/classes/:classId/students/:studentId/subjects/:subjectId`
 
 **Requires:** `ClassTeacherGuard`
 

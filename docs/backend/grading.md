@@ -78,19 +78,19 @@ The `ExcludeDto` is shared between assessment and grade exclusion.
 
 All endpoints require `AuthGuard`.
 
-### `GET /api/v1/assessments?termId=<id>&subjectId=<id>`
+### `GET /api/assessments?termId=<id>&subjectId=<id>`
 
 Returns all assessments for a term and subject, ordered by `sort_order`.
 
 ---
 
-### `GET /api/v1/assessments/:id`
+### `GET /api/assessments/:id`
 
 Returns a single assessment.
 
 ---
 
-### `POST /api/v1/assessments`
+### `POST /api/assessments`
 
 Creates a new assessment. **RLS enforced** - only the assigned teacher can create.
 
@@ -109,13 +109,13 @@ Creates a new assessment. **RLS enforced** - only the assigned teacher can creat
 
 ---
 
-### `PATCH /api/v1/assessments/:id`
+### `PATCH /api/assessments/:id`
 
 Updates an assessment. **RLS enforced.**
 
 ---
 
-### `PATCH /api/v1/assessments/:id/exclude`
+### `PATCH /api/assessments/:id/exclude`
 
 Toggles the exclusion status of an assessment.
 
@@ -129,7 +129,7 @@ Toggles the exclusion status of an assessment.
 
 ---
 
-### `DELETE /api/v1/assessments/:id`
+### `DELETE /api/assessments/:id`
 
 Deletes an assessment and all its grades. **RLS enforced.**
 
@@ -137,13 +137,13 @@ Deletes an assessment and all its grades. **RLS enforced.**
 
 All endpoints require `AuthGuard`.
 
-### `GET /api/v1/grades?assessmentId=<id>`
+### `GET /api/grades?assessmentId=<id>`
 
 Returns all grades for an assessment, enriched with student names, sorted by last name.
 
 ---
 
-### `GET /api/v1/grades/by-term?termId=<id>&subjectId=<id>`
+### `GET /api/grades/by-term?termId=<id>&subjectId=<id>`
 
 Returns all assessments for a term + subject, with nested grades and student data. This powers the grading sheet view.
 
@@ -175,7 +175,7 @@ Returns all assessments for a term + subject, with nested grades and student dat
 
 ---
 
-### `POST /api/v1/grades`
+### `POST /api/grades`
 
 Creates a single grade. **RLS enforced.**
 
@@ -193,7 +193,7 @@ Creates a single grade. **RLS enforced.**
 
 ---
 
-### `POST /api/v1/grades/bulk`
+### `POST /api/grades/bulk`
 
 Creates or updates multiple grades at once. Uses `upsert` on `(assessment_id, student_id)`, so existing grades are updated in place.
 
@@ -210,13 +210,13 @@ Creates or updates multiple grades at once. Uses `upsert` on `(assessment_id, st
 
 ---
 
-### `PATCH /api/v1/grades/:id`
+### `PATCH /api/grades/:id`
 
 Updates a grade's score or remarks. **RLS enforced.**
 
 ---
 
-### `PATCH /api/v1/grades/:id/exclude`
+### `PATCH /api/grades/:id/exclude`
 
 Toggles the exclusion status of a grade.
 

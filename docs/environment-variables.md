@@ -52,7 +52,7 @@ USE_REDIS=false
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend API base URL (without `/api/v1` - that's appended automatically) |
+| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically) |
 
 ### Example `frontend/.env.local`
 
@@ -64,7 +64,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 | Variable | File | Usage |
 |----------|------|-------|
-| `NEXT_PUBLIC_API_URL` | `lib/api.ts` | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api/v1` |
+| `NEXT_PUBLIC_API_URL` | `lib/api.ts` | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
 
 > **Note**: The `NEXT_PUBLIC_` prefix makes this variable available in the browser bundle. Do **not** put secrets in `NEXT_PUBLIC_` variables.
 

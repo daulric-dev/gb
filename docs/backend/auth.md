@@ -58,7 +58,7 @@ The `AuthGuard` is a NestJS `CanActivate` guard that protects endpoints requirin
 
 ## API Endpoints
 
-### `POST /api/v1/auth/otp/send`
+### `POST /api/auth/otp/send`
 
 Sends a one-time password to the user's email.
 
@@ -73,7 +73,7 @@ Sends a one-time password to the user's email.
 
 ---
 
-### `POST /api/v1/auth/otp/verify`
+### `POST /api/auth/otp/verify`
 
 Verifies the OTP and returns session tokens plus the user profile.
 
@@ -105,7 +105,7 @@ If the user doesn't have a `user_profile` record yet, one is created automatical
 
 ---
 
-### `GET /api/v1/auth/me`
+### `GET /api/auth/me`
 
 **Requires:** `AuthGuard`
 
@@ -113,7 +113,7 @@ Returns the current user's profile including their school.
 
 ---
 
-### `POST /api/v1/auth/refresh`
+### `POST /api/auth/refresh`
 
 Refreshes an expired access token using the refresh token.
 
@@ -126,7 +126,7 @@ Refreshes an expired access token using the refresh token.
 
 ---
 
-### `PATCH /api/v1/auth/onboard`
+### `PATCH /api/auth/onboard`
 
 **Requires:** `AuthGuard`
 
@@ -143,7 +143,7 @@ Completes the user's profile after first login.
 
 ---
 
-### `POST /api/v1/auth/logout`
+### `POST /api/auth/logout`
 
 **Requires:** `AuthGuard`
 

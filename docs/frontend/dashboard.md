@@ -24,8 +24,8 @@ The layout fetches the user profile via `useProfile()` and passes it to the Head
 ### Statistics Cards
 
 Fetches data from:
-- `GET /api/v1/academic-years/active` - the current active academic year
-- `GET /api/v1/classes` - the user's assigned classes
+- `GET /api/academic-years/active` - the current active academic year
+- `GET /api/classes` - the user's assigned classes
 
 Displays:
 | Card | Content |
@@ -62,4 +62,4 @@ Located in the top-right corner:
 - Avatar with initials
 - User name and school
 - Theme toggle
-- Logout button → `POST /api/v1/auth/logout`, clears tokens, redirects to `/login`
+- Logout button → `POST /api/auth/logout`, clears tokens, redirects to `/login`

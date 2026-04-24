@@ -33,7 +33,7 @@ Students are stored in the `student` schema (not `public`).
 
 All endpoints require `AuthGuard`. Students are automatically scoped to the user's school.
 
-### `GET /api/v1/students`
+### `GET /api/students`
 
 Returns all students for the user's school.
 
@@ -46,13 +46,13 @@ Returns all students for the user's school.
 
 ---
 
-### `GET /api/v1/students/:id`
+### `GET /api/students/:id`
 
 Returns a single student by ID.
 
 ---
 
-### `POST /api/v1/students`
+### `POST /api/students`
 
 Creates a new student. The school is determined from the authenticated user's profile.
 
@@ -80,7 +80,7 @@ Creates a new student. The school is determined from the authenticated user's pr
 
 ---
 
-### `PATCH /api/v1/students/:id`
+### `PATCH /api/students/:id`
 
 Updates a student. All fields are optional, plus `isActive` can be toggled.
 

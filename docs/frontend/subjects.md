@@ -25,7 +25,7 @@ A table showing all subjects with drag-to-sort reordering:
 Subjects can be reordered by dragging the grip handle. Uses `@dnd-kit/core` and `@dnd-kit/sortable`. On drop:
 
 1. The UI updates optimistically with the new order
-2. A `PATCH /api/v1/subjects/reorder` request sends the new sort order for all items
+2. A `PATCH /api/subjects/reorder` request sends the new sort order for all items
 3. On failure, the list reverts to the previous order
 
 ### Create Subject
@@ -53,8 +53,8 @@ Confirmation dialog. Fails with an error if the subject has existing assessments
 
 | Action | Endpoint |
 |--------|----------|
-| List | `GET /api/v1/subjects` |
-| Create | `POST /api/v1/subjects` |
-| Update | `PATCH /api/v1/subjects/:id` |
-| Delete | `DELETE /api/v1/subjects/:id` |
-| Reorder | `PATCH /api/v1/subjects/reorder` |
+| List | `GET /api/subjects` |
+| Create | `POST /api/subjects` |
+| Update | `PATCH /api/subjects/:id` |
+| Delete | `DELETE /api/subjects/:id` |
+| Reorder | `PATCH /api/subjects/reorder` |

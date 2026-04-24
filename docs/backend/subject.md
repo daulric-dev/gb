@@ -34,19 +34,19 @@ When `is_graded` is `false`, the subject won't appear in grade calculations. Thi
 
 All endpoints require `AuthGuard`. Subjects are automatically scoped to the user's school.
 
-### `GET /api/v1/subjects`
+### `GET /api/subjects`
 
 Returns all subjects for the user's school, ordered by `sort_order` then `name`.
 
 ---
 
-### `GET /api/v1/subjects/:id`
+### `GET /api/subjects/:id`
 
 Returns a single subject by ID.
 
 ---
 
-### `POST /api/v1/subjects`
+### `POST /api/subjects`
 
 Creates a new subject.
 
@@ -72,13 +72,13 @@ Creates a new subject.
 
 ---
 
-### `PATCH /api/v1/subjects/:id`
+### `PATCH /api/subjects/:id`
 
 Updates a subject. All fields optional.
 
 ---
 
-### `PATCH /api/v1/subjects/reorder`
+### `PATCH /api/subjects/reorder`
 
 Batch-updates the `sort_order` for multiple subjects at once. Used by the drag-to-sort UI.
 
@@ -97,6 +97,6 @@ Clears the subject cache after updating.
 
 ---
 
-### `DELETE /api/v1/subjects/:id`
+### `DELETE /api/subjects/:id`
 
 Deletes a subject. Fails with `409 Conflict` if the subject has existing assessments or student assignments (foreign key constraint).

@@ -47,8 +47,8 @@ Confirmation dialog. Fails if the term has existing assessments (shows error toa
 
 | Action | Endpoint |
 |--------|----------|
-| List academic years | `GET /api/v1/academic-years` |
-| List terms | `GET /api/v1/terms?yearId=<id>` |
-| Create | `POST /api/v1/terms` |
-| Update | `PATCH /api/v1/terms/:id` |
-| Delete | `DELETE /api/v1/terms/:id` |
+| List academic years | `GET /api/academic-years` |
+| List terms | `GET /api/terms?yearId=<id>` |
+| Create | `POST /api/terms` |
+| Update | `PATCH /api/terms/:id` |
+| Delete | `DELETE /api/terms/:id` |

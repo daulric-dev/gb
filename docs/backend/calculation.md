@@ -117,7 +117,7 @@ This results in a fixed number of database queries (6-7) regardless of how many 
 
 All endpoints require `AuthGuard`. Class-level endpoints additionally require the user to be an **admin or class teacher**.
 
-### `GET /api/v1/calculations/student-term`
+### `GET /api/calculations/student-term`
 
 Calculates a single student's term results.
 
@@ -132,7 +132,7 @@ Calculates a single student's term results.
 
 ---
 
-### `GET /api/v1/calculations/student-year`
+### `GET /api/calculations/student-year`
 
 Calculates a single student's year-end results.
 
@@ -145,7 +145,7 @@ Calculates a single student's year-end results.
 
 ---
 
-### `GET /api/v1/calculations/class-term`
+### `GET /api/calculations/class-term`
 
 **Access:** Admin or class teacher only.
 
@@ -161,7 +161,7 @@ Calculates term results for **all students** in a class, with rankings.
 
 ---
 
-### `GET /api/v1/calculations/class-year`
+### `GET /api/calculations/class-year`
 
 **Access:** Admin or class teacher only.
 
@@ -175,7 +175,7 @@ Calculates year-end results for all students, including per-term breakdowns and 
 
 ---
 
-### `GET /api/v1/calculations/class-summary`
+### `GET /api/calculations/class-summary`
 
 **Access:** Admin or class teacher only.
 

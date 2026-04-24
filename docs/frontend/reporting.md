@@ -34,7 +34,7 @@ Displays all students in a class with their live calculated grades and the statu
 | Selector | Source | Notes |
 |----------|--------|-------|
 | **Report Type** | Static | Shown only for `year_based` grading model. Options: "Term" or "Year-end" |
-| **Term** | `GET /api/v1/terms?yearId=<id>` | Hidden when Report Type is "Year-end" (year-based model). Sorted by `sort_order` |
+| **Term** | `GET /api/terms?yearId=<id>` | Hidden when Report Type is "Year-end" (year-based model). Sorted by `sort_order` |
 
 ### Data Flow
 
@@ -54,7 +54,7 @@ Displays all students in a class with their live calculated grades and the statu
 ### Generate Reports Button
 
 - Label is **"Generate Reports"** if no persisted reports exist, **"Regenerate Reports"** if some exist
-- Calls `POST /api/v1/reports/generate` to persist current live calculations to the `report_book` table
+- Calls `POST /api/reports/generate` to persist current live calculations to the `report_book` table
 - This is optional -grades display immediately without generating
 
 ---
@@ -70,8 +70,8 @@ Displays a single student's report with live calculated grades and PDF download.
 
 | Data | Source | Purpose |
 |------|--------|---------|
-| Live term grades | `GET /api/v1/calculations/student-term` | CW, Exam, Term composite for each subject |
-| Live year grades | `GET /api/v1/calculations/student-year` | Year-end: per-term composites, year grade |
+| Live term grades | `GET /api/calculations/student-term` | CW, Exam, Term composite for each subject |
+| Live year grades | `GET /api/calculations/student-year` | Year-end: per-term composites, year grade |
 
 ### Page Header
 
@@ -135,8 +135,8 @@ Class-level summary with statistics, rankings, and export capabilities.
 
 ### Data Flow
 
-- **Term reports**: `GET /api/v1/calculations/class-term` → converted to `ClassSummary` via `termResultsToClassSummary()`
-- **Year-end reports**: `GET /api/v1/calculations/class-year` + `GET /api/v1/calculations/class-term` in parallel
+- **Term reports**: `GET /api/calculations/class-term` → converted to `ClassSummary` via `termResultsToClassSummary()`
+- **Year-end reports**: `GET /api/calculations/class-year` + `GET /api/calculations/class-term` in parallel
 - Stored files are fetched from `/reports/class-summary/files`
 
 ### Statistics Cards
@@ -280,23 +280,23 @@ The Class Summary card on the class detail page (`[classId]/page.tsx`) includes 
 
 | Action | Endpoint |
 |--------|----------|
-| Live term grades (student) | `GET /api/v1/calculations/student-term` |
-| Live year grades (student) | `GET /api/v1/calculations/student-year` |
-| Live term grades (class) | `GET /api/v1/calculations/class-term` |
-| Live year grades (class) | `GET /api/v1/calculations/class-year` |
-| List persisted reports | `GET /api/v1/reports?studentGroupId=&termId=` |
-| Get report detail | `GET /api/v1/reports/:id` |
-| Generate reports | `POST /api/v1/reports/generate` |
-| Update report | `PATCH /api/v1/reports/:id` |
-| Regenerate report | `PATCH /api/v1/reports/:id/regenerate` |
-| Publish report | `PATCH /api/v1/reports/:id/publish` |
-| Send to ministry | `PATCH /api/v1/reports/:id/send-to-ministry` |
-| Update entry (letter/remark) | `PATCH /api/v1/report-entries/:entryId` |
-| Upload student PDF | `POST /api/v1/reports/:id/pdf/upload` |
-| Download student PDF | `GET /api/v1/reports/:id/pdf/:pdfId/download` |
-| PDF history | `GET /api/v1/reports/:id/pdfs` |
-| Upload class summary file | `POST /api/v1/reports/class-summary/upload` |
-| Download class summary file | `GET /api/v1/reports/class-summary/download` |
-| List class summary files | `GET /api/v1/reports/class-summary/files` |
-| Academic year info | `GET /api/v1/academic-years/:id` |
-| Terms | `GET /api/v1/terms?yearId=` |
+| Live term grades (student) | `GET /api/calculations/student-term` |
+| Live year grades (student) | `GET /api/calculations/student-year` |
+| Live term grades (class) | `GET /api/calculations/class-term` |
+| Live year grades (class) | `GET /api/calculations/class-year` |
+| List persisted reports | `GET /api/reports?studentGroupId=&termId=` |
+| Get report detail | `GET /api/reports/:id` |
+| Generate reports | `POST /api/reports/generate` |
+| Update report | `PATCH /api/reports/:id` |
+| Regenerate report | `PATCH /api/reports/:id/regenerate` |
+| Publish report | `PATCH /api/reports/:id/publish` |
+| Send to ministry | `PATCH /api/reports/:id/send-to-ministry` |
+| Update entry (letter/remark) | `PATCH /api/report-entries/:entryId` |
+| Upload student PDF | `POST /api/reports/:id/pdf/upload` |
+| Download student PDF | `GET /api/reports/:id/pdf/:pdfId/download` |
+| PDF history | `GET /api/reports/:id/pdfs` |
+| Upload class summary file | `POST /api/reports/class-summary/upload` |
+| Download class summary file | `GET /api/reports/class-summary/download` |
+| List class summary files | `GET /api/reports/class-summary/files` |
+| Academic year info | `GET /api/academic-years/:id` |
+| Terms | `GET /api/terms?yearId=` |

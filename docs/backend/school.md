@@ -33,7 +33,7 @@ A school record contains:
 
 All endpoints require `AuthGuard`.
 
-### `GET /api/v1/schools`
+### `GET /api/schools`
 
 Returns all active schools ordered by name. Used during onboarding to let users select their school.
 
@@ -41,7 +41,7 @@ Returns all active schools ordered by name. Used during onboarding to let users 
 
 ---
 
-### `POST /api/v1/schools`
+### `POST /api/schools`
 
 Creates a new school.
 

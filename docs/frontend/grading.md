@@ -13,8 +13,8 @@ Two dropdowns at the top:
 
 | Selector | Source | Notes |
 |----------|--------|-------|
-| **Term** | `GET /api/v1/terms?yearId=<id>` | Terms for the class's academic year |
-| **Subject** | `GET /api/v1/classes/:id/my-subjects` | Filtered by teacher role - class teachers see all, subject teachers see only their assigned subjects |
+| **Term** | `GET /api/terms?yearId=<id>` | Terms for the class's academic year |
+| **Subject** | `GET /api/classes/:id/my-subjects` | Filtered by teacher role - class teachers see all, subject teachers see only their assigned subjects |
 
 When both are selected, assessments for that term + subject combination are loaded.
 
@@ -67,7 +67,7 @@ No error toast is shown - the value is silently adjusted.
 
 ### Bulk Save
 
-The **Save All Grades** button collects all entered scores and sends them as a single `POST /api/v1/grades/bulk` request. This uses upsert behavior, so:
+The **Save All Grades** button collects all entered scores and sends them as a single `POST /api/grades/bulk` request. This uses upsert behavior, so:
 - New grades are created
 - Existing grades are updated
 - Empty score fields are skipped
@@ -89,15 +89,15 @@ When the subject selector changes, the student list refreshes automatically.
 
 | Action | Endpoint |
 |--------|----------|
-| Class info | `GET /api/v1/classes` |
-| My subjects | `GET /api/v1/classes/:id/my-subjects` |
-| Terms | `GET /api/v1/terms?yearId=<id>` |
-| List assessments | `GET /api/v1/assessments?termId=&subjectId=` |
-| Create assessment | `POST /api/v1/assessments` |
-| Update assessment | `PATCH /api/v1/assessments/:id` |
-| Exclude assessment | `PATCH /api/v1/assessments/:id/exclude` |
-| Delete assessment | `DELETE /api/v1/assessments/:id` |
-| List grades | `GET /api/v1/grades?assessmentId=<id>` |
-| Save grades (bulk) | `POST /api/v1/grades/bulk` |
-| Exclude grade | `PATCH /api/v1/grades/:id/exclude` |
-| Enrolled students | `GET /api/v1/classes/:id/students?subjectId=<id>` |
+| Class info | `GET /api/classes` |
+| My subjects | `GET /api/classes/:id/my-subjects` |
+| Terms | `GET /api/terms?yearId=<id>` |
+| List assessments | `GET /api/assessments?termId=&subjectId=` |
+| Create assessment | `POST /api/assessments` |
+| Update assessment | `PATCH /api/assessments/:id` |
+| Exclude assessment | `PATCH /api/assessments/:id/exclude` |
+| Delete assessment | `DELETE /api/assessments/:id` |
+| List grades | `GET /api/grades?assessmentId=<id>` |
+| Save grades (bulk) | `POST /api/grades/bulk` |
+| Exclude grade | `PATCH /api/grades/:id/exclude` |
+| Enrolled students | `GET /api/classes/:id/students?subjectId=<id>` |

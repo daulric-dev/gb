@@ -9,7 +9,7 @@ The authentication flow consists of three pages: login, OTP verification, and on
 
 The login page presents a centered card with an email input field. When the user submits their email:
 
-1. Calls `POST /api/v1/auth/otp/send` with the email
+1. Calls `POST /api/auth/otp/send` with the email
 2. On success, navigates to `/login/verify?email=<email>`
 3. On failure, shows a toast error
 
@@ -29,7 +29,7 @@ The verification page shows an 8-digit OTP input. The email is read from the URL
 **Flow:**
 1. If no `email` query param → redirect back to `/login`
 2. User enters the 8-digit code from their email
-3. Calls `POST /api/v1/auth/otp/verify` with email + token
+3. Calls `POST /api/auth/otp/verify` with email + token
 4. On success:
    - Stores access and refresh tokens via `setTokens()`
    - If user has no first name → redirect to `/onboard`
@@ -52,14 +52,14 @@ Shown to first-time users who have authenticated but haven't completed their pro
 - First name (required)
 - Last name (required)
 - School selection dropdown
-  - Fetches schools from `GET /api/v1/schools`
+  - Fetches schools from `GET /api/schools`
   - Includes a "Create School" option that opens a dialog
 - Create School dialog (if school doesn't exist):
   - Name, code, school type (primary/secondary), parish dropdown (Grenada parishes), address, email, phone
 
 **Flow:**
 1. User fills in name and selects/creates a school
-2. Calls `PATCH /api/v1/auth/onboard` with `firstName`, `lastName`, `schoolId`
+2. Calls `PATCH /api/auth/onboard` with `firstName`, `lastName`, `schoolId`
 3. On success → redirect to `/dashboard`
 
 ## Authentication State
