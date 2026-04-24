@@ -228,7 +228,7 @@ describe('StudentService', () => {
 
       await mockCache.set(`students:${SCHOOL_ID}`, [original], STUDENT_TTL);
 
-      await service.update('student-1', { firstName: 'Jane' } as any);
+      await service.update('student-1', { firstName: 'Jane' });
 
       const cached = await mockCache.get(`students:${SCHOOL_ID}`);
       expect(cached[0].first_name).toBe('Jane');

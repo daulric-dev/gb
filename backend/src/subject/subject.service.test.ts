@@ -115,7 +115,7 @@ describe('SubjectService', () => {
       ];
       await mockCache.set(`subjects:${SCHOOL_ID}`, existing, SUBJECT_TTL);
 
-      await service.create(USER_ID, makeDto() as any);
+      await service.create(USER_ID, makeDto());
 
       const cached = await mockCache.get(`subjects:${SCHOOL_ID}`);
       expect(cached).toHaveLength(2);
@@ -185,7 +185,7 @@ describe('SubjectService', () => {
 
       await mockCache.set(`subjects:${SCHOOL_ID}`, [original], SUBJECT_TTL);
 
-      await service.update('subject-1', { name: 'Maths' } as any);
+      await service.update('subject-1', { name: 'Maths' });
 
       const cached = await mockCache.get(`subjects:${SCHOOL_ID}`);
       expect(cached[0].name).toBe('Maths');
@@ -221,7 +221,7 @@ describe('SubjectService', () => {
 
       await service.reorder({
         items: [{ id: 'subject-1', sortOrder: 2 }],
-      } as any);
+      });
 
       expect(await mockCache.get(`subjects:${SCHOOL_ID}`)).toBeNull();
     });

@@ -77,7 +77,7 @@ describe('TermService', () => {
       const existing = [makeTerm({ id: 'term-0', sort_order: 0 })];
       await mockCache.set(`terms:${YEAR_ID}`, existing, TERM_TTL);
 
-      await service.create(USER_ID, makeDto() as any);
+      await service.create(USER_ID, makeDto());
 
       const cached = await mockCache.get(`terms:${YEAR_ID}`);
       expect(cached).toHaveLength(2);
@@ -148,7 +148,7 @@ describe('TermService', () => {
       await service.update('term-1', {
         examWeight: 70,
         courseworkWeight: 30,
-      } as any);
+      });
 
       const cached = await mockCache.get(`terms:${YEAR_ID}`);
       expect(cached[0].exam_weight).toBe(70);

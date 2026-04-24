@@ -1405,7 +1405,7 @@ export class ReportService {
     const m = new Map<string, Record<string, unknown>>();
     const rows = (data ?? []) as unknown as { id: string }[];
     for (const row of rows) {
-      m.set(row.id, row as unknown as Record<string, unknown>);
+      m.set(row.id, row);
     }
     return m;
   }
@@ -1431,7 +1431,7 @@ export class ReportService {
     const m = new Map<string, Record<string, unknown>>();
     const rows = (data ?? []) as unknown as { id: string }[];
     for (const row of rows) {
-      m.set(row.id, row as unknown as Record<string, unknown>);
+      m.set(row.id, row);
     }
     return m;
   }
@@ -1456,7 +1456,7 @@ export class ReportService {
     const m = new Map<string, Record<string, unknown>>();
     const rows = (data ?? []) as unknown as { id: string }[];
     for (const row of rows) {
-      m.set(row.id, row as unknown as Record<string, unknown>);
+      m.set(row.id, row);
     }
     return m;
   }

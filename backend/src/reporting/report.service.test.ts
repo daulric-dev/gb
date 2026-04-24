@@ -116,7 +116,7 @@ describe('ReportService', () => {
     const result = await service.updateReport('r1', {
       classTeacherRemark: 'Good',
       conduct: 'A',
-    } as any);
+    });
 
     expect(result).toEqual(updated);
   });

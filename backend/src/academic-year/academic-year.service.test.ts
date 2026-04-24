@@ -148,7 +148,7 @@ describe('AcademicYearService', () => {
         YEAR_TTL,
       );
 
-      await service.update(yearId, { name: 'Renamed' } as any);
+      await service.update(yearId, { name: 'Renamed' });
 
       const cachedList = await mockCache.get(`academic-years:${SCHOOL_ID}`);
       expect(cachedList[0]).toEqual(updatedYear);

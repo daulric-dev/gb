@@ -82,7 +82,7 @@ describe('AssessmentService', () => {
   test('update invalidates calc caches', async () => {
     await mockCache.set('calc:x', 'y', 300);
 
-    await service.update('a1', { title: 'Updated' } as any, token);
+    await service.update('a1', { title: 'Updated' }, token);
 
     expect(await mockCache.get('calc:x')).toBeNull();
   });
@@ -104,7 +104,7 @@ describe('AssessmentService', () => {
 
     await service.exclude(
       'a1',
-      { isExcluded: true, exclusionReason: 'test' } as any,
+      { isExcluded: true, exclusionReason: 'test' },
       token,
     );
 

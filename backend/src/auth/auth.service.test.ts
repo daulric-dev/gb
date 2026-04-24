@@ -74,7 +74,7 @@ describe('AuthService', () => {
         firstName: 'Jane',
         lastName: 'Doe',
         schoolId: 's1',
-      } as any);
+      });
 
       const cached = await mockCache.get(`profile:${userId}`);
       expect(cached).toEqual(profile);
@@ -95,7 +95,7 @@ describe('AuthService', () => {
         firstName: 'Updated',
         lastName: 'Name',
         schoolId: 's2',
-      } as any);
+      });
 
       const cached = await mockCache.get(`profile:${userId}`);
       expect(cached).toEqual(updated);

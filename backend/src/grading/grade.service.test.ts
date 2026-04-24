@@ -32,7 +32,7 @@ describe('GradeService', () => {
         assessmentId: 'a1',
         studentId: 's1',
         score: 85,
-      } as any,
+      },
       token,
     );
 
@@ -96,7 +96,7 @@ describe('GradeService', () => {
           { studentId: 's1', score: 90 },
           { studentId: 's2', score: 80 },
         ],
-      } as any,
+      },
       token,
     );
 
@@ -107,7 +107,7 @@ describe('GradeService', () => {
   test('update invalidates calc caches', async () => {
     await mockCache.set('calc:u', 'v', 300);
 
-    await service.update('g1', userId, { score: 90 } as any, token);
+    await service.update('g1', userId, { score: 90 }, token);
 
     expect(await mockCache.get('calc:u')).toBeNull();
   });
@@ -118,7 +118,7 @@ describe('GradeService', () => {
     await service.exclude(
       'g1',
       userId,
-      { isExcluded: true, exclusionReason: 'cheating' } as any,
+      { isExcluded: true, exclusionReason: 'cheating' },
       token,
     );
 
