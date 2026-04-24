@@ -266,7 +266,7 @@ export class AuthController {
 
 **Example:** Add `avatar_url` to the profile response.
 
-**Step 1 — Add the v2 transformer in `src/auth/transformer.ts`:**
+**Step 1 - Add the v2 transformer in `src/auth/transformer.ts`:**
 
 ```typescript
 export function v2Profile(raw: any) {
@@ -279,7 +279,7 @@ export function v2Profile(raw: any) {
 
 v2 extends v1 by spreading it. v1 clients still get the same shape (no `avatar_url`), and v2 clients get the extra field.
 
-**Step 2 — Register in `src/versioning/transformer-registry.ts`:**
+**Step 2 - Register in `src/versioning/transformer-registry.ts`:**
 
 ```typescript
 this.versioning.registerAll('auth', {
@@ -290,7 +290,7 @@ this.versioning.registerAll('auth', {
 });
 ```
 
-**Step 3 — No handler changes needed.** `this.versioning.resolve()` auto-detects the latest version from the registry.
+**Step 3 - No handler changes needed.** `this.versioning.resolve()` auto-detects the latest version from the registry.
 
 **Result:**
 
@@ -305,7 +305,7 @@ this.versioning.registerAll('auth', {
 
 **Example:** Nest name fields and add timestamps in v3.
 
-**Step 1 — Add the v3 transformer:**
+**Step 1 - Add the v3 transformer:**
 
 ```typescript
 export function v3Profile(raw: any) {
@@ -326,7 +326,7 @@ export function v3Profile(raw: any) {
 
 v3 does **not** spread v2 because the shape is fundamentally different. It builds from scratch.
 
-**Step 2 — Register:**
+**Step 2 - Register:**
 
 ```typescript
 profile: { 1: auth.v1Profile, 2: auth.v2Profile, 3: auth.v3Profile },
@@ -348,7 +348,7 @@ All three versions coexist. No existing client breaks.
 
 **Example:** Remove `role` from the profile in v2.
 
-**Step 1 — Write v2 from scratch (don't spread v1, since spreading would include `role`):**
+**Step 1 - Write v2 from scratch (don't spread v1, since spreading would include `role`):**
 
 ```typescript
 export function v2Profile(raw: any) {
@@ -362,7 +362,7 @@ export function v2Profile(raw: any) {
 }
 ```
 
-**Step 2 — Register and the latest version is auto-detected from the registry.**
+**Step 2 - Register and the latest version is auto-detected from the registry.**
 
 v1 clients still receive `role`. v2 clients do not.
 
@@ -600,8 +600,8 @@ curl -s -H "X-API-Version: -1" http://localhost:3001/api/auth/otp/send \
 | Convention | Example |
 |------------|---------|
 | Transformer file | `src/<module>/transformer.ts` |
-| Function name | `v<number><ResponseType>` — e.g., `v1Profile`, `v2StudentList` |
-| Namespace key | `<module>.<responseType>` — e.g., `auth.profile`, `student.list` |
+| Function name | `v<number><ResponseType>` - e.g., `v1Profile`, `v2StudentList` |
+| Namespace key | `<module>.<responseType>` - e.g., `auth.profile`, `student.list` |
 
 ### Guidelines
 
@@ -630,9 +630,9 @@ Separately from header-based versioning, list endpoints can support **pagination
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `page` | number | — | Page number (1-based). Activates offset mode. |
+| `page` | number | - | Page number (1-based). Activates offset mode. |
 | `pageSize` | number | 20 | Items per page (min: 1, max: 100). |
-| `cursor` | string | — | Cursor value from a previous `nextCursor`. Activates cursor mode. |
+| `cursor` | string | - | Cursor value from a previous `nextCursor`. Activates cursor mode. |
 | `cursorColumn` | string | `id` | Database column to paginate on. |
 | `cursorDirection` | `asc` \| `desc` | `asc` | Sort direction for the cursor column. |
 
@@ -672,9 +672,9 @@ When no pagination params are sent, the endpoint returns its original flat array
 
 | File | Purpose |
 |------|---------|
-| `src/versioning/versioning.service.ts` | `VersioningService` — central registry with `register()`, `registerAll()`, and `resolve()` |
-| `src/versioning/versioning.guard.ts` | `VersioningGuard` — global guard that validates `X-API-Version` before handlers run |
-| `src/versioning/transformer-registry.ts` | `TransformerRegistry` — singleton that registers all transformers at startup |
+| `src/versioning/versioning.service.ts` | `VersioningService` - central registry with `register()`, `registerAll()`, and `resolve()` |
+| `src/versioning/versioning.guard.ts` | `VersioningGuard` - global guard that validates `X-API-Version` before handlers run |
+| `src/versioning/transformer-registry.ts` | `TransformerRegistry` - singleton that registers all transformers at startup |
 | `src/versioning/versioning.module.ts` | Global module providing `VersioningService` and `TransformerRegistry` |
 | `src/<module>/transformer.ts` | Per-module transformer functions (pure, typed) |
 | `src/createApp.ts` | Global prefix (`/api`), CORS config allowing `X-API-Version` header |
