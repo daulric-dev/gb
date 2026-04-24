@@ -128,11 +128,15 @@ export class AuthController {
   @ApiConsumes('multipart/form-data')
   async uploadAvatar(
     @Req() req: any,
-    @Query('pathname') pathname?: string,
+    @Query('pathname') pathname?: string | string[],
   ) {
     const file = await req.file();
     if (!file) {
       throw new BadRequestException('No file provided');
+    }
+
+    if (Array.isArray(pathname)) {
+      throw new BadRequestException('Invalid pathname parameter');
     }
 
     const result = await this.imagesService.setImageToUserProfile(

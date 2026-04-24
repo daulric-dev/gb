@@ -209,7 +209,11 @@ export class ImagesService {
   // ── Helpers ─────────────────────────────────────────────────────────
 
   private buildPath(userId: string, ext: string, pathname?: string): string {
-    if (!pathname) return `avatars/${userId}.${ext}`;
+    if (pathname == null || pathname === '') return `avatars/${userId}.${ext}`;
+    if (typeof pathname !== 'string') {
+      throw new BadRequestException('Invalid pathname parameter');
+    }
+
     let dir = pathname;
     while (dir.endsWith('/')) dir = dir.slice(0, -1);
     return `${dir}/${userId}.${ext}`;
