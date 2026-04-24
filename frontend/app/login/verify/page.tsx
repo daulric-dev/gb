@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from "@/components/ui/input-otp";
 
+const RESEND_COOLDOWN = 60;
+
 function VerifyOtpForm() {
   useSignals();
   const router = useRouter();
@@ -19,6 +21,8 @@ function VerifyOtpForm() {
   const email = searchParams.get("email") || "";
   const code = useSignal("");
   const loading = useSignal(false);
+  const resending = useSignal(false);
+  const cooldown = useSignal(0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +59,52 @@ function VerifyOtpForm() {
     }
   }
 
+  async function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text");
+    code.value = text;
+    if (text.length !== 8) return;
+    await handleSubmit(e);
+  }
+
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startCooldown() {
+    cooldown.value = RESEND_COOLDOWN;
+    timerRef.current = setInterval(() => {
+      cooldown.value -= 1;
+      if (cooldown.value <= 0 && timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }, 1000);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  async function handleResend() {
+    resending.value = true;
+    try {
+      await api("/auth/otp/send", {
+        method: "POST",
+        body: { email },
+      });
+      toast.success("New code sent to your email");
+      code.value = "";
+      startCooldown();
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Failed to resend code";
+      toast.error(message);
+    } finally {
+      resending.value = false;
+    }
+  }
+
   if (!email) {
     router.push("/login");
     return null;
@@ -72,7 +122,7 @@ function VerifyOtpForm() {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex justify-center">
-            <InputOTP maxLength={8} value={code.value} onChange={(v) => (code.value = v)}>
+            <InputOTP maxLength={8} value={code.value} onChange={(v) => (code.value = v)} onPaste={onPaste}>
               <InputOTPGroup>
                 <InputOTPSlot index={0} />
                 <InputOTPSlot index={1} />
@@ -94,6 +144,20 @@ function VerifyOtpForm() {
             disabled={loading.value || code.value.length !== 8}
           >
             {loading.value ? "Verifying..." : "Verify"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            disabled={resending.value || cooldown.value > 0}
+            onClick={handleResend}
+          >
+            {resending.value
+              ? "Sending..."
+              : cooldown.value > 0
+                ? `Resend code (${cooldown.value}s)`
+                : "Resend code"
+            }
           </Button>
           <Button
             type="button"

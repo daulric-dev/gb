@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useProfile } from "@/lib/use-profile";
 
 const features = [
   {
@@ -52,6 +53,7 @@ const features = [
 export default function LandingPage() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  const { profile } = useProfile();
 
   const navigateWithTransition = useCallback(
     (e: React.MouseEvent) => {
@@ -98,7 +100,7 @@ export default function LandingPage() {
               onClick={navigateWithTransition}
               className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
             >
-              Sign In
+              {profile.value ? "Dashboard" : "Sign In"}
             </button>
           </div>
         </nav>
@@ -123,7 +125,7 @@ export default function LandingPage() {
             onClick={navigateWithTransition}
             className={cn(buttonVariants({ size: "lg" }), "gap-2")}
           >
-            Get Started
+            {profile.value ? "Continue" : "Get Started"}
             <ArrowRight className="size-4" />
           </button>
           <button

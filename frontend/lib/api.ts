@@ -96,6 +96,59 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
 
 }
 
+export async function apiUpload<T = unknown>(path: string, formData: FormData): Promise<T> {
+  const { access } = getTokens();
+
+  const headers: Record<string, string> = {
+    "X-API-Version": "1",
+  };
+
+  if (access) {
+    headers["Authorization"] = `Bearer ${access}`;
+  }
+
+  let res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (res.status === 401 && access) {
+    if (!isRefreshing) {
+      isRefreshing = true;
+      refreshPromise = attemptRefresh().finally(() => {
+        isRefreshing = false;
+        refreshPromise = null;
+      });
+    }
+
+    const refreshed = await refreshPromise;
+
+    if (refreshed) {
+      const { access: newAccess } = getTokens();
+      headers["Authorization"] = `Bearer ${newAccess}`;
+      res = await fetch(`${BASE_URL}${path}`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+    } else {
+      clearTokens();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new Error("Session expired");
+    }
+  }
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: res.statusText }));
+    throw new ApiError(res.status, error.message || res.statusText, error);
+  }
+
+  return res.json();
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

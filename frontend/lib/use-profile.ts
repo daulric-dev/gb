@@ -11,6 +11,7 @@ export interface UserProfile {
   first_name: string | null;
   last_name: string | null;
   role: string | null;
+  avatar_url: string | null;
   school: {
     id: string;
     name: string;

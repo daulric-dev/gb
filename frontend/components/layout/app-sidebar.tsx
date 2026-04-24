@@ -41,7 +41,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -326,6 +326,9 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             }
           >
             <Avatar className="size-8 shrink-0">
+              {profile?.avatar_url && (
+                <AvatarImage src={profile.avatar_url} alt="Profile picture" />
+              )}
               <AvatarFallback className="text-xs">
                 {getInitials(profile)}
               </AvatarFallback>
