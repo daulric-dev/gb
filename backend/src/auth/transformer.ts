@@ -8,6 +8,7 @@ export interface ProfileResponse {
   first_name: string | null;
   last_name: string | null;
   role: UserProfile['role'];
+  avatar_url: string | null;
   school: any | null;
 }
 
@@ -34,6 +35,7 @@ export function v1Profile(raw: any): ProfileResponse {
     first_name: raw.first_name ?? null,
     last_name: raw.last_name ?? null,
     role: raw.role ?? null,
+    avatar_url: raw.avatar_url ?? null,
     school: raw.school ?? null,
   };
 }
@@ -61,6 +63,7 @@ export function v1VerifyOtp(
       first_name: profile?.first_name ?? null,
       last_name: profile?.last_name ?? null,
       role: profile?.role ?? null,
+      avatar_url: profile?.avatar_url ?? null,
       school: profile?.school ?? null,
       is_onboarded: hasOnboarded,
     },

@@ -1,21 +1,28 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Patch,
   Post,
+  Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiProduces, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
+import { ImagesService } from '@/images/images.service';
 import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
 import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
+import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
+import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { VersioningService } from '@/versioning/versioning.service';
 
@@ -24,6 +31,7 @@ import { VersioningService } from '@/versioning/versioning.service';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly imagesService: ImagesService,
     private readonly supabaseService: SupabaseService,
     private readonly versioning: VersioningService,
   ) {}
@@ -92,5 +100,77 @@ export class AuthController {
     const supabase = this.supabaseService.getServiceClient();
     await supabase.auth.admin.signOut(req.user.access_token);
     return this.versioning.resolve(req, 'auth.message')('Logged out');
+  }
+
+  // ── Avatar ───────────────────────────────────────────────────────────
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Get('avatar')
+  @ApiProduces('image/*')
+  async getAvatar(@Req() req: any, @Res() res: FastifyReply) {
+    const { blob, contentType } = await this.imagesService.getImageFromUserProfile(
+      req.user.id,
+    );
+
+    const buffer = Buffer.from(await blob.arrayBuffer());
+
+    return res
+      .header('Content-Type', contentType)
+      .header('Content-Length', buffer.length)
+      .header('Cache-Control', 'private, max-age=3600')
+      .send(buffer);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Post('avatar')
+  @ApiConsumes('multipart/form-data')
+  async uploadAvatar(
+    @Req() req: any,
+    @Query('pathname') pathname?: string,
+  ) {
+    const file = await req.file();
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    const result = await this.imagesService.setImageToUserProfile(
+      req.user.id,
+      file,
+      pathname,
+    );
+    return this.versioning.resolve(req, 'images.uploaded')(result);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Post('avatar/resumable')
+  async createResumableUpload(
+    @Req() req: any,
+    @Body() dto: CreateResumableUploadDto,
+  ) {
+    const result = await this.imagesService.createResumableUpload(
+      req.user.id,
+      dto.filename,
+      dto.contentType,
+      dto.totalSize,
+      dto.pathname,
+    );
+    return this.versioning.resolve(req, 'images.resumable')(result);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Post('avatar/complete')
+  async completeResumableUpload(
+    @Req() req: any,
+    @Body() dto: CompleteUploadDto,
+  ) {
+    const result = await this.imagesService.completeResumableUpload(
+      req.user.id,
+      dto.path,
+    );
+    return this.versioning.resolve(req, 'images.uploaded')(result);
   }
 }

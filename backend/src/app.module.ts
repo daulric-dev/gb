@@ -17,6 +17,7 @@ import { EnrollmentModule } from '@/enrollment/enrollment.module';
 import { GradingModule } from '@/grading/grading.module';
 import { CalculationModule } from '@/calculation/calculation.module';
 import { ReportingModule } from '@/reporting/reporting.module';
+import { ImagesModule } from '@/images/images.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
@@ -56,6 +57,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     GradingModule,
     CalculationModule,
     ReportingModule,
+    ImagesModule,
   ],
   controllers: [AppController],
   providers: [
