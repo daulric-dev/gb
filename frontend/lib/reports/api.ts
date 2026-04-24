@@ -1,4 +1,4 @@
-import { api, ApiError } from "../api";
+import { api, ApiError, buildUrl } from "../api";
 
 export type ReportType = "term" | "year_end";
 
@@ -88,8 +88,7 @@ export async function uploadClassSummaryFile(
   form.append("reportType", reportType);
   form.append("fileType", fileType);
 
-  const base = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
-  const res = await fetch(`${base}/reports/class-summary/upload`, {
+  const res = await fetch(buildUrl("/reports/class-summary/upload"), {
     method: "POST",
     headers: {
       Authorization: access ? `Bearer ${access}` : "",
@@ -115,8 +114,7 @@ export async function downloadClassSummaryFile(
   const { getTokens } = await import("../auth");
   const { access } = getTokens();
   const q = new URLSearchParams({ studentGroupId, termId, reportType, fileType });
-  const base = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
-  const res = await fetch(`${base}/reports/class-summary/download?${q.toString()}`, {
+  const res = await fetch(`${buildUrl("/reports/class-summary/download")}?${q.toString()}`, {
     headers: {
       Authorization: access ? `Bearer ${access}` : "",
       "X-API-Version": "1",

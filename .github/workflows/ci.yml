@@ -50,3 +50,17 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "supabase-anon-key"
         run: bunx turbo run build
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "CI failed: build=${{ needs.build.result }}"
+            exit 1
+          fi
+          echo "All checks passed"

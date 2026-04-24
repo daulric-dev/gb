@@ -12,6 +12,7 @@ import * as enrollment from '@/enrollment/transformer';
 import * as grade from '@/grading/transformer';
 import * as calculation from '@/calculation/transformer';
 import * as report from '@/reporting/transformer';
+import * as images from '@/images/transformer';
 
 @Injectable()
 export class TransformerRegistry implements OnModuleInit {
@@ -127,6 +128,11 @@ export class TransformerRegistry implements OnModuleInit {
 
     this.versioning.registerAll('reportEntry', {
       updated: { 1: report.v1ReportEntryUpdated },
+    });
+
+    this.versioning.registerAll('images', {
+      uploaded: { 1: images.v1Uploaded },
+      resumable: { 1: images.v1Resumable },
     });
   }
 }

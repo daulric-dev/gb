@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, ApiError } from "@/lib/api";
+import { api, apiUpload, ApiError } from "@/lib/api";
 import { clearTokens } from "@/lib/auth";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { AvatarCropDialog } from "@/components/dashboard/avatar-crop-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Trash2 } from "lucide-react";
+import { Camera, Loader2, Trash2 } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -31,6 +33,7 @@ interface Profile {
   first_name: string | null;
   last_name: string | null;
   role: string | null;
+  avatar_url: string | null;
   school: { id: string; name: string } | null;
 }
 
@@ -60,6 +63,12 @@ export default function SettingsPage() {
   const schoolId = useSignal("");
   const schools = useSignal<School[]>([]);
 
+  const avatarUrl = useSignal<string | null>(null);
+  const cropSrc = useSignal<string | null>(null);
+  const cropOpen = useSignal(false);
+  const uploading = useSignal(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const fetchProfile = useCallback(() => {
     loading.value = true;
     api<Profile>("/auth/me")
@@ -68,6 +77,7 @@ export default function SettingsPage() {
         firstName.value = data.first_name || "";
         lastName.value = data.last_name || "";
         schoolId.value = data.school?.id || "";
+        avatarUrl.value = data.avatar_url || null;
       })
       .catch(() => toast.error("Failed to load profile"))
       .finally(() => (loading.value = false));
@@ -126,6 +136,50 @@ export default function SettingsPage() {
     }
   }
 
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Only JPEG, PNG, and WebP images are allowed");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      cropSrc.value = reader.result as string;
+      cropOpen.value = true;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  async function handleCropConfirm(blob: Blob) {
+    uploading.value = true;
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, "avatar.jpg");
+      const result = await apiUpload<{ avatar_url: string }>("/auth/avatar", formData);
+      avatarUrl.value = result.avatar_url;
+      toast.success("Profile picture updated");
+      cropOpen.value = false;
+      cropSrc.value = null;
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to upload image";
+      toast.error(message);
+    } finally {
+      uploading.value = false;
+    }
+  }
+
+  function getInitials() {
+    const f = firstName.value?.[0] || profile.value?.first_name?.[0] || "";
+    const l = lastName.value?.[0] || profile.value?.last_name?.[0] || "";
+    return `${f}${l}`.toUpperCase() || "?";
+  }
+
   const hasChanges =
     profile.value &&
     (firstName.value.trim() !== (profile.value.first_name || "") ||
@@ -155,6 +209,60 @@ export default function SettingsPage() {
         title="Settings"
         description="Manage your account and preferences"
       />
+
+      <Card className="p-6">
+        <h2 className="text-lg font-semibold">Profile Picture</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Click to upload or change your profile picture.
+        </p>
+
+        <div className="flex items-center gap-5">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="group relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Avatar size="lg" className="size-20">
+              {avatarUrl.value && (
+                <AvatarImage src={avatarUrl.value} alt="Profile picture" />
+              )}
+              <AvatarFallback className="text-lg">{getInitials()}</AvatarFallback>
+            </Avatar>
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+              <Camera className="size-5 text-white" />
+            </span>
+          </button>
+          <div className="space-y-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Change Picture
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              JPG, PNG or WebP. Max 5MB.
+            </p>
+          </div>
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+
+        <AvatarCropDialog
+          imageSrc={cropSrc.value}
+          open={cropOpen.value}
+          onOpenChange={(v) => (cropOpen.value = v)}
+          onConfirm={handleCropConfirm}
+          uploading={uploading.value}
+        />
+      </Card>
 
       <Card className="p-6">
         <h2 className="text-lg font-semibold">Profile</h2>
