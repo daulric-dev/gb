@@ -119,7 +119,7 @@ export class ImagesService {
 
   /**
    * Creates a signed upload URL for the client to use with the TUS protocol.
-   * The client uploads directly to Supabase — no chunks pass through the backend.
+   * The client uploads directly to Supabase - no chunks pass through the backend.
    *
    * Flow:
    *  1. Client calls this endpoint to get TUS credentials
