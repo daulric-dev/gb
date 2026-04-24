@@ -209,9 +209,10 @@ export class ImagesService {
   // ── Helpers ─────────────────────────────────────────────────────────
 
   private buildPath(userId: string, ext: string, pathname?: string): string {
-    return pathname
-      ? `${pathname.replace(/\/+$/, '')}/${userId}.${ext}`
-      : `avatars/${userId}.${ext}`;
+    if (!pathname) return `avatars/${userId}.${ext}`;
+    let dir = pathname;
+    while (dir.endsWith('/')) dir = dir.slice(0, -1);
+    return `${dir}/${userId}.${ext}`;
   }
 
   private cacheBust(url: string): string {
