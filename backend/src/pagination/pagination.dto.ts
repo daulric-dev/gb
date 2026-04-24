@@ -3,14 +3,21 @@ import { IsOptional, IsInt, Min, Max, IsString, IsIn } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PaginationQueryDto {
-  @ApiPropertyOptional({ description: 'Page number (1-based, offset mode)', example: 1 })
+  @ApiPropertyOptional({
+    description: 'Page number (1-based, offset mode)',
+    example: 1,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number;
 
-  @ApiPropertyOptional({ description: 'Items per page', example: 20, default: 20 })
+  @ApiPropertyOptional({
+    description: 'Items per page',
+    example: 20,
+    default: 20,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -18,17 +25,26 @@ export class PaginationQueryDto {
   @Max(100)
   pageSize?: number;
 
-  @ApiPropertyOptional({ description: 'Cursor value (cursor mode, mutually exclusive with page)' })
+  @ApiPropertyOptional({
+    description: 'Cursor value (cursor mode, mutually exclusive with page)',
+  })
   @IsOptional()
   @IsString()
   cursor?: string;
 
-  @ApiPropertyOptional({ description: 'Column to use for cursor pagination', default: 'id' })
+  @ApiPropertyOptional({
+    description: 'Column to use for cursor pagination',
+    default: 'id',
+  })
   @IsOptional()
   @IsString()
   cursorColumn?: string;
 
-  @ApiPropertyOptional({ description: 'Sort direction for cursor column', default: 'asc', enum: ['asc', 'desc'] })
+  @ApiPropertyOptional({
+    description: 'Sort direction for cursor column',
+    default: 'asc',
+    enum: ['asc', 'desc'],
+  })
   @IsOptional()
   @IsIn(['asc', 'desc'])
   cursorDirection?: 'asc' | 'desc';

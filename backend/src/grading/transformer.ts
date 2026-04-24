@@ -8,7 +8,10 @@ export interface GradeWithStudent extends Grade {
 }
 
 export interface AssessmentWithGrades extends Assessment {
-  grades: (Pick<Grade, 'id' | 'assessment_id' | 'student_id' | 'score' | 'remarks' | 'is_excluded'> & {
+  grades: (Pick<
+    Grade,
+    'id' | 'assessment_id' | 'student_id' | 'score' | 'remarks' | 'is_excluded'
+  > & {
     student: { id: string; first_name: string; last_name: string } | null;
   })[];
 }
@@ -19,11 +22,15 @@ export interface MessageResponse {
 }
 
 // Grade transformers
-export function v1GradesByAssessment(data: GradeWithStudent[]): GradeWithStudent[] {
+export function v1GradesByAssessment(
+  data: GradeWithStudent[],
+): GradeWithStudent[] {
   return data;
 }
 
-export function v1GradesByTermSubject(data: AssessmentWithGrades[]): AssessmentWithGrades[] {
+export function v1GradesByTermSubject(
+  data: AssessmentWithGrades[],
+): AssessmentWithGrades[] {
   return data;
 }
 

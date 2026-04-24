@@ -18,7 +18,6 @@ import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { UpdateAssessmentDto } from './dto/update-assessment.dto';
 import { ExcludeDto } from './dto/exclude.dto';
 
-
 @ApiTags('Assessments')
 @ApiBearerAuth()
 @Controller('assessments')
@@ -55,7 +54,11 @@ export class AssessmentController {
 
   @Post()
   async create(@Body() dto: CreateAssessmentDto, @Req() req: any) {
-    const raw = await this.assessmentService.create(req.user.id, dto, this.getToken(req));
+    const raw = await this.assessmentService.create(
+      req.user.id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'assessment.created')(raw);
   }
 
@@ -65,13 +68,25 @@ export class AssessmentController {
     @Body() dto: UpdateAssessmentDto,
     @Req() req: any,
   ) {
-    const raw = await this.assessmentService.update(id, dto, this.getToken(req));
+    const raw = await this.assessmentService.update(
+      id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'assessment.updated')(raw);
   }
 
   @Patch(':id/exclude')
-  async exclude(@Param('id') id: string, @Body() dto: ExcludeDto, @Req() req: any) {
-    const raw = await this.assessmentService.exclude(id, dto, this.getToken(req));
+  async exclude(
+    @Param('id') id: string,
+    @Body() dto: ExcludeDto,
+    @Req() req: any,
+  ) {
+    const raw = await this.assessmentService.exclude(
+      id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'assessment.excluded')(raw);
   }
 

@@ -19,7 +19,6 @@ import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { VersioningService } from '@/versioning/versioning.service';
 
-
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {

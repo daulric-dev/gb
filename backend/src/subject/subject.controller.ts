@@ -17,7 +17,6 @@ import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
 import { ReorderSubjectsDto } from './dto/reorder-subjects.dto';
 
-
 @ApiTags('Subjects')
 @ApiBearerAuth()
 @Controller('subjects')
@@ -53,7 +52,11 @@ export class SubjectController {
   }
 
   @Patch(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateSubjectDto) {
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateSubjectDto,
+  ) {
     const raw = await this.subjectService.update(id, dto);
     return this.versioning.resolve(req, 'subject.updated')(raw);
   }

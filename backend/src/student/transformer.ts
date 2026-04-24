@@ -19,6 +19,8 @@ export function v1StudentUpdated(raw: Student): Student {
   return raw;
 }
 
-export function v1StudentPaginated(raw: PaginatedResult<Student>): PaginatedResult<Student> {
+export function v1StudentPaginated(
+  raw: PaginatedResult<Student>,
+): PaginatedResult<Student> {
   return raw;
 }

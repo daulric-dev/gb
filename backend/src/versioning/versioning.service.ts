@@ -7,10 +7,7 @@ export class VersioningService {
   private readonly logger = new Logger(VersioningService.name);
   private readonly registry = new Map<string, Map<number, TransformerFn>>();
 
-  register(
-    namespace: string,
-    versions: Record<number, TransformerFn>,
-  ): void {
+  register(namespace: string, versions: Record<number, TransformerFn>): void {
     const map = this.registry.get(namespace) ?? new Map();
 
     for (const [version, fn] of Object.entries(versions)) {

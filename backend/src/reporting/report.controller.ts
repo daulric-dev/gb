@@ -13,7 +13,6 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
-import type { MultipartFile } from '@fastify/multipart';
 import { AuthGuard } from '@/auth/auth.guard';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
 import { ReportGuard } from './report.guard';
@@ -39,10 +38,7 @@ export class ReportController {
 
   @Post('generate')
   @UseGuards(ClassTeacherGuard)
-  async generate(
-    @Req() req: any,
-    @Body() dto: GenerateReportDto,
-  ) {
+  async generate(@Req() req: any, @Body() dto: GenerateReportDto) {
     const raw = await this.reportService.generateTermReports(req.user.id, dto);
     return this.versioning.resolve(req, 'report.generated')(raw);
   }
@@ -203,7 +199,11 @@ export class ReportController {
 
   @Patch(':id')
   @UseGuards(ClassTeacherGuard, ReportGuard)
-  async updateReport(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateReportDto) {
+  async updateReport(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateReportDto,
+  ) {
     const raw = await this.reportService.updateReport(id, dto);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
@@ -242,10 +242,7 @@ export class ReportController {
 
   @Post(':id/pdf/upload')
   @UseGuards(ClassTeacherGuard, ReportGuard)
-  async uploadPdf(
-    @Param('id') id: string,
-    @Req() req: any,
-  ) {
+  async uploadPdf(@Param('id') id: string, @Req() req: any) {
     const file = await req.file();
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -260,7 +257,12 @@ export class ReportController {
       (file.fields?.objectPath as { value?: string } | undefined)?.value ??
       `${id}.pdf`;
 
-    const raw = await this.reportService.uploadPdf(id, req.user.id, buffer, objectPath);
+    const raw = await this.reportService.uploadPdf(
+      id,
+      req.user.id,
+      buffer,
+      objectPath,
+    );
     return this.versioning.resolve(req, 'report.pdfUploaded')(raw);
   }
 

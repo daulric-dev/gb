@@ -5,7 +5,6 @@ import { AuthGuard } from '@/auth/auth.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 
-
 @ApiTags('Schools')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)

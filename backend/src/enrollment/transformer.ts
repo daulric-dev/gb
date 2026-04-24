@@ -37,11 +37,15 @@ export interface BulkResponse {
   message: string;
 }
 
-export function v1EnrolledStudents(data: EnrolledStudentItem[]): EnrolledStudentItem[] {
+export function v1EnrolledStudents(
+  data: EnrolledStudentItem[],
+): EnrolledStudentItem[] {
   return data;
 }
 
-export function v1StudentSubjects(data: StudentSubjectItem[]): StudentSubjectItem[] {
+export function v1StudentSubjects(
+  data: StudentSubjectItem[],
+): StudentSubjectItem[] {
   return data;
 }
 

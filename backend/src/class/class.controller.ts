@@ -33,7 +33,10 @@ export class ClassController {
     @Req() req: any,
     @Query('academicYearId') academicYearId?: string,
   ) {
-    const raw = await this.classService.getMyClasses(req.user.id, academicYearId);
+    const raw = await this.classService.getMyClasses(
+      req.user.id,
+      academicYearId,
+    );
     return this.versioning.resolve(req, 'class.list')(raw);
   }
 
@@ -75,7 +78,10 @@ export class ClassController {
 
   @Get(':classId/my-subjects')
   async getMySubjects(@Req() req: any, @Param('classId') classId: string) {
-    const raw = await this.classService.getMySubjectsForClass(req.user.id, classId);
+    const raw = await this.classService.getMySubjectsForClass(
+      req.user.id,
+      classId,
+    );
     return this.versioning.resolve(req, 'class.subjects')(raw);
   }
 
