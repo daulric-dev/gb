@@ -139,84 +139,22 @@ http://localhost:3001/docs
 
 The project includes a monorepo-aware Git CLI at `command/index.ts`. It scopes git operations to individual services so you don't accidentally commit cross-service changes.
 
-### Setup
-
 ```bash
-bun link        # registers the "gbsh" command globally
-```
-
-Or run directly:
-
-```bash
+bun link        # registers "gbsh" globally
 bun run gb <command>
 ```
 
-### Commands
-
 | Command | Description |
 |---------|-------------|
-| `gb status` | Show `git status` grouped by service |
-| `gb affected [--base=main]` | List services with changes vs a base branch |
-| `gb branch [service] [name]` | Create a service-scoped branch |
-| `gb commit [service]` | Stage and commit files for a service |
-| `gb diff [service]` | Show diff for a specific service or all |
-| `gb push [--force]` | Push current branch to origin |
-| `gb run <service> <script>` | Run a package.json script in a service directory |
-| `gb help` | Show help |
+| `gb status` | Show git status grouped by service |
+| `gb affected` | List services with changes vs a base branch |
+| `gb branch` | Create a service-scoped branch |
+| `gb commit` | Stage and commit (multi-service loop) |
+| `gb diff` | Show diff for a service or all |
+| `gb push` | Push current branch to origin |
+| `gb run` | Run a package.json script in a service |
 
-All commands display execution time on completion.
-
-### `gb branch`
-
-Create a branch scoped to a service, or a custom freeform branch.
-
-```bash
-gb branch                                      # prompted to select service (or custom) and enter name
-gb branch frontend "add auth"                  # creates frontend(add-auth)
-gb branch frontend "add auth" --type=feat      # creates feat(frontend)/add-auth
-gb branch --custom "best branch of them all"   # creates best-branch-of-them-all
-```
-
-**Options:**
-
-- `--type=<type>` - optional type prefix (e.g. `feat`, `fix`). Produces `type(service)/name` format.
-- `--custom` - skip service and type selection, create a branch with a freeform name.
-
-When no service is provided, an interactive arrow-key selector is shown with `custom` as the first option.
-
-If you're on a non-protected branch, a warning is shown asking you to confirm before creating a new branch.
-
-### `gb commit`
-
-Interactive commit flow scoped to a single service.
-
-```bash
-gb commit                   # prompted to select a service
-gb commit frontend          # skip service selection
-gb commit frontend --topic "add auth" --type=feat
-gb commit backend --topic "fix query" -m "handle null joins" --type=fix
-```
-
-**Options:**
-
-- `--topic "..."` - commit subject (required, prompted if omitted, max 10 words)
-- `-m "..."` - optional extended commit body
-- `--type=<type>` - commit type prefix (default: `feat`). One of: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`
-
-When no service is provided, an interactive arrow-key selector is shown. When `--topic` is omitted, you're prompted with a live word counter (limit: 10 words).
-
-If you're on a protected branch (`main`/`master`/`staging`), a new branch is auto-created (e.g. `feat(frontend)/add-auth`) before committing.
-
-### `gb push`
-
-Push the current branch to origin.
-
-```bash
-gb push            # push (auto sets upstream on first push)
-gb push --force    # force push with --force-with-lease
-```
-
-**Services:** `frontend`, `backend`, `docs`, `.github`, `command`, `root`
+**Full documentation:** [`docs/cli/`](docs/cli/overview.md) — architecture, interactive prompts, and detailed command reference.
 
 ## Scripts
 
