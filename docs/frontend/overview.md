@@ -19,6 +19,7 @@ The frontend is a **Next.js 16** application using the **App Router**. It provid
 | @react-pdf/renderer | React-based PDF generation (student report cards, exam broadsheets) |
 | xlsx (SheetJS 0.20.3) | Client-side Excel/CSV generation (installed from CDN tarball, not npm) |
 | web-haptics | Global haptic feedback on all buttons/interactive elements (mobile) |
+| react-easy-crop | Client-side image cropping with zoom/rotation (avatar upload) |
 | @dnd-kit | Drag-and-drop for sortable lists |
 | input-otp | OTP input component |
 
@@ -70,7 +71,8 @@ frontend/
 │   │   └── auth-page-shell.tsx    # Centered layout for auth pages
 │   ├── dashboard/
 │   │   ├── dashboard-page-header.tsx  # Page title + description
-│   │   └── back-title-toolbar.tsx     # Back button + title toolbar
+│   │   ├── back-title-toolbar.tsx     # Back button + title toolbar
+│   │   └── avatar-crop-dialog.tsx     # Profile picture crop/resize dialog
 │   ├── marketing/
 │   │   └── policy-page.tsx        # Reusable policy/legal page component
 │   └── ui/                        # shadcn/base-ui primitives
@@ -91,7 +93,7 @@ frontend/
 │       ├── sonner.tsx
 │       └── tooltip.tsx
 ├── lib/
-│   ├── api.ts                     # API client with auth and token refresh
+│   ├── api.ts                     # API client with auth, token refresh, and multipart upload
 │   ├── auth.ts                    # Token storage (localStorage + cookie)
 │   ├── utils.ts                   # cn() utility for class merging
 │   ├── use-profile.ts            # Profile fetching hook

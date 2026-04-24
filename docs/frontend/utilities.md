@@ -7,7 +7,8 @@ The core API client used by all pages to communicate with the backend.
 ### Configuration
 
 - **Base URL**: `NEXT_PUBLIC_API_URL` environment variable, or `http://localhost:3001` + `/api`
-- **Content-Type**: `application/json` for all requests
+- **URL Validation**: The base URL is validated against an allowlist (`ALLOWED_ORIGINS`) at module load via `resolveBaseUrl()`. All paths are validated to start with `/` via `buildUrl()`. This prevents SSRF vulnerabilities (flagged by CodeQL).
+- **Content-Type**: `application/json` for all requests (except `apiUpload` which uses `multipart/form-data`)
 - **API Version**: `X-API-Version: 1` header sent with every request
 
 ### `api<T>(path, options?)` Function
@@ -36,6 +37,22 @@ If the API returns a `401 Unauthorized`:
 5. If refresh also fails → clears tokens, redirects to `/login`
 
 This uses a **single-flight pattern** - if multiple requests get 401 simultaneously, only one refresh call is made and all waiters share the result.
+
+### `apiUpload<T>(path, formData)` Function
+
+Uploads files via `multipart/form-data`. Used for avatar uploads and any other file upload that sends a `FormData` body instead of JSON.
+
+**Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `path` | string | API path (e.g., `/auth/avatar`) |
+| `formData` | FormData | The form data containing the file |
+
+Has the same authentication and automatic token refresh behavior as `api()`. Returns the parsed JSON response.
+
+### `buildUrl(path)` Function
+
+Constructs a validated full URL from a relative API path. Ensures `path` starts with `/` and the base URL origin is in the allowlist. Exported for use by other modules (e.g., `lib/reports/api.ts`).
 
 ### `ApiError` Class
 
@@ -125,6 +142,7 @@ Values are accessed via `.value` (e.g. `profile.value?.email`).
   first_name: string | null;
   last_name: string | null;
   role: string | null;
+  avatar_url: string | null;
   school: {
     id: string;
     name: string;
