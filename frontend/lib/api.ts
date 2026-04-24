@@ -1,6 +1,27 @@
 import { getTokens, setTokens, clearTokens } from "./auth";
 
-const BASE_URL = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001")}/api`;
+const ALLOWED_ORIGINS = [
+  "http://localhost:3001",
+  process.env.NEXT_PUBLIC_API_URL,
+].filter(Boolean) as string[];
+
+function resolveBaseUrl(): string {
+  const origin = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  const parsed = new URL(origin);
+  if (!ALLOWED_ORIGINS.includes(parsed.origin)) {
+    throw new Error(`Untrusted API origin: ${parsed.origin}`);
+  }
+  return `${parsed.origin}/api`;
+}
+
+const BASE_URL = resolveBaseUrl();
+
+export function buildUrl(path: string): string {
+  if (!path.startsWith("/")) {
+    throw new Error(`API path must start with "/": ${path}`);
+  }
+  return `${BASE_URL}${path}`;
+}
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
@@ -14,7 +35,7 @@ async function attemptRefresh(): Promise<boolean> {
   if (!refresh) return false;
 
   try {
-    const res = await fetch(`${BASE_URL}/auth/refresh`, {
+    const res = await fetch(buildUrl("/auth/refresh"), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Version": "1" },
       body: JSON.stringify({ refresh_token: refresh }),
@@ -47,7 +68,9 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
     headers["Authorization"] = `Bearer ${access}`;
   }
 
-  let res = await fetch(`${BASE_URL}${path}`, {
+  const url = buildUrl(path);
+
+  let res = await fetch(url, {
     ...rest,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -67,7 +90,7 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
     if (refreshed) {
       const { access: newAccess } = getTokens();
       headers["Authorization"] = `Bearer ${newAccess}`;
-      res = await fetch(`${BASE_URL}${path}`, {
+      res = await fetch(url, {
         ...rest,
         headers,
         body: body ? JSON.stringify(body) : undefined,
@@ -107,7 +130,9 @@ export async function apiUpload<T = unknown>(path: string, formData: FormData): 
     headers["Authorization"] = `Bearer ${access}`;
   }
 
-  let res = await fetch(`${BASE_URL}${path}`, {
+  const url = buildUrl(path);
+
+  let res = await fetch(url, {
     method: "POST",
     headers,
     body: formData,
@@ -127,7 +152,7 @@ export async function apiUpload<T = unknown>(path: string, formData: FormData): 
     if (refreshed) {
       const { access: newAccess } = getTokens();
       headers["Authorization"] = `Bearer ${newAccess}`;
-      res = await fetch(`${BASE_URL}${path}`, {
+      res = await fetch(url, {
         method: "POST",
         headers,
         body: formData,
