@@ -11,7 +11,12 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiConsumes, ApiProduces, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
@@ -109,9 +114,8 @@ export class AuthController {
   @Get('avatar')
   @ApiProduces('image/*')
   async getAvatar(@Req() req: any, @Res() res: FastifyReply) {
-    const { blob, contentType } = await this.imagesService.getImageFromUserProfile(
-      req.user.id,
-    );
+    const { blob, contentType } =
+      await this.imagesService.getImageFromUserProfile(req.user.id);
 
     const buffer = Buffer.from(await blob.arrayBuffer());
 

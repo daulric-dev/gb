@@ -75,7 +75,7 @@ export default function GradingPage() {
   useSignals();
   const params = useParams();
   const router = useRouter();
-  const classId = params.classId as string;
+  const classId = params?.classId as string;
 
   const classInfo = useSignal<ClassInfo | null>(null);
   const terms = useSignal<Term[]>([]);

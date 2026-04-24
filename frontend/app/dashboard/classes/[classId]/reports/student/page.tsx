@@ -52,10 +52,10 @@ export default function StudentReportPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const classId = params.classId as string;
-  const studentId = searchParams.get("studentId") ?? "";
-  const termId = searchParams.get("termId") ?? "";
-  const reportType = (searchParams.get("reportType") ?? "term") as ReportType;
+  const classId = params?.classId as string;
+  const studentId = searchParams?.get("studentId") ?? "";
+  const termId = searchParams?.get("termId") ?? "";
+  const reportType = (searchParams?.get("reportType") ?? "term") as ReportType;
 
   const classInfo = useSignal<ClassInfo | null>(null);
   const gradingModel = useSignal<"term_based" | "year_based">("term_based");

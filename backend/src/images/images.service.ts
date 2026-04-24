@@ -1,19 +1,25 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { SupabaseService } from "../supabase/supabase.service";
-import { CacheService } from "../cache/cache.service";
-import { MultipartFile } from "@fastify/multipart";
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { SupabaseService } from '../supabase/supabase.service';
+import { CacheService } from '../cache/cache.service';
+import { MultipartFile } from '@fastify/multipart';
 
 @Injectable()
 export class ImagesService {
   private readonly logger = new Logger(ImagesService.name);
 
   private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024;
-  private static readonly ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  private static readonly ALLOWED_TYPES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ];
   private static readonly BUCKET = 'images';
   private static readonly TUS_CHUNK_SIZE = 6 * 1024 * 1024; // Supabase requires 6MB chunks
   private static readonly CACHE_TTL = 3600; // 1 hour
-  private static cacheKey(userId: string) { return `avatar:${userId}`; }
+  private static cacheKey(userId: string) {
+    return `avatar:${userId}`;
+  }
 
   constructor(
     private readonly supabaseService: SupabaseService,
@@ -21,7 +27,9 @@ export class ImagesService {
     private readonly configService: ConfigService,
   ) {}
 
-  async getImageFromUserProfile(userId: string): Promise<{ blob: Blob; contentType: string }> {
+  async getImageFromUserProfile(
+    userId: string,
+  ): Promise<{ blob: Blob; contentType: string }> {
     const key = ImagesService.cacheKey(userId);
 
     let avatarUrl: string = (await this.cacheService.get(key)) as string;
@@ -35,7 +43,9 @@ export class ImagesService {
         .single();
 
       if (profileError || !profile?.avatar_url) {
-        this.logger.error(`Failed to get avatar URL: ${profileError?.message ?? 'No avatar set'}`);
+        this.logger.error(
+          `Failed to get avatar URL: ${profileError?.message ?? 'No avatar set'}`,
+        );
         throw new BadRequestException('No avatar found for this user');
       }
 
@@ -71,7 +81,11 @@ export class ImagesService {
 
   // ── Standard upload (small files, backend-mediated) ─────────────────
 
-  async setImageToUserProfile(userId: string, file: MultipartFile, pathname?: string) {
+  async setImageToUserProfile(
+    userId: string,
+    file: MultipartFile,
+    pathname?: string,
+  ) {
     const buffer = await file.toBuffer();
 
     if (buffer.byteLength > ImagesService.MAX_FILE_SIZE) {
@@ -92,12 +106,18 @@ export class ImagesService {
     const supabase = this.supabaseService.getServiceClient();
     const storageBucket = supabase.storage.from(ImagesService.BUCKET);
 
-    this.logger.log(`Uploading to bucket "${ImagesService.BUCKET}" at path "${path}" (${buffer.byteLength} bytes, ${file.mimetype})`);
+    this.logger.log(
+      `Uploading to bucket "${ImagesService.BUCKET}" at path "${path}" (${buffer.byteLength} bytes, ${file.mimetype})`,
+    );
 
-    const { data: uploadData, error: uploadError } = await storageBucket.upload(path, buffer, {
-      contentType: file.mimetype,
-      upsert: true,
-    });
+    const { data: uploadData, error: uploadError } = await storageBucket.upload(
+      path,
+      buffer,
+      {
+        contentType: file.mimetype,
+        upsert: true,
+      },
+    );
 
     if (uploadError) {
       this.logger.error(`Failed to upload avatar: ${uploadError.message}`);
@@ -106,7 +126,9 @@ export class ImagesService {
 
     this.logger.log(`Upload successful: ${JSON.stringify(uploadData)}`);
 
-    const { data: { publicUrl } } = storageBucket.getPublicUrl(path);
+    const {
+      data: { publicUrl },
+    } = storageBucket.getPublicUrl(path);
     const avatarUrl = this.cacheBust(publicUrl);
     this.logger.log(`Public URL: ${avatarUrl}`);
 
@@ -156,7 +178,9 @@ export class ImagesService {
     });
 
     if (error || !data) {
-      this.logger.error(`Failed to create signed upload URL: ${error?.message}`);
+      this.logger.error(
+        `Failed to create signed upload URL: ${error?.message}`,
+      );
       throw new BadRequestException('Failed to create upload session');
     }
 
@@ -198,7 +222,9 @@ export class ImagesService {
       );
     }
 
-    const { data: { publicUrl } } = storageBucket.getPublicUrl(path);
+    const {
+      data: { publicUrl },
+    } = storageBucket.getPublicUrl(path);
     const avatarUrl = this.cacheBust(publicUrl);
 
     await this.updateProfileAvatar(userId, avatarUrl);
