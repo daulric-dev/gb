@@ -1,6 +1,6 @@
 import { getTokens, setTokens, clearTokens } from "./auth";
 
-const BASE_URL = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001")}/api/v1`;
+const BASE_URL = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001")}/api`;
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
