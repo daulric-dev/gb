@@ -1,5 +1,6 @@
 import { Module, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { VersioningGuard } from '@/versioning/versioning.guard';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from '@/app.controller';
@@ -17,6 +18,8 @@ import { GradingModule } from '@/grading/grading.module';
 import { CalculationModule } from '@/calculation/calculation.module';
 import { ReportingModule } from '@/reporting/reporting.module';
 import { CacheModule } from '@/cache/cache.module';
+import { PaginationModule } from '@/pagination/pagination.module';
+import { VersioningModule } from '@/versioning/versioning.module';
 
 @Module({
   imports: [
@@ -40,6 +43,8 @@ import { CacheModule } from '@/cache/cache.module';
     SupabaseModule,
     AuthModule,
     CacheModule,
+    PaginationModule,
+    VersioningModule,
     ClassModule,
 
     AcademicYearModule,
@@ -58,6 +63,10 @@ import { CacheModule } from '@/cache/cache.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: VersioningGuard,
     },
   ],
 })

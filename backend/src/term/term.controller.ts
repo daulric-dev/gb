@@ -12,39 +12,47 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { VersioningService } from '@/versioning/versioning.service';
 import { TermService } from './term.service';
 import { CreateTermDto } from './dto/create-term.dto';
 import { UpdateTermDto } from './dto/update-term.dto';
-
 @ApiTags('Terms')
 @ApiBearerAuth()
 @Controller('terms')
 @UseGuards(AuthGuard)
 export class TermController {
-  constructor(private readonly termService: TermService) {}
+  constructor(
+    private readonly termService: TermService,
+    private readonly versioning: VersioningService,
+  ) {}
 
   @Get()
-  findByYear(@Query('yearId') yearId: string) {
-    return this.termService.findByYear(yearId);
+  async findByYear(@Req() req: any, @Query('yearId') yearId: string) {
+    const raw = await this.termService.findByYear(yearId);
+    return this.versioning.resolve(req, 'term.list')(raw);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.termService.findOne(id);
+  async findOne(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.termService.findOne(id);
+    return this.versioning.resolve(req, 'term.detail')(raw);
   }
 
   @Post()
-  create(@Req() req, @Body() dto: CreateTermDto) {
-    return this.termService.create(req.user.id, dto);
+  async create(@Req() req: any, @Body() dto: CreateTermDto) {
+    const raw = await this.termService.create(req.user.id, dto);
+    return this.versioning.resolve(req, 'term.created')(raw);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateTermDto) {
-    return this.termService.update(id, dto);
+  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateTermDto) {
+    const raw = await this.termService.update(id, dto);
+    return this.versioning.resolve(req, 'term.updated')(raw);
   }
 
   @Delete(':id')
-  delete(@Param('id') id: string) {
-    return this.termService.delete(id);
+  async delete(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.termService.delete(id);
+    return this.versioning.resolve(req, 'term.deleted')(raw);
   }
 }

@@ -17,18 +17,21 @@ import type { MultipartFile } from '@fastify/multipart';
 import { AuthGuard } from '@/auth/auth.guard';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
 import { ReportGuard } from './report.guard';
+import { VersioningService } from '@/versioning/versioning.service';
 import { ReportService } from './report.service';
 import { GenerateReportDto } from './dto/generate-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { UpdateReportEntryDto } from './dto/update-report-entry.dto';
 import { SavePdfDto } from './dto/save-pdf.dto';
-
 @ApiTags('Reports')
 @ApiBearerAuth()
 @Controller('reports')
 @UseGuards(AuthGuard)
 export class ReportController {
-  constructor(private readonly reportService: ReportService) {}
+  constructor(
+    private readonly reportService: ReportService,
+    private readonly versioning: VersioningService,
+  ) {}
 
   private getToken(req: { headers?: { authorization?: string } }): string {
     return req.headers?.authorization?.replace(/^Bearer\s+/i, '') ?? '';
@@ -36,53 +39,53 @@ export class ReportController {
 
   @Post('generate')
   @UseGuards(ClassTeacherGuard)
-  generate(
-    @Req() req: { user: { id: string } },
+  async generate(
+    @Req() req: any,
     @Body() dto: GenerateReportDto,
   ) {
-    return this.reportService.generateTermReports(req.user.id, dto);
+    const raw = await this.reportService.generateTermReports(req.user.id, dto);
+    return this.versioning.resolve(req, 'report.generated')(raw);
   }
 
   @Get()
   @UseGuards(ClassTeacherGuard)
-  findByClassAndTerm(
+  async findByClassAndTerm(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string | undefined,
-    @Req() req: { headers?: { authorization?: string } },
+    @Req() req: any,
   ) {
-    return this.reportService.findByClassAndTerm(
+    const raw = await this.reportService.findByClassAndTerm(
       studentGroupId,
       termId,
       this.getToken(req),
       reportType,
     );
+    return this.versioning.resolve(req, 'report.list')(raw);
   }
 
   @Get('class-summary')
   @UseGuards(ClassTeacherGuard)
-  getClassSummary(
+  async getClassSummary(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
-    @Req() req: { headers?: { authorization?: string } },
+    @Req() req: any,
   ) {
-    return this.reportService.getClassSummary(
+    const raw = await this.reportService.getClassSummary(
       studentGroupId,
       termId,
       reportType,
       this.getToken(req),
     );
+    return this.versioning.resolve(req, 'report.classSummary')(raw);
   }
 
   @Post('class-summary/upload')
   @UseGuards(ClassTeacherGuard)
   async uploadClassSummaryFile(
     @Req()
-    req: {
-      user: { id: string };
-      file: () => Promise<MultipartFile | undefined>;
-    },
+    req: any,
   ) {
     const file = await req.file();
     if (!file) {
@@ -109,7 +112,7 @@ export class ReportController {
       );
     }
 
-    return this.reportService.uploadClassSummaryFile(
+    const raw = await this.reportService.uploadClassSummaryFile(
       studentGroupId,
       termId,
       reportType,
@@ -117,6 +120,7 @@ export class ReportController {
       req.user.id,
       buffer,
     );
+    return this.versioning.resolve(req, 'report.classSummaryUploaded')(raw);
   }
 
   @Get('class-summary/download')
@@ -144,106 +148,103 @@ export class ReportController {
 
   @Get('class-summary/files')
   @UseGuards(ClassTeacherGuard)
-  getClassSummaryFiles(
+  async getClassSummaryFiles(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
-    @Req() req: { headers?: { authorization?: string } },
+    @Req() req: any,
   ) {
-    return this.reportService.getClassSummaryFiles(
+    const raw = await this.reportService.getClassSummaryFiles(
       studentGroupId,
       termId,
       reportType,
       this.getToken(req),
     );
+    return this.versioning.resolve(req, 'report.classSummaryFiles')(raw);
   }
 
   @Get('student')
   @UseGuards(ClassTeacherGuard)
-  findStudentReport(
+  async findStudentReport(
     @Query('studentId') studentId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
-    @Req() req: { headers?: { authorization?: string } },
+    @Req() req: any,
   ) {
-    return this.reportService.findStudentReport(
+    const raw = await this.reportService.findStudentReport(
       studentId,
       termId,
       reportType,
       this.getToken(req),
     );
+    return this.versioning.resolve(req, 'report.studentReport')(raw);
   }
 
   @Get(':id/pdfs')
   @UseGuards(ClassTeacherGuard)
-  getPdfHistory(
-    @Param('id') id: string,
-    @Req() req: { headers?: { authorization?: string } },
-  ) {
-    return this.reportService.getPdfHistory(id, this.getToken(req));
+  async getPdfHistory(@Param('id') id: string, @Req() req: any) {
+    const raw = await this.reportService.getPdfHistory(id, this.getToken(req));
+    return this.versioning.resolve(req, 'report.pdfHistory')(raw);
   }
 
   @Get(':id/pdf/latest')
   @UseGuards(ClassTeacherGuard)
-  getLatestPdf(
-    @Param('id') id: string,
-    @Req() req: { headers?: { authorization?: string } },
-  ) {
-    return this.reportService.getLatestPdf(id, this.getToken(req));
+  async getLatestPdf(@Param('id') id: string, @Req() req: any) {
+    const raw = await this.reportService.getLatestPdf(id, this.getToken(req));
+    return this.versioning.resolve(req, 'report.pdfLatest')(raw);
   }
 
   @Get(':id')
   @UseGuards(ClassTeacherGuard)
-  findOne(
-    @Param('id') id: string,
-    @Req() req: { headers?: { authorization?: string } },
-  ) {
-    return this.reportService.findOne(id, this.getToken(req));
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    const raw = await this.reportService.findOne(id, this.getToken(req));
+    return this.versioning.resolve(req, 'report.detail')(raw);
   }
 
   @Patch(':id')
   @UseGuards(ClassTeacherGuard, ReportGuard)
-  updateReport(@Param('id') id: string, @Body() dto: UpdateReportDto) {
-    return this.reportService.updateReport(id, dto);
+  async updateReport(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateReportDto) {
+    const raw = await this.reportService.updateReport(id, dto);
+    return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Patch(':id/regenerate')
   @UseGuards(ClassTeacherGuard, ReportGuard)
-  regenerate(@Param('id') id: string) {
-    return this.reportService.regenerateReport(id);
+  async regenerate(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.reportService.regenerateReport(id);
+    return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Patch(':id/publish')
   @UseGuards(ClassTeacherGuard, ReportGuard)
-  publish(@Param('id') id: string) {
-    return this.reportService.publish(id);
+  async publish(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.reportService.publish(id);
+    return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Patch(':id/send-to-ministry')
   @UseGuards(ClassTeacherGuard)
-  sendToMinistry(@Param('id') id: string) {
-    return this.reportService.sendToMinistry(id);
+  async sendToMinistry(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.reportService.sendToMinistry(id);
+    return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Post(':id/pdf')
   @UseGuards(ClassTeacherGuard, ReportGuard)
-  savePdf(
+  async savePdf(
     @Param('id') id: string,
-    @Req() req: { user: { id: string } },
+    @Req() req: any,
     @Body() dto: SavePdfDto,
   ) {
-    return this.reportService.savePdf(id, req.user.id, dto);
+    const raw = await this.reportService.savePdf(id, req.user.id, dto);
+    return this.versioning.resolve(req, 'report.pdfSaved')(raw);
   }
 
   @Post(':id/pdf/upload')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async uploadPdf(
     @Param('id') id: string,
-    @Req()
-    req: {
-      user: { id: string };
-      file: () => Promise<MultipartFile | undefined>;
-    },
+    @Req() req: any,
   ) {
     const file = await req.file();
     if (!file) {
@@ -259,7 +260,8 @@ export class ReportController {
       (file.fields?.objectPath as { value?: string } | undefined)?.value ??
       `${id}.pdf`;
 
-    return this.reportService.uploadPdf(id, req.user.id, buffer, objectPath);
+    const raw = await this.reportService.uploadPdf(id, req.user.id, buffer, objectPath);
+    return this.versioning.resolve(req, 'report.pdfUploaded')(raw);
   }
 
   @Get(':id/pdf/:pdfId/download')
@@ -279,7 +281,10 @@ export class ReportController {
 @Controller('report-entries')
 @UseGuards(AuthGuard)
 export class ReportEntriesController {
-  constructor(private readonly reportService: ReportService) {}
+  constructor(
+    private readonly reportService: ReportService,
+    private readonly versioning: VersioningService,
+  ) {}
 
   private getToken(req: { headers?: { authorization?: string } }): string {
     return req.headers?.authorization?.replace(/^Bearer\s+/i, '') ?? '';
@@ -287,15 +292,16 @@ export class ReportEntriesController {
 
   @Patch(':entryId')
   @UseGuards(ReportGuard)
-  updateEntry(
+  async updateEntry(
+    @Req() req: any,
     @Param('entryId') entryId: string,
     @Body() dto: UpdateReportEntryDto,
-    @Req() req: { headers?: { authorization?: string } },
   ) {
-    return this.reportService.updateReportEntry(
+    const raw = await this.reportService.updateReportEntry(
       entryId,
       dto,
       this.getToken(req),
     );
+    return this.versioning.resolve(req, 'reportEntry.updated')(raw);
   }
 }

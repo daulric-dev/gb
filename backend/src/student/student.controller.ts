@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+
   Param,
   Patch,
   Post,
@@ -11,34 +12,60 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { PaginationQueryDto } from '@/pagination/pagination.dto';
+import { VersioningService } from '@/versioning/versioning.service';
 import { StudentService } from './student.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+
 
 @ApiTags('Students')
 @ApiBearerAuth()
 @Controller('students')
 @UseGuards(AuthGuard)
 export class StudentController {
-  constructor(private readonly studentService: StudentService) {}
+  constructor(
+    private readonly studentService: StudentService,
+    private readonly versioning: VersioningService,
+  ) {}
 
   @Get()
-  findAll(@Req() req, @Query('search') search?: string) {
-    return this.studentService.findAll(req.user.id, search);
+  async findAll(
+    @Req() req: any,
+    @Query('search') search?: string,
+    @Query() pagination?: PaginationQueryDto,
+  ) {
+    const hasPaginationParams =
+      pagination?.page !== undefined || pagination?.cursor !== undefined;
+
+    if (!hasPaginationParams) {
+      const raw = await this.studentService.findAll(req.user.id, search);
+      return this.versioning.resolve(req, 'student.list')(raw);
+    }
+
+    const raw = await this.studentService.findAllPaginated(
+      req.user.id,
+      pagination,
+      search,
+    );
+    return this.versioning.resolve(req, 'student.paginated')(raw);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.studentService.findOne(id);
+  async findOne(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.studentService.findOne(id);
+    return this.versioning.resolve(req, 'student.detail')(raw);
   }
 
   @Post()
-  create(@Req() req, @Body() dto: CreateStudentDto) {
-    return this.studentService.create(req.user.id, dto);
+  async create(@Req() req: any, @Body() dto: CreateStudentDto) {
+    const raw = await this.studentService.create(req.user.id, dto);
+    return this.versioning.resolve(req, 'student.created')(raw);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateStudentDto) {
-    return this.studentService.update(id, dto);
+  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateStudentDto) {
+    const raw = await this.studentService.update(id, dto);
+    return this.versioning.resolve(req, 'student.updated')(raw);
   }
 }

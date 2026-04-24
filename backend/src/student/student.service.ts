@@ -7,6 +7,11 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
+import { PaginationService } from '@/pagination/pagination.service';
+import {
+  PaginationQueryDto,
+  PaginatedResult,
+} from '@/pagination/pagination.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 
@@ -19,6 +24,7 @@ export class StudentService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly paginationService: PaginationService,
   ) {}
 
   async create(userId: string, dto: CreateStudentDto) {
@@ -133,6 +139,45 @@ export class StudentService {
       await this.cache.set(cacheKey, result, STUDENT_TTL);
     }
     return result;
+  }
+
+  async findAllPaginated(
+    userId: string,
+    pagination: PaginationQueryDto,
+    search?: string,
+  ): Promise<PaginatedResult<any>> {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: profile, error: profileError } = await supabase
+      .from('user_profile')
+      .select('school_id')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile?.school_id) {
+      this.logger.error(
+        `Failed to get school for user ${userId}: ${profileError?.message}`,
+      );
+      throw new BadRequestException('Could not determine your school');
+    }
+
+    let query = supabase
+      .schema('student')
+      .from('student')
+      .select('*', { count: 'exact' })
+      .eq('school_id', profile.school_id);
+
+    if (search) {
+      query = query.or(
+        `first_name.ilike.%${search}%,last_name.ilike.%${search}%`,
+      );
+    }
+
+    query = query
+      .order('last_name', { ascending: true })
+      .order('first_name', { ascending: true });
+
+    return this.paginationService.paginate(query, pagination);
   }
 
   async findOne(studentId: string) {
