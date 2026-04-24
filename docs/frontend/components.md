@@ -53,6 +53,8 @@ A sidebar navigation component with:
 
 Includes an embedded `ChangeSchoolDialog` component that opens a modal with a searchable list of schools. The dialog trigger uses Base UI's `DialogTrigger` with a `<span>` child (not a `<button>`) to avoid nested button hydration errors.
 
+The sidebar avatar shows the user's actual profile picture (via `AvatarImage`) when `avatar_url` is available, with initials as the fallback.
+
 #### HapticsProvider (`layout/haptics-provider.tsx`)
 
 A global haptic feedback component mounted in the root layout. Attaches a single document-level click listener that triggers a `"nudge"` vibration via `web-haptics` whenever the user taps:
@@ -82,6 +84,30 @@ A reusable page title component with:
 #### BackTitleToolbar (`dashboard/back-title-toolbar.tsx`)
 
 A toolbar with a back button, title, description, and optional action buttons. Used on the class detail and grading pages.
+
+#### AvatarCropDialog (`dashboard/avatar-crop-dialog.tsx`)
+
+A modal dialog for cropping and resizing profile pictures before upload. Built on `react-easy-crop`.
+
+**Features:**
+- Circular crop area (1:1 aspect ratio) matching the avatar shape
+- Zoom slider (1x–3x) with zoom in/out icons
+- Rotation slider (0°–360°) with degree indicator
+- Crops to a max 512x512 JPEG at 90% quality for optimal file size
+- Upload/Cancel buttons with loading state while uploading
+- Dialog is locked while upload is in progress to prevent accidental dismissal
+- Resets crop/zoom/rotation state when the dialog is closed
+
+**Props:**
+| Prop | Type | Description |
+|------|------|-------------|
+| `imageSrc` | `string \| null` | Base64 data URL of the selected image |
+| `open` | `boolean` | Whether the dialog is visible |
+| `onOpenChange` | `(open: boolean) => void` | Callback when dialog open state changes |
+| `onConfirm` | `(blob: Blob) => void` | Called with the cropped JPEG blob when the user confirms |
+| `uploading` | `boolean` | Shows loading spinner on the Upload button |
+
+**Used in:** Settings page (`app/dashboard/settings/page.tsx`) for profile picture uploads.
 
 ### Marketing (`components/marketing/`)
 

@@ -49,79 +49,118 @@ export async function commitCmd(
   positionals: string[],
   flags: Record<string, string>,
 ) {
-  let service = positionals[0];
-  let topic = flags["topic"];
-  let message = flags["m"];
-  const type = (flags["type"] ?? "feat") as CommitType;
+  const allServices = [...Object.values(SERVICES), "root"];
+  let isFirst = true;
+  let branchCreated = false;
 
-  if (!service) {
-    const allServices = [...Object.values(SERVICES), "root"];
-    service = await select("Select a service:", allServices);
-  }
+  while (true) {
+    let service = isFirst ? positionals[0] : undefined;
+    let topic = isFirst ? flags["topic"] : undefined;
+    let message = isFirst ? flags["m"] : undefined;
+    const type = (isFirst ? flags["type"] ?? "feat" : "feat") as CommitType;
 
-  if (!topic) {
-    topic = await promptWithWordLimit("Topic (required):", 10);
+    const statusCheck = await git("status", "--porcelain");
+    if (!statusCheck.trim()) {
+      console.log("\x1b[32mNo more changes to commit.\x1b[0m");
+      break;
+    }
+
+    if (!isFirst) {
+      console.log();
+      const remaining = parseStatusOutput(statusCheck);
+      const groups = groupByService(remaining);
+      const availableServices = Object.keys(groups).sort();
+
+      if (availableServices.length === 0) {
+        console.log("\x1b[32mNo more changes to commit.\x1b[0m");
+        break;
+      }
+
+      console.log(`\x1b[1mRemaining changes:\x1b[0m`);
+      for (const svc of availableServices) {
+        console.log(`  \x1b[36m${svc}\x1b[0m (${groups[svc].length} file${groups[svc].length !== 1 ? "s" : ""})`);
+      }
+      console.log();
+
+      const continueOptions = ["yes", "no"];
+      const shouldContinue = await select("Commit another service?", continueOptions);
+      if (shouldContinue === "no") break;
+    }
+
+    if (!service) {
+      service = await select("Select a service:", allServices);
+    }
+
     if (!topic) {
-      console.error("Topic is required.");
+      topic = await promptWithWordLimit("Topic (required):", 10);
+      if (!topic) {
+        console.error("Topic is required.");
+        process.exit(1);
+      }
+    }
+
+    if (message === undefined) {
+      message = await prompt("Message (optional):");
+    }
+
+    if (!COMMIT_TYPES.includes(type)) {
+      console.error(
+        `Invalid type "${type}". Must be one of: ${COMMIT_TYPES.join(", ")}`,
+      );
       process.exit(1);
     }
-  }
 
-  if (message === undefined) {
-    message = await prompt("Message (optional):");
-  }
-  if (!COMMIT_TYPES.includes(type)) {
-    console.error(
-      `Invalid type "${type}". Must be one of: ${COMMIT_TYPES.join(", ")}`,
-    );
-    process.exit(1);
-  }
-
-  const allServices = [...Object.values(SERVICES), "root"];
-  if (!allServices.includes(service)) {
-    console.error(
-      `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
-    );
-    process.exit(1);
-  }
-
-  const branch = await getCurrentBranch();
-  if (PROTECTED_BRANCHES.includes(branch)) {
-    const slug = slugify(topic);
-    const newBranch = `${type}(${service})/${slug}`;
-    console.log(`On ${branch}, creating branch: \x1b[36m${newBranch}\x1b[0m`);
-    await git("checkout", "-b", newBranch);
-  }
-
-  const serviceDir = service === "root" ? "." : service;
-  const statusOutput = await git("status", "--porcelain");
-  const files = parseStatusOutput(statusOutput);
-  const serviceFiles = files.filter((f) => {
-    if (service === "root") {
-      return !Object.keys(SERVICES).some((prefix) =>
-        f.path.startsWith(`${prefix}/`),
+    if (!allServices.includes(service)) {
+      console.error(
+        `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
       );
+      process.exit(1);
     }
-    return f.path.startsWith(`${serviceDir}/`);
-  });
 
-  if (serviceFiles.length === 0) {
-    console.error(`No changed files in ${service}.`);
-    process.exit(1);
+    if (!branchCreated) {
+      const branch = await getCurrentBranch();
+      if (PROTECTED_BRANCHES.includes(branch)) {
+        const slug = slugify(topic);
+        const newBranch = `${type}(${service})/${slug}`;
+        console.log(`On ${branch}, creating branch: \x1b[36m${newBranch}\x1b[0m`);
+        await git("checkout", "-b", newBranch);
+        branchCreated = true;
+      }
+    }
+
+    const serviceDir = service === "root" ? "." : service;
+    const statusOutput = await git("status", "--porcelain");
+    const files = parseStatusOutput(statusOutput);
+    const serviceFiles = files.filter((f) => {
+      if (service === "root") {
+        return !Object.keys(SERVICES).some((prefix) =>
+          f.path.startsWith(`${prefix}/`),
+        );
+      }
+      return f.path.startsWith(`${serviceDir}/`);
+    });
+
+    if (serviceFiles.length === 0) {
+      console.log(`\x1b[33mNo changed files in ${service}.\x1b[0m`);
+      isFirst = false;
+      continue;
+    }
+
+    for (const f of serviceFiles) {
+      await git("add", f.path);
+    }
+
+    const subject =
+      service === "root" ? `${type}: ${topic}` : `${type}(${service}): ${topic}`;
+    const commitMsg = message?.trim() ? `${subject}\n\n${message.trim()}` : subject;
+
+    await git("commit", "-m", commitMsg);
+    console.log(`\x1b[32mCommitted:\x1b[0m ${subject}`);
+    if (message) console.log(`  ${message}`);
+    console.log(`  ${serviceFiles.length} file${serviceFiles.length !== 1 ? "s" : ""} staged`);
+
+    isFirst = false;
   }
-
-  for (const f of serviceFiles) {
-    await git("add", f.path);
-  }
-
-  const subject =
-    service === "root" ? `${type}: ${topic}` : `${type}(${service}): ${topic}`;
-  const commitMsg = message?.trim() ? `${subject}\n\n${message.trim()}` : subject;
-
-  await git("commit", "-m", commitMsg);
-  console.log(`\x1b[32mCommitted:\x1b[0m ${subject}`);
-  if (message) console.log(`  ${message}`);
-  console.log(`  ${serviceFiles.length} file${serviceFiles.length !== 1 ? "s" : ""} staged`);
 }
 
 export async function branchCmd(

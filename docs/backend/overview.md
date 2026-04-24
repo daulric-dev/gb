@@ -46,6 +46,7 @@ backend/
 │   ├── grading/               # Assessments and grades
 │   ├── calculation/           # Grade calculations and summaries
 │   ├── reporting/             # Report generation, status workflow, file storage
+│   ├── images/                # Image upload service (avatar, resumable TUS uploads)
 │   └── cache/                 # Pluggable caching (memory or Redis)
 ```
 
@@ -100,7 +101,7 @@ AppModule
 ├── ConfigModule (global)
 ├── ThrottlerModule (global guard)
 ├── SupabaseModule (global - provides DB clients)
-├── AuthModule (exports AuthGuard)
+├── AuthModule (exports AuthGuard; imports ImagesModule for avatar endpoints)
 ├── SchoolModule
 ├── AcademicYearModule
 ├── TermModule
@@ -111,6 +112,7 @@ AppModule
 ├── GradingModule
 ├── CalculationModule
 ├── ReportingModule
+├── ImagesModule (exports ImagesService - used by AuthModule for avatar uploads)
 ├── PaginationModule (global - exports PaginationService for offset/cursor pagination)
 ├── VersioningModule (global - exports VersioningService; includes TransformerRegistry and VersioningGuard)
 └── CacheModule (global - exports CacheService with memory or Redis store)
