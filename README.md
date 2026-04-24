@@ -1,4 +1,4 @@
-# GradeBook
+# GradeBook (gb)
 
 A school management platform for educators to manage academic records, student enrollment, grading, and class administration. Built by [daulric](https://daulric.dev).
 
