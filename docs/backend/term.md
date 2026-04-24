@@ -46,7 +46,7 @@ The `exam_weight + coursework_weight` must always equal **100**. For example:
 
 All endpoints require `AuthGuard`.
 
-### `GET /api/v1/terms?yearId=<academic_year_id>`
+### `GET /api/terms?yearId=<academic_year_id>`
 
 Returns all terms for the specified academic year, ordered by `sort_order`.
 
@@ -57,13 +57,13 @@ Returns all terms for the specified academic year, ordered by `sort_order`.
 
 ---
 
-### `GET /api/v1/terms/:id`
+### `GET /api/terms/:id`
 
 Returns a single term by ID.
 
 ---
 
-### `POST /api/v1/terms`
+### `POST /api/terms`
 
 Creates a new term.
 
@@ -87,12 +87,12 @@ Creates a new term.
 
 ---
 
-### `PATCH /api/v1/terms/:id`
+### `PATCH /api/terms/:id`
 
 Updates a term. All fields are optional. Weight validation still applies.
 
 ---
 
-### `DELETE /api/v1/terms/:id`
+### `DELETE /api/terms/:id`
 
 Deletes a term. Fails with `409 Conflict` if the term has existing assessments or grades (foreign key constraint).

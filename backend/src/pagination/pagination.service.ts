@@ -23,7 +23,6 @@ export class PaginationService {
     dto: PaginationQueryDto,
     pageSize: number,
   ): Promise<PaginatedResult<T>> {
-    
     const page = dto.page ?? 1;
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;

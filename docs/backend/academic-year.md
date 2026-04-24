@@ -42,7 +42,7 @@ Term grades are aggregated into a **year-end grade** using the weights defined o
 
 All endpoints require `AuthGuard`. Data is automatically scoped to the user's school.
 
-### `POST /api/v1/academic-years`
+### `POST /api/academic-years`
 
 Creates a new academic year.
 
@@ -64,25 +64,25 @@ Creates a new academic year.
 
 ---
 
-### `GET /api/v1/academic-years`
+### `GET /api/academic-years`
 
 Returns all academic years for the user's school, ordered by creation date.
 
 ---
 
-### `GET /api/v1/academic-years/active`
+### `GET /api/academic-years/active`
 
 Returns the currently active academic year for the user's school.
 
 ---
 
-### `GET /api/v1/academic-years/:id`
+### `GET /api/academic-years/:id`
 
 Returns a single academic year by ID.
 
 ---
 
-### `PATCH /api/v1/academic-years/:id`
+### `PATCH /api/academic-years/:id`
 
 Updates an academic year. All fields are optional.
 
@@ -90,12 +90,12 @@ Updates an academic year. All fields are optional.
 
 ---
 
-### `PATCH /api/v1/academic-years/:id/activate`
+### `PATCH /api/academic-years/:id/activate`
 
 Sets this academic year as active. **Deactivates all other years** for the same school first.
 
 ---
 
-### `PATCH /api/v1/academic-years/:id/deactivate`
+### `PATCH /api/academic-years/:id/deactivate`
 
 Deactivates the academic year.

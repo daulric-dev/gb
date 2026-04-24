@@ -46,9 +46,9 @@ Same form as create, pre-filled with existing data.
 
 | Action | Endpoint |
 |--------|----------|
-| List | `GET /api/v1/academic-years` |
-| Create | `POST /api/v1/academic-years` |
-| Update | `PATCH /api/v1/academic-years/:id` |
-| Activate | `PATCH /api/v1/academic-years/:id/activate` |
-| Deactivate | `PATCH /api/v1/academic-years/:id/deactivate` |
-| Delete | `DELETE /api/v1/academic-years/:id` |
+| List | `GET /api/academic-years` |
+| Create | `POST /api/academic-years` |
+| Update | `PATCH /api/academic-years/:id` |
+| Activate | `PATCH /api/academic-years/:id/activate` |
+| Deactivate | `PATCH /api/academic-years/:id/deactivate` |
+| Delete | `DELETE /api/academic-years/:id` |

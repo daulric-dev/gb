@@ -6,7 +6,7 @@ The core API client used by all pages to communicate with the backend.
 
 ### Configuration
 
-- **Base URL**: `NEXT_PUBLIC_API_URL` environment variable, or `http://localhost:3001` + `/api/v1`
+- **Base URL**: `NEXT_PUBLIC_API_URL` environment variable, or `http://localhost:3001` + `/api`
 - **Content-Type**: `application/json` for all requests
 - **API Version**: `X-API-Version: 1` header sent with every request
 
@@ -30,7 +30,7 @@ The main export. Makes authenticated JSON requests to the backend.
 If the API returns a `401 Unauthorized`:
 
 1. Reads the refresh token from localStorage
-2. Calls `POST /api/v1/auth/refresh` with the refresh token
+2. Calls `POST /api/auth/refresh` with the refresh token
 3. Stores the new tokens via `setTokens()`
 4. **Retries the original request** with the new access token
 5. If refresh also fails → clears tokens, redirects to `/login`
@@ -133,7 +133,7 @@ Values are accessed via `.value` (e.g. `profile.value?.email`).
 ```
 
 **Behavior:**
-- Calls `GET /api/v1/auth/me` on mount
+- Calls `GET /api/auth/me` on mount
 - Used by the dashboard layout to populate the sidebar and header with user info
 
 ---

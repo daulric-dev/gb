@@ -7,7 +7,9 @@ import {
   createMockQueryBuilder,
 } from '@/test/mocks';
 
-const mockPaginationService = { paginate: async () => ({ data: [], meta: {} }) };
+const mockPaginationService = {
+  paginate: () => Promise.resolve({ data: [], meta: {} }),
+};
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 const USER_ID = 'user-1';
@@ -78,7 +80,11 @@ describe('StudentService', () => {
         _client: client,
         _builder: existingBuilder,
       };
-      service = new StudentService(mockSupabase as any, mockCache as any, mockPaginationService as any);
+      service = new StudentService(
+        mockSupabase as any,
+        mockCache as any,
+        mockPaginationService as any,
+      );
 
       expect(service.create(USER_ID, makeDto() as any)).rejects.toBeInstanceOf(
         ConflictException,
@@ -118,7 +124,11 @@ describe('StudentService', () => {
         _client: client,
         _builder: insertBuilder,
       };
-      service = new StudentService(mockSupabase as any, mockCache as any, mockPaginationService as any);
+      service = new StudentService(
+        mockSupabase as any,
+        mockCache as any,
+        mockPaginationService as any,
+      );
 
       const existing = [
         makeStudent({
@@ -143,7 +153,11 @@ describe('StudentService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: PROFILE, error: null },
       });
-      service = new StudentService(mockSupabase as any, mockCache as any, mockPaginationService as any);
+      service = new StudentService(
+        mockSupabase as any,
+        mockCache as any,
+        mockPaginationService as any,
+      );
 
       const students = [makeStudent()];
       await mockCache.set(`students:${SCHOOL_ID}`, students, STUDENT_TTL);
@@ -178,7 +192,11 @@ describe('StudentService', () => {
         _client: client,
         _builder: searchBuilder,
       };
-      service = new StudentService(mockSupabase as any, mockCache as any, mockPaginationService as any);
+      service = new StudentService(
+        mockSupabase as any,
+        mockCache as any,
+        mockPaginationService as any,
+      );
 
       await mockCache.set(
         `students:${SCHOOL_ID}`,
@@ -202,7 +220,11 @@ describe('StudentService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: updated, error: null },
       });
-      service = new StudentService(mockSupabase as any, mockCache as any, mockPaginationService as any);
+      service = new StudentService(
+        mockSupabase as any,
+        mockCache as any,
+        mockPaginationService as any,
+      );
 
       await mockCache.set(`students:${SCHOOL_ID}`, [original], STUDENT_TTL);
 
@@ -216,7 +238,11 @@ describe('StudentService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: null, error: null },
       });
-      service = new StudentService(mockSupabase as any, mockCache as any, mockPaginationService as any);
+      service = new StudentService(
+        mockSupabase as any,
+        mockCache as any,
+        mockPaginationService as any,
+      );
 
       expect(
         service.update('nonexistent', { firstName: 'Jane' } as any),

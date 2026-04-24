@@ -92,7 +92,7 @@ Shows students enrolled in the class:
 - Search bar to filter students by name
 - "Select All / Deselect All" toggle that operates on unassigned students only
 - Students already assigned to the selected subject show an "Assigned" badge with a disabled checkbox
-- Calls `POST /api/v1/classes/:id/subjects/bulk` with the selected subject and student IDs
+- Calls `POST /api/classes/:id/subjects/bulk` with the selected subject and student IDs
 
 **Enroll Students dialog** (class teacher only):
 - Lists all school students not already enrolled
@@ -131,22 +131,22 @@ Available when the academic year uses the `year_based` grading model. Shows a to
 
 | Action | Endpoint |
 |--------|----------|
-| List classes | `GET /api/v1/classes` |
-| Create class | `POST /api/v1/classes` |
-| Get teachers | `GET /api/v1/classes/:id/teachers` |
-| Add teacher | `POST /api/v1/classes/:id/teachers` |
-| Remove teacher | `DELETE /api/v1/classes/:id/teachers/:teacherId` |
-| Get enrolled students | `GET /api/v1/classes/:id/students` |
-| Enroll student | `POST /api/v1/classes/:id/enroll` |
-| Bulk enroll | `POST /api/v1/classes/:id/enroll/bulk` |
-| Unenroll | `DELETE /api/v1/classes/:id/enroll/:studentId` |
-| Get student subjects | `GET /api/v1/classes/:id/students/:sid/subjects` |
-| Assign subjects | `POST /api/v1/classes/:id/subjects` |
-| Bulk assign subjects | `POST /api/v1/classes/:id/subjects/bulk` |
-| Remove subject | `DELETE /api/v1/classes/:id/students/:sid/subjects/:subjectId` |
-| Class summary (term) | `GET /api/v1/calculations/class-summary?termId=&studentGroupId=` |
-| Class summary (year) | `GET /api/v1/calculations/class-year?academicYearId=&studentGroupId=` |
-| Academic year details | `GET /api/v1/academic-years/:id` |
-| Terms | `GET /api/v1/terms?yearId=` |
-| School teachers | `GET /api/v1/classes/school-teachers` |
-| All subjects | `GET /api/v1/subjects` |
+| List classes | `GET /api/classes` |
+| Create class | `POST /api/classes` |
+| Get teachers | `GET /api/classes/:id/teachers` |
+| Add teacher | `POST /api/classes/:id/teachers` |
+| Remove teacher | `DELETE /api/classes/:id/teachers/:teacherId` |
+| Get enrolled students | `GET /api/classes/:id/students` |
+| Enroll student | `POST /api/classes/:id/enroll` |
+| Bulk enroll | `POST /api/classes/:id/enroll/bulk` |
+| Unenroll | `DELETE /api/classes/:id/enroll/:studentId` |
+| Get student subjects | `GET /api/classes/:id/students/:sid/subjects` |
+| Assign subjects | `POST /api/classes/:id/subjects` |
+| Bulk assign subjects | `POST /api/classes/:id/subjects/bulk` |
+| Remove subject | `DELETE /api/classes/:id/students/:sid/subjects/:subjectId` |
+| Class summary (term) | `GET /api/calculations/class-summary?termId=&studentGroupId=` |
+| Class summary (year) | `GET /api/calculations/class-year?academicYearId=&studentGroupId=` |
+| Academic year details | `GET /api/academic-years/:id` |
+| Terms | `GET /api/terms?yearId=` |
+| School teachers | `GET /api/classes/school-teachers` |
+| All subjects | `GET /api/subjects` |

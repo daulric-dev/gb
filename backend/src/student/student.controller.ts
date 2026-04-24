@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-
   Param,
   Patch,
   Post,
@@ -17,7 +16,6 @@ import { VersioningService } from '@/versioning/versioning.service';
 import { StudentService } from './student.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
-
 
 @ApiTags('Students')
 @ApiBearerAuth()
@@ -64,7 +62,11 @@ export class StudentController {
   }
 
   @Patch(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateStudentDto) {
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateStudentDto,
+  ) {
     const raw = await this.studentService.update(id, dto);
     return this.versioning.resolve(req, 'student.updated')(raw);
   }

@@ -19,7 +19,6 @@ import { BulkEnrollDto } from './dto/bulk-enroll.dto';
 import { AssignSubjectsDto } from './dto/assign-subjects.dto';
 import { BulkAssignSubjectsDto } from './dto/bulk-assign-subjects.dto';
 
-
 @ApiTags('Enrollment')
 @ApiBearerAuth()
 @Controller('classes/:classId')
@@ -50,20 +49,31 @@ export class EnrollmentController {
     @Param('classId') classId: string,
     @Param('studentId') studentId: string,
   ) {
-    const raw = await this.enrollmentService.getStudentSubjects(classId, studentId);
+    const raw = await this.enrollmentService.getStudentSubjects(
+      classId,
+      studentId,
+    );
     return this.versioning.resolve(req, 'enrollment.studentSubjects')(raw);
   }
 
   @UseGuards(ClassTeacherGuard)
   @Post('enroll')
-  async enroll(@Req() req: any, @Param('classId') classId: string, @Body() dto: EnrollStudentDto) {
+  async enroll(
+    @Req() req: any,
+    @Param('classId') classId: string,
+    @Body() dto: EnrollStudentDto,
+  ) {
     const raw = await this.enrollmentService.enroll(classId, dto);
     return this.versioning.resolve(req, 'enrollment.enrolled')(raw);
   }
 
   @UseGuards(ClassTeacherGuard)
   @Post('enroll/bulk')
-  async bulkEnroll(@Req() req: any, @Param('classId') classId: string, @Body() dto: BulkEnrollDto) {
+  async bulkEnroll(
+    @Req() req: any,
+    @Param('classId') classId: string,
+    @Body() dto: BulkEnrollDto,
+  ) {
     const raw = await this.enrollmentService.bulkEnroll(classId, dto);
     return this.versioning.resolve(req, 'enrollment.bulkEnrolled')(raw);
   }
@@ -109,7 +119,11 @@ export class EnrollmentController {
     @Param('studentId') studentId: string,
     @Param('subjectId') subjectId: string,
   ) {
-    const raw = await this.enrollmentService.removeSubject(classId, studentId, subjectId);
+    const raw = await this.enrollmentService.removeSubject(
+      classId,
+      studentId,
+      subjectId,
+    );
     return this.versioning.resolve(req, 'enrollment.subjectRemoved')(raw);
   }
 }

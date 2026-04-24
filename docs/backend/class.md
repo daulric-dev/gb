@@ -66,7 +66,7 @@ The `ClassTeacherGuard` restricts certain actions to the class teacher (or an ad
 
 All endpoints require `AuthGuard`.
 
-### `GET /api/v1/classes`
+### `GET /api/classes`
 
 Returns all classes the authenticated user is assigned to (as class teacher or subject teacher).
 
@@ -89,7 +89,7 @@ Returns all classes the authenticated user is assigned to (as class teacher or s
 
 ---
 
-### `POST /api/v1/classes`
+### `POST /api/classes`
 
 Creates a new class. The creator is automatically assigned as the class teacher.
 
@@ -106,13 +106,13 @@ The optional `subjectIds` array assigns subjects to the class teacher during cre
 
 ---
 
-### `GET /api/v1/classes/:classId`
+### `GET /api/classes/:classId`
 
 Returns a single class by ID.
 
 ---
 
-### `PATCH /api/v1/classes/:classId`
+### `PATCH /api/classes/:classId`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -120,7 +120,7 @@ Updates the class name.
 
 ---
 
-### `DELETE /api/v1/classes/:classId`
+### `DELETE /api/classes/:classId`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -128,7 +128,7 @@ Deletes the class and all associated data.
 
 ---
 
-### `GET /api/v1/classes/:classId/my-subjects`
+### `GET /api/classes/:classId/my-subjects`
 
 Returns the subjects the current user can grade for this class.
 
@@ -140,7 +140,7 @@ This endpoint is used by the grading page to populate the subject dropdown.
 
 ---
 
-### `GET /api/v1/classes/:classId/teachers`
+### `GET /api/classes/:classId/teachers`
 
 Returns all teachers assigned to this class with their subjects.
 
@@ -161,7 +161,7 @@ Returns all teachers assigned to this class with their subjects.
 
 ---
 
-### `POST /api/v1/classes/:classId/teachers`
+### `POST /api/classes/:classId/teachers`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -177,7 +177,7 @@ Adds a teacher to the class or updates their subject assignments. If the teacher
 
 ---
 
-### `DELETE /api/v1/classes/:classId/teachers/:teacherId`
+### `DELETE /api/classes/:classId/teachers/:teacherId`
 
 **Requires:** `ClassTeacherGuard`
 
@@ -185,6 +185,6 @@ Removes a teacher from the class. **Cannot remove the class teacher** - returns 
 
 ---
 
-### `GET /api/v1/classes/school-teachers`
+### `GET /api/classes/school-teachers`
 
 Returns all teachers in the same school as the current user. Used when assigning teachers to a class.

@@ -43,6 +43,6 @@ Same form pre-filled with existing data, plus an **Active** toggle to enable/dis
 
 | Action | Endpoint |
 |--------|----------|
-| List/Search | `GET /api/v1/students?search=<query>` |
-| Create | `POST /api/v1/students` |
-| Update | `PATCH /api/v1/students/:id` |
+| List/Search | `GET /api/students?search=<query>` |
+| Create | `POST /api/students` |
+| Update | `PATCH /api/students/:id` |

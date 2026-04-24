@@ -18,7 +18,6 @@ import { UpdateGradeDto } from './dto/update-grade.dto';
 import { BulkGradeDto } from './dto/bulk-grade.dto';
 import { ExcludeDto } from './dto/exclude.dto';
 
-
 @ApiTags('Grades')
 @ApiBearerAuth()
 @Controller('grades')
@@ -38,7 +37,10 @@ export class GradeController {
     @Query('assessmentId') assessmentId: string,
     @Req() req: any,
   ) {
-    const raw = await this.gradeService.findByAssessment(assessmentId, this.getToken(req));
+    const raw = await this.gradeService.findByAssessment(
+      assessmentId,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'grade.byAssessment')(raw);
   }
 
@@ -58,13 +60,21 @@ export class GradeController {
 
   @Post()
   async create(@Body() dto: CreateGradeDto, @Req() req: any) {
-    const raw = await this.gradeService.create(req.user.id, dto, this.getToken(req));
+    const raw = await this.gradeService.create(
+      req.user.id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'grade.created')(raw);
   }
 
   @Post('bulk')
   async bulkCreate(@Body() dto: BulkGradeDto, @Req() req: any) {
-    const raw = await this.gradeService.bulkCreate(req.user.id, dto, this.getToken(req));
+    const raw = await this.gradeService.bulkCreate(
+      req.user.id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'grade.bulkGraded')(raw);
   }
 
@@ -74,13 +84,27 @@ export class GradeController {
     @Body() dto: UpdateGradeDto,
     @Req() req: any,
   ) {
-    const raw = await this.gradeService.update(id, req.user.id, dto, this.getToken(req));
+    const raw = await this.gradeService.update(
+      id,
+      req.user.id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'grade.updated')(raw);
   }
 
   @Patch(':id/exclude')
-  async exclude(@Param('id') id: string, @Body() dto: ExcludeDto, @Req() req: any) {
-    const raw = await this.gradeService.exclude(id, req.user.id, dto, this.getToken(req));
+  async exclude(
+    @Param('id') id: string,
+    @Body() dto: ExcludeDto,
+    @Req() req: any,
+  ) {
+    const raw = await this.gradeService.exclude(
+      id,
+      req.user.id,
+      dto,
+      this.getToken(req),
+    );
     return this.versioning.resolve(req, 'grade.excluded')(raw);
   }
 }

@@ -56,7 +56,9 @@ export function v1TeacherList(data: TeacherItem[]): TeacherItem[] {
   return data;
 }
 
-export function v1TeacherAdded(raw: TeacherAddedResponse): TeacherAddedResponse {
+export function v1TeacherAdded(
+  raw: TeacherAddedResponse,
+): TeacherAddedResponse {
   return raw;
 }
 

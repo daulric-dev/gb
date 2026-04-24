@@ -78,7 +78,7 @@ All endpoints require `AuthGuard`. Most also require `ClassTeacherGuard` (admin 
 
 ### Report Generation
 
-#### `POST /api/v1/reports/generate`
+#### `POST /api/reports/generate`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
@@ -94,7 +94,7 @@ Generates (or regenerates) report book entries for all students in a class for a
 
 ### Report Queries
 
-#### `GET /api/v1/reports`
+#### `GET /api/reports`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
@@ -106,13 +106,13 @@ Lists all report books for a class + term combination.
 | `termId` | Yes | Term UUID |
 | `reportType` | No | Filter by `term` or `year_end` |
 
-#### `GET /api/v1/reports/:id`
+#### `GET /api/reports/:id`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
 Returns a single report book with all entries, student info, and PDF history.
 
-#### `GET /api/v1/reports/student`
+#### `GET /api/reports/student`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
@@ -126,7 +126,7 @@ Finds a student's report by student ID, term, and report type.
 
 ### Report Updates
 
-#### `PATCH /api/v1/reports/:id`
+#### `PATCH /api/reports/:id`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`, `ReportGuard`
 
@@ -140,19 +140,19 @@ Updates class teacher metadata on a report.
 | `conduct` | string | e.g., "Excellent" |
 | `attendancePercentage` | number | 0–100 |
 
-#### `PATCH /api/v1/reports/:id/regenerate`
+#### `PATCH /api/reports/:id/regenerate`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`, `ReportGuard`
 
 Re-runs grade calculations for a single report and updates all entries.
 
-#### `PATCH /api/v1/reports/:id/publish`
+#### `PATCH /api/reports/:id/publish`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`, `ReportGuard`
 
 Sets status to `published`.
 
-#### `PATCH /api/v1/reports/:id/send-to-ministry`
+#### `PATCH /api/reports/:id/send-to-ministry`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
@@ -160,7 +160,7 @@ Sets status to `sent_to_ministry`. The report becomes **locked** -the `ReportGua
 
 ### Report Entry Updates
 
-#### `PATCH /api/v1/report-entries/:entryId`
+#### `PATCH /api/report-entries/:entryId`
 
 **Guards**: `AuthGuard`, `ReportGuard`
 
@@ -175,33 +175,33 @@ Updates editable fields on a single subject entry.
 
 ### PDF Management
 
-#### `POST /api/v1/reports/:id/pdf`
+#### `POST /api/reports/:id/pdf`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`, `ReportGuard`
 
 Records a PDF file reference (path + size) without uploading.
 
-#### `POST /api/v1/reports/:id/pdf/upload`
+#### `POST /api/reports/:id/pdf/upload`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`, `ReportGuard`
 
 Uploads a PDF blob to Supabase Storage and records the reference. Accepts multipart form data with the file and an optional `objectPath` field.
 
-#### `GET /api/v1/reports/:id/pdfs`
+#### `GET /api/reports/:id/pdfs`
 
 Returns the PDF generation history for a report.
 
-#### `GET /api/v1/reports/:id/pdf/latest`
+#### `GET /api/reports/:id/pdf/latest`
 
 Returns the most recent PDF record.
 
-#### `GET /api/v1/reports/:id/pdf/:pdfId/download`
+#### `GET /api/reports/:id/pdf/:pdfId/download`
 
 Downloads a PDF file from Supabase Storage. Returns the file as a binary response with appropriate headers.
 
 ### Class Summary Files
 
-#### `POST /api/v1/reports/class-summary/upload`
+#### `POST /api/reports/class-summary/upload`
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
@@ -209,7 +209,7 @@ Uploads a class summary file (PDF, CSV, or XLSX) to Supabase Storage.
 
 Accepts multipart form data with fields: `studentGroupId`, `termId`, `reportType`, `fileType`.
 
-#### `GET /api/v1/reports/class-summary/download`
+#### `GET /api/reports/class-summary/download`
 
 Downloads a stored class summary file by type.
 
@@ -220,7 +220,7 @@ Downloads a stored class summary file by type.
 | `reportType` | Yes | `term` or `year_end` |
 | `fileType` | Yes | `pdf`, `csv`, or `xlsx` |
 
-#### `GET /api/v1/reports/class-summary/files`
+#### `GET /api/reports/class-summary/files`
 
 Lists all stored class summary files for a class + term + report type.
 

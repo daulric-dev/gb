@@ -47,7 +47,11 @@ export function v1Session(raw: any): SessionResponse {
   };
 }
 
-export function v1VerifyOtp(session: any, user: any, profile: any): VerifyOtpResponse {
+export function v1VerifyOtp(
+  session: any,
+  user: any,
+  profile: any,
+): VerifyOtpResponse {
   const hasOnboarded = !!(profile?.first_name && profile?.school_id);
   return {
     session: v1Session(session),

@@ -685,7 +685,7 @@ When no pagination params are sent, the endpoint returns its original flat array
 ## Design Decisions
 
 **Why header-based, not URL-based?**
-URL-based versioning (`/v1/` vs `/v2/`) duplicates routes and controllers. Header-based versioning keeps one set of routes and transforms the response at the edge.
+URL-based versioning (`/` vs `/v2/`) duplicates routes and controllers. Header-based versioning keeps one set of routes and transforms the response at the edge.
 
 **Why a centralized registry instead of controller `onModuleInit`?**
 Controllers depend on `SupabaseService`, which uses `Scope.REQUEST`. NestJS does not call lifecycle hooks on request-scoped providers, so `onModuleInit` in controllers never fires. The `TransformerRegistry` is a singleton whose `onModuleInit` is guaranteed to run during bootstrap.

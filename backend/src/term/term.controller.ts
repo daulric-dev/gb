@@ -45,7 +45,11 @@ export class TermController {
   }
 
   @Patch(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateTermDto) {
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateTermDto,
+  ) {
     const raw = await this.termService.update(id, dto);
     return this.versioning.resolve(req, 'term.updated')(raw);
   }

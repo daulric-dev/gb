@@ -49,7 +49,11 @@ export class AcademicYearController {
   }
 
   @Patch(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateAcademicYearDto) {
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateAcademicYearDto,
+  ) {
     const raw = await this.academicYearService.update(id, dto);
     return this.versioning.resolve(req, 'academicYear.updated')(raw);
   }
