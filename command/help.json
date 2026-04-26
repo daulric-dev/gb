@@ -36,6 +36,10 @@
       "description": "Show diff for a service or all"
     },
     {
+      "name": "sync",
+      "description": "Delete local branches that no longer exist on remote"
+    },
+    {
       "name": "push",
       "args": "[--force]",
       "description": "Push current branch to origin"
@@ -57,6 +61,7 @@
     "gb commit frontend --topic \"add auth\" --type=feat",
     "gb commit frontend --topic \"add auth\" -m \"supports OAuth and email\"",
     "gb diff backend",
+    "gb sync",
     "gb push",
     "gb push --force",
     "gb run backend test"

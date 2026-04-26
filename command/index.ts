@@ -9,6 +9,7 @@ import {
   commitCmd,
   diffCmd,
   pushCmd,
+  syncCmd,
   runCmd,
   helpCmd,
 } from "./commands";
@@ -34,6 +35,9 @@ switch (command) {
     break;
   case "push":
     await pushCmd(flags);
+    break;
+  case "sync":
+    await syncCmd();
     break;
   case "run":
     await runCmd(positionals);
