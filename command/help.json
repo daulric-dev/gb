@@ -31,6 +31,11 @@
       ]
     },
     {
+      "name": "checkout",
+      "args": "[branch]",
+      "description": "Checkout a branch and pull latest changes"
+    },
+    {
       "name": "diff",
       "args": "[service]",
       "description": "Show diff for a service or all"
@@ -60,6 +65,8 @@
     "gb commit frontend",
     "gb commit frontend --topic \"add auth\" --type=feat",
     "gb commit frontend --topic \"add auth\" -m \"supports OAuth and email\"",
+    "gb checkout",
+    "gb checkout main",
     "gb diff backend",
     "gb sync",
     "gb push",

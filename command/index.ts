@@ -6,6 +6,7 @@ import {
   statusCmd,
   affectedCmd,
   branchCmd,
+  checkoutCmd,
   commitCmd,
   diffCmd,
   pushCmd,
@@ -32,6 +33,9 @@ switch (command) {
     break;
   case "diff":
     await diffCmd(positionals);
+    break;
+  case "checkout":
+    await checkoutCmd(positionals);
     break;
   case "push":
     await pushCmd(flags);
