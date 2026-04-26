@@ -145,6 +145,52 @@ Examples:
 
 ---
 
+## Checkout
+
+```bash
+gb checkout [branch]
+```
+
+Switches to a branch and pulls the latest changes from origin. Fetches remote refs first so remote-only branches are visible.
+
+**Interactive mode** (no argument):
+
+An arrow-key selector lists all available branches:
+- Local branches are shown with a plain prefix
+- Remote-only branches (not yet tracked locally) are marked with `↓`
+
+Selecting a remote-only branch automatically creates a local tracking branch (`git checkout -b <branch> --track origin/<branch>`).
+
+**Direct mode:**
+
+```bash
+gb checkout main
+gb checkout feat(backend)/add-auth
+```
+
+Pass the branch name directly to skip the selector.
+
+**Behavior after switching:**
+
+Runs `git pull origin <branch>` to bring the branch fully up to date. If the pull cannot fast-forward, a warning is shown and you can pull manually.
+
+---
+
+## Sync
+
+```bash
+gb sync
+```
+
+Removes local branches that no longer exist on the remote (e.g., after a PR is merged and the branch is deleted on GitHub).
+
+1. Runs `git fetch --prune origin` to update remote-tracking refs
+2. Finds all local branches marked as `gone` (no remote counterpart)
+3. Lists them and prompts for confirmation before deleting
+4. Skips the currently checked-out branch if it appears in the list
+
+---
+
 ## Diff
 
 ```bash
