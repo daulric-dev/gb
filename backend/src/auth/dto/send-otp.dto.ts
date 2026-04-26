@@ -5,5 +5,5 @@ export class SendOtpDto {
   @ApiProperty({ example: 'teacher@school.com' })
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 }

@@ -18,7 +18,7 @@ function VerifyOtpForm() {
   useSignals();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const email = searchParams.get("email") || "";
+  const email = searchParams?.get("email") || "";
   const code = useSignal("");
   const loading = useSignal(false);
   const resending = useSignal(false);

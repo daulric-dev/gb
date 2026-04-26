@@ -3,15 +3,15 @@ import { IsUUID, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
 export class GenerateReportDto {
   @IsUUID()
   @IsNotEmpty()
-  termId: string;
+  termId!: string;
 
   @IsUUID()
   @IsNotEmpty()
-  studentGroupId: string;
+  studentGroupId!: string;
 
   @IsEnum(['term', 'year_end'])
   @IsNotEmpty()
-  reportType: 'term' | 'year_end';
+  reportType!: 'term' | 'year_end';
 
   @IsOptional()
   @IsUUID()

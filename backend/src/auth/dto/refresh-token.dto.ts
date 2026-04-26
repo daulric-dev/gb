@@ -5,5 +5,5 @@ export class RefreshTokenDto {
   @ApiProperty({ example: 'v1.MDA4OWE3ZT...' })
   @IsString()
   @IsNotEmpty()
-  refresh_token: string;
+  refresh_token!: string;
 }

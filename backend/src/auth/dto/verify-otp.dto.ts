@@ -5,10 +5,10 @@ export class VerifyOtpDto {
   @ApiProperty({ example: 'teacher@school.com' })
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @ApiProperty({ example: '123456', description: '6-digit OTP from email' })
   @IsString()
   @IsNotEmpty()
-  token: string;
+  token!: string;
 }

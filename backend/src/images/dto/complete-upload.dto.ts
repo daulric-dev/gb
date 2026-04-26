@@ -5,5 +5,5 @@ export class CompleteUploadDto {
   @ApiProperty({ example: 'avatars/user-123.png' })
   @IsString()
   @IsNotEmpty()
-  path: string;
+  path!: string;
 }

@@ -13,29 +13,29 @@ import {
 export class CreateTermDto {
   @IsUUID()
   @IsNotEmpty()
-  academicYearId: string;
+  academicYearId!: string;
 
   @IsEnum(['michaelmas', 'hilary', 'trinity'])
   @IsNotEmpty()
-  name: 'michaelmas' | 'hilary' | 'trinity';
+  name!: 'michaelmas' | 'hilary' | 'trinity';
 
   @IsDateString()
   @IsNotEmpty()
-  startDate: string;
+  startDate!: string;
 
   @IsDateString()
   @IsNotEmpty()
-  endDate: string;
+  endDate!: string;
 
   @IsInt()
   @Min(0)
   @Max(100)
-  examWeight: number;
+  examWeight!: number;
 
   @IsInt()
   @Min(0)
   @Max(100)
-  courseworkWeight: number;
+  courseworkWeight!: number;
 
   @IsOptional()
   @IsBoolean()
