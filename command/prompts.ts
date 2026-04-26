@@ -2,18 +2,21 @@ export function prompt(label: string): Promise<string> {
   process.stdout.write(`\x1b[1m${label}\x1b[0m `);
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
-    process.stdin.resume();
-    process.stdin.on("data", (chunk) => {
+    const handler = (chunk: Buffer) => {
       chunks.push(chunk);
       const input = Buffer.concat(chunks).toString().trim();
       if (input.includes("\n") || chunk.toString().includes("\n")) {
+        process.stdin.removeListener("data", handler);
         process.stdin.pause();
         resolve(input.split("\n")[0].trim());
       } else {
+        process.stdin.removeListener("data", handler);
         process.stdin.pause();
         resolve(input);
       }
-    });
+    };
+    process.stdin.resume();
+    process.stdin.on("data", handler);
   });
 }
 
@@ -36,12 +39,13 @@ export function promptWithWordLimit(label: string, maxWords: number): Promise<st
     process.stdin.setRawMode(true);
     process.stdin.resume();
 
-    process.stdin.on("data", (data: Buffer) => {
+    const handler = (data: Buffer) => {
       const key = data.toString();
 
       if (key === "\r" || key === "\n") {
         process.stdin.setRawMode(false);
         process.stdin.pause();
+        process.stdin.removeListener("data", handler);
         const words = input.trim().split(/\s+/);
         if (input.trim() && words.length > maxWords) {
           process.stdout.write(`\r\x1b[2K\x1b[33mTopic trimmed to ${maxWords} words.\x1b[0m\n`);
@@ -58,6 +62,7 @@ export function promptWithWordLimit(label: string, maxWords: number): Promise<st
       } else if (key === "\x03") {
         process.stdin.setRawMode(false);
         process.stdin.pause();
+        process.stdin.removeListener("data", handler);
         process.stdout.write("\n");
         process.exit(130);
       } else if (key === "\x17") {
@@ -67,7 +72,8 @@ export function promptWithWordLimit(label: string, maxWords: number): Promise<st
         input += key;
         render();
       }
-    });
+    };
+    process.stdin.on("data", handler);
   });
 }
 
@@ -93,7 +99,7 @@ export function select(label: string, options: string[]): Promise<string> {
 
     process.stdin.setRawMode(true);
     process.stdin.resume();
-    process.stdin.on("data", (data: Buffer) => {
+    const handler = (data: Buffer) => {
       const key = data.toString();
 
       if (key === "\x1b[A" && cursor > 0) {
@@ -105,12 +111,15 @@ export function select(label: string, options: string[]): Promise<string> {
       } else if (key === "\r" || key === "\n") {
         process.stdin.setRawMode(false);
         process.stdin.pause();
+        process.stdin.removeListener("data", handler);
         resolve(options[cursor]);
       } else if (key === "\x03") {
         process.stdin.setRawMode(false);
         process.stdin.pause();
+        process.stdin.removeListener("data", handler);
         process.exit(130);
       }
-    });
+    };
+    process.stdin.on("data", handler);
   });
 }
