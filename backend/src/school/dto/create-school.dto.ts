@@ -13,7 +13,7 @@ export class CreateSchoolDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  name: string;
+  name!: string;
 
   @ApiPropertyOptional({ example: 'SAS001' })
   @IsOptional()
@@ -24,13 +24,13 @@ export class CreateSchoolDto {
   @ApiProperty({ example: 'secondary', enum: ['primary', 'secondary'] })
   @IsEnum(['primary', 'secondary'])
   @IsNotEmpty()
-  schoolType: 'primary' | 'secondary';
+  schoolType!: 'primary' | 'secondary';
 
   @ApiProperty({ example: 'St. Andrew' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  parish: string;
+  parish!: string;
 
   @ApiPropertyOptional({ example: '123 Main Street' })
   @IsOptional()

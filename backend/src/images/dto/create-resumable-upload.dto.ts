@@ -11,17 +11,17 @@ export class CreateResumableUploadDto {
   @ApiProperty({ example: 'avatar.png' })
   @IsString()
   @IsNotEmpty()
-  filename: string;
+  filename!: string;
 
   @ApiProperty({ example: 'image/png' })
   @IsString()
   @IsNotEmpty()
-  contentType: string;
+  contentType!: string;
 
   @ApiProperty({ example: 204800 })
   @IsNumber()
   @Min(1)
-  totalSize: number;
+  totalSize!: number;
 
   @ApiPropertyOptional({ example: 'avatars' })
   @IsString()

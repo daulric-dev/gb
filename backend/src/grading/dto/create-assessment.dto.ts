@@ -15,20 +15,20 @@ import {
 export class CreateAssessmentDto {
   @IsUUID()
   @IsNotEmpty()
-  termId: string;
+  termId!: string;
 
   @IsUUID()
   @IsNotEmpty()
-  subjectId: string;
+  subjectId!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  title: string;
+  title!: string;
 
   @IsEnum(['exam', 'coursework'])
   @IsNotEmpty()
-  assessmentType: 'exam' | 'coursework';
+  assessmentType!: 'exam' | 'coursework';
 
   @IsOptional()
   @IsDateString()
@@ -37,7 +37,7 @@ export class CreateAssessmentDto {
   @IsNumber()
   @Min(1)
   @Max(1000)
-  maxScore: number;
+  maxScore!: number;
 
   @IsOptional()
   @IsNumber()

@@ -6,5 +6,5 @@ export class UpdateClassDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  name!: string;
 }

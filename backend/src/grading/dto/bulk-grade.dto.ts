@@ -14,11 +14,11 @@ import { Type } from 'class-transformer';
 class GradeEntry {
   @IsUUID()
   @IsNotEmpty()
-  studentId: string;
+  studentId!: string;
 
   @IsNumber()
   @Min(0)
-  score: number;
+  score!: number;
 
   @IsOptional()
   @IsString()
@@ -28,11 +28,11 @@ class GradeEntry {
 export class BulkGradeDto {
   @IsUUID()
   @IsNotEmpty()
-  assessmentId: string;
+  assessmentId!: string;
 
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => GradeEntry)
-  grades: GradeEntry[];
+  grades!: GradeEntry[];
 }

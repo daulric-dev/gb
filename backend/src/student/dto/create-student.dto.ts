@@ -11,16 +11,16 @@ export class CreateStudentDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  firstName: string;
+  firstName!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  lastName: string;
+  lastName!: string;
 
   @IsEnum(['male', 'female'])
   @IsNotEmpty()
-  gender: 'male' | 'female';
+  gender!: 'male' | 'female';
 
   @IsOptional()
   @IsDateString()

@@ -10,15 +10,15 @@ import {
 export class CreateGradeDto {
   @IsUUID()
   @IsNotEmpty()
-  assessmentId: string;
+  assessmentId!: string;
 
   @IsUUID()
   @IsNotEmpty()
-  studentId: string;
+  studentId!: string;
 
   @IsNumber()
   @Min(0)
-  score: number;
+  score!: number;
 
   @IsOptional()
   @IsString()

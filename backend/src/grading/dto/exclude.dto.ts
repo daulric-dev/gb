@@ -9,7 +9,7 @@ import {
 export class ExcludeDto {
   @IsBoolean()
   @IsNotEmpty()
-  isExcluded: boolean;
+  isExcluded!: boolean;
 
   @IsOptional()
   @IsString()

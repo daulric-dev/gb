@@ -12,7 +12,7 @@ export class CreateSubjectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  name!: string;
 
   @IsOptional()
   @IsString()
