@@ -41,7 +41,7 @@ export class AuthGuard implements CanActivate {
       return true;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      this.logger.error(`Unexpected error in AuthGuard: ${err}`);
+      this.logger.error(`Unexpected error in AuthGuard: ${String(err)}`);
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

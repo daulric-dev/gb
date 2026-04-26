@@ -38,7 +38,7 @@ export class AuthService {
       return 'OTP sent to email';
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
-      this.logger.error(`Unexpected error sending OTP: ${err}`);
+      this.logger.error(`Unexpected error sending OTP: ${String(err)}`);
       throw new BadRequestException('Failed to send OTP');
     }
   }
@@ -96,7 +96,7 @@ export class AuthService {
       };
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      this.logger.error(`Unexpected error verifying OTP: ${err}`);
+      this.logger.error(`Unexpected error verifying OTP: ${String(err)}`);
       throw new UnauthorizedException('Invalid or expired OTP');
     }
   }
@@ -123,7 +123,7 @@ export class AuthService {
       return profile;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
-      this.logger.error(`Unexpected error fetching profile: ${err}`);
+      this.logger.error(`Unexpected error fetching profile: ${String(err)}`);
       throw new NotFoundException('User profile not found');
     }
   }
@@ -221,7 +221,7 @@ export class AuthService {
       return data.session;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      this.logger.error(`Unexpected error refreshing token: ${err}`);
+      this.logger.error(`Unexpected error refreshing token: ${String(err)}`);
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
   }
