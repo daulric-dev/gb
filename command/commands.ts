@@ -305,6 +305,44 @@ export async function runCmd(positionals: string[]) {
   process.exit(code);
 }
 
+export async function syncCmd() {
+  console.log("Fetching remote refs...");
+  await git("fetch", "--prune", "origin");
+
+  const vv = await git("branch", "-vv");
+  const gone = vv
+    .split("\n")
+    .filter((line) => line.includes(": gone]"))
+    .map((line) => line.replace(/^\*?\s+/, "").split(/\s+/)[0]);
+
+  if (gone.length === 0) {
+    console.log("\x1b[32mAll local branches have a remote counterpart.\x1b[0m");
+    return;
+  }
+
+  console.log(`\x1b[33mLocal branches with no remote counterpart:\x1b[0m`);
+  for (const b of gone) {
+    console.log(`  \x1b[36m${b}\x1b[0m`);
+  }
+  console.log();
+
+  const answer = await select(`Delete ${gone.length} branch(es)?`, ["yes", "no"]);
+  if (answer === "no") {
+    console.log("Aborted.");
+    return;
+  }
+
+  const current = await getCurrentBranch();
+  for (const b of gone) {
+    if (b === current) {
+      console.log(`\x1b[33mSkipping \x1b[36m${b}\x1b[33m (currently checked out).\x1b[0m`);
+      continue;
+    }
+    await git("branch", "-D", b);
+    console.log(`\x1b[32mDeleted\x1b[0m ${b}`);
+  }
+}
+
 export async function pushCmd(flags: Record<string, string>) {
   const branch = await getCurrentBranch();
   const force = "force" in flags;
