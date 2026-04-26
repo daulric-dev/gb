@@ -305,6 +305,53 @@ export async function runCmd(positionals: string[]) {
   process.exit(code);
 }
 
+export async function checkoutCmd(positionals: string[]) {
+  console.log("Fetching remote refs...");
+  await git("fetch", "--prune", "origin");
+
+  const localOut = await git("branch", "--format=%(refname:short)");
+  const remoteOut = await git("branch", "-r", "--format=%(refname:short)");
+
+  const current = await getCurrentBranch();
+  const local = new Set(localOut.split("\n").filter(Boolean));
+  const remote = remoteOut
+    .split("\n")
+    .filter(Boolean)
+    .map((b) => b.replace(/^origin\//, ""))
+    .filter((b) => b !== "HEAD" && !local.has(b));
+
+  const branches = [
+    ...[...local].filter((b) => b !== current).map((b) => `  ${b}`),
+    ...remote.map((b) => `↓ ${b}`),
+  ].sort((a, b) => a.slice(2).localeCompare(b.slice(2)));
+
+  if (branches.length === 0) {
+    console.log("No other branches available.");
+    return;
+  }
+
+  let target = positionals[0];
+  if (!target) {
+    const chosen = await select("Checkout branch:", branches);
+    target = chosen.slice(2);
+  }
+
+  const isRemoteOnly = !local.has(target);
+  if (isRemoteOnly) {
+    await git("checkout", "-b", target, "--track", `origin/${target}`);
+  } else {
+    await git("checkout", target);
+  }
+
+  try {
+    await git("pull", "origin", target);
+    console.log(`\x1b[32mSwitched to\x1b[0m ${target} and pulled latest changes.`);
+  } catch {
+    console.log(`\x1b[32mSwitched to\x1b[0m ${target}.`);
+    console.log(`\x1b[33mCould not pull — try manually if needed.\x1b[0m`);
+  }
+}
+
 export async function syncCmd() {
   console.log("Fetching remote refs...");
   await git("fetch", "--prune", "origin");

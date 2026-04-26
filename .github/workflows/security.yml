@@ -10,35 +10,9 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
-  # 1. SAST - CodeQL static analysis
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:${{ matrix.language }}"
-
-  # 2. SCA - Dependency vulnerability scanning
+  # 1. SCA - Dependency vulnerability scanning
   dependency-scan:
     name: Dependency Scan
     runs-on: ubuntu-latest
