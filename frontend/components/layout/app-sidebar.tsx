@@ -273,7 +273,7 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             <SidebarMenu>
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = navItemActive(pathname, item.href);
+                const isActive = navItemActive(pathname ?? "", item.href);
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
