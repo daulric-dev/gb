@@ -71,8 +71,10 @@ Every command displays its execution time on completion (e.g., `Done in 142ms` o
 | [`gb status`](./commands.md#status) | Show git status grouped by service |
 | [`gb affected`](./commands.md#affected) | List services with changes vs a base branch |
 | [`gb branch`](./commands.md#branch) | Create a service-scoped branch |
+| [`gb checkout`](./commands.md#checkout) | Switch to a branch and pull latest changes |
 | [`gb commit`](./commands.md#commit) | Stage and commit files for a service (multi-service loop) |
 | [`gb diff`](./commands.md#diff) | Show diff for a service or all |
+| [`gb sync`](./commands.md#sync) | Delete local branches that no longer exist on remote |
 | [`gb push`](./commands.md#push) | Push current branch to origin |
 | [`gb run`](./commands.md#run) | Run a package.json script in a service |
 | `gb help` | Show help |
