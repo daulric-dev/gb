@@ -77,8 +77,19 @@ export async function commitCmd(
       }
 
       console.log(`\x1b[1mRemaining changes:\x1b[0m`);
+
+      if (groups === undefined) {
+        console.log("\x1b[32mNo more changes to commit.\x1b[0m");
+        process.exit(1);
+      }
+
+      if (groups && Object.keys(groups).length === 0) {
+        console.log("\x1b[32mNo more changes to commit.\x1b[0m");
+        process.exit(0);
+      }
+
       for (const svc of availableServices) {
-        console.log(`  \x1b[36m${svc}\x1b[0m (${groups[svc].length} file${groups[svc].length !== 1 ? "s" : ""})`);
+        console.log(`  \x1b[36m${svc}\x1b[0m (${groups[svc]?.length ?? 0} file${(groups[svc]?.length ?? 0) !== 1 ? "s" : ""})`);
       }
       console.log();
 
@@ -360,7 +371,8 @@ export async function syncCmd() {
   const gone = vv
     .split("\n")
     .filter((line) => line.includes(": gone]"))
-    .map((line) => line.replace(/^\*?\s+/, "").split(/\s+/)[0]);
+    .map((line) => line.replace(/^\*?\s+/, "").split(/\s+/)[0] ?? "")
+    .filter(Boolean);
 
   if (gone.length === 0) {
     console.log("\x1b[32mAll local branches have a remote counterpart.\x1b[0m");
