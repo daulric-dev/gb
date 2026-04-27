@@ -8,7 +8,7 @@ export function prompt(label: string): Promise<string> {
       if (input.includes("\n") || chunk.toString().includes("\n")) {
         process.stdin.removeListener("data", handler);
         process.stdin.pause();
-        resolve(input.split("\n")[0].trim());
+        resolve((input.split("\n")[0] ?? "").trim());
       } else {
         process.stdin.removeListener("data", handler);
         process.stdin.pause();
@@ -112,7 +112,7 @@ export function select(label: string, options: string[]): Promise<string> {
         process.stdin.setRawMode(false);
         process.stdin.pause();
         process.stdin.removeListener("data", handler);
-        resolve(options[cursor]);
+        resolve(options[cursor] ?? "");
       } else if (key === "\x03") {
         process.stdin.setRawMode(false);
         process.stdin.pause();
