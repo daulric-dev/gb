@@ -4,6 +4,7 @@ export const SERVICES: Record<string, string> = {
   docs: "docs",
   ".github": ".github",
   command: "command",
+  supabase: "supabase",
 };
 
 export const COMMIT_TYPES = [
