@@ -1,5 +1,5 @@
-import { IsString, IsNotEmpty, IsUUID, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsUUID, IsOptional, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class OnboardDto {
   @ApiProperty({ example: 'John' })
@@ -14,8 +14,8 @@ export class OnboardDto {
   @MaxLength(100)
   lastName!: string;
 
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsOptional()
   @IsUUID()
-  @IsNotEmpty()
-  schoolId!: string;
+  schoolId?: string;
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
@@ -35,6 +35,17 @@ export class SchoolService {
   }
 
   async create(dto: CreateSchoolDto) {
+    if (process.env.DEDICATED_DEPLOYMENT === 'true') {
+      const supabase = this.supabaseService.getServiceClient();
+      const { count } = await supabase
+        .from('school')
+        .select('id', { count: 'exact', head: true });
+
+      if ((count ?? 0) > 0) {
+        throw new ForbiddenException('School creation is disabled on dedicated deployments');
+      }
+    }
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data, error } = await supabase
