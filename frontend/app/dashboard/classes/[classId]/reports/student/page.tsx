@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   type ReportType,
   buildReportPdfBlob,
@@ -19,33 +19,15 @@ import {
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ArrowLeft, Download, FileText, RefreshCw } from "lucide-react";
-
-interface ClassInfo {
-  id: string;
-  name: string;
-  academicYearId: string;
-  isClassTeacher: boolean;
-}
-
-const fmtNum = (v: number | null) => (v != null ? v.toFixed(1) : "-");
+import { RefreshCw } from "lucide-react";
+import { type ClassInfo } from "./_components/types";
+import { StudentReportLoadingSkeleton } from "./_components/StudentReportLoadingSkeleton";
+import { StudentReportAccessDenied } from "./_components/StudentReportAccessDenied";
+import { NoGradesCard } from "./_components/NoGradesCard";
+import { YearEndResultsCard } from "./_components/YearEndResultsCard";
+import { TermResultsCard } from "./_components/TermResultsCard";
+import { ExportCard } from "./_components/ExportCard";
 
 export default function StudentReportPage() {
   useSignals();
@@ -197,32 +179,15 @@ export default function StudentReportPage() {
   };
 
   if (loading.value) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-72" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    );
+    return <StudentReportLoadingSkeleton />;
   }
 
   if (!classInfo.value || !classInfo.value.isClassTeacher) {
     return (
-      <div className="space-y-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            router.push(`/dashboard/classes/${classId}/reports`)
-          }
-        >
-          <ArrowLeft className="mr-2 size-4" /> Back
-        </Button>
-        <p className="text-muted-foreground py-8 text-center">
-          {classInfo.value && !classInfo.value.isClassTeacher
-            ? "Only the class teacher can view this report."
-            : "Class not found."}
-        </p>
-      </div>
+      <StudentReportAccessDenied
+        classInfo={classInfo.value}
+        onBack={() => router.push(`/dashboard/classes/${classId}/reports`)}
+      />
     );
   }
 
@@ -239,7 +204,7 @@ export default function StudentReportPage() {
                 {termName.value}
               </span>
             )}
-            {(tr?.position != null) && (
+            {tr?.position != null && (
               <span className="text-muted-foreground text-sm">
                 Rank {tr.position}
               </span>
@@ -267,141 +232,19 @@ export default function StudentReportPage() {
       />
 
       {!hasData ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No calculated grades found for this student. Make sure assessments
-            have been entered.
-          </CardContent>
-        </Card>
+        <NoGradesCard />
       ) : isYearEnd && yr ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Year-End Subject Results</CardTitle>
-            <CardDescription>
-              Each term composite and year grade, calculated live from
-              assessments.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Subject</TableHead>
-                  {yr.terms.map((t) => (
-                    <TableHead
-                      key={t.termId}
-                      className="text-right"
-                      title={t.termName}
-                    >
-                      {t.termName.charAt(0).toUpperCase()}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-right">End of Yr Exam</TableHead>
-                  <TableHead className="text-right">Year Grade</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {yr.yearEnd.subjects.map((sub) => {
-                  const lastTerm = yr.terms[yr.terms.length - 1];
-                  const lastTermSubject = lastTerm?.subjects.find(
-                    (s) => s.subjectId === sub.subjectId,
-                  );
-                  return (
-                    <TableRow key={sub.subjectId}>
-                      <TableCell className="font-medium">
-                        {sub.subjectName}
-                      </TableCell>
-                      {yr.terms.map((t) => {
-                        const tg = sub.termGrades.find(
-                          (g) => g.termId === t.termId,
-                        );
-                        return (
-                          <TableCell
-                            key={t.termId}
-                            className="text-right tabular-nums text-muted-foreground"
-                          >
-                            {fmtNum(tg?.termComposite ?? null)}
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {fmtNum(lastTermSubject?.examAverage ?? null)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">
-                        {fmtNum(sub.yearGrade)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <YearEndResultsCard yr={yr} />
       ) : tr ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Subject Results</CardTitle>
-            <CardDescription>
-              Live calculated grades from assessments.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Subject</TableHead>
-                  <TableHead className="text-right">Coursework</TableHead>
-                  <TableHead className="text-right">Exam</TableHead>
-                  <TableHead className="text-right">Term</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tr.subjects.map((sub) => (
-                  <TableRow key={sub.subjectId}>
-                    <TableCell className="font-medium">
-                      {sub.subjectName}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {fmtNum(sub.courseworkAverage)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {fmtNum(sub.examAverage)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmtNum(sub.termComposite)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <TermResultsCard tr={tr} />
       ) : null}
 
       {hasData && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="size-5" />
-              Export
-            </CardTitle>
-            <CardDescription>
-              Download this student&apos;s report as a PDF.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={downloadPdf}>
-              <Download className="mr-2 size-4" />
-              Download PDF
-            </Button>
-            {tr && (
-              <Button size="sm" onClick={downloadReportCard}>
-                <FileText className="mr-2 size-4" />
-                Report Card
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+        <ExportCard
+          tr={tr}
+          onDownloadPdf={downloadPdf}
+          onDownloadReportCard={downloadReportCard}
+        />
       )}
     </div>
   );

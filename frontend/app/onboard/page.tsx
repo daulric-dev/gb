@@ -89,59 +89,61 @@ function OnboardProfileCard({
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="school">School</Label>
-              <Dialog open={createDialogOpen.value} onOpenChange={(v) => (createDialogOpen.value = v)}>
-                <DialogTrigger
-                  render={
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                    />
-                  }
+          {!isDedicated && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="school">School</Label>
+                <Dialog open={createDialogOpen.value} onOpenChange={(v) => (createDialogOpen.value = v)}>
+                  <DialogTrigger
+                    render={
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      />
+                    }
+                  >
+                    <Plus className="size-3" />
+                    Create school
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create a School</DialogTitle>
+                      <DialogDescription>
+                        Add a new school to the system
+                      </DialogDescription>
+                    </DialogHeader>
+                    <CreateSchoolForm onSuccess={onSchoolCreated} />
+                  </DialogContent>
+                </Dialog>
+              </div>
+              {schoolsLoading.value ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (schools.value ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No schools found. Create one using the button above.
+                </p>
+              ) : (
+                <select
+                  id="school"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={schoolId.value}
+                  onChange={(e) => (schoolId.value = e.target.value)}
+                  required
                 >
-                  <Plus className="size-3" />
-                  Create school
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create a School</DialogTitle>
-                    <DialogDescription>
-                      Add a new school to the system
-                    </DialogDescription>
-                  </DialogHeader>
-                  <CreateSchoolForm onSuccess={onSchoolCreated} />
-                </DialogContent>
-              </Dialog>
+                  {(schools.value ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                      {s.parish ? ` - ${s.parish}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            {schoolsLoading.value ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (schools.value ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No schools found. Create one using the button above.
-              </p>
-            ) : (
-              <select
-                id="school"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={schoolId.value}
-                onChange={(e) => (schoolId.value = e.target.value)}
-                required
-              >
-                {(schools.value ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.parish ? ` - ${s.parish}` : ""}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          )}
           <Button
             type="submit"
             className="w-full"
-            disabled={loading.value || !schoolId.value}
+            disabled={loading.value || (!isDedicated && !schoolId.value)}
           >
             {loading.value ? "Saving..." : "Get started"}
           </Button>
@@ -150,6 +152,8 @@ function OnboardProfileCard({
     </Card>
   );
 }
+
+const isDedicated = process.env.NEXT_PUBLIC_DEDICATED_DEPLOYMENT === 'true';
 
 export default function OnboardPage() {
   useSignals();
@@ -160,10 +164,11 @@ export default function OnboardPage() {
   const loading = useSignal(false);
 
   const schools = useSignal<School[]>([]);
-  const schoolsLoading = useSignal(true);
+  const schoolsLoading = useSignal(!isDedicated);
   const createDialogOpen = useSignal(false);
 
   useEffect(() => {
+    if (isDedicated) return;
     api<School[]>("/schools")
       .then((data) => {
         schools.value = data;
@@ -175,17 +180,20 @@ export default function OnboardPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!schoolId.value) {
+    if (!isDedicated && !schoolId.value) {
       toast.error("Please select a school");
       return;
     }
     loading.value = true;
 
     try {
-      await api("/auth/onboard", {
-        method: "PATCH",
-        body: { firstName: firstName.value, lastName: lastName.value, schoolId: schoolId.value },
-      });
+      const body: Record<string, string> = {
+        firstName: firstName.value,
+        lastName: lastName.value,
+      };
+      if (!isDedicated) body.schoolId = schoolId.value;
+
+      await api("/auth/onboard", { method: "PATCH", body });
       toast.success("Welcome aboard!");
       router.push("/dashboard");
     } catch (err) {

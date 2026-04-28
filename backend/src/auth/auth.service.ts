@@ -131,13 +131,30 @@ export class AuthService {
   async onboard(userId: string, dto: OnboardDto) {
     const supabase = this.supabaseService.getServiceClient();
 
+    let schoolId = dto.schoolId;
+
+    if (process.env.DEDICATED_DEPLOYMENT === 'true') {
+      const { data: school } = await supabase
+        .from('school')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (!school) {
+        throw new BadRequestException('No school found on this dedicated instance');
+      }
+
+      schoolId = school.id;
+    }
+
     const { data, error } = await supabase
       .from('user_profile')
       .upsert({
         id: userId,
         first_name: dto.firstName,
         last_name: dto.lastName,
-        school_id: dto.schoolId,
+        school_id: schoolId,
       })
       .select('*, school:school_id(*)')
       .single();

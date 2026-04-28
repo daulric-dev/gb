@@ -17,15 +17,10 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -38,25 +33,16 @@ import {
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { Plus, Pencil, Trash2, GripVertical } from "lucide-react";
-
-interface Subject {
-  id: string;
-  school_id: string;
-  name: string;
-  code: string | null;
-  is_graded: boolean;
-  sort_order: number;
-}
-
-const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+import { Plus } from "lucide-react";
+import { type Subject } from "./_components/types";
+import { SortableSubjectRow } from "./_components/SortableSubjectRow";
+import { CreateSubjectForm } from "./_components/CreateSubjectForm";
+import { EditSubjectForm } from "./_components/EditSubjectForm";
 
 export default function SubjectsPage() {
   useSignals();
@@ -230,245 +216,5 @@ export default function SubjectsPage() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function SortableSubjectRow({
-  subject,
-  onEdit,
-  onDelete,
-}: {
-  subject: Subject;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: subject.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <TableRow ref={setNodeRef} style={style}>
-      <TableCell className="w-10 px-2">
-        <button
-          type="button"
-          className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
-      </TableCell>
-      <TableCell className="font-medium">{subject.name}</TableCell>
-      <TableCell>
-        {subject.code ? (
-          <Badge variant="outline">{subject.code}</Badge>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </TableCell>
-      <TableCell>
-        {subject.is_graded ? (
-          <Badge>Graded</Badge>
-        ) : (
-          <Badge variant="secondary">Not Graded</Badge>
-        )}
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {subject.sort_order}
-      </TableCell>
-      <TableCell className="text-right space-x-1">
-        <Button variant="ghost" size="sm" onClick={onEdit}>
-          <Pencil className="size-4" />
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onDelete}>
-          <Trash2 className="size-4 text-destructive" />
-        </Button>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-function CreateSubjectForm({ onSuccess }: { onSuccess: () => void }) {
-  useSignals();
-  const name = useSignal("");
-  const code = useSignal("");
-  const isGraded = useSignal(true);
-  const sortOrder = useSignal(0);
-  const loading = useSignal(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    loading.value = true;
-
-    const body: Record<string, unknown> = {
-      name: name.value,
-      isGraded: isGraded.value,
-      sortOrder: sortOrder.value,
-    };
-    if (code.value) body.code = code.value;
-
-    try {
-      await api("/subjects", { method: "POST", body });
-      toast.success("Subject created");
-      onSuccess();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to create";
-      toast.error(msg);
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="name">Subject Name</Label>
-          <Input
-            id="name"
-            placeholder="Mathematics"
-            value={name.value}
-            onChange={(e) => (name.value = e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="code">Code</Label>
-          <Input
-            id="code"
-            placeholder="MATH"
-            value={code.value}
-            onChange={(e) => (code.value = e.target.value)}
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="isGraded">Grading</Label>
-          <select
-            id="isGraded"
-            className={selectClass}
-            value={isGraded.value ? "true" : "false"}
-            onChange={(e) => (isGraded.value = e.target.value === "true")}
-          >
-            <option value="true">Graded</option>
-            <option value="false">Not Graded (remarks only)</option>
-          </select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="sortOrder">Display Order</Label>
-          <Input
-            id="sortOrder"
-            type="number"
-            min={0}
-            value={sortOrder.value}
-            onChange={(e) => (sortOrder.value = Number(e.target.value))}
-          />
-        </div>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading.value}>
-        {loading.value ? "Creating..." : "Create Subject"}
-      </Button>
-    </form>
-  );
-}
-
-function EditSubjectForm({
-  subject,
-  onSuccess,
-}: {
-  subject: Subject;
-  onSuccess: () => void;
-}) {
-  useSignals();
-  const name = useSignal(subject.name);
-  const code = useSignal(subject.code ?? "");
-  const isGraded = useSignal(subject.is_graded);
-  const sortOrder = useSignal(subject.sort_order);
-  const loading = useSignal(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    loading.value = true;
-
-    const body: Record<string, unknown> = {
-      name: name.value,
-      code: code.value || null,
-      isGraded: isGraded.value,
-      sortOrder: sortOrder.value,
-    };
-
-    try {
-      await api(`/subjects/${subject.id}`, { method: "PATCH", body });
-      toast.success("Subject updated");
-      onSuccess();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to update";
-      toast.error(msg);
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="editName">Subject Name</Label>
-          <Input
-            id="editName"
-            value={name.value}
-            onChange={(e) => (name.value = e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="editCode">Code</Label>
-          <Input
-            id="editCode"
-            value={code.value}
-            onChange={(e) => (code.value = e.target.value)}
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="editIsGraded">Grading</Label>
-          <select
-            id="editIsGraded"
-            className={selectClass}
-            value={isGraded.value ? "true" : "false"}
-            onChange={(e) => (isGraded.value = e.target.value === "true")}
-          >
-            <option value="true">Graded</option>
-            <option value="false">Not Graded (remarks only)</option>
-          </select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="editSortOrder">Display Order</Label>
-          <Input
-            id="editSortOrder"
-            type="number"
-            min={0}
-            value={sortOrder.value}
-            onChange={(e) => (sortOrder.value = Number(e.target.value))}
-          />
-        </div>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading.value}>
-        {loading.value ? "Saving..." : "Save Changes"}
-      </Button>
-    </form>
   );
 }

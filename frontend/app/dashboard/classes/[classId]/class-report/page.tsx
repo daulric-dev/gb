@@ -27,49 +27,19 @@ import {
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Download,
-  FileSpreadsheet,
-  FileText,
-  RefreshCw,
-  Upload,
-} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { RefreshCw } from "lucide-react";
 
-interface ClassInfo {
-  id: string;
-  name: string;
-  academicYearId: string;
-  isClassTeacher: boolean;
-}
-
-interface Term {
-  id: string;
-  name: string;
-  sort_order: number;
-  coursework_weight: number;
-  exam_weight: number;
-}
-
-const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+import type { ClassInfo, Term } from "./_components/types";
+import { LoadingSkeleton } from "./_components/LoadingSkeleton";
+import { AccessDenied } from "./_components/AccessDenied";
+import { FiltersCard } from "./_components/FiltersCard";
+import { StatsSummaryCards } from "./_components/StatsSummaryCards";
+import { SubjectAveragesCard } from "./_components/SubjectAveragesCard";
+import { StudentRankingsCard } from "./_components/StudentRankingsCard";
+import { ExportCard } from "./_components/ExportCard";
 
 export default function ClassReportPage() {
   useSignals();
@@ -357,36 +327,15 @@ export default function ClassReportPage() {
   };
 
   if (loading.value) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
+    return <LoadingSkeleton />;
   }
 
   if (!classInfo.value || !classInfo.value.isClassTeacher) {
-    return (
-      <div className="space-y-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/dashboard/classes")}
-        >
-          Back to Classes
-        </Button>
-        <p className="text-center text-muted-foreground py-12">
-          {classInfo.value
-            ? "Only the class teacher can view the class report."
-            : "Class not found or you don\u2019t have access."}
-        </p>
-      </div>
-    );
+    return <AccessDenied classInfo={classInfo.value} />;
   }
 
   const s = summary.value;
   const isClassTeacher = classInfo.value.isClassTeacher;
-
   const storedFileTypes = new Set(storedFiles.value.map((f) => f.file_type));
 
   return (
@@ -410,49 +359,14 @@ export default function ClassReportPage() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>
-            Select the term and report type to view statistics.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-          {gradingModel.value === "year_based" && (
-            <div className="space-y-1.5 min-w-[160px]">
-              <label className="text-sm font-medium">Report Type</label>
-              <select
-                className={selectClass}
-                value={reportType.value}
-                onChange={(e) => {
-                  reportType.value = e.target.value as ReportType;
-                }}
-              >
-                <option value="term">Term</option>
-                <option value="year_end">Year-end</option>
-              </select>
-            </div>
-          )}
-          {!(gradingModel.value === "year_based" && reportType.value === "year_end") && (
-            <div className="space-y-1.5 min-w-[180px]">
-              <label className="text-sm font-medium">Term</label>
-              <select
-                className={selectClass}
-                value={selectedTermId.value}
-                onChange={(e) => {
-                  selectedTermId.value = e.target.value;
-                }}
-              >
-                {terms.value.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <FiltersCard
+        gradingModel={gradingModel.value}
+        reportType={reportType.value}
+        onReportTypeChange={(v) => { reportType.value = v; }}
+        selectedTermId={selectedTermId.value}
+        onTermChange={(v) => { selectedTermId.value = v; }}
+        terms={terms.value}
+      />
 
       {dataLoading.value ? (
         <div className="space-y-4">
@@ -468,258 +382,30 @@ export default function ClassReportPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Class Average</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">
-                  {s.classAverage != null ? s.classAverage.toFixed(2) : "-"}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Highest / Lowest</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">
-                  {s.highestAverage != null ? s.highestAverage.toFixed(1) : "-"}
-                  {" / "}
-                  {s.lowestAverage != null ? s.lowestAverage.toFixed(1) : "-"}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>
-                  Students ({s.totalStudents})
-                </CardDescription>
-                <CardTitle className="text-2xl">
-                  <span className="text-green-600 dark:text-green-400">
-                    {s.passCount} pass
-                  </span>
-                  {" / "}
-                  <span className="text-red-600 dark:text-red-400">
-                    {s.failCount} fail
-                  </span>
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>
-                  {reportType.value === "year_end" && s.gradingModel === "year_based"
-                    ? "Year Weights"
-                    : "Term Weights"}
-                </CardDescription>
-                <CardTitle className="text-2xl tabular-nums">
-                  CW {s.courseworkWeight}% / EX {s.examWeight}%
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </div>
+          <StatsSummaryCards summary={s} reportType={reportType.value} />
 
           {s.subjectAverages.length > 0 && gradingModel.value !== "year_based" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Subject Averages</CardTitle>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Subject</TableHead>
-                      <TableHead className="text-right">Average</TableHead>
-                      <TableHead className="text-right">Highest</TableHead>
-                      <TableHead className="text-right">Lowest</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {s.subjectAverages.map((sub) => (
-                      <TableRow key={sub.subjectId}>
-                        <TableCell className="font-medium">
-                          {sub.subjectName}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {sub.average != null ? sub.average.toFixed(2) : "-"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {sub.highestMark != null
-                            ? sub.highestMark.toFixed(1)
-                            : "-"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {sub.lowestMark != null
-                            ? sub.lowestMark.toFixed(1)
-                            : "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            <SubjectAveragesCard subjectAverages={s.subjectAverages} />
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Student Rankings</CardTitle>
-              <CardDescription>
-                {isYearEnd && yearResults.value.length > 0
-                  ? "Ordered by position, based on year-end overall average"
-                  : "Ordered by position, based on overall average"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              {isYearEnd && yearResults.value.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-16">#</TableHead>
-                      <TableHead>Student</TableHead>
-                      <TableHead className="text-right">
-                        Year Average
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {yearResults.value.map((yr) => (
-                      <TableRow key={yr.studentId}>
-                        <TableCell>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {yr.position ?? "-"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {yr.firstName} {yr.lastName}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {yr.yearEnd.overallAverage != null
-                            ? yr.yearEnd.overallAverage.toFixed(2)
-                            : "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-16">#</TableHead>
-                      <TableHead>Student</TableHead>
-                      <TableHead className="text-right">
-                        Overall Average
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {s.students.map((st) => (
-                      <TableRow key={st.studentId}>
-                        <TableCell>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {st.position ?? "-"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {st.firstName} {st.lastName}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {st.overallAverage != null
-                            ? st.overallAverage.toFixed(2)
-                            : "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <StudentRankingsCard
+            isYearEnd={isYearEnd}
+            yearResults={yearResults.value}
+            students={s.students}
+          />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="size-5" />
-                Export
-              </CardTitle>
-              <CardDescription>
-                Download locally or generate and upload to storage.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={downloadPdf}>
-                  <FileText className="mr-2 size-4" />
-                  Download PDF
-                </Button>
-                <Button size="sm" variant="outline" onClick={downloadExamReportPdf}>
-                  <FileText className="mr-2 size-4" />
-                  Exam Report Card
-                </Button>
-                <Button size="sm" variant="outline" onClick={downloadCsv}>
-                  <FileSpreadsheet className="mr-2 size-4" />
-                  Download CSV
-                </Button>
-                <Button size="sm" variant="outline" onClick={downloadXlsx}>
-                  <FileSpreadsheet className="mr-2 size-4" />
-                  Download Excel
-                </Button>
-              </div>
-
-              {isClassTeacher && (
-                <div className="flex flex-wrap gap-2 border-t pt-4">
-                  <Button
-                    size="sm"
-                    onClick={generateAndUploadAll}
-                    disabled={generating.value}
-                  >
-                    <Upload className="mr-2 size-4" />
-                    {generating.value
-                      ? "Working…"
-                      : "Generate & save all to storage"}
-                  </Button>
-                </div>
-              )}
-
-              {storedFiles.value.length > 0 && (
-                <div className="space-y-2 border-t pt-4">
-                  <p className="text-sm font-medium">Stored files</p>
-                  <ul className="space-y-2 text-sm">
-                    {storedFiles.value.map((f) => (
-                      <li
-                        key={f.id}
-                        className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
-                      >
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="text-xs uppercase">
-                              {f.file_type}
-                            </Badge>
-                            <code className="text-xs break-all">
-                              {f.file_path}
-                            </code>
-                          </div>
-                          <span className="text-muted-foreground">
-                            {(f.file_size / 1024).toFixed(1)} KB ·{" "}
-                            {new Date(f.generated_at).toLocaleString()}
-                          </span>
-                        </div>
-                        {storedFileTypes.has(f.file_type) && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="shrink-0"
-                            onClick={() => downloadStoredFile(f.file_type)}
-                          >
-                            <Download className="size-4" />
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ExportCard
+            isClassTeacher={isClassTeacher}
+            generating={generating.value}
+            storedFiles={storedFiles.value}
+            storedFileTypes={storedFileTypes}
+            onDownloadPdf={downloadPdf}
+            onDownloadExamReportPdf={downloadExamReportPdf}
+            onDownloadCsv={downloadCsv}
+            onDownloadXlsx={downloadXlsx}
+            onGenerateAndUploadAll={generateAndUploadAll}
+            onDownloadStoredFile={downloadStoredFile}
+          />
         </>
       )}
     </div>
