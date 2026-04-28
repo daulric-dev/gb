@@ -254,14 +254,16 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             <span className="text-xs text-muted-foreground truncate flex-1">
               {profile.school.name}
             </span>
-            <ChangeSchoolDialog currentSchoolId={profile.school.id}>
-              <span
-                title="Change school"
-                className="shrink-0 rounded-md p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-              >
-                <ArrowLeftRight className="size-3" />
-              </span>
-            </ChangeSchoolDialog>
+            {process.env.NEXT_PUBLIC_DEDICATED_DEPLOYMENT !== 'true' && (
+              <ChangeSchoolDialog currentSchoolId={profile.school.id}>
+                <span
+                  title="Change school"
+                  className="shrink-0 rounded-md p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                >
+                  <ArrowLeftRight className="size-3" />
+                </span>
+              </ChangeSchoolDialog>
+            )}
           </div>
         )}
       </SidebarHeader>
