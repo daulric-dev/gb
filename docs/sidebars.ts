@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "implementation-guide",
         "environment-variables",
+        "dedicated-deployment",
       ],
     },
     {

@@ -23,6 +23,7 @@ No `.env` files are committed to the repository. You must create them manually i
 | `PORT` | No | `3001` | Port the backend server listens on. |
 | `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching instead of in-memory. |
 | `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
+| `DEDICATED_DEPLOYMENT` | No | `false` | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md). |
 
 ### Example `backend/.env`
 
@@ -34,6 +35,9 @@ FRONTEND_URL=http://localhost:3000
 PORT=3001
 USE_REDIS=false
 # REDIS_URL=redis://localhost:6379
+
+# Dedicated deployment (single-school instance)
+# DEDICATED_DEPLOYMENT=true
 ```
 
 ### Where Each Variable Is Used
@@ -57,11 +61,15 @@ USE_REDIS=false
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically) |
+| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No | `false` | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
 
 ### Example `frontend/.env.local`
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
+
+# Dedicated deployment (single-school instance)
+# NEXT_PUBLIC_DEDICATED_DEPLOYMENT=true
 ```
 
 ### Where It Is Used
@@ -69,6 +77,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 | Variable | File | Usage |
 |----------|------|-------|
 | `NEXT_PUBLIC_API_URL` | `lib/api.ts` | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
+| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | `app/onboard/page.tsx`, `components/layout/app-sidebar.tsx` | Hides school selection UI on dedicated instances |
 
 > **Note**: The `NEXT_PUBLIC_` prefix makes this variable available in the browser bundle. Do **not** put secrets in `NEXT_PUBLIC_` variables.
 
