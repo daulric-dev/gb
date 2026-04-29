@@ -60,6 +60,7 @@ const sidebars: SidebarsConfig = {
       link: { type: "doc", id: "cli/overview" },
       items: [
         "cli/commands",
+        "cli/service-registry",
         "cli/interactive-prompts",
       ],
     },

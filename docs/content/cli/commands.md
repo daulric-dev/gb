@@ -129,6 +129,7 @@ After each commit:
 - If a selected service has no changes, a warning is shown and the loop continues
 - Each subsequent commit defaults to `feat` type
 - CLI flags (`--topic`, `-m`, `--type`) only apply to the first commit
+- Services with multiple paths (e.g., `ci` covering `.github/` and `infrastructure/`) stage all matching files under a single commit
 
 ### Commit message format
 
@@ -239,6 +240,52 @@ gb run frontend lint        # runs "bun run lint" in frontend/
 ```
 
 Inherits stdin/stdout/stderr, so interactive scripts work. The exit code from the script is propagated.
+
+---
+
+## Service
+
+```bash
+gb service
+gb service list
+gb service add [name]
+gb service remove [name]
+```
+
+Manages the service registry in `_mr.json`. See [Service Registry](./service-registry.md) for the full config format.
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `gb service` / `gb service list` | Print all registered services with their mapped paths |
+| `gb service add [name]` | Register a new service (prompts for name and paths if not provided) |
+| `gb service remove [name]` | Remove a service from the registry (interactive selector if no name given) |
+
+**Listing services:**
+
+```
+Registered services:
+  frontend   → frontend
+  backend    → backend
+  ci         → .github, infrastructure
+  root       → (built-in — catches unregistered paths)
+```
+
+**Adding a service:**
+
+```bash
+gb service add
+# Service name: api
+# Paths (comma-separated, default: api): api, shared
+# Added api → api, shared
+```
+
+If no extra paths are needed, press enter to use the service name as the only path.
+
+**Notes:**
+- `root` is a built-in service and cannot be added or removed
+- Changes take effect immediately for the next `gb` command (config is loaded at startup)
 
 ---
 
