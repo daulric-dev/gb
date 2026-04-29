@@ -1,0 +1,16 @@
+{
+  "services": [
+    "frontend",
+    "backend",
+    "docs",
+    ".github",
+    "command",
+    "infrastructure",
+    "supabase"
+  ],
+  "protectedBranches": [
+    "main",
+    "master",
+    "staging"
+  ]
+}
