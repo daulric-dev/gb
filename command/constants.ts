@@ -1,9 +1,24 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 
+type ServiceEntry = string |  {
+  name: string;
+  paths: string[];
+};
+
+export interface NormalizedService {
+  name: string;
+  paths: string[];
+}
+
 interface MrConfig {
-  services: string[];
+  root?: string;
+  services: ServiceEntry[];
   protectedBranches?: string[];
+}
+
+function normalizedEntry(entry: ServiceEntry): NormalizedService {
+  return typeof entry === "string" ? { name: entry, paths: [entry] } : entry;
 }
 
 function loadConfig(): MrConfig {
@@ -16,12 +31,17 @@ function loadConfig(): MrConfig {
 }
 
 const config = loadConfig();
+const normalized = config.services.map(normalizedEntry);
 
 export const SERVICES: Record<string, string> = Object.fromEntries(
-  config.services.map((s) => [s, s]),
+  normalized.flatMap( ({name, paths}) => paths.map((p) => [p, name]) ),
 );
 
-export const ALL_SERVICES: string[] = ["root", ...config.services];
+export const CONFIGURED_ROOT: string | undefined = config.root;
+
+export const NORMALIZED_SERVICES: NormalizedService[] = normalized;
+
+export const ALL_SERVICES: string[] = ["root", ...normalized.map((e) => e.name)];
 
 export const PROTECTED_BRANCHES: string[] = config.protectedBranches ?? ["main", "master", "staging"];
 

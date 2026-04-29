@@ -1,14 +1,29 @@
 import { readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-import { SERVICES, ALL_SERVICES, COMMIT_TYPES, PROTECTED_BRANCHES, type CommitType } from "./constants";
+import { join, relative } from "path";
+import { SERVICES, ALL_SERVICES, NORMALIZED_SERVICES, CONFIGURED_ROOT, COMMIT_TYPES, PROTECTED_BRANCHES, type CommitType } from "./constants";
 import { git, getCurrentBranch, groupByService, parseStatusOutput, slugify } from "./utils";
-import { prompt, promptWithWordLimit, select } from "./prompts";
+import { prompt, promptPrefilled, promptWithWordLimit, select } from "./prompts";
 
 const MR_CONFIG_PATH = join(import.meta.dir, "../_mr.json");
 
+type ServiceEntry = string | {
+  name: string;
+  paths: string[];
+};
+
+interface NormalizedService {
+  name: string;
+  paths: string[]
+}
+
 interface MrConfig {
-  services: string[];
+  root?: string;
+  services: ServiceEntry[];
   protectedBranches?: string[];
+}
+
+function normalizedEntry(entry: ServiceEntry): NormalizedService {
+  return typeof entry === "string" ? { name: entry, paths: [entry] } : entry;
 }
 
 function readMrConfig(): MrConfig {
@@ -23,65 +38,127 @@ export async function serviceCmd(positionals: string[]) {
   const sub = positionals[0];
 
   if (!sub || sub === "list") {
-    const config = readMrConfig();
+    const entries = readMrConfig().services.map(normalizedEntry);
     console.log("\x1b[1mRegistered services:\x1b[0m");
-    for (const s of config.services) {
-      console.log(`  \x1b[36m${s}\x1b[0m`);
+    for (const { name, paths } of entries) {
+      console.log(`  \x1b[36m${name}\x1b[0m  \x1b[2m→ ${paths.join(", ")}\x1b[0m`);
     }
-    console.log(`  \x1b[2mroot\x1b[0m \x1b[2m(built-in — catches unregistered paths)\x1b[0m`);
+    console.log(`  \x1b[2mroot  → (built-in — catches unregistered paths)\x1b[0m`);
     return;
   }
 
   if (sub === "add") {
-    let name = positionals[1];
+    const name = await promptPrefilled("Service name:", positionals[1] ?? "");
     if (!name) {
-      name = await prompt("Service name (directory):");
-      if (!name) {
-        console.error("Service name is required.");
-        process.exit(1);
-      }
+      console.error("Service name is required.");
+      process.exit(1);
     }
     if (name === "root") {
       console.error("root is a built-in service and cannot be added.");
       process.exit(1);
     }
     const config = readMrConfig();
-    if (config.services.includes(name)) {
+    if (config.services.map(normalizedEntry).some((e) => e.name === name)) {
       console.log(`\x1b[33m${name}\x1b[0m is already registered.`);
       return;
     }
-    config.services.push(name);
+    const rawPaths = await promptPrefilled("Paths (comma-separated):", name);
+    const paths = rawPaths.trim()
+      ? rawPaths.split(",").map((p) => p.trim()).filter(Boolean)
+      : [name];
+    config.services.push({ name, paths });
     writeMrConfig(config);
-    console.log(`\x1b[32mAdded\x1b[0m \x1b[36m${name}\x1b[0m to _mr.json`);
+    console.log(`\x1b[32mAdded\x1b[0m \x1b[36m${name}\x1b[0m → ${paths.join(", ")}`);
+    return;
+  }
+
+  if (sub === "edit") {
+    const config = readMrConfig();
+    const entries = config.services.map(normalizedEntry);
+    if (entries.length === 0) {
+      console.log("No services registered.");
+      return;
+    }
+    const name = await select("Edit which service?", entries.map((e) => e.name));
+    const current = entries.find((e) => e.name === name)!;
+    const rawPaths = await promptPrefilled("Paths (comma-separated):", current.paths.join(", "));
+    const paths = rawPaths.trim()
+      ? rawPaths.split(",").map((p) => p.trim()).filter(Boolean)
+      : current.paths;
+    config.services = config.services.map((s) =>
+      normalizedEntry(s).name === name ? { name, paths } : s,
+    );
+    writeMrConfig(config);
+    console.log(`\x1b[32mUpdated\x1b[0m \x1b[36m${name}\x1b[0m → ${paths.join(", ")}`);
     return;
   }
 
   if (sub === "remove") {
     const config = readMrConfig();
-    if (config.services.length === 0) {
+    const entries = config.services.map(normalizedEntry);
+    if (entries.length === 0) {
       console.log("No services registered.");
       return;
     }
     let name = positionals[1];
     if (!name) {
-      name = await select("Remove which service?", config.services);
+      name = await select("Remove which service?", entries.map((e) => e.name));
     }
     if (name === "root") {
       console.error("root is a built-in service and cannot be removed.");
       process.exit(1);
     }
-    if (!config.services.includes(name)) {
+    if (!entries.some((e) => e.name === name)) {
       console.error(`Service "${name}" is not registered.`);
       process.exit(1);
     }
-    config.services = config.services.filter((s) => s !== name);
+    config.services = config.services.filter((s) => normalizedEntry(s).name !== name);
     writeMrConfig(config);
     console.log(`\x1b[32mRemoved\x1b[0m \x1b[36m${name}\x1b[0m from _mr.json`);
     return;
   }
 
+  if (sub === "root") {
+    const config = readMrConfig();
+    const action = positionals[1];
+
+    if (!action || action === "show") {
+      if (config.root) {
+        console.log(`\x1b[1mConfigured root:\x1b[0m \x1b[36m${config.root}\x1b[0m`);
+      } else {
+        const detected = await git("rev-parse", "--show-toplevel");
+        console.log(`\x1b[1mRoot:\x1b[0m \x1b[36m${detected}\x1b[0m \x1b[2m(detected from git)\x1b[0m`);
+      }
+      return;
+    }
+
+    if (action === "set") {
+      const current = config.root ?? await git("rev-parse", "--show-toplevel");
+      const newRoot = await promptPrefilled("Monorepo root path:", current);
+      if (!newRoot) {
+        console.error("Root path is required.");
+        process.exit(1);
+      }
+      config.root = newRoot;
+      writeMrConfig(config);
+      console.log(`\x1b[32mUpdated root\x1b[0m → \x1b[36m${newRoot}\x1b[0m`);
+      return;
+    }
+
+    if (action === "clear") {
+      delete config.root;
+      writeMrConfig(config);
+      console.log(`\x1b[32mCleared root override\x1b[0m — will use git detection`);
+      return;
+    }
+
+    console.error(`Unknown action: service root ${action}`);
+    console.error("Usage: gb service root [show|set|clear]");
+    process.exit(1);
+  }
+
   console.error(`Unknown subcommand: service ${sub}`);
-  console.error("Usage: gb service [list|add|remove]");
+  console.error("Usage: gb service [list|add|edit|remove|root]");
   process.exit(1);
 }
 
@@ -134,6 +211,11 @@ export async function commitCmd(
 ) {
   let isFirst = true;
   let branchCreated = false;
+
+  const gitRoot = await git("rev-parse", "--show-toplevel");
+  const rootPrefix = CONFIGURED_ROOT && CONFIGURED_ROOT !== gitRoot
+    ? relative(gitRoot, CONFIGURED_ROOT)
+    : "";
 
   while (true) {
     let service = isFirst ? positionals[0] : undefined;
@@ -221,16 +303,21 @@ export async function commitCmd(
       }
     }
 
-    const serviceDir = service === "root" ? "." : service;
     const statusOutput = await git("status", "--porcelain");
     const files = parseStatusOutput(statusOutput);
+    const servicePaths = service === "root"
+      ? null
+      : (NORMALIZED_SERVICES.find((s) => s.name === service)?.paths ?? [service]);
+
+    const withPrefix = (p: string) => rootPrefix ? `${rootPrefix}/${p}` : p;
+
     const serviceFiles = files.filter((f) => {
       if (service === "root") {
         return !Object.keys(SERVICES).some((prefix) =>
-          f.path.startsWith(`${prefix}/`),
+          f.path.startsWith(`${withPrefix(prefix)}/`),
         );
       }
-      return f.path.startsWith(`${serviceDir}/`);
+      return servicePaths!.some((p) => f.path.startsWith(`${withPrefix(p)}/`));
     });
 
     if (serviceFiles.length === 0) {
@@ -240,7 +327,8 @@ export async function commitCmd(
     }
 
     for (const f of serviceFiles) {
-      await git("add", f.path);
+      const stagePath = rootPrefix ? f.path.slice(rootPrefix.length + 1) : f.path;
+      await git("add", stagePath);
     }
 
     const subject =

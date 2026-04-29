@@ -77,6 +77,50 @@ export function promptWithWordLimit(label: string, maxWords: number): Promise<st
   });
 }
 
+export function promptPrefilled(label: string, defaultValue: string): Promise<string> {
+  return new Promise((resolve) => {
+    let input = defaultValue;
+
+    const render = () => {
+      process.stdout.write(`\r\x1b[2K\x1b[1m${label}\x1b[0m ${input}`);
+    };
+
+    render();
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+
+    const handler = (data: Buffer) => {
+      const key = data.toString();
+
+      if (key === "\r" || key === "\n") {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener("data", handler);
+        process.stdout.write("\n");
+        resolve(input.trim());
+      } else if (key === "\x7f" || key === "\b") {
+        if (input.length > 0) {
+          input = input.slice(0, -1);
+          render();
+        }
+      } else if (key === "\x03") {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener("data", handler);
+        process.stdout.write("\n");
+        process.exit(130);
+      } else if (key === "\x17") {
+        input = input.replace(/\s*\S+\s*$/, "");
+        render();
+      } else if (!key.startsWith("\x1b") && key >= " ") {
+        input += key;
+        render();
+      }
+    };
+    process.stdin.on("data", handler);
+  });
+}
+
 export function select(label: string, options: string[]): Promise<string> {
   return new Promise((resolve) => {
     let cursor = 0;
