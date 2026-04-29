@@ -69,6 +69,7 @@ jobs:
         run: |
           git config user.email "ci@github.com"
           git config user.name "CI"
+          git checkout -- bun.lock
 
       - name: gb help
         run: bun run gb help
