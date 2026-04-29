@@ -1,0 +1,107 @@
+name: CLI
+
+on:
+  push:
+    paths:
+      - "command/**"
+      - "_mr.json"
+  pull_request:
+    paths:
+      - "command/**"
+      - "_mr.json"
+
+jobs:
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Type check
+        run: bun x tsc --noEmit --project command/tsconfig.json
+
+  validate-config:
+    name: Validate _mr.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+
+      - name: Validate structure
+        run: |
+          bun -e "
+          const config = require('./_mr.json');
+          if (!Array.isArray(config.services)) throw new Error('services must be an array');
+          for (const s of config.services) {
+            const entry = typeof s === 'string' ? { name: s, paths: [s] } : s;
+            if (!entry.name || !Array.isArray(entry.paths) || entry.paths.length === 0)
+              throw new Error('Invalid service entry: ' + JSON.stringify(s));
+          }
+          const names = config.services.map(s => typeof s === 'string' ? s : s.name);
+          console.log('Valid — services:', names.join(', '));
+          if (config.protectedBranches) console.log('Protected branches:', config.protectedBranches.join(', '));
+          "
+
+  commands:
+    name: CLI Commands
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Configure git
+        run: |
+          git config user.email "ci@github.com"
+          git config user.name "CI"
+          git checkout -- bun.lock
+
+      - name: gb help
+        run: bun run gb help
+
+      - name: gb status — clean tree
+        run: |
+          output=$(bun run gb status)
+          echo "$output"
+          [[ "$output" == *"Working tree clean"* ]] || { echo "Expected clean working tree"; exit 1; }
+
+      - name: gb affected — no changes vs HEAD
+        run: |
+          output=$(bun run gb affected --base=HEAD 2>&1 || true)
+          echo "$output"
+          [[ "$output" == *"No changes detected"* ]] || { echo "Expected no changes"; exit 1; }
+
+      - name: gb service list — services loaded from _mr.json
+        run: |
+          output=$(bun run gb service list)
+          echo "$output"
+          [[ "$output" == *"frontend"* ]] || { echo "Expected frontend service"; exit 1; }
+          [[ "$output" == *"backend"* ]]  || { echo "Expected backend service"; exit 1; }
+          [[ "$output" == *"root"* ]]     || { echo "Expected root built-in"; exit 1; }
+
+      - name: gb service root — shows repo root
+        run: |
+          output=$(bun run gb service root)
+          echo "$output"
+          [[ "$output" == *"$GITHUB_WORKSPACE"* ]] || { echo "Expected workspace path in root output"; exit 1; }
+
+      - name: gb diff — no unstaged changes
+        run: |
+          output=$(bun run gb diff 2>&1 || true)
+          echo "$output"
+          [[ "$output" == *"No unstaged changes"* ]] || { echo "Expected no unstaged changes"; exit 1; }

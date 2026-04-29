@@ -1,6 +1,7 @@
-import { SERVICES } from "./constants";
+import { SERVICES, CONFIGURED_ROOT } from "./constants";
 
 async function getRepoRoot(): Promise<string> {
+  if (CONFIGURED_ROOT) return CONFIGURED_ROOT;
   const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
     stdout: "pipe",
     stderr: "pipe",

@@ -129,6 +129,7 @@ After each commit:
 - If a selected service has no changes, a warning is shown and the loop continues
 - Each subsequent commit defaults to `feat` type
 - CLI flags (`--topic`, `-m`, `--type`) only apply to the first commit
+- Services with multiple paths (e.g., `ci` covering `.github/` and `infrastructure/`) stage all matching files under a single commit
 
 ### Commit message format
 
@@ -239,6 +240,82 @@ gb run frontend lint        # runs "bun run lint" in frontend/
 ```
 
 Inherits stdin/stdout/stderr, so interactive scripts work. The exit code from the script is propagated.
+
+---
+
+## Service
+
+```bash
+gb service
+gb service list
+gb service add
+gb service edit
+gb service remove
+gb service root [show|set|clear]
+```
+
+Manages the service registry in `_mr.json`. See [Service Registry](./service-registry.md) for the full config format.
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `gb service` / `gb service list` | Print all registered services with their mapped paths |
+| `gb service add` | Register a new service — prompts for name then paths |
+| `gb service edit` | Select a service and edit its paths in-place |
+| `gb service remove` | Remove a service (interactive selector) |
+| `gb service root` | Show the configured monorepo root |
+| `gb service root set` | Set the monorepo root path in `_mr.json` |
+| `gb service root clear` | Remove the root override (falls back to git detection) |
+
+**Listing services:**
+
+```
+Registered services:
+  frontend   → frontend
+  backend    → backend
+  ci         → .github, infrastructure
+  root       → (built-in — catches unregistered paths)
+```
+
+**Adding a service:**
+
+```
+gb service add
+Service name: api
+Paths (comma-separated): api, shared
+Added api → api, shared
+```
+
+The paths field is pre-filled with the service name — press enter to keep it, or type a comma-separated list to override.
+
+**Editing a service:**
+
+```
+gb service edit
+❯ backend
+  frontend
+  ci
+
+Paths (comma-separated): backend, shared
+Updated backend → backend, shared
+```
+
+The paths field opens pre-filled with the current value so you can backspace and edit in place.
+
+**Managing the monorepo root:**
+
+```bash
+gb service root           # Root: /Users/you/gbv2 (detected from git)
+gb service root set       # opens pre-filled prompt to change it
+gb service root clear     # removes override, reverts to git detection
+```
+
+When a root is configured in `_mr.json`, all `gb` commands use it as the working directory instead of auto-detecting via `git rev-parse --show-toplevel`.
+
+**Notes:**
+- `root` is a built-in pseudo-service and cannot be added, edited, or removed
+- Changes to `_mr.json` take effect on the next `gb` invocation (config is loaded at startup)
 
 ---
 

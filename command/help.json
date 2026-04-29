@@ -51,8 +51,8 @@
     },
     {
       "name": "service",
-      "args": "[list|add|remove] [name]",
-      "description": "Manage registered services in _mr.json"
+      "args": "[list|add|edit|remove|root]",
+      "description": "Manage registered services and repo root in _mr.json"
     },
     {
       "name": "run",
@@ -78,7 +78,11 @@
     "gb push --force",
     "gb run backend test",
     "gb service",
-    "gb service add my-service",
-    "gb service remove"
+    "gb service add",
+    "gb service edit",
+    "gb service remove",
+    "gb service root",
+    "gb service root set",
+    "gb service root clear"
   ]
 }

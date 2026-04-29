@@ -47,31 +47,33 @@ The frontend and docs cannot be compiled this way as they depend on the Next.js 
 command/
 ├── index.ts       # Entrypoint — parses args, dispatches to commands
 ├── commands.ts    # All command implementations
-├── constants.ts   # Services, commit types, protected branches
+├── constants.ts   # Loads _mr.json; exports SERVICES, ALL_SERVICES, PROTECTED_BRANCHES
 ├── prompts.ts     # Interactive terminal UI (prompt, select, word limit)
 ├── utils.ts       # Git helpers, path mapping, arg parsing
 ├── timer.ts       # Execution timer
 └── help.json      # Help text data (loaded at runtime)
+_mr.json           # Service registry — defines services and protected branches
 ```
 
 ## Services
 
-The CLI recognizes these service directories in the monorepo:
+Services are defined in [`_mr.json`](./service-registry.md) at the repo root rather than being hardcoded. Each entry maps a service name to one or more directory paths.
 
-| Service | Directory |
-|---------|-----------|
-| `frontend` | `frontend/` |
-| `backend` | `backend/` |
-| `docs` | `docs/` |
-| `.github` | `.github/` |
-| `command` | `command/` |
-| `root` | Everything else (root-level files like `package.json`, `turbo.json`, etc.) |
+```json
+{ "name": "backend", "paths": ["backend"] }
+```
 
-Defined in `constants.ts` as the `SERVICES` map. The `root` pseudo-service captures files not under any service directory.
+`constants.ts` reads this file at startup and builds:
+- `SERVICES` — a flat `path → name` map used to group files
+- `ALL_SERVICES` — the list of service names shown in selectors (always includes `root`)
+
+The built-in `root` pseudo-service captures any file not covered by a registered path.
+
+To add, remove, or inspect services use [`gb service`](./commands.md#service).
 
 ## Protected Branches
 
-The following branches are considered protected: `main`, `master`, `staging`.
+Protected branches are configured in `_mr.json` under `protectedBranches` (defaults to `main`, `master`, `staging` if omitted).
 
 When committing on a protected branch, `gb commit` automatically creates a new feature branch before committing. When creating a branch from a non-protected branch, a confirmation prompt is shown.
 
@@ -97,6 +99,7 @@ Every command displays its execution time on completion (e.g., `Done in 142ms` o
 | [`gb diff`](./commands.md#diff) | Show diff for a service or all |
 | [`gb sync`](./commands.md#sync) | Delete local branches that no longer exist on remote |
 | [`gb push`](./commands.md#push) | Push current branch to origin |
+| [`gb service`](./commands.md#service) | Add, remove, or list registered services in `_mr.json` |
 | [`gb run`](./commands.md#run) | Run a package.json script in a service |
 | `gb help` | Show help |
 
