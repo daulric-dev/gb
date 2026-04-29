@@ -10,6 +10,7 @@ sidebar_label: Service Registry
 
 ```json
 {
+  "root": "/Users/you/gbv2",
   "services": [
     { "name": "frontend",       "paths": ["frontend"] },
     { "name": "backend",        "paths": ["backend"] },
@@ -45,6 +46,23 @@ Running `gb commit` and selecting `ci` will stage and commit all changed files u
 "services": ["frontend", "backend"]
 ```
 
+### `root`
+
+Optional. When set, all `gb` commands use this path as the monorepo working directory instead of auto-detecting via `git rev-parse --show-toplevel`.
+
+```json
+"root": "/Users/you/gbv2"
+```
+
+If the configured root is a subdirectory of the git root, `gb commit` automatically computes the relative prefix so service paths are resolved correctly against the git status output.
+
+Manage it with:
+```bash
+gb service root           # show current root
+gb service root set       # edit with a pre-filled prompt
+gb service root clear     # remove and fall back to git detection
+```
+
 ### `protectedBranches`
 
 Optional. Defaults to `["main", "master", "staging"]` if omitted.
@@ -57,10 +75,10 @@ Instead of editing `_mr.json` by hand, use the `gb service` command:
 
 ```bash
 gb service               # list all registered services and their paths
-gb service add           # interactive: prompts for name and paths
-gb service add api       # add "api" service, prompts for paths
-gb service remove        # interactive selector
-gb service remove docs   # remove "docs" directly
+gb service add           # prompts for name then paths
+gb service edit          # select a service and edit its paths in-place
+gb service remove        # interactive selector to pick which to remove
+gb service root set      # update the monorepo root path
 ```
 
 See [`gb service`](./commands.md#service) for full details.
@@ -70,14 +88,20 @@ See [`gb service`](./commands.md#service) for full details.
 `constants.ts` reads `_mr.json` at startup and builds a flat `path → service name` map:
 
 ```
-frontend     → frontend
-backend      → backend
-.github      → ci
+frontend       → frontend
+backend        → backend
+.github        → ci
 infrastructure → ci
-docs         → docs
+docs           → docs
 ```
 
 `getServiceForPath` in `utils.ts` walks this map and returns the first matching prefix. Any file that doesn't match falls through to `root`.
+
+### Commit path resolution
+
+`git status --porcelain` always returns paths relative to the git root. When `root` in `_mr.json` is a subdirectory of the git root, `gb commit` computes a `rootPrefix` (e.g. `gbv2/`) and prepends it to service paths when filtering files. The prefix is stripped again before calling `git add`, since git runs with `cwd` set to the configured root.
+
+When `root` matches the git root (the typical case), the prefix is empty and there is no difference in behaviour.
 
 This means:
 - Adding a service to `_mr.json` immediately changes how `gb status`, `gb commit`, and `gb diff` group files
