@@ -1,6 +1,89 @@
-import { SERVICES, COMMIT_TYPES, PROTECTED_BRANCHES, type CommitType } from "./constants";
+import { readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+import { SERVICES, ALL_SERVICES, COMMIT_TYPES, PROTECTED_BRANCHES, type CommitType } from "./constants";
 import { git, getCurrentBranch, groupByService, parseStatusOutput, slugify } from "./utils";
 import { prompt, promptWithWordLimit, select } from "./prompts";
+
+const MR_CONFIG_PATH = join(import.meta.dir, "../_mr.json");
+
+interface MrConfig {
+  services: string[];
+  protectedBranches?: string[];
+}
+
+function readMrConfig(): MrConfig {
+  return JSON.parse(readFileSync(MR_CONFIG_PATH, "utf-8")) as MrConfig;
+}
+
+function writeMrConfig(config: MrConfig): void {
+  writeFileSync(MR_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+}
+
+export async function serviceCmd(positionals: string[]) {
+  const sub = positionals[0];
+
+  if (!sub || sub === "list") {
+    const config = readMrConfig();
+    console.log("\x1b[1mRegistered services:\x1b[0m");
+    for (const s of config.services) {
+      console.log(`  \x1b[36m${s}\x1b[0m`);
+    }
+    console.log(`  \x1b[2mroot\x1b[0m \x1b[2m(built-in — catches unregistered paths)\x1b[0m`);
+    return;
+  }
+
+  if (sub === "add") {
+    let name = positionals[1];
+    if (!name) {
+      name = await prompt("Service name (directory):");
+      if (!name) {
+        console.error("Service name is required.");
+        process.exit(1);
+      }
+    }
+    if (name === "root") {
+      console.error("root is a built-in service and cannot be added.");
+      process.exit(1);
+    }
+    const config = readMrConfig();
+    if (config.services.includes(name)) {
+      console.log(`\x1b[33m${name}\x1b[0m is already registered.`);
+      return;
+    }
+    config.services.push(name);
+    writeMrConfig(config);
+    console.log(`\x1b[32mAdded\x1b[0m \x1b[36m${name}\x1b[0m to _mr.json`);
+    return;
+  }
+
+  if (sub === "remove") {
+    const config = readMrConfig();
+    if (config.services.length === 0) {
+      console.log("No services registered.");
+      return;
+    }
+    let name = positionals[1];
+    if (!name) {
+      name = await select("Remove which service?", config.services);
+    }
+    if (name === "root") {
+      console.error("root is a built-in service and cannot be removed.");
+      process.exit(1);
+    }
+    if (!config.services.includes(name)) {
+      console.error(`Service "${name}" is not registered.`);
+      process.exit(1);
+    }
+    config.services = config.services.filter((s) => s !== name);
+    writeMrConfig(config);
+    console.log(`\x1b[32mRemoved\x1b[0m \x1b[36m${name}\x1b[0m from _mr.json`);
+    return;
+  }
+
+  console.error(`Unknown subcommand: service ${sub}`);
+  console.error("Usage: gb service [list|add|remove]");
+  process.exit(1);
+}
 
 export async function statusCmd() {
   const output = await git("status", "--porcelain");
@@ -49,7 +132,6 @@ export async function commitCmd(
   positionals: string[],
   flags: Record<string, string>,
 ) {
-  const allServices = [...Object.values(SERVICES), "root"];
   let isFirst = true;
   let branchCreated = false;
 
@@ -99,7 +181,7 @@ export async function commitCmd(
     }
 
     if (!service) {
-      service = await select("Select a service:", allServices);
+      service = await select("Select a service:", ALL_SERVICES);
     }
 
     if (!topic) {
@@ -121,9 +203,9 @@ export async function commitCmd(
       process.exit(1);
     }
 
-    if (!allServices.includes(service)) {
+    if (!ALL_SERVICES.includes(service)) {
       console.error(
-        `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
+        `Unknown service "${service}". Must be one of: ${ALL_SERVICES.join(", ")}`,
       );
       process.exit(1);
     }
@@ -196,7 +278,7 @@ export async function branchCmd(
   const isCustom = "custom" in flags;
 
   if (!service && !isCustom) {
-    const options = ["custom", ...Object.values(SERVICES), "root"];
+    const options = ["custom", ...ALL_SERVICES];
     const selected = await select("Select a service:", options);
     if (selected === "custom") {
       let customName = await prompt("Branch name:");
@@ -224,10 +306,9 @@ export async function branchCmd(
     return;
   }
 
-  const allServices = [...Object.values(SERVICES), "root"];
-  if (!allServices.includes(service!)) {
+  if (!ALL_SERVICES.includes(service!)) {
     console.error(
-      `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
+      `Unknown service "${service}". Must be one of: ${ALL_SERVICES.join(", ")}`,
     );
     process.exit(1);
   }
@@ -297,10 +378,9 @@ export async function runCmd(positionals: string[]) {
     process.exit(1);
   }
 
-  const allServices = Object.values(SERVICES);
-  if (!allServices.includes(service)) {
+  if (!ALL_SERVICES.includes(service)) {
     console.error(
-      `Unknown service "${service}". Must be one of: ${allServices.join(", ")}`,
+      `Unknown service "${service}". Must be one of: ${ALL_SERVICES.join(", ")}`,
     );
     process.exit(1);
   }
@@ -443,7 +523,7 @@ export function helpCmd() {
     }
   }
 
-  lines.push(`\n\x1b[1mServices:\x1b[0m ${[...Object.values(SERVICES), "root"].join(", ")}\n`);
+  lines.push(`\n\x1b[1mServices:\x1b[0m ${ALL_SERVICES.join(", ")}\n`);
 
   lines.push(`\x1b[1mExamples:\x1b[0m`);
   for (const example of help.examples) {

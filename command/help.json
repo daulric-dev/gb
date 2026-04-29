@@ -50,6 +50,11 @@
       "description": "Push current branch to origin"
     },
     {
+      "name": "service",
+      "args": "[list|add|remove] [name]",
+      "description": "Manage registered services in _mr.json"
+    },
+    {
       "name": "run",
       "args": "<service> <script>",
       "description": "Run a package.json script in a service"
@@ -71,6 +76,9 @@
     "gb sync",
     "gb push",
     "gb push --force",
-    "gb run backend test"
+    "gb run backend test",
+    "gb service",
+    "gb service add my-service",
+    "gb service remove"
   ]
 }
