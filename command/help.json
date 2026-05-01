@@ -50,6 +50,17 @@
       "description": "Push current branch to origin"
     },
     {
+      "name": "pr",
+      "description": "Create a pull request (GitHub/GitLab/Bitbucket) from the current branch",
+      "options": [
+        { "flag": "--from=branch", "description": "Source branch (prompted if omitted, defaults to current)" },
+        { "flag": "--base=branch", "description": "Target branch (prompted if omitted)" },
+        { "flag": "--title \"title\"", "description": "PR title (default: last commit subject)" },
+        { "flag": "--body \"body\"", "description": "PR description" },
+        { "flag": "--draft", "description": "Create as a draft PR" }
+      ]
+    },
+    {
       "name": "service",
       "args": "[list|add|edit|remove|root]",
       "description": "Manage registered services and repo root in _mr.json"
@@ -76,6 +87,9 @@
     "gb sync",
     "gb push",
     "gb push --force",
+    "gb pr",
+    "gb pr --base=dev --title \"add auth\"",
+    "gb pr --draft",
     "gb run backend test",
     "gb service",
     "gb service add",

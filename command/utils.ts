@@ -76,6 +76,45 @@ export function slugify(text: string): string {
     .slice(0, 60);
 }
 
+export type GitProvider = "github" | "gitlab" | "bitbucket";
+
+export interface RemoteInfo {
+  provider: GitProvider;
+  owner: string;
+  repo: string;
+}
+
+export async function getRemoteInfo(): Promise<RemoteInfo> {
+  const remoteUrl = await git("remote", "get-url", "origin");
+  const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+  const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
+
+  let host: string;
+  let path: string;
+
+  if (sshMatch) {
+    host = sshMatch[1]!;
+    path = sshMatch[2]!;
+  } else if (httpsMatch) {
+    host = httpsMatch[1]!;
+    path = httpsMatch[2]!;
+  } else {
+    throw new Error(`Cannot parse remote URL: ${remoteUrl}`);
+  }
+
+  const parts = path.split("/");
+  const owner = parts[0]!;
+  const repo = parts[1]!;
+
+  let provider: GitProvider;
+  if (host.includes("github")) provider = "github";
+  else if (host.includes("gitlab")) provider = "gitlab";
+  else if (host.includes("bitbucket")) provider = "bitbucket";
+  else throw new Error(`Unsupported Git provider: ${host}`);
+
+  return { provider, owner, repo };
+}
+
 export function parseArgs(argv: string[]): {
   command: string;
   positionals: string[];
