@@ -99,7 +99,7 @@ export async function prCmd(flags: Record<string, string>) {
     branch = (flags["from"] ?? flags["head"])!;
   } else {
     const fromOptions = [current, ...allBranches.filter((b) => b !== current)];
-    branch = await select("Your branch (head):", fromOptions);
+    branch = await select("Merge from:", fromOptions);
   }
 
   // Target branch: preferred bases first, then remainder (excluding source)
@@ -114,7 +114,7 @@ export async function prCmd(flags: Record<string, string>) {
       console.error("\x1b[31mError:\x1b[0m No valid target branches found.");
       process.exit(1);
     }
-    base = await select("Base branch (merge target):", baseOptions);
+    base = await select("Merge into:", baseOptions);
   }
 
   const isDraft = "draft" in flags;
