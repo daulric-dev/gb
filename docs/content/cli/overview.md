@@ -46,10 +46,11 @@ The frontend and docs cannot be compiled this way as they depend on the Next.js 
 ```
 command/
 ├── index.ts       # Entrypoint — parses args, dispatches to commands
-├── commands.ts    # All command implementations
+├── commands.ts    # Command implementations (status, commit, branch, push, …)
+├── pr.ts          # PR/MR creation — GitHub, GitLab, Bitbucket API
 ├── constants.ts   # Loads _mr.json; exports SERVICES, ALL_SERVICES, PROTECTED_BRANCHES
 ├── prompts.ts     # Interactive terminal UI (prompt, select, word limit)
-├── utils.ts       # Git helpers, path mapping, arg parsing
+├── utils.ts       # Git helpers, remote URL parsing, arg parsing
 ├── timer.ts       # Execution timer
 └── help.json      # Help text data (loaded at runtime)
 _mr.json           # Service registry — defines services and protected branches
@@ -99,6 +100,7 @@ Every command displays its execution time on completion (e.g., `Done in 142ms` o
 | [`gb diff`](./commands.md#diff) | Show diff for a service or all |
 | [`gb sync`](./commands.md#sync) | Delete local branches that no longer exist on remote |
 | [`gb push`](./commands.md#push) | Push current branch to origin |
+| [`gb pr`](./commands.md#pr) | Create a pull request via GitHub, GitLab, or Bitbucket API |
 | [`gb service`](./commands.md#service) | Add, remove, or list registered services in `_mr.json` |
 | [`gb run`](./commands.md#run) | Run a package.json script in a service |
 | `gb help` | Show help |
