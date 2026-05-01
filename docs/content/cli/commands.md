@@ -208,6 +208,50 @@ Shows the git diff, optionally scoped to a service.
 
 ---
 
+## PR
+
+```bash
+gb pr
+gb pr --base=dev --title "add auth"
+gb pr --draft
+```
+
+Creates a pull request (GitHub/GitLab) or merge request (GitLab) from the current branch using the hosting provider's API. Automatically detects the provider from the remote URL.
+
+**Interactive flow:**
+
+1. **Merge from** — arrow-key selector listing all local and remote branches, with the current branch pre-selected at the top
+2. **Merge into** — selector with common base branches (`main`, `master`, `staging`, `develop`, `dev`) floated to the top; source branch is excluded
+3. **PR title** — pre-filled with the last commit subject; edit in place and press enter
+4. **Description** — optional body text
+
+If the selected head branch has no upstream, it is pushed automatically before the API call.
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--from=<branch>` | Skip the "Merge from" selector |
+| `--base=<branch>` | Skip the "Merge into" selector |
+| `--title "..."` | Skip the title prompt |
+| `--body "..."` | Skip the description prompt |
+| `--draft` | Create as a draft PR (GitHub) or `Draft:` prefixed MR (GitLab) |
+
+**Authentication:**
+
+Tokens are read from environment variables. If a token is missing, `gb pr` prints step-by-step setup instructions pointing to the provider's token settings page and the shell config file to persist the export.
+
+| Provider | Environment variable |
+|----------|----------------------|
+| GitHub | `GITHUB_TOKEN` or `GH_TOKEN` |
+| GitLab | `GITLAB_TOKEN` or `GL_TOKEN` |
+| Bitbucket | `BITBUCKET_TOKEN` or `BITBUCKET_USERNAME` + `BITBUCKET_APP_PASSWORD` |
+
+**Supported remote URL formats:**
+
+Both SSH (`git@github.com:owner/repo.git`) and HTTPS (`https://github.com/owner/repo.git`) are supported.
+
+---
+
 ## Push
 
 ```bash
