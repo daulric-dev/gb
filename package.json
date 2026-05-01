@@ -2,7 +2,7 @@
     "name": "gbv2",
     "devDependencies": {
         "@types/bun": "^1.3.13",
-        "turbo": "^2.9.6"
+        "turbo": "^2.9.7"
     },
     "private": true,
     "packageManager": "bun@1.3.13",
