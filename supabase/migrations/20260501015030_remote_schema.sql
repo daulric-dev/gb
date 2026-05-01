@@ -41,6 +41,20 @@ CREATE SCHEMA IF NOT EXISTS "student";
 ALTER SCHEMA "student" OWNER TO "postgres";
 
 
+CREATE EXTENSION IF NOT EXISTS "hypopg" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "index_advisor" WITH SCHEMA "extensions";
+
+
+
+
+
+
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
 
 
@@ -1549,6 +1563,42 @@ GRANT USAGE ON SCHEMA "student" TO "service_role";
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 GRANT ALL ON FUNCTION "public"."get_user_school_id"() TO "anon";
 GRANT ALL ON FUNCTION "public"."get_user_school_id"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_user_school_id"() TO "service_role";
@@ -1576,6 +1626,12 @@ GRANT ALL ON FUNCTION "public"."is_assigned_to_subject_in_group"("p_subject_id" 
 GRANT ALL ON FUNCTION "public"."rls_auto_enable"() TO "anon";
 GRANT ALL ON FUNCTION "public"."rls_auto_enable"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rls_auto_enable"() TO "service_role";
+
+
+
+
+
+
 
 
 
@@ -1791,6 +1847,18 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "student" GRANT ALL ON TA
 
 
 
+
+
+
+drop extension if exists "pg_net";
+
+
+  create policy "school_isolation"
+  on "storage"."objects"
+  as permissive
+  for all
+  to public
+using (((bucket_id = 'report-books'::text) AND ((storage.foldername(name))[1] = (public.get_user_school_id())::text)));
 
 
 
