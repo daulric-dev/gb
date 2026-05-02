@@ -1,20 +1,6 @@
 import { setAccessToken, getAccessToken, clearAccessToken } from "./auth";
 
-const ALLOWED_ORIGINS = [
-  "http://localhost:3001",
-  process.env.NEXT_PUBLIC_API_URL,
-].filter(Boolean) as string[];
-
-function resolveBaseUrl(): string {
-  const origin = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-  const parsed = new URL(origin);
-  if (!ALLOWED_ORIGINS.includes(parsed.origin)) {
-    throw new Error(`Untrusted API origin: ${parsed.origin}`);
-  }
-  return `${parsed.origin}/api`;
-}
-
-const BASE_URL = resolveBaseUrl();
+const BASE_URL = "/api";
 
 export function buildUrl(path: string): string {
   if (!path.startsWith("/")) {

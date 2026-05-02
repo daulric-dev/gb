@@ -15,9 +15,9 @@ globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 import { ApiError } from "@/lib/api";
 import { setAccessToken } from "@/lib/auth";
 
-type MockedFetch = typeof fetch & { mock: { calls: [string, Record<string, string | Record<string, string>>][] } };
+type MockedFetch = typeof fetch & { mock: { calls: [string, { headers: Record<string, string>; [k: string]: unknown }][] } };
 
-const BASE_URL = "http://localhost:3001/api";
+const BASE_URL = "/api";
 
 describe("ApiError", () => {
   test("sets status, message, and data", () => {
@@ -46,7 +46,7 @@ describe("api()", () => {
     globalThis.fetch = mock(
       async () =>
         new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -87,7 +87,7 @@ describe("api()", () => {
           status: 403,
           statusText: "Forbidden",
         }),
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
 
     const { api } = await import("@/lib/api");
     try {
@@ -105,7 +105,7 @@ describe("api()", () => {
         new Response(JSON.stringify({ id: 1, name: "Alice" }), {
           status: 200,
         }),
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
 
     const { api } = await import("@/lib/api");
     const result = await api("/users/1");

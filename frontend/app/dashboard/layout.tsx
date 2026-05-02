@@ -4,35 +4,12 @@ import { useProfile } from "@/lib/use-profile";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { bootstrapSession } from "@/lib/auth";
+import { bootstrapSession, getAccessToken } from "@/lib/auth";
 import { useRouter } from "next/navigation";
-import { useSignal, useSignals } from "@preact/signals-react/runtime";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  useSignals();
-  const isReady = useSignal(false);
-  const router = useRouter();
+function DashboardContent({ children }: { children: React.ReactNode }) {
   const { profile } = useProfile();
-  
-  useEffect(() => {
-    bootstrapSession().then((ok) => {
-      if (!ok) { 
-        router.push("/login");
-        return;
-      };
-
-      isReady.value = true;
-      
-    })
-  })
-
-  if (!isReady.value) return null;
-
   return (
     <SidebarProvider>
       <AppSidebar profile={profile.value} />
@@ -44,4 +21,32 @@ export default function DashboardLayout({
       </SidebarInset>
     </SidebarProvider>
   );
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [ready, setReady] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (getAccessToken()) {
+      setReady(true);
+      return;
+    }
+
+    bootstrapSession().then((ok) => {
+      if (!ok) {
+        router.push("/login");
+        return;
+      }
+      setReady(true);
+    });
+  }, []);
+
+  if (!ready) return null;
+
+  return <DashboardContent>{children}</DashboardContent>;
 }
