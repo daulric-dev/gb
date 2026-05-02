@@ -29,8 +29,16 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Cache turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Lint & Test
-        run: bunx turbo run lint test --force
+        run: bunx turbo run lint test
 
       - name: Notify Vercel
         uses: vercel/repository-dispatch/actions/status@v1
@@ -41,7 +49,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "supabase-anon-key"
-        run: bunx turbo run build --force
+        run: bunx turbo run build
 
   gate:
     name: CI Gate
