@@ -1,4 +1,4 @@
-import { getTokens, setTokens, clearTokens } from "./auth";
+import { setAccessToken, getAccessToken, clearAccessToken } from "./auth";
 
 const ALLOWED_ORIGINS = [
   "http://localhost:3001",
@@ -31,20 +31,18 @@ let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
 async function attemptRefresh(): Promise<boolean> {
-  const { refresh } = getTokens();
-  if (!refresh) return false;
 
   try {
     const res = await fetch(buildUrl("/auth/refresh"), {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json", "X-API-Version": "1" },
-      body: JSON.stringify({ refresh_token: refresh }),
     });
 
     if (!res.ok) return false;
 
     const data = await res.json();
-    setTokens(data.access_token, data.refresh_token);
+    setAccessToken(data.access_token);
     return true;
   } catch {
     return false;
@@ -53,7 +51,7 @@ async function attemptRefresh(): Promise<boolean> {
 
 export async function api<T = unknown>( path: string, options: RequestOptions = {}): Promise<T> {
   const { body, headers: customHeaders, ...rest } = options;
-  const { access } = getTokens();
+  const access = getAccessToken();
 
   const headers: Record<string, string> = {
     "X-API-Version": "1",
@@ -73,6 +71,7 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
   let res = await fetch(url, {
     ...rest,
     headers,
+    credentials: "include",
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
@@ -88,15 +87,16 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
     const refreshed = await refreshPromise;
 
     if (refreshed) {
-      const { access: newAccess } = getTokens();
+      const newAccess = getAccessToken()
       headers["Authorization"] = `Bearer ${newAccess}`;
       res = await fetch(url, {
         ...rest,
         headers,
+        credentials: "include",
         body: body ? JSON.stringify(body) : undefined,
       });
     } else {
-      clearTokens();
+      clearAccessToken();
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }
@@ -120,7 +120,7 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
 }
 
 export async function apiUpload<T = unknown>(path: string, formData: FormData): Promise<T> {
-  const { access } = getTokens();
+  const access = getAccessToken();
 
   const headers: Record<string, string> = {
     "X-API-Version": "1",
@@ -136,6 +136,7 @@ export async function apiUpload<T = unknown>(path: string, formData: FormData): 
     method: "POST",
     headers,
     body: formData,
+    credentials: "include",
   });
 
   if (res.status === 401 && access) {
@@ -150,15 +151,16 @@ export async function apiUpload<T = unknown>(path: string, formData: FormData): 
     const refreshed = await refreshPromise;
 
     if (refreshed) {
-      const { access: newAccess } = getTokens();
+      const newAccess = getAccessToken();
       headers["Authorization"] = `Bearer ${newAccess}`;
       res = await fetch(url, {
         method: "POST",
         headers,
+        credentials: "include",
         body: formData,
       });
     } else {
-      clearTokens();
+      clearAccessToken();
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }

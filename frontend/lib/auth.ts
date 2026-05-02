@@ -1,30 +1,40 @@
-const ACCESS_TOKEN_KEY = "gb_access_token";
-const REFRESH_TOKEN_KEY = "gb_refresh_token";
+let _accessToken: string | null = null;
 
-export function getTokens() {
-  if (typeof window === "undefined") return { access: null, refresh: null };
-  return {
-    access: localStorage.getItem(ACCESS_TOKEN_KEY),
-    refresh: localStorage.getItem(REFRESH_TOKEN_KEY),
-  };
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+export function setAccessToken(token: string) {
+  _accessToken = token;
 }
 
-export function setTokens(access: string, refresh: string) {
-  localStorage.setItem(ACCESS_TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
-  document.cookie = `gb_logged_in=1; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
-}
-
-export function clearTokens() {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  document.cookie = "gb_logged_in=; path=/; max-age=0";
+export function clearAccessToken() {
+  _accessToken = null;
 }
 
 export function getAccessToken() {
-  return getTokens().access;
+  return _accessToken;
 }
 
 export function isAuthenticated() {
-  return !!getAccessToken();
+  return _accessToken !== null;
+}
+
+export async function bootstrapSession(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "X-API-Version":  "1"
+      }
+
+    })
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    setAccessToken(data.access_token);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }

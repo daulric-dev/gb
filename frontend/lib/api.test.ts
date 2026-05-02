@@ -13,7 +13,7 @@ globalThis.document ??= { cookie: "" } as unknown as Document;
 globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 
 import { ApiError } from "@/lib/api";
-import { setTokens } from "@/lib/auth";
+import { setAccessToken } from "@/lib/auth";
 
 type MockedFetch = typeof fetch & { mock: { calls: [string, Record<string, string | Record<string, string>>][] } };
 
@@ -64,7 +64,7 @@ describe("api()", () => {
   });
 
   test("sets Authorization header when access token exists", async () => {
-    setTokens("test-access", "test-refresh");
+    setAccessToken("test-access");
     const { api } = await import("@/lib/api");
     await api("/me");
 
