@@ -35,8 +35,9 @@ The verification page shows an 8-digit OTP input. The email is read from the URL
 2. User enters the 8-digit code from their email
 3. Calls `POST /api/auth/otp/verify` with email + token
 4. On success:
-   - Stores access and refresh tokens via `setTokens()`
-   - If user has no first name → redirect to `/onboard`
+   - Stores the access token in memory via `setAccessToken()`
+   - The refresh token is set as an httpOnly cookie by the backend
+   - If `user.is_onboarded` is false → redirect to `/onboard`
    - Otherwise → redirect to `/dashboard`
 5. On failure, shows a toast error
 
@@ -72,8 +73,16 @@ Tokens are managed in `lib/auth.ts`:
 
 | Storage | Key | Purpose |
 |---------|-----|---------|
-| localStorage | `gb_access_token` | JWT for API requests |
-| localStorage | `gb_refresh_token` | Token for refreshing expired JWTs |
-| Cookie | `gb_logged_in` | Flag for route protection (30-day expiry) |
+| In-memory + `localStorage` | `gb_access_token` | JWT for API requests; shared across tabs via localStorage |
+| httpOnly cookie | `gb_refresh_token` | Token for refreshing expired JWTs (set by backend) |
 
-The `setTokens()` function sets all three. `clearTokens()` removes them on logout.
+On page load, `bootstrapSession()` first checks `localStorage` for an existing access token (set by another tab). If found, it uses it directly. Otherwise it calls `POST /api/auth/refresh` using the cookie to obtain a fresh access token. This avoids consuming Supabase's one-time refresh token when multiple tabs are open.
+
+The middleware (`proxy.ts`) checks for the `gb_refresh_token` cookie to gate access to protected routes.
+
+## Route Protection
+
+The `proxy.ts` middleware runs on every navigation to `/dashboard/*`, `/onboard/*`, and `/login/*`:
+
+- If navigating to a protected route without the `gb_refresh_token` cookie → redirect to `/login`
+- If navigating to `/login` with the cookie present → redirect to `/dashboard`

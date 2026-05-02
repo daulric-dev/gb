@@ -32,7 +32,8 @@ The authentication module handles user login via email OTP (one-time password), 
 
 2. User enters OTP code
    └── POST /auth/otp/verify { email, token }
-       └── Returns access_token, refresh_token, user profile
+       └── Returns access_token + user profile in response body
+       └── Sets gb_refresh_token as an httpOnly cookie
        └── If no profile exists, one is created automatically
 
 3. If user has no name/school (first login)
@@ -40,13 +41,29 @@ The authentication module handles user login via email OTP (one-time password), 
        └── Completes the user profile
 
 4. Token expired
-   └── POST /auth/refresh { refresh_token }
-       └── Returns new access_token + refresh_token
+   └── POST /auth/refresh (reads refresh token from cookie)
+       └── Returns new access_token in response body
+       └── Rotates the refresh token cookie
 
 5. User logs out
    └── POST /auth/logout
        └── Invalidates the session server-side
+       └── Clears the refresh token cookie
 ```
+
+## Session Cookies
+
+The refresh token is stored as an httpOnly cookie (`gb_refresh_token`) with the following attributes:
+
+| Attribute | Value |
+|-----------|-------|
+| `httpOnly` | `true` (not accessible via JavaScript) |
+| `secure` | `true` in production, `false` in development |
+| `sameSite` | `strict` |
+| `path` | `/` |
+| `maxAge` | 30 days |
+
+The access token is stored in-memory on the frontend and mirrored to `localStorage` for cross-tab sharing. On page load, the frontend checks `localStorage` first; if no token is found it calls `POST /auth/refresh` to obtain a new access token using the cookie. Since Supabase rotates the refresh token on each use (one-time tokens), the frontend avoids redundant refresh calls by sharing the access token across tabs via `localStorage`.
 
 ## AuthGuard
 
@@ -80,28 +97,33 @@ Sends a one-time password to the user's email.
 
 ### `POST /api/auth/otp/verify`
 
-Verifies the OTP and returns session tokens plus the user profile.
+Verifies the OTP and returns session data plus the user profile. Also sets the `gb_refresh_token` httpOnly cookie.
 
 **Body:**
 ```json
 {
   "email": "user@example.com",
-  "token": "123456"
+  "token": "12345678"
 }
 ```
 
 **Response:**
 ```json
 {
-  "access_token": "...",
-  "refresh_token": "...",
+  "session": {
+    "access_token": "...",
+    "expires_in": 3600,
+    "expires_at": 1234567890
+  },
   "user": {
     "id": "uuid",
     "email": "user@example.com",
     "first_name": "John",
     "last_name": "Doe",
     "role": "teacher",
-    "school": { "id": "uuid", "name": "School Name", ... }
+    "avatar_url": "...",
+    "school": { "id": "uuid", "name": "School Name" },
+    "is_onboarded": true
   }
 }
 ```
@@ -120,12 +142,14 @@ Returns the current user's profile including their school.
 
 ### `POST /api/auth/refresh`
 
-Refreshes an expired access token using the refresh token.
+Refreshes an expired access token using the httpOnly `gb_refresh_token` cookie (no request body needed). Rotates the refresh token and sets a new cookie.
 
-**Body:**
+**Response:**
 ```json
 {
-  "refresh_token": "..."
+  "access_token": "...",
+  "expires_in": 3600,
+  "expires_at": 1234567890
 }
 ```
 
