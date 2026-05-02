@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -23,7 +24,6 @@ import { AuthGuard } from './auth.guard';
 import { ImagesService } from '@/images/images.service';
 import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
-import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
@@ -48,11 +48,24 @@ export class AuthController {
   }
 
   @Post('otp/verify')
-  async verifyOtp(@Body() dto: VerifyOtpDto, @Req() req: any) {
+  async verifyOtp(
+    @Body() dto: VerifyOtpDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
     const { session, user, profile } = await this.authService.verifyOtp(
       dto.email,
       dto.token,
     );
+
+    res.setCookie('gb_refresh_token', session.refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
+
     return this.versioning.resolve(req, 'auth.verifyOtp')(
       session,
       user,
@@ -69,8 +82,23 @@ export class AuthController {
   }
 
   @Post('refresh')
-  async refresh(@Body() dto: RefreshTokenDto, @Req() req: any) {
-    const session = await this.authService.refreshToken(dto.refresh_token);
+  async refresh(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const refreshToken = req.cookies?.['gb_refresh_token'];
+    if (!refreshToken) throw new UnauthorizedException('No refresh token');
+
+    const session = await this.authService.refreshToken(refreshToken);
+
+    res.setCookie('gb_refresh_token', session.refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
+
     return this.versioning.resolve(req, 'auth.session')(session);
   }
 
@@ -101,9 +129,10 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Post('logout')
-  async logout(@Req() req: any) {
+  async logout(@Req() req: any, @Res({ passthrough: true }) res: FastifyReply) {
     const supabase = this.supabaseService.getServiceClient();
     await supabase.auth.admin.signOut(req.user.access_token);
+    res.clearCookie('gb_refresh_token', { path: '/' });
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 

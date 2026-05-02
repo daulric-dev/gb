@@ -14,7 +14,6 @@ export interface ProfileResponse {
 
 export interface SessionResponse {
   access_token: string;
-  refresh_token: string;
   expires_in: number;
   expires_at: number;
 }
@@ -43,7 +42,6 @@ export function v1Profile(raw: any): ProfileResponse {
 export function v1Session(raw: any): SessionResponse {
   return {
     access_token: raw.access_token,
-    refresh_token: raw.refresh_token,
     expires_in: raw.expires_in,
     expires_at: raw.expires_at,
   };

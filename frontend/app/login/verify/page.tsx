@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { setTokens } from "@/lib/auth";
+import { setAccessToken } from "@/lib/auth";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
@@ -43,7 +43,7 @@ function VerifyOtpForm() {
         body: { email, token: code.value },
       });
 
-      setTokens(data.session.access_token, data.session.refresh_token);
+      setAccessToken(data.session.access_token);
 
       if (data.user.is_onboarded) {
         router.push("/dashboard");

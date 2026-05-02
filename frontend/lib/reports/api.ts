@@ -80,7 +80,8 @@ export async function uploadClassSummaryFile(
   fileType: string,
   filename: string,
 ): Promise<ClassReportFile> {
-  const { access } = await import("../auth").then((m) => m.getTokens());
+
+  const access = await import("../auth").then((m) => m.getAccessToken());
   const form = new FormData();
   form.append("file", blob, filename);
   form.append("studentGroupId", studentGroupId);
@@ -94,6 +95,7 @@ export async function uploadClassSummaryFile(
       Authorization: access ? `Bearer ${access}` : "",
       "X-API-Version": "1",
     },
+    credentials: "include",
     body: form,
   });
 
@@ -111,14 +113,15 @@ export async function downloadClassSummaryFile(
   reportType: ReportType,
   fileType: string,
 ): Promise<Blob> {
-  const { getTokens } = await import("../auth");
-  const { access } = getTokens();
+  const { getAccessToken } = await import("../auth");
+  const access = getAccessToken();
   const q = new URLSearchParams({ studentGroupId, termId, reportType, fileType });
   const res = await fetch(`${buildUrl("/reports/class-summary/download")}?${q.toString()}`, {
     headers: {
       Authorization: access ? `Bearer ${access}` : "",
       "X-API-Version": "1",
     },
+    credentials: "include",
   });
 
   if (!res.ok) {

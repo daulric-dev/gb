@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
@@ -42,7 +47,9 @@ export class SchoolService {
         .select('id', { count: 'exact', head: true });
 
       if ((count ?? 0) > 0) {
-        throw new ForbiddenException('School creation is disabled on dedicated deployments');
+        throw new ForbiddenException(
+          'School creation is disabled on dedicated deployments',
+        );
       }
     }
 

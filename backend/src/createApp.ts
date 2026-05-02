@@ -7,12 +7,15 @@ import {
 } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
+import cookie from '@fastify/cookie';
 
 export async function createApp(): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
   );
+
+  await app.register(cookie as any);
 
   await app.register(multipart as any, {
     limits: { fileSize: 10 * 1024 * 1024 },

@@ -5,7 +5,7 @@ const PUBLIC_PATHS = ["/login", "/login/verify", "/privacy", "/terms"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isLoggedIn = request.cookies.get("gb_logged_in")?.value === "1";
+  const isLoggedIn = request.cookies.has("gb_refresh_token");
 
   if (pathname.startsWith("/dashboard") && !isLoggedIn) {
     return NextResponse.redirect(new URL("/login", request.url));

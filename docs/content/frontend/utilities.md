@@ -10,8 +10,8 @@ The core API client used by all pages to communicate with the backend.
 
 ### Configuration
 
-- **Base URL**: `NEXT_PUBLIC_API_URL` environment variable, or `http://localhost:3001` + `/api`
-- **URL Validation**: The base URL is validated against an allowlist (`ALLOWED_ORIGINS`) at module load via `resolveBaseUrl()`. All paths are validated to start with `/` via `buildUrl()`. This prevents SSRF vulnerabilities (flagged by CodeQL).
+- **Base URL**: `/api` (relative path, proxied to the backend via Next.js rewrites)
+- **Proxy**: Auth endpoints (`/api/auth/*`) are handled by a Route Handler at `app/api/auth/[...path]/route.ts` that explicitly forwards cookies and `Set-Cookie` headers. It uses `getSetCookie()` to forward each `Set-Cookie` header individually (the standard `Headers.forEach()` can merge multiple cookies into one unparseable value). All other endpoints use the Next.js rewrite defined in `next.config.ts`.
 - **Content-Type**: `application/json` for all requests (except `apiUpload` which uses `multipart/form-data`)
 - **API Version**: `X-API-Version: 1` header sent with every request
 
@@ -27,18 +27,17 @@ The main export. Makes authenticated JSON requests to the backend.
 | `options.body` | object | Request body (auto-serialized to JSON) |
 
 **Authentication:**
-- Reads the access token from localStorage via `getAccessToken()`
+- Reads the access token from the in-memory module variable via `getAccessToken()`
 - Attaches it as `Authorization: Bearer <token>`
 
 ### Automatic Token Refresh
 
 If the API returns a `401 Unauthorized`:
 
-1. Reads the refresh token from localStorage
-2. Calls `POST /api/auth/refresh` with the refresh token
-3. Stores the new tokens via `setTokens()`
-4. **Retries the original request** with the new access token
-5. If refresh also fails → clears tokens, redirects to `/login`
+1. Calls `POST /api/auth/refresh` (the httpOnly cookie is sent automatically)
+2. Stores the new access token in memory via `setAccessToken()`
+3. **Retries the original request** with the new access token
+4. If refresh also fails → clears the in-memory token, redirects to `/login`
 
 This uses a **single-flight pattern** - if multiple requests get 401 simultaneously, only one refresh call is made and all waiters share the result.
 
@@ -56,7 +55,7 @@ Has the same authentication and automatic token refresh behavior as `api()`. Ret
 
 ### `buildUrl(path)` Function
 
-Constructs a validated full URL from a relative API path. Ensures `path` starts with `/` and the base URL origin is in the allowlist. Exported for use by other modules (e.g., `lib/reports/api.ts`).
+Constructs a full URL from a relative API path. Ensures `path` starts with `/` and prepends the base URL (`/api`). Exported for use by other modules (e.g., `lib/reports/api.ts`).
 
 ### `ApiError` Class
 
@@ -83,27 +82,36 @@ try {
 
 ## Auth Helpers (`lib/auth.ts`)
 
-Manages authentication tokens in the browser.
+Manages the access token and handles session bootstrap on page refresh.
 
 ### Storage Strategy
 
-| Data | Storage | Key |
-|------|---------|-----|
-| Access token (JWT) | localStorage | `gb_access_token` |
-| Refresh token | localStorage | `gb_refresh_token` |
-| Login flag | Cookie | `gb_logged_in` |
+| Data | Storage | Purpose |
+|------|---------|---------|
+| Access token (JWT) | In-memory + `localStorage` | Used for API requests; `localStorage` enables multi-tab sharing |
+| Refresh token | httpOnly cookie (`gb_refresh_token`) | Set/managed by the backend; survives page refresh |
 
-The cookie is used by `proxy.ts` for route protection (cookies are accessible in middleware/proxy, localStorage is not).
+The access token is kept in both a module-level variable (fast reads) and `localStorage` (cross-tab sharing). When a new tab opens, `bootstrapSession()` checks `localStorage` first — if a valid token exists (set by another tab), it uses it directly without hitting the refresh endpoint. This avoids consuming the one-time refresh token unnecessarily.
+
+The httpOnly cookie is used by `proxy.ts` for route protection (cookies are accessible in middleware, in-memory variables are not).
+
+### Multi-Tab Support
+
+Supabase uses **one-time refresh tokens** — each refresh call rotates the token and invalidates the old one. Without coordination, two tabs calling refresh simultaneously would race: the first succeeds and rotates the token, the second fails because it sent the now-invalid old token.
+
+This is handled by:
+1. **localStorage sharing** — new tabs read the access token from localStorage and skip the refresh call entirely
+2. **Single-flight pattern** — within a single tab, concurrent `bootstrapSession()` calls are deduplicated so only one refresh request is made
 
 ### Functions
 
 | Function | Description |
 |----------|-------------|
-| `getTokens()` | Returns `{ access_token, refresh_token }` from localStorage |
-| `setTokens(access, refresh)` | Stores both tokens + sets `gb_logged_in=1` cookie (30-day expiry, `SameSite=Lax`) |
-| `clearTokens()` | Removes both tokens + deletes the cookie |
-| `getAccessToken()` | Shorthand - returns just the access token |
-| `isAuthenticated()` | Returns `true` if an access token exists |
+| `setAccessToken(token)` | Stores the access token in memory and `localStorage` (no-op if token is falsy) |
+| `clearAccessToken()` | Clears the access token from memory and `localStorage` |
+| `getAccessToken()` | Returns the access token from memory, falling back to `localStorage` |
+| `isAuthenticated()` | Returns `true` if an access token is available (memory or `localStorage`) |
+| `bootstrapSession()` | Returns immediately if a token exists in `localStorage`; otherwise calls `POST /api/auth/refresh` using the cookie, stores the new access token, and returns `true` on success |
 
 ---
 
@@ -155,7 +163,8 @@ Values are accessed via `.value` (e.g. `profile.value?.email`).
 ```
 
 **Behavior:**
-- Calls `GET /api/auth/me` on mount
+- Skips the API call if no access token is in memory (avoids unnecessary 401s)
+- Otherwise calls `GET /api/auth/me` on mount
 - Used by the dashboard layout to populate the sidebar and header with user info
 
 ---
