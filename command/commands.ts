@@ -587,6 +587,86 @@ export async function syncCmd() {
   }
 }
 
+export async function rebaseCmd(flags: Record<string, string>) {
+  console.log("Fetching remote refs...");
+  await git("fetch", "--prune", "origin");
+
+  const current = await getCurrentBranch();
+  const localOut = await git("branch", "--format=%(refname:short)");
+  const remoteOut = await git("branch", "-r", "--format=%(refname:short)");
+
+  const local = new Set(localOut.split("\n").filter(Boolean));
+  const remote = remoteOut
+    .split("\n")
+    .filter(Boolean)
+    .map((b) => b.replace(/^origin\//, ""))
+    .filter((b) => b !== "HEAD");
+
+  const allBranches = [...new Set([...local, ...remote])].sort();
+
+  let source = flags["from"];
+  if (!source) {
+    const sourceOptions = allBranches.map((b) => b === current ? `* ${b}` : `  ${b}`);
+    const chosen = await select("Branch to rebase:", sourceOptions);
+    source = chosen.slice(2);
+  }
+
+  let base = flags["base"];
+  if (!base) {
+    const baseOptions = allBranches.filter((b) => b !== source).map((b) => `  ${b}`);
+    const chosen = await select(`Rebase ${source} onto:`, baseOptions);
+    base = chosen.slice(2);
+  }
+
+  if (source === base) {
+    console.error(`\x1b[31mSource and base cannot be the same branch.\x1b[0m`);
+    process.exit(1);
+  }
+
+  const sourceRef = local.has(source) ? source : `origin/${source}`;
+  const baseRef = `origin/${base}`;
+
+  const behind = (await git("rev-list", "--count", `${sourceRef}..${baseRef}`)).trim();
+  const ahead = (await git("rev-list", "--count", `${baseRef}..${sourceRef}`)).trim();
+
+  console.log(
+    `\x1b[36m${source}\x1b[0m is \x1b[33m${behind}\x1b[0m commit${behind === "1" ? "" : "s"} behind` +
+    ` and \x1b[33m${ahead}\x1b[0m commit${ahead === "1" ? "" : "s"} ahead of \x1b[36m${base}\x1b[0m`,
+  );
+
+  if (behind === "0") {
+    console.log(`\x1b[32m${source} is already up to date with ${base}.\x1b[0m`);
+    return;
+  }
+
+  const answer = await select(`Rebase ${source} onto ${base}?`, ["yes", "no"]);
+  if (answer === "no") {
+    console.log("Aborted.");
+    return;
+  }
+
+  if (current !== source) {
+    await git("checkout", source);
+    console.log(`\x1b[32mSwitched to\x1b[0m ${source}`);
+  }
+
+  try {
+    await git("rebase", baseRef);
+    console.log(`\x1b[32mRebased\x1b[0m ${source} onto ${base}.`);
+  } catch {
+    console.error(`\x1b[31mRebase failed — you may have conflicts.\x1b[0m`);
+    console.error(`Resolve them, then run: git rebase --continue`);
+    console.error(`Or abort with: git rebase --abort`);
+    process.exit(1);
+  }
+
+  const pushAnswer = await select("Force-push to update remote?", ["yes", "no"]);
+  if (pushAnswer === "yes") {
+    await git("push", "--force-with-lease");
+    console.log(`\x1b[32mPushed\x1b[0m ${source} to origin (force-with-lease)`);
+  }
+}
+
 export async function pushCmd(flags: Record<string, string>) {
   const branch = await getCurrentBranch();
   const force = "force" in flags;
