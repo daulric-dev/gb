@@ -1,0 +1,30 @@
+name: Reset staging branch
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  reset-staging:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'staging'
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Delete and recreate staging from main
+        run: |
+          git push origin --delete staging
+          git checkout -b staging
+          git push origin staging
