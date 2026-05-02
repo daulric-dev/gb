@@ -535,6 +535,24 @@ export async function syncCmd() {
   console.log("Fetching remote refs...");
   await git("fetch", "--prune", "origin");
 
+  const current = await getCurrentBranch();
+  let hasUpstream = false;
+  try {
+    await git("rev-parse", "--abbrev-ref", `${current}@{upstream}`);
+    hasUpstream = true;
+  } catch {
+    // no upstream set
+  }
+
+  if (hasUpstream) {
+    try {
+      await git("merge", "--ff-only", `origin/${current}`);
+      console.log(`\x1b[32mPulled latest changes into\x1b[0m ${current}.`);
+    } catch {
+      console.log(`\x1b[33mCould not fast-forward ${current} — diverged from remote?\x1b[0m`);
+    }
+  }
+
   const vv = await git("branch", "-vv");
   const gone = vv
     .split("\n")
@@ -559,7 +577,6 @@ export async function syncCmd() {
     return;
   }
 
-  const current = await getCurrentBranch();
   for (const b of gone) {
     if (b === current) {
       console.log(`\x1b[33mSkipping \x1b[36m${b}\x1b[33m (currently checked out).\x1b[0m`);
