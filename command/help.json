@@ -45,6 +45,10 @@
       "description": "Delete local branches that no longer exist on remote"
     },
     {
+      "name": "reset",
+      "description": "Force local branch to match its remote counterpart"
+    },
+    {
       "name": "rebase",
       "description": "Rebase any branch onto another to sync commits",
       "options": [
