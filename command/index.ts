@@ -15,6 +15,7 @@ import {
   runCmd,
   helpCmd,
 } from "./commands";
+import { prCmd } from "./pr";
 
 const { command, positionals, flags } = parseArgs(Bun.argv);
 const stop = startTimer();
@@ -40,6 +41,9 @@ switch (command) {
     break;
   case "push":
     await pushCmd(flags);
+    break;
+  case "pr":
+    await prCmd(flags);
     break;
   case "sync":
     await syncCmd();

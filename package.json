@@ -1,5 +1,5 @@
 {
-    "name": "gbv2",
+    "name": "gb",
     "devDependencies": {
         "@types/bun": "^1.3.13",
         "turbo": "^2.9.6"
@@ -25,7 +25,9 @@
         "install:all": "bun --bun install",
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh",
         "dev:docs": "turbo run dev --filter=docs",
-        "build:docs": "turbo run build --filter=docs"
+        "build:docs": "turbo run build --filter=docs",
+        "db:diff": "supabase db diff --schema '*',auth,storage -f",
+        "db:pull": "supabase db pull --schema '*',auth,storage"
     },
     "workspaces": ["backend", "frontend", "docs"],
     "overrides": {
