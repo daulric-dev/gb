@@ -45,6 +45,14 @@
       "description": "Delete local branches that no longer exist on remote"
     },
     {
+      "name": "rebase",
+      "description": "Rebase any branch onto another to sync commits",
+      "options": [
+        { "flag": "--from=branch", "description": "Branch to rebase (prompted if omitted)" },
+        { "flag": "--base=branch", "description": "Branch to rebase onto (prompted if omitted)" }
+      ]
+    },
+    {
       "name": "push",
       "args": "[--force]",
       "description": "Push current branch to origin"
@@ -85,6 +93,8 @@
     "gb checkout main",
     "gb diff backend",
     "gb sync",
+    "gb rebase",
+    "gb rebase --from=staging --base=main",
     "gb push",
     "gb push --force",
     "gb pr",
