@@ -28,14 +28,11 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(() => !!getAccessToken());
   const router = useRouter();
 
   useEffect(() => {
-    if (getAccessToken()) {
-      setReady(true);
-      return;
-    }
+    if (ready) return;
 
     bootstrapSession().then((ok) => {
       if (!ok) {
@@ -44,7 +41,7 @@ export default function DashboardLayout({
       }
       setReady(true);
     });
-  }, []);
+  }, [ready, router]);
 
   if (!ready) return null;
 
