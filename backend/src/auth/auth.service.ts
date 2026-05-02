@@ -227,11 +227,11 @@ export class AuthService {
       const supabase = this.supabaseService.getServiceClient();
 
       const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: refreshToken,
+        refresh_token: refreshToken, 
       });
 
       if (error || !data.session) {
-        this.logger.error(`Token refresh failed: ${error?.message}`);
+        this.logger.error(`Token refresh failed: ${error?.message} ${JSON.stringify(data)}`);
         throw new UnauthorizedException('Invalid or expired refresh token');
       }
 
