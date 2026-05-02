@@ -23,10 +23,20 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Delete and recreate staging from main
+      - name: Reset staging to main
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          if git ls-remote --exit-code --heads origin staging >/dev/null 2>&1; then
-            git push origin --delete staging
+          MAIN_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/main --jq '.object.sha')
+
+          if gh api repos/${{ github.repository }}/git/ref/heads/staging >/dev/null 2>&1; then
+            gh api repos/${{ github.repository }}/git/refs/heads/staging \
+              -X PATCH \
+              -f sha="$MAIN_SHA" \
+              -F force=true
+          else
+            gh api repos/${{ github.repository }}/git/refs \
+              -X POST \
+              -f ref="refs/heads/staging" \
+              -f sha="$MAIN_SHA"
           fi
-          git checkout -b staging
-          git push origin staging
