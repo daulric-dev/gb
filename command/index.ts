@@ -12,6 +12,7 @@ import {
   pushCmd,
   serviceCmd,
   syncCmd,
+  rebaseCmd,
   runCmd,
   helpCmd,
 } from "./commands";
@@ -47,6 +48,9 @@ switch (command) {
     break;
   case "sync":
     await syncCmd();
+    break;
+  case "rebase":
+    await rebaseCmd(flags);
     break;
   case "service":
     await serviceCmd(positionals);
