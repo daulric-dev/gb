@@ -25,6 +25,8 @@ jobs:
 
       - name: Delete and recreate staging from main
         run: |
-          git push origin --delete staging
+          if git ls-remote --exit-code --heads origin staging >/dev/null 2>&1; then
+            git push origin --delete staging
+          fi
           git checkout -b staging
           git push origin staging
