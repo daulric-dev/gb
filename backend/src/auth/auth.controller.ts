@@ -129,10 +129,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Post('logout')
-  async logout(
-    @Req() req: any,
-    @Res({ passthrough: true }) res: FastifyReply,
-  ) {
+  async logout(@Req() req: any, @Res({ passthrough: true }) res: FastifyReply) {
     const supabase = this.supabaseService.getServiceClient();
     await supabase.auth.admin.signOut(req.user.access_token);
     res.clearCookie('gb_refresh_token', { path: '/' });

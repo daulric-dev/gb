@@ -142,7 +142,9 @@ export class AuthService {
         .single();
 
       if (!school) {
-        throw new BadRequestException('No school found on this dedicated instance');
+        throw new BadRequestException(
+          'No school found on this dedicated instance',
+        );
       }
 
       schoolId = school.id;
@@ -227,11 +229,13 @@ export class AuthService {
       const supabase = this.supabaseService.getServiceClient();
 
       const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: refreshToken, 
+        refresh_token: refreshToken,
       });
 
       if (error || !data.session) {
-        this.logger.error(`Token refresh failed: ${error?.message} ${JSON.stringify(data)}`);
+        this.logger.error(
+          `Token refresh failed: ${error?.message} ${JSON.stringify(data)}`,
+        );
         throw new UnauthorizedException('Invalid or expired refresh token');
       }
 
