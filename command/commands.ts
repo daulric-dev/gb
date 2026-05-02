@@ -667,6 +667,48 @@ export async function rebaseCmd(flags: Record<string, string>) {
   }
 }
 
+export async function resetCmd() {
+  const current = await getCurrentBranch();
+
+  let hasUpstream = false;
+  try {
+    await git("rev-parse", "--abbrev-ref", `${current}@{upstream}`);
+    hasUpstream = true;
+  } catch {}
+
+  if (!hasUpstream) {
+    console.error(`\x1b[31m${current} has no remote tracking branch.\x1b[0m`);
+    process.exit(1);
+  }
+
+  console.log("Fetching remote refs...");
+  await git("fetch", "origin");
+
+  const local = (await git("rev-parse", current)).trim();
+  const remote = (await git("rev-parse", `origin/${current}`)).trim();
+
+  if (local === remote) {
+    console.log(`\x1b[32m${current} is already in sync with origin/${current}.\x1b[0m`);
+    return;
+  }
+
+  const behind = (await git("rev-list", "--count", `${current}..origin/${current}`)).trim();
+  const ahead = (await git("rev-list", "--count", `origin/${current}..${current}`)).trim();
+
+  console.log(
+    `\x1b[36m${current}\x1b[0m is \x1b[33m${behind}\x1b[0m behind, \x1b[33m${ahead}\x1b[0m ahead of \x1b[36morigin/${current}\x1b[0m`,
+  );
+
+  const answer = await select(`Reset ${current} to match origin/${current}? (local changes will be lost)`, ["yes", "no"]);
+  if (answer === "no") {
+    console.log("Aborted.");
+    return;
+  }
+
+  await git("reset", "--hard", `origin/${current}`);
+  console.log(`\x1b[32mReset\x1b[0m ${current} to origin/${current}`);
+}
+
 export async function pushCmd(flags: Record<string, string>) {
   const branch = await getCurrentBranch();
   const force = "force" in flags;
