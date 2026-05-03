@@ -9,7 +9,18 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
-  const { profile } = useProfile();
+  const { profile, loading } = useProfile();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading.value) return;
+    if (profile.value && !profile.value.school) {
+      router.replace("/schools");
+    }
+  }, [loading.value, profile.value, router]);
+
+  if (loading.value || !profile.value?.school) return null;
+
   return (
     <SidebarProvider>
       <AppSidebar profile={profile.value} />

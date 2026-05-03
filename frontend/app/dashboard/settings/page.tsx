@@ -26,7 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Camera, Loader2, Trash2 } from "lucide-react";
-import { selectClass, type Profile, type School } from "./_components/types";
+import type { Profile } from "./_components/types";
 
 export default function SettingsPage() {
   useSignals();
@@ -35,14 +35,13 @@ export default function SettingsPage() {
   const profile = useSignal<Profile | null>(null);
   const loading = useSignal(true);
   const saving = useSignal(false);
+  const leaving = useSignal(false);
   const deleting = useSignal(false);
   const deleteOpen = useSignal(false);
   const confirmText = useSignal("");
 
   const firstName = useSignal("");
   const lastName = useSignal("");
-  const schoolId = useSignal("");
-  const schools = useSignal<School[]>([]);
 
   const avatarUrl = useSignal<string | null>(null);
   const cropSrc = useSignal<string | null>(null);
@@ -57,7 +56,6 @@ export default function SettingsPage() {
         profile.value = data;
         firstName.value = data.first_name || "";
         lastName.value = data.last_name || "";
-        schoolId.value = data.school?.id || "";
         avatarUrl.value = data.avatar_url || null;
       })
       .catch(() => toast.error("Failed to load profile"))
@@ -66,9 +64,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchProfile();
-    api<School[]>("/schools")
-      .then((data) => (schools.value = data))
-      .catch(() => {});
   }, [fetchProfile]);
 
   async function handleSave(e: React.FormEvent) {
@@ -79,41 +74,36 @@ export default function SettingsPage() {
     }
     saving.value = true;
     try {
-      const currentSchoolId = profile.value?.school?.id || "";
-      const schoolChanged = schoolId.value && schoolId.value !== currentSchoolId;
-
-      if (schoolChanged) {
-        // Changing school goes through join request flow
-        await api(`/schools/${schoolId.value}/join-requests`, { method: "POST" });
-        // Still save name changes
-        const updated = await api<Profile>("/auth/profile", {
-          method: "PATCH",
-          body: {
-            firstName: firstName.value.trim(),
-            lastName: lastName.value.trim(),
-          },
-        });
-        profile.value = updated;
-        // Reset school selector to current school (request is pending)
-        schoolId.value = currentSchoolId;
-        toast.success("Join request submitted — awaiting admin approval. Name updated.");
-      } else {
-        const updated = await api<Profile>("/auth/profile", {
-          method: "PATCH",
-          body: {
-            firstName: firstName.value.trim(),
-            lastName: lastName.value.trim(),
-          },
-        });
-        profile.value = updated;
-        toast.success("Profile updated");
-      }
+      const updated = await api<Profile>("/auth/profile", {
+        method: "PATCH",
+        body: {
+          firstName: firstName.value.trim(),
+          lastName: lastName.value.trim(),
+        },
+      });
+      profile.value = updated;
+      toast.success("Profile updated");
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Failed to update profile";
       toast.error(message);
     } finally {
       saving.value = false;
+    }
+  }
+
+  async function handleLeaveSchool() {
+    if (!window.confirm("Are you sure you want to leave this school?")) return;
+    leaving.value = true;
+    try {
+      await api("/schools/leave", { method: "POST" });
+      toast.success("You have left the school.");
+      window.location.href = "/schools";
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Failed to leave school";
+      toast.error(message);
+      leaving.value = false;
     }
   }
 
@@ -179,8 +169,7 @@ export default function SettingsPage() {
   const hasChanges =
     profile.value &&
     (firstName.value.trim() !== (profile.value.first_name || "") ||
-      lastName.value.trim() !== (profile.value.last_name || "") ||
-      schoolId.value !== (profile.value.school?.id || ""));
+      lastName.value.trim() !== (profile.value.last_name || ""));
 
   if (loading.value) {
     return (
@@ -317,20 +306,36 @@ export default function SettingsPage() {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="school">School</Label>
-            <select
-              id="school"
-              className={selectClass}
-              value={schoolId.value}
-              onChange={(e) => (schoolId.value = e.target.value)}
-            >
-              <option value="">Select a school</option>
-              {schools.value.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <Label>School</Label>
+            <div className="flex items-center gap-3">
+              <Input
+                value={profile.value?.school?.name || "No school"}
+                disabled
+                className="opacity-60"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => router.push("/schools")}
+              >
+                Change
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="shrink-0"
+                disabled={leaving.value}
+                onClick={handleLeaveSchool}
+              >
+                {leaving.value ? (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                ) : null}
+                Leave
+              </Button>
+            </div>
           </div>
 
           <div className="flex justify-end">
