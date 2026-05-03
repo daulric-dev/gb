@@ -73,11 +73,14 @@ describe('SchoolService', () => {
       });
       service = new SchoolService(mockSupabase as any, mockCache as any);
 
-      await service.create({
-        name: 'Gamma School',
-        schoolType: 'primary',
-        parish: 'St. Ann',
-      } as any);
+      await service.create(
+        {
+          name: 'Gamma School',
+          schoolType: 'primary',
+          parish: 'St. Ann',
+        } as any,
+        'user-1',
+      );
 
       const cached = await mockCache.get('schools:all');
       expect(cached).toBeArray();
@@ -92,11 +95,14 @@ describe('SchoolService', () => {
       service = new SchoolService(mockSupabase as any, mockCache as any);
 
       expect(
-        service.create({
-          name: 'Fail School',
-          schoolType: 'primary',
-          parish: 'Kingston',
-        } as any),
+        service.create(
+          {
+            name: 'Fail School',
+            schoolType: 'primary',
+            parish: 'Kingston',
+          } as any,
+          'user-1',
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });

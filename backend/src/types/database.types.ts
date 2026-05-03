@@ -322,10 +322,101 @@ export type Database = {
           },
         ];
       };
+      school_management: {
+        Row: {
+          id: string;
+          user_id: string;
+          school_id: string;
+          role: Database['public']['Enums']['role'];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          school_id: string;
+          role: Database['public']['Enums']['role'];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          school_id?: string;
+          role?: Database['public']['Enums']['role'];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_management_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_management_school_id_fkey';
+            columns: ['school_id'];
+            isOneToOne: false;
+            referencedRelation: 'school';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      school_join_request: {
+        Row: {
+          id: string;
+          user_id: string;
+          school_id: string;
+          status: Database['public']['Enums']['join_request_status'];
+          message: string | null;
+          requested_at: string;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          school_id: string;
+          status?: Database['public']['Enums']['join_request_status'];
+          message?: string | null;
+          requested_at?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          school_id?: string;
+          status?: Database['public']['Enums']['join_request_status'];
+          message?: string | null;
+          requested_at?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_join_request_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_join_request_school_id_fkey';
+            columns: ['school_id'];
+            isOneToOne: false;
+            referencedRelation: 'school';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       user_profile: {
         Row: {
           avatar_url: string | null;
           created_at: string | null;
+          email: string | null;
           first_name: string | null;
           id: string;
           is_active: boolean | null;
@@ -337,6 +428,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null;
           created_at?: string | null;
+          email?: string | null;
           first_name?: string | null;
           id?: string;
           is_active?: boolean | null;
@@ -348,6 +440,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null;
           created_at?: string | null;
+          email?: string | null;
           first_name?: string | null;
           id?: string;
           is_active?: boolean | null;
@@ -383,10 +476,11 @@ export type Database = {
       assessment_type: 'exam' | 'coursework';
       gender: 'male' | 'female';
       gradingmodel: 'term_based' | 'year_based';
+      join_request_status: 'pending' | 'approved' | 'rejected';
       relationship_type: 'mother' | 'father' | 'guardian';
       report_book_status: 'draft' | 'published' | 'sent_to_ministry';
       report_book_type: 'term' | 'year_end';
-      role: 'admin' | 'teacher';
+      role: 'admin' | 'teacher' | 'member';
       schooltype: 'primary' | 'secondary';
       term_name: 'michaelmas' | 'hilary' | 'trinity';
     };
@@ -828,10 +922,11 @@ export const Constants = {
       assessment_type: ['exam', 'coursework'],
       gender: ['male', 'female'],
       gradingmodel: ['term_based', 'year_based'],
+      join_request_status: ['pending', 'approved', 'rejected'],
       relationship_type: ['mother', 'father', 'guardian'],
       report_book_status: ['draft', 'published', 'sent_to_ministry'],
       report_book_type: ['term', 'year_end'],
-      role: ['admin', 'teacher'],
+      role: ['admin', 'teacher', 'member'],
       schooltype: ['primary', 'secondary'],
       term_name: ['michaelmas', 'hilary', 'trinity'],
     },
