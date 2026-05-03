@@ -87,3 +87,4 @@ docs/build/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+*.env*
