@@ -38,7 +38,10 @@ The authentication module handles user login via email OTP (one-time password), 
 
 3. If user has no name/school (first login)
    └── PATCH /auth/onboard { firstName, lastName, schoolId }
-       └── Completes the user profile
+       ├─ If user already has school_id (because they just created one): updates name
+       ├─ If joining an existing school: creates a school_join_request and returns
+       │  the profile with a `joinRequest` field — frontend redirects to /onboard/pending
+       └─ If no schoolId provided: saves name, leaves school empty
 
 4. Token expired
    └── POST /auth/refresh (reads refresh token from cookie)
@@ -159,7 +162,11 @@ Refreshes an expired access token using the httpOnly `gb_refresh_token` cookie (
 
 **Requires:** `AuthGuard`
 
-Completes the user's profile after first login.
+Completes the user's profile after first login. The behavior depends on the user's existing state:
+
+- **User already has `school_id`** (because they just created a school via `POST /schools`, which auto-assigns them as `admin`): only `first_name` / `last_name` are updated.
+- **User selected an existing school** via `schoolId`: a `school_join_request` is created in `pending` status. The user's `school_id` is **not** set — they remain in a pending state until an admin approves. The response includes a `joinRequest` field.
+- **No `schoolId` provided**: only the name is saved.
 
 **Body:**
 ```json
@@ -169,6 +176,24 @@ Completes the user's profile after first login.
   "schoolId": "uuid"
 }
 ```
+
+**Response (joining existing school — pending approval):**
+```json
+{
+  "id": "uuid",
+  "first_name": "John",
+  "last_name": "Doe",
+  "school_id": null,
+  "school": null,
+  "joinRequest": {
+    "id": "uuid",
+    "school_id": "uuid",
+    "status": "pending"
+  }
+}
+```
+
+When the response includes `joinRequest`, the frontend redirects to `/onboard/pending`, which polls `GET /auth/me` until the request is approved. See the [School module](./school.md) for full details on the join request flow.
 
 ---
 

@@ -1,27 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
-import { useSignal, useComputed } from "@preact/signals-react";
-import { useSignals } from "@preact/signals-react/runtime";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  ArrowLeftRight,
   BookOpen,
   Calendar,
-  Check,
   ChevronsUpDown,
   FileText,
   GraduationCap,
   LayoutDashboard,
-  Loader2,
   LogOut,
-  Search,
   Settings,
   Shield,
+  UserPlus,
   UserRoundSearch,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -48,151 +43,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-
-interface School {
-  id: string;
-  name: string;
-  parish: string | null;
-  school_type: string | null;
-}
-
-function ChangeSchoolDialog({
-  currentSchoolId,
-  children,
-}: {
-  currentSchoolId?: string;
-  children: React.ReactNode;
-}) {
-  useSignals();
-  const router = useRouter();
-  const open = useSignal(false);
-  const schools = useSignal<School[]>([]);
-  const loading = useSignal(false);
-  const saving = useSignal<string | null>(null);
-  const search = useSignal("");
-
-  const filtered = useComputed(() => {
-    const q = search.value.toLowerCase();
-    if (!q) return schools.value;
-    return schools.value.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.parish?.toLowerCase().includes(q),
-    );
-  });
-
-  useEffect(() => {
-    if (!open.value) {
-      search.value = "";
-      return;
-    }
-    loading.value = true;
-    api<School[]>("/schools")
-      .then((data) => (schools.value = data))
-      .catch(() => toast.error("Failed to load schools"))
-      .finally(() => (loading.value = false));
-  }, [open.value]);
-
-  async function handleSelect(school: School) {
-    if (school.id === currentSchoolId) return;
-    saving.value = school.id;
-    try {
-      await api("/auth/profile", {
-        method: "PATCH",
-        body: { schoolId: school.id },
-      });
-      toast.success(`Switched to ${school.name}`);
-      open.value = false;
-      router.refresh();
-      window.location.reload();
-    } catch {
-      toast.error("Failed to switch school");
-    } finally {
-      saving.value = null;
-    }
-  }
-
-  return (
-    <Dialog open={open.value} onOpenChange={(v) => (open.value = v)}>
-      <DialogTrigger className="inline-flex appearance-none border-0 bg-transparent p-0">{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Change School</DialogTitle>
-          <DialogDescription>Select a school to switch to.</DialogDescription>
-        </DialogHeader>
-        {!loading.value && schools.value.length > 0 && (
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search schools..."
-              value={search.value}
-              onChange={(e) => (search.value = e.target.value)}
-              className="w-full rounded-md border border-input bg-transparent py-2 pl-8 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
-        )}
-        <div className="max-h-64 overflow-y-auto -mx-1">
-          {loading.value ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : filtered.value.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              {schools.value.length === 0 ? "No schools found." : "No matching schools."}
-            </p>
-          ) : (
-            <div className="space-y-0.5 px-1">
-              {filtered.value.map((school) => {
-                const isActive = school.id === currentSchoolId;
-                const isSaving = saving.value === school.id;
-                return (
-                  <button
-                    key={school.id}
-                    type="button"
-                    disabled={isSaving || isActive}
-                    onClick={() => handleSelect(school)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                      isActive
-                        ? "bg-primary/10 text-primary"
-                        : "hover:bg-accent"
-                    } disabled:opacity-70`}
-                  >
-                    <GraduationCap className="size-4 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{school.name}</p>
-                      {school.parish && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {school.parish}
-                        </p>
-                      )}
-                    </div>
-                    {isSaving && <Loader2 className="size-4 animate-spin shrink-0" />}
-                    {isActive && !isSaving && <Check className="size-4 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { title: "Academic Years", href: "/dashboard/academic-years", icon: GraduationCap },
   { title: "Classes", href: "/dashboard/classes", icon: Users },
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
+  { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
   { title: "Terms", href: "/dashboard/terms", icon: Calendar },
+];
+
+const adminNavItems = [
+  { title: "Members", href: "/dashboard/members", icon: UserPlus },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -254,16 +116,6 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             <span className="text-xs text-muted-foreground truncate flex-1">
               {profile.school.name}
             </span>
-            {process.env.NEXT_PUBLIC_DEDICATED_DEPLOYMENT !== 'true' && (
-              <ChangeSchoolDialog currentSchoolId={profile.school.id}>
-                <span
-                  title="Change school"
-                  className="shrink-0 rounded-md p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                >
-                  <ArrowLeftRight className="size-3" />
-                </span>
-              </ChangeSchoolDialog>
-            )}
           </div>
         )}
       </SidebarHeader>
@@ -292,6 +144,32 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {profile?.role === "admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = navItemActive(pathname ?? "", item.href);
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        render={<Link href={item.href} />}
+                        isActive={isActive}
+                        tooltip={item.title}
+                      >
+                        <Icon className="size-4" />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>Legal</SidebarGroupLabel>

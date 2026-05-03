@@ -41,7 +41,8 @@ All lowercase values in the database.
 | Enum | Values | Used in |
 |---|---|---|
 | schooltype | primary, secondary | school.school_type |
-| role | admin, teacher | user_profile.role |
+| role | admin, member, teacher | user_profile.role, school_management.role |
+| join_request_status | pending, approved, rejected | school_join_request.status |
 | gradingmodel | term_based, year_based | academic_year.grading_model |
 | term_name | michaelmas, hilary, trinity | term.name |
 | gender | male, female | student.gender |
@@ -71,15 +72,45 @@ All lowercase values in the database.
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid PK | Same as auth.users.id |
-| school_id | uuid FK → school | NULL until onboarding |
+| school_id | uuid FK → school | NULL until a join request is approved. Denormalized cache of the user's active school — `school_management` is the source of truth. |
 | email | varchar | |
 | first_name | varchar | |
 | last_name | varchar | |
-| role | enum role | admin or teacher |
+| role | enum role | Denormalized cache of the role from the matching `school_management` row. |
 | avatar_url | varchar nullable | |
 | is_active | boolean default true | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
+
+### public.school_management
+Canonical record of who belongs to which school and in what role. See the [School module docs](./backend/school.md) for full details.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK → user_profile | ON DELETE CASCADE |
+| school_id | uuid FK → school | ON DELETE CASCADE |
+| role | enum role | admin, member, or teacher |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+UNIQUE: `(user_id, school_id)`
+
+### public.school_join_request
+A user's pending/historic request to join a school. See the [School module docs](./backend/school.md) for the approval flow.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | |
+| user_id | uuid FK → user_profile | ON DELETE CASCADE |
+| school_id | uuid FK → school | ON DELETE CASCADE |
+| status | enum join_request_status | pending, approved, or rejected |
+| message | text nullable | Optional note from requester |
+| requested_at | timestamptz | |
+| reviewed_at | timestamptz nullable | |
+| reviewed_by | uuid FK → user_profile nullable | The admin who reviewed |
+
+UNIQUE INDEX (partial): `(user_id, school_id) WHERE status = 'pending'` — prevents duplicate pending requests.
 
 ### public.academic_year
 | Column | Type | Notes |
@@ -416,6 +447,7 @@ OR EXISTS (
 | Guard | What it checks | Used on |
 |---|---|---|
 | AuthGuard | Validates Supabase JWT. Attaches `request.user = { id, email }` | All protected endpoints |
+| AdminGuard | `user_profile.role = 'admin'` and `is_active = true` | School member management, join request approval/rejection |
 | ClassTeacherGuard | `teacher_group_assignment.is_class_teacher = true`. Admin bypasses. | Enrollment, reports, teacher management, class updates |
 | ReportGuard | `report_book.status !== 'sent_to_ministry'`. Blocks edits on locked reports. | Report updates, entry edits, regenerate, publish |
 
@@ -428,7 +460,18 @@ OR EXISTS (
 
 Rule: If the endpoint involves grading data, use the user client. For everything else, use serviceClient with NestJS guards.
 
-## 10. Schema Grants
+## 10. Supabase Config
+
+Custom schemas must be exposed through PostgREST in `supabase/config.toml`:
+
+```toml
+[api]
+schemas = ["public", "student", "staff", "grading", "reporting"]
+```
+
+Without this, `.schema('student')` calls from the Supabase JS client fail with "Invalid schema".
+
+## 11. Schema Grants
 
 Custom schemas need explicit grants (Supabase only auto-grants `public`):
 
@@ -456,17 +499,18 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA staff GRANT ALL ON TABLES TO service_role, au
 ## 11. Build Order
 
 ```
- 1. Auth              -OTP login, JWT validation
- 2. Academic Year     -create, activate, grading model
- 3. Subject           -school-level CRUD
- 4. Term              -3 terms per year, weights
- 5. Student           -school-level CRUD
- 6. Class             -student groups, teacher assignment
- 7. Enrollment        -enroll students, assign subjects
- 8. Grading           -assessments, grades, bulk entry, exclusions
- 9. Calculation       -weighted averages, rankings
-10. Reporting         -report books, remarks, PDF, status flow
-11. Cache             -pluggable caching (memory or Redis)
+ 1. Auth              -OTP login, JWT validation, onboarding
+ 2. School            -create, join requests, members, leave
+ 3. Academic Year     -create, activate, grading model
+ 4. Subject           -school-level CRUD
+ 5. Term              -3 terms per year, weights
+ 6. Student           -school-level CRUD
+ 7. Class             -student groups, teacher assignment
+ 8. Enrollment        -enroll students, assign subjects
+ 9. Grading           -assessments, grades, bulk entry, exclusions
+10. Calculation       -weighted averages, rankings
+11. Reporting         -report books, remarks, PDF, status flow
+12. Cache             -pluggable caching (memory or Redis)
 ```
 
 ## 12. Project Structure
@@ -485,10 +529,20 @@ backend/src/
 │   ├── auth.controller.ts
 │   ├── auth.service.ts
 │   ├── auth.guard.ts
+│   ├── admin.guard.ts
 │   └── dto/
 │       ├── send-otp.dto.ts
 │       ├── verify-otp.dto.ts
+│       ├── onboard.dto.ts
 │       └── refresh-token.dto.ts
+├── school/
+│   ├── school.module.ts
+│   ├── school.controller.ts
+│   ├── school.service.ts
+│   └── dto/
+│       ├── create-school.dto.ts
+│       ├── create-join-request.dto.ts
+│       └── approve-join-request.dto.ts
 ├── academic-year/
 │   ├── academic-year.module.ts
 │   ├── academic-year.controller.ts
@@ -581,10 +635,28 @@ backend/src/
 | POST | `/auth/otp/send` | Public | Send OTP to email. shouldCreateUser: true |
 | POST | `/auth/otp/verify` | Public | Verify OTP → JWT session + user profile |
 | GET | `/auth/me` | Auth | Get current user profile with school |
+| PATCH | `/auth/onboard` | Auth | Set first/last name (no school selection) |
+| PATCH | `/auth/profile` | Auth | Update first/last name |
 | POST | `/auth/refresh` | Public | Refresh expired access token |
 | POST | `/auth/logout` | Auth | Sign out |
+| DELETE | `/auth/account` | Auth | Permanently delete account |
 
-New teacher: OTP → auth.users created → `handle_new_user()` trigger creates user_profile (school_id = null) → frontend redirects to onboarding.
+New user flow: OTP → auth.users created → `handle_new_user()` trigger creates user_profile (school_id = null) → frontend redirects to `/onboard` (name only) → redirects to `/schools` (browse and request to join).
+
+## 13b. School Management
+
+| Method | Route | Guards | Description |
+|---|---|---|---|
+| GET | `/schools` | Auth | List all active schools |
+| POST | `/schools` | Auth | Create school (creator becomes admin) |
+| GET | `/schools/my-pending-request` | Auth | Get the current user's pending join request (if any) |
+| GET | `/schools/members` | Auth | List all members of the user's school (with role + profile) |
+| POST | `/schools/leave` | Auth | Leave current school. Blocked if user is the sole admin. |
+| DELETE | `/schools/members/:membershipId` | Auth + Admin | Remove a member from the school. Cannot remove admins. |
+| POST | `/schools/:schoolId/join-requests` | Auth | Request to join a school. Auto-joins if the school has no admin. |
+| GET | `/schools/join-requests` | Auth + Admin | List pending join requests for admin's school |
+| PATCH | `/schools/join-requests/:requestId/approve` | Auth + Admin | Approve request and assign role |
+| PATCH | `/schools/join-requests/:requestId/reject` | Auth + Admin | Reject request |
 
 ## 14. Academic Year
 
@@ -1028,3 +1100,43 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
 | Add subject remark | Yes (any subject) | Own subject only (RLS) | Yes |
 | Publish reports | Yes (guard) | No (guard blocks) | Yes |
 | Send to ministry | Yes (guard) | No (guard blocks) | Yes |
+
+---
+
+# PART H — Frontend Pages
+
+## 38. Key Routes
+
+| Route | Access | Description |
+|---|---|---|
+| `/login` | Public | Email OTP login |
+| `/login/verify` | Public | OTP verification |
+| `/onboard` | Auth (no school) | Collect first/last name only, then redirect to `/schools` |
+| `/onboard/pending` | Auth (no school) | Waiting screen after submitting a join request during onboarding |
+| `/schools` | Auth (no school) | Browse all schools. **Request** button per school (shows **Pending** after requesting). **Create** button (non-dedicated only). Persists pending state across reloads via `GET /schools/my-pending-request`. |
+| `/dashboard` | Auth + school | Home overview (active year, class count) |
+| `/dashboard/academic-years` | Auth + school | Academic year CRUD |
+| `/dashboard/classes` | Auth + school | Class list |
+| `/dashboard/classes/[classId]` | Auth + school | Class detail, enrollment, teachers |
+| `/dashboard/classes/[classId]/grading` | Auth + school | Grade entry |
+| `/dashboard/classes/[classId]/reports` | Auth + school | Report management |
+| `/dashboard/students` | Auth + school | Student roster with search |
+| `/dashboard/staff` | Auth + school | School members grouped by role: Admins → Teachers → Members. Admins see remove buttons (cannot remove self or other admins). |
+| `/dashboard/subjects` | Auth + school | Subject CRUD |
+| `/dashboard/terms` | Auth + school | Term management |
+| `/dashboard/members` | Auth + Admin | Pending join request approval queue |
+| `/dashboard/settings` | Auth + school | Profile (name, avatar), school (read-only with Change/Leave buttons), danger zone (delete account) |
+
+## 39. School Gate
+
+The dashboard layout (`app/dashboard/layout.tsx`) checks the user profile after auth. If `profile.school` is null (user was removed from a school, or left), the layout redirects to `/schools`. This means no dashboard page renders without an active school.
+
+## 40. Sidebar Navigation
+
+**Main nav** (all users): Dashboard, Academic Years, Classes, Students, Staff, Subjects, Terms.
+
+**Admin nav** (role = admin only): Members (join request queue).
+
+**Footer:** User dropdown with Settings and Log out.
+
+The school name displays below the logo in the sidebar header (read-only, no inline switching).
