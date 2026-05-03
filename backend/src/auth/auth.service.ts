@@ -147,12 +147,19 @@ export class AuthService {
 
       const { data, error } = await supabase
         .from('user_profile')
-        .upsert({ id: userId, first_name: dto.firstName, last_name: dto.lastName, school_id: school.id })
+        .upsert({
+          id: userId,
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+          school_id: school.id,
+        })
         .select('*, school:school_id(*)')
         .single();
 
       if (error || !data) {
-        this.logger.error(`Failed to onboard user ${userId}: ${error?.message}`);
+        this.logger.error(
+          `Failed to onboard user ${userId}: ${error?.message}`,
+        );
         throw new BadRequestException('Failed to complete onboarding');
       }
 
@@ -171,12 +178,18 @@ export class AuthService {
       // User created a school — just update name
       const { data, error } = await supabase
         .from('user_profile')
-        .upsert({ id: userId, first_name: dto.firstName, last_name: dto.lastName })
+        .upsert({
+          id: userId,
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+        })
         .select('*, school:school_id(*)')
         .single();
 
       if (error || !data) {
-        this.logger.error(`Failed to onboard user ${userId}: ${error?.message}`);
+        this.logger.error(
+          `Failed to onboard user ${userId}: ${error?.message}`,
+        );
         throw new BadRequestException('Failed to complete onboarding');
       }
 
@@ -185,7 +198,74 @@ export class AuthService {
     }
 
     if (dto.schoolId) {
-      // Joining an existing school — create a join request instead of direct assignment
+      // If the school has no admin yet, auto-assign this user as admin
+      // (bootstrap rule for orphaned schools — first joiner takes ownership).
+      const { data: existingAdmin } = await supabase
+        .from('school_management')
+        .select('id')
+        .eq('school_id', dto.schoolId)
+        .eq('role', 'admin')
+        .limit(1)
+        .maybeSingle();
+
+      if (!existingAdmin) {
+        // Upsert user_profile FIRST (school_management has an FK to user_profile)
+        const { data, error } = await supabase
+          .from('user_profile')
+          .upsert({
+            id: userId,
+            first_name: dto.firstName,
+            last_name: dto.lastName,
+            school_id: dto.schoolId,
+            role: 'admin',
+          })
+          .select('*, school:school_id(*)')
+          .single();
+
+        if (error || !data) {
+          this.logger.error(
+            `Failed to onboard user ${userId}: ${error?.message}`,
+          );
+          throw new BadRequestException('Failed to complete onboarding');
+        }
+
+        const { error: managementError } = await supabase
+          .from('school_management')
+          .upsert(
+            { user_id: userId, school_id: dto.schoolId, role: 'admin' },
+            { onConflict: 'user_id,school_id' },
+          );
+
+        if (managementError) {
+          this.logger.error(
+            `Failed to auto-assign admin for ${userId} at ${dto.schoolId}: ${managementError.message}`,
+          );
+          throw new BadRequestException('Failed to complete onboarding');
+        }
+
+        await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
+        return data;
+      }
+
+      // School already has an admin — go through the join request flow.
+      // Upsert user_profile FIRST (school_join_request has an FK to user_profile).
+      const { data, error } = await supabase
+        .from('user_profile')
+        .upsert({
+          id: userId,
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+        })
+        .select('*, school:school_id(*)')
+        .single();
+
+      if (error || !data) {
+        this.logger.error(
+          `Failed to onboard user ${userId}: ${error?.message}`,
+        );
+        throw new BadRequestException('Failed to complete onboarding');
+      }
+
       const { data: joinRequest, error: reqError } = await supabase
         .from('school_join_request')
         .insert({ user_id: userId, school_id: dto.schoolId })
@@ -199,18 +279,6 @@ export class AuthService {
         throw new BadRequestException('Failed to submit join request');
       }
 
-      // Save name only (no school_id)
-      const { data, error } = await supabase
-        .from('user_profile')
-        .upsert({ id: userId, first_name: dto.firstName, last_name: dto.lastName })
-        .select('*, school:school_id(*)')
-        .single();
-
-      if (error || !data) {
-        this.logger.error(`Failed to onboard user ${userId}: ${error?.message}`);
-        throw new BadRequestException('Failed to complete onboarding');
-      }
-
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
       return { ...data, joinRequest };
     }
@@ -218,7 +286,11 @@ export class AuthService {
     // No school selected — just save name
     const { data, error } = await supabase
       .from('user_profile')
-      .upsert({ id: userId, first_name: dto.firstName, last_name: dto.lastName })
+      .upsert({
+        id: userId,
+        first_name: dto.firstName,
+        last_name: dto.lastName,
+      })
       .select('*, school:school_id(*)')
       .single();
 

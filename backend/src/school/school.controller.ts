@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -33,6 +34,30 @@ export class SchoolController {
     return this.versioning.resolve(req, 'school.list')(raw);
   }
 
+  @Get('my-pending-request')
+  async getMyPendingRequest(@Req() req: any) {
+    return this.schoolService.getMyPendingRequest(req.user.id);
+  }
+
+  @Get('members')
+  async getMembers(@Req() req: any) {
+    return this.schoolService.getMembers(req.user.id);
+  }
+
+  @Post('leave')
+  async leaveSchool(@Req() req: any) {
+    return this.schoolService.leaveSchool(req.user.id);
+  }
+
+  @Delete('members/:membershipId')
+  @UseGuards(AdminGuard)
+  async removeMember(
+    @Req() req: any,
+    @Param('membershipId') membershipId: string,
+  ) {
+    return this.schoolService.removeMember(req.user.id, membershipId);
+  }
+
   // Must be defined before /:schoolId to avoid route conflicts
   @Get('join-requests')
   @UseGuards(AdminGuard)
@@ -52,10 +77,7 @@ export class SchoolController {
 
   @Patch('join-requests/:requestId/reject')
   @UseGuards(AdminGuard)
-  async rejectRequest(
-    @Req() req: any,
-    @Param('requestId') requestId: string,
-  ) {
+  async rejectRequest(@Req() req: any, @Param('requestId') requestId: string) {
     return this.schoolService.rejectRequest(req.user.id, requestId);
   }
 
