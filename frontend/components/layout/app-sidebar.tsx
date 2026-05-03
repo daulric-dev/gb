@@ -20,6 +20,7 @@ import {
   Search,
   Settings,
   Shield,
+  UserPlus,
   UserRoundSearch,
   Users,
 } from "lucide-react";
@@ -103,16 +104,11 @@ function ChangeSchoolDialog({
     if (school.id === currentSchoolId) return;
     saving.value = school.id;
     try {
-      await api("/auth/profile", {
-        method: "PATCH",
-        body: { schoolId: school.id },
-      });
-      toast.success(`Switched to ${school.name}`);
+      await api(`/schools/${school.id}/join-requests`, { method: "POST" });
+      toast.success(`Join request submitted for ${school.name} — awaiting admin approval.`);
       open.value = false;
-      router.refresh();
-      window.location.reload();
     } catch {
-      toast.error("Failed to switch school");
+      toast.error("Failed to submit join request");
     } finally {
       saving.value = null;
     }
@@ -193,6 +189,10 @@ const navItems = [
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
   { title: "Terms", href: "/dashboard/terms", icon: Calendar },
+];
+
+const adminNavItems = [
+  { title: "Members", href: "/dashboard/members", icon: UserPlus },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -292,6 +292,32 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {profile?.role === "admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = navItemActive(pathname ?? "", item.href);
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        render={<Link href={item.href} />}
+                        isActive={isActive}
+                        tooltip={item.title}
+                      >
+                        <Icon className="size-4" />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>Legal</SidebarGroupLabel>

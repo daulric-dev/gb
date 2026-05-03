@@ -77,22 +77,37 @@ export default function SettingsPage() {
       toast.error("First and last name are required");
       return;
     }
-    if (!schoolId.value) {
-      toast.error("Please select a school");
-      return;
-    }
     saving.value = true;
     try {
-      const updated = await api<Profile>("/auth/profile", {
-        method: "PATCH",
-        body: {
-          firstName: firstName.value.trim(),
-          lastName: lastName.value.trim(),
-          schoolId: schoolId.value,
-        },
-      });
-      profile.value = updated;
-      toast.success("Profile updated");
+      const currentSchoolId = profile.value?.school?.id || "";
+      const schoolChanged = schoolId.value && schoolId.value !== currentSchoolId;
+
+      if (schoolChanged) {
+        // Changing school goes through join request flow
+        await api(`/schools/${schoolId.value}/join-requests`, { method: "POST" });
+        // Still save name changes
+        const updated = await api<Profile>("/auth/profile", {
+          method: "PATCH",
+          body: {
+            firstName: firstName.value.trim(),
+            lastName: lastName.value.trim(),
+          },
+        });
+        profile.value = updated;
+        // Reset school selector to current school (request is pending)
+        schoolId.value = currentSchoolId;
+        toast.success("Join request submitted — awaiting admin approval. Name updated.");
+      } else {
+        const updated = await api<Profile>("/auth/profile", {
+          method: "PATCH",
+          body: {
+            firstName: firstName.value.trim(),
+            lastName: lastName.value.trim(),
+          },
+        });
+        profile.value = updated;
+        toast.success("Profile updated");
+      }
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Failed to update profile";

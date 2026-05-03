@@ -166,6 +166,8 @@ export default function OnboardPage() {
   const schools = useSignal<School[]>([]);
   const schoolsLoading = useSignal(!isDedicated);
   const createDialogOpen = useSignal(false);
+  // Tracks whether the currently selected school was just created by this user
+  const schoolWasCreated = useSignal(false);
 
   useEffect(() => {
     if (isDedicated) return;
@@ -193,9 +195,17 @@ export default function OnboardPage() {
       };
       if (!isDedicated) body.schoolId = schoolId.value;
 
-      await api("/auth/onboard", { method: "PATCH", body });
-      toast.success("Welcome aboard!");
-      router.push("/dashboard");
+      const result = await api<any>("/auth/onboard", { method: "PATCH", body });
+
+      if (result?.joinRequest) {
+        // User is joining an existing school — redirect to pending page
+        const selectedSchool = schools.value.find((s) => s.id === schoolId.value);
+        const schoolName = selectedSchool?.name ?? "";
+        router.push(`/onboard/pending?school=${encodeURIComponent(schoolName)}`);
+      } else {
+        toast.success("Welcome aboard!");
+        router.push("/dashboard");
+      }
     } catch (err) {
       console.error(err);
       const message = err instanceof ApiError ? err.message : "Onboarding Failed";
@@ -208,6 +218,7 @@ export default function OnboardPage() {
   function handleSchoolCreated(school: School) {
     schools.value = [...schools.value, school].sort((a, b) => a.name.localeCompare(b.name));
     schoolId.value = school.id;
+    schoolWasCreated.value = true;
     createDialogOpen.value = false;
     toast.success("School created");
   }
