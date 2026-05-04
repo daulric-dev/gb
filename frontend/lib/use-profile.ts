@@ -18,13 +18,15 @@ export interface UserProfile {
   } | null;
 }
 
-export function useProfile() {
+export function useProfile(opts?: { optional?: boolean }) {
   useSignals();
   const profile = useSignal<UserProfile | null>(null);
   const loading = useSignal(true);
 
   useEffect(() => {
-    api<UserProfile>("/auth/me")
+    api<UserProfile>("/auth/me", {
+      skipAuthRedirect: opts?.optional,
+    })
       .then((data) => {
         profile.value = data;
       })

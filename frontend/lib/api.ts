@@ -9,6 +9,7 @@ export function buildUrl(path: string): string {
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
+  skipAuthRedirect?: boolean;
 };
 
 function redirectToLogin() {
@@ -34,6 +35,7 @@ async function attemptRefresh(): Promise<boolean> {
 
 async function withRefreshRetry(
   doFetch: () => Promise<Response>,
+  skipAuthRedirect = false,
 ): Promise<Response> {
   let res = await doFetch();
 
@@ -48,7 +50,7 @@ async function withRefreshRetry(
 
     if (refreshed) {
       res = await doFetch();
-    } else {
+    } else if (!skipAuthRedirect) {
       redirectToLogin();
       throw new ApiError(401, "Session expired");
     }
@@ -61,7 +63,7 @@ export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { body, headers: customHeaders, ...rest } = options;
+  const { body, headers: customHeaders, skipAuthRedirect, ...rest } = options;
 
   const headers: Record<string, string> = {
     "X-API-Version": "1",
@@ -80,7 +82,7 @@ export async function api<T = unknown>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-  const res = await withRefreshRetry(doFetch);
+  const res = await withRefreshRetry(doFetch, skipAuthRedirect);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));

@@ -53,22 +53,22 @@ const features = [
 export default function LandingPage() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
-  const { profile } = useProfile();
+  const { profile } = useProfile({ optional: true });
 
-  const navigateWithTransition = useCallback(
-    (e: React.MouseEvent) => {
+  const navigateWithTransition = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
+      const target = profile.value ? "/dashboard" : "/login";
       const el = containerRef.current;
       if (!el) {
-        router.push("/login");
+        router.push(target);
         return;
       }
       el.classList.add("animate-fade-out-down");
-      el.addEventListener("animationend", () => router.push("/login"), {
+      el.addEventListener("animationend", () => router.push(target), {
         once: true,
       });
     },
-    [router],
+    [router, profile],
   );
 
   return (
