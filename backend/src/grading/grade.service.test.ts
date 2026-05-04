@@ -13,7 +13,8 @@ describe('GradeService', () => {
   let mockCache: ReturnType<typeof createMockCacheService>;
 
   const userId = 'user-1';
-  const token = 'tok';
+  const req = { cookies: {} } as any;
+  const reply = { setCookie: () => undefined } as any;
 
   beforeEach(() => {
     mockSupabase = createMockSupabaseService({
@@ -33,7 +34,8 @@ describe('GradeService', () => {
         studentId: 's1',
         score: 85,
       },
-      token,
+      req,
+      reply,
     );
 
     expect(await mockCache.get('calc:a')).toBeNull();
@@ -55,7 +57,8 @@ describe('GradeService', () => {
           studentId: 's1',
           score: 85,
         } as any,
-        token,
+        req,
+        reply,
       ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
@@ -76,7 +79,8 @@ describe('GradeService', () => {
           studentId: 's1',
           score: 85,
         } as any,
-        token,
+        req,
+        reply,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -97,7 +101,8 @@ describe('GradeService', () => {
           { studentId: 's2', score: 80 },
         ],
       },
-      token,
+      req,
+      reply,
     );
 
     expect(result.graded).toBe(2);
@@ -107,7 +112,7 @@ describe('GradeService', () => {
   test('update invalidates calc caches', async () => {
     await mockCache.set('calc:u', 'v', 300);
 
-    await service.update('g1', userId, { score: 90 }, token);
+    await service.update('g1', userId, { score: 90 }, req, reply);
 
     expect(await mockCache.get('calc:u')).toBeNull();
   });
@@ -119,7 +124,8 @@ describe('GradeService', () => {
       'g1',
       userId,
       { isExcluded: true, exclusionReason: 'cheating' },
-      token,
+      req,
+      reply,
     );
 
     expect(await mockCache.get('calc:e')).toBeNull();

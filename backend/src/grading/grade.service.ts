@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
@@ -25,8 +26,8 @@ export class GradeService {
     await this.cache.deleteByPrefix('calc:');
   }
 
-  async create(userId: string, dto: CreateGradeDto, token: string) {
-    const supabase = this.supabaseService.createUserClient(token, 'grading');
+  async create(userId: string, dto: CreateGradeDto, req: FastifyRequest, reply: FastifyReply) {
+    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
 
     const { data, error } = await supabase
       .from('grade')
@@ -63,8 +64,8 @@ export class GradeService {
     return data;
   }
 
-  async bulkCreate(userId: string, dto: BulkGradeDto, token: string) {
-    const supabase = this.supabaseService.createUserClient(token, 'grading');
+  async bulkCreate(userId: string, dto: BulkGradeDto, req: FastifyRequest, reply: FastifyReply) {
+    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
 
     const rows = dto.grades.map((entry) => ({
       assessment_id: dto.assessmentId,
@@ -96,8 +97,8 @@ export class GradeService {
     return { graded: dto.grades.length, message: 'Grades saved' };
   }
 
-  async findByAssessment(assessmentId: string, token: string) {
-    const supabase = this.supabaseService.createUserClient(token, 'grading');
+  async findByAssessment(assessmentId: string, req: FastifyRequest, reply: FastifyReply) {
+    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
 
     const { data: grades, error } = await supabase
       .from('grade')
@@ -136,8 +137,8 @@ export class GradeService {
       });
   }
 
-  async findByTermAndSubject(termId: string, subjectId: string, token: string) {
-    const supabase = this.supabaseService.createUserClient(token, 'grading');
+  async findByTermAndSubject(termId: string, subjectId: string, req: FastifyRequest, reply: FastifyReply) {
+    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
 
     const { data: assessments, error: aErr } = await supabase
       .from('assessment')
@@ -204,9 +205,10 @@ export class GradeService {
     gradeId: string,
     userId: string,
     dto: UpdateGradeDto,
-    token: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
   ) {
-    const supabase = this.supabaseService.createUserClient(token, 'grading');
+    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
 
     const updateData: Record<string, unknown> = { updated_by: userId };
     if (dto.score !== undefined) updateData.score = dto.score;
@@ -240,9 +242,10 @@ export class GradeService {
     gradeId: string,
     userId: string,
     dto: ExcludeDto,
-    token: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
   ) {
-    const supabase = this.supabaseService.createUserClient(token, 'grading');
+    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
 
     const { data, error } = await supabase
       .from('grade')

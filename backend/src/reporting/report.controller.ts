@@ -32,10 +32,6 @@ export class ReportController {
     private readonly versioning: VersioningService,
   ) {}
 
-  private getToken(req: { headers?: { authorization?: string } }): string {
-    return req.headers?.authorization?.replace(/^Bearer\s+/i, '') ?? '';
-  }
-
   @Post('generate')
   @UseGuards(ClassTeacherGuard)
   async generate(@Req() req: any, @Body() dto: GenerateReportDto) {
@@ -50,11 +46,13 @@ export class ReportController {
     @Query('termId') termId: string,
     @Query('reportType') reportType: string | undefined,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.findByClassAndTerm(
       studentGroupId,
       termId,
-      this.getToken(req),
+      req,
+      reply,
       reportType,
     );
     return this.versioning.resolve(req, 'report.list')(raw);
@@ -67,12 +65,14 @@ export class ReportController {
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.getClassSummary(
       studentGroupId,
       termId,
       reportType,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'report.classSummary')(raw);
   }
@@ -149,12 +149,14 @@ export class ReportController {
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.getClassSummaryFiles(
       studentGroupId,
       termId,
       reportType,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'report.classSummaryFiles')(raw);
   }
@@ -166,34 +168,48 @@ export class ReportController {
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.findStudentReport(
       studentId,
       termId,
       reportType,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'report.studentReport')(raw);
   }
 
   @Get(':id/pdfs')
   @UseGuards(ClassTeacherGuard)
-  async getPdfHistory(@Param('id') id: string, @Req() req: any) {
-    const raw = await this.reportService.getPdfHistory(id, this.getToken(req));
+  async getPdfHistory(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const raw = await this.reportService.getPdfHistory(id, req, reply);
     return this.versioning.resolve(req, 'report.pdfHistory')(raw);
   }
 
   @Get(':id/pdf/latest')
   @UseGuards(ClassTeacherGuard)
-  async getLatestPdf(@Param('id') id: string, @Req() req: any) {
-    const raw = await this.reportService.getLatestPdf(id, this.getToken(req));
+  async getLatestPdf(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const raw = await this.reportService.getLatestPdf(id, req, reply);
     return this.versioning.resolve(req, 'report.pdfLatest')(raw);
   }
 
   @Get(':id')
   @UseGuards(ClassTeacherGuard)
-  async findOne(@Param('id') id: string, @Req() req: any) {
-    const raw = await this.reportService.findOne(id, this.getToken(req));
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const raw = await this.reportService.findOne(id, req, reply);
     return this.versioning.resolve(req, 'report.detail')(raw);
   }
 
@@ -288,21 +304,19 @@ export class ReportEntriesController {
     private readonly versioning: VersioningService,
   ) {}
 
-  private getToken(req: { headers?: { authorization?: string } }): string {
-    return req.headers?.authorization?.replace(/^Bearer\s+/i, '') ?? '';
-  }
-
   @Patch(':entryId')
   @UseGuards(ReportGuard)
   async updateEntry(
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
     @Param('entryId') entryId: string,
     @Body() dto: UpdateReportEntryDto,
   ) {
     const raw = await this.reportService.updateReportEntry(
       entryId,
       dto,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'reportEntry.updated')(raw);
   }

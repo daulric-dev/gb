@@ -4,11 +4,14 @@ import { useProfile } from "@/lib/use-profile";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { bootstrapSession, getAccessToken } from "@/lib/auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-function DashboardContent({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { profile, loading } = useProfile();
   const router = useRouter();
 
@@ -32,29 +35,4 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       </SidebarInset>
     </SidebarProvider>
   );
-}
-
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [ready, setReady] = useState(() => !!getAccessToken());
-  const router = useRouter();
-
-  useEffect(() => {
-    if (ready) return;
-
-    bootstrapSession().then((ok) => {
-      if (!ok) {
-        router.push("/login");
-        return;
-      }
-      setReady(true);
-    });
-  }, [ready, router]);
-
-  if (!ready) return null;
-
-  return <DashboardContent>{children}</DashboardContent>;
 }
