@@ -8,9 +8,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { AssessmentService } from './assessment.service';
@@ -28,36 +30,43 @@ export class AssessmentController {
     private readonly versioning: VersioningService,
   ) {}
 
-  private getToken(req: any): string {
-    return req.headers.authorization?.replace('Bearer ', '') ?? '';
-  }
-
   @Get()
   async findByTermAndSubject(
     @Query('termId') termId: string,
     @Query('subjectId') subjectId: string,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.assessmentService.findByTermAndSubject(
       termId,
       subjectId,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'assessment.list')(raw);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @Req() req: any) {
-    const raw = await this.assessmentService.findOne(id, this.getToken(req));
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const raw = await this.assessmentService.findOne(id, req, reply);
     return this.versioning.resolve(req, 'assessment.detail')(raw);
   }
 
   @Post()
-  async create(@Body() dto: CreateAssessmentDto, @Req() req: any) {
+  async create(
+    @Body() dto: CreateAssessmentDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
     const raw = await this.assessmentService.create(
       req.user.id,
       dto,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'assessment.created')(raw);
   }
@@ -67,12 +76,9 @@ export class AssessmentController {
     @Param('id') id: string,
     @Body() dto: UpdateAssessmentDto,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const raw = await this.assessmentService.update(
-      id,
-      dto,
-      this.getToken(req),
-    );
+    const raw = await this.assessmentService.update(id, dto, req, reply);
     return this.versioning.resolve(req, 'assessment.updated')(raw);
   }
 
@@ -81,18 +87,19 @@ export class AssessmentController {
     @Param('id') id: string,
     @Body() dto: ExcludeDto,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const raw = await this.assessmentService.exclude(
-      id,
-      dto,
-      this.getToken(req),
-    );
+    const raw = await this.assessmentService.exclude(id, dto, req, reply);
     return this.versioning.resolve(req, 'assessment.excluded')(raw);
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string, @Req() req: any) {
-    const raw = await this.assessmentService.delete(id, this.getToken(req));
+  async delete(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const raw = await this.assessmentService.delete(id, req, reply);
     return this.versioning.resolve(req, 'assessment.deleted')(raw);
   }
 }

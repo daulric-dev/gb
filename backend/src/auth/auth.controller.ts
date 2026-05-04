@@ -58,12 +58,10 @@ export class AuthController {
       dto.token,
     );
 
-    res.setCookie('gb_refresh_token', session.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
+    const supabase = this.supabaseService.createUserClient(req, res, 'public');
+    await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
     });
 
     return this.versioning.resolve(req, 'auth.verifyOtp')(
@@ -86,20 +84,14 @@ export class AuthController {
     @Req() req: any,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    const refreshToken = req.cookies?.['gb_refresh_token'];
-    if (!refreshToken) throw new UnauthorizedException('No refresh token');
+    const supabase = this.supabaseService.createUserClient(req, res, 'public');
+    const { data, error } = await supabase.auth.getSession();
 
-    const session = await this.authService.refreshToken(refreshToken);
+    if (error || !data.session) {
+      throw new UnauthorizedException('Invalid or expired session');
+    }
 
-    res.setCookie('gb_refresh_token', session.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
-    });
-
-    return this.versioning.resolve(req, 'auth.session')(session);
+    return this.versioning.resolve(req, 'auth.session')(data.session);
   }
 
   @ApiBearerAuth()
@@ -130,9 +122,8 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('logout')
   async logout(@Req() req: any, @Res({ passthrough: true }) res: FastifyReply) {
-    const supabase = this.supabaseService.getServiceClient();
-    await supabase.auth.admin.signOut(req.user.access_token);
-    res.clearCookie('gb_refresh_token', { path: '/' });
+    const supabase = this.supabaseService.createUserClient(req, res, 'public');
+    await supabase.auth.signOut();
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 
