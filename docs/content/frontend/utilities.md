@@ -27,19 +27,12 @@ The main export. Makes authenticated JSON requests to the backend.
 | `options.body` | object | Request body (auto-serialized to JSON) |
 
 **Authentication:**
-- Reads the access token from the in-memory module variable via `getAccessToken()`
-- Attaches it as `Authorization: Bearer <token>`
+- Sends `credentials: "include"` so the browser forwards the Supabase session cookies (`sb-*-auth-token*`) on every request
+- The frontend never reads or attaches an access token — the backend's `AuthGuard` validates and silently refreshes the session via cookies on every authenticated request
 
-### Automatic Token Refresh
+### 401 Handling
 
-If the API returns a `401 Unauthorized`:
-
-1. Calls `POST /api/auth/refresh` (the httpOnly cookie is sent automatically)
-2. Stores the new access token in memory via `setAccessToken()`
-3. **Retries the original request** with the new access token
-4. If refresh also fails → clears the in-memory token, redirects to `/login`
-
-This uses a **single-flight pattern** - if multiple requests get 401 simultaneously, only one refresh call is made and all waiters share the result.
+If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry — the backend rotates the access token transparently on every authenticated call, so a 401 means the refresh token itself is invalid (expired, revoked, or the session cookies were cleared).
 
 ### `apiUpload<T>(path, formData)` Function
 
@@ -51,7 +44,7 @@ Uploads files via `multipart/form-data`. Used for avatar uploads and any other f
 | `path` | string | API path (e.g., `/auth/avatar`) |
 | `formData` | FormData | The form data containing the file |
 
-Has the same authentication and automatic token refresh behavior as `api()`. Returns the parsed JSON response.
+Sends `credentials: "include"` and handles 401 the same way as `api()`. Returns the parsed JSON response.
 
 ### `buildUrl(path)` Function
 
@@ -80,38 +73,15 @@ try {
 
 ---
 
-## Auth Helpers (`lib/auth.ts`)
+## Session Cookies
 
-Manages the access token and handles session bootstrap on page refresh.
+The frontend has no client-side token storage. Auth state lives entirely in HTTP-only cookies (`sb-<project>-auth-token` and chunks `.0`, `.1`, ...) set by the backend after `POST /api/auth/otp/verify`. The browser sends them on every request via `credentials: "include"`, and `proxy.ts` checks for their presence to gate protected routes.
 
-### Storage Strategy
+Because the cookies are HTTP-only, JavaScript cannot read them — there's nothing to coordinate across tabs, no `localStorage` sync, no single-flight refresh logic. Refresh is handled server-side by `AuthGuard` on every authenticated request.
 
-| Data | Storage | Purpose |
-|------|---------|---------|
-| Access token (JWT) | In-memory + `localStorage` | Used for API requests; `localStorage` enables multi-tab sharing |
-| Refresh token | httpOnly cookie (`gb_refresh_token`) | Set/managed by the backend; survives page refresh |
+### Multi-Tab Behavior
 
-The access token is kept in both a module-level variable (fast reads) and `localStorage` (cross-tab sharing). When a new tab opens, `bootstrapSession()` checks `localStorage` first — if a valid token exists (set by another tab), it uses it directly without hitting the refresh endpoint. This avoids consuming the one-time refresh token unnecessarily.
-
-The httpOnly cookie is used by `proxy.ts` for route protection (cookies are accessible in middleware, in-memory variables are not).
-
-### Multi-Tab Support
-
-Supabase uses **one-time refresh tokens** — each refresh call rotates the token and invalidates the old one. Without coordination, two tabs calling refresh simultaneously would race: the first succeeds and rotates the token, the second fails because it sent the now-invalid old token.
-
-This is handled by:
-1. **localStorage sharing** — new tabs read the access token from localStorage and skip the refresh call entirely
-2. **Single-flight pattern** — within a single tab, concurrent `bootstrapSession()` calls are deduplicated so only one refresh request is made
-
-### Functions
-
-| Function | Description |
-|----------|-------------|
-| `setAccessToken(token)` | Stores the access token in memory and `localStorage` (no-op if token is falsy) |
-| `clearAccessToken()` | Clears the access token from memory and `localStorage` |
-| `getAccessToken()` | Returns the access token from memory, falling back to `localStorage` |
-| `isAuthenticated()` | Returns `true` if an access token is available (memory or `localStorage`) |
-| `bootstrapSession()` | Returns immediately if a token exists in `localStorage`; otherwise calls `POST /api/auth/refresh` using the cookie, stores the new access token, and returns `true` on success |
+All tabs share the same cookies (browser-managed) and the backend serializes refresh internally, so concurrent requests from multiple tabs always see a valid rotated session. There is no client-side coordination required.
 
 ---
 
@@ -163,8 +133,8 @@ Values are accessed via `.value` (e.g. `profile.value?.email`).
 ```
 
 **Behavior:**
-- Skips the API call if no access token is in memory (avoids unnecessary 401s)
-- Otherwise calls `GET /api/auth/me` on mount
+- Calls `GET /api/auth/me` on mount; cookies authenticate the request
+- On 401, `lib/api.ts` redirects to `/login` and the hook leaves `profile.value` as `null`
 - Used by the dashboard layout to populate the sidebar and header with user info
 
 ---

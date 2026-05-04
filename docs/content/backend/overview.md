@@ -151,7 +151,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 |-------|----------|----------|
 | `ThrottlerGuard` | Global (APP_GUARD) | Rate limits all endpoints |
 | `VersioningGuard` | Global (APP_GUARD) | Validates `X-API-Version` header; rejects invalid/non-existent versions with 400 |
-| `AuthGuard` | `auth/auth.guard.ts` | Validates Bearer JWT via Supabase `getUser`; populates `request.user` with `{ id, email, access_token }` |
+| `AuthGuard` | `auth/auth.guard.ts` | Validates the SSR cookie session via `supabase.auth.getUser()` (which auto-refreshes expired access tokens and rotates cookies on the response); populates `request.user` with `{ id, email }` |
 | `ClassTeacherGuard` | `class/class-teacher.guard.ts` | Checks if the user is an admin or the class teacher for the `:classId` route parameter |
 
 ## Environment Variables

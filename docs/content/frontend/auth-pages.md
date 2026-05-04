@@ -35,8 +35,7 @@ The verification page shows an 8-digit OTP input. The email is read from the URL
 2. User enters the 8-digit code from their email
 3. Calls `POST /api/auth/otp/verify` with email + token
 4. On success:
-   - Stores the access token in memory via `setAccessToken()`
-   - The refresh token is set as an httpOnly cookie by the backend
+   - The backend writes the Supabase session cookies (`sb-*-auth-token*`) on the response — the frontend doesn't need to store anything
    - If `user.is_onboarded` is false → redirect to `/onboard`
    - Otherwise → redirect to `/dashboard`
 5. On failure, shows a toast error
@@ -69,20 +68,21 @@ Shown to first-time users who have authenticated but haven't completed their pro
 
 ## Authentication State
 
-Tokens are managed in `lib/auth.ts`:
+The frontend has **no token storage** — there is no `lib/auth.ts`, no `localStorage`, no in-memory access token. All session state lives in HTTP-only cookies set by the backend, and the browser sends them automatically on every request thanks to `credentials: "include"` in `lib/api.ts`.
 
-| Storage | Key | Purpose |
-|---------|-----|---------|
-| In-memory + `localStorage` | `gb_access_token` | JWT for API requests; shared across tabs via localStorage |
-| httpOnly cookie | `gb_refresh_token` | Token for refreshing expired JWTs (set by backend) |
+| Cookie | Set by | Purpose |
+|--------|--------|---------|
+| `sb-<project>-auth-token` (chunked: `.0`, `.1`, ...) | Backend `setAll` handler in `SupabaseService` | Encoded session payload (access token + refresh token) |
 
-On page load, `bootstrapSession()` first checks `localStorage` for an existing access token (set by another tab). If found, it uses it directly. Otherwise it calls `POST /api/auth/refresh` using the cookie to obtain a fresh access token. This avoids consuming Supabase's one-time refresh token when multiple tabs are open.
+The access token expires after 1 hour, but the backend's `AuthGuard` calls `auth.getUser()` on every authenticated request, which silently refreshes the token and writes new cookies on the response. The frontend never sees a 401 unless the refresh token itself is invalid (30+ days inactive, revoked, or cookies manually cleared).
 
-The middleware (`proxy.ts`) checks for the `gb_refresh_token` cookie to gate access to protected routes.
+When a 401 does occur, `lib/api.ts` bounces to `/login` automatically.
 
 ## Route Protection
 
-The `proxy.ts` middleware runs on every navigation to `/dashboard/*`, `/onboard/*`, and `/login/*`:
+The `proxy.ts` middleware runs on every navigation to `/dashboard/*`, `/onboard/*`, and `/login/*`. It checks for the presence of any cookie matching `sb-*-auth-token*`:
 
-- If navigating to a protected route without the `gb_refresh_token` cookie → redirect to `/login`
-- If navigating to `/login` with the cookie present → redirect to `/dashboard`
+- If navigating to a protected route without a session cookie → redirect to `/login`
+- If navigating to `/login` with a session cookie → redirect to `/dashboard`
+
+The check is only a presence test. If the cookies are corrupted or the session is invalid, the middleware will let the user through and the first API call from `useProfile` will return 401 — at which point `lib/api.ts` redirects to `/login`. There is a brief flash of the dashboard frame in this edge case, but no broken state.
