@@ -32,6 +32,31 @@ async function attemptRefresh(): Promise<boolean> {
   }
 }
 
+async function withRefreshRetry(
+  doFetch: () => Promise<Response>,
+): Promise<Response> {
+  let res = await doFetch();
+
+  if (res.status === 401) {
+    if (!refreshPromise) {
+      refreshPromise = attemptRefresh().finally(() => {
+        refreshPromise = null;
+      });
+    }
+
+    const refreshed = await refreshPromise;
+
+    if (refreshed) {
+      res = await doFetch();
+    } else {
+      redirectToLogin();
+      throw new ApiError(401, "Session expired");
+    }
+  }
+
+  return res;
+}
+
 export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
@@ -47,34 +72,15 @@ export async function api<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
-  let res = await fetch(buildUrl(path), {
-    ...rest,
-    headers,
-    credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const doFetch = () =>
+    fetch(buildUrl(path), {
+      ...rest,
+      headers,
+      credentials: "include",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
 
-  if (res.status === 401) {
-    if (!refreshPromise) {
-      refreshPromise = attemptRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const refreshed = await refreshPromise;
-
-    if (refreshed) {
-      res = await fetch(buildUrl(path), {
-        ...rest,
-        headers,
-        credentials: "include",
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-    } else {
-      redirectToLogin();
-      throw new ApiError(401, "Session expired");
-    }
-  }
+  const res = await withRefreshRetry(doFetch);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));
@@ -93,34 +99,15 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  let res = await fetch(buildUrl(path), {
-    method: "POST",
-    headers: { "X-API-Version": "1" },
-    body: formData,
-    credentials: "include",
-  });
+  const doFetch = () =>
+    fetch(buildUrl(path), {
+      method: "POST",
+      headers: { "X-API-Version": "1" },
+      body: formData,
+      credentials: "include",
+    });
 
-  if (res.status === 401) {
-    if (!refreshPromise) {
-      refreshPromise = attemptRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const refreshed = await refreshPromise;
-
-    if (refreshed) {
-      res = await fetch(buildUrl(path), {
-        method: "POST",
-        headers: { "X-API-Version": "1" },
-        body: formData,
-        credentials: "include",
-      });
-    } else {
-      redirectToLogin();
-      throw new ApiError(401, "Session expired");
-    }
-  }
+  const res = await withRefreshRetry(doFetch);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));

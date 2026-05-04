@@ -5,6 +5,8 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 
 type Schema = 'public' | 'student' | 'grading' | 'reporting' | 'staff';
 
+const BASE64_PREFIX = 'base64-';
+
 @Injectable()
 export class SupabaseService {
   private serviceClient: SupabaseClient = createClient(
@@ -38,6 +40,59 @@ export class SupabaseService {
         },
       },
     );
+  }
+
+  /**
+   * Extracts the access token from Supabase auth cookies.
+   * Handles both chunked and non-chunked cookies, and base64url encoding.
+   */
+  extractAccessToken(req: FastifyRequest): string | null {
+    const cookies: Record<string, string> = (req as any).cookies ?? {};
+    const names = Object.keys(cookies);
+
+    const baseKey = names.find(
+      (n) => n.startsWith('sb-') && n.endsWith('-auth-token'),
+    );
+
+    const key =
+      baseKey ??
+      names
+        .find((n) => n.startsWith('sb-') && n.includes('-auth-token.'))
+        ?.replace(/\.\d+$/, '');
+
+    if (!key) return null;
+
+    let raw: string;
+
+    if (cookies[key]) {
+      raw = cookies[key];
+    } else {
+      const chunks: string[] = [];
+      for (let i = 0; ; i++) {
+        const chunk = cookies[`${key}.${i}`];
+        if (!chunk) break;
+        chunks.push(chunk);
+      }
+      if (chunks.length === 0) return null;
+      raw = chunks.join('');
+    }
+
+    if (raw.startsWith(BASE64_PREFIX)) {
+      try {
+        raw = Buffer.from(
+          raw.substring(BASE64_PREFIX.length),
+          'base64url',
+        ).toString('utf-8');
+      } catch {
+        return null;
+      }
+    }
+
+    try {
+      return JSON.parse(raw).access_token ?? null;
+    } catch {
+      return null;
+    }
   }
 
   getServiceClient() {
