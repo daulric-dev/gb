@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { clearAccessToken } from "@/lib/auth";
 import type { UserProfile } from "@/lib/use-profile";
 import {
   Sidebar,
@@ -81,7 +80,6 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     } catch {
       toast.error("Failed to logout");
     }
-    clearAccessToken();
     router.push("/login");
     toast.success("Logged out");
   }

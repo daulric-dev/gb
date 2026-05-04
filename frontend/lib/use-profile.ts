@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { useSignal } from "@preact/signals-react";
 import { api } from "./api";
-import { getAccessToken } from "./auth";
 import { useSignals } from "@preact/signals-react/runtime";
 
 export interface UserProfile {
@@ -25,14 +24,16 @@ export function useProfile() {
   const loading = useSignal(true);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      loading.value = false;
-      return;
-    }
     api<UserProfile>("/auth/me")
-      .then((data) => { profile.value = data; })
-      .catch(() => { profile.value = null; })
-      .finally(() => { loading.value = false; });
+      .then((data) => {
+        profile.value = data;
+      })
+      .catch(() => {
+        profile.value = null;
+      })
+      .finally(() => {
+        loading.value = false;
+      });
   }, []);
 
   return { profile, loading };

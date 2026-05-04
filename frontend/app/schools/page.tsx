@@ -28,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { GraduationCap, Loader2, LogOut, Plus, Search } from "lucide-react";
-import { clearAccessToken } from "@/lib/auth";
 
 const isDedicated = process.env.NEXT_PUBLIC_DEDICATED_DEPLOYMENT === "true";
 
@@ -195,7 +194,6 @@ export default function SchoolsPage() {
     try {
       await api("/auth/logout", { method: "POST" });
     } catch {}
-    clearAccessToken();
     router.push("/login");
   }
 
