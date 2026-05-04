@@ -6,7 +6,7 @@ sidebar_label: Authentication
 
 **Location**: `backend/src/auth/`
 
-The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. It uses Supabase Auth under the hood.
+The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. It uses Supabase Auth under the hood, with **`@supabase/ssr` cookie-based sessions** — the access token and refresh token live entirely in HTTP-only cookies, and rotation happens transparently on every authenticated request.
 
 ## Files
 
@@ -14,12 +14,11 @@ The authentication module handles user login via email OTP (one-time password), 
 |------|---------|
 | `auth.module.ts` | Module definition; exports `AuthGuard`, imports `ImagesModule` for avatar endpoints |
 | `auth.controller.ts` | API endpoints for auth operations and avatar management |
-| `auth.service.ts` | Business logic for OTP, sessions, profiles |
-| `auth.guard.ts` | JWT validation guard |
+| `auth.service.ts` | Business logic for OTP, profiles, onboarding |
+| `auth.guard.ts` | Validates the SSR cookie session and triggers refresh on expired access tokens |
 | `transformer.ts` | Response shaping for API versioning (includes `avatar_url`) |
 | `dto/send-otp.dto.ts` | Validation for OTP send request |
 | `dto/verify-otp.dto.ts` | Validation for OTP verification |
-| `dto/refresh-token.dto.ts` | Validation for token refresh |
 | `dto/onboard.dto.ts` | Validation for onboarding data |
 | `dto/update-profile.dto.ts` | Validation for profile updates |
 
@@ -28,13 +27,14 @@ The authentication module handles user login via email OTP (one-time password), 
 ```
 1. User enters email
    └── POST /auth/otp/send { email }
-       └── Supabase sends a 6 or 8-digit OTP to the email
+       └── Supabase sends an 8-digit OTP to the email
 
 2. User enters OTP code
    └── POST /auth/otp/verify { email, token }
-       └── Returns access_token + user profile in response body
-       └── Sets gb_refresh_token as an httpOnly cookie
-       └── If no profile exists, one is created automatically
+       ├─ Returns user profile in response body
+       └─ Calls supabase.auth.setSession() via the SSR cookie client,
+          which writes the chunked sb-<project>-auth-token.* HTTP-only
+          cookies to the response
 
 3. If user has no name/school (first login)
    └── PATCH /auth/onboard { firstName, lastName, schoolId }
@@ -43,30 +43,43 @@ The authentication module handles user login via email OTP (one-time password), 
        │  the profile with a `joinRequest` field — frontend redirects to /onboard/pending
        └─ If no schoolId provided: saves name, leaves school empty
 
-4. Token expired
-   └── POST /auth/refresh (reads refresh token from cookie)
-       └── Returns new access_token in response body
-       └── Rotates the refresh token cookie
+4. Access token expires (default: 1 hour)
+   └── Next authenticated request triggers AuthGuard
+       └── supabase.auth.getUser() detects the expired access token
+       └── Refreshes via the refresh token cookie
+       └── setAll handler writes rotated cookies to the response
+       └── Original request completes normally — frontend never sees a 401
 
 5. User logs out
    └── POST /auth/logout
-       └── Invalidates the session server-side
-       └── Clears the refresh token cookie
+       └── supabase.auth.signOut() invalidates the session and clears cookies
 ```
 
 ## Session Cookies
 
-The refresh token is stored as an httpOnly cookie (`gb_refresh_token`) with the following attributes:
+The session is stored entirely in HTTP-only cookies managed by `@supabase/ssr`. The session payload (containing both access token and refresh token) is encoded and split across one or more chunks named `sb-<project-ref>-auth-token`, `sb-<project-ref>-auth-token.0`, `sb-<project-ref>-auth-token.1`, etc.
+
+Cookie attributes (set in `setAll` inside `SupabaseService.createUserClient`):
 
 | Attribute | Value |
 |-----------|-------|
-| `httpOnly` | `true` (not accessible via JavaScript) |
+| `httpOnly` | `true` (not accessible via JavaScript — prevents XSS exfiltration) |
 | `secure` | `true` in production, `false` in development |
-| `sameSite` | `strict` |
+| `sameSite` | `lax` (works for same-origin and most cross-origin GETs; switch to `none` if frontend is on a different domain) |
 | `path` | `/` |
-| `maxAge` | 30 days |
 
-The access token is stored in-memory on the frontend and mirrored to `localStorage` for cross-tab sharing. On page load, the frontend checks `localStorage` first; if no token is found it calls `POST /auth/refresh` to obtain a new access token using the cookie. Since Supabase rotates the refresh token on each use (one-time tokens), the frontend avoids redundant refresh calls by sharing the access token across tabs via `localStorage`.
+There is no separate frontend access-token storage. The frontend never reads or writes auth tokens — it only sends `credentials: "include"` on every request, and the browser handles the cookies automatically.
+
+## SupabaseService
+
+`SupabaseService.createUserClient(req, reply, schema)` builds an `@supabase/ssr` server client wired to the current Fastify request and reply:
+
+- `getAll`: reads all cookies from `req.cookies`
+- `setAll`: writes rotated session cookies via `reply.setCookie` with the secure flag set above
+
+Any service method that needs to make a user-scoped (RLS-respecting) Supabase query takes `req` and `reply` parameters and calls `createUserClient(req, reply, schema)`. Calling `auth.getUser()` on this client triggers automatic refresh and cookie rotation when the access token has expired.
+
+`SupabaseService.getServiceClient()` returns a singleton service-role client that bypasses RLS — used for trusted backend operations.
 
 ## AuthGuard
 
@@ -74,10 +87,10 @@ The `AuthGuard` is a NestJS `CanActivate` guard that protects endpoints requirin
 
 **How it works:**
 
-1. Extracts the `Authorization: Bearer <token>` header
-2. Calls `supabase.auth.getUser(token)` to validate the JWT
-3. If valid, attaches `{ id, email, access_token }` to `request.user`
-4. If invalid or missing, throws `UnauthorizedException`
+1. Builds an SSR client via `SupabaseService.createUserClient(req, reply, 'public')`
+2. Calls `supabase.auth.getUser()` — this validates the session and silently refreshes the access token if expired (rotating cookies on the response in the process)
+3. If valid, attaches `{ id, email }` to `request.user`
+4. If invalid or missing, throws `UnauthorizedException` (the frontend then redirects to `/login`)
 
 **Usage:** Applied to controllers/endpoints with `@UseGuards(AuthGuard)`.
 
@@ -100,7 +113,7 @@ Sends a one-time password to the user's email.
 
 ### `POST /api/auth/otp/verify`
 
-Verifies the OTP and returns session data plus the user profile. Also sets the `gb_refresh_token` httpOnly cookie.
+Verifies the OTP and returns the user profile. Writes the Supabase session cookies (`sb-*-auth-token*`) on the response.
 
 **Body:**
 ```json
@@ -131,7 +144,7 @@ Verifies the OTP and returns session data plus the user profile. Also sets the `
 }
 ```
 
-If the user doesn't have a `user_profile` record yet, one is created automatically during verification.
+The session payload is included in the response body for backwards compatibility, but the frontend doesn't need it — the cookies set on the response are the source of truth.
 
 ---
 
@@ -145,12 +158,13 @@ Returns the current user's profile including their school.
 
 ### `POST /api/auth/refresh`
 
-Refreshes an expired access token using the httpOnly `gb_refresh_token` cookie (no request body needed). Rotates the refresh token and sets a new cookie.
+A thin compatibility endpoint that returns the current session. Refresh actually happens implicitly inside `AuthGuard` on every authenticated request, so the frontend doesn't need to call this — it exists only to support deployed clients still polling it during the migration.
 
 **Response:**
 ```json
 {
   "access_token": "...",
+  "refresh_token": "...",
   "expires_in": 3600,
   "expires_at": 1234567890
 }
@@ -201,7 +215,7 @@ When the response includes `joinRequest`, the frontend redirects to `/onboard/pe
 
 **Requires:** `AuthGuard`
 
-Signs out the user server-side using Supabase admin API.
+Signs out the user via `supabase.auth.signOut()`, which invalidates the session server-side and clears the session cookies on the response.
 
 ## Avatar Endpoints
 
