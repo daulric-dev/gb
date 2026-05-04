@@ -1,5 +1,3 @@
-import { setAccessToken, getAccessToken, clearAccessToken } from "./auth";
-
 const BASE_URL = "/api";
 
 export function buildUrl(path: string): string {
@@ -13,31 +11,17 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
-let isRefreshing = false;
-let refreshPromise: Promise<boolean> | null = null;
-
-async function attemptRefresh(): Promise<boolean> {
-
-  try {
-    const res = await fetch(buildUrl("/auth/refresh"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", "X-API-Version": "1" },
-    });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    setAccessToken(data.access_token);
-    return true;
-  } catch {
-    return false;
+function redirectToLogin() {
+  if (typeof window !== "undefined") {
+    window.location.href = "/login";
   }
 }
 
-export async function api<T = unknown>( path: string, options: RequestOptions = {}): Promise<T> {
+export async function api<T = unknown>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const { body, headers: customHeaders, ...rest } = options;
-  const access = getAccessToken();
 
   const headers: Record<string, string> = {
     "X-API-Version": "1",
@@ -48,46 +32,16 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
     headers["Content-Type"] = "application/json";
   }
 
-  if (access) {
-    headers["Authorization"] = `Bearer ${access}`;
-  }
-
-  const url = buildUrl(path);
-
-  let res = await fetch(url, {
+  const res = await fetch(buildUrl(path), {
     ...rest,
     headers,
     credentials: "include",
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401 && access) {
-    if (!isRefreshing) {
-      isRefreshing = true;
-      refreshPromise = attemptRefresh().finally(() => {
-        isRefreshing = false;
-        refreshPromise = null;
-      });
-    }
-
-    const refreshed = await refreshPromise;
-
-    if (refreshed) {
-      const newAccess = getAccessToken()
-      headers["Authorization"] = `Bearer ${newAccess}`;
-      res = await fetch(url, {
-        ...rest,
-        headers,
-        credentials: "include",
-        body: body ? JSON.stringify(body) : undefined,
-      });
-    } else {
-      clearAccessToken();
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
-      }
-      throw new Error("Session expired");
-    }
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new ApiError(401, "Session expired");
   }
 
   if (!res.ok) {
@@ -96,62 +50,27 @@ export async function api<T = unknown>( path: string, options: RequestOptions = 
   }
 
   const text = await res.text();
-
   try {
     return JSON.parse(text);
   } catch {
     return text as T;
   }
-
 }
 
-export async function apiUpload<T = unknown>(path: string, formData: FormData): Promise<T> {
-  const access = getAccessToken();
-
-  const headers: Record<string, string> = {
-    "X-API-Version": "1",
-  };
-
-  if (access) {
-    headers["Authorization"] = `Bearer ${access}`;
-  }
-
-  const url = buildUrl(path);
-
-  let res = await fetch(url, {
+export async function apiUpload<T = unknown>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const res = await fetch(buildUrl(path), {
     method: "POST",
-    headers,
+    headers: { "X-API-Version": "1" },
     body: formData,
     credentials: "include",
   });
 
-  if (res.status === 401 && access) {
-    if (!isRefreshing) {
-      isRefreshing = true;
-      refreshPromise = attemptRefresh().finally(() => {
-        isRefreshing = false;
-        refreshPromise = null;
-      });
-    }
-
-    const refreshed = await refreshPromise;
-
-    if (refreshed) {
-      const newAccess = getAccessToken();
-      headers["Authorization"] = `Bearer ${newAccess}`;
-      res = await fetch(url, {
-        method: "POST",
-        headers,
-        credentials: "include",
-        body: formData,
-      });
-    } else {
-      clearAccessToken();
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
-      }
-      throw new Error("Session expired");
-    }
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new ApiError(401, "Session expired");
   }
 
   if (!res.ok) {

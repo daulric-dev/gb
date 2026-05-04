@@ -13,7 +13,8 @@ describe('AssessmentService', () => {
   let mockCache: ReturnType<typeof createMockCacheService>;
 
   const userId = 'user-1';
-  const token = 'tok';
+  const req = { cookies: {} } as any;
+  const reply = { setCookie: () => undefined } as any;
 
   beforeEach(() => {
     mockSupabase = createMockSupabaseService({
@@ -36,7 +37,8 @@ describe('AssessmentService', () => {
         assessmentType: 'coursework',
         maxScore: 100,
       } as any,
-      token,
+      req,
+      reply,
     );
 
     expect(await mockCache.get('calc:foo')).toBeNull();
@@ -64,7 +66,8 @@ describe('AssessmentService', () => {
           assessmentType: 'coursework',
           maxScore: 100,
         } as any,
-        token,
+        req,
+        reply,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -75,14 +78,14 @@ describe('AssessmentService', () => {
     mockSupabase.createUserClient = () =>
       ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    const result = await service.findByTermAndSubject('t1', 's1', token);
+    const result = await service.findByTermAndSubject('t1', 's1', req, reply);
     expect(result).toEqual(rows);
   });
 
   test('update invalidates calc caches', async () => {
     await mockCache.set('calc:x', 'y', 300);
 
-    await service.update('a1', { title: 'Updated' }, token);
+    await service.update('a1', { title: 'Updated' }, req, reply);
 
     expect(await mockCache.get('calc:x')).toBeNull();
   });
@@ -94,7 +97,7 @@ describe('AssessmentService', () => {
 
     await mockCache.set('calc:z', 'w', 300);
 
-    await service.delete('a1', token);
+    await service.delete('a1', req, reply);
 
     expect(await mockCache.get('calc:z')).toBeNull();
   });
@@ -105,7 +108,8 @@ describe('AssessmentService', () => {
     await service.exclude(
       'a1',
       { isExcluded: true, exclusionReason: 'test' },
-      token,
+      req,
+      reply,
     );
 
     expect(await mockCache.get('calc:m')).toBeNull();

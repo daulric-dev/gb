@@ -80,7 +80,9 @@ describe('ReportService', () => {
     mockSupabase.createUserClient = () =>
       ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
 
-    expect(service.findOne('nonexistent', 'tok')).rejects.toBeInstanceOf(
+    const req = { cookies: {} } as any;
+    const reply = { setCookie: () => undefined } as any;
+    expect(service.findOne('nonexistent', req, reply)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });

@@ -1,21 +1,15 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 
-const store = new Map<string, string>();
-globalThis.localStorage ??= {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => { store.set(k, v); },
-  removeItem: (k: string) => { store.delete(k); },
-  clear: () => store.clear(),
-  get length() { return store.size; },
-  key: (i: number) => [...store.keys()][i] ?? null,
-} as Storage;
 globalThis.document ??= { cookie: "" } as unknown as Document;
 globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 
 import { ApiError } from "@/lib/api";
-import { setAccessToken } from "@/lib/auth";
 
-type MockedFetch = typeof fetch & { mock: { calls: [string, { headers: Record<string, string>; [k: string]: unknown }][] } };
+type MockedFetch = typeof fetch & {
+  mock: {
+    calls: [string, { headers: Record<string, string>; [k: string]: unknown }][];
+  };
+};
 
 const BASE_URL = "/api";
 
@@ -42,7 +36,6 @@ describe("api()", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
-    localStorage.clear();
     globalThis.fetch = mock(
       async () =>
         new Response(JSON.stringify({ ok: true }), { status: 200 }),
@@ -63,13 +56,12 @@ describe("api()", () => {
     );
   });
 
-  test("sets Authorization header when access token exists", async () => {
-    setAccessToken("test-access");
+  test("sends credentials so cookies are forwarded", async () => {
     const { api } = await import("@/lib/api");
     await api("/me");
 
     const callArgs = (globalThis.fetch as MockedFetch).mock.calls[0];
-    expect(callArgs[1].headers["Authorization"]).toBe("Bearer test-access");
+    expect(callArgs[1].credentials).toBe("include");
   });
 
   test("sets Content-Type when body is provided", async () => {

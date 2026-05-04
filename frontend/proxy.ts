@@ -3,9 +3,18 @@ import type { NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/login/verify", "/privacy", "/terms"];
 
+function hasSupabaseSession(request: NextRequest): boolean {
+  for (const cookie of request.cookies.getAll()) {
+    if (cookie.name.startsWith("sb-") && cookie.name.includes("auth-token")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isLoggedIn = request.cookies.has("gb_refresh_token");
+  const isLoggedIn = hasSupabaseSession(request);
 
   if (pathname.startsWith("/dashboard") && !isLoggedIn) {
     return NextResponse.redirect(new URL("/login", request.url));

@@ -7,9 +7,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { GradeService } from './grade.service';
@@ -28,18 +30,16 @@ export class GradeController {
     private readonly versioning: VersioningService,
   ) {}
 
-  private getToken(req: any): string {
-    return req.headers.authorization?.replace('Bearer ', '') ?? '';
-  }
-
   @Get()
   async findByAssessment(
     @Query('assessmentId') assessmentId: string,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.gradeService.findByAssessment(
       assessmentId,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'grade.byAssessment')(raw);
   }
@@ -49,31 +49,38 @@ export class GradeController {
     @Query('termId') termId: string,
     @Query('subjectId') subjectId: string,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.gradeService.findByTermAndSubject(
       termId,
       subjectId,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'grade.byTermSubject')(raw);
   }
 
   @Post()
-  async create(@Body() dto: CreateGradeDto, @Req() req: any) {
-    const raw = await this.gradeService.create(
-      req.user.id,
-      dto,
-      this.getToken(req),
-    );
+  async create(
+    @Body() dto: CreateGradeDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const raw = await this.gradeService.create(req.user.id, dto, req, reply);
     return this.versioning.resolve(req, 'grade.created')(raw);
   }
 
   @Post('bulk')
-  async bulkCreate(@Body() dto: BulkGradeDto, @Req() req: any) {
+  async bulkCreate(
+    @Body() dto: BulkGradeDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
     const raw = await this.gradeService.bulkCreate(
       req.user.id,
       dto,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'grade.bulkGraded')(raw);
   }
@@ -83,12 +90,14 @@ export class GradeController {
     @Param('id') id: string,
     @Body() dto: UpdateGradeDto,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.gradeService.update(
       id,
       req.user.id,
       dto,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'grade.updated')(raw);
   }
@@ -98,12 +107,14 @@ export class GradeController {
     @Param('id') id: string,
     @Body() dto: ExcludeDto,
     @Req() req: any,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.gradeService.exclude(
       id,
       req.user.id,
       dto,
-      this.getToken(req),
+      req,
+      reply,
     );
     return this.versioning.resolve(req, 'grade.excluded')(raw);
   }

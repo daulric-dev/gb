@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api, apiUpload, ApiError } from "@/lib/api";
-import { clearAccessToken } from "@/lib/auth";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { AvatarCropDialog } from "@/components/dashboard/avatar-crop-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -111,7 +110,6 @@ export default function SettingsPage() {
     deleting.value = true;
     try {
       await api("/auth/account", { method: "DELETE" });
-      clearAccessToken();
       toast.success("Account deleted");
       router.push("/login");
     } catch (err) {

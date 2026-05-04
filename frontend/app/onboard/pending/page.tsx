@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { clearAccessToken } from "@/lib/auth";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
@@ -56,7 +55,6 @@ export default function PendingPage() {
     } catch {
       // ignore
     }
-    clearAccessToken();
     router.push("/login");
   }
 

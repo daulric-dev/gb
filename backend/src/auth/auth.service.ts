@@ -361,26 +361,4 @@ export class AuthService {
     return 'Account deleted successfully';
   }
 
-  async refreshToken(refreshToken: string) {
-    try {
-      const supabase = this.supabaseService.getServiceClient();
-
-      const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: refreshToken,
-      });
-
-      if (error || !data.session) {
-        this.logger.error(
-          `Token refresh failed: ${error?.message} ${JSON.stringify(data)}`,
-        );
-        throw new UnauthorizedException('Invalid or expired refresh token');
-      }
-
-      return data.session;
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-      this.logger.error(`Unexpected error refreshing token: ${String(err)}`);
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-  }
 }

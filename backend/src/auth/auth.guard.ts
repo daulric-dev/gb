@@ -14,35 +14,34 @@ export class AuthGuard implements CanActivate {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers['authorization'];
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('No token provided');
-    }
-
-    const token = authHeader.split(' ')[1];
+    const http = context.switchToHttp();
+    const request = http.getRequest();
+    const reply = http.getResponse();
 
     try {
-      const supabase = this.supabaseService.getServiceClient();
-      const { data, error } = await supabase.auth.getUser(token);
+      const supabase = this.supabaseService.createUserClient(
+        request,
+        reply,
+        'public',
+      );
+
+      const { data, error } = await supabase.auth.getUser();
 
       if (error || !data.user) {
-        this.logger.warn(`Invalid token: ${error?.message}`);
-        throw new UnauthorizedException('Invalid or expired token');
+        this.logger.warn(`Invalid session: ${error?.message}`);
+        throw new UnauthorizedException('Invalid or expired session');
       }
 
       request.user = {
         id: data.user.id,
         email: data.user.email,
-        access_token: token,
       };
 
       return true;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
       this.logger.error(`Unexpected error in AuthGuard: ${String(err)}`);
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException('Invalid or expired session');
     }
   }
 }
