@@ -9,6 +9,6 @@
     "binding": "ASSETS"
   },
   "build": {
-    "command": "bun install --no-frozen-lockfile && opennextjs-cloudflare build"
+    "command": "bun install --force && opennextjs-cloudflare build"
   }
 }
