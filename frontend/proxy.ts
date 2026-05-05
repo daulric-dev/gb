@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/login/verify", "/privacy", "/terms"];
+const GUEST_ONLY = ["/login", "/login/verify"];
+const PUBLIC_PATHS = ["/", "/privacy", "/terms", ...GUEST_ONLY];
 const BACKEND = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
+function isGuestOnly(pathname: string): boolean {
+  return GUEST_ONLY.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
 }
@@ -32,7 +39,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isPublic(pathname)) {
-    if (hasSessionCookie(request) || hasRefreshToken(request)) {
+    if (isGuestOnly(pathname) && hasSessionCookie(request)) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     return NextResponse.next();
