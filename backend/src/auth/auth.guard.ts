@@ -14,10 +14,16 @@ export class AuthGuard implements CanActivate {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const http = context.switchToHttp();
+    const request = http.getRequest();
+    const reply = http.getResponse();
 
     try {
-      const accessToken = this.supabaseService.extractAccessToken(request);
+      let accessToken = this.supabaseService.extractAccessToken(request);
+
+      if (!accessToken) {
+        accessToken = await this.refreshFromCookie(request, reply);
+      }
 
       if (!accessToken) {
         throw new UnauthorizedException('No session token found');
@@ -43,5 +49,30 @@ export class AuthGuard implements CanActivate {
       this.logger.error(`Unexpected error in AuthGuard: ${String(err)}`);
       throw new UnauthorizedException('Invalid or expired session');
     }
+  }
+
+  private async refreshFromCookie(
+    request: any,
+    reply: any,
+  ): Promise<string | null> {
+    const refreshToken = this.supabaseService.extractRefreshToken(request);
+    if (!refreshToken) return null;
+
+    const supabase = this.supabaseService.createUserClient(
+      request,
+      reply,
+      'public',
+    );
+
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: refreshToken,
+    });
+
+    if (error || !data.session) {
+      this.logger.warn(`Refresh failed: ${error?.message}`);
+      return null;
+    }
+
+    return data.session.access_token;
   }
 }
