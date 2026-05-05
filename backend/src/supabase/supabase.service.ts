@@ -42,11 +42,21 @@ export class SupabaseService {
     );
   }
 
-  /**
-   * Extracts the access token from Supabase auth cookies.
-   * Handles both chunked and non-chunked cookies, and base64url encoding.
-   */
   extractAccessToken(req: FastifyRequest): string | null {
+    return this.readAuthTokenCookie(req);
+  }
+
+  extractRefreshToken(req: FastifyRequest): string | null {
+    const cookies: Record<string, string> = (req as any).cookies ?? {};
+    const key = Object.keys(cookies).find((n) => n.includes('refresh_token'));
+    return key ? cookies[key] || null : null;
+  }
+
+  getServiceClient() {
+    return this.serviceClient;
+  }
+
+  private readAuthTokenCookie(req: FastifyRequest): string | null {
     const cookies: Record<string, string> = (req as any).cookies ?? {};
     const names = Object.keys(cookies);
 
@@ -89,13 +99,10 @@ export class SupabaseService {
     }
 
     try {
-      return JSON.parse(raw).access_token ?? null;
+      const parsed = JSON.parse(raw);
+      return parsed.access_token ?? null;
     } catch {
-      return null;
+      return raw || null;
     }
-  }
-
-  getServiceClient() {
-    return this.serviceClient;
   }
 }

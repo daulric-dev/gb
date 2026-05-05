@@ -84,11 +84,19 @@ export class AuthController {
     @Req() req: any,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
+    const refreshToken = this.supabaseService.extractRefreshToken(req);
+
+    if (!refreshToken) {
+      throw new UnauthorizedException('No refresh token found');
+    }
+
     const supabase = this.supabaseService.createUserClient(req, res, 'public');
-    const { data, error } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: refreshToken,
+    });
 
     if (error || !data.session) {
-      throw new UnauthorizedException('Invalid or expired session');
+      throw new UnauthorizedException('Failed to refresh session');
     }
 
     return this.versioning.resolve(req, 'auth.session')(data.session);
