@@ -58,11 +58,7 @@ export class AuthController {
       dto.token,
     );
 
-    const supabase = this.supabaseService.createUserClient(req, res, 'public');
-    await supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-    });
+    this.supabaseService.setSessionCookies(res, session);
 
     return this.versioning.resolve(req, 'auth.verifyOtp')(
       session,
@@ -90,16 +86,15 @@ export class AuthController {
       throw new UnauthorizedException('No refresh token found');
     }
 
-    const supabase = this.supabaseService.createUserClient(req, res, 'public');
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
+    const session = await this.supabaseService.refreshSession(refreshToken);
 
-    if (error || !data.session) {
+    if (!session) {
       throw new UnauthorizedException('Failed to refresh session');
     }
 
-    return this.versioning.resolve(req, 'auth.session')(data.session);
+    this.supabaseService.setSessionCookies(res, session);
+
+    return this.versioning.resolve(req, 'auth.session')(session);
   }
 
   @ApiBearerAuth()
@@ -132,6 +127,7 @@ export class AuthController {
   async logout(@Req() req: any, @Res({ passthrough: true }) res: FastifyReply) {
     const supabase = this.supabaseService.createUserClient(req, res, 'public');
     await supabase.auth.signOut();
+    this.supabaseService.clearSessionCookies(res);
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 

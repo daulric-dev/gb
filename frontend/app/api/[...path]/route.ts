@@ -26,10 +26,17 @@ async function proxy(request: Request): Promise<Response> {
     responseHeaders.append(key, value);
   });
 
-  // Set-Cookie must be forwarded individually; forEach may merge them
-  const cookies = res.headers.getSetCookie();
-  for (const cookie of cookies) {
-    responseHeaders.append("set-cookie", cookie);
+  // Forward Set-Cookie headers individually
+  if (typeof res.headers.getSetCookie === "function") {
+    for (const cookie of res.headers.getSetCookie()) {
+      responseHeaders.append("set-cookie", cookie);
+    }
+  } else {
+    // Fallback: raw header access
+    const raw = res.headers.get("set-cookie");
+    if (raw) {
+      responseHeaders.append("set-cookie", raw);
+    }
   }
 
   return new Response(res.body, {

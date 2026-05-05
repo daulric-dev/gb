@@ -58,21 +58,14 @@ export class AuthGuard implements CanActivate {
     const refreshToken = this.supabaseService.extractRefreshToken(request);
     if (!refreshToken) return null;
 
-    const supabase = this.supabaseService.createUserClient(
-      request,
-      reply,
-      'public',
-    );
+    const session = await this.supabaseService.refreshSession(refreshToken);
 
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
-
-    if (error || !data.session) {
-      this.logger.warn(`Refresh failed: ${error?.message}`);
+    if (!session) {
+      this.logger.warn('Refresh failed');
       return null;
     }
 
-    return data.session.access_token;
+    this.supabaseService.setSessionCookies(reply, session);
+    return session.access_token;
   }
 }

@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/login/verify", "/privacy", "/terms"];
+const BACKEND = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-function hasSupabaseSession(request: NextRequest): boolean {
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
+function hasSessionCookie(request: NextRequest): boolean {
   for (const cookie of request.cookies.getAll()) {
     if (cookie.name.startsWith("sb-") && cookie.name.includes("auth-token")) {
       return true;
@@ -12,25 +19,47 @@ function hasSupabaseSession(request: NextRequest): boolean {
   return false;
 }
 
-export function proxy(request: NextRequest) {
+function hasRefreshToken(request: NextRequest): boolean {
+  for (const cookie of request.cookies.getAll()) {
+    if (cookie.name.includes("refresh_token") && cookie.value) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isLoggedIn = hasSupabaseSession(request);
 
-  if (pathname.startsWith("/dashboard") && !isLoggedIn) {
+  if (isPublic(pathname)) {
+    if (hasSessionCookie(request) || hasRefreshToken(request)) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (!hasSessionCookie(request) && !hasRefreshToken(request)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (pathname.startsWith("/onboard") && !isLoggedIn) {
+  const res = await fetch(`${BACKEND}/api/auth/me`, {
+    headers: {
+      cookie: request.headers.get("cookie") || "",
+      "X-API-Version": "1",
+    },
+  });
+
+  if (!res.ok) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (PUBLIC_PATHS.includes(pathname) && isLoggedIn) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  const response = NextResponse.next();
+  for (const cookie of res.headers.getSetCookie()) {
+    response.headers.append("set-cookie", cookie);
   }
-
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/onboard/:path*", "/login", "/login/verify"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|.*\\..*).*)"],
 };
