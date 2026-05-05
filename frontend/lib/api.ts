@@ -18,45 +18,9 @@ function redirectToLogin() {
   }
 }
 
-let refreshPromise: Promise<boolean> | null = null;
-
-async function attemptRefresh(): Promise<boolean> {
-  try {
-    const res = await fetch(buildUrl("/auth/refresh"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "X-API-Version": "1" },
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function withRefreshRetry(
-  doFetch: () => Promise<Response>,
-  skipAuthRedirect = false,
-): Promise<Response> {
-  let res = await doFetch();
-
-  if (res.status === 401) {
-    if (!refreshPromise) {
-      refreshPromise = attemptRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const refreshed = await refreshPromise;
-
-    if (refreshed) {
-      res = await doFetch();
-    } else if (!skipAuthRedirect) {
-      redirectToLogin();
-      throw new ApiError(401, "Session expired");
-    }
-  }
-
-  return res;
+function handleUnauthorized(skipAuthRedirect: boolean): never {
+  if (!skipAuthRedirect) redirectToLogin();
+  throw new ApiError(401, "Session expired");
 }
 
 export async function api<T = unknown>(
@@ -74,15 +38,14 @@ export async function api<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
-  const doFetch = () =>
-    fetch(buildUrl(path), {
-      ...rest,
-      headers,
-      credentials: "include",
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+  const res = await fetch(buildUrl(path), {
+    ...rest,
+    headers,
+    credentials: "include",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
 
-  const res = await withRefreshRetry(doFetch, skipAuthRedirect);
+  if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));
@@ -101,15 +64,14 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const doFetch = () =>
-    fetch(buildUrl(path), {
-      method: "POST",
-      headers: { "X-API-Version": "1" },
-      body: formData,
-      credentials: "include",
-    });
+  const res = await fetch(buildUrl(path), {
+    method: "POST",
+    headers: { "X-API-Version": "1" },
+    body: formData,
+    credentials: "include",
+  });
 
-  const res = await withRefreshRetry(doFetch);
+  if (res.status === 401) handleUnauthorized(false);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));

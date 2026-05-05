@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { OnboardDto } from './dto/onboard.dto';
@@ -43,11 +44,22 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(email: string, token: string) {
+  async verifyOtp(
+    email: string,
+    token: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
     try {
-      const supabase = this.supabaseService.getServiceClient();
+      // Verify on the user client so the SSR adapter writes the auth-token
+      // cookie via setAll synchronously inside this call.
+      const userClient = this.supabaseService.createUserClient(
+        req,
+        reply,
+        'public',
+      );
 
-      const { data, error } = await supabase.auth.verifyOtp({
+      const { data, error } = await userClient.auth.verifyOtp({
         email,
         token,
         type: 'email',
@@ -62,6 +74,10 @@ export class AuthService {
 
       const userId = data.session.user.id;
       const userEmail = data.session.user.email;
+
+      // Profile lookup uses the service client to bypass RLS for the
+      // first-time profile insert.
+      const supabase = this.supabaseService.getServiceClient();
 
       let { data: profile } = await supabase
         .from('user_profile')

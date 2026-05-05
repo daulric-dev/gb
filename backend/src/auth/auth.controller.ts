@@ -9,7 +9,6 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -56,9 +55,9 @@ export class AuthController {
     const { session, user, profile } = await this.authService.verifyOtp(
       dto.email,
       dto.token,
+      req,
+      res,
     );
-
-    this.supabaseService.setSessionCookies(res, session);
 
     return this.versioning.resolve(req, 'auth.verifyOtp')(
       session,
@@ -73,28 +72,6 @@ export class AuthController {
   async me(@Req() req: any) {
     const raw = await this.authService.getProfile(req.user.id);
     return this.versioning.resolve(req, 'auth.profile')(raw);
-  }
-
-  @Post('refresh')
-  async refresh(
-    @Req() req: any,
-    @Res({ passthrough: true }) res: FastifyReply,
-  ) {
-    const refreshToken = this.supabaseService.extractRefreshToken(req);
-
-    if (!refreshToken) {
-      throw new UnauthorizedException('No refresh token found');
-    }
-
-    const session = await this.supabaseService.refreshSession(refreshToken);
-
-    if (!session) {
-      throw new UnauthorizedException('Failed to refresh session');
-    }
-
-    this.supabaseService.setSessionCookies(res, session);
-
-    return this.versioning.resolve(req, 'auth.session')(session);
   }
 
   @ApiBearerAuth()
@@ -125,9 +102,7 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('logout')
   async logout(@Req() req: any, @Res({ passthrough: true }) res: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, res, 'public');
-    await supabase.auth.signOut();
-    this.supabaseService.clearSessionCookies(res);
+    await this.supabaseService.signOut(req, res);
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 
