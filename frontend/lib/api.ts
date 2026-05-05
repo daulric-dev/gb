@@ -1,4 +1,4 @@
-const BASE_URL = "/api";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export function buildUrl(path: string): string {
   if (!path.startsWith("/")) {

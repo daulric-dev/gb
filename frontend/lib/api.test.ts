@@ -11,7 +11,7 @@ type MockedFetch = typeof fetch & {
   };
 };
 
-const BASE_URL = "/api";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 describe("ApiError", () => {
   test("sets status, message, and data", () => {
