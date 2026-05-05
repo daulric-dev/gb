@@ -25,8 +25,17 @@ export class AssessmentService {
     await this.cache.deleteByPrefix('calc:');
   }
 
-  async create(userId: string, dto: CreateAssessmentDto, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
+  async create(
+    userId: string,
+    dto: CreateAssessmentDto,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'grading',
+    );
 
     const { data, error } = await supabase
       .from('assessment')
@@ -60,8 +69,17 @@ export class AssessmentService {
     return data;
   }
 
-  async findByTermAndSubject(termId: string, subjectId: string, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
+  async findByTermAndSubject(
+    termId: string,
+    subjectId: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'grading',
+    );
 
     const { data, error } = await supabase
       .from('assessment')
@@ -78,8 +96,16 @@ export class AssessmentService {
     return data ?? [];
   }
 
-  async findOne(assessmentId: string, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
+  async findOne(
+    assessmentId: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'grading',
+    );
 
     const { data, error } = await supabase
       .from('assessment')
@@ -98,8 +124,17 @@ export class AssessmentService {
     return data;
   }
 
-  async update(assessmentId: string, dto: UpdateAssessmentDto, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
+  async update(
+    assessmentId: string,
+    dto: UpdateAssessmentDto,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'grading',
+    );
 
     const updateData: Record<string, unknown> = {};
     if (dto.title !== undefined) updateData.title = dto.title;
@@ -133,8 +168,17 @@ export class AssessmentService {
     return data;
   }
 
-  async exclude(assessmentId: string, dto: ExcludeDto, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
+  async exclude(
+    assessmentId: string,
+    dto: ExcludeDto,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'grading',
+    );
 
     const { data, error } = await supabase
       .from('assessment')
@@ -164,7 +208,11 @@ export class AssessmentService {
   }
 
   async delete(assessmentId: string, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'grading');
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'grading',
+    );
 
     const { error } = await supabase
       .from('assessment')

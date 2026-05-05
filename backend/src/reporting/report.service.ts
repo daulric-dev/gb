@@ -169,7 +169,11 @@ export class ReportService {
     reply: FastifyReply,
     reportType?: string,
   ) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     let query = supabase
       .from('report_book')
@@ -212,7 +216,11 @@ export class ReportService {
   }
 
   async findOne(reportId: string, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     const { data: report, error } = await supabase
       .from('report_book')
@@ -256,7 +264,11 @@ export class ReportService {
     req: FastifyRequest,
     reply: FastifyReply,
   ) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     const { data: report, error } = await supabase
       .from('report_book')
@@ -330,7 +342,11 @@ export class ReportService {
     req: FastifyRequest,
     reply: FastifyReply,
   ) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
     const updateData: Record<string, unknown> = {};
     if (dto.teacherRemark !== undefined) {
       updateData.teacher_remark = dto.teacherRemark;
@@ -708,8 +724,16 @@ export class ReportService {
     };
   }
 
-  async getPdfHistory(reportId: string, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+  async getPdfHistory(
+    reportId: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     const { data: rows, error } = await supabase
       .from('report_book_pdf')
@@ -730,7 +754,11 @@ export class ReportService {
           .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const profileMap = await this.fetchUserProfilesByIdsForUser(req, reply, userIds);
+    const profileMap = await this.fetchUserProfilesByIdsForUser(
+      req,
+      reply,
+      userIds,
+    );
 
     return list.map((r: { generated_by: string | null }) => ({
       ...r,
@@ -740,8 +768,16 @@ export class ReportService {
     }));
   }
 
-  async getLatestPdf(reportId: string, req: FastifyRequest, reply: FastifyReply) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+  async getLatestPdf(
+    reportId: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     const { data, error } = await supabase
       .from('report_book_pdf')
@@ -766,7 +802,11 @@ export class ReportService {
     req: FastifyRequest,
     reply: FastifyReply,
   ) {
-    const reporting = this.supabaseService.createUserClient(req, reply, 'reporting');
+    const reporting = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
     const pub = this.supabaseService.createUserClient(req, reply, 'public');
 
     let query = reporting
@@ -859,7 +899,11 @@ export class ReportService {
           .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const subjectMap = await this.fetchSubjectsByIdsForUser(req, reply, subjectIds);
+    const subjectMap = await this.fetchSubjectsByIdsForUser(
+      req,
+      reply,
+      subjectIds,
+    );
 
     const averages = list
       .map((r: { overall_average: number | null }) => r.overall_average)
@@ -1111,7 +1155,11 @@ export class ReportService {
     req: FastifyRequest,
     reply: FastifyReply,
   ) {
-    const supabase = this.supabaseService.createUserClient(req, reply, 'reporting');
+    const supabase = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     const { data, error } = await supabase
       .from('class_report_file')
@@ -1216,8 +1264,16 @@ export class ReportService {
     };
   }
 
-  private async loadReportEntriesAndPdfs(reportBookId: string, req: FastifyRequest, reply: FastifyReply) {
-    const reporting = this.supabaseService.createUserClient(req, reply, 'reporting');
+  private async loadReportEntriesAndPdfs(
+    reportBookId: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const reporting = this.supabaseService.createUserClient(
+      req,
+      reply,
+      'reporting',
+    );
 
     const { data: entryRows, error: entriesError } = await reporting
       .from('report_book_entry')
@@ -1236,7 +1292,11 @@ export class ReportService {
     const subjectIds = rawEntries
       .map((e: { subject_id: string | null }) => e.subject_id)
       .filter((id): id is string => Boolean(id));
-    const subjectMap = await this.fetchSubjectsByIdsForUser(req, reply, subjectIds);
+    const subjectMap = await this.fetchSubjectsByIdsForUser(
+      req,
+      reply,
+      subjectIds,
+    );
 
     const entries = rawEntries.map((e: { subject_id: string | null }) => ({
       ...e,

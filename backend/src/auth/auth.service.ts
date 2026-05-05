@@ -360,5 +360,4 @@ export class AuthService {
     this.logger.log(`Account deleted for user ${userId}`);
     return 'Account deleted successfully';
   }
-
 }
