@@ -77,7 +77,6 @@ describe('SchoolService', () => {
         {
           name: 'Gamma School',
           schoolType: 'primary',
-          parish: 'St. Ann',
         } as any,
         'user-1',
       );
@@ -99,7 +98,6 @@ describe('SchoolService', () => {
           {
             name: 'Fail School',
             schoolType: 'primary',
-            parish: 'Kingston',
           } as any,
           'user-1',
         ),

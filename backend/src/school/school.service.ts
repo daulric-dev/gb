@@ -62,7 +62,6 @@ export class SchoolService {
         name: dto.name,
         code: dto.code ?? null,
         school_type: dto.schoolType,
-        parish: dto.parish,
         address: dto.address ?? null,
         email: dto.email ?? null,
         phone: dto.phone ?? null,
