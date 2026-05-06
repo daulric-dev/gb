@@ -16,7 +16,7 @@
       ],
       "list": [
         { "bold": "Account Information", "text": "your email address, first name, and last name, collected during registration and onboarding." },
-        { "bold": "School Information", "text": "school name, contact details, parish, and school type, provided when creating or joining a school." },
+        { "bold": "School Information", "text": "school name, contact details, and school type, provided when creating or joining a school." },
         { "bold": "Student Records", "text": "student names, gender, date of birth, enrollment dates, class assignments, and subject profiles entered by teachers." },
         { "bold": "Academic Data", "text": "assessments, grades, scores, remarks, and calculated results created through the grading system." },
         { "bold": "Usage Data", "text": "authentication tokens and session information required to operate the Service." }

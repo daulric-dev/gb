@@ -59,7 +59,7 @@ Shown to first-time users who have authenticated but haven't completed their pro
   - Fetches schools from `GET /api/schools`
   - Includes a "Create School" option that opens a dialog
 - Create School dialog (if school doesn't exist):
-  - Name, code, school type (primary/secondary), parish dropdown (Grenada parishes), address, email, phone
+  - Name and school type (primary/secondary)
 
 **Flow:**
 1. User fills in name and selects/creates a school
