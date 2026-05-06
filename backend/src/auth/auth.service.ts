@@ -191,7 +191,7 @@ export class AuthService {
       .single();
 
     if (existing?.school_id) {
-      // User created a school — just update name
+      // User created a school - just update name
       const { data, error } = await supabase
         .from('user_profile')
         .upsert({
@@ -215,7 +215,7 @@ export class AuthService {
 
     if (dto.schoolId) {
       // If the school has no admin yet, auto-assign this user as admin
-      // (bootstrap rule for orphaned schools — first joiner takes ownership).
+      // (bootstrap rule for orphaned schools - first joiner takes ownership).
       const { data: existingAdmin } = await supabase
         .from('school_management')
         .select('id')
@@ -263,7 +263,7 @@ export class AuthService {
         return data;
       }
 
-      // School already has an admin — go through the join request flow.
+      // School already has an admin - go through the join request flow.
       // Upsert user_profile FIRST (school_join_request has an FK to user_profile).
       const { data, error } = await supabase
         .from('user_profile')
@@ -299,7 +299,7 @@ export class AuthService {
       return { ...data, joinRequest };
     }
 
-    // No school selected — just save name
+    // No school selected - just save name
     const { data, error } = await supabase
       .from('user_profile')
       .upsert({

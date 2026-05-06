@@ -37,7 +37,7 @@ bun run build:docs         # Docusaurus static site
 bun run compile
 ```
 
-Runs `turbo run build` across all workspaces, then uses `bun build --compile` to produce a single native binary at `./dist/server`. The binary bundles the backend and all its dependencies — no Bun or Node.js installation required to run it.
+Runs `turbo run build` across all workspaces, then uses `bun build --compile` to produce a single native binary at `./dist/server`. The binary bundles the backend and all its dependencies - no Bun or Node.js installation required to run it.
 
 The frontend and docs cannot be compiled this way as they depend on the Next.js and Docusaurus runtimes respectively.
 
@@ -45,15 +45,15 @@ The frontend and docs cannot be compiled this way as they depend on the Next.js 
 
 ```
 command/
-├── index.ts       # Entrypoint — parses args, dispatches to commands
+├── index.ts       # Entrypoint - parses args, dispatches to commands
 ├── commands.ts    # Command implementations (status, commit, branch, push, …)
-├── pr.ts          # PR/MR creation — GitHub, GitLab, Bitbucket API
+├── pr.ts          # PR/MR creation - GitHub, GitLab, Bitbucket API
 ├── constants.ts   # Loads _mr.json; exports SERVICES, ALL_SERVICES, PROTECTED_BRANCHES
 ├── prompts.ts     # Interactive terminal UI (prompt, select, word limit)
 ├── utils.ts       # Git helpers, remote URL parsing, arg parsing
 ├── timer.ts       # Execution timer
 └── help.json      # Help text data (loaded at runtime)
-_mr.json           # Service registry — defines services and protected branches
+_mr.json           # Service registry - defines services and protected branches
 ```
 
 ## Services
@@ -65,8 +65,8 @@ Services are defined in [`_mr.json`](./service-registry.md) at the repo root rat
 ```
 
 `constants.ts` reads this file at startup and builds:
-- `SERVICES` — a flat `path → name` map used to group files
-- `ALL_SERVICES` — the list of service names shown in selectors (always includes `root`)
+- `SERVICES` - a flat `path → name` map used to group files
+- `ALL_SERVICES` - the list of service names shown in selectors (always includes `root`)
 
 The built-in `root` pseudo-service captures any file not covered by a registered path.
 

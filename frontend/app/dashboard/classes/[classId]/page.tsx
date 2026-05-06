@@ -718,7 +718,7 @@ export default function ClassDetailPage() {
                                   const avg = subjectMap.get(c.id);
                                   return (
                                     <TableCell key={c.id} className="text-center tabular-nums">
-                                      {avg != null ? avg.toFixed(1) : "—"}
+                                      {avg != null ? avg.toFixed(1) : "-"}
                                     </TableCell>
                                   );
                                 })}
@@ -858,14 +858,14 @@ export default function ClassDetailPage() {
                                         <TableCell key={`${row.studentId}-${c.id}-${t.id}`} className="text-center tabular-nums text-sm px-2 border-l">
                                           {termGrade?.termComposite != null
                                             ? termGrade.termComposite.toFixed(1)
-                                            : "—"}
+                                            : "-"}
                                         </TableCell>
                                       );
                                     }),
                                     <TableCell key={`${row.studentId}-${c.id}-year`} className="text-center tabular-nums text-sm font-semibold px-2">
                                       {yearSubj?.yearGrade != null
                                         ? yearSubj.yearGrade.toFixed(1)
-                                        : "—"}
+                                        : "-"}
                                     </TableCell>,
                                   ];
                                 })}

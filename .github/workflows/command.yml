@@ -48,7 +48,7 @@ jobs:
               throw new Error('Invalid service entry: ' + JSON.stringify(s));
           }
           const names = config.services.map(s => typeof s === 'string' ? s : s.name);
-          console.log('Valid — services:', names.join(', '));
+          console.log('Valid - services:', names.join(', '));
           if (config.protectedBranches) console.log('Protected branches:', config.protectedBranches.join(', '));
           "
 
@@ -74,19 +74,19 @@ jobs:
       - name: gb help
         run: bun run gb help
 
-      - name: gb status — clean tree
+      - name: gb status - clean tree
         run: |
           output=$(bun run gb status)
           echo "$output"
           [[ "$output" == *"Working tree clean"* ]] || { echo "Expected clean working tree"; exit 1; }
 
-      - name: gb affected — no changes vs HEAD
+      - name: gb affected - no changes vs HEAD
         run: |
           output=$(bun run gb affected --base=HEAD 2>&1 || true)
           echo "$output"
           [[ "$output" == *"No changes detected"* ]] || { echo "Expected no changes"; exit 1; }
 
-      - name: gb service list — services loaded from _mr.json
+      - name: gb service list - services loaded from _mr.json
         run: |
           output=$(bun run gb service list)
           echo "$output"
@@ -94,13 +94,13 @@ jobs:
           [[ "$output" == *"backend"* ]]  || { echo "Expected backend service"; exit 1; }
           [[ "$output" == *"root"* ]]     || { echo "Expected root built-in"; exit 1; }
 
-      - name: gb service root — shows repo root
+      - name: gb service root - shows repo root
         run: |
           output=$(bun run gb service root)
           echo "$output"
           [[ "$output" == *"$GITHUB_WORKSPACE"* ]] || { echo "Expected workspace path in root output"; exit 1; }
 
-      - name: gb diff — no unstaged changes
+      - name: gb diff - no unstaged changes
         run: |
           output=$(bun run gb diff 2>&1 || true)
           echo "$output"

@@ -105,7 +105,7 @@ When `root` matches the git root (the typical case), the prefix is empty and the
 
 This means:
 - Adding a service to `_mr.json` immediately changes how `gb status`, `gb commit`, and `gb diff` group files
-- Renaming a service's `name` only affects display and commit message format — the paths stay the same
+- Renaming a service's `name` only affects display and commit message format - the paths stay the same
 - A file can only belong to one service (first prefix match wins)
 
 ## Example: grouping CI and infrastructure

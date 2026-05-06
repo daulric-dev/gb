@@ -76,7 +76,7 @@ export class SchoolService {
       throw new BadRequestException('Failed to create school');
     }
 
-    // Canonical membership record — creator is admin
+    // Canonical membership record - creator is admin
     const { error: managementError } = await supabase
       .from('school_management')
       .insert({ user_id: userId, school_id: data.id, role: 'admin' });

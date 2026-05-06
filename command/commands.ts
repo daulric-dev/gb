@@ -43,7 +43,7 @@ export async function serviceCmd(positionals: string[]) {
     for (const { name, paths } of entries) {
       console.log(`  \x1b[36m${name}\x1b[0m  \x1b[2m→ ${paths.join(", ")}\x1b[0m`);
     }
-    console.log(`  \x1b[2mroot  → (built-in — catches unregistered paths)\x1b[0m`);
+    console.log(`  \x1b[2mroot  → (built-in - catches unregistered paths)\x1b[0m`);
     return;
   }
 
@@ -148,7 +148,7 @@ export async function serviceCmd(positionals: string[]) {
     if (action === "clear") {
       delete config.root;
       writeMrConfig(config);
-      console.log(`\x1b[32mCleared root override\x1b[0m — will use git detection`);
+      console.log(`\x1b[32mCleared root override\x1b[0m - will use git detection`);
       return;
     }
 
@@ -527,7 +527,7 @@ export async function checkoutCmd(positionals: string[]) {
     console.log(`\x1b[32mSwitched to\x1b[0m ${target} and pulled latest changes.`);
   } catch {
     console.log(`\x1b[32mSwitched to\x1b[0m ${target}.`);
-    console.log(`\x1b[33mCould not pull — try manually if needed.\x1b[0m`);
+    console.log(`\x1b[33mCould not pull - try manually if needed.\x1b[0m`);
   }
 }
 
@@ -549,7 +549,7 @@ export async function syncCmd() {
       await git("merge", "--ff-only", `origin/${current}`);
       console.log(`\x1b[32mPulled latest changes into\x1b[0m ${current}.`);
     } catch {
-      console.log(`\x1b[33mCould not fast-forward ${current} — diverged from remote?\x1b[0m`);
+      console.log(`\x1b[33mCould not fast-forward ${current} - diverged from remote?\x1b[0m`);
     }
   }
 
@@ -654,7 +654,7 @@ export async function rebaseCmd(flags: Record<string, string>) {
     await git("rebase", baseRef);
     console.log(`\x1b[32mRebased\x1b[0m ${source} onto ${base}.`);
   } catch {
-    console.error(`\x1b[31mRebase failed — you may have conflicts.\x1b[0m`);
+    console.error(`\x1b[31mRebase failed - you may have conflicts.\x1b[0m`);
     console.error(`Resolve them, then run: git rebase --continue`);
     console.error(`Or abort with: git rebase --abort`);
     process.exit(1);

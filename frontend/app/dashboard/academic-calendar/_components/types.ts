@@ -1,7 +1,12 @@
 export interface AcademicYear {
   id: string;
   name: string;
+  start_date: string;
+  end_date: string;
+  grading_model: "term_based" | "year_based";
   is_active: boolean;
+  year_exam_weight: number | null;
+  year_coursework_weight: number | null;
 }
 
 export interface Term {
@@ -24,3 +29,12 @@ export const termLabel: Record<string, string> = {
   hilary: "Hilary",
   trinity: "Trinity",
 };
+
+export function sortYearsActiveFirst(years: AcademicYear[]): AcademicYear[] {
+  return [...years].sort((a, b) => {
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+    return (
+      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+    );
+  });
+}
