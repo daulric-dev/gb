@@ -6,6 +6,7 @@ import { useProfile } from "@/lib/use-profile";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminDashboard } from "./_components/AdminDashboard";
 import { TeacherDashboard } from "./_components/TeacherDashboard";
 
@@ -16,12 +17,18 @@ interface ClassItem {
   isClassTeacher: boolean | null;
 }
 
-function shouldShowTeacherView(
+type DashboardMode = "admin-only" | "teacher-only" | "both";
+
+function pickMode(
   role: string | null | undefined,
   classes: ClassItem[],
-): boolean {
-  if (role !== "admin") return true;
-  return classes.some((c) => c.isClassTeacher === true);
+): DashboardMode {
+  const isAdmin = role === "admin";
+  const hasClasses = classes.length > 0;
+
+  if (isAdmin && hasClasses) return "both";
+  if (isAdmin) return "admin-only";
+  return "teacher-only";
 }
 
 export default function DashboardPage() {
@@ -42,8 +49,8 @@ export default function DashboardPage() {
     : "there";
 
   const ready = !profileLoading.value && !classesLoading.value;
-  const showTeacherView = ready
-    ? shouldShowTeacherView(profile.value?.role, classes.value)
+  const mode: DashboardMode | null = ready
+    ? pickMode(profile.value?.role, classes.value)
     : null;
 
   return (
@@ -62,10 +69,23 @@ export default function DashboardPage() {
             <Skeleton key={i} className="h-20 w-full" />
           ))}
         </div>
-      ) : showTeacherView ? (
+      ) : mode === "admin-only" ? (
+        <AdminDashboard />
+      ) : mode === "teacher-only" ? (
         <TeacherDashboard classes={classes.value} />
       ) : (
-        <AdminDashboard classCount={classes.value.length} />
+        <Tabs defaultValue="admin">
+          <TabsList className="w-full">
+            <TabsTrigger value="admin">School Overview</TabsTrigger>
+            <TabsTrigger value="teacher">My Classes</TabsTrigger>
+          </TabsList>
+          <TabsContent value="admin" className="mt-4">
+            <AdminDashboard />
+          </TabsContent>
+          <TabsContent value="teacher" className="mt-4">
+            <TeacherDashboard classes={classes.value} />
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );

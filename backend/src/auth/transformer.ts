@@ -10,6 +10,9 @@ export interface ProfileResponse {
   role: UserProfile['role'];
   avatar_url: string | null;
   school: any | null;
+  school_management: {
+    role: UserProfile['role'];
+  } | null;
 }
 
 export interface SessionResponse {
@@ -36,6 +39,7 @@ export function v1Profile(raw: any): ProfileResponse {
     role: raw.role ?? null,
     avatar_url: raw.avatar_url ?? null,
     school: raw.school ?? null,
+    school_management: raw.school_management ?? null,
   };
 }
 
@@ -64,6 +68,7 @@ export function v1VerifyOtp(
       avatar_url: profile?.avatar_url ?? null,
       school: profile?.school ?? null,
       is_onboarded: hasOnboarded,
+      school_management: profile?.school_management ?? null,
     },
   };
 }

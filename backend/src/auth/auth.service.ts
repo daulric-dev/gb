@@ -126,13 +126,19 @@ export class AuthService {
 
       const { data: profile, error } = await supabase
         .from('user_profile')
-        .select('*, school:school_id(*)')
+        .select('*, school:school_id(*), school_management(role)')
         .eq('id', userId)
         .single();
 
       if (error || !profile) {
         this.logger.error(`Profile not found for ${userId}: ${error?.message}`);
         throw new NotFoundException('User profile not found');
+      }
+
+      if (profile.school_management.length === 1) {
+        profile.school_management = {
+          role: profile.school_management[0].role,
+        };
       }
 
       await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
