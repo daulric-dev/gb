@@ -28,8 +28,8 @@
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh",
         "dev:docs": "turbo run dev --filter=docs",
         "build:docs": "turbo run build --filter=docs",
-        "db:diff": "supabase db diff --schema '*',auth,storage -f",
-        "db:pull": "supabase db pull --schema '*',auth,storage"
+        "db:diff": "supabase db diff --schema '*',storage -f",
+        "db:pull": "supabase db pull --schema '*',storage"
     },
     "workspaces": ["backend", "frontend", "docs"],
     "overrides": {
