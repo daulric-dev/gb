@@ -6,7 +6,7 @@ sidebar_label: School
 
 **Location**: `backend/src/school/`
 
-The school module manages schools, school membership, and join requests. Schools are the top-level organizational unit — every user belongs to a school via a `school_management` row, and all data (students, subjects, classes) is scoped to a school.
+The school module manages schools, school membership, and join requests. Schools are the top-level organizational unit - every user belongs to a school via a `school_management` row, and all data (students, subjects, classes) is scoped to a school.
 
 ## Files
 
@@ -23,7 +23,7 @@ Related guard:
 
 | File | Purpose |
 |------|---------|
-| `backend/src/auth/admin.guard.ts` | `AdminGuard` — restricts endpoints to users whose `user_profile.role` is `admin` and `is_active = true` |
+| `backend/src/auth/admin.guard.ts` | `AdminGuard` - restricts endpoints to users whose `user_profile.role` is `admin` and `is_active = true` |
 
 ## Membership Model
 
@@ -94,13 +94,13 @@ These are kept in sync on every write that affects membership (school creation a
 |------|---------|
 | `admin` | Full administrative control of the school. Can approve/reject join requests, manage all data. School creators are automatically `admin`. |
 | `teacher` | Staff member assigned to classes. Has access scoped to the classes/subjects they're assigned to (see `ClassTeacherGuard`). |
-| `member` | Generic school participant — for users who belong to the school but aren't teaching staff or admins. |
+| `member` | Generic school participant - for users who belong to the school but aren't teaching staff or admins. |
 
 ## Flows
 
 ### Creating a school (auto-admin)
 
-When a user creates a school, they become its admin immediately — no approval needed.
+When a user creates a school, they become its admin immediately - no approval needed.
 
 ```
 User → POST /schools { name, schoolType, parish, ... }
@@ -116,7 +116,7 @@ User → PATCH /auth/onboard { firstName, lastName, schoolId }
   └─ INSERT school_join_request { status: 'pending' }
   └─ Response includes a `joinRequest` field; frontend redirects to /onboard/pending
 
-[user is in pending state — no school_id set on user_profile]
+[user is in pending state - no school_id set on user_profile]
 
 Admin → GET /schools/join-requests          # sees the pending request
 Admin → PATCH /schools/join-requests/:id/approve { role }
@@ -138,7 +138,7 @@ The user can submit a new request afterwards (no pending request blocks them any
 
 ### Switching schools
 
-The "Change School" dialog in the sidebar and the school selector on the settings page both go through the same join-request flow — they `POST /schools/:schoolId/join-requests` rather than directly mutating `user_profile.school_id`. The user's active school does not change until an admin of the target school approves.
+The "Change School" dialog in the sidebar and the school selector on the settings page both go through the same join-request flow - they `POST /schools/:schoolId/join-requests` rather than directly mutating `user_profile.school_id`. The user's active school does not change until an admin of the target school approves.
 
 ## API Endpoints
 
@@ -252,7 +252,7 @@ Approves a pending request. Fails with `403` if the request belongs to a differe
 
 **Requires:** `AdminGuard`
 
-Rejects a pending request. Same scope checks as approve. The user's profile is not modified — they may submit a new request afterwards.
+Rejects a pending request. Same scope checks as approve. The user's profile is not modified - they may submit a new request afterwards.
 
 **Response:** The updated `school_join_request` row.
 
@@ -271,6 +271,6 @@ Rejects a pending request. Same scope checks as approve. The user's profile is n
 |------|----------|---------|
 | `/onboard` | New users | Pick or create a school. Selecting an existing school submits a join request. |
 | `/onboard/pending` | Users with a pending request | Polls `/auth/me` every 10s and auto-redirects to `/dashboard` once approved. |
-| `/dashboard/members` | Admins only | Lists pending join requests with approve (with role picker) / reject actions. |
+| `/dashboard/staff` (Pending Members tab) | Admins only | Lists pending join requests with approve (with role picker) / reject actions. |
 | Sidebar → "Change School" | Any user | Submits a join request to switch schools. Does not change the active school until approved. |
 | `/dashboard/settings` | Any user | School selector goes through the join-request flow; name updates apply immediately. |

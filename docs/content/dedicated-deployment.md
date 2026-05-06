@@ -15,7 +15,7 @@ This is distinct from the default multi-tenant setup where multiple schools shar
 When `DEDICATED_DEPLOYMENT=true` is set on the backend:
 
 - **School creation is limited to one.** The first school can be created during onboarding. Any subsequent attempt to create a school returns `403 Forbidden`.
-- **Onboarding skips school selection.** New users are automatically assigned to the single existing school — no dropdown, no school picker.
+- **Onboarding skips school selection.** New users are automatically assigned to the single existing school - no dropdown, no school picker.
 - **School switching is hidden** in the frontend sidebar.
 
 The schema, RLS policies, and all API behaviour remain identical to the multi-tenant setup. The only difference is the enforcement of the one-school limit and the simplified onboarding flow.
@@ -27,8 +27,8 @@ The schema, RLS policies, and all API behaviour remain identical to the multi-te
 ### 1. Provision a Supabase Instance
 
 Use either:
-- **Supabase Cloud** — create a new project at [supabase.com](https://supabase.com)
-- **Self-hosted Supabase** — follow the [official self-hosting guide](https://supabase.com/docs/guides/self-hosting)
+- **Supabase Cloud** - create a new project at [supabase.com](https://supabase.com)
+- **Self-hosted Supabase** - follow the [official self-hosting guide](https://supabase.com/docs/guides/self-hosting)
 
 ### 2. Run Migrations
 
@@ -60,9 +60,9 @@ NEXT_PUBLIC_API_URL=https://your-backend-domain.com
 NEXT_PUBLIC_DEDICATED_DEPLOYMENT=true
 ```
 
-### 5. First Login — Create the School
+### 5. First Login - Create the School
 
-On the very first login, the onboarding form will include a **Create school** option (since no school exists yet). Create the school during this step — this is the only time school creation is permitted.
+On the very first login, the onboarding form will include a **Create school** option (since no school exists yet). Create the school during this step - this is the only time school creation is permitted.
 
 All subsequent users who log in will be automatically assigned to this school, with no school selection shown.
 
@@ -83,6 +83,6 @@ All subsequent users who log in will be automatically assigned to this school, w
 
 ## Security Notes
 
-- `DEDICATED_DEPLOYMENT=true` is enforced **server-side** — even if a client sends a request to `POST /schools`, it will be rejected once a school exists.
+- `DEDICATED_DEPLOYMENT=true` is enforced **server-side** - even if a client sends a request to `POST /schools`, it will be rejected once a school exists.
 - All existing RLS policies apply as normal. Since the entire database belongs to one school, `get_user_school_id()` will always resolve to the same school for every user.
 - `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` only controls UI visibility. The backend enforcement does not depend on this frontend variable.

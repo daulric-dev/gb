@@ -6,7 +6,7 @@ sidebar_label: Authentication
 
 **Location**: `backend/src/auth/`
 
-The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. It uses Supabase Auth under the hood, with **`@supabase/ssr` cookie-based sessions** — the access token and refresh token live entirely in HTTP-only cookies, and rotation happens transparently on every authenticated request.
+The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. It uses Supabase Auth under the hood, with **`@supabase/ssr` cookie-based sessions** - the access token and refresh token live entirely in HTTP-only cookies, and rotation happens transparently on every authenticated request.
 
 ## Files
 
@@ -40,7 +40,7 @@ The authentication module handles user login via email OTP (one-time password), 
    └── PATCH /auth/onboard { firstName, lastName, schoolId }
        ├─ If user already has school_id (because they just created one): updates name
        ├─ If joining an existing school: creates a school_join_request and returns
-       │  the profile with a `joinRequest` field — frontend redirects to /onboard/pending
+       │  the profile with a `joinRequest` field - frontend redirects to /onboard/pending
        └─ If no schoolId provided: saves name, leaves school empty
 
 4. Access token expires (default: 1 hour)
@@ -48,7 +48,7 @@ The authentication module handles user login via email OTP (one-time password), 
        └── supabase.auth.getUser() detects the expired access token
        └── Refreshes via the refresh token cookie
        └── setAll handler writes rotated cookies to the response
-       └── Original request completes normally — frontend never sees a 401
+       └── Original request completes normally - frontend never sees a 401
 
 5. User logs out
    └── POST /auth/logout
@@ -63,12 +63,12 @@ Cookie attributes (set in `setAll` inside `SupabaseService.createUserClient`):
 
 | Attribute | Value |
 |-----------|-------|
-| `httpOnly` | `true` (not accessible via JavaScript — prevents XSS exfiltration) |
+| `httpOnly` | `true` (not accessible via JavaScript - prevents XSS exfiltration) |
 | `secure` | `true` in production, `false` in development |
 | `sameSite` | `lax` (works for same-origin and most cross-origin GETs; switch to `none` if frontend is on a different domain) |
 | `path` | `/` |
 
-There is no separate frontend access-token storage. The frontend never reads or writes auth tokens — it only sends `credentials: "include"` on every request, and the browser handles the cookies automatically.
+There is no separate frontend access-token storage. The frontend never reads or writes auth tokens - it only sends `credentials: "include"` on every request, and the browser handles the cookies automatically.
 
 ## SupabaseService
 
@@ -79,7 +79,7 @@ There is no separate frontend access-token storage. The frontend never reads or 
 
 Any service method that needs to make a user-scoped (RLS-respecting) Supabase query takes `req` and `reply` parameters and calls `createUserClient(req, reply, schema)`. Calling `auth.getUser()` on this client triggers automatic refresh and cookie rotation when the access token has expired.
 
-`SupabaseService.getServiceClient()` returns a singleton service-role client that bypasses RLS — used for trusted backend operations.
+`SupabaseService.getServiceClient()` returns a singleton service-role client that bypasses RLS - used for trusted backend operations.
 
 ## AuthGuard
 
@@ -88,7 +88,7 @@ The `AuthGuard` is a NestJS `CanActivate` guard that protects endpoints requirin
 **How it works:**
 
 1. Builds an SSR client via `SupabaseService.createUserClient(req, reply, 'public')`
-2. Calls `supabase.auth.getUser()` — this validates the session and silently refreshes the access token if expired (rotating cookies on the response in the process)
+2. Calls `supabase.auth.getUser()` - this validates the session and silently refreshes the access token if expired (rotating cookies on the response in the process)
 3. If valid, attaches `{ id, email }` to `request.user`
 4. If invalid or missing, throws `UnauthorizedException` (the frontend then redirects to `/login`)
 
@@ -144,7 +144,7 @@ Verifies the OTP and returns the user profile. Writes the Supabase session cooki
 }
 ```
 
-The session payload is included in the response body for backwards compatibility, but the frontend doesn't need it — the cookies set on the response are the source of truth.
+The session payload is included in the response body for backwards compatibility, but the frontend doesn't need it - the cookies set on the response are the source of truth.
 
 ---
 
@@ -158,7 +158,7 @@ Returns the current user's profile including their school.
 
 ### `POST /api/auth/refresh`
 
-A thin compatibility endpoint that returns the current session. Refresh actually happens implicitly inside `AuthGuard` on every authenticated request, so the frontend doesn't need to call this — it exists only to support deployed clients still polling it during the migration.
+A thin compatibility endpoint that returns the current session. Refresh actually happens implicitly inside `AuthGuard` on every authenticated request, so the frontend doesn't need to call this - it exists only to support deployed clients still polling it during the migration.
 
 **Response:**
 ```json
@@ -179,7 +179,7 @@ A thin compatibility endpoint that returns the current session. Refresh actually
 Completes the user's profile after first login. The behavior depends on the user's existing state:
 
 - **User already has `school_id`** (because they just created a school via `POST /schools`, which auto-assigns them as `admin`): only `first_name` / `last_name` are updated.
-- **User selected an existing school** via `schoolId`: a `school_join_request` is created in `pending` status. The user's `school_id` is **not** set — they remain in a pending state until an admin approves. The response includes a `joinRequest` field.
+- **User selected an existing school** via `schoolId`: a `school_join_request` is created in `pending` status. The user's `school_id` is **not** set - they remain in a pending state until an admin approves. The response includes a `joinRequest` field.
 - **No `schoolId` provided**: only the name is saved.
 
 **Body:**
@@ -191,7 +191,7 @@ Completes the user's profile after first login. The behavior depends on the user
 }
 ```
 
-**Response (joining existing school — pending approval):**
+**Response (joining existing school - pending approval):**
 ```json
 {
   "id": "uuid",

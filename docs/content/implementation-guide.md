@@ -72,7 +72,7 @@ All lowercase values in the database.
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid PK | Same as auth.users.id |
-| school_id | uuid FK → school | NULL until a join request is approved. Denormalized cache of the user's active school — `school_management` is the source of truth. |
+| school_id | uuid FK → school | NULL until a join request is approved. Denormalized cache of the user's active school - `school_management` is the source of truth. |
 | email | varchar | |
 | first_name | varchar | |
 | last_name | varchar | |
@@ -110,7 +110,7 @@ A user's pending/historic request to join a school. See the [School module docs]
 | reviewed_at | timestamptz nullable | |
 | reviewed_by | uuid FK → user_profile nullable | The admin who reviewed |
 
-UNIQUE INDEX (partial): `(user_id, school_id) WHERE status = 'pending'` — prevents duplicate pending requests.
+UNIQUE INDEX (partial): `(user_id, school_id) WHERE status = 'pending'` - prevents duplicate pending requests.
 
 ### public.academic_year
 | Column | Type | Notes |
@@ -1103,7 +1103,7 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
 
 ---
 
-# PART H — Frontend Pages
+# PART H - Frontend Pages
 
 ## 38. Key Routes
 
@@ -1114,17 +1114,15 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
 | `/onboard` | Auth (no school) | Collect first/last name only, then redirect to `/schools` |
 | `/onboard/pending` | Auth (no school) | Waiting screen after submitting a join request during onboarding |
 | `/schools` | Auth (no school) | Browse all schools. **Request** button per school (shows **Pending** after requesting). **Create** button (non-dedicated only). Persists pending state across reloads via `GET /schools/my-pending-request`. |
-| `/dashboard` | Auth + school | Home overview (active year, class count) |
-| `/dashboard/academic-years` | Auth + school | Academic year CRUD |
+| `/dashboard` | Auth + school | Role-aware home. Admins (with no class-teacher assignments) see the school overview (active year, class count). Teachers - and admins who are class teacher of at least one class - see a teaching overview with class stats, a subject-performance bar chart, and per-class cards. |
+| `/dashboard/academic-calendar` | Auth + school | Two tabs: **Academic Years** (year CRUD with activate/deactivate) and **Terms** (terms grouped under each academic year, with per-year add/edit/delete). The old `/dashboard/academic-years` URL redirects here. |
 | `/dashboard/classes` | Auth + school | Class list |
 | `/dashboard/classes/[classId]` | Auth + school | Class detail, enrollment, teachers |
 | `/dashboard/classes/[classId]/grading` | Auth + school | Grade entry |
 | `/dashboard/classes/[classId]/reports` | Auth + school | Report management |
 | `/dashboard/students` | Auth + school | Student roster with search |
-| `/dashboard/staff` | Auth + school | School members grouped by role: Admins → Teachers → Members. Admins see remove buttons (cannot remove self or other admins). |
+| `/dashboard/staff` | Auth + school | School members grouped by role: Admins → Teachers → Members. Admins see remove buttons (cannot remove self or other admins) and a "Pending Members" tab with the join request approval queue. |
 | `/dashboard/subjects` | Auth + school | Subject CRUD |
-| `/dashboard/terms` | Auth + school | Term management |
-| `/dashboard/members` | Auth + Admin | Pending join request approval queue |
 | `/dashboard/settings` | Auth + school | Profile (name, avatar), school (read-only with Change/Leave buttons), danger zone (delete account) |
 
 ## 39. School Gate
@@ -1133,9 +1131,9 @@ The dashboard layout (`app/dashboard/layout.tsx`) checks the user profile after 
 
 ## 40. Sidebar Navigation
 
-**Main nav** (all users): Dashboard, Academic Years, Classes, Students, Staff, Subjects, Terms.
+**Main nav** (all users): Dashboard, Academic Calendar, Classes, Students, Staff, Subjects.
 
-**Admin nav** (role = admin only): Members (join request queue).
+The Academic Calendar page (`/dashboard/academic-calendar`) hosts both year and term management as tabs. Admins manage join requests from the **Pending Members** tab on `/dashboard/staff`.
 
 **Footer:** User dropdown with Settings and Log out.
 
