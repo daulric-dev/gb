@@ -39,7 +39,6 @@ The school record itself.
 | `name` | string | School name |
 | `code` | string? | Optional school code |
 | `school_type` | enum | `primary` or `secondary` |
-| `parish` | string | Parish/district location |
 | `address` | string? | Optional physical address |
 | `email` | string | Contact email |
 | `phone` | string | Contact phone |
@@ -103,7 +102,7 @@ These are kept in sync on every write that affects membership (school creation a
 When a user creates a school, they become its admin immediately - no approval needed.
 
 ```
-User → POST /schools { name, schoolType, parish, ... }
+User → POST /schools { name, schoolType, ... }
   ├─ INSERT school
   ├─ INSERT school_management { user_id, school_id, role: 'admin' }
   └─ UPDATE user_profile { school_id, role: 'admin' }   (cache mirror)
@@ -148,7 +147,7 @@ All endpoints require `AuthGuard`. Endpoints under `/schools/join-requests` addi
 
 Returns all active schools ordered by name. Used during onboarding and in the school switcher.
 
-**Response:** Array of `{ id, name, parish, school_type }`.
+**Response:** Array of `{ id, name, school_type }` (the underlying table also carries a legacy `parish` column for previously-created schools).
 
 ---
 
@@ -162,7 +161,6 @@ Creates a new school **and** assigns the requesting user as its admin (inserts `
   "name": "Grenada Academy",
   "code": "GA",
   "schoolType": "secondary",
-  "parish": "St. George",
   "address": "123 Main St",
   "email": "info@school.com",
   "phone": "+1473-555-0100"
@@ -174,7 +172,6 @@ Creates a new school **and** assigns the requesting user as its admin (inserts `
 | `name` | Yes | |
 | `code` | No | |
 | `schoolType` | Yes | `primary` or `secondary` |
-| `parish` | Yes | |
 | `address` | No | |
 | `email` | No | |
 | `phone` | No | |
