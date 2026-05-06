@@ -43,7 +43,6 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
 
   const name = useSignal("");
   const schoolType = useSignal<"primary" | "secondary">("secondary");
-  const parish = useSignal("");
   const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -55,7 +54,6 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
         body: {
           name: name.value,
           schoolType: schoolType.value,
-          parish: parish.value || undefined,
         },
       });
       onSuccess(school);
@@ -89,25 +87,6 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
         >
           <option value="primary">Primary</option>
           <option value="secondary">Secondary</option>
-        </select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="parish">Parish</Label>
-        <select
-          id="parish"
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={parish.value}
-          onChange={(e) => (parish.value = e.target.value)}
-          required
-        >
-          <option value="">Select a parish</option>
-          <option value="St. Andrew">St. Andrew</option>
-          <option value="St. David">St. David</option>
-          <option value="St. George">St. George</option>
-          <option value="St. John">St. John</option>
-          <option value="St. Mark">St. Mark</option>
-          <option value="St. Patrick">St. Patrick</option>
-          <option value="Carriacou and Petite Martinique">Carriacou and Petite Martinique</option>
         </select>
       </div>
       <Button type="submit" className="w-full" disabled={loading.value}>

@@ -61,6 +61,49 @@ export class SupabaseService {
     return this.serviceClient;
   }
 
+  async ensureBucket(bucketName: string, isPublic = false): Promise<boolean> {
+    const supabase = this.getServiceClient();
+
+    const { data: bucket, error } =
+      await supabase.storage.getBucket(bucketName);
+    if (bucket) return true;
+
+    if (error && !error.message.toLowerCase().includes('not found')) {
+      throw error;
+    }
+
+    const { error: createError } =
+      await this.getServiceClient().storage.createBucket(bucketName, {
+        public: isPublic,
+      });
+
+    if (createError) throw createError;
+    return true;
+  }
+
+  async uploadFile(
+    bucketName: string,
+    path: string,
+    file: Buffer,
+    contentType: string,
+  ): Promise<{ path: string; publicUrl: string } | null> {
+    await this.ensureBucket(bucketName);
+    const { data, error } = await this.getServiceClient()
+      .storage.from(bucketName)
+      .upload(path, file, {
+        contentType,
+        upsert: true,
+      });
+
+    if (error || !data) return null;
+
+    const { data: publicUrl } = this.getServiceClient()
+      .storage.from(bucketName)
+      .getPublicUrl(data.path);
+
+    return { path: data.path, publicUrl: publicUrl.publicUrl };
+  }
+
   // Transitional: clear the old gb_refresh_token cookie if it's still hanging
   // around in clients from the previous auth implementation. Safe to remove
   // after a few weeks once active users have rotated through.

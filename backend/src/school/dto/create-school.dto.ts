@@ -26,12 +26,6 @@ export class CreateSchoolDto {
   @IsNotEmpty()
   schoolType!: 'primary' | 'secondary';
 
-  @ApiProperty({ example: 'St. Andrew' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  parish!: string;
-
   @ApiPropertyOptional({ example: '123 Main Street' })
   @IsOptional()
   @IsString()
