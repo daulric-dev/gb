@@ -155,7 +155,7 @@ bun run gb <command>
 | `gb pr` | Create a pull request via GitHub, GitLab, or Bitbucket API |
 | `gb run` | Run a package.json script in a service |
 
-**Full documentation:** [`docs/cli/`](docs/cli/overview.md) — architecture, interactive prompts, and detailed command reference.
+**Full documentation:** [`docs/cli/`](docs/cli/overview.md) - architecture, interactive prompts, and detailed command reference.
 
 ## Scripts
 
