@@ -63,26 +63,34 @@ export class SupabaseService {
 
   async ensureBucket(bucketName: string, isPublic = false): Promise<boolean> {
     const supabase = this.getServiceClient();
-  
-    const { data: bucket, error } = await supabase.storage.getBucket(bucketName);
+
+    const { data: bucket, error } =
+      await supabase.storage.getBucket(bucketName);
     if (bucket) return true;
-    
+
     if (error && !error.message.toLowerCase().includes('not found')) {
       throw error;
     }
 
-    const { data: created, error: createError } = await this.getServiceClient()
-      .storage
-      .createBucket(bucketName, { public: isPublic });
+    const { error: createError } =
+      await this.getServiceClient().storage.createBucket(bucketName, {
+        public: isPublic,
+      });
 
     if (createError) throw createError;
     return true;
   }
 
-  async uploadFile(bucketName: string, path: string, file: Buffer, contentType: string): Promise<{ path: string, publicUrl: string } | null> {
+  async uploadFile(
+    bucketName: string,
+    path: string,
+    file: Buffer,
+    contentType: string,
+  ): Promise<{ path: string; publicUrl: string } | null> {
     await this.ensureBucket(bucketName);
     const { data, error } = await this.getServiceClient()
-      .storage.from(bucketName).upload(path, file, {
+      .storage.from(bucketName)
+      .upload(path, file, {
         contentType,
         upsert: true,
       });
@@ -90,8 +98,7 @@ export class SupabaseService {
     if (error || !data) return null;
 
     const { data: publicUrl } = this.getServiceClient()
-      .storage
-      .from(bucketName)
+      .storage.from(bucketName)
       .getPublicUrl(data.path);
 
     return { path: data.path, publicUrl: publicUrl.publicUrl };
