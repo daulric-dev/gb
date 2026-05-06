@@ -142,7 +142,6 @@ export class AuthService {
       }
 
       await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
-      this.logger.log("profie", profile);
       return profile;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
