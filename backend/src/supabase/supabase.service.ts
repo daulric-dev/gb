@@ -28,7 +28,10 @@ export class SupabaseService {
             cookiesToSet.forEach(({ name, value, options }) => {
               reply.setCookie(name, value, {
                 ...options,
-                domain: process.env.NODE_ENV === 'production' ? `.${new URL(process.env.FRONTEND_URL!).hostname.split('.').slice(-2).join('.')}` : undefined,
+                domain:
+                  process.env.NODE_ENV === 'production'
+                    ? `.${new URL(process.env.FRONTEND_URL!).hostname.split('.').slice(-2).join('.')}`
+                    : undefined,
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'lax',

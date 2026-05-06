@@ -7,19 +7,19 @@ sidebar_label: Dashboard
 **Route**: `/dashboard`  
 **File**: `app/dashboard/page.tsx`
 
-The dashboard is the landing page after login. It is **role-aware**: admins without any class-teacher assignment see a school overview, while teachers (and admins who are class teacher for at least one class) see a teaching overview with class stats and a subject-performance chart.
+The dashboard is the landing page after login. It is **role-aware**: pure administrators (no teaching assignments) see a school overview with charts; teachers — and any admin who is also assigned to a class — see a teaching overview with class stats and a subject-performance chart.
 
 ## View selection
 
 After loading the user profile (`/auth/me`) and class list (`/classes`), the page chooses between two layouts:
 
-| Role | Has `isClassTeacher: true` for any class? | View |
-|------|-------------------------------------------|------|
-| `admin` | No  | Admin school overview |
-| `admin` | Yes | Teacher overview |
-| `teacher` / `member` / other | n/a | Teacher overview (with empty state if no classes) |
+| Role | Has any entry in `/classes`? | View |
+|------|------------------------------|------|
+| `admin` | No  | Admin school overview only |
+| `admin` | Yes (class teacher **or** subject teacher) | **Tabbed**: School Overview \| My Classes (defaults to School Overview) |
+| `teacher` / `member` / other | n/a | Teacher overview only (with empty state if no classes) |
 
-`/classes` returns only classes the user is assigned to (via `staff.teacher_group_assignment`) along with an `isClassTeacher` flag per class - see `frontend/app/dashboard/page.tsx`.
+`/classes` returns only classes the user is assigned to (via `staff.teacher_group_assignment`) along with an `isClassTeacher` flag per class — see `frontend/app/dashboard/page.tsx`. Admins who also teach get both views as tabs so they can flip between school administration and their day-to-day teaching context without leaving the dashboard.
 
 ## Layout
 

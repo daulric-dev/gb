@@ -37,26 +37,73 @@ describe('AuthService', () => {
 
   describe('getProfile', () => {
     const userId = 'user-123';
-    const profile = { id: userId, first_name: 'John', school_id: 's1' };
+
+    function makeDbProfile(overrides: Record<string, any> = {}) {
+      return {
+        id: userId,
+        first_name: 'John',
+        school_id: 's1',
+        school_management: [{ role: 'admin' }],
+        ...overrides,
+      };
+    }
 
     test('returns cached profile if available', async () => {
-      await mockCache.set(`profile:${userId}`, profile, 1);
+      const cached = makeDbProfile({ school_management: { role: 'admin' } });
+      await mockCache.set(`profile:${userId}`, cached, 1);
 
       const result = await service.getProfile(userId);
-      expect(result).toEqual(profile);
+      expect(result).toEqual(cached);
     });
 
     test('fetches from DB and caches when not cached', async () => {
+      const dbProfile = makeDbProfile();
       mockSupabase = createMockSupabaseService({
-        queryResult: { data: profile, error: null },
+        queryResult: { data: dbProfile, error: null },
       });
       service = new AuthService(mockSupabase as any, mockCache as any);
 
       const result = await service.getProfile(userId);
-      expect(result).toEqual(profile);
+      expect(result.id).toBe(userId);
 
-      const cached = await mockCache.get(`profile:${userId}`);
-      expect(cached).toEqual(profile);
+      const stored = await mockCache.get(`profile:${userId}`);
+      expect(stored).toEqual(result);
+    });
+
+    test('collapses a single school_management row to a scalar', async () => {
+      const dbProfile = makeDbProfile({
+        school_management: [{ role: 'admin' }],
+      });
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: dbProfile, error: null },
+      });
+      service = new AuthService(mockSupabase as any, mockCache as any);
+
+      const result = await service.getProfile(userId);
+      expect(result.school_management).toEqual({ role: 'admin' });
+    });
+
+    test('keeps school_management as an array when there are multiple memberships', async () => {
+      const memberships = [{ role: 'admin' }, { role: 'teacher' }];
+      const dbProfile = makeDbProfile({ school_management: memberships });
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: dbProfile, error: null },
+      });
+      service = new AuthService(mockSupabase as any, mockCache as any);
+
+      const result = await service.getProfile(userId);
+      expect(result.school_management).toEqual(memberships);
+    });
+
+    test('keeps school_management as an empty array when there are no memberships', async () => {
+      const dbProfile = makeDbProfile({ school_management: [] });
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: dbProfile, error: null },
+      });
+      service = new AuthService(mockSupabase as any, mockCache as any);
+
+      const result = await service.getProfile(userId);
+      expect(result.school_management).toEqual([]);
     });
   });
 

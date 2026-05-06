@@ -1114,7 +1114,7 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
 | `/onboard` | Auth (no school) | Collect first/last name only, then redirect to `/schools` |
 | `/onboard/pending` | Auth (no school) | Waiting screen after submitting a join request during onboarding |
 | `/schools` | Auth (no school) | Browse all schools. **Request** button per school (shows **Pending** after requesting). **Create** button (non-dedicated only). Persists pending state across reloads via `GET /schools/my-pending-request`. |
-| `/dashboard` | Auth + school | Role-aware home. Admins (with no class-teacher assignments) see the school overview (active year, class count). Teachers - and admins who are class teacher of at least one class - see a teaching overview with class stats, a subject-performance bar chart, and per-class cards. |
+| `/dashboard` | Auth + school | Role-aware home. Pure admins see a school overview with stat cards and donut charts (staff composition, student gender). Pure teachers see a teaching overview with class stats, a subject-performance bar chart, and per-class cards. Admins who also teach see **both views as tabs** (School Overview \| My Classes). |
 | `/dashboard/academic-calendar` | Auth + school | Two tabs: **Academic Years** (year CRUD with activate/deactivate) and **Terms** (terms grouped under each academic year, with per-year add/edit/delete). The old `/dashboard/academic-years` URL redirects here. |
 | `/dashboard/classes` | Auth + school | Class list |
 | `/dashboard/classes/[classId]` | Auth + school | Class detail, enrollment, teachers |

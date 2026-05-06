@@ -12,6 +12,9 @@ export interface UserProfile {
   last_name: string | null;
   role: string | null;
   avatar_url: string | null;
+  school_management: {
+    role: string | null;
+  } | null;
   school: {
     id: string;
     name: string;
