@@ -6,14 +6,42 @@ import { api, ApiError } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/lib/use-profile";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { Users } from "lucide-react";
-import type { SchoolMember } from "./_components/types";
+import { RefreshCw, Users } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { JoinRequest, SchoolMember } from "./_components/types";
 import { RoleSection } from "./_components/RoleSection";
+import { PendingRequestsTab } from "./_components/PendingRequestsTab";
 
 const ROLE_ORDER: SchoolMember["role"][] = ["admin", "teacher", "member"];
+
+function RefreshButton({
+  onClick,
+  loading,
+  label,
+}: {
+  onClick: () => void;
+  loading: boolean;
+  label: string;
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onClick}
+      disabled={loading}
+      aria-label={label}
+    >
+      <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+      Refresh
+    </Button>
+  );
+}
 
 function StaffSkeleton() {
   return (
@@ -53,6 +81,8 @@ export default function StaffPage() {
   const members = useSignal<SchoolMember[]>([]);
   const loading = useSignal(true);
   const removingId = useSignal<string | null>(null);
+  const requests = useSignal<JoinRequest[]>([]);
+  const requestsLoading = useSignal(true);
   const isAdmin = profile.value?.role === "admin";
 
   const grouped = useComputed(() =>
@@ -65,12 +95,33 @@ export default function StaffPage() {
     ),
   );
 
-  useEffect(() => {
+  const fetchMembers = useCallback(() => {
+    loading.value = true;
     api<SchoolMember[]>("/schools/members")
       .then((data) => (members.value = data))
       .catch(() => toast.error("Failed to load staff"))
       .finally(() => (loading.value = false));
   }, []);
+
+  const fetchRequests = useCallback(() => {
+    requestsLoading.value = true;
+    api<JoinRequest[]>("/schools/join-requests")
+      .then((data) => (requests.value = data))
+      .catch(() => toast.error("Failed to load pending requests"))
+      .finally(() => (requestsLoading.value = false));
+  }, []);
+
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchRequests();
+    } else {
+      requestsLoading.value = false;
+    }
+  }, [isAdmin, fetchRequests]);
 
   const handleRemove = useCallback(
     async (member: SchoolMember) => {
@@ -95,6 +146,46 @@ export default function StaffPage() {
     [],
   );
 
+  const staffPanel = loading.value ? (
+    <StaffSkeleton />
+  ) : members.value.length === 0 ? (
+    <StaffEmpty />
+  ) : (
+    <div className="space-y-6">
+      {ROLE_ORDER.map((role) => (
+        <RoleSection
+          key={role}
+          role={role}
+          members={grouped.value[role]}
+          removingId={removingId.value}
+          currentUserId={profile.value?.id}
+          onRemove={isAdmin ? handleRemove : undefined}
+        />
+      ))}
+    </div>
+  );
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6">
+        <DashboardPageHeader
+          title="Staff"
+          description="View teachers and administrators at your school"
+          action={
+            <RefreshButton
+              onClick={fetchMembers}
+              loading={loading.value}
+              label="Refresh staff"
+            />
+          }
+        />
+        {staffPanel}
+      </div>
+    );
+  }
+
+  const pendingCount = requests.value.length;
+
   return (
     <div className="space-y-6">
       <DashboardPageHeader
@@ -102,24 +193,44 @@ export default function StaffPage() {
         description="View teachers and administrators at your school"
       />
 
-      {loading.value ? (
-        <StaffSkeleton />
-      ) : members.value.length === 0 ? (
-        <StaffEmpty />
-      ) : (
-        <div className="space-y-6">
-          {ROLE_ORDER.map((role) => (
-            <RoleSection
-              key={role}
-              role={role}
-              members={grouped.value[role]}
-              removingId={removingId.value}
-              currentUserId={profile.value?.id}
-              onRemove={isAdmin ? handleRemove : undefined}
+      <Tabs defaultValue="staff">
+        <TabsList className="w-full">
+          <TabsTrigger value="staff">Staff</TabsTrigger>
+          <TabsTrigger value="pending">
+            Pending Members
+            {!requestsLoading.value && pendingCount > 0 && (
+              <Badge variant="secondary" className="ml-1.5">
+                {pendingCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="staff" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <RefreshButton
+              onClick={fetchMembers}
+              loading={loading.value}
+              label="Refresh staff"
             />
-          ))}
-        </div>
-      )}
+          </div>
+          {staffPanel}
+        </TabsContent>
+        <TabsContent value="pending" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <RefreshButton
+              onClick={fetchRequests}
+              loading={requestsLoading.value}
+              label="Refresh pending members"
+            />
+          </div>
+          <PendingRequestsTab
+            requests={requests.value}
+            loading={requestsLoading.value}
+            onChange={(next) => (requests.value = next)}
+            onApproved={fetchMembers}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

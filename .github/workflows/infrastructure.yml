@@ -64,7 +64,7 @@ jobs:
             [ "$response" != "FAILED" ] || { echo "Upstream port $port is not responding"; exit 1; }
           done
 
-      - name: Ping through reverse proxy — verify all 3 upstreams are reached
+      - name: Ping through reverse proxy - verify all 3 upstreams are reached
         run: |
           hit_3004=0; hit_3005=0; hit_3006=0; success=0
           for i in $(seq 1 9); do
@@ -78,7 +78,7 @@ jobs:
             fi
           done
           echo "$success/9 requests succeeded"
-          echo "Ports reached — 3004:$hit_3004  3005:$hit_3005  3006:$hit_3006"
+          echo "Ports reached - 3004:$hit_3004  3005:$hit_3005  3006:$hit_3006"
           [ $success -eq 9 ] || { echo "Not all requests succeeded"; exit 1; }
           [ $hit_3004 -eq 1 ] && [ $hit_3005 -eq 1 ] && [ $hit_3006 -eq 1 ] \
             || { echo "Not all 3 upstream ports were reached"; exit 1; }

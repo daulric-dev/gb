@@ -1,13 +1,15 @@
 ---
-sidebar_label: Academic Years
+sidebar_label: Academic Calendar
 ---
 
-# Academic Years Page
+# Academic Calendar Page
 
-**Route**: `/dashboard/academic-years`  
-**File**: `app/dashboard/academic-years/page.tsx`
+**Route**: `/dashboard/academic-calendar`
+**File**: `app/dashboard/academic-calendar/page.tsx`
 
-This page manages the lifecycle of academic years for the school.
+This page hosts both academic-year and term management as tabs. The **Academic Years** tab covers the year lifecycle (described below); the **Terms** tab groups terms under each academic year (see [Terms](./terms.md)).
+
+The legacy URL `/dashboard/academic-years` is permanently redirected to `/dashboard/academic-calendar` (see `frontend/next.config.ts`).
 
 ## Features
 

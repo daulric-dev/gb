@@ -35,7 +35,7 @@ The verification page shows an 8-digit OTP input. The email is read from the URL
 2. User enters the 8-digit code from their email
 3. Calls `POST /api/auth/otp/verify` with email + token
 4. On success:
-   - The backend writes the Supabase session cookies (`sb-*-auth-token*`) on the response — the frontend doesn't need to store anything
+   - The backend writes the Supabase session cookies (`sb-*-auth-token*`) on the response - the frontend doesn't need to store anything
    - If `user.is_onboarded` is false → redirect to `/onboard`
    - Otherwise → redirect to `/dashboard`
 5. On failure, shows a toast error
@@ -68,7 +68,7 @@ Shown to first-time users who have authenticated but haven't completed their pro
 
 ## Authentication State
 
-The frontend has **no token storage** — there is no `lib/auth.ts`, no `localStorage`, no in-memory access token. All session state lives in HTTP-only cookies set by the backend, and the browser sends them automatically on every request thanks to `credentials: "include"` in `lib/api.ts`.
+The frontend has **no token storage** - there is no `lib/auth.ts`, no `localStorage`, no in-memory access token. All session state lives in HTTP-only cookies set by the backend, and the browser sends them automatically on every request thanks to `credentials: "include"` in `lib/api.ts`.
 
 | Cookie | Set by | Purpose |
 |--------|--------|---------|
@@ -85,4 +85,4 @@ The `proxy.ts` middleware runs on every navigation to `/dashboard/*`, `/onboard/
 - If navigating to a protected route without a session cookie → redirect to `/login`
 - If navigating to `/login` with a session cookie → redirect to `/dashboard`
 
-The check is only a presence test. If the cookies are corrupted or the session is invalid, the middleware will let the user through and the first API call from `useProfile` will return 401 — at which point `lib/api.ts` redirects to `/login`. There is a brief flash of the dashboard frame in this edge case, but no broken state.
+The check is only a presence test. If the cookies are corrupted or the session is invalid, the middleware will let the user through and the first API call from `useProfile` will return 401 - at which point `lib/api.ts` redirects to `/login`. There is a brief flash of the dashboard frame in this edge case, but no broken state.

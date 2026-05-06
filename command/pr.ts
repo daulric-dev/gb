@@ -73,14 +73,14 @@ export async function prCmd(flags: Record<string, string>) {
       const rc = shellConfigFile();
       console.error("\x1b[31mNo Bitbucket credentials found.\x1b[0m");
       console.error("");
-      console.error("  Option A — App password (recommended):");
+      console.error("  Option A - App password (recommended):");
       console.error("  1. Go to \x1b[36mhttps://bitbucket.org/account/settings/app-passwords/new\x1b[0m");
       console.error("  2. Select scopes: \x1b[1mPull requests: write\x1b[0m");
       console.error(`  3. Add to \x1b[36m${rc}\x1b[0m:`);
       console.error("     \x1b[2mexport BITBUCKET_USERNAME=your_username\x1b[0m");
       console.error("     \x1b[2mexport BITBUCKET_APP_PASSWORD=your_app_password\x1b[0m");
       console.error("");
-      console.error("  Option B — Repository access token:");
+      console.error("  Option B - Repository access token:");
       console.error(`  Add to \x1b[36m${rc}\x1b[0m:`);
       console.error("     \x1b[2mexport BITBUCKET_TOKEN=your_token_here\x1b[0m");
       process.exit(1);
@@ -127,7 +127,7 @@ export async function prCmd(flags: Record<string, string>) {
     hasUpstream = false;
   }
   if (!hasUpstream) {
-    console.log(`\x1b[33mBranch \x1b[36m${branch}\x1b[33m has no remote — pushing now...\x1b[0m`);
+    console.log(`\x1b[33mBranch \x1b[36m${branch}\x1b[33m has no remote - pushing now...\x1b[0m`);
     await git("push", "-u", "origin", branch);
     console.log(`\x1b[32mPushed.\x1b[0m`);
   }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BookOpen,
-  Calendar,
+  CalendarRange,
   ChevronsUpDown,
   FileText,
   GraduationCap,
@@ -13,7 +13,6 @@ import {
   LogOut,
   Settings,
   Shield,
-  UserPlus,
   UserRoundSearch,
   Users,
   UsersRound,
@@ -44,16 +43,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Academic Years", href: "/dashboard/academic-years", icon: GraduationCap },
+  { title: "Academic Calendar", href: "/dashboard/academic-calendar", icon: CalendarRange },
   { title: "Classes", href: "/dashboard/classes", icon: Users },
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
   { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
-  { title: "Terms", href: "/dashboard/terms", icon: Calendar },
-];
-
-const adminNavItems = [
-  { title: "Members", href: "/dashboard/members", icon: UserPlus },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -142,32 +136,6 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {profile?.role === "admin" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = navItemActive(pathname ?? "", item.href);
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        render={<Link href={item.href} />}
-                        isActive={isActive}
-                        tooltip={item.title}
-                      >
-                        <Icon className="size-4" />
-                        <span>{item.title}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>Legal</SidebarGroupLabel>

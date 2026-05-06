@@ -101,11 +101,11 @@ Interactive commit flow scoped to a single service, with support for **multi-ser
 
 ### Single commit flow
 
-1. **Service selection** — if not provided as an argument, an interactive arrow-key selector is shown
-2. **Topic** — if `--topic` is not provided, you're prompted with a live word counter (limit: 10 words). If you exceed the limit, the topic is trimmed automatically
-3. **Message** — optional extended commit body
-4. **Protected branch check** — if on `main`/`master`/`staging`, a new branch is auto-created (e.g., `feat(frontend)/add-auth`) before committing
-5. **Stage & commit** — all changed files for the selected service are staged and committed
+1. **Service selection** - if not provided as an argument, an interactive arrow-key selector is shown
+2. **Topic** - if `--topic` is not provided, you're prompted with a live word counter (limit: 10 words). If you exceed the limit, the topic is trimmed automatically
+3. **Message** - optional extended commit body
+4. **Protected branch check** - if on `main`/`master`/`staging`, a new branch is auto-created (e.g., `feat(frontend)/add-auth`) before committing
+5. **Stage & commit** - all changed files for the selected service are staged and committed
 
 ### Multi-service commit loop
 
@@ -120,9 +120,9 @@ After each commit:
 
    Commit another service? (yes / no)
    ```
-3. If **yes** — prompts for a new service, topic, and message (each commit is independent)
-4. If **no** — exits
-5. If there are no more changes — exits automatically with "No more changes to commit"
+3. If **yes** - prompts for a new service, topic, and message (each commit is independent)
+4. If **no** - exits
+5. If there are no more changes - exits automatically with "No more changes to commit"
 
 **Key behaviors:**
 - The protected branch check only runs once (first commit)
@@ -220,10 +220,10 @@ Creates a pull request (GitHub/GitLab) or merge request (GitLab) from the curren
 
 **Interactive flow:**
 
-1. **Merge from** — arrow-key selector listing all local and remote branches, with the current branch pre-selected at the top
-2. **Merge into** — selector with common base branches (`main`, `master`, `staging`, `develop`, `dev`) floated to the top; source branch is excluded
-3. **PR title** — pre-filled with the last commit subject; edit in place and press enter
-4. **Description** — optional body text
+1. **Merge from** - arrow-key selector listing all local and remote branches, with the current branch pre-selected at the top
+2. **Merge into** - selector with common base branches (`main`, `master`, `staging`, `develop`, `dev`) floated to the top; source branch is excluded
+3. **PR title** - pre-filled with the last commit subject; edit in place and press enter
+4. **Description** - optional body text
 
 If the selected head branch has no upstream, it is pushed automatically before the API call.
 
@@ -305,7 +305,7 @@ Manages the service registry in `_mr.json`. See [Service Registry](./service-reg
 | Subcommand | Description |
 |------------|-------------|
 | `gb service` / `gb service list` | Print all registered services with their mapped paths |
-| `gb service add` | Register a new service — prompts for name then paths |
+| `gb service add` | Register a new service - prompts for name then paths |
 | `gb service edit` | Select a service and edit its paths in-place |
 | `gb service remove` | Remove a service (interactive selector) |
 | `gb service root` | Show the configured monorepo root |
@@ -319,7 +319,7 @@ Registered services:
   frontend   → frontend
   backend    → backend
   ci         → .github, infrastructure
-  root       → (built-in — catches unregistered paths)
+  root       → (built-in - catches unregistered paths)
 ```
 
 **Adding a service:**
@@ -331,7 +331,7 @@ Paths (comma-separated): api, shared
 Added api → api, shared
 ```
 
-The paths field is pre-filled with the service name — press enter to keep it, or type a comma-separated list to override.
+The paths field is pre-filled with the service name - press enter to keep it, or type a comma-separated list to override.
 
 **Editing a service:**
 

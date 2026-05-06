@@ -28,11 +28,11 @@ The main export. Makes authenticated JSON requests to the backend.
 
 **Authentication:**
 - Sends `credentials: "include"` so the browser forwards the Supabase session cookies (`sb-*-auth-token*`) on every request
-- The frontend never reads or attaches an access token — the backend's `AuthGuard` validates and silently refreshes the session via cookies on every authenticated request
+- The frontend never reads or attaches an access token - the backend's `AuthGuard` validates and silently refreshes the session via cookies on every authenticated request
 
 ### 401 Handling
 
-If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry — the backend rotates the access token transparently on every authenticated call, so a 401 means the refresh token itself is invalid (expired, revoked, or the session cookies were cleared).
+If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry - the backend rotates the access token transparently on every authenticated call, so a 401 means the refresh token itself is invalid (expired, revoked, or the session cookies were cleared).
 
 ### `apiUpload<T>(path, formData)` Function
 
@@ -77,7 +77,7 @@ try {
 
 The frontend has no client-side token storage. Auth state lives entirely in HTTP-only cookies (`sb-<project>-auth-token` and chunks `.0`, `.1`, ...) set by the backend after `POST /api/auth/otp/verify`. The browser sends them on every request via `credentials: "include"`, and `proxy.ts` checks for their presence to gate protected routes.
 
-Because the cookies are HTTP-only, JavaScript cannot read them — there's nothing to coordinate across tabs, no `localStorage` sync, no single-flight refresh logic. Refresh is handled server-side by `AuthGuard` on every authenticated request.
+Because the cookies are HTTP-only, JavaScript cannot read them - there's nothing to coordinate across tabs, no `localStorage` sync, no single-flight refresh logic. Refresh is handled server-side by `AuthGuard` on every authenticated request.
 
 ### Multi-Tab Behavior
 
