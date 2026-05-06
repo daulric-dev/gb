@@ -6,8 +6,8 @@
 -- service role bypasses RLS so backend writes continue to work.
 --
 -- Helpers used (defined in the base schema migration):
---   public.is_admin()             — auth.uid() has role='admin' on their active school
---   public.get_user_school_id()   — auth.uid()'s active school_id
+--   public.is_admin()             - auth.uid() has role='admin' on their active school
+--   public.get_user_school_id()   - auth.uid()'s active school_id
 
 -- ── school_management ───────────────────────────────────────────────────────
 
