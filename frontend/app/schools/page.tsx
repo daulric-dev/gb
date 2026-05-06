@@ -174,7 +174,7 @@ export default function SchoolsPage() {
         pendingSchoolId.value = school.id;
         joiningId.value = null;
         toast.success(
-          `Join request sent for ${school.name} — waiting for admin approval.`,
+          `Join request sent for ${school.name} - waiting for admin approval.`,
         );
       }
     } catch (err) {
@@ -231,7 +231,7 @@ export default function SchoolsPage() {
                     <DialogHeader>
                       <DialogTitle>Create a School</DialogTitle>
                       <DialogDescription>
-                        Add a new school — you&apos;ll be assigned as its admin.
+                        Add a new school - you&apos;ll be assigned as its admin.
                       </DialogDescription>
                     </DialogHeader>
                     <CreateSchoolForm onSuccess={handleSchoolCreated} />

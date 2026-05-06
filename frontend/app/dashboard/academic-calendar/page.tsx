@@ -3,11 +3,12 @@
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { useSignal } from "@preact/signals-react";
+import { useComputed, useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -25,10 +26,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { Plus, Pencil } from "lucide-react";
-import { type AcademicYear } from "./_components/types";
+import { Pencil, Plus } from "lucide-react";
+import { sortYearsActiveFirst, type AcademicYear } from "./_components/types";
 import { CreateYearForm } from "./_components/CreateYearForm";
 import { EditYearForm } from "./_components/EditYearForm";
+import { TermsTab } from "./_components/TermsTab";
 
 export default function AcademicYearsPage() {
   useSignals();
@@ -37,7 +39,10 @@ export default function AcademicYearsPage() {
   const dialogOpen = useSignal(false);
   const editYear = useSignal<AcademicYear | null>(null);
 
+  const sortedYears = useComputed(() => sortYearsActiveFirst(years.value));
+
   const fetchYears = useCallback(() => {
+    loading.value = true;
     api<AcademicYear[]>("/academic-years")
       .then((data) => (years.value = data))
       .catch(() => toast.error("Failed to load academic years"))
@@ -72,34 +77,33 @@ export default function AcademicYearsPage() {
     }
   }
 
-  return (
-    <div className="space-y-6">
-      <DashboardPageHeader
-        title="Academic Years"
-        description={"Manage Your School's Academic Years"}
-        action={
-          <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
-            <DialogTrigger render={<Button />}>
-              <Plus className="mr-2 size-4" />
-              New Academic Year
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create Academic Year</DialogTitle>
-                <DialogDescription>
-                  Add a new academic year for your school
-                </DialogDescription>
-              </DialogHeader>
-              <CreateYearForm
-                onSuccess={() => {
-                  dialogOpen.value = false;
-                  fetchYears();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
-        }
-      />
+  const yearsPanel = (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Dialog
+          open={dialogOpen.value}
+          onOpenChange={(v) => (dialogOpen.value = v)}
+        >
+          <DialogTrigger render={<Button />}>
+            <Plus className="mr-2 size-4" />
+            New Academic Year
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Academic Year</DialogTitle>
+              <DialogDescription>
+                Add a new academic year for your school
+              </DialogDescription>
+            </DialogHeader>
+            <CreateYearForm
+              onSuccess={() => {
+                dialogOpen.value = false;
+                fetchYears();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      </div>
 
       {loading.value ? (
         <div className="space-y-2">
@@ -107,7 +111,7 @@ export default function AcademicYearsPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : years.value.length === 0 ? (
+      ) : sortedYears.value.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No academic years yet. Create your first one.
         </div>
@@ -125,7 +129,7 @@ export default function AcademicYearsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {years.value.map((year) => (
+              {sortedYears.value.map((year) => (
                 <TableRow key={year.id}>
                   <TableCell className="font-medium">{year.name}</TableCell>
                   <TableCell>
@@ -185,6 +189,28 @@ export default function AcademicYearsPage() {
           </Table>
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <DashboardPageHeader
+        title="Academic Calendar"
+        description="Manage academic years and the terms within each year"
+      />
+
+      <Tabs defaultValue="years">
+        <TabsList className="w-full">
+          <TabsTrigger value="years">Academic Years</TabsTrigger>
+          <TabsTrigger value="terms">Terms</TabsTrigger>
+        </TabsList>
+        <TabsContent value="years" className="mt-4">
+          {yearsPanel}
+        </TabsContent>
+        <TabsContent value="terms" className="mt-4">
+          <TermsTab years={sortedYears.value} yearsLoading={loading.value} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog
         open={editYear.value !== null}

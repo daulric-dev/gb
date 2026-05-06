@@ -9,3 +9,17 @@ export interface SchoolMember {
     avatar_url: string | null;
   } | null;
 }
+
+export interface JoinRequest {
+  id: string;
+  status: string;
+  message: string | null;
+  requested_at: string;
+  user: {
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  } | null;
+  school: { id: string; name: string } | null;
+}
