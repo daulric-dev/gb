@@ -32,13 +32,13 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^1.7.0",
-    "next": "16.2.4",
+    "next": "16.2.6",
     "next-themes": "^0.4.6",
     "react": "19.2.5",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.2.5",
     "react-easy-crop": "^5.5.7",
-    "react-resizable-panels": "^4.10.0",
+    "react-resizable-panels": "^4.11.0",
     "recharts": "3.8.0",
     "shadcn": "^4.2.0",
     "sonner": "^2.0.7",
@@ -60,7 +60,7 @@
     "happy-dom": "^20.9.0",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "wrangler": "^4.87.0"
+    "wrangler": "^4.90.0"
   },
   "ignoreScripts": [
     "sharp",
