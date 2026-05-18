@@ -8,6 +8,7 @@ import {
   pdf,
 } from "@react-pdf/renderer";
 import type { StudentTermResult } from "./calculations";
+import { getGradingRules } from "@/lib/grading-rules";
 
 export interface StudentReportOptions {
   termName?: string;
@@ -15,6 +16,7 @@ export interface StudentReportOptions {
   className?: string;
   totalStudents?: number;
   schoolName?: string;
+  gradingModel?: string;
 }
 
 function computeLetterGrade(score: number | null): string {
@@ -205,6 +207,8 @@ export function StudentReportDocument({
   options?: StudentReportOptions;
 }) {
   const name = `${result.firstName} ${result.lastName}`.trim();
+  const rules = getGradingRules(options.gradingModel);
+  const hasTermExam = rules.termHasExam;
 
   const validScores = result.subjects
     .map((sub) => sub.termComposite)
@@ -287,9 +291,11 @@ export function StudentReportDocument({
             <View style={s.scoreCol}>
               <Text style={s.headerText}>COURSE{"\n"}WORK %</Text>
             </View>
-            <View style={s.scoreCol}>
-              <Text style={s.headerText}>Final{"\n"}Exam %</Text>
-            </View>
+            {hasTermExam && (
+              <View style={s.scoreCol}>
+                <Text style={s.headerText}>Final{"\n"}Exam %</Text>
+              </View>
+            )}
             <View style={s.scoreCol}>
               <Text style={s.headerText}>Total</Text>
             </View>
@@ -312,9 +318,11 @@ export function StudentReportDocument({
                 <View style={s.scoreCol}>
                   <Text style={s.cellText}>{fmt(sub.courseworkAverage)}</Text>
                 </View>
-                <View style={s.scoreCol}>
-                  <Text style={s.cellText}>{fmt(sub.examAverage)}</Text>
-                </View>
+                {hasTermExam && (
+                  <View style={s.scoreCol}>
+                    <Text style={s.cellText}>{fmt(sub.examAverage)}</Text>
+                  </View>
+                )}
                 <View style={s.scoreCol}>
                   <Text style={s.cellTextBold}>{fmt(sub.termComposite)}</Text>
                 </View>
@@ -336,9 +344,11 @@ export function StudentReportDocument({
               <View style={s.scoreCol}>
                 <Text style={s.cellText} />
               </View>
-              <View style={s.scoreCol}>
-                <Text style={s.cellText} />
-              </View>
+              {hasTermExam && (
+                <View style={s.scoreCol}>
+                  <Text style={s.cellText} />
+                </View>
+              )}
               <View style={s.scoreCol}>
                 <Text style={s.cellTextBold}>{total.toFixed(1)}</Text>
               </View>

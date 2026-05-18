@@ -1,8 +1,8 @@
-import { Redis } from 'ioredis';
+import { RedisClient } from 'bun';
 import { CacheInterface } from './cache.interface';
 
 export class RedisStore implements CacheInterface {
-  constructor(private readonly redis: Redis) {}
+  constructor(private readonly redis: RedisClient) {}
 
   async get(key: string): Promise<any> {
     const raw = await this.redis.get(key);
@@ -34,6 +34,6 @@ export class RedisStore implements CacheInterface {
   }
 
   async clear(): Promise<void> {
-    await this.redis.flushdb();
+    await this.redis.send("FLUSHALL", ["ASYNC"]);
   }
 }

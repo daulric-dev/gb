@@ -44,11 +44,13 @@ A dialog form with:
 | Field | Required | Description |
 |-------|----------|-------------|
 | Title | Yes | Assessment name |
-| Type | Yes | `Exam` or `Coursework` |
+| Type | Yes | `Exam` or `Coursework` (default: `Coursework`) |
 | Assessment Date | No | Date of the assessment |
 | Max Score | Yes | Maximum possible score (default: 100) |
 | Weight | No | Weight within its type category |
 | Sort Order | No | Display ordering |
+
+The default assessment type is **Coursework** (changed 2026-05-17). This aligns with the most common use case across all grading models, since coursework assessments are created more frequently than exams.
 
 ## Grade Entry Table
 

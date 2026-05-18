@@ -14,23 +14,64 @@ The calculation module performs all grade calculations - from individual subject
 |------|---------|
 | `calculation.module.ts` | Module definition |
 | `calculation.controller.ts` | API endpoints |
-| `calculation.service.ts` | Calculation business logic |
+| `calculation.service.ts` | Orchestrator — delegates to grading system strategies |
 | `interfaces/calculation.interfaces.ts` | TypeScript interfaces for result types |
+| `grading-systems/grading-system.factory.ts` | Factory that resolves grading model → service |
+| `grading-systems/weighted-continuous/` | Weighted Continuous Assessment strategy |
+| `grading-systems/weighted-cumulative/` | Weighted Cumulative strategy |
+| `grading-systems/continuous-cumulative/` | Continuous-Cumulative (Hybrid) strategy |
+
+Each grading system folder contains:
+- `index.ts` — service class implementing `calculateSubjectTermGrade` and `calculateSubjectYearGrade`
+- `*.rules.ts` — static rules object defining term/year behaviour
+
+## Grading System Architecture (added 2026-05-17)
+
+The calculation module uses a **Strategy pattern**. `CalculationService` delegates grade computation to whichever grading system is selected on the academic year:
+
+```
+CalculationService → GradingSystemFactory.getService(model) → WeightedContinuousService
+                                                             → WeightedCumulativeService
+                                                             → ContinuousCumulativeService
+```
+
+To add a new grading system:
+1. Create a new folder under `grading-systems/`
+2. Implement `calculateSubjectTermGrade()` and `calculateSubjectYearGrade()`
+3. Add a rules file
+4. Register in `GradingSystemFactory`
+5. Add the enum value to the `gradingmodel` database type
+
+## Grading Models
+
+### Weighted Continuous Assessment (`weighted_continuous`)
+
+Each term has independent coursework and exams. At year-end, term composites are averaged and combined with year weights.
+
+```
+term_composite = (coursework_avg × cw_weight) + (exam_avg × ex_weight)
+year_grade = (avg_of_term_composites × year_cw_weight) + (avg_of_term_exams × year_ex_weight)
+```
+
+### Weighted Cumulative (`weighted_cumulative`)
+
+All coursework across all terms is pooled together into a single CA total. Term boundaries are ignored for the year-end calculation.
+
+```
+term_composite = (coursework_avg × cw_weight) + (exam_avg × ex_weight)
+year_grade = (pooled_cw_avg × year_cw_weight) + (pooled_exam_avg × year_ex_weight)
+```
+
+### Continuous-Cumulative (`continuous_cumulative`)
+
+Each term has coursework only (no per-term exam). At year-end, all term coursework is combined and paired with a single final exam from the last term.
+
+```
+term_composite = coursework_avg only (no exam)
+year_grade = (avg_of_term_composites × year_cw_weight) + (final_term_exam × year_ex_weight)
+```
 
 ## Key Concepts
-
-### Weighted Term Grade Calculation
-
-For each subject in a term, the grade is calculated as:
-
-```
-term_composite = (coursework_average × coursework_weight) + (exam_average × exam_weight)
-```
-
-Where:
-- **Coursework average** = weighted average of all non-excluded coursework assessments, normalized to percentage
-- **Exam average** = weighted average of all non-excluded exam assessments, normalized to percentage
-- **coursework_weight** / **exam_weight** = the term's weight split (e.g., 40/60)
 
 ### Assessment Score Normalization
 
@@ -38,15 +79,6 @@ Each grade is normalized to a percentage before averaging:
 
 ```
 normalized_score = (student_score / assessment_max_score) × 100
-```
-
-### Year-End Grade (year_based model only)
-
-For `year_based` academic years, term composites are averaged across all terms, then split by the year's weights:
-
-```
-year_grade = (avg_coursework_across_terms × year_coursework_weight) +
-             (avg_exam_across_terms × year_exam_weight)
 ```
 
 ### Overall Average

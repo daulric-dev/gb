@@ -28,20 +28,34 @@ export class CreateAcademicYearDto {
   @IsNotEmpty()
   endDate!: string;
 
-  @ApiProperty({ example: 'term_based', enum: ['term_based', 'year_based'] })
-  @IsEnum(['term_based', 'year_based'])
+  @ApiProperty({
+    example: 'weighted_continuous',
+    enum: [
+      'weighted_continuous',
+      'weighted_cumulative',
+      'continuous_cumulative',
+    ],
+  })
+  @IsEnum([
+    'weighted_continuous',
+    'weighted_cumulative',
+    'continuous_cumulative',
+  ])
   @IsNotEmpty()
-  gradingModel!: 'term_based' | 'year_based';
+  gradingModel!:
+    | 'weighted_continuous'
+    | 'weighted_cumulative'
+    | 'continuous_cumulative';
 
   @ApiPropertyOptional({ example: 40 })
-  @ValidateIf((o) => o.gradingModel === 'year_based')
+  @ValidateIf((o) => o.gradingModel !== undefined)
   @IsInt()
   @Min(0)
   @Max(100)
   yearExamWeight?: number;
 
   @ApiPropertyOptional({ example: 60 })
-  @ValidateIf((o) => o.gradingModel === 'year_based')
+  @ValidateIf((o) => o.gradingModel !== undefined)
   @IsInt()
   @Min(0)
   @Max(100)

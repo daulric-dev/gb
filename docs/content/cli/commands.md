@@ -316,11 +316,13 @@ Manages the service registry in `_mr.json`. See [Service Registry](./service-reg
 
 ```
 Registered services:
-  frontend   → frontend
-  backend    → backend
+  frontend   → frontend  ● 3 changes
+  backend    → backend   ● 5 changes
   ci         → .github, infrastructure
   root       → (built-in - catches unregistered paths)
 ```
+
+Services with uncommitted changes show a yellow `●` indicator with the number of changed files. Clean services show no indicator.
 
 **Adding a service:**
 

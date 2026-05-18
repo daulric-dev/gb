@@ -1,9 +1,12 @@
+import type { GradingModel } from "@/lib/grading-rules";
+export { type GradingModel, GRADING_MODEL_LABELS } from "@/lib/grading-rules";
+
 export interface AcademicYear {
   id: string;
   name: string;
   start_date: string;
   end_date: string;
-  grading_model: "term_based" | "year_based";
+  grading_model: GradingModel;
   is_active: boolean;
   year_exam_weight: number | null;
   year_coursework_weight: number | null;

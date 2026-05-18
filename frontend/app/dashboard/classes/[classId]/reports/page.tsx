@@ -31,7 +31,7 @@ export default function ClassReportsPage() {
   const classInfo = useSignal<ClassInfo | null>(null);
   const terms = useSignal<Term[]>([]);
   const selectedTermId = useSignal("");
-  const gradingModel = useSignal<"term_based" | "year_based">("term_based");
+  const gradingModel = useSignal<string>("weighted_continuous");
   const reportType = useSignal<ReportType>("term");
   const students = useSignal<StudentRow[]>([]);
   const loading = useSignal(true);
@@ -48,12 +48,7 @@ export default function ClassReportsPage() {
             `/academic-years/${info.academicYearId}`,
           )
             .then((ay) => {
-              const model =
-                ay.grading_model === "year_based" ? "year_based" : "term_based";
-              gradingModel.value = model;
-              if (model === "term_based") {
-                reportType.value = "term";
-              }
+              gradingModel.value = ay.grading_model ?? "weighted_continuous";
             })
             .catch(() => {});
 
@@ -87,8 +82,7 @@ export default function ClassReportsPage() {
     }
     dataLoading.value = true;
 
-    const isYearEnd =
-      reportType.value === "year_end" && gradingModel.value === "year_based";
+    const isYearEnd = reportType.value === "year_end";
 
     const calcPromise: Promise<
       StudentTermResult[] | StudentYearReport[]
@@ -205,7 +199,6 @@ export default function ClassReportsPage() {
       />
 
       <ReportsFiltersCard
-        gradingModel={gradingModel.value}
         reportType={reportType.value}
         onReportTypeChange={(v) => {
           reportType.value = v;

@@ -50,7 +50,7 @@ export default function ClassReportPage() {
   const classInfo = useSignal<ClassInfo | null>(null);
   const terms = useSignal<Term[]>([]);
   const selectedTermId = useSignal("");
-  const gradingModel = useSignal<"term_based" | "year_based">("term_based");
+  const gradingModel = useSignal<string>("weighted_continuous");
   const reportType = useSignal<ReportType>("term");
   const summary = useSignal<ClassSummary | null>(null);
   const yearResults = useSignal<StudentYearReport[]>([]);
@@ -76,14 +76,10 @@ export default function ClassReportPage() {
             year_exam_weight?: number;
           }>(`/academic-years/${info.academicYearId}`)
             .then((ay) => {
-              const model = ay.grading_model === "year_based" ? "year_based" : "term_based";
-              gradingModel.value = model;
+              gradingModel.value = ay.grading_model ?? "weighted_continuous";
               academicYearName.value = ay.name ?? "";
               yearCwWeight.value = ay.year_coursework_weight ?? null;
               yearExWeight.value = ay.year_exam_weight ?? null;
-              if (model === "term_based") {
-                reportType.value = "term";
-              }
             })
             .catch(() => {});
 
@@ -119,8 +115,7 @@ export default function ClassReportPage() {
     }
     dataLoading.value = true;
 
-    const isYearEnd =
-      reportType.value === "year_end" && gradingModel.value === "year_based";
+    const isYearEnd = reportType.value === "year_end";
 
     const filesPromise = getClassSummaryFiles(classId, selectedTermId.value, reportType.value)
       .catch(() => [] as ClassReportFile[]);
@@ -189,8 +184,7 @@ export default function ClassReportPage() {
     yearExWeight: yearExWeight.value ?? undefined,
   };
 
-  const isYearEnd =
-    reportType.value === "year_end" && gradingModel.value === "year_based";
+  const isYearEnd = reportType.value === "year_end";
 
   const downloadPdf = () => {
     if (isYearEnd && yearResults.value.length > 0) {
@@ -204,7 +198,7 @@ export default function ClassReportPage() {
     }
     const s = summary.value;
     if (!s) return;
-    const blob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName);
+    const blob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName, gradingModel.value);
     downloadBlob(blob, `${className}_summary.pdf`);
   };
 
@@ -217,6 +211,8 @@ export default function ClassReportPage() {
         termName: selectedTermName || undefined,
         academicYear: academicYearName.value || undefined,
         scoreField: isYearEnd ? "yearGrade" : "termComposite",
+        yearResults: isYearEnd ? yearResults.value : undefined,
+        gradingModel: gradingModel.value,
       });
       downloadBlob(blob, `${className}_exam_report.pdf`);
     } catch (e) {
@@ -237,7 +233,7 @@ export default function ClassReportPage() {
     }
     const s = summary.value;
     if (!s) return;
-    const blob = buildClassSummaryCsv(s, className, reportType.value, selectedTermName);
+    const blob = buildClassSummaryCsv(s, className, reportType.value, selectedTermName, gradingModel.value);
     downloadBlob(blob, `${className}_summary.csv`);
   };
 
@@ -253,7 +249,7 @@ export default function ClassReportPage() {
     }
     const s = summary.value;
     if (!s) return;
-    const blob = buildClassSummaryXlsx(s, className, reportType.value, selectedTermName);
+    const blob = buildClassSummaryXlsx(s, className, reportType.value, selectedTermName, gradingModel.value);
     downloadBlob(blob, `${className}_summary.xlsx`);
   };
 
@@ -273,9 +269,9 @@ export default function ClassReportPage() {
         csvBlob = buildYearClassSummaryCsv(yearResults.value, className, yearOpts);
         xlsxBlob = buildYearClassSummaryXlsx(yearResults.value, className, yearOpts);
       } else {
-        pdfBlob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName);
-        csvBlob = buildClassSummaryCsv(s, className, reportType.value, selectedTermName);
-        xlsxBlob = buildClassSummaryXlsx(s, className, reportType.value, selectedTermName);
+        pdfBlob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName, gradingModel.value);
+        csvBlob = buildClassSummaryCsv(s, className, reportType.value, selectedTermName, gradingModel.value);
+        xlsxBlob = buildClassSummaryXlsx(s, className, reportType.value, selectedTermName, gradingModel.value);
       }
 
       downloadBlob(pdfBlob, `${className}_${suffix}.pdf`);
@@ -360,7 +356,6 @@ export default function ClassReportPage() {
       />
 
       <FiltersCard
-        gradingModel={gradingModel.value}
         reportType={reportType.value}
         onReportTypeChange={(v) => { reportType.value = v; }}
         selectedTermId={selectedTermId.value}
@@ -384,7 +379,7 @@ export default function ClassReportPage() {
         <>
           <StatsSummaryCards summary={s} reportType={reportType.value} />
 
-          {s.subjectAverages.length > 0 && gradingModel.value !== "year_based" && (
+          {s.subjectAverages.length > 0 && !isYearEnd && (
             <SubjectAveragesCard subjectAverages={s.subjectAverages} />
           )}
 
@@ -392,6 +387,7 @@ export default function ClassReportPage() {
             isYearEnd={isYearEnd}
             yearResults={yearResults.value}
             students={s.students}
+            gradingModel={gradingModel.value}
           />
 
           <ExportCard

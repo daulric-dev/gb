@@ -39,11 +39,24 @@ export async function serviceCmd(positionals: string[]) {
 
   if (!sub || sub === "list") {
     const entries = readMrConfig().services.map(normalizedEntry);
+
+    const statusOutput = await git("status", "--porcelain");
+    const files = parseStatusOutput(statusOutput);
+    const groups = files.length > 0 ? groupByService(files) : {};
+
     console.log("\x1b[1mRegistered services:\x1b[0m");
     for (const { name, paths } of entries) {
-      console.log(`  \x1b[36m${name}\x1b[0m  \x1b[2m→ ${paths.join(", ")}\x1b[0m`);
+      const count = groups[name]?.length ?? 0;
+      const indicator = count > 0
+        ? `  \x1b[33m● ${count} change${count !== 1 ? "s" : ""}\x1b[0m`
+        : "";
+      console.log(`  \x1b[36m${name}\x1b[0m  \x1b[2m→ ${paths.join(", ")}\x1b[0m${indicator}`);
     }
-    console.log(`  \x1b[2mroot  → (built-in - catches unregistered paths)\x1b[0m`);
+    const rootCount = groups["root"]?.length ?? 0;
+    const rootIndicator = rootCount > 0
+      ? `  \x1b[33m● ${rootCount} change${rootCount !== 1 ? "s" : ""}\x1b[0m`
+      : "";
+    console.log(`  \x1b[2mroot  → (built-in - catches unregistered paths)\x1b[0m${rootIndicator}`);
     return;
   }
 
@@ -229,31 +242,28 @@ export async function commitCmd(
       break;
     }
 
-    if (!isFirst) {
+    const currentFiles = parseStatusOutput(statusCheck);
+    const currentGroups = groupByService(currentFiles);
+    const currentServices = Object.keys(currentGroups).sort();
+
+    if (currentServices.length === 0) {
+      console.log("\x1b[32mNo more changes to commit.\x1b[0m");
+      break;
+    }
+
+    if (isFirst) {
+      console.log(`\x1b[1mChanges detected:\x1b[0m`);
+      for (const svc of currentServices) {
+        const count = currentGroups[svc]?.length ?? 0;
+        console.log(`  \x1b[33m●\x1b[0m \x1b[36m${svc}\x1b[0m  ${count} change${count !== 1 ? "s" : ""}`);
+      }
       console.log();
-      const remaining = parseStatusOutput(statusCheck);
-      const groups = groupByService(remaining);
-      const availableServices = Object.keys(groups).sort();
-
-      if (availableServices.length === 0) {
-        console.log("\x1b[32mNo more changes to commit.\x1b[0m");
-        break;
-      }
-
+    } else {
+      console.log();
       console.log(`\x1b[1mRemaining changes:\x1b[0m`);
-
-      if (groups === undefined) {
-        console.log("\x1b[32mNo more changes to commit.\x1b[0m");
-        process.exit(1);
-      }
-
-      if (groups && Object.keys(groups).length === 0) {
-        console.log("\x1b[32mNo more changes to commit.\x1b[0m");
-        process.exit(0);
-      }
-
-      for (const svc of availableServices) {
-        console.log(`  \x1b[36m${svc}\x1b[0m (${groups[svc]?.length ?? 0} file${(groups[svc]?.length ?? 0) !== 1 ? "s" : ""})`);
+      for (const svc of currentServices) {
+        const count = currentGroups[svc]?.length ?? 0;
+        console.log(`  \x1b[33m●\x1b[0m \x1b[36m${svc}\x1b[0m  ${count} change${count !== 1 ? "s" : ""}`);
       }
       console.log();
 

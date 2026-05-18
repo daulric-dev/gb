@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { ClassSummary } from "./api";
+import { getGradingRules } from "@/lib/grading-rules";
 
 function collectSubjectCols(summary: ClassSummary) {
   const seen = new Set<string>();
@@ -22,10 +23,13 @@ export function buildClassSummaryCsv(
   className: string,
   reportType?: string,
   termName?: string,
+  gradingModel?: string,
 ): Blob {
   const lines: string[] = [];
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-  const isYearEnd = reportType === "year_end" && summary.gradingModel === "year_based";
+  const isYearEnd = reportType === "year_end";
+  const csvRules = getGradingRules(gradingModel);
+  const hasTermExam = csvRules.termHasExam || isYearEnd;
   const weightLabel = isYearEnd ? "Year" : "Term";
 
   lines.push(`Class Summary Report`);
@@ -70,7 +74,9 @@ export function buildClassSummaryCsv(
     const groupRow = [
       "",
       "",
-      ...subjectCols.flatMap((c) => [esc(c.name), "", ""]),
+      ...subjectCols.flatMap((c) =>
+        hasTermExam ? [esc(c.name), "", ""] : [esc(c.name), ""]
+      ),
       "",
     ];
     lines.push(groupRow.join(","));
@@ -80,7 +86,9 @@ export function buildClassSummaryCsv(
     const subRow = [
       "Position",
       "Student",
-      ...subjectCols.flatMap(() => [cwLabel, exLabel, finalLabel]),
+      ...subjectCols.flatMap(() =>
+        hasTermExam ? [cwLabel, exLabel, finalLabel] : [cwLabel, finalLabel]
+      ),
       "Overall Average",
     ];
     lines.push(subRow.map(esc).join(","));
@@ -95,9 +103,15 @@ export function buildClassSummaryCsv(
           const finalScore = isYearEnd
             ? (g?.yearGrade ?? null)
             : (g?.termComposite ?? null);
+          if (hasTermExam) {
+            return [
+              num(g?.courseworkAverage ?? null),
+              num(g?.examAverage ?? null),
+              num(finalScore),
+            ];
+          }
           return [
             num(g?.courseworkAverage ?? null),
-            num(g?.examAverage ?? null),
             num(finalScore),
           ];
         }),
@@ -115,13 +129,17 @@ export function buildClassSummaryXlsx(
   className: string,
   reportType?: string,
   termName?: string,
+  gradingModel?: string,
 ): Blob {
   const wb = XLSX.utils.book_new();
   const r2 = (v: number | null) =>
     v != null ? Math.round(v * 100) / 100 : null;
   const r1 = (v: number | null) =>
     v != null ? Math.round(v * 10) / 10 : null;
-  const isYearEnd = reportType === "year_end" && summary.gradingModel === "year_based";
+  const isYearEnd = reportType === "year_end";
+  const xlsxRules = getGradingRules(gradingModel);
+  const hasTermExam = xlsxRules.termHasExam || isYearEnd;
+  const colsPerSubject = hasTermExam ? 3 : 2;
   const weightLabel = isYearEnd ? "Year" : "Term";
 
   const summaryRows: (string | number | null)[][] = [
@@ -154,7 +172,11 @@ export function buildClassSummaryXlsx(
   const groupRow: (string | null)[] = [
     "",
     "",
-    ...subjectCols.flatMap((c) => [c.name, null, null]),
+    ...subjectCols.flatMap((c) => {
+      const cells: (string | null)[] = [c.name];
+      for (let i = 1; i < colsPerSubject; i++) cells.push(null);
+      return cells;
+    }),
     "",
   ];
   const cwLabel = `CW (${summary.courseworkWeight}%)`;
@@ -163,7 +185,9 @@ export function buildClassSummaryXlsx(
   const subRow: (string | null)[] = [
     "Position",
     "Student",
-    ...subjectCols.flatMap(() => [cwLabel, exLabel, finalLabel]),
+    ...subjectCols.flatMap(() =>
+      hasTermExam ? [cwLabel, exLabel, finalLabel] : [cwLabel, finalLabel]
+    ),
     "Overall Average",
   ];
   const studentRows: (string | number | null)[][] = [groupRow, subRow];
@@ -178,9 +202,15 @@ export function buildClassSummaryXlsx(
         const finalScore = isYearEnd
           ? (g?.yearGrade ?? null)
           : (g?.termComposite ?? null);
+        if (hasTermExam) {
+          return [
+            r1(g?.courseworkAverage ?? null),
+            r1(g?.examAverage ?? null),
+            r1(finalScore),
+          ];
+        }
         return [
           r1(g?.courseworkAverage ?? null),
-          r1(g?.examAverage ?? null),
           r1(finalScore),
         ];
       }),
@@ -192,15 +222,19 @@ export function buildClassSummaryXlsx(
 
   const merges: XLSX.Range[] = [];
   for (let i = 0; i < subjectCols.length; i++) {
-    const startCol = 2 + i * 3;
-    merges.push({ s: { r: 0, c: startCol }, e: { r: 0, c: startCol + 2 } });
+    const startCol = 2 + i * colsPerSubject;
+    merges.push({ s: { r: 0, c: startCol }, e: { r: 0, c: startCol + colsPerSubject - 1 } });
   }
   ws2["!merges"] = merges;
 
   const colWidths: { wch: number }[] = [
     { wch: 10 },
     { wch: 28 },
-    ...subjectCols.flatMap(() => [{ wch: 12 }, { wch: 12 }, { wch: 12 }]),
+    ...subjectCols.flatMap(() => {
+      const w: { wch: number }[] = [];
+      for (let i = 0; i < colsPerSubject; i++) w.push({ wch: 12 });
+      return w;
+    }),
     { wch: 16 },
   ];
   ws2["!cols"] = colWidths;

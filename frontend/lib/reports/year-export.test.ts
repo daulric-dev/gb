@@ -8,7 +8,7 @@ const students: StudentYearReport[] = [
     firstName: "Alice",
     lastName: "Smith",
     academicYearId: "y1",
-    gradingModel: "year_based",
+    gradingModel: "weighted_cumulative",
     position: 1,
     terms: [
       {
@@ -85,12 +85,13 @@ describe("buildYearClassSummaryCsv", () => {
     expect(text).toContain("2024-2025");
   });
 
-  test("CSV includes term initials as column headers", async () => {
+  test("CSV includes pooled column headers for weighted_cumulative model", async () => {
     const blob = buildYearClassSummaryCsv(students, "Grade 10A");
     const text = await blob.text();
 
-    expect(text).toContain('"M"');
-    expect(text).toContain('"H"');
+    expect(text).toContain("CA /40");
+    expect(text).toContain("Exam /60");
+    expect(text).toContain('"Total"');
   });
 
   test("CSV contains student data row", async () => {

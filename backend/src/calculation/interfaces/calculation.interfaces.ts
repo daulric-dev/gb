@@ -1,3 +1,7 @@
+import type { GradingModel } from './grading-system.interface';
+
+export type { GradingModel };
+
 export interface SubjectGradeSummary {
   subjectId: string;
   subjectName: string;
@@ -37,7 +41,9 @@ export interface StudentYearResult {
   firstName: string;
   lastName: string;
   academicYearId: string;
-  gradingModel: 'term_based' | 'year_based';
+  gradingModel: GradingModel;
+  yearCourseworkWeight?: number;
+  yearExamWeight?: number;
   terms: {
     termId: string;
     termName: string;
