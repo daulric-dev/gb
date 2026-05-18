@@ -111,8 +111,8 @@ Displays differently based on report type:
 | Column | Description |
 |--------|-------------|
 | Subject | Subject name |
-| AVG /{cwWeight} | Average of term composites, scaled to coursework weight |
-| FINAL /{exWeight} | Final exam from last term, scaled to exam weight (continuous_cumulative only) |
+| AVG /cwWeight | Average of term composites, scaled to coursework weight |
+| FINAL /exWeight | Final exam from last term, scaled to exam weight (continuous_cumulative only) |
 | Total | Year grade |
 
 The layout is driven by `getGradingRules(model).display.yearEndColumns` — either `"per_term"` or `"pooled"`.
@@ -281,7 +281,7 @@ Takes a `ClassSummary` and `ExamReportOptions`. Generates a landscape A4 PDF mat
 When `yearResults` and `gradingModel` are provided and the model has `yearEndColumns: "pooled"`, the broadsheet uses a **two-row header** with per-subject sub-columns:
 
 - **Row 1**: Subject names spanning across sub-columns
-- **Row 2**: `AVG /{cwW}` | `FINAL /{exW}` | `Total` under each subject
+- **Row 2**: `AVG /cwW` | `FINAL /exW` | `Total` under each subject
 - Subtitle: `CA (40%) + Exam (60%) = Total` (using actual weights)
 - Data: scaled CA average, scaled final exam, year grade per subject + overall TOTAL, AVE., Position
 
