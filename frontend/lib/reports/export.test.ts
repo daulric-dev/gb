@@ -11,7 +11,7 @@ const summary: ClassSummary = {
   failCount: 0,
   courseworkWeight: 40,
   examWeight: 60,
-  gradingModel: "term_based",
+  gradingModel: "weighted_continuous",
   subjectAverages: [
     {
       subjectId: "s1",
@@ -105,7 +105,7 @@ describe("buildClassSummaryCsv", () => {
   test("year-end report uses 'Year' labels instead of 'Term'/'Final'", async () => {
     const yearSummary: ClassSummary = {
       ...summary,
-      gradingModel: "year_based",
+      gradingModel: "weighted_cumulative",
     };
     const blob = buildClassSummaryCsv(yearSummary, "Grade 10A", "year_end");
     const text = await blob.text();

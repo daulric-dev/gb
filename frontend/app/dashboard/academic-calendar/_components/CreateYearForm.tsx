@@ -7,6 +7,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { type GradingModel, GRADING_MODEL_LABELS } from "./types";
 
 interface CreateYearFormProps {
   onSuccess: () => void;
@@ -17,7 +18,7 @@ export function CreateYearForm({ onSuccess }: CreateYearFormProps) {
   const name = useSignal("");
   const startDate = useSignal("");
   const endDate = useSignal("");
-  const gradingModel = useSignal<"term_based" | "year_based">("term_based");
+  const gradingModel = useSignal<GradingModel>("weighted_continuous");
   const examWeight = useSignal(60);
   const courseworkWeight = useSignal(40);
   const loading = useSignal(false);
@@ -31,12 +32,9 @@ export function CreateYearForm({ onSuccess }: CreateYearFormProps) {
       startDate: startDate.value,
       endDate: endDate.value,
       gradingModel: gradingModel.value,
+      yearExamWeight: examWeight.value,
+      yearCourseworkWeight: courseworkWeight.value,
     };
-
-    if (gradingModel.value === "year_based") {
-      body.yearExamWeight = examWeight.value;
-      body.yearCourseworkWeight = courseworkWeight.value;
-    }
 
     try {
       await api("/academic-years", { method: "POST", body });
@@ -91,44 +89,45 @@ export function CreateYearForm({ onSuccess }: CreateYearFormProps) {
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           value={gradingModel.value}
           onChange={(e) =>
-            (gradingModel.value = e.target.value as "term_based" | "year_based")
+            (gradingModel.value = e.target.value as GradingModel)
           }
         >
-          <option value="term_based">Term Based</option>
-          <option value="year_based">Year Based</option>
+          {Object.entries(GRADING_MODEL_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
       </div>
-      {gradingModel.value === "year_based" && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="examWeight">Exam Weight (%)</Label>
-            <Input
-              id="examWeight"
-              type="number"
-              min={0}
-              max={100}
-              value={examWeight.value}
-              onChange={(e) => (examWeight.value = Number(e.target.value))}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="cwWeight">Coursework Weight (%)</Label>
-            <Input
-              id="cwWeight"
-              type="number"
-              min={0}
-              max={100}
-              value={courseworkWeight.value}
-              onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
-              required
-            />
-          </div>
-          <p className="col-span-2 text-xs text-muted-foreground">
-            Weights must add up to 100%
-          </p>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="examWeight">Exam Weight (%)</Label>
+          <Input
+            id="examWeight"
+            type="number"
+            min={0}
+            max={100}
+            value={examWeight.value}
+            onChange={(e) => (examWeight.value = Number(e.target.value))}
+            required
+          />
         </div>
-      )}
+        <div className="space-y-2">
+          <Label htmlFor="cwWeight">Coursework Weight (%)</Label>
+          <Input
+            id="cwWeight"
+            type="number"
+            min={0}
+            max={100}
+            value={courseworkWeight.value}
+            onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
+            required
+          />
+        </div>
+        <p className="col-span-2 text-xs text-muted-foreground">
+          Weights must add up to 100%
+        </p>
+      </div>
       <Button type="submit" className="w-full" disabled={loading.value}>
         {loading.value ? "Creating..." : "Create Academic Year"}
       </Button>

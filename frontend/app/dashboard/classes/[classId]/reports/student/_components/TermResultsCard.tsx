@@ -14,14 +14,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type StudentTermResult } from "@/lib/reports";
+import { getGradingRules } from "@/lib/grading-rules";
 
 const fmtNum = (v: number | null) => (v != null ? v.toFixed(1) : "-");
 
 interface TermResultsCardProps {
   tr: StudentTermResult;
+  gradingModel?: string;
 }
 
-export function TermResultsCard({ tr }: TermResultsCardProps) {
+export function TermResultsCard({ tr, gradingModel }: TermResultsCardProps) {
+  const rules = getGradingRules(gradingModel);
+  const hasTermExam = rules.termHasExam;
+
   return (
     <Card>
       <CardHeader>
@@ -36,7 +41,9 @@ export function TermResultsCard({ tr }: TermResultsCardProps) {
             <TableRow>
               <TableHead>Subject</TableHead>
               <TableHead className="text-right">Coursework</TableHead>
-              <TableHead className="text-right">Exam</TableHead>
+              {hasTermExam && (
+                <TableHead className="text-right">Exam</TableHead>
+              )}
               <TableHead className="text-right">Term</TableHead>
             </TableRow>
           </TableHeader>
@@ -49,9 +56,11 @@ export function TermResultsCard({ tr }: TermResultsCardProps) {
                 <TableCell className="text-right tabular-nums text-muted-foreground">
                   {fmtNum(sub.courseworkAverage)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {fmtNum(sub.examAverage)}
-                </TableCell>
+                {hasTermExam && (
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {fmtNum(sub.examAverage)}
+                  </TableCell>
+                )}
                 <TableCell className="text-right tabular-nums">
                   {fmtNum(sub.termComposite)}
                 </TableCell>

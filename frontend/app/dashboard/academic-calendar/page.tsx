@@ -139,11 +139,10 @@ export default function AcademicYearsPage() {
                     {new Date(year.end_date).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {year.grading_model.replace("_", " ")}
+                    <Badge variant="outline">
+                      {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     </Badge>
-                    {year.grading_model === "year_based" &&
-                      year.year_exam_weight != null && (
+                    {year.year_exam_weight != null && (
                         <span className="ml-2 text-xs text-muted-foreground">
                           Exam {year.year_exam_weight}% / CW{" "}
                           {year.year_coursework_weight}%

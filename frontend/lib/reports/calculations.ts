@@ -39,7 +39,9 @@ export interface StudentYearReport {
   firstName: string;
   lastName: string;
   academicYearId: string;
-  gradingModel: "term_based" | "year_based";
+  gradingModel: "weighted_continuous" | "weighted_cumulative" | "continuous_cumulative";
+  yearCourseworkWeight?: number;
+  yearExamWeight?: number;
   terms: YearTermDetail[];
   yearEnd: {
     subjects: YearEndSubjectResult[];
@@ -180,7 +182,7 @@ export function termResultsToClassSummary(
     failCount,
     courseworkWeight: opts.courseworkWeight,
     examWeight: opts.examWeight,
-    gradingModel: opts.gradingModel ?? "term_based",
+    gradingModel: opts.gradingModel ?? "weighted_continuous",
     subjectAverages,
     students,
   };

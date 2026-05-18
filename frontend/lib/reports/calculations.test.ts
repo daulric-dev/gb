@@ -170,16 +170,16 @@ describe("termResultsToClassSummary", () => {
     expect(summary.subjectAverages[0].lowestMark).toBe(55);
   });
 
-  test("gradingModel defaults to 'term_based' when not provided", () => {
+  test("gradingModel defaults to 'weighted_continuous' when not provided", () => {
     const summary = termResultsToClassSummary([], defaultOpts);
-    expect(summary.gradingModel).toBe("term_based");
+    expect(summary.gradingModel).toBe("weighted_continuous");
   });
 
   test("gradingModel uses provided value", () => {
     const summary = termResultsToClassSummary([], {
       ...defaultOpts,
-      gradingModel: "year_based",
+      gradingModel: "weighted_cumulative",
     });
-    expect(summary.gradingModel).toBe("year_based");
+    expect(summary.gradingModel).toBe("weighted_cumulative");
   });
 });

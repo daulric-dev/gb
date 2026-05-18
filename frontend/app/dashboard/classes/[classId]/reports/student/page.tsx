@@ -40,7 +40,7 @@ export default function StudentReportPage() {
   const reportType = (searchParams?.get("reportType") ?? "term") as ReportType;
 
   const classInfo = useSignal<ClassInfo | null>(null);
-  const gradingModel = useSignal<"term_based" | "year_based">("term_based");
+  const gradingModel = useSignal<string>("weighted_continuous");
   const termResult = useSignal<StudentTermResult | null>(null);
   const yearResult = useSignal<StudentYearReport | null>(null);
   const termName = useSignal("");
@@ -57,9 +57,7 @@ export default function StudentReportPage() {
             `/academic-years/${info.academicYearId}`,
           )
             .then((ay) => {
-              const model =
-                ay.grading_model === "year_based" ? "year_based" : "term_based";
-              gradingModel.value = model;
+              gradingModel.value = ay.grading_model ?? "weighted_continuous";
             })
             .catch(() => {});
 
@@ -94,7 +92,6 @@ export default function StudentReportPage() {
 
     const info = classInfo.value;
     if (
-      gradingModel.value === "year_based" &&
       reportType === "year_end" &&
       info?.academicYearId
     ) {
@@ -118,8 +115,7 @@ export default function StudentReportPage() {
 
   const tr = termResult.value;
   const yr = yearResult.value;
-  const isYearEnd =
-    gradingModel.value === "year_based" && reportType === "year_end" && !!yr;
+  const isYearEnd = reportType === "year_end" && !!yr;
 
   const studentName = tr
     ? `${tr.firstName} ${tr.lastName}`
@@ -146,6 +142,7 @@ export default function StudentReportPage() {
       try {
         const blob = buildReportPdfBlob(tr, {
           termName: termName.value || undefined,
+          gradingModel: gradingModel.value,
         });
         const safeName = `${tr.firstName}_${tr.lastName}`.replace(/\s+/g, "_");
         downloadBlob(blob, `${safeName}_report.pdf`);
@@ -168,6 +165,7 @@ export default function StudentReportPage() {
       const blob = await buildStudentReportPdfBlob(tr, {
         termName: termName.value || undefined,
         className: classInfo.value?.name,
+        gradingModel: gradingModel.value,
       });
       const safeName = `${tr.firstName}_${tr.lastName}`.replace(/\s+/g, "_");
       downloadBlob(blob, `${safeName}_report_card.pdf`);
@@ -236,7 +234,7 @@ export default function StudentReportPage() {
       ) : isYearEnd && yr ? (
         <YearEndResultsCard yr={yr} />
       ) : tr ? (
-        <TermResultsCard tr={tr} />
+        <TermResultsCard tr={tr} gradingModel={gradingModel.value} />
       ) : null}
 
       {hasData && (

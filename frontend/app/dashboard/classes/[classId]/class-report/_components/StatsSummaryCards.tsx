@@ -53,7 +53,7 @@ export function StatsSummaryCards({ summary: s, reportType }: StatsSummaryCardsP
       <Card>
         <CardHeader className="pb-2">
           <CardDescription>
-            {reportType === "year_end" && s.gradingModel === "year_based"
+            {reportType === "year_end"
               ? "Year Weights"
               : "Term Weights"}
           </CardDescription>

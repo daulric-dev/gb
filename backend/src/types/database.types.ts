@@ -475,7 +475,10 @@ export type Database = {
     Enums: {
       assessment_type: 'exam' | 'coursework';
       gender: 'male' | 'female';
-      gradingmodel: 'term_based' | 'year_based';
+      gradingmodel:
+        | 'weighted_continuous'
+        | 'weighted_cumulative'
+        | 'continuous_cumulative';
       join_request_status: 'pending' | 'approved' | 'rejected';
       relationship_type: 'mother' | 'father' | 'guardian';
       report_book_status: 'draft' | 'published' | 'sent_to_ministry';
@@ -921,7 +924,11 @@ export const Constants = {
     Enums: {
       assessment_type: ['exam', 'coursework'],
       gender: ['male', 'female'],
-      gradingmodel: ['term_based', 'year_based'],
+      gradingmodel: [
+        'weighted_continuous',
+        'weighted_cumulative',
+        'continuous_cumulative',
+      ],
       join_request_status: ['pending', 'approved', 'rejected'],
       relationship_type: ['mother', 'father', 'guardian'],
       report_book_status: ['draft', 'published', 'sent_to_ministry'],

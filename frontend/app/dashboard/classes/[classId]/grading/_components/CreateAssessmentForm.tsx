@@ -20,7 +20,7 @@ export function CreateAssessmentForm({
 }) {
   useSignals();
   const title = useSignal("");
-  const assessmentType = useSignal<"exam" | "coursework">("exam");
+  const assessmentType = useSignal<"exam" | "coursework">("coursework");
   const maxScore = useSignal(100);
   const weight = useSignal(1);
   const assessmentDate = useSignal("");
