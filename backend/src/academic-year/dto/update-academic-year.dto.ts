@@ -29,12 +29,23 @@ export class UpdateAcademicYearDto {
   endDate?: string;
 
   @ApiPropertyOptional({
-    example: 'term_based',
-    enum: ['term_based', 'year_based'],
+    example: 'weighted_continuous',
+    enum: [
+      'weighted_continuous',
+      'weighted_cumulative',
+      'continuous_cumulative',
+    ],
   })
   @IsOptional()
-  @IsEnum(['term_based', 'year_based'])
-  gradingModel?: 'term_based' | 'year_based';
+  @IsEnum([
+    'weighted_continuous',
+    'weighted_cumulative',
+    'continuous_cumulative',
+  ])
+  gradingModel?:
+    | 'weighted_continuous'
+    | 'weighted_cumulative'
+    | 'continuous_cumulative';
 
   @ApiPropertyOptional({ example: 40 })
   @IsOptional()

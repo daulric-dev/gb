@@ -22,7 +22,7 @@ const mockCalc = {
       firstName: 'A',
       lastName: 'B',
       academicYearId: 'y1',
-      gradingModel: 'term_based',
+      gradingModel: 'weighted_continuous',
       terms: [],
       yearEnd: { subjects: [], overallAverage: null },
     }),

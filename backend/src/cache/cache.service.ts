@@ -1,5 +1,5 @@
 import { RedisStore, MemoryStore, CacheStore } from './stores';
-import { Redis } from 'ioredis';
+import { RedisClient } from 'bun';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
@@ -9,7 +9,7 @@ export class CacheService implements CacheStore {
 
   constructor() {
     if (process.env.USE_REDIS === 'true') {
-      const redis = new Redis(process.env.REDIS_URL!);
+      const redis = new RedisClient(process.env.REDIS_URL!);
       this.store = new RedisStore(redis);
       this.logger.log('Using Redis Store');
     } else {

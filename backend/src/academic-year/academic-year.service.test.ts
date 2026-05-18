@@ -39,7 +39,7 @@ describe('AcademicYearService', () => {
   });
 
   describe('create', () => {
-    test('validates year_based weights must sum to 100', () => {
+    test('validates weights must sum to 100', () => {
       mockSupabase = createMockSupabaseService();
       service = new AcademicYearService(mockSupabase as any, mockCache as any);
 
@@ -48,7 +48,7 @@ describe('AcademicYearService', () => {
           name: '2025-2026',
           startDate: '2025-09-01',
           endDate: '2026-06-30',
-          gradingModel: 'year_based',
+          gradingModel: 'weighted_cumulative',
           yearExamWeight: 40,
           yearCourseworkWeight: 40,
         } as any),
@@ -64,7 +64,7 @@ describe('AcademicYearService', () => {
           name: '2025-2026',
           startDate: '2026-09-01',
           endDate: '2025-06-30',
-          gradingModel: 'term_based',
+          gradingModel: 'weighted_continuous',
         } as any),
       ).rejects.toBeInstanceOf(BadRequestException);
     });

@@ -838,7 +838,7 @@ export class ReportService {
         failCount: 0,
         courseworkWeight: 50,
         examWeight: 50,
-        gradingModel: 'term_based',
+        gradingModel: 'weighted_continuous',
         subjectAverages: [],
         students: [],
       };
@@ -852,7 +852,7 @@ export class ReportService {
 
     let courseworkWeight = termRow?.coursework_weight ?? 50;
     let examWeight = termRow?.exam_weight ?? 50;
-    let gradingModel = 'term_based';
+    let gradingModel = 'weighted_continuous';
 
     if (termRow?.academic_year_id) {
       const { data: ayRow } = await pub
@@ -860,9 +860,9 @@ export class ReportService {
         .select('grading_model, year_coursework_weight, year_exam_weight')
         .eq('id', termRow.academic_year_id)
         .single();
-      gradingModel = ayRow?.grading_model ?? 'term_based';
+      gradingModel = ayRow?.grading_model ?? 'weighted_continuous';
 
-      if (reportType === 'year_end' && gradingModel === 'year_based') {
+      if (reportType === 'year_end' && gradingModel !== 'weighted_continuous') {
         courseworkWeight = ayRow?.year_coursework_weight ?? 50;
         examWeight = ayRow?.year_exam_weight ?? 50;
       }
@@ -928,7 +928,7 @@ export class ReportService {
     };
 
     const isYearEnd =
-      reportType === 'year_end' && gradingModel === 'year_based';
+      reportType === 'year_end' && gradingModel !== 'weighted_continuous';
     const subjectScores = new Map<string, number[]>();
     for (const e of (entryRows ?? []) as EntryShape[]) {
       const score = isYearEnd ? e.year_grade : e.term_composite;

@@ -40,8 +40,11 @@ export class AcademicYearService {
   }
 
   async create(userId: string, dto: CreateAcademicYearDto) {
-    if (dto.gradingModel === 'year_based') {
-      const sum = (dto.yearExamWeight ?? 0) + (dto.yearCourseworkWeight ?? 0);
+    const sum = (dto.yearExamWeight ?? 0) + (dto.yearCourseworkWeight ?? 0);
+    if (
+      dto.yearExamWeight !== undefined ||
+      dto.yearCourseworkWeight !== undefined
+    ) {
       if (sum !== 100) {
         throw new BadRequestException('Year weights must add up to 100');
       }
@@ -159,10 +162,6 @@ export class AcademicYearService {
     if (dto.endDate !== undefined) updateData.end_date = dto.endDate;
     if (dto.gradingModel !== undefined) {
       updateData.grading_model = dto.gradingModel;
-      if (dto.gradingModel === 'term_based') {
-        updateData.year_exam_weight = null;
-        updateData.year_coursework_weight = null;
-      }
     }
     if (dto.yearExamWeight !== undefined)
       updateData.year_exam_weight = dto.yearExamWeight;
@@ -170,7 +169,6 @@ export class AcademicYearService {
       updateData.year_coursework_weight = dto.yearCourseworkWeight;
 
     if (
-      updateData.grading_model === 'year_based' ||
       dto.yearExamWeight !== undefined ||
       dto.yearCourseworkWeight !== undefined
     ) {
@@ -178,9 +176,8 @@ export class AcademicYearService {
       const examWeight = dto.yearExamWeight ?? existing.year_exam_weight ?? 0;
       const courseworkWeight =
         dto.yearCourseworkWeight ?? existing.year_coursework_weight ?? 0;
-      const model = dto.gradingModel ?? existing.grading_model;
 
-      if (model === 'year_based' && examWeight + courseworkWeight !== 100) {
+      if (examWeight + courseworkWeight !== 100) {
         throw new BadRequestException('Year weights must add up to 100');
       }
     }

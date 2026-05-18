@@ -10,7 +10,10 @@ async function getApp() {
   return cachedApp;
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+export default async function handler(
+  req: IncomingMessage,
+  res: ServerResponse,
+) {
   const app = await getApp();
   const fastify = app.getHttpAdapter().getInstance();
   await fastify.ready();
