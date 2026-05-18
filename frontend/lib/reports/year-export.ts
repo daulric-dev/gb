@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { StudentYearReport } from "./calculations";
+import { getGradingRules } from "@/lib/grading-rules";
 
 function fmt(v: number | null): string {
   return v != null ? v.toFixed(1) : "";
@@ -69,15 +70,24 @@ export function buildYearClassSummaryCsv(
 
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
 
+  const rules = getGradingRules(students[0]?.gradingModel);
+  const isPooled = rules.display.yearEndColumns === "pooled";
+  const cwW = students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
+  const exW = students[0]?.yearExamWeight ?? opts.yearExWeight ?? 60;
+
   if (students.length > 0 && subjectCols.length > 0) {
     lines.push("Student Year Grades");
+
+    const subHeadersPerSubject = isPooled
+      ? [`CA /${cwW}`, `Exam /${exW}`, "Total"]
+      : [...termInitials, "E", "Year"];
 
     const groupRow = [
       "",
       "",
       ...subjectCols.flatMap((c) => [
         esc(c.name),
-        ...Array.from({ length: termInitials.length + 1 }, () => ""),
+        ...Array.from({ length: subHeadersPerSubject.length - 1 }, () => ""),
       ]),
       "",
     ];
@@ -86,7 +96,7 @@ export function buildYearClassSummaryCsv(
     const subRow = [
       "Position",
       "Student",
-      ...subjectCols.flatMap(() => [...termInitials, "E", "Year"]),
+      ...subjectCols.flatMap(() => subHeadersPerSubject),
       "Year Average",
     ];
     lines.push(subRow.map(esc).join(","));
@@ -110,6 +120,20 @@ export function buildYearClassSummaryCsv(
         esc(`${st.firstName} ${st.lastName}`.trim()),
         ...subjectCols.flatMap((c) => {
           const sub = subMap.get(c.id);
+
+          if (isPooled) {
+            const composites = (sub?.termGrades ?? [])
+              .map((g) => g.termComposite)
+              .filter((v): v is number => v != null);
+            const rawCa = composites.length > 0
+              ? composites.reduce((a, b) => a + b, 0) / composites.length
+              : null;
+            const ca = rawCa != null ? fmt(rawCa * cwW / 100) : "";
+            const endOfYrExam = lastTermExamMap.get(c.id) ?? null;
+            const exam = endOfYrExam != null ? fmt(endOfYrExam * exW / 100) : "";
+            return [ca, exam, fmt(sub?.yearGrade ?? null)];
+          }
+
           const termScores = termIds.map((tid) => {
             const tg = sub?.termGrades.find((g) => g.termId === tid);
             return fmt(tg?.termComposite ?? null);
@@ -169,7 +193,16 @@ export function buildYearClassSummaryXlsx(
   const termIds = students[0]?.terms.map((t) => t.termId) ?? [];
 
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
-  const colsPerSubject = termInitials.length + 2;
+
+  const xlsxRules = getGradingRules(students[0]?.gradingModel);
+  const isPooledXlsx = xlsxRules.display.yearEndColumns === "pooled";
+  const cwWXlsx = students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
+  const exWXlsx = students[0]?.yearExamWeight ?? opts.yearExWeight ?? 60;
+
+  const subHeadersXlsx = isPooledXlsx
+    ? [`CA /${cwWXlsx}`, `Exam /${exWXlsx}`, "Total"]
+    : [...termInitials, "E", "Year"];
+  const colsPerSubject = subHeadersXlsx.length;
 
   const groupRow: (string | null)[] = [
     "",
@@ -183,7 +216,7 @@ export function buildYearClassSummaryXlsx(
   const subRow: (string | null)[] = [
     "Position",
     "Student",
-    ...subjectCols.flatMap(() => [...termInitials, "E", "Year"]),
+    ...subjectCols.flatMap(() => subHeadersXlsx),
     "Year Average",
   ];
   const studentRows: (string | number | null)[][] = [groupRow, subRow];
@@ -207,6 +240,20 @@ export function buildYearClassSummaryXlsx(
       `${st.firstName} ${st.lastName}`.trim(),
       ...subjectCols.flatMap((c) => {
         const sub = subMap.get(c.id);
+
+        if (isPooledXlsx) {
+          const composites = (sub?.termGrades ?? [])
+            .map((g) => g.termComposite)
+            .filter((v): v is number => v != null);
+          const rawCa = composites.length > 0
+            ? composites.reduce((a, b) => a + b, 0) / composites.length
+            : null;
+          const ca = rawCa != null ? r1(rawCa * cwWXlsx / 100) : null;
+          const endOfYrExam = lastTermExamMap.get(c.id) ?? null;
+          const exam = endOfYrExam != null ? r1(endOfYrExam * exWXlsx / 100) : null;
+          return [ca, exam, r1(sub?.yearGrade ?? null)];
+        }
+
         const termScores = termIds.map((tid) => {
           const tg = sub?.termGrades.find((g) => g.termId === tid);
           return r1(tg?.termComposite ?? null);

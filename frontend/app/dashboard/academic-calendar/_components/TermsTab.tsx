@@ -120,8 +120,6 @@ export function TermsTab({
       {years.map((year) => {
         const yearTerms = termsByYear.value[year.id] ?? [];
         const canAdd = yearTerms.length < TERM_SLOTS;
-        const isYearBased = year.grading_model === "year_based";
-
         return (
           <section
             key={year.id}
@@ -136,20 +134,18 @@ export function TermsTab({
                 ) : (
                   <Badge variant="secondary">Inactive</Badge>
                 )}
-                <Badge variant="outline" className="capitalize">
-                  {year.grading_model.replace("_", " ")}
+                <Badge variant="outline">
+                  {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
                 </Badge>
               </div>
               <Button
                 size="sm"
                 onClick={() => (createForYear.value = year)}
-                disabled={!canAdd || isYearBased}
+                disabled={!canAdd}
                 title={
-                  isYearBased
-                    ? "Year-based grading does not use terms"
-                    : !canAdd
-                      ? "Maximum of 3 terms per year"
-                      : undefined
+                  !canAdd
+                    ? "Maximum of 3 terms per year"
+                    : undefined
                 }
               >
                 <Plus className="mr-1.5 size-3.5" />
@@ -157,12 +153,7 @@ export function TermsTab({
               </Button>
             </div>
 
-            {isYearBased ? (
-              <p className="text-sm text-muted-foreground">
-                This academic year uses year-based grading and does not have
-                terms.
-              </p>
-            ) : yearTerms.length === 0 ? (
+            {yearTerms.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No terms for this academic year yet.
               </p>

@@ -2,13 +2,16 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { ClassSummary } from "./api";
 import type { StudentTermResult } from "./calculations";
+import { getGradingRules } from "@/lib/grading-rules";
 
 export function buildReportPdfBlob(
   termResult: StudentTermResult,
-  opts: { termName?: string } = {},
+  opts: { termName?: string; gradingModel?: string } = {},
 ): Blob {
   const doc = new jsPDF({ format: "a4", unit: "mm" });
   const name = `${termResult.firstName} ${termResult.lastName}`.trim();
+  const rules = getGradingRules(opts.gradingModel);
+  const hasTermExam = rules.termHasExam;
 
   doc.setFontSize(16);
   doc.text("Report card", 14, 18);
@@ -29,15 +32,26 @@ export function buildReportPdfBlob(
     y += 6;
   }
 
-  autoTable(doc, {
-    startY: y + 4,
-    head: [["Subject", "Coursework", "Exam", "Term"]],
-    body: termResult.subjects.map((s) => [
+  const head = hasTermExam
+    ? [["Subject", "Coursework", "Exam", "Term"]]
+    : [["Subject", "Coursework", "Term"]];
+
+  const body = termResult.subjects.map((s) => {
+    const row = [
       s.subjectName,
       s.courseworkAverage != null ? s.courseworkAverage.toFixed(1) : "-",
-      s.examAverage != null ? s.examAverage.toFixed(1) : "-",
-      s.termComposite != null ? s.termComposite.toFixed(1) : "-",
-    ]),
+    ];
+    if (hasTermExam) {
+      row.push(s.examAverage != null ? s.examAverage.toFixed(1) : "-");
+    }
+    row.push(s.termComposite != null ? s.termComposite.toFixed(1) : "-");
+    return row;
+  });
+
+  autoTable(doc, {
+    startY: y + 4,
+    head,
+    body,
     styles: { fontSize: 8 },
     headStyles: { fillColor: [66, 66, 66] },
   });
@@ -75,9 +89,13 @@ export function buildClassSummaryPdfBlob(
   className: string,
   reportType?: string,
   termName?: string,
+  gradingModel?: string,
 ): Blob {
+  const classRules = getGradingRules(gradingModel);
+  const hasTermExam = classRules.termHasExam || reportType === "year_end";
+  const colsPerSubject = hasTermExam ? 3 : 2;
   const subjectCount = collectSubjectColumns(summary).length;
-  const dataCols = 2 + subjectCount * 3 + 1;
+  const dataCols = 2 + subjectCount * colsPerSubject + 1;
   const colWidth = 11;
   const fixedWidth = 8 + 30;
   const minWidth = fixedWidth + (dataCols - 2) * colWidth + 20;
@@ -90,7 +108,7 @@ export function buildClassSummaryPdfBlob(
     format: [pageWidth, 210],
   });
   const fmt = (v: number | null) => (v != null ? v.toFixed(1) : "-");
-  const isYearEnd = reportType === "year_end" && summary.gradingModel === "year_based";
+  const isYearEnd = reportType === "year_end";
   const weightLabel = isYearEnd ? "Year" : "Term";
 
   doc.setFontSize(16);
@@ -150,11 +168,15 @@ export function buildClassSummaryPdfBlob(
     const groupRow: { content: string; colSpan?: number }[] = [
       { content: "#" },
       { content: "Student" },
-      ...subjectCols.flatMap((c) => [
-        { content: c.name, colSpan: 3 },
-        { content: "", colSpan: 0 },
-        { content: "", colSpan: 0 },
-      ]),
+      ...subjectCols.flatMap((c) => {
+        const cells: { content: string; colSpan?: number }[] = [
+          { content: c.name, colSpan: colsPerSubject },
+        ];
+        for (let i = 1; i < colsPerSubject; i++) {
+          cells.push({ content: "", colSpan: 0 });
+        }
+        return cells;
+      }),
       { content: "Overall" },
     ];
     const cwLabel = `CW (${summary.courseworkWeight}%)`;
@@ -163,7 +185,9 @@ export function buildClassSummaryPdfBlob(
     const subRow = [
       "",
       "",
-      ...subjectCols.flatMap(() => [cwLabel, exLabel, finalLabel]),
+      ...subjectCols.flatMap(() =>
+        hasTermExam ? [cwLabel, exLabel, finalLabel] : [cwLabel, finalLabel]
+      ),
       "",
     ];
 
@@ -177,9 +201,15 @@ export function buildClassSummaryPdfBlob(
           const finalScore = isYearEnd
             ? (g?.yearGrade ?? null)
             : (g?.termComposite ?? null);
+          if (hasTermExam) {
+            return [
+              fmt(g?.courseworkAverage ?? null),
+              fmt(g?.examAverage ?? null),
+              fmt(finalScore),
+            ];
+          }
           return [
             fmt(g?.courseworkAverage ?? null),
-            fmt(g?.examAverage ?? null),
             fmt(finalScore),
           ];
         }),
@@ -189,9 +219,9 @@ export function buildClassSummaryPdfBlob(
 
     const borderCols = new Set<number>();
     for (let i = 0; i < subjectCols.length; i++) {
-      borderCols.add(2 + i * 3);
+      borderCols.add(2 + i * colsPerSubject);
     }
-    const overallCol = 2 + subjectCols.length * 3;
+    const overallCol = 2 + subjectCols.length * colsPerSubject;
     borderCols.add(overallCol);
 
     autoTable(doc, {

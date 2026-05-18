@@ -26,6 +26,7 @@ import { EditTeacherSubjectsForm } from "./_components/EditTeacherSubjectsForm";
 import { AssignTeacherForm } from "./_components/AssignTeacherForm";
 import { BulkAssignSubjects } from "./_components/BulkAssignSubjects";
 import type { EnrolledStudent, TeacherAssignment } from "./_components/types";
+import { getGradingRules } from "@/lib/grading-rules";
 
 interface ClassInfo {
   id: string;
@@ -65,10 +66,12 @@ interface YearResultRow {
   firstName: string;
   lastName: string;
   gradingModel: string;
+  yearCourseworkWeight?: number;
+  yearExamWeight?: number;
   terms: {
     termId: string;
     termName: string;
-    subjects: { subjectId: string; termComposite: number | null }[];
+    subjects: { subjectId: string; termComposite: number | null; examAverage?: number | null }[];
     overallAverage: number | null;
   }[];
   yearEnd: {
@@ -102,7 +105,7 @@ export default function ClassDetailPage() {
   const summaryView = useSignal<"term" | "year">("term");
   const yearData = useSignal<YearResultRow[]>([]);
   const yearLoading = useSignal(false);
-  const gradingModel = useSignal<string>("term_based");
+  const gradingModel = useSignal<string>("weighted_continuous");
   const summaryPage = useSignal(0);
   const summaryPageSize = useSignal(10);
   const yearPage = useSignal(0);
@@ -144,15 +147,17 @@ export default function ClassDetailPage() {
           failCount: 0,
           courseworkWeight: 0,
           examWeight: 0,
-          gradingModel: "year_based",
+          gradingModel: "weighted_cumulative",
           subjectAverages: [],
           students,
         };
 
         const blob = await buildEndOfYearExamPdfBlob(summary, {
-          title: "END OF YEAR EXAMINATIONS",
+          title: "END OF YEAR REPORT",
           className,
           scoreField: "yearGrade",
+          yearResults: yearData.value,
+          gradingModel: gradingModel.value,
         });
         downloadBlob(blob, `${className}_year_exam_report.pdf`);
       } else if (summaryData.value.length > 0) {
@@ -181,7 +186,7 @@ export default function ClassDetailPage() {
           failCount: 0,
           courseworkWeight: 0,
           examWeight: 0,
-          gradingModel: "term_based",
+          gradingModel: "weighted_continuous",
           subjectAverages: [],
           students,
         };
@@ -227,9 +232,7 @@ export default function ClassDetailPage() {
 
         api<{ grading_model?: string }>(`/academic-years/${info.academicYearId}`)
           .then((ay) => {
-            const model = ay.grading_model ?? "term_based";
-            gradingModel.value = model;
-            if (model === "term_based") summaryView.value = "term";
+            gradingModel.value = ay.grading_model ?? "weighted_continuous";
           })
           .catch(() => {});
       }
@@ -602,26 +605,24 @@ export default function ClassDetailPage() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              {gradingModel.value === "year_based" && (
-                <div className="flex rounded-md border">
-                  <Button
-                    variant={summaryView.value === "term" ? "default" : "ghost"}
-                    size="sm"
-                    className="rounded-r-none"
-                    onClick={() => (summaryView.value = "term")}
-                  >
-                    Term
-                  </Button>
-                  <Button
-                    variant={summaryView.value === "year" ? "default" : "ghost"}
-                    size="sm"
-                    className="rounded-l-none"
-                    onClick={() => (summaryView.value = "year")}
-                  >
-                    Year
-                  </Button>
-                </div>
-              )}
+              <div className="flex rounded-md border">
+                <Button
+                  variant={summaryView.value === "term" ? "default" : "ghost"}
+                  size="sm"
+                  className="rounded-r-none"
+                  onClick={() => (summaryView.value = "term")}
+                >
+                  Term
+                </Button>
+                <Button
+                  variant={summaryView.value === "year" ? "default" : "ghost"}
+                  size="sm"
+                  className="rounded-l-none"
+                  onClick={() => (summaryView.value = "year")}
+                >
+                  Year
+                </Button>
+              </div>
               {summaryView.value === "term" && (
                 <select
                   className={`${selectClass} w-auto min-w-[140px]`}
@@ -795,6 +796,13 @@ export default function ClassDetailPage() {
                 const start = yearPage.value * ps;
                 const pageRows = yearData.value.slice(start, start + ps);
 
+                const rules = getGradingRules(gradingModel.value);
+                const firstRow = yearData.value[0];
+                const cwWeight = firstRow?.yearCourseworkWeight ?? 40;
+                const exWeight = firstRow?.yearExamWeight ?? 60;
+                const extraCols = (rules.display.showTermAvgColumn ? 1 : 0) + (rules.display.examColumnLocation === "final_term_only" ? 1 : 0);
+                const subColsPerSubject = termNames.length + extraCols + 1;
+
                 return (
                   <div className="space-y-3">
                     <div className="rounded-md border overflow-x-auto">
@@ -806,7 +814,7 @@ export default function ClassDetailPage() {
                             {subjectCols.map((c) => (
                               <TableHead
                                 key={c.id}
-                                colSpan={termNames.length + 1}
+                                colSpan={subColsPerSubject}
                                 className="text-center border-l"
                               >
                                 {c.name}
@@ -817,9 +825,19 @@ export default function ClassDetailPage() {
                             {subjectCols.flatMap((c) => [
                               ...termNames.map((t) => (
                                 <TableHead key={`${c.id}-${t.id}`} className="text-center text-xs px-2 border-l min-w-[50px]">
-                                  {t.short}
+                                  {t.short}{rules.display.termCwScaledToYearWeight ? ` /${cwWeight}` : ""}
                                 </TableHead>
                               )),
+                              ...(rules.display.showTermAvgColumn ? [
+                                <TableHead key={`${c.id}-avg`} className="text-center text-xs px-2 min-w-[50px] font-semibold">
+                                  AVG /{cwWeight}
+                                </TableHead>,
+                              ] : []),
+                              ...(rules.display.examColumnLocation === "final_term_only" ? [
+                                <TableHead key={`${c.id}-final`} className="text-center text-xs px-2 min-w-[50px]">
+                                  FINAL /{exWeight}
+                                </TableHead>,
+                              ] : []),
                               <TableHead key={`${c.id}-year`} className="text-center text-xs font-semibold px-2 min-w-[50px]">
                                 YR
                               </TableHead>,
@@ -831,6 +849,7 @@ export default function ClassDetailPage() {
                             const yearSubjectMap = new Map(
                               row.yearEnd.subjects.map((s) => [s.subjectId, s]),
                             );
+                            const lastTerm = row.terms[row.terms.length - 1];
 
                             return (
                               <TableRow key={row.studentId}>
@@ -854,14 +873,47 @@ export default function ClassDetailPage() {
                                       const termGrade = yearSubj?.termGrades.find(
                                         (tg) => tg.termId === t.id,
                                       );
+                                      const raw = termGrade?.termComposite ?? null;
+                                      const display = rules.display.termCwScaledToYearWeight && raw != null
+                                        ? (raw * cwWeight / 100).toFixed(1)
+                                        : raw != null ? raw.toFixed(1) : "-";
                                       return (
                                         <TableCell key={`${row.studentId}-${c.id}-${t.id}`} className="text-center tabular-nums text-sm px-2 border-l">
-                                          {termGrade?.termComposite != null
-                                            ? termGrade.termComposite.toFixed(1)
-                                            : "-"}
+                                          {display}
                                         </TableCell>
                                       );
                                     }),
+                                    ...(rules.display.showTermAvgColumn ? [
+                                      (() => {
+                                        const termComposites = yearSubj?.termGrades
+                                          .map((tg) => tg.termComposite)
+                                          .filter((v): v is number => v != null) ?? [];
+                                        const rawAvg = termComposites.length > 0
+                                          ? termComposites.reduce((a, b) => a + b, 0) / termComposites.length
+                                          : null;
+                                        return (
+                                          <TableCell key={`${row.studentId}-${c.id}-avg`} className="text-center tabular-nums text-sm px-2 font-semibold">
+                                            {rawAvg != null ? (rawAvg * cwWeight / 100).toFixed(1) : "-"}
+                                          </TableCell>
+                                        );
+                                      })(),
+                                    ] : []),
+                                    ...(rules.display.examColumnLocation === "final_term_only" ? [
+                                      (() => {
+                        const lastTermSubj = lastTerm?.subjects.find(
+                          (s) => s.subjectId === c.id,
+                        );
+                                        const rawExam = lastTermSubj?.examAverage ?? null;
+                                        const display = rules.display.examScaledToYearWeight && rawExam != null
+                                          ? (rawExam * exWeight / 100).toFixed(1)
+                                          : rawExam != null ? rawExam.toFixed(1) : "-";
+                                        return (
+                                          <TableCell key={`${row.studentId}-${c.id}-final`} className="text-center tabular-nums text-sm px-2">
+                                            {display}
+                                          </TableCell>
+                                        );
+                                      })(),
+                                    ] : []),
                                     <TableCell key={`${row.studentId}-${c.id}-year`} className="text-center tabular-nums text-sm font-semibold px-2">
                                       {yearSubj?.yearGrade != null
                                         ? yearSubj.yearGrade.toFixed(1)

@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { StudentYearReport, YearEndSubjectResult } from "./calculations";
+import { getGradingRules } from "@/lib/grading-rules";
 
 function fmt(v: number | null): string {
   return v != null ? v.toFixed(1) : "-";
@@ -85,43 +86,84 @@ export function buildYearReportPdfBlob(
     lastTermExamMap.set(s.subjectId, s.examAverage);
   }
 
-  const head = [
-    "Subject",
-    ...termInitials,
-    "End of Yr Exam",
-    "Year Grade",
-    "Grade",
-  ];
+  const rules = getGradingRules(yr.gradingModel);
+  const cwW = yr.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
+  const exW = yr.yearExamWeight ?? opts.yearExWeight ?? 60;
+  const isPooled = rules.display.yearEndColumns === "pooled";
 
-  const body = yr.yearEnd.subjects.map((sub: YearEndSubjectResult) => {
-    const termScores = yr.terms.map((t) => {
-      const tg = sub.termGrades.find((g) => g.termId === t.termId);
-      return fmt(tg?.termComposite ?? null);
+  let head: string[];
+  let body: string[][];
+
+  if (isPooled) {
+    head = ["Subject", `CA /${cwW}`, `Exam /${exW}`, "Total", "Grade"];
+
+    body = yr.yearEnd.subjects.map((sub: YearEndSubjectResult) => {
+      const composites = sub.termGrades
+        .map((g) => g.termComposite)
+        .filter((v): v is number => v != null);
+      const rawCa = composites.length > 0
+        ? composites.reduce((a, b) => a + b, 0) / composites.length
+        : null;
+      const ca = rawCa != null ? (rawCa * cwW / 100).toFixed(1) : "-";
+
+      const endOfYrExam = lastTermExamMap.get(sub.subjectId) ?? null;
+      const exam = endOfYrExam != null ? (endOfYrExam * exW / 100).toFixed(1) : "-";
+
+      return [
+        sub.subjectName,
+        ca,
+        exam,
+        fmt(sub.yearGrade),
+        computeLetterGrade(sub.yearGrade),
+      ];
     });
 
-    const endOfYrExam = lastTermExamMap.get(sub.subjectId) ?? null;
-    const grade = computeLetterGrade(sub.yearGrade);
-
-    return [
-      sub.subjectName,
-      ...termScores,
-      fmt(endOfYrExam),
-      fmt(sub.yearGrade),
-      grade,
+    if (yr.yearEnd.overallAverage != null) {
+      body.push([
+        "OVERALL",
+        "",
+        "",
+        yr.yearEnd.overallAverage.toFixed(1),
+        computeLetterGrade(yr.yearEnd.overallAverage),
+      ]);
+    }
+  } else {
+    head = [
+      "Subject",
+      ...termInitials,
+      "End of Yr Exam",
+      "Year Grade",
+      "Grade",
     ];
-  });
 
-  if (yr.yearEnd.overallAverage != null) {
-    const overallRow = [
-      "OVERALL",
-      ...yr.terms.map((t) =>
-        t.overallAverage != null ? t.overallAverage.toFixed(1) : "-",
-      ),
-      "",
-      yr.yearEnd.overallAverage.toFixed(1),
-      computeLetterGrade(yr.yearEnd.overallAverage),
-    ];
-    body.push(overallRow);
+    body = yr.yearEnd.subjects.map((sub: YearEndSubjectResult) => {
+      const termScores = yr.terms.map((t) => {
+        const tg = sub.termGrades.find((g) => g.termId === t.termId);
+        return fmt(tg?.termComposite ?? null);
+      });
+
+      const endOfYrExam = lastTermExamMap.get(sub.subjectId) ?? null;
+
+      return [
+        sub.subjectName,
+        ...termScores,
+        fmt(endOfYrExam),
+        fmt(sub.yearGrade),
+        computeLetterGrade(sub.yearGrade),
+      ];
+    });
+
+    if (yr.yearEnd.overallAverage != null) {
+      body.push([
+        "OVERALL",
+        ...yr.terms.map((t) =>
+          t.overallAverage != null ? t.overallAverage.toFixed(1) : "-",
+        ),
+        "",
+        yr.yearEnd.overallAverage.toFixed(1),
+        computeLetterGrade(yr.yearEnd.overallAverage),
+      ]);
+    }
   }
 
   autoTable(doc, {
@@ -149,14 +191,22 @@ export function buildYearReportPdfBlob(
       .finalY + 8;
 
   doc.setFontSize(8);
-  const legend = termInitials
-    .map((ini, i) => `${ini} = ${termNames[i]}`)
-    .join("  |  ");
-  doc.text(
-    `${legend}  |  End of Yr Exam = Exam from final term  |  Year Grade = Weighted year calculation`,
-    14,
-    tableY,
-  );
+  if (isPooled) {
+    doc.text(
+      `CA = Coursework Average (${cwW}%)  |  Exam = Final Exam (${exW}%)  |  Total = Weighted year calculation`,
+      14,
+      tableY,
+    );
+  } else {
+    const legend = termInitials
+      .map((ini, i) => `${ini} = ${termNames[i]}`)
+      .join("  |  ");
+    doc.text(
+      `${legend}  |  End of Yr Exam = Exam from final term  |  Year Grade = Weighted year calculation`,
+      14,
+      tableY,
+    );
+  }
 
   return doc.output("blob");
 }
@@ -188,8 +238,10 @@ export function buildYearClassSummaryPdfBlob(
     name,
   }));
 
+  const summaryRules = getGradingRules(students[0]?.gradingModel);
+  const isPooledSummary = summaryRules.display.yearEndColumns === "pooled";
   const termCount = students[0]?.terms.length ?? 0;
-  const colsPerSubject = termCount + 2;
+  const colsPerSubject = isPooledSummary ? 3 : (termCount + 2);
   const dataCols = 2 + subjectCols.length * colsPerSubject + 1;
   const colWidth = 10;
   const fixedWidth = 6 + 26;
@@ -247,6 +299,16 @@ export function buildYearClassSummaryPdfBlob(
 
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
 
+  const cwWSummary = students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
+  const exWSummary = students[0]?.yearExamWeight ?? opts.yearExWeight ?? 60;
+
+  let subHeadersSummary: string[];
+  if (isPooledSummary) {
+    subHeadersSummary = [`CA /${cwWSummary}`, `Ex /${exWSummary}`, "Total"];
+  } else {
+    subHeadersSummary = [...termInitials, "E", "Year"];
+  }
+
   const groupRow: { content: string; colSpan?: number }[] = [
     { content: "#" },
     { content: "Student" },
@@ -263,7 +325,7 @@ export function buildYearClassSummaryPdfBlob(
   const subRow = [
     "",
     "",
-    ...subjectCols.flatMap(() => [...termInitials, "E", "Year"]),
+    ...subjectCols.flatMap(() => subHeadersSummary),
     "",
   ];
 
@@ -274,10 +336,10 @@ export function buildYearClassSummaryPdfBlob(
     const lastTerm = lastTermId
       ? st.terms.find((t) => t.termId === lastTermId)
       : undefined;
-    const lastTermExamMap = new Map<string, number | null>();
+    const lastTermExamMapLocal = new Map<string, number | null>();
     if (lastTerm) {
       for (const s of lastTerm.subjects) {
-        lastTermExamMap.set(s.subjectId, s.examAverage);
+        lastTermExamMapLocal.set(s.subjectId, s.examAverage);
       }
     }
 
@@ -286,11 +348,25 @@ export function buildYearClassSummaryPdfBlob(
       `${st.firstName} ${st.lastName}`.trim(),
       ...subjectCols.flatMap((c) => {
         const sub = subMap.get(c.id);
+
+        if (isPooledSummary) {
+          const composites = (sub?.termGrades ?? [])
+            .map((g) => g.termComposite)
+            .filter((v): v is number => v != null);
+          const rawCa = composites.length > 0
+            ? composites.reduce((a, b) => a + b, 0) / composites.length
+            : null;
+          const ca = rawCa != null ? (rawCa * cwWSummary / 100).toFixed(1) : "-";
+          const endOfYrExam = lastTermExamMapLocal.get(c.id) ?? null;
+          const exam = endOfYrExam != null ? (endOfYrExam * exWSummary / 100).toFixed(1) : "-";
+          return [ca, exam, fmt(sub?.yearGrade ?? null)];
+        }
+
         const termScores = termIds.map((tid) => {
           const tg = sub?.termGrades.find((g) => g.termId === tid);
           return fmt(tg?.termComposite ?? null);
         });
-        const endOfYrExam = lastTermExamMap.get(c.id) ?? null;
+        const endOfYrExam = lastTermExamMapLocal.get(c.id) ?? null;
         return [...termScores, fmt(endOfYrExam), fmt(sub?.yearGrade ?? null)];
       }),
       fmt(st.yearEnd.overallAverage),

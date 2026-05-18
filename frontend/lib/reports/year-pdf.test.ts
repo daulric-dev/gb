@@ -8,7 +8,7 @@ function stubReport(firstName: string, lastName: string): StudentYearReport {
     firstName,
     lastName,
     academicYearId: "y1",
-    gradingModel: "year_based",
+    gradingModel: "weighted_cumulative",
     terms: [],
     yearEnd: { subjects: [], overallAverage: null },
   };
