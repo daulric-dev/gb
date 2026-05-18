@@ -23,6 +23,7 @@ All report-related utilities live in `lib/reports/` and are barrel-exported via 
 | `lib/reports/student-report-pdf.tsx` | Individual student report card PDF matching physical school form (`@react-pdf/renderer`) |
 | `lib/reports/export.ts` | CSV and XLSX export for term-based class summaries |
 | `lib/reports/year-export.ts` | CSV and XLSX export for year-based class summaries |
+| `lib/grading-rules.ts` | Centralized grading model display rules (mirrors backend strategy pattern) |
 
 ---
 
@@ -37,8 +38,8 @@ Displays all students in a class with their live calculated grades and the statu
 
 | Selector | Source | Notes |
 |----------|--------|-------|
-| **Report Type** | Static | Shown only for `year_based` grading model. Options: "Term" or "Year-end" |
-| **Term** | `GET /api/terms?yearId=<id>` | Hidden when Report Type is "Year-end" (year-based model). Sorted by `sort_order` |
+| **Report Type** | Static | Options: "Term" or "Year-end" |
+| **Term** | `GET /api/terms?yearId=<id>` | Hidden when Report Type is "Year-end". Sorted by `sort_order` |
 
 ### Data Flow
 
@@ -96,7 +97,7 @@ Displays differently based on report type:
 | Exam | Exam average |
 | Term | Term composite |
 
-#### Year-End Report (year_based model)
+#### Year-End Report — Per-Term Layout (`weighted_continuous`)
 
 | Column | Description |
 |--------|-------------|
@@ -104,6 +105,17 @@ Displays differently based on report type:
 | M, H, T (term initials) | Per-term composite grades |
 | End of Yr Exam | Last term's exam average |
 | Year Grade | Computed year grade |
+
+#### Year-End Report — Pooled Layout (`weighted_cumulative`, `continuous_cumulative`)
+
+| Column | Description |
+|--------|-------------|
+| Subject | Subject name |
+| AVG /{cwWeight} | Average of term composites, scaled to coursework weight |
+| FINAL /{exWeight} | Final exam from last term, scaled to exam weight (continuous_cumulative only) |
+| Total | Year grade |
+
+The layout is driven by `getGradingRules(model).display.yearEndColumns` — either `"per_term"` or `"pooled"`.
 
 ### PDF Downloads
 
@@ -134,8 +146,8 @@ Class-level summary with statistics, rankings, and export capabilities.
 
 | Selector | Position | Notes |
 |----------|----------|-------|
-| **Report Type** | Left | Shown only for `year_based` model. Options: "Term" or "Year-end" |
-| **Term** | Right | Hidden when "Year-end" is selected (year-based model) |
+| **Report Type** | Left | Options: "Term" or "Year-end" |
+| **Term** | Right | Hidden when "Year-end" is selected |
 
 ### Data Flow
 
@@ -171,12 +183,22 @@ Class-level summary with statistics, rankings, and export capabilities.
 | Student | Full name |
 | Overall Average | Term composite average |
 
-#### Year-End View
+#### Year-End View — Per-Term Models (`weighted_continuous`)
 
 | Column | Description |
 |--------|-------------|
 | # | Position |
 | Student | Full name |
+| Per-subject: M, H, T, E, Yr | Term composites, exam, year grade per subject |
+| Year Average | Year-end overall average |
+
+#### Year-End View — Pooled Models (`weighted_cumulative`, `continuous_cumulative`)
+
+| Column | Description |
+|--------|-------------|
+| # | Position |
+| Student | Full name |
+| Per-subject: CA, Exam, Total | Scaled CA, exam, and total per subject |
 | Year Average | Year-end overall average |
 
 ### Export Section
@@ -245,18 +267,25 @@ Takes `StudentYearReport[]`. Includes:
 
 ### Exam Broadsheet PDF (`buildEndOfYearExamPdfBlob`) - `@react-pdf/renderer`
 
-Takes a `ClassSummary` and `ExamReportOptions`. Generates a landscape A4 PDF matching the physical school exam form. Includes:
+Takes a `ClassSummary` and `ExamReportOptions`. Generates a landscape A4 PDF matching the physical school exam form.
+
+#### Default Layout (per-term models / term view)
 
 - Title: "END OF YEAR EXAMINATIONS" (configurable)
 - Subtitle: "SUBJECTS : Marks out of 100%"
-- Optional metadata line (class, academic year, term)
-- Grid table with full borders:
-  - **Student's Name** column (wide, sorted by position)
-  - **Subject columns** with vertical/rotated header text (dynamically sized)
-  - **TOTAL** - sum of all subject scores
-  - **AVE.** - overall average
-  - **Position** - student ranking
+- Grid table: **Student's Name** | subject columns (vertical headers) | **TOTAL** | **AVE.** | **Position**
 - Configurable `scoreField`: `termComposite`, `yearGrade`, or `examAverage`
+
+#### Pooled Layout (added 2026-05-17)
+
+When `yearResults` and `gradingModel` are provided and the model has `yearEndColumns: "pooled"`, the broadsheet uses a **two-row header** with per-subject sub-columns:
+
+- **Row 1**: Subject names spanning across sub-columns
+- **Row 2**: `AVG /{cwW}` | `FINAL /{exW}` | `Total` under each subject
+- Subtitle: `CA (40%) + Exam (60%) = Total` (using actual weights)
+- Data: scaled CA average, scaled final exam, year grade per subject + overall TOTAL, AVE., Position
+
+`ExamReportOptions` accepts optional `yearResults` (array of year report data) and `gradingModel` to activate this layout.
 
 Also available as a React component (`EndOfYearExamDocument`) for use with `<PDFViewer>`.
 
@@ -277,8 +306,35 @@ Also available as a React component (`StudentReportDocument`).
 The Class Summary card on the class detail page (`[classId]/page.tsx`) includes a **Generate Report** button that produces the exam broadsheet PDF:
 
 - **Term view**: generates using `termComposite` scores for the selected term
-- **Year view**: generates using `yearGrade` scores
+- **Year view**: generates using `yearGrade` scores, passes `yearResults` and `gradingModel` for pooled layout
 - Disabled when no data is available or while generating
+
+---
+
+## Grading Rules System (added 2026-05-17)
+
+**File**: `lib/grading-rules.ts`
+
+A centralized configuration system that drives all grading-model-specific UI logic. Each grading model has a `GradingRules` object that controls:
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `termHasExam` | boolean | Whether term views show an exam column |
+| `termHasCoursework` | boolean | Whether terms have coursework |
+| `yearAggregation` | enum | How year-end grades are aggregated |
+| `display.termCwScaledToYearWeight` | boolean | Scale term CW to year weight in year views |
+| `display.examColumnLocation` | enum | `"each_term"` or `"final_term_only"` |
+| `display.examScaledToYearWeight` | boolean | Scale exam to year weight in year views |
+| `display.showTermAvgColumn` | boolean | Show AVG column in year views |
+| `display.yearEndColumns` | enum | `"per_term"` or `"pooled"` — controls report layout |
+
+Usage: `getGradingRules(gradingModel)` returns the rules for any model. All report generators, PDF builders, CSV/XLSX exports, and UI components use this instead of scattered `if (model === "...")` checks.
+
+To add a new grading model:
+1. Add the slug to `GradingModel` type
+2. Create a `GradingRules` entry
+3. Register in `GRADING_RULES` map
+4. Add a label in `GRADING_MODEL_LABELS`
 
 ## API Calls Summary
 

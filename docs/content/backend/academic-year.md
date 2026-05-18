@@ -28,19 +28,27 @@ The academic year module manages the lifecycle of academic years for a school. E
 | `start_date` | date | Year start |
 | `end_date` | date | Year end (must be after start) |
 | `is_active` | boolean | Whether this is the current active year |
-| `grading_model` | enum | `term_based` or `year_based` |
-| `year_exam_weight` | number? | Exam weight for year-end calculation (year_based only) |
-| `year_coursework_weight` | number? | Coursework weight for year-end (year_based only) |
+| `grading_model` | enum | `weighted_continuous`, `weighted_cumulative`, or `continuous_cumulative` |
+| `year_exam_weight` | number? | Exam weight for year-end calculation (e.g., 60) |
+| `year_coursework_weight` | number? | Coursework weight for year-end (e.g., 40) |
 
-## Grading Models
+## Grading Models (updated 2026-05-17)
 
-### Term-Based (`term_based`)
+The `grading_model` enum was replaced from `term_based`/`year_based` to three specific systems:
 
-The final grade for each subject is calculated **per term only**. There is no year-end aggregation. Each term stands on its own.
+### Weighted Continuous Assessment (`weighted_continuous`)
 
-### Year-Based (`year_based`)
+Each term has independent coursework and exams. At year-end, term composites are averaged and combined with year-level weights. Replaces the old `year_based` model.
 
-Term grades are aggregated into a **year-end grade** using the weights defined on the academic year. The `year_exam_weight` and `year_coursework_weight` must sum to **100**.
+### Weighted Cumulative (`weighted_cumulative`)
+
+All coursework across all terms is pooled into a single CA total. Term boundaries are ignored for the final CA calculation. The final exam is also pooled.
+
+### Continuous-Cumulative (`continuous_cumulative`)
+
+Each term has coursework only (no per-term exam). At year-end, all term coursework averages are combined for the CA portion, and a single final exam from the last term provides the exam portion.
+
+For all three models, `year_exam_weight + year_coursework_weight` must sum to **100**.
 
 ## API Endpoints
 
@@ -56,7 +64,7 @@ Creates a new academic year.
   "name": "2025-2026",
   "startDate": "2025-09-01",
   "endDate": "2026-07-15",
-  "gradingModel": "year_based",
+  "gradingModel": "weighted_continuous",
   "yearExamWeight": 60,
   "yearCourseworkWeight": 40
 }
@@ -64,7 +72,7 @@ Creates a new academic year.
 
 **Validation:**
 - `startDate` must be before `endDate`
-- If `gradingModel` is `year_based`, then `yearExamWeight + yearCourseworkWeight` must equal 100
+- `yearExamWeight + yearCourseworkWeight` must equal 100
 
 ---
 
@@ -90,7 +98,7 @@ Returns a single academic year by ID.
 
 Updates an academic year. All fields are optional.
 
-**Body:** Same fields as create, all optional. Weight validation still applies when grading model is `year_based`.
+**Body:** Same fields as create, all optional. Weight validation still applies (`yearExamWeight + yearCourseworkWeight = 100`).
 
 ---
 
