@@ -20,7 +20,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@opennextjs/cloudflare": "^1.19.10",
-    "@preact/signals-react": "^3.10.0",
+    "@preact/signals-react": "^3.10.1",
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/supabase-js": "^2.103.0",
     "class-variance-authority": "^0.7.1",
