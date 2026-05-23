@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { createApp } from '../src/createApp.js';
+import { createApp } from '../src/createApp';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 
 let cachedApp: NestFastifyApplication | null = null;
