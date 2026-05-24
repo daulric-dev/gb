@@ -73,6 +73,7 @@ describe('SubjectService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
+        getUserSchoolId: () => Promise.resolve(SCHOOL_ID),
         _client: client,
         _builder: insertBuilder,
       };
@@ -105,6 +106,7 @@ describe('SubjectService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
+        getUserSchoolId: () => Promise.resolve(SCHOOL_ID),
         _client: client,
         _builder: insertBuilder,
       };
@@ -160,6 +162,7 @@ describe('SubjectService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
+        getUserSchoolId: () => Promise.resolve(SCHOOL_ID),
         _client: client,
         _builder: queryBuilder,
       };
@@ -185,7 +188,7 @@ describe('SubjectService', () => {
 
       await mockCache.set(`subjects:${SCHOOL_ID}`, [original], SUBJECT_TTL);
 
-      await service.update('subject-1', { name: 'Maths' });
+      await service.update(USER_ID, 'subject-1', { name: 'Maths' });
 
       const cached = await mockCache.get(`subjects:${SCHOOL_ID}`);
       expect(cached[0].name).toBe('Maths');
@@ -201,34 +204,13 @@ describe('SubjectService', () => {
       service = new SubjectService(mockSupabase as any, mockCache as any);
 
       expect(
-        service.update('subject-1', { name: 'Existing' } as any),
+        service.update(USER_ID, 'subject-1', { name: 'Existing' } as any),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
   describe('reorder', () => {
-    test('uses deleteByPrefix', async () => {
-      mockSupabase = createMockSupabaseService({
-        queryResult: { data: null, error: null },
-      });
-      service = new SubjectService(mockSupabase as any, mockCache as any);
-
-      await mockCache.set(
-        `subjects:${SCHOOL_ID}`,
-        [makeSubject()],
-        SUBJECT_TTL,
-      );
-
-      await service.reorder({
-        items: [{ id: 'subject-1', sortOrder: 2 }],
-      });
-
-      expect(await mockCache.get(`subjects:${SCHOOL_ID}`)).toBeNull();
-    });
-  });
-
-  describe('delete', () => {
-    test('uses deleteByPrefix', async () => {
+    test('invalidates the caller school cache only', async () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: null, error: null },
       });
@@ -241,10 +223,33 @@ describe('SubjectService', () => {
       );
       await mockCache.set('subjects:school-2', [makeSubject()], SUBJECT_TTL);
 
-      await service.delete('subject-1');
+      await service.reorder(USER_ID, {
+        items: [{ id: 'subject-1', sortOrder: 2 }],
+      });
 
       expect(await mockCache.get(`subjects:${SCHOOL_ID}`)).toBeNull();
-      expect(await mockCache.get('subjects:school-2')).toBeNull();
+      expect(await mockCache.get('subjects:school-2')).not.toBeNull();
+    });
+  });
+
+  describe('delete', () => {
+    test('invalidates the caller school cache only', async () => {
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: null, error: null },
+      });
+      service = new SubjectService(mockSupabase as any, mockCache as any);
+
+      await mockCache.set(
+        `subjects:${SCHOOL_ID}`,
+        [makeSubject()],
+        SUBJECT_TTL,
+      );
+      await mockCache.set('subjects:school-2', [makeSubject()], SUBJECT_TTL);
+
+      await service.delete(USER_ID, 'subject-1');
+
+      expect(await mockCache.get(`subjects:${SCHOOL_ID}`)).toBeNull();
+      expect(await mockCache.get('subjects:school-2')).not.toBeNull();
     });
 
     test('throws ConflictException on FK violation (error code 23503)', () => {
@@ -256,7 +261,7 @@ describe('SubjectService', () => {
       });
       service = new SubjectService(mockSupabase as any, mockCache as any);
 
-      expect(service.delete('subject-1')).rejects.toBeInstanceOf(
+      expect(service.delete(USER_ID, 'subject-1')).rejects.toBeInstanceOf(
         ConflictException,
       );
     });

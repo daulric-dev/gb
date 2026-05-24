@@ -27,11 +27,28 @@ export class CalculationController {
 
     const { data: profile } = await supabase
       .from('user_profile')
-      .select('role')
+      .select('role, school_id')
       .eq('id', userId)
       .single();
 
-    if (profile?.role === 'admin') return;
+    if (profile?.role === 'admin') {
+      // Admin bypass is scoped to the class's school.
+      const { data: studentGroup } = await supabase
+        .from('student_group')
+        .select('academic_year:academic_year_id(school_id)')
+        .eq('id', studentGroupId)
+        .maybeSingle();
+
+      const classSchoolId = (
+        studentGroup?.academic_year as { school_id?: string } | null
+      )?.school_id;
+
+      if (classSchoolId && classSchoolId === profile.school_id) return;
+
+      throw new ForbiddenException(
+        'Only the class teacher can perform this action',
+      );
+    }
 
     const { data: assignment } = await supabase
       .schema('staff')
@@ -44,7 +61,7 @@ export class CalculationController {
 
     if (!assignment) {
       throw new ForbiddenException(
-        'Only the class teacher can view class summary',
+        'Only the class teacher can perform this action',
       );
     }
   }
@@ -56,6 +73,7 @@ export class CalculationController {
     @Query('termId') termId: string,
     @Query('studentGroupId') studentGroupId: string,
   ) {
+    await this.verifyClassTeacher(req.user.id, studentGroupId);
     const raw = await this.calculationService.calculateStudentTermResult(
       studentId,
       termId,
@@ -71,6 +89,7 @@ export class CalculationController {
     @Query('academicYearId') academicYearId: string,
     @Query('studentGroupId') studentGroupId: string,
   ) {
+    await this.verifyClassTeacher(req.user.id, studentGroupId);
     const raw = await this.calculationService.calculateStudentYearResult(
       studentId,
       academicYearId,

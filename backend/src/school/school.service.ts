@@ -124,6 +124,10 @@ export class SchoolService {
 
     // Bootstrap rule: if this school has no admin yet, auto-assign this user
     // as admin instead of creating a request (orphaned school takeover).
+    //
+    // The partial unique index on school_management (school_id) WHERE
+    // role='admin' serializes concurrent claims — a loser receives 23505
+    // and falls through to the regular join-request flow below.
     const { data: existingAdmin } = await supabase
       .from('school_management')
       .select('id')
@@ -135,32 +139,35 @@ export class SchoolService {
     if (!existingAdmin) {
       const { error: managementError } = await supabase
         .from('school_management')
-        .upsert(
-          { user_id: userId, school_id: schoolId, role: 'admin' },
-          { onConflict: 'user_id,school_id' },
-        );
+        .insert({ user_id: userId, school_id: schoolId, role: 'admin' });
 
-      if (managementError) {
+      if (managementError && managementError.code !== '23505') {
         this.logger.error(
           `Failed to auto-assign admin for ${userId} at ${schoolId}: ${managementError.message}`,
         );
         throw new BadRequestException('Failed to join school');
       }
 
-      const { error: profileError } = await supabase
-        .from('user_profile')
-        .update({ school_id: schoolId, role: 'admin', is_active: true })
-        .eq('id', userId);
+      if (!managementError) {
+        // Claim won — elevate the profile and return.
+        const { error: profileError } = await supabase
+          .from('user_profile')
+          .update({ school_id: schoolId, role: 'admin', is_active: true })
+          .eq('id', userId);
 
-      if (profileError) {
-        this.logger.error(
-          `Failed to update profile for ${userId}: ${profileError.message}`,
-        );
-        throw new BadRequestException('Failed to join school');
+        if (profileError) {
+          this.logger.error(
+            `Failed to update profile for ${userId}: ${profileError.message}`,
+          );
+          throw new BadRequestException('Failed to join school');
+        }
+
+        await this.cache.delete(`profile:${userId}`);
+        return { autoJoined: true, school };
       }
 
-      await this.cache.delete(`profile:${userId}`);
-      return { autoJoined: true, school };
+      // Race lost (23505): another concurrent request became admin first.
+      // Fall through to the regular join-request flow below.
     }
 
     // Prevent duplicate pending requests across any school
@@ -397,6 +404,12 @@ export class SchoolService {
       .delete()
       .eq('user_id', userId)
       .eq('school_id', profile.school_id);
+
+    await supabase
+      .from('school_join_request')
+      .delete()
+      .eq('user_id', userId)
+      .eq('status', 'pending');
 
     await supabase
       .from('user_profile')

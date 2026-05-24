@@ -87,39 +87,66 @@ describe('ReportService', () => {
     );
   });
 
-  test('publish throws BadRequestException if already published', () => {
-    const fetchResult = { data: { status: 'published' }, error: null };
-    const builder = createMockQueryBuilder(fetchResult);
-    builder.maybeSingle = () => Promise.resolve(fetchResult);
+  function wireSchoolCheck(then: { data: any; error: any }[]) {
+    const schoolCheckResult = {
+      data: { academic_year: { school_id: 'school-1' } },
+      error: null,
+    };
+    const sequence = [schoolCheckResult, ...then];
+    const builder = createMockQueryBuilder(schoolCheckResult);
+
+    let i = 0;
+    builder.maybeSingle = () => Promise.resolve(sequence[i++] ?? sequence.at(-1));
+    builder.single = () => Promise.resolve(sequence[i++] ?? sequence.at(-1));
+    builder.then = (resolve: Function) =>
+      resolve(sequence[i++] ?? sequence.at(-1));
+
     mockSupabase.getServiceClient = () =>
       ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+  }
 
-    expect(service.publish('r1')).rejects.toBeInstanceOf(BadRequestException);
+  test('publish throws BadRequestException if already published', () => {
+    wireSchoolCheck([{ data: { status: 'published' }, error: null }]);
+
+    expect(service.publish('user1', 'r1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   test('sendToMinistry throws BadRequestException if still draft', () => {
-    const fetchResult = { data: { status: 'draft' }, error: null };
-    const builder = createMockQueryBuilder(fetchResult);
-    builder.maybeSingle = () => Promise.resolve(fetchResult);
-    mockSupabase.getServiceClient = () =>
-      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    wireSchoolCheck([{ data: { status: 'draft' }, error: null }]);
 
-    expect(service.sendToMinistry('r1')).rejects.toBeInstanceOf(
+    expect(service.sendToMinistry('user1', 'r1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });
 
   test('updateReport returns updated data', async () => {
     const updated = { id: 'r1', class_teacher_remark: 'Good', conduct: 'A' };
-    const builder = createMockQueryBuilder({ data: updated, error: null });
-    mockSupabase.getServiceClient = () =>
-      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    wireSchoolCheck([{ data: updated, error: null }]);
 
-    const result = await service.updateReport('r1', {
+    const result = await service.updateReport('user1', 'r1', {
       classTeacherRemark: 'Good',
       conduct: 'A',
     });
 
     expect(result).toEqual(updated);
+  });
+
+  test('updateReport rejects cross-school mutation', () => {
+    // School check returns a different school than the caller's.
+    const schoolCheckResult = {
+      data: { academic_year: { school_id: 'school-2' } },
+      error: null,
+    };
+    const builder = createMockQueryBuilder(schoolCheckResult);
+    builder.maybeSingle = () => Promise.resolve(schoolCheckResult);
+
+    mockSupabase.getServiceClient = () =>
+      ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+
+    expect(
+      service.updateReport('user1', 'r1', { classTeacherRemark: 'x' }),
+    ).rejects.toMatchObject({ status: 403 });
   });
 });

@@ -25,6 +25,8 @@ export class EnrollmentService {
   async enroll(classId: string, dto: EnrollStudentDto) {
     const supabase = this.supabaseService.getServiceClient();
 
+    await this.assertSameSchool(classId, [dto.studentId]);
+
     const { data, error } = await supabase
       .schema('student')
       .from('student_group_enrollment')
@@ -52,6 +54,8 @@ export class EnrollmentService {
 
   async bulkEnroll(classId: string, dto: BulkEnrollDto) {
     const supabase = this.supabaseService.getServiceClient();
+
+    await this.assertSameSchool(classId, dto.studentIds);
 
     const rows = dto.studentIds.map((studentId) => ({
       student_id: studentId,
@@ -327,6 +331,53 @@ export class EnrollmentService {
     }
 
     return data.academic_year_id;
+  }
+
+  // Reject enrollments that try to mix schools. The ClassTeacherGuard
+  // already restricts who can call this endpoint, but it doesn't stop a
+  // class teacher in school A from enrolling a studentId from school B.
+  private async assertSameSchool(classId: string, studentIds: string[]) {
+    if (studentIds.length === 0) return;
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: group, error: groupErr } = await supabase
+      .from('student_group')
+      .select('academic_year:academic_year_id(school_id)')
+      .eq('id', classId)
+      .maybeSingle();
+
+    const classSchoolId = (
+      group?.academic_year as { school_id?: string } | null
+    )?.school_id;
+
+    if (groupErr || !classSchoolId) {
+      throw new BadRequestException(
+        'Could not determine school for this class',
+      );
+    }
+
+    const { data: students, error: studErr } = await supabase
+      .schema('student')
+      .from('student')
+      .select('id, school_id')
+      .in('id', studentIds);
+
+    if (studErr || !students) {
+      throw new BadRequestException('Could not verify students');
+    }
+
+    if (students.length !== studentIds.length) {
+      throw new BadRequestException(
+        'One or more students do not exist',
+      );
+    }
+
+    const mismatched = students.filter((s) => s.school_id !== classSchoolId);
+    if (mismatched.length > 0) {
+      throw new BadRequestException(
+        'Students must belong to the same school as the class',
+      );
+    }
   }
 
   async assignSubjects(classId: string, dto: AssignSubjectsDto) {

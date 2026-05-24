@@ -87,13 +87,15 @@ describe('TermService', () => {
 
   describe('findByYear', () => {
     test('returns cached data on hit', async () => {
-      mockSupabase = createMockSupabaseService();
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: { id: YEAR_ID }, error: null },
+      });
       service = new TermService(mockSupabase as any, mockCache as any);
 
       const terms = [makeTerm()];
       await mockCache.set(`terms:${YEAR_ID}`, terms, TERM_TTL);
 
-      const result = await service.findByYear(YEAR_ID);
+      const result = await service.findByYear(USER_ID, YEAR_ID);
       expect(result).toEqual(terms);
     });
 
@@ -104,7 +106,7 @@ describe('TermService', () => {
       });
       service = new TermService(mockSupabase as any, mockCache as any);
 
-      const result = await service.findByYear(YEAR_ID);
+      const result = await service.findByYear(USER_ID, YEAR_ID);
       expect(result).toEqual(terms);
 
       const cached = await mockCache.get(`terms:${YEAR_ID}`);
@@ -138,6 +140,7 @@ describe('TermService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
+        getUserSchoolId: () => Promise.resolve('school-1'),
         _client: client,
         _builder: updateBuilder,
       };
@@ -145,7 +148,7 @@ describe('TermService', () => {
 
       await mockCache.set(`terms:${YEAR_ID}`, [original], TERM_TTL);
 
-      await service.update('term-1', {
+      await service.update(USER_ID, 'term-1', {
         examWeight: 70,
         courseworkWeight: 30,
       });
@@ -156,19 +159,20 @@ describe('TermService', () => {
   });
 
   describe('delete', () => {
-    test('uses deleteByPrefix', async () => {
+    test('invalidates the year cache only', async () => {
+      const term = makeTerm();
       mockSupabase = createMockSupabaseService({
-        queryResult: { data: null, error: null },
+        queryResult: { data: term, error: null },
       });
       service = new TermService(mockSupabase as any, mockCache as any);
 
-      await mockCache.set(`terms:${YEAR_ID}`, [makeTerm()], TERM_TTL);
+      await mockCache.set(`terms:${YEAR_ID}`, [term], TERM_TTL);
       await mockCache.set('terms:year-2', [makeTerm()], TERM_TTL);
 
-      await service.delete('term-1');
+      await service.delete(USER_ID, 'term-1');
 
       expect(await mockCache.get(`terms:${YEAR_ID}`)).toBeNull();
-      expect(await mockCache.get('terms:year-2')).toBeNull();
+      expect(await mockCache.get('terms:year-2')).not.toBeNull();
     });
   });
 });

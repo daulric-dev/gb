@@ -32,6 +32,17 @@ import { VersioningModule } from '@/versioning/versioning.module';
           ttl: 60_000,
           limit: 100,
         },
+        // Tighter bucket for routes that can be abused without a session
+        // (OTP send, account delete). Keyed by request body email when
+        // available, otherwise IP — so an attacker cannot just rotate
+        // IPs to drain a victim's allowance.
+        {
+          name: 'auth-strict',
+          ttl: 60 * 60 * 1000,
+          limit: 5,
+          getTracker: (req: { body?: { email?: string }; ip?: string }) =>
+            req.body?.email?.toLowerCase() ?? req.ip ?? 'unknown',
+        },
       ],
       // One shared bucket per client (IP); default keys per controller method.
       generateKey: (

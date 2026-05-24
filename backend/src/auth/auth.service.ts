@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
@@ -44,12 +38,7 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(
-    email: string,
-    token: string,
-    req: FastifyRequest,
-    reply: FastifyReply,
-  ) {
+  async verifyOtp(email: string, token: string, req: FastifyRequest, reply: FastifyReply ) {
     try {
       // Verify on the user client so the SSR adapter writes the auth-token
       // cookie via setAll synchronously inside this call.
@@ -118,36 +107,30 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    try {
-      const cached = await this.cache.get(`profile:${userId}`);
-      if (cached) return cached;
+    const cached = await this.cache.get(`profile:${userId}`);
+    if (cached) return cached;
 
-      const supabase = this.supabaseService.getServiceClient();
+    const supabase = this.supabaseService.getServiceClient();
 
-      const { data: profile, error } = await supabase
-        .from('user_profile')
-        .select('*, school:school_id(*), school_management(role)')
-        .eq('id', userId)
-        .single();
+    const { data: profile, error } = await supabase
+      .from('user_profile')
+      .select('*, school:school_id(*), school_management(role)')
+      .eq('id', userId)
+      .single();
 
-      if (error || !profile) {
-        this.logger.error(`Profile not found for ${userId}: ${error?.message}`);
-        throw new NotFoundException('User profile not found');
-      }
-
-      if (profile.school_management.length === 1) {
-        profile.school_management = {
-          role: profile.school_management[0].role,
-        };
-      }
-
-      await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
-      return profile;
-    } catch (err) {
-      if (err instanceof NotFoundException) throw err;
-      this.logger.error(`Unexpected error fetching profile: ${String(err)}`);
+    if (error || !profile) {
+      this.logger.error(`Profile not found for ${userId}: ${error?.message}`);
       throw new NotFoundException('User profile not found');
     }
+
+    if (profile.school_management.length === 1) {
+      profile.school_management = {
+        role: profile.school_management[0].role,
+      };
+    }
+
+    await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
+    return profile;
   }
 
   async onboard(userId: string, dto: OnboardDto) {
@@ -220,8 +203,11 @@ export class AuthService {
     }
 
     if (dto.schoolId) {
-      // If the school has no admin yet, auto-assign this user as admin
-      // (bootstrap rule for orphaned schools - first joiner takes ownership).
+      // Bootstrap rule: if the school has no admin yet, the first joiner
+      // takes ownership. The school_management table has a partial unique
+      // index on (school_id) WHERE role='admin' that serializes the claim
+      // — a concurrent loser receives error code 23505 and falls through
+      // to the join-request flow instead of becoming a second admin.
       const { data: existingAdmin } = await supabase
         .from('school_management')
         .select('id')
@@ -231,42 +217,67 @@ export class AuthService {
         .maybeSingle();
 
       if (!existingAdmin) {
-        // Upsert user_profile FIRST (school_management has an FK to user_profile)
-        const { data, error } = await supabase
+        // Ensure the user_profile row exists (school_management has an FK
+        // to it). Do NOT set role='admin' yet — we only elevate after the
+        // school_management claim succeeds, so a lost race leaves no
+        // half-state behind.
+        const { error: profileError } = await supabase
           .from('user_profile')
           .upsert({
             id: userId,
             first_name: dto.firstName,
             last_name: dto.lastName,
             school_id: dto.schoolId,
-            role: 'admin',
-          })
-          .select('*, school:school_id(*)')
-          .single();
+          });
 
-        if (error || !data) {
+        if (profileError) {
           this.logger.error(
-            `Failed to onboard user ${userId}: ${error?.message}`,
+            `Failed to onboard user ${userId}: ${profileError.message}`,
           );
           throw new BadRequestException('Failed to complete onboarding');
         }
 
         const { error: managementError } = await supabase
           .from('school_management')
-          .upsert(
-            { user_id: userId, school_id: dto.schoolId, role: 'admin' },
-            { onConflict: 'user_id,school_id' },
-          );
+          .insert({
+            user_id: userId,
+            school_id: dto.schoolId,
+            role: 'admin',
+          });
 
-        if (managementError) {
+        if (managementError && managementError.code !== '23505') {
           this.logger.error(
             `Failed to auto-assign admin for ${userId} at ${dto.schoolId}: ${managementError.message}`,
           );
           throw new BadRequestException('Failed to complete onboarding');
         }
 
-        await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
-        return data;
+        if (!managementError) {
+          // Claim won — elevate the profile and return the admin path.
+          const { data: adminProfile, error: roleError } = await supabase
+            .from('user_profile')
+            .update({ role: 'admin' })
+            .eq('id', userId)
+            .select('*, school:school_id(*)')
+            .single();
+
+          if (roleError || !adminProfile) {
+            this.logger.error(
+              `Failed to elevate ${userId} to admin: ${roleError?.message}`,
+            );
+            throw new BadRequestException('Failed to complete onboarding');
+          }
+
+          await this.cache.set(
+            `profile:${userId}`,
+            adminProfile,
+            PROFILE_TTL,
+          );
+          return adminProfile;
+        }
+
+        // Race lost (23505): another concurrent request became admin
+        // first. Fall through to the join-request path.
       }
 
       // School already has an admin - go through the join request flow.
@@ -332,9 +343,6 @@ export class AuthService {
       first_name: dto.firstName,
       last_name: dto.lastName,
     };
-    if (dto.schoolId !== undefined) {
-      patch.school_id = dto.schoolId;
-    }
 
     const { data, error } = await supabase
       .from('user_profile')
