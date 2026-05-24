@@ -217,7 +217,7 @@ export class AuthService {
       // Bootstrap rule: if the school has no admin yet, the first joiner
       // takes ownership. The school_management table has a partial unique
       // index on (school_id) WHERE role='admin' that serializes the claim
-      // — a concurrent loser receives error code 23505 and falls through
+      // - a concurrent loser receives error code 23505 and falls through
       // to the join-request flow instead of be-oming a second admin.
       const { data: existingAdmin } = await supabase
         .from('school_management')
@@ -229,7 +229,7 @@ export class AuthService {
 
       if (!existingAdmin) {
         // Ensure the user_profile row exists (school_management has an FK
-        // to it). Do NOT set role='admin' yet — we only elevate after the
+        // to it). Do NOT set role='admin' yet - we only elevate after the
         // school_management claim succeeds, so a lost race leaves no
         // half-state behind.
         const { error: profileError } = await supabase
@@ -264,7 +264,7 @@ export class AuthService {
         }
 
         if (!managementError) {
-          // Claim won — elevate the profile and return the admin path.
+          // Claim won - elevate the profile and return the admin path.
           const { data: adminProfile, error: roleError } = await supabase
             .from('user_profile')
             .update({ role: 'admin' })
