@@ -9,10 +9,10 @@ COPY docs/package.json docs/package.json
 RUN bun install
 
 FROM base AS build
-COPY --from=install /app/node_modules ./node_modules
+COPY --from=install /app ./
 COPY package.json bun.lock tsconfig*.json ./
 COPY backend ./backend
-RUN cd backend && ./node_modules/.bin/nest build
+RUN cd backend && bunx nest build
 
 FROM base AS production
 COPY --from=install /app/node_modules ./node_modules
