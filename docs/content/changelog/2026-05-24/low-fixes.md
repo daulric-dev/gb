@@ -3,7 +3,7 @@ sidebar_label: 2026-05-24 · Low-severity fixes
 sidebar_position: 6
 ---
 
-# 2026-05-24 — Low-severity fixes
+# 2026-05-24 - Low-severity fixes
 
 Final cleanup batch from the audit. Small, mostly-isolated changes; no migrations, no behavior changes for normal users.
 
@@ -13,9 +13,9 @@ Final cleanup batch from the audit. Small, mostly-isolated changes; no migration
 
 **Fix.** Added:
 
-- `@ArrayMaxSize(1000)` on `grades` — matches a comfortable upper bound for class size × bulk operations.
-- `@Max(1000)` on `GradeEntry.score` — grades are nominally 0–100, 1000 leaves room for any future scoring scheme without being a footgun.
-- `@MaxLength(2000)` on `GradeEntry.remarks` — caps free-text remarks.
+- `@ArrayMaxSize(1000)` on `grades` - matches a comfortable upper bound for class size × bulk operations.
+- `@Max(1000)` on `GradeEntry.score` - grades are nominally 0–100, 1000 leaves room for any future scoring scheme without being a footgun.
+- `@MaxLength(2000)` on `GradeEntry.remarks` - caps free-text remarks.
 
 `ArrayMinSize(1)` and `Min(0)` were already present.
 
@@ -27,13 +27,13 @@ Final cleanup batch from the audit. Small, mostly-isolated changes; no migration
 
 ## `docker-compose.yml` mounted nginx config from a wrong path
 
-[infrastructure/docker-compose.yml](../../../../infrastructure/docker-compose.yml) was at `infrastructure/docker-compose.yml` but mounted `./infrastructure/nginx/default.conf` — which resolves relative to the compose file's directory, so it tried to read `infrastructure/infrastructure/nginx/default.conf` (doesn't exist). The container would silently start with the stock default config, exposing the nginx welcome page on port 80.
+[infrastructure/docker-compose.yml](../../../../infrastructure/docker-compose.yml) was at `infrastructure/docker-compose.yml` but mounted `./infrastructure/nginx/default.conf` - which resolves relative to the compose file's directory, so it tried to read `infrastructure/infrastructure/nginx/default.conf` (doesn't exist). The container would silently start with the stock default config, exposing the nginx welcome page on port 80.
 
-**Fix.** Changed the volume to `./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro` (the path is now correct relative to the compose file, and the mount is read-only — defense in depth).
+**Fix.** Changed the volume to `./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro` (the path is now correct relative to the compose file, and the mount is read-only - defense in depth).
 
 ## `worker.ts` Cloudflare entrypoint missed `@fastify/cookie`
 
-[worker.ts](../../../../backend/src/worker.ts) registers `@fastify/multipart` but not `@fastify/cookie`. The main entrypoint [createApp.ts](../../../../backend/src/createApp.ts) does register cookie. So the Cloudflare worker entrypoint would boot fine but silently drop every cookie the Supabase SSR adapter tries to set — sessions would never persist on this entrypoint.
+[worker.ts](../../../../backend/src/worker.ts) registers `@fastify/multipart` but not `@fastify/cookie`. The main entrypoint [createApp.ts](../../../../backend/src/createApp.ts) does register cookie. So the Cloudflare worker entrypoint would boot fine but silently drop every cookie the Supabase SSR adapter tries to set - sessions would never persist on this entrypoint.
 
 **Fix.** Imported and registered `@fastify/cookie` in `worker.ts`, immediately before multipart, mirroring the order in `createApp.ts`.
 
@@ -53,7 +53,7 @@ This entrypoint may not be in active use today (the production deploy uses a dif
 
 ## Tests
 
-No new tests needed — the changes are config or input-validation tightening only.
+No new tests needed - the changes are config or input-validation tightening only.
 
 - Backend: 102/102 passing.
 - Frontend: pre-existing `bun:test` type-resolution errors in test files; none of the touched files (`app/login/verify/page.tsx`, `app/onboard/pending/page.tsx`) regressed.
@@ -64,11 +64,11 @@ No database migrations. Order:
 
 1. Backend deploy (picks up the new DTO bounds and removes the debug header).
 2. Frontend rebuild (picks up the paste / double-decode fixes).
-3. Reload nginx via `docker compose` — note that the `docker-compose.yml` path fix only matters if you run nginx through this compose file; if your production nginx is host-installed it's untouched.
+3. Reload nginx via `docker compose` - note that the `docker-compose.yml` path fix only matters if you run nginx through this compose file; if your production nginx is host-installed it's untouched.
 
 ## Belt-and-suspenders school check on report mutations
 
-The audit also flagged `report.service.ts` for mixing the service client (RLS-bypassing) with the user client in nearby methods. The cleanest fix — switching the mutations to the user client and relying on RLS — would require new INSERT/UPDATE/DELETE policies on `reporting.report_book`, which is a larger change than the rest of this batch.
+The audit also flagged `report.service.ts` for mixing the service client (RLS-bypassing) with the user client in nearby methods. The cleanest fix - switching the mutations to the user client and relying on RLS - would require new INSERT/UPDATE/DELETE policies on `reporting.report_book`, which is a larger change than the rest of this batch.
 
 Instead, this batch closes the same defense-in-depth gap by **re-verifying report ownership in the service layer itself**. The `ClassTeacherGuard` (which became school-aware in the [High batch](./high-fixes.md#classteacherguard--verifyclassteacher-admin-bypass)) is still the primary gate, but a guard regression would no longer let a write slip through.
 
