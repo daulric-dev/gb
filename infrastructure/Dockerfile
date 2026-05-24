@@ -4,6 +4,8 @@ WORKDIR /app
 FROM base AS install
 COPY package.json bun.lock ./
 COPY backend/package.json backend/package.json
+COPY frontend/package.json frontend/package.json
+COPY docs/package.json docs/package.json
 RUN bun install
 
 FROM base AS build
