@@ -126,7 +126,7 @@ export class SchoolService {
     // as admin instead of creating a request (orphaned school takeover).
     //
     // The partial unique index on school_management (school_id) WHERE
-    // role='admin' serializes concurrent claims — a loser receives 23505
+    // role='admin' serializes concurrent claims - a loser receives 23505
     // and falls through to the regular join-request flow below.
     const { data: existingAdmin } = await supabase
       .from('school_management')
@@ -149,7 +149,7 @@ export class SchoolService {
       }
 
       if (!managementError) {
-        // Claim won — elevate the profile and return.
+        // Claim won - elevate the profile and return.
         const { error: profileError } = await supabase
           .from('user_profile')
           .update({ school_id: schoolId, role: 'admin', is_active: true })

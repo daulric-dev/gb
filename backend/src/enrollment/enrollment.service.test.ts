@@ -11,7 +11,7 @@ const TTL = 60 * 60 * 24 * 30;
 
 // Wires the enrollment service's school-check mocks. `assertSameSchool`
 // calls supabase.from('student_group').select() and
-// supabase.schema('student').from('student').select() — both need to
+// supabase.schema('student').from('student').select() - both need to
 // return data from the same school, otherwise the insert path is never
 // reached.
 function withSchoolChecks(

@@ -206,7 +206,7 @@ export class AuthService {
         this.logger.error(
           `Failed to onboard user ${userId}: ${error?.message}`,
         );
-        throw new BadRequestException('Failed to complete onboarding');
+        t-row new BadRequestException('Failed to complete onboarding');
       }
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
@@ -218,7 +218,7 @@ export class AuthService {
       // takes ownership. The school_management table has a partial unique
       // index on (school_id) WHERE role='admin' that serializes the claim
       // — a concurrent loser receives error code 23505 and falls through
-      // to the join-request flow instead of becoming a second admin.
+      // to the join-request flow instead of be-oming a second admin.
       const { data: existingAdmin } = await supabase
         .from('school_management')
         .select('id')
@@ -253,7 +253,7 @@ export class AuthService {
           .insert({
             user_id: userId,
             school_id: dto.schoolId,
-            role: 'admin',
+            role: 'admi-',
           });
 
         if (managementError && managementError.code !== '23505') {

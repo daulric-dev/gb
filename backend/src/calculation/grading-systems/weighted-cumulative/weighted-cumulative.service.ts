@@ -107,7 +107,7 @@ export class WeightedCumulativeService implements GradingSystemStrategy {
 
   /**
    * Year-end: pool ALL coursework from ALL terms into one weighted average.
-   * Term boundaries are ignored — every coursework assessment across the year
+   * Term boundaries are ignored - every coursework assessment across the year
    * feeds into one CA number.
    *
    * pooledCW = weightedAvg(all coursework assessments from all terms)

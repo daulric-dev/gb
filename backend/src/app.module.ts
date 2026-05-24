@@ -34,7 +34,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
         },
         // Tighter bucket for routes that can be abused without a session
         // (OTP send, account delete). Keyed by request body email when
-        // available, otherwise IP — so an attacker cannot just rotate
+        // available, otherwise IP - so an attacker cannot just rotate
         // IPs to drain a victim's allowance.
         {
           name: 'auth-strict',
