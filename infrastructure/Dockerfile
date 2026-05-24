@@ -9,6 +9,7 @@ COPY docs/package.json docs/package.json
 RUN bun install
 
 FROM base AS build
+ENV PATH="/app/node_modules/.bin:$PATH"
 COPY --from=install /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig*.json ./
 COPY backend ./backend
