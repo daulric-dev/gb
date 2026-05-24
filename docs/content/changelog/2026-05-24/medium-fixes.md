@@ -3,9 +3,9 @@ sidebar_label: 2026-05-24 · Medium-severity fixes
 sidebar_position: 5
 ---
 
-# 2026-05-24 — Medium-severity fixes
+# 2026-05-24 - Medium-severity fixes
 
-Third batch from the same audit. No new migrations — everything is application code or nginx config.
+Third batch from the same audit. No new migrations - everything is application code or nginx config.
 
 ## Tighter rate limit on OTP send / verify / account-delete
 
@@ -23,7 +23,7 @@ Per-email keying means an attacker can't drain a victim's allowance by rotating 
 
 ## `enrollment.enroll` and `bulkEnroll` school mismatch
 
-`ClassTeacherGuard` restricted *who* could call enroll, but a class teacher in school A could pass any `studentId` from school B in the body — there was no check that the student actually belonged to the class's school. Combined with the IDOR fixes from the [critical batch](./security-fixes.md), this closes the last cross-school write path through enrollment.
+`ClassTeacherGuard` restricted *who* could call enroll, but a class teacher in school A could pass any `studentId` from school B in the body - there was no check that the student actually belonged to the class's school. Combined with the IDOR fixes from the [critical batch](./security-fixes.md), this closes the last cross-school write path through enrollment.
 
 **Fix.** New private helper [`EnrollmentService.assertSameSchool`](../../../../backend/src/enrollment/enrollment.service.ts) resolves the class's school via `student_group → academic_year → school_id`, then verifies every supplied `studentId` belongs to the same school. `enroll` and `bulkEnroll` call it before the insert. Mismatches throw `BadRequestException` with `"Students must belong to the same school as the class"`. Non-existent students throw `"One or more students do not exist"`.
 
@@ -57,7 +57,7 @@ A grep across the rest of the backend confirms this is the only `.or()` interpol
 
 ## Removed unused `@supabase/supabase-js` from the frontend
 
-The frontend never imports `@supabase/supabase-js` — all Supabase calls go through the NestJS backend. Carrying the dep meant a non-trivial bundle bloat and a footgun: a future contributor could reach for it and accidentally bypass the auth layer the rest of the app uses.
+The frontend never imports `@supabase/supabase-js` - all Supabase calls go through the NestJS backend. Carrying the dep meant a non-trivial bundle bloat and a footgun: a future contributor could reach for it and accidentally bypass the auth layer the rest of the app uses.
 
 **Fix.** Removed from [frontend/package.json](../../../../frontend/package.json) `dependencies`. Run `bun install` (or your package manager's equivalent) after pulling to clean the lockfile.
 
@@ -65,7 +65,7 @@ The frontend never imports `@supabase/supabase-js` — all Supabase calls go thr
 
 The [High batch](./high-fixes.md#nginx-hardening) added `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` to [nginx default.conf](../../../../infrastructure/nginx/default.conf). This batch adds Content-Security-Policy.
 
-The CSP here covers the **API surface only** — nginx proxies the NestJS backend, whose responses are JSON, Swagger UI, and error pages. None of that needs to embed cross-origin content. The frontend's CSP should be configured separately in `next.config.ts` where it can be tuned to the actual asset origins (Supabase storage, etc.).
+The CSP here covers the **API surface only** - nginx proxies the NestJS backend, whose responses are JSON, Swagger UI, and error pages. None of that needs to embed cross-origin content. The frontend's CSP should be configured separately in `next.config.ts` where it can be tuned to the actual asset origins (Supabase storage, etc.).
 
 ```
 Content-Security-Policy:
@@ -99,8 +99,8 @@ No database migrations in this batch. Order:
 
 These are Low and not in this batch:
 
-- `BulkGradeDto` has no `@ArrayMaxSize` and `score` has no `@Max` — unbounded payloads.
-- `worker.ts` Cloudflare entrypoint doesn't register `@fastify/cookie` — only matters if that entrypoint is ever used.
+- `BulkGradeDto` has no `@ArrayMaxSize` and `score` has no `@Max` - unbounded payloads.
+- `worker.ts` Cloudflare entrypoint doesn't register `@fastify/cookie` - only matters if that entrypoint is ever used.
 - `docker-compose.yml` mounts the nginx config from a wrong relative path → container would boot with stock default config exposing the welcome page.
 - OTP verify auto-submits on paste in the frontend.
 - Onboard/pending page double-decodes `searchParams.get('school')`.

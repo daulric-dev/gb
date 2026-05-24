@@ -29,14 +29,16 @@ build:
 
 ### Updated: `.github/workflows/infrastructure.yml`
 
-Replaced the old validation-only jobs with three jobs:
+Three jobs:
 
 | Job | Purpose |
 |---|---|
-| **nginx** | `nginx -t` syntax check (unchanged) |
+| **nginx** | `nginx -t` syntax check |
 | **build** | Validates compose file, then runs `docker compose build` to compile all images |
-| **smoke-test** | Starts the full stack (`up -d`), waits for readiness, curls nginx to verify it responds, then tears down |
+| **reverse-proxy** | Spins up Python mock upstreams on 3004/5/6, runs nginx with host networking, and verifies round-robin load balancing across all 3 backends |
 
 ## Why
 
 Previously a broken Dockerfile or build failure would only surface at deploy time. The workflow now catches build regressions on every push to `infrastructure/**`.
+
+The reverse-proxy job uses mock Python HTTP servers rather than booting the real NestJS stack — the real backend needs Supabase/Redis to start, which would require provisioning real external services just to validate nginx routing. The mock approach tests nginx config + routing in isolation, while the build job separately validates that the backend image actually compiles.
