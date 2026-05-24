@@ -6,7 +6,7 @@
 -- school-blind, so a user with role='admin' in school A passes these
 -- policies for rows in school B. Each of these tables also has a
 -- school_isolation policy, but since both policies are permissive,
--- they are combined with OR — so the admin clause grants cross-school
+-- they are combined with OR - so the admin clause grants cross-school
 -- access on its own.
 --
 -- Fix: replace `is_admin()` with `is_admin() AND <row's school> =
