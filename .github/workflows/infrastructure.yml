@@ -16,11 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Test nginx config syntax
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}/infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro \
-            -v ${{ github.workspace }}/infrastructure/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
-            nginx:alpine nginx -t
+        run: ./.github/scripts/validate-nginx.sh
 
   build:
     name: Build Docker Images
@@ -34,43 +30,26 @@ jobs:
       - name: Build all services
         run: docker compose -f infrastructure/docker-compose.yml build
 
-  smoke-test:
-    name: Smoke Test Stack
+  reverse-proxy:
+    name: Test Reverse Proxy
     needs: [nginx, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build and start the stack
-        run: docker compose -f infrastructure/docker-compose.yml up -d --build
-        env:
-          SUPABASE_URL: "http://localhost:54321"
-          SUPABASE_SERVICE_ROLE_KEY: "test-key"
-          SUPABASE_PUSHABLE_KEY: "test-key"
+      - name: Start mock upstream servers
+        run: ./.github/scripts/start-mock-upstreams.sh
 
-      - name: Wait for services to be ready
-        run: |
-          echo "Waiting for containers to start..."
-          sleep 10
-          docker compose -f infrastructure/docker-compose.yml ps
+      - name: Start nginx with host networking
+        run: ./.github/scripts/start-nginx-test.sh
 
-      - name: Verify nginx is listening
-        run: |
-          for i in $(seq 1 5); do
-            if curl -sf -o /dev/null http://localhost; then
-              echo "nginx is responding"
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying in 3s..."
-            sleep 3
-          done
-          echo "nginx never became ready"
-          exit 1
+      - name: Verify reverse proxy routing
+        run: ./.github/scripts/test-reverse-proxy.sh
 
-      - name: Show logs on failure
+      - name: Show nginx logs on failure
         if: failure()
-        run: docker compose -f infrastructure/docker-compose.yml logs
+        run: docker logs nginx_test
 
       - name: Cleanup
         if: always()
-        run: docker compose -f infrastructure/docker-compose.yml down -v
+        run: docker rm -f nginx_test || true
