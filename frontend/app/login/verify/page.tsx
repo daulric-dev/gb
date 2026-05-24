@@ -54,7 +54,7 @@ function VerifyOtpForm() {
 
   function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
     e.preventDefault();
-    // Keep only digits, cap at 8 chars. Don't auto-submit — the user
+    // Keep only digits, cap at 8 chars. Don't auto-submit - the user
     // must explicitly click Verify. A clipboard-watcher script that
     // injects values shouldn't be able to trigger a verify attempt
     // just by triggering a paste event.
