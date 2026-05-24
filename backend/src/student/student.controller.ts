@@ -51,7 +51,7 @@ export class StudentController {
 
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.studentService.findOne(id);
+    const raw = await this.studentService.findOne(req.user.id, id);
     return this.versioning.resolve(req, 'student.detail')(raw);
   }
 
@@ -67,7 +67,7 @@ export class StudentController {
     @Param('id') id: string,
     @Body() dto: UpdateStudentDto,
   ) {
-    const raw = await this.studentService.update(id, dto);
+    const raw = await this.studentService.update(req.user.id, id, dto);
     return this.versioning.resolve(req, 'student.updated')(raw);
   }
 }

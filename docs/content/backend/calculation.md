@@ -14,7 +14,7 @@ The calculation module performs all grade calculations - from individual subject
 |------|---------|
 | `calculation.module.ts` | Module definition |
 | `calculation.controller.ts` | API endpoints |
-| `calculation.service.ts` | Orchestrator — delegates to grading system strategies |
+| `calculation.service.ts` | Orchestrator - delegates to grading system strategies |
 | `interfaces/calculation.interfaces.ts` | TypeScript interfaces for result types |
 | `grading-systems/grading-system.factory.ts` | Factory that resolves grading model → service |
 | `grading-systems/weighted-continuous/` | Weighted Continuous Assessment strategy |
@@ -22,8 +22,8 @@ The calculation module performs all grade calculations - from individual subject
 | `grading-systems/continuous-cumulative/` | Continuous-Cumulative (Hybrid) strategy |
 
 Each grading system folder contains:
-- `index.ts` — service class implementing `calculateSubjectTermGrade` and `calculateSubjectYearGrade`
-- `*.rules.ts` — static rules object defining term/year behaviour
+- `index.ts` - service class implementing `calculateSubjectTermGrade` and `calculateSubjectYearGrade`
+- `*.rules.ts` - static rules object defining term/year behaviour
 
 ## Grading System Architecture (added 2026-05-17)
 

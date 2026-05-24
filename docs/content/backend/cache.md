@@ -37,7 +37,7 @@ CacheService (Injectable, Global)
 ├── implements CacheStore interface
 ├── delegates to one of:
 │   ├── MemoryStore (default, in-process Map)
-│   └── RedisStore (requires Redis via ioredis)
+│   └── RedisStore (requires Redis via Bun's built-in RedisClient)
 ```
 
 The `CacheService` reads `USE_REDIS` at construction time. If `true`, it connects to Redis using `REDIS_URL`. Otherwise, it falls back to an in-memory `Map`.
@@ -54,7 +54,7 @@ backend/src/cache/
     ├── index.ts                 # Barrel exports
     ├── cache.interface.ts       # CacheInterface definition
     ├── MemoryStore.ts           # In-memory implementation
-    └── RedisStore.ts            # Redis implementation (ioredis)
+    └── RedisStore.ts            # Redis implementation (Bun's built-in RedisClient)
 ```
 
 ## CacheInterface
@@ -81,12 +81,28 @@ All stores implement this interface:
 
 ### RedisStore
 
-- Uses `ioredis` to connect to a Redis instance.
+- Uses Bun's built-in `RedisClient` to connect to a Redis instance.
 - Values are JSON-serialized on `set()` and JSON-parsed on `get()`.
 - TTL is set via `SET key value EX ttl` (seconds).
 - `deleteByPrefix()` uses `SCAN` with `MATCH` to find and delete matching keys without blocking.
-- `clear()` calls `FLUSHDB` - use with caution in shared Redis instances.
+- `clear()` calls `FLUSHALL ASYNC` - use with caution in shared Redis instances.
 - Suitable for production and multi-instance deployments where cache must be shared.
+- Sends a `PING` every 60 seconds to keep the connection alive against providers (e.g. Upstash) that close idle TCP sockets.
+- Constructed with `autoReconnect: true`, `maxRetries: 20`, `idleTimeout: 0`.
+- Disposed via `OnModuleDestroy` - clears the keepalive interval and closes the socket on shutdown.
+
+## Resilience
+
+The cache is treated as a best-effort layer, never a hard dependency. `CacheService` wraps every store call in try/catch so a Redis outage cannot take down request handling:
+
+| Operation | On store error |
+|-----------|----------------|
+| `get` | Logs error, returns `null` (treated as cache miss → caller falls through to Supabase) |
+| `set` | Logs error, no-op |
+| `update` | Logs error, returns `false` |
+| `delete` / `deleteByPrefix` / `clear` | Logs error, no-op |
+
+This means callers do not need to catch cache errors themselves. Catch blocks in services should only convert *domain* errors (e.g. Supabase row-not-found) into `HttpException`s - they must not re-wrap arbitrary errors, or genuine 500s will be hidden behind misleading 404s.
 
 ## Environment Variables
 
@@ -320,3 +336,7 @@ Search queries bypass the cache entirely.
 - For Redis, `deleteByPrefix` uses cursor-based `SCAN` to avoid blocking the server.
 - Calculation caches use a longer TTL (600s) since they are the most expensive operations to recompute.
 - Schools also use 600s TTL since the list rarely changes.
+
+## History
+
+For dated changes to this module, see [Changelog → 2026-05-24 Redis resilience](../changelog/2026-05-24/redis-resilience.md).

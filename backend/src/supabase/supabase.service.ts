@@ -61,6 +61,19 @@ export class SupabaseService {
     return this.serviceClient;
   }
 
+  async getUserSchoolId(userId: string): Promise<string> {
+    const { data, error } = await this.serviceClient
+      .from('user_profile')
+      .select('school_id')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data?.school_id) {
+      throw new Error(`Could not resolve school for user ${userId}`);
+    }
+    return data.school_id;
+  }
+
   async ensureBucket(bucketName: string, isPublic = false): Promise<boolean> {
     const supabase = this.getServiceClient();
 
