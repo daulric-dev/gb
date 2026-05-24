@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CalculationService } from '@/calculation/calculation.service';
@@ -1188,9 +1194,7 @@ export class ReportService {
       .maybeSingle();
 
     if (error) {
-      this.logger.error(
-        `assertReportInCallerSchool fetch: ${error.message}`,
-      );
+      this.logger.error(`assertReportInCallerSchool fetch: ${error.message}`);
       throw new BadRequestException(error.message);
     }
 

@@ -52,6 +52,6 @@ export class RedisStore implements CacheInterface {
   }
 
   async clear(): Promise<void> {
-    await this.redis.send("FLUSHALL", ["ASYNC"]);
+    await this.redis.send('FLUSHALL', ['ASYNC']);
   }
 }

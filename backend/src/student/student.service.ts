@@ -21,7 +21,10 @@ const STUDENT_TTL = 60 * 60 * 24 * 30;
 // `%` and `_` as wildcards. Strip all of these so an attacker cannot break
 // out of the filter or force a full-table scan with leading wildcards.
 function sanitizeSearchTerm(raw: string): string {
-  return raw.replace(/[,()*%_\\]/g, '').trim().slice(0, 64);
+  return raw
+    .replace(/[,()*%_\\]/g, '')
+    .trim()
+    .slice(0, 64);
 }
 
 @Injectable()

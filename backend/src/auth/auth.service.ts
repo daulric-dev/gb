@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
@@ -38,7 +44,12 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(email: string, token: string, req: FastifyRequest, reply: FastifyReply ) {
+  async verifyOtp(
+    email: string,
+    token: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
     try {
       // Verify on the user client so the SSR adapter writes the auth-token
       // cookie via setAll synchronously inside this call.
@@ -268,11 +279,7 @@ export class AuthService {
             throw new BadRequestException('Failed to complete onboarding');
           }
 
-          await this.cache.set(
-            `profile:${userId}`,
-            adminProfile,
-            PROFILE_TTL,
-          );
+          await this.cache.set(`profile:${userId}`, adminProfile, PROFILE_TTL);
           return adminProfile;
         }
 

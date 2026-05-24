@@ -93,9 +93,9 @@ describe('EnrollmentService', () => {
       mockSupabase._client.schema = () => ({ from: () => studentBuilder });
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
-      expect(
-        service.enroll('c1', { studentId: 's1' }),
-      ).rejects.toMatchObject({ status: 400 });
+      expect(service.enroll('c1', { studentId: 's1' })).rejects.toMatchObject({
+        status: 400,
+      });
     });
   });
 

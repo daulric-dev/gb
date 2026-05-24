@@ -9,7 +9,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
 
   constructor() {
     if (process.env.USE_REDIS === 'true') {
-      const redis = new RedisClient(process.env.REDIS_URL!, {
+      const redis = new RedisClient(process.env.REDIS_URL, {
         autoReconnect: true,
         maxRetries: 20,
         idleTimeout: 0,

@@ -96,7 +96,8 @@ describe('ReportService', () => {
     const builder = createMockQueryBuilder(schoolCheckResult);
 
     let i = 0;
-    builder.maybeSingle = () => Promise.resolve(sequence[i++] ?? sequence.at(-1));
+    builder.maybeSingle = () =>
+      Promise.resolve(sequence[i++] ?? sequence.at(-1));
     builder.single = () => Promise.resolve(sequence[i++] ?? sequence.at(-1));
     builder.then = (resolve: Function) =>
       resolve(sequence[i++] ?? sequence.at(-1));

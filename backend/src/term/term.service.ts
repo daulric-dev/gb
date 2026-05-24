@@ -111,7 +111,10 @@ export class TermService {
       throw new NotFoundException('Term not found');
     }
 
-    const { academic_year: _ay, ...term } = data as any;
+    const { academic_year: _ay, ...term } = data;
+    if (_ay) {
+      this.logger.log(`Academic year: ${_ay.id}`);
+    }
     return term;
   }
 

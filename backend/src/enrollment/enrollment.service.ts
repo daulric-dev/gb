@@ -367,9 +367,7 @@ export class EnrollmentService {
     }
 
     if (students.length !== studentIds.length) {
-      throw new BadRequestException(
-        'One or more students do not exist',
-      );
+      throw new BadRequestException('One or more students do not exist');
     }
 
     const mismatched = students.filter((s) => s.school_id !== classSchoolId);
