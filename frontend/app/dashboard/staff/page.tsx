@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { useProfile } from "@/lib/use-profile";
+import { useProfile } from "@/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";

@@ -13,7 +13,7 @@ import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ScrollText, FileBarChart, ListChecks, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ScrollText, FileBarChart, ListChecks, Download, CalendarCheck } from "lucide-react";
 import {
   buildEndOfYearExamPdfBlob,
   downloadBlob,
@@ -323,6 +323,13 @@ export default function ClassDetailPage() {
             >
               <ClipboardList className="mr-2 size-4" />
               Grading
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/dashboard/classes/${classId}/attendance`)}
+            >
+              <CalendarCheck className="mr-2 size-4" />
+              Attendance
             </Button>
             {info.isClassTeacher && (
               <>

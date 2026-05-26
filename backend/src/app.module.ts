@@ -14,7 +14,9 @@ import { StudentModule } from '@/student/student.module';
 import { SubjectModule } from '@/subject/subject.module';
 import { TermModule } from '@/term/term.module';
 import { EnrollmentModule } from '@/enrollment/enrollment.module';
+import { AttendanceModule } from '@/attendance/attendance.module';
 import { GradingModule } from '@/grading/grading.module';
+import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
 import { CalculationModule } from '@/calculation/calculation.module';
 import { ReportingModule } from '@/reporting/reporting.module';
 import { ImagesModule } from '@/images/images.module';
@@ -30,21 +32,17 @@ import { VersioningModule } from '@/versioning/versioning.module';
         {
           name: 'default',
           ttl: 60_000,
-          limit: 100,
+          limit: process.env.NODE_ENV === 'production' ? 100 : 1000,
         },
-        // Tighter bucket for routes that can be abused without a session
-        // (OTP send, account delete). Keyed by request body email when
-        // available, otherwise IP - so an attacker cannot just rotate
-        // IPs to drain a victim's allowance.
         {
           name: 'auth-strict',
           ttl: 60 * 60 * 1000,
-          limit: 5,
+          limit: process.env.NODE_ENV === 'production' ? 5 : 100,
           getTracker: (req: { body?: { email?: string }; ip?: string }) =>
             req.body?.email?.toLowerCase() ?? req.ip ?? 'unknown',
         },
       ],
-      // One shared bucket per client (IP); default keys per controller method.
+      
       generateKey: (
         _context: ExecutionContext,
         tracker: string,
@@ -65,7 +63,9 @@ import { VersioningModule } from '@/versioning/versioning.module';
     SubjectModule,
     TermModule,
     EnrollmentModule,
+    AttendanceModule,
     GradingModule,
+    GradeScaleModule,
     CalculationModule,
     ReportingModule,
     ImagesModule,
