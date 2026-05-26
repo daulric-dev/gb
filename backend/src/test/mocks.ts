@@ -68,8 +68,6 @@ export function createMockSupabaseService(overrides: Record<string, any> = {}) {
   return {
     getServiceClient: () => client,
     createUserClient: () => client,
-    getUserSchoolId: () =>
-      Promise.resolve(overrides.userSchoolId ?? 'school-1'),
     _client: client,
     _builder: builder,
   };

@@ -4,7 +4,6 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { HapticsProvider } from "@/components/layout/haptics-provider";
-import { AuthProvider } from "@/providers/AuthProvider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -28,7 +27,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         >
           <TooltipProvider delay={0}>
             <HapticsProvider />
-            <AuthProvider>{children}</AuthProvider>
+            {children}
             <Toaster richColors position="top-right" />
           </TooltipProvider>
         </ThemeProvider>

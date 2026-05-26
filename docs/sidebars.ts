@@ -64,26 +64,6 @@ const sidebars: SidebarsConfig = {
         "cli/interactive-prompts",
       ],
     },
-    {
-      type: "category",
-      label: "Changelog",
-      collapsed: false,
-      link: { type: "doc", id: "changelog/overview" },
-      items: [
-        {
-          type: "category",
-          label: "2026-05-24",
-          collapsed: false,
-          items: [
-            "changelog/2026-05-24/security-fixes",
-            "changelog/2026-05-24/high-fixes",
-            "changelog/2026-05-24/medium-fixes",
-            "changelog/2026-05-24/low-fixes",
-            "changelog/2026-05-24/redis-resilience",
-          ],
-        },
-      ],
-    },
   ],
 };
 

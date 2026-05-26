@@ -1,5 +1,5 @@
 /**
- * Frontend grading system rules - mirrors the backend rules structure.
+ * Frontend grading system rules — mirrors the backend rules structure.
  *
  * Each grading model defines term-level behaviour and year-end display rules
  * so that UI components can be driven by a single config object instead of

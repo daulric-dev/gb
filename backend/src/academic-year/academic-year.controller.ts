@@ -44,7 +44,7 @@ export class AcademicYearController {
 
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.academicYearService.findOne(req.user.id, id);
+    const raw = await this.academicYearService.findOne(id);
     return this.versioning.resolve(req, 'academicYear.detail')(raw);
   }
 
@@ -54,7 +54,7 @@ export class AcademicYearController {
     @Param('id') id: string,
     @Body() dto: UpdateAcademicYearDto,
   ) {
-    const raw = await this.academicYearService.update(req.user.id, id, dto);
+    const raw = await this.academicYearService.update(id, dto);
     return this.versioning.resolve(req, 'academicYear.updated')(raw);
   }
 
@@ -66,7 +66,7 @@ export class AcademicYearController {
 
   @Patch(':id/deactivate')
   async deactivate(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.academicYearService.deactivate(req.user.id, id);
+    const raw = await this.academicYearService.deactivate(id);
     return this.versioning.resolve(req, 'academicYear.updated')(raw);
   }
 }

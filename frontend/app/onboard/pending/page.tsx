@@ -29,10 +29,8 @@ export default function PendingPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    // URLSearchParams.get already URL-decodes; calling decodeURIComponent
-    // again would throw on `%` in school names and double-decode `%25` etc.
     const name = params.get("school");
-    if (name) schoolName.value = name;
+    if (name) schoolName.value = decodeURIComponent(name);
 
     // Poll every 10s to check if request was approved
     const interval = setInterval(async () => {

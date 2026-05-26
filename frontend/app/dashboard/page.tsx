@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { api } from "@/lib/api";
-import { useProfile } from "@/providers/AuthProvider";
+import { useProfile } from "@/lib/use-profile";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Skeleton } from "@/components/ui/skeleton";

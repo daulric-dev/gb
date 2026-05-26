@@ -11,7 +11,6 @@ import {
   GraduationCap,
   LayoutDashboard,
   LogOut,
-  Scale,
   Settings,
   Shield,
   UserRoundSearch,
@@ -20,7 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import type { UserProfile } from "@/providers/AuthProvider";
+import type { UserProfile } from "@/lib/use-profile";
 import {
   Sidebar,
   SidebarContent,
@@ -49,10 +48,6 @@ const navItems = [
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
   { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
-];
-
-const adminNavItems = [
-  { title: "Grade Scales", href: "/dashboard/grade-scales", icon: Scale },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -141,32 +136,6 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {profile?.role === "admin" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = navItemActive(pathname ?? "", item.href);
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        render={<Link href={item.href} />}
-                        isActive={isActive}
-                        tooltip={item.title}
-                      >
-                        <Icon className="size-4" />
-                        <span>{item.title}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>Legal</SidebarGroupLabel>

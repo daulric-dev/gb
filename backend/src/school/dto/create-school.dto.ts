@@ -9,7 +9,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSchoolDto {
-  @ApiProperty({ example: 'Gradebook Academy' })
+  @ApiProperty({ example: 'St. Andrew Anglican Secondary' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)

@@ -6,6 +6,7 @@ import {
   Get,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -16,7 +17,6 @@ import {
   ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import type { FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
@@ -41,14 +41,12 @@ export class AuthController {
   ) {}
 
   @Post('otp/send')
-  @Throttle({ 'auth-strict': { limit: 5, ttl: 60 * 60 * 1000 } })
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
     const message = await this.authService.sendOtp(dto.email);
     return this.versioning.resolve(req, 'auth.message')(message);
   }
 
   @Post('otp/verify')
-  @Throttle({ 'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 } })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
     @Req() req: any,
@@ -95,7 +93,6 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Delete('account')
-  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } })
   async deleteAccount(@Req() req: any) {
     const message = await this.authService.deleteAccount(req.user.id);
     return this.versioning.resolve(req, 'auth.message')(message);
@@ -132,15 +129,23 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar')
   @ApiConsumes('multipart/form-data')
-  async uploadAvatar(@Req() req: any) {
+  async uploadAvatar(
+    @Req() req: any,
+    @Query('pathname') pathname?: string | string[],
+  ) {
     const file = await req.file();
     if (!file) {
       throw new BadRequestException('No file provided');
     }
 
+    if (Array.isArray(pathname)) {
+      throw new BadRequestException('Invalid pathname parameter');
+    }
+
     const result = await this.imagesService.setImageToUserProfile(
       req.user.id,
       file,
+      pathname,
     );
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
@@ -157,6 +162,7 @@ export class AuthController {
       dto.filename,
       dto.contentType,
       dto.totalSize,
+      dto.pathname,
     );
     return this.versioning.resolve(req, 'images.resumable')(result);
   }

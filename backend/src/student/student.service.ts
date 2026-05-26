@@ -17,16 +17,6 @@ import { UpdateStudentDto } from './dto/update-student.dto';
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 
-// PostgREST .or() parses `,`, `(`, `)`, and `*` as syntax. ilike treats
-// `%` and `_` as wildcards. Strip all of these so an attacker cannot break
-// out of the filter or force a full-table scan with leading wildcards.
-function sanitizeSearchTerm(raw: string): string {
-  return raw
-    .replace(/[,()*%_\\]/g, '')
-    .trim()
-    .slice(0, 64);
-}
-
 @Injectable()
 export class StudentService {
   private readonly logger = new Logger(StudentService.name);
@@ -130,12 +120,9 @@ export class StudentService {
       .eq('school_id', profile.school_id);
 
     if (search) {
-      const safe = sanitizeSearchTerm(search);
-      if (safe) {
-        query = query.or(
-          `first_name.ilike.%${safe}%,last_name.ilike.%${safe}%`,
-        );
-      }
+      query = query.or(
+        `first_name.ilike.%${search}%,last_name.ilike.%${search}%`,
+      );
     }
 
     const { data, error } = await query
@@ -181,12 +168,9 @@ export class StudentService {
       .eq('school_id', profile.school_id);
 
     if (search) {
-      const safe = sanitizeSearchTerm(search);
-      if (safe) {
-        query = query.or(
-          `first_name.ilike.%${safe}%,last_name.ilike.%${safe}%`,
-        );
-      }
+      query = query.or(
+        `first_name.ilike.%${search}%,last_name.ilike.%${search}%`,
+      );
     }
 
     query = query
@@ -196,16 +180,14 @@ export class StudentService {
     return this.paginationService.paginate(query, pagination);
   }
 
-  async findOne(userId: string, studentId: string) {
+  async findOne(studentId: string) {
     const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     const { data, error } = await supabase
       .schema('student')
       .from('student')
       .select('*')
       .eq('id', studentId)
-      .eq('school_id', schoolId)
       .single();
 
     if (error || !data) {
@@ -215,9 +197,8 @@ export class StudentService {
     return data;
   }
 
-  async update(userId: string, studentId: string, dto: UpdateStudentDto) {
+  async update(studentId: string, dto: UpdateStudentDto) {
     const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     const updateData: Record<string, unknown> = {};
     if (dto.firstName !== undefined) updateData.first_name = dto.firstName;
@@ -234,7 +215,6 @@ export class StudentService {
       .from('student')
       .update(updateData)
       .eq('id', studentId)
-      .eq('school_id', schoolId)
       .select()
       .single();
 

@@ -8,7 +8,6 @@ import {
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
-import { GradeScaleService } from '@/grade-scale/grade-scale.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
 import { BulkGradeDto } from './dto/bulk-grade.dto';
@@ -21,7 +20,6 @@ export class GradeService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
-    private readonly gradeScale: GradeScaleService,
   ) {}
 
   private async invalidateCalcCaches() {
@@ -142,13 +140,6 @@ export class GradeService {
 
     if (!grades?.length) return [];
 
-    const { data: assessment } = await supabase
-      .from('assessment')
-      .select('max_score')
-      .eq('id', assessmentId)
-      .maybeSingle();
-    const maxScore = assessment?.max_score;
-
     const studentIds = [...new Set(grades.map((g) => g.student_id))];
     const serviceClient = this.supabaseService.getServiceClient();
 
@@ -160,16 +151,10 @@ export class GradeService {
 
     const studentMap = new Map((students ?? []).map((s) => [s.id, s]));
 
-    const userId = (req as FastifyRequest & { user?: { id: string } }).user?.id;
-    const scale = userId
-      ? await this.gradeScale.getDefault(userId).catch(() => null)
-      : null;
-
     return grades
       .map((g) => ({
         ...g,
         student: studentMap.get(g.student_id) ?? null,
-        converted: this.gradeScale.convertScore(scale, g.score, maxScore),
       }))
       .sort((a, b) => {
         const aName = a.student?.last_name ?? '';
@@ -242,17 +227,11 @@ export class GradeService {
       gradesByAssessment.set(g.assessment_id, list);
     }
 
-    const userId = (req as FastifyRequest & { user?: { id: string } }).user?.id;
-    const scale = userId
-      ? await this.gradeScale.getDefault(userId).catch(() => null)
-      : null;
-
     return assessments.map((a) => ({
       ...a,
       grades: (gradesByAssessment.get(a.id) ?? []).map((g) => ({
         ...g,
         student: studentMap.get(g.student_id) ?? null,
-        converted: this.gradeScale.convertScore(scale, g.score, a.max_score),
       })),
     }));
   }

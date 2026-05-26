@@ -27,7 +27,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { useProfile } from "@/providers/AuthProvider";
+import { useProfile } from "@/lib/use-profile";
 import {
   ArrowRight,
   GraduationCap,

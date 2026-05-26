@@ -136,15 +136,13 @@ export class AcademicYearService {
     return data;
   }
 
-  async findOne(userId: string, yearId: string) {
+  async findOne(yearId: string) {
     const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.getSchoolId(userId);
 
     const { data, error } = await supabase
       .from('academic_year')
       .select('*')
       .eq('id', yearId)
-      .eq('school_id', schoolId)
       .single();
 
     if (error || !data) {
@@ -155,9 +153,8 @@ export class AcademicYearService {
     return data;
   }
 
-  async update(userId: string, yearId: string, dto: UpdateAcademicYearDto) {
+  async update(yearId: string, dto: UpdateAcademicYearDto) {
     const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.getSchoolId(userId);
 
     const updateData: any = {};
     if (dto.name !== undefined) updateData.name = dto.name;
@@ -175,7 +172,7 @@ export class AcademicYearService {
       dto.yearExamWeight !== undefined ||
       dto.yearCourseworkWeight !== undefined
     ) {
-      const existing = await this.findOne(userId, yearId);
+      const existing = await this.findOne(yearId);
       const examWeight = dto.yearExamWeight ?? existing.year_exam_weight ?? 0;
       const courseworkWeight =
         dto.yearCourseworkWeight ?? existing.year_coursework_weight ?? 0;
@@ -189,7 +186,6 @@ export class AcademicYearService {
       .from('academic_year')
       .update(updateData)
       .eq('id', yearId)
-      .eq('school_id', schoolId)
       .select()
       .single();
 
@@ -226,7 +222,6 @@ export class AcademicYearService {
       .from('academic_year')
       .update({ is_active: true })
       .eq('id', yearId)
-      .eq('school_id', schoolId)
       .select()
       .single();
 
@@ -237,19 +232,17 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to activate academic year');
     }
 
-    await this.cache.deleteByPrefix(`academic-year`);
+    await this.cache.deleteByPrefix('academic-year');
     return data;
   }
 
-  async deactivate(userId: string, yearId: string) {
+  async deactivate(yearId: string) {
     const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.getSchoolId(userId);
 
     const { data, error } = await supabase
       .from('academic_year')
       .update({ is_active: false })
       .eq('id', yearId)
-      .eq('school_id', schoolId)
       .select()
       .single();
 
@@ -260,7 +253,7 @@ export class AcademicYearService {
       throw new BadRequestException('Failed to deactivate academic year');
     }
 
-    await this.cache.deleteByPrefix(`academic-year`);
+    await this.cache.deleteByPrefix('academic-year');
     return data;
   }
 }

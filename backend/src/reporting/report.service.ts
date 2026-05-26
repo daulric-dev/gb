@@ -307,9 +307,8 @@ export class ReportService {
     return { ...report, student, entries, pdfs };
   }
 
-  async updateReport(userId: string, reportId: string, dto: UpdateReportDto) {
+  async updateReport(reportId: string, dto: UpdateReportDto) {
     const serviceClient = this.supabaseService.getServiceClient();
-    await this.assertReportInCallerSchool(reportId, userId);
     const updateData: Record<string, unknown> = {};
     if (dto.classTeacherRemark !== undefined) {
       updateData.class_teacher_remark = dto.classTeacherRemark;
@@ -377,9 +376,8 @@ export class ReportService {
     return data;
   }
 
-  async publish(userId: string, reportId: string) {
+  async publish(reportId: string) {
     const serviceClient = this.supabaseService.getServiceClient();
-    await this.assertReportInCallerSchool(reportId, userId);
 
     const { data: existing, error: fetchError } = await serviceClient
       .schema('reporting')
@@ -420,9 +418,8 @@ export class ReportService {
     return data;
   }
 
-  async sendToMinistry(userId: string, reportId: string) {
+  async sendToMinistry(reportId: string) {
     const serviceClient = this.supabaseService.getServiceClient();
-    await this.assertReportInCallerSchool(reportId, userId);
 
     const { data: existing, error: fetchError } = await serviceClient
       .schema('reporting')
@@ -466,9 +463,8 @@ export class ReportService {
     return data;
   }
 
-  async regenerateReport(userId: string, reportId: string) {
+  async regenerateReport(reportId: string) {
     const serviceClient = this.supabaseService.getServiceClient();
-    await this.assertReportInCallerSchool(reportId, userId);
 
     const { data: reportRow, error: loadError } = await serviceClient
       .schema('reporting')
@@ -647,16 +643,19 @@ export class ReportService {
   private static readonly PDF_BUCKET = 'report-books';
 
   /** Upload a PDF buffer to Supabase Storage and record metadata. */
-  async uploadPdf(reportId: string, userId: string, fileBuffer: Buffer) {
+  async uploadPdf(
+    reportId: string,
+    userId: string,
+    fileBuffer: Buffer,
+    objectPath: string,
+  ) {
     const serviceClient = this.supabaseService.getServiceClient();
-
-    const objectPath = `${reportId}/${Date.now()}-${crypto.randomUUID()}.pdf`;
 
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
       .upload(objectPath, fileBuffer, {
         contentType: 'application/pdf',
-        upsert: false,
+        upsert: true,
       });
 
     if (uploadError) {
@@ -688,13 +687,13 @@ export class ReportService {
   }
 
   /** Download a PDF from Supabase Storage and return the raw bytes. */
-  async downloadPdf(reportId: string, pdfId: string) {
+  async downloadPdf(pdfId: string) {
     const serviceClient = this.supabaseService.getServiceClient();
 
     const { data: pdfRow, error: fetchError } = await serviceClient
       .schema('reporting')
       .from('report_book_pdf')
-      .select('file_path, report_book_id')
+      .select('file_path')
       .eq('id', pdfId)
       .maybeSingle();
 
@@ -704,10 +703,6 @@ export class ReportService {
     }
 
     if (!pdfRow) {
-      throw new NotFoundException('PDF record not found');
-    }
-
-    if (pdfRow.report_book_id !== reportId) {
       throw new NotFoundException('PDF record not found');
     }
 
@@ -1180,40 +1175,6 @@ export class ReportService {
     }
 
     return data ?? [];
-  }
-
-  private async assertReportInCallerSchool(reportId: string, userId: string) {
-    const serviceClient = this.supabaseService.getServiceClient();
-    const callerSchoolId = await this.supabaseService.getUserSchoolId(userId);
-
-    const { data: report, error } = await serviceClient
-      .schema('reporting')
-      .from('report_book')
-      .select('academic_year:academic_year_id(school_id)')
-      .eq('id', reportId)
-      .maybeSingle();
-
-    if (error) {
-      this.logger.error(`assertReportInCallerSchool fetch: ${error.message}`);
-      throw new BadRequestException(error.message);
-    }
-
-    if (!report) {
-      throw new NotFoundException('Report not found');
-    }
-
-    const reportSchoolId = (
-      report.academic_year as { school_id?: string } | null
-    )?.school_id;
-
-    if (!reportSchoolId || reportSchoolId !== callerSchoolId) {
-      this.logger.warn(
-        `User ${userId} denied cross-school report mutation on ${reportId}`,
-      );
-      throw new ForbiddenException(
-        'You cannot modify reports from another school',
-      );
-    }
   }
 
   private async loadFullReportWithServiceClient(reportId: string) {
