@@ -44,7 +44,7 @@ Convert-on-read is wired into `GradeService`:
 
 ## Frontend
 
-- New admin-only page at `/dashboard/grade-scales` - list of scales with set-default / edit / delete actions, plus a "New scale" dialog. The bands editor seeds reasonable defaults per scale type (GPA seeds A=4.0..F=0.0, pass/fail seeds Pass>=50, letter seeds A=90..F<60) so admins don't start from a blank slate.
+- New admin-only page at `/dashboard/grade-scales` - list of scales with set-default / edit / delete actions, plus a "New scale" dialog. The bands editor seeds reasonable defaults per scale type (GPA seeds A=4.0..F=0.0, pass/fail seeds Pass>=50, letter seeds A=90..F&lt;60) so admins don't start from a blank slate.
 - Scale type is locked after creation (UI dims the select with an explanatory note).
 - Bands editor enforces overlap validation client-side before submitting.
 - Added an "Admin" group to the sidebar (only rendered when `profile?.role === "admin"`) with the Grade Scales entry.
