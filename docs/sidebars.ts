@@ -72,6 +72,17 @@ const sidebars: SidebarsConfig = {
       items: [
         {
           type: "category",
+          label: "2026-05-25",
+          collapsed: false,
+          items: [
+            "changelog/2026-05-25/attendance-tracking",
+            "changelog/2026-05-25/custom-grade-scales",
+            "changelog/2026-05-25/auth-and-dev-ergonomics",
+            "changelog/2026-05-25/per-session-throttling",
+          ],
+        },
+        {
+          type: "category",
           label: "2026-05-24",
           collapsed: false,
           items: [
@@ -80,6 +91,7 @@ const sidebars: SidebarsConfig = {
             "changelog/2026-05-24/medium-fixes",
             "changelog/2026-05-24/low-fixes",
             "changelog/2026-05-24/redis-resilience",
+            "changelog/2026-05-24/infrastructure-ci",
           ],
         },
       ],

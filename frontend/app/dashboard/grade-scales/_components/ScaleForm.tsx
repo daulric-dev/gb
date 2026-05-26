@@ -295,7 +295,7 @@ export function ScaleForm({
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          Bands may not overlap. Gaps are allowed — scores in a gap will display
+          Bands may not overlap. Gaps are allowed - scores in a gap will display
           as numeric.
         </p>
       </div>
