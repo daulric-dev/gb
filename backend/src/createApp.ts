@@ -17,7 +17,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   await app.register(cookie as any);
 
-  await app.register(multipart as any, {
+  await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 

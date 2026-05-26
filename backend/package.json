@@ -15,7 +15,7 @@
     "start:prod": "bun --bun dist/src/main",
     "deploy": "wrangler deploy",
     "deploy:staging": "wrangler deploy --env staging",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix --quiet",
     "test": "bun test src",
     "test:watch": "bun test src --watch"
   },
@@ -53,7 +53,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^25.6.0",
     "@types/supertest": "^7.0.0",
-    "eslint": "^9.18.0",
+    "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.6.0",

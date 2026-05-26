@@ -28,7 +28,7 @@ async function ensureApp(env: Record<string, string>) {
   // and sessions break on this entrypoint.
   await app.register(cookie as any);
 
-  await app.register(multipart as any, {
+  await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
