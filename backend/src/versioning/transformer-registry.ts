@@ -9,7 +9,9 @@ import * as academicYear from '@/academic-year/transformer';
 import * as term from '@/term/transformer';
 import * as subject from '@/subject/transformer';
 import * as enrollment from '@/enrollment/transformer';
+import * as attendance from '@/attendance/transformer';
 import * as grade from '@/grading/transformer';
+import * as gradeScale from '@/grade-scale/transformer';
 import * as calculation from '@/calculation/transformer';
 import * as report from '@/reporting/transformer';
 import * as images from '@/images/transformer';
@@ -85,6 +87,16 @@ export class TransformerRegistry implements OnModuleInit {
       subjectRemoved: { 1: enrollment.v1SubjectRemoved },
     });
 
+    this.versioning.registerAll('attendance', {
+      roster: { 1: attendance.v1Roster },
+      marked: { 1: attendance.v1Marked },
+      bulkMarked: { 1: attendance.v1BulkMarked },
+      updated: { 1: attendance.v1Updated },
+      deleted: { 1: attendance.v1Deleted },
+      studentRange: { 1: attendance.v1StudentRange },
+      studentSummary: { 1: attendance.v1StudentSummary },
+    });
+
     this.versioning.registerAll('grade', {
       byAssessment: { 1: grade.v1GradesByAssessment },
       byTermSubject: { 1: grade.v1GradesByTermSubject },
@@ -101,6 +113,16 @@ export class TransformerRegistry implements OnModuleInit {
       updated: { 1: grade.v1AssessmentUpdated },
       excluded: { 1: grade.v1AssessmentExcluded },
       deleted: { 1: grade.v1AssessmentDeleted },
+    });
+
+    this.versioning.registerAll('gradeScale', {
+      list: { 1: gradeScale.v1ScaleList },
+      detail: { 1: gradeScale.v1ScaleDetail },
+      created: { 1: gradeScale.v1ScaleCreated },
+      updated: { 1: gradeScale.v1ScaleUpdated },
+      bandsReplaced: { 1: gradeScale.v1BandsReplaced },
+      defaultSet: { 1: gradeScale.v1DefaultSet },
+      deleted: { 1: gradeScale.v1ScaleDeleted },
     });
 
     this.versioning.registerAll('calculation', {

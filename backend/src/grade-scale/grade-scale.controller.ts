@@ -1,0 +1,92 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from '@/auth/auth.guard';
+import { AdminGuard } from '@/auth/admin.guard';
+import { VersioningService } from '@/versioning/versioning.service';
+import { GradeScaleService } from './grade-scale.service';
+import { CreateGradeScaleDto } from './dto/create-grade-scale.dto';
+import { UpdateGradeScaleDto } from './dto/update-grade-scale.dto';
+import { ReplaceBandsDto } from './dto/replace-bands.dto';
+
+@ApiTags('Grade Scales')
+@ApiBearerAuth()
+@Controller('grade-scales')
+@UseGuards(AuthGuard)
+export class GradeScaleController {
+  constructor(
+    private readonly service: GradeScaleService,
+    private readonly versioning: VersioningService,
+  ) {}
+
+  @Get()
+  async list(@Req() req: any) {
+    const raw = await this.service.list(req.user.id);
+    return this.versioning.resolve(req, 'gradeScale.list')(raw);
+  }
+
+  @Get('default')
+  async getDefault(@Req() req: any) {
+    const raw = await this.service.getDefault(req.user.id);
+    return this.versioning.resolve(req, 'gradeScale.detail')(raw);
+  }
+
+  @Get(':id')
+  async get(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.service.get(id, req.user.id);
+    return this.versioning.resolve(req, 'gradeScale.detail')(raw);
+  }
+
+  @UseGuards(AdminGuard)
+  @Post()
+  async create(@Req() req: any, @Body() dto: CreateGradeScaleDto) {
+    const raw = await this.service.create(req.user.id, dto);
+    return this.versioning.resolve(req, 'gradeScale.created')(raw);
+  }
+
+  @UseGuards(AdminGuard)
+  @Patch(':id')
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateGradeScaleDto,
+  ) {
+    const raw = await this.service.update(id, req.user.id, dto);
+    return this.versioning.resolve(req, 'gradeScale.updated')(raw);
+  }
+
+  @UseGuards(AdminGuard)
+  @Put(':id/bands')
+  async replaceBands(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ReplaceBandsDto,
+  ) {
+    const raw = await this.service.replaceBands(id, req.user.id, dto);
+    return this.versioning.resolve(req, 'gradeScale.bandsReplaced')(raw);
+  }
+
+  @UseGuards(AdminGuard)
+  @Post(':id/set-default')
+  async setDefault(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.service.setDefault(id, req.user.id);
+    return this.versioning.resolve(req, 'gradeScale.defaultSet')(raw);
+  }
+
+  @UseGuards(AdminGuard)
+  @Delete(':id')
+  async remove(@Req() req: any, @Param('id') id: string) {
+    const raw = await this.service.delete(id, req.user.id);
+    return this.versioning.resolve(req, 'gradeScale.deleted')(raw);
+  }
+}

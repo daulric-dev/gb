@@ -52,9 +52,13 @@ export class SupabaseService {
 
   async getUser(req: FastifyRequest, reply: FastifyReply) {
     const client = this.createUserClient(req, reply, 'public');
-    const { data, error } = await client.auth.getUser();
-    if (error || !data.user) return null;
-    return data.user;
+    try {
+      const { data, error } = await client.auth.getUser();
+      if (error || !data.user) return null;
+      return data.user;
+    } catch {
+      return null;
+    }
   }
 
   getServiceClient() {

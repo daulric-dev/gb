@@ -206,7 +206,7 @@ export class AuthService {
         this.logger.error(
           `Failed to onboard user ${userId}: ${error?.message}`,
         );
-       new BadRequestException('Failed to complete onboarding');
+        new BadRequestException('Failed to complete onboarding');
       }
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
