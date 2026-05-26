@@ -3,8 +3,15 @@ import type { Tables } from '@/types/database.types';
 type Grade = Tables<{ schema: 'grading' }, 'grade'>;
 type Assessment = Tables<{ schema: 'grading' }, 'assessment'>;
 
+export interface ConvertedGrade {
+  label: string;
+  gpaPoints: number | null;
+  isPass: boolean;
+}
+
 export interface GradeWithStudent extends Grade {
   student: { id: string; first_name: string; last_name: string } | null;
+  converted: ConvertedGrade | null;
 }
 
 export interface AssessmentWithGrades extends Assessment {
@@ -13,6 +20,7 @@ export interface AssessmentWithGrades extends Assessment {
     'id' | 'assessment_id' | 'student_id' | 'score' | 'remarks' | 'is_excluded'
   > & {
     student: { id: string; first_name: string; last_name: string } | null;
+    converted: ConvertedGrade | null;
   })[];
 }
 

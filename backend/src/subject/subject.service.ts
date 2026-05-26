@@ -106,13 +106,15 @@ export class SubjectService {
     return result;
   }
 
-  async findOne(subjectId: string) {
+  async findOne(userId: string, subjectId: string) {
     const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     const { data, error } = await supabase
       .from('subject')
       .select('*')
       .eq('id', subjectId)
+      .eq('school_id', schoolId)
       .single();
 
     if (error || !data) {
@@ -122,8 +124,9 @@ export class SubjectService {
     return data;
   }
 
-  async update(subjectId: string, dto: UpdateSubjectDto) {
+  async update(userId: string, subjectId: string, dto: UpdateSubjectDto) {
     const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     const updateData: Record<string, unknown> = {};
     if (dto.name !== undefined) updateData.name = dto.name;
@@ -135,6 +138,7 @@ export class SubjectService {
       .from('subject')
       .update(updateData)
       .eq('id', subjectId)
+      .eq('school_id', schoolId)
       .select()
       .single();
 
@@ -158,14 +162,16 @@ export class SubjectService {
     return data;
   }
 
-  async reorder(dto: ReorderSubjectsDto) {
+  async reorder(userId: string, dto: ReorderSubjectsDto) {
     const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     for (const item of dto.items) {
       const { error } = await supabase
         .from('subject')
         .update({ sort_order: item.sortOrder })
-        .eq('id', item.id);
+        .eq('id', item.id)
+        .eq('school_id', schoolId);
 
       if (error) {
         this.logger.error(
@@ -175,17 +181,19 @@ export class SubjectService {
       }
     }
 
-    await this.cache.deleteByPrefix('subjects:');
+    await this.cache.delete(`subjects:${schoolId}`);
     return { message: 'Subjects reordered' };
   }
 
-  async delete(subjectId: string) {
+  async delete(userId: string, subjectId: string) {
     const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     const { error } = await supabase
       .from('subject')
       .delete()
-      .eq('id', subjectId);
+      .eq('id', subjectId)
+      .eq('school_id', schoolId);
 
     if (error) {
       if (error.code === '23503') {
@@ -197,7 +205,7 @@ export class SubjectService {
       throw new BadRequestException('Failed to delete subject');
     }
 
-    await this.cache.deleteByPrefix('subjects:');
+    await this.cache.delete(`subjects:${schoolId}`);
     return { message: 'Subject deleted' };
   }
 }
