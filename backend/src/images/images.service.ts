@@ -82,11 +82,7 @@ export class ImagesService {
 
   // ── Standard upload (small files, backend-mediated) ─────────────────
 
-  async setImageToUserProfile(
-    userId: string,
-    file: MultipartFile,
-    pathname?: string,
-  ) {
+  async setImageToUserProfile(userId: string, file: MultipartFile) {
     const buffer = await file.toBuffer();
 
     if (buffer.byteLength > ImagesService.MAX_FILE_SIZE) {
@@ -101,8 +97,8 @@ export class ImagesService {
       );
     }
 
-    const ext = file.filename?.split('.').pop() ?? 'jpg';
-    const path = this.buildPath(userId, ext, pathname);
+    const ext = this.safeExtension(file.filename);
+    const path = this.buildPath(userId, ext);
 
     // Make sure the bucket exists as public BEFORE uploadFile runs,
     // because uploadFile's internal ensureBucket defaults to private.
@@ -154,7 +150,6 @@ export class ImagesService {
     filename: string,
     contentType: string,
     totalSize: number,
-    pathname?: string,
   ) {
     if (totalSize > ImagesService.MAX_FILE_SIZE) {
       throw new BadRequestException(
@@ -168,8 +163,8 @@ export class ImagesService {
       );
     }
 
-    const ext = filename.split('.').pop() ?? 'jpg';
-    const path = this.buildPath(userId, ext, pathname);
+    const ext = this.safeExtension(filename);
+    const path = this.buildPath(userId, ext);
 
     // Ensure bucket exists (and is public) before issuing a signed upload URL.
     await this.supabaseService.ensureBucket(
@@ -241,15 +236,13 @@ export class ImagesService {
 
   // ── Helpers ─────────────────────────────────────────────────────────
 
-  private buildPath(userId: string, ext: string, pathname?: string): string {
-    if (pathname == null || pathname === '') return `avatars/${userId}.${ext}`;
-    if (typeof pathname !== 'string') {
-      throw new BadRequestException('Invalid pathname parameter');
-    }
+  private buildPath(userId: string, ext: string): string {
+    return `avatars/${userId}.${ext}`;
+  }
 
-    let dir = pathname;
-    while (dir.endsWith('/')) dir = dir.slice(0, -1);
-    return `${dir}/${userId}.${ext}`;
+  private safeExtension(filename: string | undefined): string {
+    const raw = filename?.split('.').pop()?.toLowerCase() ?? '';
+    return /^[a-z0-9]{1,8}$/.test(raw) ? raw : 'jpg';
   }
 
   private cacheBust(url: string): string {

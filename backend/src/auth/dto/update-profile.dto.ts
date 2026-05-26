@@ -1,5 +1,5 @@
-import { IsOptional, IsString, IsNotEmpty, MaxLength } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateProfileDto {
   @ApiProperty({ example: 'John' })
@@ -13,9 +13,4 @@ export class UpdateProfileDto {
   @IsNotEmpty()
   @MaxLength(100)
   lastName!: string;
-
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000' })
-  @IsOptional()
-  @IsString()
-  schoolId?: string;
 }

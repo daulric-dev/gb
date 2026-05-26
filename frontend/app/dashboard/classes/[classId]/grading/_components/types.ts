@@ -27,6 +27,12 @@ export interface Assessment {
   exclusion_reason: string | null;
 }
 
+export interface ConvertedGrade {
+  label: string;
+  gpaPoints: number | null;
+  isPass: boolean;
+}
+
 export interface GradeRow {
   id: string;
   assessment_id: string;
@@ -37,6 +43,7 @@ export interface GradeRow {
   is_excluded: boolean;
   exclusion_reason: string | null;
   student: { id: string; first_name: string; last_name: string } | null;
+  converted: ConvertedGrade | null;
 }
 
 export interface AcademicYear {

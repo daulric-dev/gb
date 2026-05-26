@@ -50,7 +50,7 @@ export interface TermSubjectData {
 
 /**
  * Pre-fetched data for computing a single subject's grade within a term.
- * Avoids DB calls inside the strategy — the orchestrator provides everything.
+ * Avoids DB calls inside the strategy - the orchestrator provides everything.
  */
 export interface SubjectTermContext {
   studentId: string;

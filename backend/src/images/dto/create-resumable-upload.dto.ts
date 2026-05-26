@@ -1,11 +1,5 @@
-import {
-  IsNotEmpty,
-  IsString,
-  IsNumber,
-  IsOptional,
-  Min,
-} from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsString, IsNumber, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateResumableUploadDto {
   @ApiProperty({ example: 'avatar.png' })
@@ -22,9 +16,4 @@ export class CreateResumableUploadDto {
   @IsNumber()
   @Min(1)
   totalSize!: number;
-
-  @ApiPropertyOptional({ example: 'avatars' })
-  @IsString()
-  @IsOptional()
-  pathname?: string;
 }

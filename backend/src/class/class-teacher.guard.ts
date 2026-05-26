@@ -62,12 +62,34 @@ export class ClassTeacherGuard implements CanActivate {
 
     const { data: profile } = await supabase
       .from('user_profile')
-      .select('role')
+      .select('role, school_id')
       .eq('id', userId)
       .single();
 
     if (profile?.role === 'admin') {
-      return true;
+      // Admin bypass is scoped to the class's school. Without this check,
+      // a platform admin in school A could perform class-teacher actions
+      // against a class in school B by guessing/iterating class ids.
+      const { data: studentGroup } = await supabase
+        .from('student_group')
+        .select('academic_year:academic_year_id(school_id)')
+        .eq('id', classId)
+        .maybeSingle();
+
+      const classSchoolId = (
+        studentGroup?.academic_year as { school_id?: string } | null
+      )?.school_id;
+
+      if (classSchoolId && classSchoolId === profile.school_id) {
+        return true;
+      }
+
+      this.logger.warn(
+        `Admin ${userId} denied cross-school class teacher access to ${classId}`,
+      );
+      throw new ForbiddenException(
+        'Only the class teacher can perform this action',
+      );
     }
 
     const { data: assignment, error } = await supabase

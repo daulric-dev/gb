@@ -1,5 +1,14 @@
 {
   "$schema": "https://v2-9-7.turborepo.dev/schema.json",
+  "globalEnv": [
+    "FRONTEND_URL",
+    "PORT",
+    "REDIS_URL",
+    "SUPABASE_URL",
+    "SUPABASE_PUSHABLE_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "USE_REDIS"
+  ],
   "tasks": {
     "build": {
       "outputs": [".next/**", "dist/**", "build/**"],
