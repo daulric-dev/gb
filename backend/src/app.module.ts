@@ -5,6 +5,19 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
+
+// Extract real client IP from X-Forwarded-For header (for proxied deployments like Render)
+function getClientIp(req: { headers?: Record<string, string | string[]>; ip?: string }): string | undefined {
+  if (!req.headers) return req.ip;
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  if (Array.isArray(forwarded)) {
+    return forwarded[0];
+  }
+  return req.ip;
+}
 import { SupabaseModule } from '@/supabase/supabase.module';
 import { AuthModule } from '@/auth/auth.module';
 import { ClassModule } from '@/class/class.module';
@@ -32,14 +45,14 @@ import { VersioningModule } from '@/versioning/versioning.module';
         {
           name: 'default',
           ttl: 60_000,
-          limit: process.env.NODE_ENV === 'production' ? 100 : 1000,
+          limit: process.env.NODE_ENV === 'production' ? 300 : 1000,
         },
         {
           name: 'auth-strict',
           ttl: 60 * 60 * 1000,
           limit: process.env.NODE_ENV === 'production' ? 5 : 100,
-          getTracker: (req: { body?: { email?: string }; ip?: string }) =>
-            req.body?.email?.toLowerCase() ?? req.ip ?? 'unknown',
+          getTracker: (req: { body?: { email?: string }; headers?: Record<string, string | string[]>; ip?: string }) =>
+            req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
         },
       ],
       
