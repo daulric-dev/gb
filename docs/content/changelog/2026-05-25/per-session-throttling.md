@@ -22,7 +22,7 @@ async function validateOnBackend(request: NextRequest): Promise<Response> {
 }
 ```
 
-From the backend's point of view every one of those requests has the same source IP (the Next.js server's), so the entire fleet of users behind a given Next.js instance shared one `default:<ip>` bucket - 300 req/60s, easily blown past by a handful of concurrent users navigating around. Some users started seeing 429s on first page load.
+From the backend's point of view every one of those requests has the same source IP (the Next.js server's), so the entire fleet of users behind a given Next.js instance shared one `default:<ip>` bucket - 300 req/60s at the time, easily blown past by a handful of concurrent users navigating around. Some users started seeing 429s on first page load.
 
 ## Fix
 
@@ -34,11 +34,15 @@ The `default` throttler now derives its tracker from the session, not the IP. Re
 
 Both authenticated paths feed into a truncated SHA-256 (22 base64url chars, ~132 bits) so the throttler storage never holds raw tokens. Keys are prefixed `u:` for sessions and `ip:` for the IP fallback to keep the two namespaces unambiguous.
 
-After this change, each authenticated user gets their own 300 req/60s bucket regardless of which Next.js instance their requests transit through.
+After this change, each authenticated user gets their own default-bucket budget regardless of which Next.js instance their requests transit through.
+
+## Production limit raised to 10,000 / 60s
+
+The same deploy raised the `default` bucket from 300 to 10,000 req/60s in production (dev unchanged at 1,000). Even with per-session tracking, 300 was still being tripped on first reloads, almost certainly because something on the frontend is firing requests in a tight loop (an effect / query refetch worth chasing separately). 10,000/min/user is generous enough that legitimate UI behaviour can't realistically hit it; the throttler is now mostly a circuit-breaker against pathological abuse rather than a tight per-user cap. Worth revisiting once the underlying request-loop bug is fixed.
 
 ## What did not change
 
-- Production / dev limits (300 vs 1000 req/min default; 5 vs 100 OTP/hour `auth-strict`) - same as set in [Auth + dev ergonomics](./auth-and-dev-ergonomics.md#dev-only-throttle-relief).
+- Dev `default` limit (1000 req/min) and the entire `auth-strict` bucket (5/hour prod, 100/hour dev) - unchanged from [Auth + dev ergonomics](./auth-and-dev-ergonomics.md#dev-only-throttle-relief).
 - `auth-strict` tracker - still keys off `body.email` (then IP) precisely because there is no session yet on `/auth/otp/send` and `/auth/otp/verify`.
 - `getClientIp` semantics - same `X-Forwarded-For`-aware extraction, still applied to the `auth-strict` bucket and the unauthenticated fallback. The [nginx hardening](../2026-05-24/high-fixes.md#nginx-hardening) that made `X-Real-IP` the real TCP peer is still the source of truth for that IP.
 - No client changes. The Next.js middleware was already forwarding the user's session cookie verbatim; that cookie is now what the throttler keys off.

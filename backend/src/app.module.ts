@@ -78,14 +78,14 @@ function getSessionTracker(req: ThrottlerReq): string | undefined {
         {
           name: 'default',
           ttl: 60_000,
-          limit: process.env.NODE_ENV === 'production' ? 300 : 1000,
+          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
           getTracker: (req: ThrottlerReq) =>
             getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
         },
         {
           name: 'auth-strict',
           ttl: 60 * 60 * 1000,
-          limit: process.env.NODE_ENV === 'production' ? 5 : 100,
+          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
           getTracker: (req: ThrottlerReq) =>
             req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
         },
