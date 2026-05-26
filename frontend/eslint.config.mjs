@@ -14,6 +14,11 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
   ]),
   {
+    settings: {
+      react: {
+        version: "19.0.0",
+      },
+    },
     rules: {
       "react-hooks/immutability": "off",
     },
