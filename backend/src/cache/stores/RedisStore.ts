@@ -1,26 +1,8 @@
 import { RedisClient } from 'bun';
-import { Logger } from '@nestjs/common';
 import { CacheInterface } from './cache.interface';
 
-const KEEPALIVE_INTERVAL_MS = 60_000;
-
 export class RedisStore implements CacheInterface {
-  private readonly logger = new Logger(RedisStore.name);
-  private readonly keepalive: ReturnType<typeof setInterval>;
-
-  constructor(private readonly redis: RedisClient) {
-    this.keepalive = setInterval(() => {
-      this.redis.send('PING', []).catch((err) => {
-        this.logger.warn(`Redis keepalive ping failed: ${String(err)}`);
-      });
-    }, KEEPALIVE_INTERVAL_MS);
-    this.keepalive.unref?.();
-  }
-
-  dispose(): void {
-    clearInterval(this.keepalive);
-    this.redis.close?.();
-  }
+  constructor(private readonly redis: RedisClient) {}
 
   async get(key: string): Promise<any> {
     const raw = await this.redis.get(key);
@@ -52,6 +34,6 @@ export class RedisStore implements CacheInterface {
   }
 
   async clear(): Promise<void> {
-    await this.redis.send('FLUSHALL', ['ASYNC']);
+    await this.redis.send("FLUSHALL", ["ASYNC"]);
   }
 }

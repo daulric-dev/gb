@@ -35,13 +35,13 @@ export class SubjectController {
 
   @Patch('reorder')
   async reorder(@Req() req: any, @Body() dto: ReorderSubjectsDto) {
-    const raw = await this.subjectService.reorder(req.user.id, dto);
+    const raw = await this.subjectService.reorder(dto);
     return this.versioning.resolve(req, 'subject.reordered')(raw);
   }
 
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.subjectService.findOne(req.user.id, id);
+    const raw = await this.subjectService.findOne(id);
     return this.versioning.resolve(req, 'subject.detail')(raw);
   }
 
@@ -57,13 +57,13 @@ export class SubjectController {
     @Param('id') id: string,
     @Body() dto: UpdateSubjectDto,
   ) {
-    const raw = await this.subjectService.update(req.user.id, id, dto);
+    const raw = await this.subjectService.update(id, dto);
     return this.versioning.resolve(req, 'subject.updated')(raw);
   }
 
   @Delete(':id')
   async delete(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.subjectService.delete(req.user.id, id);
+    const raw = await this.subjectService.delete(id);
     return this.versioning.resolve(req, 'subject.deleted')(raw);
   }
 }

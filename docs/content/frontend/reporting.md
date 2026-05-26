@@ -97,7 +97,7 @@ Displays differently based on report type:
 | Exam | Exam average |
 | Term | Term composite |
 
-#### Year-End Report - Per-Term Layout (`weighted_continuous`)
+#### Year-End Report — Per-Term Layout (`weighted_continuous`)
 
 | Column | Description |
 |--------|-------------|
@@ -106,7 +106,7 @@ Displays differently based on report type:
 | End of Yr Exam | Last term's exam average |
 | Year Grade | Computed year grade |
 
-#### Year-End Report - Pooled Layout (`weighted_cumulative`, `continuous_cumulative`)
+#### Year-End Report — Pooled Layout (`weighted_cumulative`, `continuous_cumulative`)
 
 | Column | Description |
 |--------|-------------|
@@ -115,7 +115,7 @@ Displays differently based on report type:
 | FINAL /exWeight | Final exam from last term, scaled to exam weight (continuous_cumulative only) |
 | Total | Year grade |
 
-The layout is driven by `getGradingRules(model).display.yearEndColumns` - either `"per_term"` or `"pooled"`.
+The layout is driven by `getGradingRules(model).display.yearEndColumns` — either `"per_term"` or `"pooled"`.
 
 ### PDF Downloads
 
@@ -183,7 +183,7 @@ Class-level summary with statistics, rankings, and export capabilities.
 | Student | Full name |
 | Overall Average | Term composite average |
 
-#### Year-End View - Per-Term Models (`weighted_continuous`)
+#### Year-End View — Per-Term Models (`weighted_continuous`)
 
 | Column | Description |
 |--------|-------------|
@@ -192,7 +192,7 @@ Class-level summary with statistics, rankings, and export capabilities.
 | Per-subject: M, H, T, E, Yr | Term composites, exam, year grade per subject |
 | Year Average | Year-end overall average |
 
-#### Year-End View - Pooled Models (`weighted_cumulative`, `continuous_cumulative`)
+#### Year-End View — Pooled Models (`weighted_cumulative`, `continuous_cumulative`)
 
 | Column | Description |
 |--------|-------------|
@@ -326,7 +326,7 @@ A centralized configuration system that drives all grading-model-specific UI log
 | `display.examColumnLocation` | enum | `"each_term"` or `"final_term_only"` |
 | `display.examScaledToYearWeight` | boolean | Scale exam to year weight in year views |
 | `display.showTermAvgColumn` | boolean | Show AVG column in year views |
-| `display.yearEndColumns` | enum | `"per_term"` or `"pooled"` - controls report layout |
+| `display.yearEndColumns` | enum | `"per_term"` or `"pooled"` — controls report layout |
 
 Usage: `getGradingRules(gradingModel)` returns the rules for any model. All report generators, PDF builders, CSV/XLSX exports, and UI components use this instead of scattered `if (model === "...")` checks.
 

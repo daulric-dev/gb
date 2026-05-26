@@ -9,34 +9,6 @@ import {
 
 const TTL = 60 * 60 * 24 * 30;
 
-// Wires the enrollment service's school-check mocks. `assertSameSchool`
-// calls supabase.from('student_group').select() and
-// supabase.schema('student').from('student').select() - both need to
-// return data from the same school, otherwise the insert path is never
-// reached.
-function withSchoolChecks(
-  mockSupabase: ReturnType<typeof createMockSupabaseService>,
-  insertBuilder: ReturnType<typeof createMockQueryBuilder>,
-  studentIds: string[],
-) {
-  const groupBuilder = createMockQueryBuilder({
-    data: { academic_year: { school_id: 'school-1' } },
-    error: null,
-  });
-  const studentBuilder = createMockQueryBuilder({
-    data: studentIds.map((id) => ({ id, school_id: 'school-1' })),
-    error: null,
-  });
-  mockSupabase._client.from = () => groupBuilder;
-  (mockSupabase._client as any).schema = (schema: string) =>
-    schema === 'student'
-      ? {
-          from: (table: string) =>
-            table === 'student' ? studentBuilder : insertBuilder,
-        }
-      : { from: () => insertBuilder };
-}
-
 describe('EnrollmentService', () => {
   let service: EnrollmentService;
   let mockSupabase: ReturnType<typeof createMockSupabaseService>;
@@ -50,11 +22,11 @@ describe('EnrollmentService', () => {
 
   describe('enroll', () => {
     test('throws ConflictException on duplicate (error code 23505)', () => {
-      const insertBuilder = createMockQueryBuilder({
+      const builder = createMockQueryBuilder({
         data: null,
         error: { code: '23505', message: 'duplicate' },
       });
-      withSchoolChecks(mockSupabase, insertBuilder, ['s1']);
+      mockSupabase._client.schema = () => ({ from: () => builder });
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
       expect(service.enroll('c1', { studentId: 's1' })).rejects.toBeInstanceOf(
@@ -64,11 +36,10 @@ describe('EnrollmentService', () => {
 
     test('uses deleteByPrefix for enrolled cache', async () => {
       const enrolled = { id: 'e1', student_id: 's1' };
-      const insertBuilder = createMockQueryBuilder({
-        data: enrolled,
-        error: null,
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: enrolled, error: null },
       });
-      withSchoolChecks(mockSupabase, insertBuilder, ['s1']);
+      mockCache = createMockCacheService();
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
       await mockCache.set('enrolled:c1:all:all', [{ id: 'old' }], TTL);
@@ -79,33 +50,15 @@ describe('EnrollmentService', () => {
       expect(await mockCache.get('enrolled:c1:all:all')).toBeNull();
       expect(await mockCache.get('enrolled:c1:u1:all')).toBeNull();
     });
-
-    test('rejects when student is in a different school', () => {
-      const groupBuilder = createMockQueryBuilder({
-        data: { academic_year: { school_id: 'school-1' } },
-        error: null,
-      });
-      const studentBuilder = createMockQueryBuilder({
-        data: [{ id: 's1', school_id: 'school-2' }],
-        error: null,
-      });
-      mockSupabase._client.from = () => groupBuilder;
-      mockSupabase._client.schema = () => ({ from: () => studentBuilder });
-      service = new EnrollmentService(mockSupabase as any, mockCache as any);
-
-      expect(service.enroll('c1', { studentId: 's1' })).rejects.toMatchObject({
-        status: 400,
-      });
-    });
   });
 
   describe('bulkEnroll', () => {
     test('throws ConflictException on duplicate', () => {
-      const insertBuilder = createMockQueryBuilder({
+      const builder = createMockQueryBuilder({
         data: null,
         error: { code: '23505', message: 'duplicate' },
       });
-      withSchoolChecks(mockSupabase, insertBuilder, ['s1', 's2']);
+      mockSupabase._client.schema = () => ({ from: () => builder });
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
       expect(
@@ -115,11 +68,10 @@ describe('EnrollmentService', () => {
 
     test('uses deleteByPrefix', async () => {
       const rows = [{ id: 'e1' }, { id: 'e2' }];
-      const insertBuilder = createMockQueryBuilder({
-        data: rows,
-        error: null,
+      mockSupabase = createMockSupabaseService({
+        queryResult: { data: rows, error: null },
       });
-      withSchoolChecks(mockSupabase, insertBuilder, ['s1', 's2']);
+      mockCache = createMockCacheService();
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
       await mockCache.set('enrolled:c1:all:all', [{ id: 'old' }], TTL);

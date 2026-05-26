@@ -141,6 +141,7 @@ describe('AuthService', () => {
       await service.updateProfile(userId, {
         firstName: 'Updated',
         lastName: 'Name',
+        schoolId: 's2',
       });
 
       const cached = await mockCache.get(`profile:${userId}`);

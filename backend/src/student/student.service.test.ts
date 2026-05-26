@@ -77,7 +77,6 @@ describe('StudentService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
-        getUserSchoolId: () => Promise.resolve(SCHOOL_ID),
         _client: client,
         _builder: existingBuilder,
       };
@@ -122,7 +121,6 @@ describe('StudentService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
-        getUserSchoolId: () => Promise.resolve(SCHOOL_ID),
         _client: client,
         _builder: insertBuilder,
       };
@@ -191,7 +189,6 @@ describe('StudentService', () => {
       mockSupabase = {
         getServiceClient: () => client,
         createUserClient: () => client,
-        getUserSchoolId: () => Promise.resolve(SCHOOL_ID),
         _client: client,
         _builder: searchBuilder,
       };
@@ -231,7 +228,7 @@ describe('StudentService', () => {
 
       await mockCache.set(`students:${SCHOOL_ID}`, [original], STUDENT_TTL);
 
-      await service.update(USER_ID, 'student-1', { firstName: 'Jane' });
+      await service.update('student-1', { firstName: 'Jane' });
 
       const cached = await mockCache.get(`students:${SCHOOL_ID}`);
       expect(cached[0].first_name).toBe('Jane');
@@ -248,7 +245,7 @@ describe('StudentService', () => {
       );
 
       expect(
-        service.update(USER_ID, 'nonexistent', { firstName: 'Jane' } as any),
+        service.update('nonexistent', { firstName: 'Jane' } as any),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });

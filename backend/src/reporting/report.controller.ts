@@ -220,28 +220,28 @@ export class ReportController {
     @Param('id') id: string,
     @Body() dto: UpdateReportDto,
   ) {
-    const raw = await this.reportService.updateReport(req.user.id, id, dto);
+    const raw = await this.reportService.updateReport(id, dto);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Patch(':id/regenerate')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async regenerate(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.reportService.regenerateReport(req.user.id, id);
+    const raw = await this.reportService.regenerateReport(id);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Patch(':id/publish')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async publish(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.reportService.publish(req.user.id, id);
+    const raw = await this.reportService.publish(id);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
   @Patch(':id/send-to-ministry')
   @UseGuards(ClassTeacherGuard)
   async sendToMinistry(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.reportService.sendToMinistry(req.user.id, id);
+    const raw = await this.reportService.sendToMinistry(id);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
@@ -269,21 +269,23 @@ export class ReportController {
       throw new BadRequestException('Empty file');
     }
 
-    const raw = await this.reportService.uploadPdf(id, req.user.id, buffer);
+    const objectPath =
+      (file.fields?.objectPath as { value?: string } | undefined)?.value ??
+      `${id}.pdf`;
+
+    const raw = await this.reportService.uploadPdf(
+      id,
+      req.user.id,
+      buffer,
+      objectPath,
+    );
     return this.versioning.resolve(req, 'report.pdfUploaded')(raw);
   }
 
   @Get(':id/pdf/:pdfId/download')
   @UseGuards(ClassTeacherGuard)
-  async downloadPdf(
-    @Param('id') id: string,
-    @Param('pdfId') pdfId: string,
-    @Res() reply: FastifyReply,
-  ) {
-    const { buffer, filename } = await this.reportService.downloadPdf(
-      id,
-      pdfId,
-    );
+  async downloadPdf(@Param('pdfId') pdfId: string, @Res() reply: FastifyReply) {
+    const { buffer, filename } = await this.reportService.downloadPdf(pdfId);
     reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `attachment; filename="${filename}"`)

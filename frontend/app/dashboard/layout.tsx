@@ -1,7 +1,6 @@
 "use client";
 
-import { useProfile } from "@/providers/AuthProvider";
-import { useSignals } from "@preact/signals-react/runtime";
+import { useProfile } from "@/lib/use-profile";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -13,18 +12,12 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  useSignals();
   const { profile, loading } = useProfile();
   const router = useRouter();
 
   useEffect(() => {
     if (loading.value) return;
-    if (!profile.value) {
-      // AuthProvider doesn't redirect on its own; the dashboard does.
-      router.replace("/login");
-      return;
-    }
-    if (!profile.value.school) {
+    if (profile.value && !profile.value.school) {
       router.replace("/schools");
     }
   }, [loading.value, profile.value, router]);

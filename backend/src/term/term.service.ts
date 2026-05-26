@@ -36,7 +36,6 @@ export class TermService {
     const sortOrder = dto.sortOrder ?? defaultSortOrder[dto.name];
 
     const supabase = this.supabaseService.getServiceClient();
-    await this.assertYearInUserSchool(userId, dto.academicYearId);
 
     const { data: term, error } = await supabase
       .from('term')
@@ -71,9 +70,7 @@ export class TermService {
     return term;
   }
 
-  async findByYear(userId: string, academicYearId: string) {
-    await this.assertYearInUserSchool(userId, academicYearId);
-
+  async findByYear(academicYearId: string) {
     const cacheKey = `terms:${academicYearId}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
@@ -96,36 +93,27 @@ export class TermService {
     return result;
   }
 
-  async findOne(userId: string, termId: string) {
+  async findOne(termId: string) {
     const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.supabaseService.getUserSchoolId(userId);
 
     const { data, error } = await supabase
       .from('term')
-      .select('*, academic_year!inner(school_id)')
+      .select('*')
       .eq('id', termId)
-      .eq('academic_year.school_id', schoolId)
       .single();
 
     if (error || !data) {
       throw new NotFoundException('Term not found');
     }
 
-    const { academic_year: _ay, ...term } = data;
-    if (_ay) {
-      this.logger.log(`Academic year: ${_ay.id}`);
-    }
-    return term;
+    return data;
   }
 
-  async update(userId: string, termId: string, dto: UpdateTermDto) {
+  async update(termId: string, dto: UpdateTermDto) {
     const supabase = this.supabaseService.getServiceClient();
 
-    // findOne enforces school scope; if the term isn't in the caller's school,
-    // this throws NotFoundException before any write happens.
-    const current = await this.findOne(userId, termId);
-
     if (dto.examWeight !== undefined || dto.courseworkWeight !== undefined) {
+      const current = await this.findOne(termId);
       const examW = dto.examWeight ?? current.exam_weight;
       const courseworkW = dto.courseworkWeight ?? current.coursework_weight;
       if (examW + courseworkW !== 100) {
@@ -169,11 +157,8 @@ export class TermService {
     return data;
   }
 
-  async delete(userId: string, termId: string) {
+  async delete(termId: string) {
     const supabase = this.supabaseService.getServiceClient();
-
-    // Enforce school scope via findOne before deleting.
-    const current = await this.findOne(userId, termId);
 
     const { error } = await supabase.from('term').delete().eq('id', termId);
 
@@ -187,23 +172,7 @@ export class TermService {
       throw new BadRequestException('Failed to delete term');
     }
 
-    await this.cache.delete(`terms:${current.academic_year_id}`);
+    await this.cache.deleteByPrefix('terms:');
     return { message: 'Term deleted' };
-  }
-
-  private async assertYearInUserSchool(userId: string, academicYearId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.supabaseService.getUserSchoolId(userId);
-
-    const { data, error } = await supabase
-      .from('academic_year')
-      .select('id')
-      .eq('id', academicYearId)
-      .eq('school_id', schoolId)
-      .maybeSingle();
-
-    if (error || !data) {
-      throw new NotFoundException('Academic year not found');
-    }
   }
 }

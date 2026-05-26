@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useProfile } from "@/providers/AuthProvider";
+import { useProfile } from "@/lib/use-profile";
 
 const features = [
   {
@@ -53,7 +53,7 @@ const features = [
 export default function LandingPage() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
-  const { profile } = useProfile();
+  const { profile } = useProfile({ optional: true });
 
   const navigateWithTransition = useCallback((e: React.MouseEvent) => {
       e.preventDefault();

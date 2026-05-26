@@ -21,15 +21,7 @@ describe('GradeService', () => {
       queryResult: { data: { id: 'g1', score: 85 }, error: null },
     });
     mockCache = createMockCacheService();
-    const mockGradeScale = {
-      getDefault: () => Promise.resolve(null),
-      convertScore: () => null,
-    };
-    service = new GradeService(
-      mockSupabase as any,
-      mockCache as any,
-      mockGradeScale as any,
-    );
+    service = new GradeService(mockSupabase as any, mockCache as any);
   });
 
   test('create invalidates calc caches', async () => {

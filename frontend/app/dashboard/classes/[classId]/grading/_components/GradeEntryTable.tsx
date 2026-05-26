@@ -187,37 +187,22 @@ export function GradeEntryTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={maxScore}
-                        step="any"
-                        value={entry.score}
-                        onChange={(ev) =>
-                          updateScore(
-                            e.student.id,
-                            "score",
-                            ev.target.value,
-                          )
-                        }
-                        className="w-24 h-8 text-sm"
-                        placeholder="-"
-                      />
-                      {existingGrade?.converted && (
-                        <Badge
-                          variant={existingGrade.converted.isPass ? "default" : "destructive"}
-                          className="text-xs"
-                          title={
-                            existingGrade.converted.gpaPoints != null
-                              ? `GPA ${existingGrade.converted.gpaPoints.toFixed(2)}`
-                              : undefined
-                          }
-                        >
-                          {existingGrade.converted.label}
-                        </Badge>
-                      )}
-                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={maxScore}
+                      step="any"
+                      value={entry.score}
+                      onChange={(ev) =>
+                        updateScore(
+                          e.student.id,
+                          "score",
+                          ev.target.value,
+                        )
+                      }
+                      className="w-24 h-8 text-sm"
+                      placeholder="-"
+                    />
                   </TableCell>
                   <TableCell>
                     <Input

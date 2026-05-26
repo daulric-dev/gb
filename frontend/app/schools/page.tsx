@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { useProfile } from "@/providers/AuthProvider";
+import { useProfile } from "@/lib/use-profile";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -71,7 +71,7 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
         <Label htmlFor="schoolName">School Name</Label>
         <Input
           id="schoolName"
-          placeholder="Gradebook Academy"
+          placeholder="St. Andrew Anglican Secondary"
           value={name.value}
           onChange={(e) => (name.value = e.target.value)}
           required
