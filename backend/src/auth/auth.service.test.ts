@@ -4,7 +4,21 @@ import { AuthService } from './auth.service';
 import {
   createMockSupabaseService,
   createMockCacheService,
+  createRoutingSupabase,
+  expectRejection,
 } from '@/test/mocks';
+
+/** True if any recorded query attempted to grant admin rights. */
+function grantedAdmin(calls: any[]): boolean {
+  return calls.some(
+    (c) =>
+      c.table === 'school_management' ||
+      (c.payload &&
+        (Array.isArray(c.payload) ? c.payload : [c.payload]).some(
+          (p: any) => p?.role === 'admin' || p?.role === 'admi-',
+        )),
+  );
+}
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -125,6 +139,84 @@ describe('AuthService', () => {
 
       const cached = await mockCache.get(`profile:${userId}`);
       expect(cached).toEqual(profile);
+    });
+
+    describe('joining an existing school never self-elevates to admin', () => {
+      const userId = 'user-join';
+
+      function makeService(joinRequestResult: { data: any; error: any }) {
+        const supabase = createRoutingSupabase({
+          tables: {
+            // user has no school yet -> not the school-creator branch
+            'public.user_profile': (call) =>
+              call.op === 'select'
+                ? { data: { school_id: null }, error: null }
+                : { data: { id: userId, first_name: 'Jane' }, error: null },
+            'public.school_join_request': joinRequestResult,
+          },
+        });
+        return {
+          service: new AuthService(
+            supabase as any,
+            createMockCacheService() as any,
+          ),
+          supabase,
+        };
+      }
+
+      test('creates a join request and grants no admin rights', async () => {
+        const { service: svc, supabase } = makeService({
+          data: { id: 'req-1', school_id: 's-orphan', status: 'pending' },
+          error: null,
+        });
+
+        const result: any = await svc.onboard(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+          schoolId: 's-orphan',
+        });
+
+        expect(result.joinRequest).toEqual({
+          id: 'req-1',
+          school_id: 's-orphan',
+          status: 'pending',
+        });
+        expect(grantedAdmin(supabase._calls)).toBe(false);
+      });
+
+      test('never queries or writes school_management at all', async () => {
+        const { service: svc, supabase } = makeService({
+          data: { id: 'req-1', school_id: 's1', status: 'pending' },
+          error: null,
+        });
+
+        await svc.onboard(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+          schoolId: 's1',
+        });
+
+        expect(
+          supabase._calls.some((c: any) => c.table === 'school_management'),
+        ).toBe(false);
+      });
+
+      test('surfaces a join-request failure instead of falling back to admin', async () => {
+        const { service: svc } = makeService({
+          data: null,
+          error: { message: 'insert failed' },
+        });
+
+        expect(
+          await expectRejection(
+            svc.onboard(userId, {
+              firstName: 'Jane',
+              lastName: 'Doe',
+              schoolId: 's1',
+            }),
+          ),
+        ).toBeInstanceOf(BadRequestException);
+      });
     });
   });
 
