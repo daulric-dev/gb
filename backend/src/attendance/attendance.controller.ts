@@ -36,6 +36,7 @@ export class AttendanceController {
     @Param('classId') classId: string,
     @Query('date') date: string,
   ) {
+    await this.attendanceService.assertCanViewClass(req.user.id, classId);
     const raw = await this.attendanceService.getClassRosterForDate(
       classId,
       date,
@@ -73,17 +74,27 @@ export class AttendanceController {
   @Patch(':recordId')
   async update(
     @Req() req: any,
+    @Param('classId') classId: string,
     @Param('recordId') recordId: string,
     @Body() dto: UpdateAttendanceDto,
   ) {
-    const raw = await this.attendanceService.update(recordId, req.user.id, dto);
+    const raw = await this.attendanceService.update(
+      classId,
+      recordId,
+      req.user.id,
+      dto,
+    );
     return this.versioning.resolve(req, 'attendance.updated')(raw);
   }
 
   @UseGuards(ClassTeacherGuard)
   @Delete(':recordId')
-  async remove(@Req() req: any, @Param('recordId') recordId: string) {
-    const raw = await this.attendanceService.delete(recordId);
+  async remove(
+    @Req() req: any,
+    @Param('classId') classId: string,
+    @Param('recordId') recordId: string,
+  ) {
+    const raw = await this.attendanceService.delete(classId, recordId);
     return this.versioning.resolve(req, 'attendance.deleted')(raw);
   }
 
