@@ -78,6 +78,11 @@ export class PermissionController {
     );
   }
 
+  @Get('members/:membershipId/roles')
+  getMemberRoles(@Req() req: any, @Param('membershipId') membershipId: string) {
+    return this.permissionService.getMemberRoles(req.user.id, membershipId);
+  }
+
   @Post('members/:membershipId/roles')
   assignRole(
     @Req() req: any,

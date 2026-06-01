@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
-import { PERM_CACHE_PREFIX } from './permission.guard';
+import {
+  computeEffectivePermissions,
+  PERM_CACHE_PREFIX,
+} from './permission.effective';
 import { isPermissionKey, PERMISSION_CATALOG } from './permission.catalog';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -268,6 +271,63 @@ export class PermissionService {
 
     await this.invalidate();
     return { unassigned: true };
+  }
+
+  /** Custom roles currently assigned to a membership (for the admin UI). */
+  async getMemberRoles(adminUserId: string, membershipId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.requireAdminSchool(adminUserId);
+    await this.requireMembershipInSchool(membershipId, schoolId);
+
+    const { data, error } = await supabase
+      .from('school_management_role')
+      .select('school_role:school_role_id(id, name, is_system)')
+      .eq('school_management_id', membershipId);
+
+    if (error) {
+      this.logger.error(`Failed to read member roles: ${error.message}`);
+      throw new BadRequestException('Failed to read member roles');
+    }
+
+    type Role = { id: string; name: string; is_system: boolean };
+    return (data ?? [])
+      .map((r) => {
+        const sr = r.school_role as Role | Role[] | null;
+        return Array.isArray(sr) ? (sr[0] ?? null) : sr;
+      })
+      .filter((r): r is Role => Boolean(r));
+  }
+
+  /**
+   * The caller's own effective permissions in their active school. Available to
+   * any authenticated user (not admin-only) so the frontend can gate its UI.
+   */
+  async getMyPermissions(userId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: profile } = await supabase
+      .from('user_profile')
+      .select('school_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const schoolId = profile?.school_id ?? null;
+    if (!schoolId) {
+      return { schoolId: null, role: null, isAdmin: false, permissions: [] };
+    }
+
+    const effective = await computeEffectivePermissions(
+      this.supabaseService,
+      userId,
+      schoolId,
+    );
+
+    return {
+      schoolId,
+      role: effective.role,
+      isAdmin: effective.role === 'admin',
+      permissions: effective.keys,
+    };
   }
 
   // --- helpers -------------------------------------------------------------

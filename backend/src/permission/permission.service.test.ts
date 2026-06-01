@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PermissionService } from './permission.service';
 import { createRoutingSupabase, expectRejection } from '@/test/mocks';
-import { PERM_CACHE_PREFIX } from './permission.guard';
+import { PERM_CACHE_PREFIX } from './permission.effective';
 
 function makeCache() {
   const prefixes: string[] = [];
@@ -141,6 +141,38 @@ describe('PermissionService', () => {
       ),
     ).toBe(true);
     expect(prefixes).toContain(PERM_CACHE_PREFIX);
+  });
+
+  test('getMyPermissions returns empty for a user with no active school', async () => {
+    const sb = createRoutingSupabase({
+      tables: { user_profile: { data: { school_id: null }, error: null } },
+    });
+    const { cache } = makeCache();
+    const svc = new PermissionService(sb as any, cache);
+
+    const result = await svc.getMyPermissions('u1');
+    expect(result).toEqual({
+      schoolId: null,
+      role: null,
+      isAdmin: false,
+      permissions: [],
+    });
+  });
+
+  test('getMyPermissions reports admin with the full catalog', async () => {
+    const sb = createRoutingSupabase({
+      tables: {
+        user_profile: { data: { school_id: 's1' }, error: null },
+        school_management: { data: { id: 'm1', role: 'admin' }, error: null },
+      },
+    });
+    const { cache } = makeCache();
+    const svc = new PermissionService(sb as any, cache);
+
+    const result = await svc.getMyPermissions('u1');
+    expect(result.isAdmin).toBe(true);
+    expect(result.role).toBe('admin');
+    expect(result.permissions).toContain('student:delete');
   });
 
   test('assignRoleToMember rejects a membership from another school', async () => {

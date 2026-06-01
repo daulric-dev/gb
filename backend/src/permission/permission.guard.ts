@@ -9,32 +9,14 @@ import { Reflector } from '@nestjs/core';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { PERMISSION_KEY } from './require-permission.decorator';
-import { defaultsForRole, PermissionKey } from './permission.catalog';
+import { PermissionKey } from './permission.catalog';
+import {
+  computeEffectivePermissions,
+  EffectivePermissions,
+  permCacheKey,
+  PERM_TTL,
+} from './permission.effective';
 
-/** Cached effective-permission payload for one (user, school) pair. */
-interface EffectivePermissions {
-  member: boolean;
-  keys: string[];
-}
-
-/** How long an effective-permission set is cached. Bounds staleness after an
- *  admin edits a role; writes also actively invalidate (see PermissionService). */
-const PERM_TTL = 45;
-
-export const PERM_CACHE_PREFIX = 'perm:eff:';
-
-const cacheKey = (userId: string, schoolId: string) =>
-  `${PERM_CACHE_PREFIX}${userId}:${schoolId}`;
-
-/**
- * Capability gate: checks that the user's role (enum defaults ∪ assigned custom
- * roles) grants the catalog permission declared by @RequirePermission, scoped
- * to the school that owns the targeted resource.
- *
- * Inert on routes without @RequirePermission. Must run after AuthGuard (needs
- * request.user). Composes with instance-ownership guards like ClassTeacherGuard
- * — both must pass.
- */
 @Injectable()
 export class PermissionGuard implements CanActivate {
   private readonly logger = new Logger(PermissionGuard.name);
@@ -86,13 +68,6 @@ export class PermissionGuard implements CanActivate {
     throw new ForbiddenException(`Missing permission: ${required}`);
   }
 
-  /**
-   * Resolve the school that owns the targeted resource: explicit :schoolId,
-   * else via the class/report the route addresses, else the user's active
-   * school. We never silently pick one of several memberships for an
-   * anchorless route — the active-school fallback uses the denormalized
-   * user_profile.school_id, which is the user's single current school.
-   */
   private async resolveSchoolContext(
     request: any,
   ): Promise<string | undefined> {
@@ -133,61 +108,16 @@ export class PermissionGuard implements CanActivate {
     userId: string,
     schoolId: string,
   ): Promise<EffectivePermissions> {
-    const key = cacheKey(userId, schoolId);
+    const key = permCacheKey(userId, schoolId);
     const cached = (await this.cache.get(key)) as EffectivePermissions | null;
     if (cached) return cached;
 
-    const effective = await this.computeEffectivePermissions(userId, schoolId);
+    const effective = await computeEffectivePermissions(
+      this.supabaseService,
+      userId,
+      schoolId,
+    );
     await this.cache.set(key, effective, PERM_TTL);
     return effective;
-  }
-
-  private async computeEffectivePermissions(
-    userId: string,
-    schoolId: string,
-  ): Promise<EffectivePermissions> {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: membership } = await supabase
-      .from('school_management')
-      .select('id, role')
-      .eq('user_id', userId)
-      .eq('school_id', schoolId)
-      .maybeSingle();
-
-    if (!membership) {
-      return { member: false, keys: [] };
-    }
-
-    // Admin: full catalog, scoped to this resolved school.
-    if (membership.role === 'admin') {
-      return { member: true, keys: [...defaultsForRole('admin')] };
-    }
-
-    const keys = defaultsForRole(membership.role);
-
-    // Union any custom roles assigned to this membership.
-    const { data: assignedRoles } = await supabase
-      .from('school_management_role')
-      .select('school_role_id')
-      .eq('school_management_id', membership.id);
-
-    const roleIds = (assignedRoles ?? []).map(
-      (r: { school_role_id: string }) => r.school_role_id,
-    );
-
-    if (roleIds.length > 0) {
-      const { data: grants } = await supabase
-        .from('school_role_permission')
-        .select('permission_catalog:permission_id(key)')
-        .in('school_role_id', roleIds);
-
-      for (const g of grants ?? []) {
-        const grantKey = (g.permission_catalog as { key?: string } | null)?.key;
-        if (grantKey) keys.add(grantKey as PermissionKey);
-      }
-    }
-
-    return { member: true, keys: [...keys] };
   }
 }
