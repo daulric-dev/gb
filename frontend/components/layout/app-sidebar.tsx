@@ -9,6 +9,7 @@ import {
   ChevronsUpDown,
   FileText,
   GraduationCap,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Scale,
@@ -53,6 +54,7 @@ const navItems = [
 
 const adminNavItems = [
   { title: "Grade Scales", href: "/dashboard/grade-scales", icon: Scale },
+  { title: "Roles", href: "/dashboard/roles", icon: KeyRound },
 ];
 
 function getInitials(profile: UserProfile | null) {

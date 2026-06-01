@@ -25,8 +25,6 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid or expired session');
       }
 
-      // A valid session is not enough: a deactivated account must lose access
-      // everywhere, not just on admin-guarded routes.
       const { data: profile } = await this.supabaseService
         .getServiceClient()
         .from('user_profile')

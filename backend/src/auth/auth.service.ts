@@ -161,6 +161,18 @@ export class AuthService {
         );
       }
 
+      // Preserve an existing membership role (e.g. the school creator's
+      // 'admin', set by SchoolService.create) — the dedicated branch runs for
+      // every onboard, including theirs. Brand-new members default to teacher.
+      const { data: membership } = await supabase
+        .from('school_management')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('school_id', school.id)
+        .maybeSingle();
+
+      const role = membership?.role ?? 'teacher';
+
       const { data, error } = await supabase
         .from('user_profile')
         .upsert({
@@ -168,6 +180,7 @@ export class AuthService {
           first_name: dto.firstName,
           last_name: dto.lastName,
           school_id: school.id,
+          role,
         })
         .select('*, school:school_id(*)')
         .single();
@@ -177,6 +190,21 @@ export class AuthService {
           `Failed to onboard user ${userId}: ${error?.message}`,
         );
         throw new BadRequestException('Failed to complete onboarding');
+      }
+
+      // Canonical membership so the permission layer recognizes the user.
+      // Without this, a dedicated-instance user has a school_id but no
+      // school_management row, and PermissionGuard treats them as a non-member.
+      if (!membership) {
+        const { error: managementError } = await supabase
+          .from('school_management')
+          .insert({ user_id: userId, school_id: school.id, role });
+
+        if (managementError) {
+          this.logger.error(
+            `Failed to create school_management for ${userId} at ${school.id}: ${managementError.message}`,
+          );
+        }
       }
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);

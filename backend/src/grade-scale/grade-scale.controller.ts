@@ -13,6 +13,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AdminGuard } from '@/auth/admin.guard';
+import { PermissionGuard } from '@/permission/permission.guard';
+import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
 import { GradeScaleService } from './grade-scale.service';
 import { CreateGradeScaleDto } from './dto/create-grade-scale.dto';
@@ -22,31 +24,35 @@ import { ReplaceBandsDto } from './dto/replace-bands.dto';
 @ApiTags('Grade Scales')
 @ApiBearerAuth()
 @Controller('grade-scales')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 export class GradeScaleController {
   constructor(
     private readonly service: GradeScaleService,
     private readonly versioning: VersioningService,
   ) {}
 
+  @RequirePermission('grade-scale', 'read')
   @Get()
   async list(@Req() req: any) {
     const raw = await this.service.list(req.user.id);
     return this.versioning.resolve(req, 'gradeScale.list')(raw);
   }
 
+  @RequirePermission('grade-scale', 'read')
   @Get('default')
   async getDefault(@Req() req: any) {
     const raw = await this.service.getDefault(req.user.id);
     return this.versioning.resolve(req, 'gradeScale.detail')(raw);
   }
 
+  @RequirePermission('grade-scale', 'read')
   @Get(':id')
   async get(@Req() req: any, @Param('id') id: string) {
     const raw = await this.service.get(id, req.user.id);
     return this.versioning.resolve(req, 'gradeScale.detail')(raw);
   }
 
+  @RequirePermission('grade-scale', 'create')
   @UseGuards(AdminGuard)
   @Post()
   async create(@Req() req: any, @Body() dto: CreateGradeScaleDto) {
@@ -54,6 +60,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.created')(raw);
   }
 
+  @RequirePermission('grade-scale', 'update')
   @UseGuards(AdminGuard)
   @Patch(':id')
   async update(
@@ -65,6 +72,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.updated')(raw);
   }
 
+  @RequirePermission('grade-scale', 'update')
   @UseGuards(AdminGuard)
   @Put(':id/bands')
   async replaceBands(
@@ -76,6 +84,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.bandsReplaced')(raw);
   }
 
+  @RequirePermission('grade-scale', 'update')
   @UseGuards(AdminGuard)
   @Post(':id/set-default')
   async setDefault(@Req() req: any, @Param('id') id: string) {
@@ -83,6 +92,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.defaultSet')(raw);
   }
 
+  @RequirePermission('grade-scale', 'delete')
   @UseGuards(AdminGuard)
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {

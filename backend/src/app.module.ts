@@ -24,6 +24,7 @@ import { GradingModule } from '@/grading/grading.module';
 import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
 import { CalculationModule } from '@/calculation/calculation.module';
 import { ReportingModule } from '@/reporting/reporting.module';
+import { PermissionModule } from '@/permission/permission.module';
 import { ImagesModule } from '@/images/images.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
@@ -75,6 +76,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     GradeScaleModule,
     CalculationModule,
     ReportingModule,
+    PermissionModule,
     ImagesModule,
   ],
   controllers: [AppController],
