@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { Plus } from "lucide-react";
 import type { Student } from "./_components/types";
 import { StudentsSearchField } from "./_components/StudentsSearchField";
@@ -18,6 +19,7 @@ import { EditStudentForm } from "./_components/EditStudentForm";
 
 export default function StudentsPage() {
   useSignals();
+  const { can } = usePermissions();
   const students = useSignal<Student[]>([]);
   const loading = useSignal(true);
   const search = useSignal("");
@@ -49,26 +51,28 @@ export default function StudentsPage() {
         title="Students"
         description="Manage Students in Your School"
         action={
-          <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-            <DialogTrigger render={<Button />}>
-              <Plus className="mr-2 size-4" />
-              New Student
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Student</DialogTitle>
-                <DialogDescription>
-                  Create a new student record for your school
-                </DialogDescription>
-              </DialogHeader>
-              <CreateStudentForm
-                onSuccess={() => {
-                  createOpen.value = false;
-                  fetchStudents(search.value);
-                }}
-              />
-            </DialogContent>
-          </Dialog>
+          can("student", "create") ? (
+            <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
+              <DialogTrigger render={<Button />}>
+                <Plus className="mr-2 size-4" />
+                New Student
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Student</DialogTitle>
+                  <DialogDescription>
+                    Create a new student record for your school
+                  </DialogDescription>
+                </DialogHeader>
+                <CreateStudentForm
+                  onSuccess={() => {
+                    createOpen.value = false;
+                    fetchStudents(search.value);
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          ) : undefined
         }
       />
 
