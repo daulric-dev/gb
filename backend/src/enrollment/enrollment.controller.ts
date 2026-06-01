@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { PermissionGuard } from '@/permission/permission.guard';
+import { RequirePermission } from '@/permission/require-permission.decorator';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { EnrollmentService } from './enrollment.service';
@@ -22,13 +24,14 @@ import { BulkAssignSubjectsDto } from './dto/bulk-assign-subjects.dto';
 @ApiTags('Enrollment')
 @ApiBearerAuth()
 @Controller('classes/:classId')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 export class EnrollmentController {
   constructor(
     private readonly enrollmentService: EnrollmentService,
     private readonly versioning: VersioningService,
   ) {}
 
+  @RequirePermission('enrollment', 'read')
   @Get('students')
   async getEnrolledStudents(
     @Req() req: any,
@@ -43,6 +46,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.students')(raw);
   }
 
+  @RequirePermission('enrollment', 'read')
   @Get('students/:studentId/subjects')
   async getStudentSubjects(
     @Req() req: any,
@@ -56,6 +60,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.studentSubjects')(raw);
   }
 
+  @RequirePermission('enrollment', 'create')
   @UseGuards(ClassTeacherGuard)
   @Post('enroll')
   async enroll(
@@ -67,6 +72,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.enrolled')(raw);
   }
 
+  @RequirePermission('enrollment', 'create')
   @UseGuards(ClassTeacherGuard)
   @Post('enroll/bulk')
   async bulkEnroll(
@@ -78,6 +84,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.bulkEnrolled')(raw);
   }
 
+  @RequirePermission('enrollment', 'delete')
   @UseGuards(ClassTeacherGuard)
   @Delete('enroll/:studentId')
   async unenroll(
@@ -89,6 +96,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.unenrolled')(raw);
   }
 
+  @RequirePermission('enrollment', 'create')
   @UseGuards(ClassTeacherGuard)
   @Post('subjects')
   async assignSubjects(
@@ -100,6 +108,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.subjectsAssigned')(raw);
   }
 
+  @RequirePermission('enrollment', 'create')
   @UseGuards(ClassTeacherGuard)
   @Post('subjects/bulk')
   async bulkAssignSubjects(
@@ -111,6 +120,7 @@ export class EnrollmentController {
     return this.versioning.resolve(req, 'enrollment.bulkSubjectsAssigned')(raw);
   }
 
+  @RequirePermission('enrollment', 'delete')
   @UseGuards(ClassTeacherGuard)
   @Delete('students/:studentId/subjects/:subjectId')
   async removeSubject(

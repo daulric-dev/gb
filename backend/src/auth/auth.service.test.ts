@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import {
@@ -216,6 +216,86 @@ describe('AuthService', () => {
             }),
           ),
         ).toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    describe('dedicated deployment auto-joins the single school', () => {
+      const userId = 'user-dedicated';
+      let prevEnv: string | undefined;
+
+      beforeEach(() => {
+        prevEnv = process.env.DEDICATED_DEPLOYMENT;
+        process.env.DEDICATED_DEPLOYMENT = 'true';
+      });
+
+      afterEach(() => {
+        if (prevEnv === undefined) delete process.env.DEDICATED_DEPLOYMENT;
+        else process.env.DEDICATED_DEPLOYMENT = prevEnv;
+      });
+
+      function makeService(membership: { data: any; error: any }) {
+        const supabase = createRoutingSupabase({
+          tables: {
+            'public.school': { data: { id: 's1' }, error: null },
+            'public.school_management': (call) =>
+              call.op === 'select' ? membership : { data: null, error: null },
+            'public.user_profile': (call) => ({
+              data: { id: userId, ...call.payload, school_id: 's1' },
+              error: null,
+            }),
+          },
+        });
+        return {
+          service: new AuthService(
+            supabase as any,
+            createMockCacheService() as any,
+          ),
+          supabase,
+        };
+      }
+
+      test('new user gets a teacher membership and profile role', async () => {
+        const { service: svc, supabase } = makeService({
+          data: null,
+          error: null,
+        });
+
+        const result: any = await svc.onboard(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+        });
+
+        // user_profile mirrors the teacher role
+        expect(result.role).toBe('teacher');
+
+        // a canonical school_management row was inserted as teacher
+        const insert = supabase._calls.find(
+          (c: any) => c.table === 'school_management' && c.op === 'insert',
+        );
+        expect(insert?.payload).toMatchObject({
+          user_id: userId,
+          school_id: 's1',
+          role: 'teacher',
+        });
+      });
+
+      test('preserves the school creator admin role and does not re-insert membership', async () => {
+        const { service: svc, supabase } = makeService({
+          data: { role: 'admin' },
+          error: null,
+        });
+
+        const result: any = await svc.onboard(userId, {
+          firstName: 'Admin',
+          lastName: 'User',
+        });
+
+        expect(result.role).toBe('admin');
+        expect(
+          supabase._calls.some(
+            (c: any) => c.table === 'school_management' && c.op === 'insert',
+          ),
+        ).toBe(false);
       });
     });
   });
