@@ -175,6 +175,35 @@ describe('PermissionService', () => {
     expect(result.permissions).toContain('student:delete');
   });
 
+  test('getMyPermissions serves a cached effective set without re-querying', async () => {
+    const sb = createRoutingSupabase({
+      tables: {
+        user_profile: { data: { school_id: 's1' }, error: null },
+        // A cache hit must not reach the membership/role tables.
+        school_management: () => {
+          throw new Error('should not query on cache hit');
+        },
+      },
+    });
+    const cache = {
+      get: () =>
+        Promise.resolve({
+          member: true,
+          role: 'teacher',
+          keys: ['student:read'],
+        }),
+      set: async () => {},
+      delete: async () => {},
+      deleteByPrefix: async () => {},
+    } as any;
+    const svc = new PermissionService(sb as any, cache);
+
+    const result = await svc.getMyPermissions('u1');
+    expect(result.permissions).toEqual(['student:read']);
+    expect(result.role).toBe('teacher');
+    expect(result.isAdmin).toBe(false);
+  });
+
   test('assignRoleToMember rejects a membership from another school', async () => {
     const sb = createRoutingSupabase({
       tables: {

@@ -10,12 +10,7 @@ import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { PERMISSION_KEY } from './require-permission.decorator';
 import { PermissionKey } from './permission.catalog';
-import {
-  computeEffectivePermissions,
-  EffectivePermissions,
-  permCacheKey,
-  PERM_TTL,
-} from './permission.effective';
+import { loadEffectivePermissions } from './permission.effective';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -49,7 +44,12 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException('Could not resolve school context');
     }
 
-    const effective = await this.loadEffectivePermissions(userId, schoolId);
+    const effective = await loadEffectivePermissions(
+      this.supabaseService,
+      this.cache,
+      userId,
+      schoolId,
+    );
 
     if (!effective.member) {
       this.logger.warn(
@@ -102,22 +102,5 @@ export class PermissionGuard implements CanActivate {
       .maybeSingle();
 
     return profile?.school_id ?? undefined;
-  }
-
-  private async loadEffectivePermissions(
-    userId: string,
-    schoolId: string,
-  ): Promise<EffectivePermissions> {
-    const key = permCacheKey(userId, schoolId);
-    const cached = (await this.cache.get(key)) as EffectivePermissions | null;
-    if (cached) return cached;
-
-    const effective = await computeEffectivePermissions(
-      this.supabaseService,
-      userId,
-      schoolId,
-    );
-    await this.cache.set(key, effective, PERM_TTL);
-    return effective;
   }
 }

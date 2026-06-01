@@ -8,19 +8,13 @@ import {
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import {
-  computeEffectivePermissions,
+  loadEffectivePermissions,
   PERM_CACHE_PREFIX,
 } from './permission.effective';
 import { isPermissionKey, PERMISSION_CATALOG } from './permission.catalog';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
-/**
- * Admin-facing management of per-school custom roles and their permission
- * grants. Every operation is scoped to the calling admin's own school; cross-
- * school reads/writes are rejected. Mutations invalidate the permission cache
- * so guard decisions reflect changes within one TTL at most (usually instantly).
- */
 @Injectable()
 export class PermissionService {
   private readonly logger = new Logger(PermissionService.name);
@@ -316,8 +310,9 @@ export class PermissionService {
       return { schoolId: null, role: null, isAdmin: false, permissions: [] };
     }
 
-    const effective = await computeEffectivePermissions(
+    const effective = await loadEffectivePermissions(
       this.supabaseService,
+      this.cache,
       userId,
       schoolId,
     );

@@ -1,4 +1,5 @@
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 import { defaultsForRole, PermissionKey } from './permission.catalog';
 
 /** Effective-permission payload for one (user, school) pair. */
@@ -76,4 +77,23 @@ export async function computeEffectivePermissions(
   }
 
   return { member: true, role: membership.role, keys: [...keys] };
+}
+
+export async function loadEffectivePermissions(
+  supabaseService: SupabaseService,
+  cache: CacheService,
+  userId: string,
+  schoolId: string,
+): Promise<EffectivePermissions> {
+  const key = permCacheKey(userId, schoolId);
+  const cached = (await cache.get(key)) as EffectivePermissions | null;
+  if (cached) return cached;
+
+  const effective = await computeEffectivePermissions(
+    supabaseService,
+    userId,
+    schoolId,
+  );
+  await cache.set(key, effective, PERM_TTL);
+  return effective;
 }
