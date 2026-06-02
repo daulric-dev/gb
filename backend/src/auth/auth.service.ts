@@ -44,7 +44,12 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(email: string, token: string, req: FastifyRequest, reply: FastifyReply) {
+  async verifyOtp(
+    email: string,
+    token: string,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
     try {
       // Verify on the user client so the SSR adapter writes the auth-token
       // cookie via setAll synchronously inside this call.
@@ -150,7 +155,8 @@ export class AuthService {
     // who won't re-run verifyOtp). getProfile has no session, so the email is
     // sourced from the auth user via the admin API.
     if (!profile.email) {
-      const { data: authData, error: adminError } = await supabase.auth.admin.getUserById(userId);
+      const { data: authData, error: adminError } =
+        await supabase.auth.admin.getUserById(userId);
       const authEmail = authData?.user?.email;
 
       if (adminError || !authEmail) {
