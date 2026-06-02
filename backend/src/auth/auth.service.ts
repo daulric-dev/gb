@@ -44,12 +44,7 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(
-    email: string,
-    token: string,
-    req: FastifyRequest,
-    reply: FastifyReply,
-  ) {
+  async verifyOtp(email: string, token: string, req: FastifyRequest, reply: FastifyReply) {
     try {
       // Verify on the user client so the SSR adapter writes the auth-token
       // cookie via setAll synchronously inside this call.
@@ -99,6 +94,23 @@ export class AuthService {
           );
         }
         profile = newProfile;
+      } else if (!profile.email && userEmail) {
+        // Backfill email for existing profiles created before the column
+        // existed; populated lazily on the user's next login.
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('user_profile')
+          .update({ email: userEmail })
+          .eq('id', userId)
+          .select('*, school:school_id(*)')
+          .single();
+
+        if (updateError) {
+          this.logger.error(
+            `Failed to backfill email for user_profile ${userId}: ${updateError.message}`,
+          );
+        } else {
+          profile = updatedProfile;
+        }
       }
 
       if (profile) {
@@ -119,7 +131,7 @@ export class AuthService {
 
   async getProfile(userId: string) {
     const cached = await this.cache.get(`profile:${userId}`);
-    if (cached) return cached;
+    if (cached?.email) return cached;
 
     const supabase = this.supabaseService.getServiceClient();
 
@@ -132,6 +144,33 @@ export class AuthService {
     if (error || !profile) {
       this.logger.error(`Profile not found for ${userId}: ${error?.message}`);
       throw new NotFoundException('User profile not found');
+    }
+
+    // Backfill email for existing profiles (e.g. users with an active session
+    // who won't re-run verifyOtp). getProfile has no session, so the email is
+    // sourced from the auth user via the admin API.
+    if (!profile.email) {
+      const { data: authData, error: adminError } = await supabase.auth.admin.getUserById(userId);
+      const authEmail = authData?.user?.email;
+
+      if (adminError || !authEmail) {
+        this.logger.error(
+          `Failed to backfill email for user_profile ${userId}: ${adminError?.message ?? 'no auth email'}`,
+        );
+      } else {
+        const { error: updateError } = await supabase
+          .from('user_profile')
+          .update({ email: authEmail })
+          .eq('id', userId);
+
+        if (updateError) {
+          this.logger.error(
+            `Failed to persist backfilled email for user_profile ${userId}: ${updateError.message}`,
+          );
+        } else {
+          profile.email = authEmail;
+        }
+      }
     }
 
     if (profile.school_management.length === 1) {
