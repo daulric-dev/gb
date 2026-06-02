@@ -54,6 +54,8 @@ export function createMockSupabaseService(overrides: Record<string, any> = {}) {
           Promise.resolve(overrides.deleteUserResult ?? defaultResult),
         signOut: () =>
           Promise.resolve(overrides.signOutResult ?? defaultResult),
+        getUserById: () =>
+          Promise.resolve(overrides.getUserByIdResult ?? defaultResult),
       },
     },
     storage: {
@@ -102,6 +104,9 @@ export function createRoutingSupabase(
     storage?: Record<string, any>;
     getUser?: () => any;
     userSchoolId?: string;
+    verifyOtpResult?: QueryResult;
+    getUserByIdResult?: QueryResult;
+    authResult?: QueryResult;
   } = {},
 ) {
   const calls: RoutingCall[] = [];
@@ -169,11 +174,21 @@ export function createRoutingSupabase(
     return builder;
   }
 
+  const noResult: QueryResult = { data: null, error: null };
   const client: any = {
     from: (t: string) => makeBuilder().from(t),
     schema: (s: string) => ({
       from: (t: string) => makeBuilder().schema(s).from(t),
     }),
+    auth: {
+      signInWithOtp: () => Promise.resolve(config.authResult ?? noResult),
+      verifyOtp: () => Promise.resolve(config.verifyOtpResult ?? noResult),
+      admin: {
+        getUserById: () => Promise.resolve(config.getUserByIdResult ?? noResult),
+        deleteUser: () => Promise.resolve(noResult),
+        signOut: () => Promise.resolve(noResult),
+      },
+    },
     storage: {
       from: () => config.storage ?? {},
     },

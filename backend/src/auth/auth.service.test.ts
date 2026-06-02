@@ -49,6 +49,90 @@ describe('AuthService', () => {
     });
   });
 
+  describe('verifyOtp', () => {
+    const userId = 'user-otp';
+    const email = 'new@example.com';
+
+    function makeService(
+      userProfileRoute: (call: any) => { data: any; error: any },
+    ) {
+      const supabase = createRoutingSupabase({
+        verifyOtpResult: {
+          data: { session: { user: { id: userId, email } } },
+          error: null,
+        },
+        tables: { 'public.user_profile': userProfileRoute },
+      });
+      return {
+        service: new AuthService(
+          supabase as any,
+          createMockCacheService() as any,
+        ),
+        supabase,
+      };
+    }
+
+    test('persists the email when creating a new profile', async () => {
+      const { service: svc, supabase } = makeService((call) =>
+        call.op === 'select'
+          ? { data: null, error: null } // no existing profile
+          : { data: { id: userId, email: call.payload.email }, error: null },
+      );
+
+      const result: any = await svc.verifyOtp(
+        email,
+        '123456',
+        {} as any,
+        {} as any,
+      );
+
+      expect(result.profile.email).toBe(email);
+      const insert = supabase._calls.find(
+        (c: any) => c.table === 'user_profile' && c.op === 'insert',
+      );
+      expect(insert?.payload).toMatchObject({ id: userId, email });
+    });
+
+    test('backfills the email of an existing profile that has none', async () => {
+      const { service: svc, supabase } = makeService((call) =>
+        call.op === 'select'
+          ? { data: { id: userId, email: null }, error: null }
+          : { data: { id: userId, email: call.payload.email }, error: null },
+      );
+
+      const result: any = await svc.verifyOtp(
+        email,
+        '123456',
+        {} as any,
+        {} as any,
+      );
+
+      expect(result.profile.email).toBe(email);
+      const update = supabase._calls.find(
+        (c: any) => c.table === 'user_profile' && c.op === 'update',
+      );
+      expect(update?.payload).toMatchObject({ email });
+    });
+
+    test('leaves an existing profile that already has an email untouched', async () => {
+      const { service: svc, supabase } = makeService((call) =>
+        call.op === 'select'
+          ? { data: { id: userId, email: 'old@example.com' }, error: null }
+          : { data: null, error: null },
+      );
+
+      await svc.verifyOtp(email, '123456', {} as any, {} as any);
+
+      expect(
+        supabase._calls.some(
+          (c: any) =>
+            c.table === 'user_profile' &&
+            (c.op === 'insert' || c.op === 'update'),
+        ),
+      ).toBe(false);
+    });
+  });
+
   describe('getProfile', () => {
     const userId = 'user-123';
 
@@ -56,6 +140,7 @@ describe('AuthService', () => {
       return {
         id: userId,
         first_name: 'John',
+        email: 'john@example.com',
         school_id: 's1',
         school_management: [{ role: 'admin' }],
         ...overrides,
@@ -118,6 +203,100 @@ describe('AuthService', () => {
 
       const result = await service.getProfile(userId);
       expect(result.school_management).toEqual([]);
+    });
+
+    test('ignores a cached profile with no email and re-fetches to backfill', async () => {
+      // A profile cached before the email column existed must not short-circuit.
+      await mockCache.set(
+        `profile:${userId}`,
+        makeDbProfile({ email: null, school_management: { role: 'admin' } }),
+        1,
+      );
+
+      const supabase = createRoutingSupabase({
+        getUserByIdResult: {
+          data: { user: { id: userId, email: 'backfilled@example.com' } },
+          error: null,
+        },
+        tables: {
+          'public.user_profile': (call) =>
+            call.op === 'select'
+              ? {
+                  data: { id: userId, email: null, school_management: [] },
+                  error: null,
+                }
+              : { data: null, error: null },
+        },
+      });
+      service = new AuthService(supabase as any, mockCache as any);
+
+      const result = await service.getProfile(userId);
+
+      expect(result.email).toBe('backfilled@example.com');
+      // re-fetched from the DB rather than returning the stale cache
+      expect(supabase._calls.some((c: any) => c.table === 'user_profile')).toBe(
+        true,
+      );
+    });
+
+    test('backfills a null email from the auth user and persists it', async () => {
+      const supabase = createRoutingSupabase({
+        getUserByIdResult: {
+          data: { user: { id: userId, email: 'backfilled@example.com' } },
+          error: null,
+        },
+        tables: {
+          'public.user_profile': (call) =>
+            call.op === 'select'
+              ? {
+                  data: { id: userId, email: null, school_management: [] },
+                  error: null,
+                }
+              : { data: null, error: null },
+        },
+      });
+      service = new AuthService(supabase as any, mockCache as any);
+
+      const result = await service.getProfile(userId);
+
+      expect(result.email).toBe('backfilled@example.com');
+
+      // the email was written back to user_profile
+      const update = supabase._calls.find(
+        (c: any) => c.table === 'user_profile' && c.op === 'update',
+      );
+      expect(update?.payload).toMatchObject({ email: 'backfilled@example.com' });
+
+      // and the backfilled profile is cached
+      const cached = await mockCache.get(`profile:${userId}`);
+      expect(cached.email).toBe('backfilled@example.com');
+    });
+
+    test('returns the profile even when the auth lookup yields no email', async () => {
+      const supabase = createRoutingSupabase({
+        getUserByIdResult: { data: null, error: { message: 'not found' } },
+        tables: {
+          'public.user_profile': (call) =>
+            call.op === 'select'
+              ? {
+                  data: { id: userId, email: null, school_management: [] },
+                  error: null,
+                }
+              : { data: null, error: null },
+        },
+      });
+      service = new AuthService(supabase as any, mockCache as any);
+
+      const result = await service.getProfile(userId);
+
+      expect(result.id).toBe(userId);
+      expect(result.email).toBeNull();
+      // no write attempted when there is no email to persist
+      expect(
+        supabase._calls.some(
+          (c: any) => c.table === 'user_profile' && c.op === 'update',
+        ),
+      ).toBe(false);
     });
   });
 
