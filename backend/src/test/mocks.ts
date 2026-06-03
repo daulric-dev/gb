@@ -184,7 +184,8 @@ export function createRoutingSupabase(
       signInWithOtp: () => Promise.resolve(config.authResult ?? noResult),
       verifyOtp: () => Promise.resolve(config.verifyOtpResult ?? noResult),
       admin: {
-        getUserById: () => Promise.resolve(config.getUserByIdResult ?? noResult),
+        getUserById: () =>
+          Promise.resolve(config.getUserByIdResult ?? noResult),
         deleteUser: () => Promise.resolve(noResult),
         signOut: () => Promise.resolve(noResult),
       },

@@ -3,7 +3,7 @@ export interface Student {
   school_id: string;
   first_name: string;
   last_name: string;
-  gender: "male" | "female";
+  gender: "male" | "female" | null;
   date_of_birth: string | null;
   enrollement_date: string | null;
   is_active: boolean;

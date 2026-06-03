@@ -59,6 +59,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
+    // Let the browser read the server-provided download filename.
+    exposedHeaders: ['Content-Disposition'],
   });
 
   await app.init();

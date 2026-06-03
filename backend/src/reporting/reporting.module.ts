@@ -9,6 +9,6 @@ import { ReportGuard } from './report.guard';
   imports: [CalculationModule, ClassModule],
   controllers: [ReportController, ReportEntriesController],
   providers: [ReportService, ReportGuard],
-  exports: [ReportGuard],
+  exports: [ReportGuard, ReportService],
 })
 export class ReportingModule {}
