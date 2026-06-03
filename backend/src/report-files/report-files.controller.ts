@@ -21,8 +21,6 @@ import { ReportFilesService } from './report-files.service';
 import { PersistClassSummaryDto } from './dto/persist-class-summary.dto';
 import type { GeneratedFile } from './generation/types';
 
-type SummaryFormat = 'pdf' | 'csv' | 'xlsx';
-
 @ApiTags('Report files')
 @ApiBearerAuth()
 @Controller('reports/files')

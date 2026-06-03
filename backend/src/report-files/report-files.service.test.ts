@@ -79,15 +79,15 @@ function makeService(overrides: Partial<Record<string, any>> = {}) {
     queryResult: { data: contextRow, error: null },
   });
   const calc = {
-    calculateStudentTermResult: async () => termResult,
-    calculateStudentYearResult: async () => yearResult,
-    calculateClassTermResults: async () => [termResult],
-    calculateClassYearResults: async () => [yearResult],
+    calculateStudentTermResult: () => Promise.resolve(termResult),
+    calculateStudentYearResult: () => Promise.resolve(yearResult),
+    calculateClassTermResults: () => Promise.resolve([termResult]),
+    calculateClassYearResults: () => Promise.resolve([yearResult]),
     ...overrides.calc,
   };
   const uploads: any[] = [];
   const reportService = {
-    uploadClassSummaryFile: async (
+    uploadClassSummaryFile: (
       _g: string,
       _t: string,
       rt: string,
@@ -99,7 +99,7 @@ function makeService(overrides: Partial<Record<string, any>> = {}) {
         report_type: rt,
       };
       uploads.push(row);
-      return row;
+      return Promise.resolve(row);
     },
   };
   const service = new ReportFilesService(

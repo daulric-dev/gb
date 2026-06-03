@@ -44,8 +44,8 @@ function makeService(classResults: StudentTermResult[]) {
     queryResult: { data: contextRow, error: null },
   });
   const calc = {
-    calculateClassTermResults: async () => classResults,
-    calculateClassYearResults: async () => [],
+    calculateClassTermResults: () => Promise.resolve(classResults),
+    calculateClassYearResults: () => Promise.resolve([]),
   };
   return new ReportFilesService(supabase as any, calc as any, {} as any);
 }
