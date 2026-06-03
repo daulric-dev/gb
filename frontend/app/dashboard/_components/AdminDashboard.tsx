@@ -52,7 +52,7 @@ interface SchoolMember {
 
 interface SchoolStudent {
   id: string;
-  gender: "male" | "female";
+  gender: "male" | "female" | null;
   is_active: boolean;
 }
 
@@ -198,7 +198,9 @@ export function AdminDashboard() {
     const counts = { male: 0, female: 0 };
     for (const s of students.value) {
       if (!s.is_active) continue;
-      counts[s.gender] = (counts[s.gender] ?? 0) + 1;
+      // Only tally known genders; null/unset (or any unexpected value) would
+      // otherwise add a stray key that has no STUDENT_CONFIG entry.
+      if (s.gender === "male" || s.gender === "female") counts[s.gender] += 1;
     }
     return (Object.keys(counts) as Array<keyof typeof counts>)
       .filter((k) => counts[k] > 0)

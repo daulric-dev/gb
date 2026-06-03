@@ -47,7 +47,7 @@ export function FiltersCard({
             }}
           >
             <option value="term">Term</option>
-            <option value="year_end">Year-end</option>
+            <option value="year_end">Year-End</option>
           </select>
         </div>
         {reportType !== "year_end" && (
