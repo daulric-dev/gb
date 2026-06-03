@@ -32,7 +32,9 @@
     },
     "workspaces": ["backend", "frontend", "docs"],
     "overrides": {
-        "webpackbar": "^7.0.0"
+        "webpackbar": "^7.0.0",
+        "react": "19.2.5",
+        "react-dom": "19.2.5"
     },
     "dependencies": {
         "typescript": "^6.0.3"
