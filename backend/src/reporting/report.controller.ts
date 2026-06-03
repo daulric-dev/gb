@@ -82,49 +82,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.classSummary')(raw);
   }
 
-  @RequirePermission('reporting', 'create')
-  @Post('class-summary/upload')
-  @UseGuards(ClassTeacherGuard)
-  async uploadClassSummaryFile(
-    @Req()
-    req: any,
-  ) {
-    const file = await req.file();
-    if (!file) {
-      throw new BadRequestException('No file uploaded');
-    }
-
-    const buffer = await file.toBuffer();
-    if (!buffer.length) {
-      throw new BadRequestException('Empty file');
-    }
-
-    const fields = file.fields as Record<
-      string,
-      { value?: string } | undefined
-    >;
-    const studentGroupId = fields?.studentGroupId?.value;
-    const termId = fields?.termId?.value;
-    const reportType = fields?.reportType?.value;
-    const fileType = fields?.fileType?.value;
-
-    if (!studentGroupId || !termId || !reportType || !fileType) {
-      throw new BadRequestException(
-        'Missing required fields: studentGroupId, termId, reportType, fileType',
-      );
-    }
-
-    const raw = await this.reportService.uploadClassSummaryFile(
-      studentGroupId,
-      termId,
-      reportType,
-      fileType,
-      req.user.id,
-      buffer,
-    );
-    return this.versioning.resolve(req, 'report.classSummaryUploaded')(raw);
-  }
-
   @RequirePermission('reporting', 'read')
   @Get('class-summary/download')
   @UseGuards(ClassTeacherGuard)

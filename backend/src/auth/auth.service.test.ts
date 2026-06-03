@@ -265,7 +265,9 @@ describe('AuthService', () => {
       const update = supabase._calls.find(
         (c: any) => c.table === 'user_profile' && c.op === 'update',
       );
-      expect(update?.payload).toMatchObject({ email: 'backfilled@example.com' });
+      expect(update?.payload).toMatchObject({
+        email: 'backfilled@example.com',
+      });
 
       // and the backfilled profile is cached
       const cached = await mockCache.get(`profile:${userId}`);
