@@ -8,6 +8,8 @@ sidebar_label: Reporting
 
 The reporting module handles the persistence layer for student reports -generating report books, managing report status workflows, and storing/serving exported files (PDFs, CSVs, Excel). It works alongside the [Calculation Module](./calculation.md), which provides the live grade data.
 
+> **File generation moved.** PDF/CSV/XLSX/zip files are now generated server-side by the [Report Files Module](./report-files.md). This module still stores and serves the persisted class-summary files (its `uploadClassSummaryFile` is what `report-files` calls to persist them).
+
 ## Files
 
 | File | Purpose |

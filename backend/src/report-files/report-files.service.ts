@@ -258,7 +258,11 @@ export class ReportFilesService {
           ? buildYearClassSummaryPdfBuffer(yearResults, className, yearOpts)
           : format === 'csv'
             ? buildYearClassSummaryCsvBuffer(yearResults, className, yearOpts)
-            : buildYearClassSummaryXlsxBuffer(yearResults, className, yearOpts);
+            : await buildYearClassSummaryXlsxBuffer(
+                yearResults,
+                className,
+                yearOpts,
+              );
       return {
         buffer,
         filename: `${this.safe(className)}_year_summary.${format}`,
@@ -292,7 +296,7 @@ export class ReportFilesService {
               term.name ?? undefined,
               ay?.gradingModel,
             )
-          : buildClassSummaryXlsxBuffer(
+          : await buildClassSummaryXlsxBuffer(
               summary,
               className,
               reportType,

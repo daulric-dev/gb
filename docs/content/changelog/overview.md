@@ -9,6 +9,17 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-06-04
+
+- [Announcement board](./2026-06-04/announcement-board.md) - new school-wide notice board: `announcement` + `announcement_read` tables with RLS, an `announcement` RBAC resource, `AnnouncementModule` (CRUD + unread-count + mark-read), a `/dashboard/announcements` board with a permission-gated composer, a sidebar unread badge, and per-announcement read receipts (reader avatars with name tooltips). Content is cached per school; read receipts are merged in live.
+- [Server-side report files](./2026-06-04/server-side-report-files.md) - moved all report-file generation (student/year/report-card/exam PDFs, class-summary PDF/CSV/XLSX) from the browser to the backend `ReportFilesModule`, which streams files to the client; added a bulk `class-zip` that streams a zip of every student's report card with flat memory; the frontend became a thin client and dropped `jspdf`/`xlsx`/`@react-pdf/renderer`/`jszip`.
+- [Fixes & UI polish](./2026-06-04/fixes-and-ui.md) - `user_profile.email` column + backfill, null-gender crash fixes (dashboard chart + edit form), a persistent class sidebar across class sub-pages, and a redesigned role permissions editor (toggle-pill rows replacing the fragile checkbox matrix).
+- [Dependency maintenance](./2026-06-04/dependency-maintenance.md) - replaced the unmaintained, advisory-carrying `xlsx` (SheetJS) with the actively maintained, write-only `write-excel-file` for XLSX report exports (the builders are now async); bumped `react-day-picker` 9 → 10 (`table` → `month_grid` classNames key); reconciled the root `react`/`react-dom` override that was silently pinning the repo to `19.2.5`, unifying all workspaces on `19.2.7`; evaluated `archiver` v8 and deliberately stayed on v7 (v8 is a typeless ESM-only rewrite).
+
+## 2026-05-29
+
+- [Security fixes](./2026-05-29/security-fixes.md) - authorization and input-validation batch from a follow-up audit: attendance IDOR (update / delete / roster), avatar object IDOR + content-type spoofing, deactivated-user access, admin self-elevation via onboard/join, per-student calculation/report IDOR, and a spoofable rate-limit identity. Backend-only, no migrations.
+
 ## 2026-05-25
 
 - [Attendance tracking](./2026-05-25/attendance-tracking.md) - new `student.attendance_record` table + RLS, `AttendanceModule` with mark/bulk-mark/update/delete and per-student range + summary reports, mark-attendance page under `/dashboard/classes/[classId]/attendance` with a per-student report dialog.
