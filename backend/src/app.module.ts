@@ -26,6 +26,7 @@ import { CalculationModule } from '@/calculation/calculation.module';
 import { ReportingModule } from '@/reporting/reporting.module';
 import { ReportFilesModule } from '@/report-files/report-files.module';
 import { PermissionModule } from '@/permission/permission.module';
+import { AnnouncementModule } from '@/announcement/announcement.module';
 import { ImagesModule } from '@/images/images.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
@@ -79,6 +80,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     ReportingModule,
     ReportFilesModule,
     PermissionModule,
+    AnnouncementModule,
     ImagesModule,
   ],
   controllers: [AppController],

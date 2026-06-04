@@ -21,7 +21,7 @@ import { AssignRoleDto } from './dto/assign-role.dto';
 
 /**
  * Admin-only management of per-school custom roles and permission grants.
- * Guarded by AdminGuard (not PermissionGuard) — admins are the authority over
+ * Guarded by AdminGuard (not PermissionGuard) - admins are the authority over
  * roles; gating this with PermissionGuard would be circular.
  */
 @ApiTags('Permissions')

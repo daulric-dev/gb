@@ -207,7 +207,7 @@ export class AuthService {
       }
 
       // Preserve an existing membership role (e.g. the school creator's
-      // 'admin', set by SchoolService.create) — the dedicated branch runs for
+      // 'admin', set by SchoolService.create) - the dedicated branch runs for
       // every onboard, including theirs. Brand-new members default to teacher.
       const { data: membership } = await supabase
         .from('school_management')
