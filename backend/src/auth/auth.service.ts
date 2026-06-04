@@ -99,6 +99,23 @@ export class AuthService {
           );
         }
         profile = newProfile;
+      } else if (!profile.email && userEmail) {
+        // Backfill email for existing profiles created before the column
+        // existed; populated lazily on the user's next login.
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('user_profile')
+          .update({ email: userEmail })
+          .eq('id', userId)
+          .select('*, school:school_id(*)')
+          .single();
+
+        if (updateError) {
+          this.logger.error(
+            `Failed to backfill email for user_profile ${userId}: ${updateError.message}`,
+          );
+        } else {
+          profile = updatedProfile;
+        }
       }
 
       if (profile) {
@@ -119,7 +136,7 @@ export class AuthService {
 
   async getProfile(userId: string) {
     const cached = await this.cache.get(`profile:${userId}`);
-    if (cached) return cached;
+    if (cached?.email) return cached;
 
     const supabase = this.supabaseService.getServiceClient();
 
@@ -132,6 +149,34 @@ export class AuthService {
     if (error || !profile) {
       this.logger.error(`Profile not found for ${userId}: ${error?.message}`);
       throw new NotFoundException('User profile not found');
+    }
+
+    // Backfill email for existing profiles (e.g. users with an active session
+    // who won't re-run verifyOtp). getProfile has no session, so the email is
+    // sourced from the auth user via the admin API.
+    if (!profile.email) {
+      const { data: authData, error: adminError } =
+        await supabase.auth.admin.getUserById(userId);
+      const authEmail = authData?.user?.email;
+
+      if (adminError || !authEmail) {
+        this.logger.error(
+          `Failed to backfill email for user_profile ${userId}: ${adminError?.message ?? 'no auth email'}`,
+        );
+      } else {
+        const { error: updateError } = await supabase
+          .from('user_profile')
+          .update({ email: authEmail })
+          .eq('id', userId);
+
+        if (updateError) {
+          this.logger.error(
+            `Failed to persist backfilled email for user_profile ${userId}: ${updateError.message}`,
+          );
+        } else {
+          profile.email = authEmail;
+        }
+      }
     }
 
     if (profile.school_management.length === 1) {
@@ -161,6 +206,18 @@ export class AuthService {
         );
       }
 
+      // Preserve an existing membership role (e.g. the school creator's
+      // 'admin', set by SchoolService.create) - the dedicated branch runs for
+      // every onboard, including theirs. Brand-new members default to teacher.
+      const { data: membership } = await supabase
+        .from('school_management')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('school_id', school.id)
+        .maybeSingle();
+
+      const role = membership?.role ?? 'teacher';
+
       const { data, error } = await supabase
         .from('user_profile')
         .upsert({
@@ -168,6 +225,7 @@ export class AuthService {
           first_name: dto.firstName,
           last_name: dto.lastName,
           school_id: school.id,
+          role,
         })
         .select('*, school:school_id(*)')
         .single();
@@ -177,6 +235,21 @@ export class AuthService {
           `Failed to onboard user ${userId}: ${error?.message}`,
         );
         throw new BadRequestException('Failed to complete onboarding');
+      }
+
+      // Canonical membership so the permission layer recognizes the user.
+      // Without this, a dedicated-instance user has a school_id but no
+      // school_management row, and PermissionGuard treats them as a non-member.
+      if (!membership) {
+        const { error: managementError } = await supabase
+          .from('school_management')
+          .insert({ user_id: userId, school_id: school.id, role });
+
+        if (managementError) {
+          this.logger.error(
+            `Failed to create school_management for ${userId} at ${school.id}: ${managementError.message}`,
+          );
+        }
       }
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
@@ -206,7 +279,7 @@ export class AuthService {
         this.logger.error(
           `Failed to onboard user ${userId}: ${error?.message}`,
         );
-        new BadRequestException('Failed to complete onboarding');
+        throw new BadRequestException('Failed to complete onboarding');
       }
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
@@ -214,81 +287,13 @@ export class AuthService {
     }
 
     if (dto.schoolId) {
-      // Bootstrap rule: if the school has no admin yet, the first joiner
-      // takes ownership. The school_management table has a partial unique
-      // index on (school_id) WHERE role='admin' that serializes the claim
-      // - a concurrent loser receives error code 23505 and falls through
-      // to the join-request flow instead of be-oming a second admin.
-      const { data: existingAdmin } = await supabase
-        .from('school_management')
-        .select('id')
-        .eq('school_id', dto.schoolId)
-        .eq('role', 'admin')
-        .limit(1)
-        .maybeSingle();
-
-      if (!existingAdmin) {
-        // Ensure the user_profile row exists (school_management has an FK
-        // to it). Do NOT set role='admin' yet - we only elevate after the
-        // school_management claim succeeds, so a lost race leaves no
-        // half-state behind.
-        const { error: profileError } = await supabase
-          .from('user_profile')
-          .upsert({
-            id: userId,
-            first_name: dto.firstName,
-            last_name: dto.lastName,
-            school_id: dto.schoolId,
-          });
-
-        if (profileError) {
-          this.logger.error(
-            `Failed to onboard user ${userId}: ${profileError.message}`,
-          );
-          throw new BadRequestException('Failed to complete onboarding');
-        }
-
-        const { error: managementError } = await supabase
-          .from('school_management')
-          .insert({
-            user_id: userId,
-            school_id: dto.schoolId,
-            role: 'admi-',
-          });
-
-        if (managementError && managementError.code !== '23505') {
-          this.logger.error(
-            `Failed to auto-assign admin for ${userId} at ${dto.schoolId}: ${managementError.message}`,
-          );
-          throw new BadRequestException('Failed to complete onboarding');
-        }
-
-        if (!managementError) {
-          // Claim won - elevate the profile and return the admin path.
-          const { data: adminProfile, error: roleError } = await supabase
-            .from('user_profile')
-            .update({ role: 'admin' })
-            .eq('id', userId)
-            .select('*, school:school_id(*)')
-            .single();
-
-          if (roleError || !adminProfile) {
-            this.logger.error(
-              `Failed to elevate ${userId} to admin: ${roleError?.message}`,
-            );
-            throw new BadRequestException('Failed to complete onboarding');
-          }
-
-          await this.cache.set(`profile:${userId}`, adminProfile, PROFILE_TTL);
-          return adminProfile;
-        }
-
-        // Race lost (23505): another concurrent request became admin
-        // first. Fall through to the join-request path.
-      }
-
-      // School already has an admin - go through the join request flow.
-      // Upsert user_profile FIRST (school_join_request has an FK to user_profile).
+      // Joining an existing school always goes through the join-request flow,
+      // which an existing admin must approve. Admin rights are only ever
+      // granted to the user who *creates* a school (see SchoolService.create);
+      // we never auto-grant admin from a client-supplied schoolId, since that
+      // let any user claim ownership of any school lacking an admin.
+      //
+      // Go through the join request flow.
       const { data, error } = await supabase
         .from('user_profile')
         .upsert({

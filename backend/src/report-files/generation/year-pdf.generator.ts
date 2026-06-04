@@ -1,10 +1,13 @@
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import type { StudentYearReport, YearEndSubjectResult } from "./calculations";
-import { getGradingRules } from "@/lib/grading-rules";
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import type {
+  StudentYearResult as StudentYearReport,
+  YearEndSubject as YearEndSubjectResult,
+} from '@/calculation/interfaces/calculation.interfaces';
+import { getGradingRules } from './grading-rules';
 
 function fmt(v: number | null): string {
-  return v != null ? v.toFixed(1) : "-";
+  return v != null ? v.toFixed(1) : '-';
 }
 
 function termInitial(name: string): string {
@@ -12,16 +15,16 @@ function termInitial(name: string): string {
 }
 
 function computeLetterGrade(score: number | null): string {
-  if (score == null) return "-";
-  if (score >= 80) return "A";
-  if (score >= 70) return "B";
-  if (score >= 60) return "C";
-  if (score >= 50) return "D";
-  if (score >= 40) return "E";
-  return "F";
+  if (score == null) return '-';
+  if (score >= 80) return 'A';
+  if (score >= 70) return 'B';
+  if (score >= 60) return 'C';
+  if (score >= 50) return 'D';
+  if (score >= 40) return 'E';
+  return 'F';
 }
 
-export function buildYearReportPdfBlob(
+export function buildYearReportPdfBuffer(
   yr: StudentYearReport,
   opts: {
     className?: string;
@@ -29,12 +32,12 @@ export function buildYearReportPdfBlob(
     yearCwWeight?: number;
     yearExWeight?: number;
   } = {},
-): Blob {
-  const doc = new jsPDF({ format: "a4", unit: "mm" });
+): Buffer {
+  const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   const name = `${yr.firstName} ${yr.lastName}`.trim();
 
   doc.setFontSize(16);
-  doc.text("YEAR-END REPORT CARD", 105, 18, { align: "center" });
+  doc.text('YEAR-END REPORT CARD', 105, 18, { align: 'center' });
 
   doc.setFontSize(10);
   let y = 30;
@@ -79,7 +82,7 @@ export function buildYearReportPdfBlob(
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
 
   const lastTermSubjects = lastTermId
-    ? yr.terms.find((t) => t.termId === lastTermId)?.subjects ?? []
+    ? (yr.terms.find((t) => t.termId === lastTermId)?.subjects ?? [])
     : [];
   const lastTermExamMap = new Map<string, number | null>();
   for (const s of lastTermSubjects) {
@@ -89,25 +92,27 @@ export function buildYearReportPdfBlob(
   const rules = getGradingRules(yr.gradingModel);
   const cwW = yr.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
   const exW = yr.yearExamWeight ?? opts.yearExWeight ?? 60;
-  const isPooled = rules.display.yearEndColumns === "pooled";
+  const isPooled = rules.display.yearEndColumns === 'pooled';
 
   let head: string[];
   let body: string[][];
 
   if (isPooled) {
-    head = ["Subject", `CA /${cwW}`, `Exam /${exW}`, "Total", "Grade"];
+    head = ['Subject', `CA /${cwW}`, `Exam /${exW}`, 'Total', 'Grade'];
 
     body = yr.yearEnd.subjects.map((sub: YearEndSubjectResult) => {
       const composites = sub.termGrades
         .map((g) => g.termComposite)
         .filter((v): v is number => v != null);
-      const rawCa = composites.length > 0
-        ? composites.reduce((a, b) => a + b, 0) / composites.length
-        : null;
-      const ca = rawCa != null ? (rawCa * cwW / 100).toFixed(1) : "-";
+      const rawCa =
+        composites.length > 0
+          ? composites.reduce((a, b) => a + b, 0) / composites.length
+          : null;
+      const ca = rawCa != null ? ((rawCa * cwW) / 100).toFixed(1) : '-';
 
       const endOfYrExam = lastTermExamMap.get(sub.subjectId) ?? null;
-      const exam = endOfYrExam != null ? (endOfYrExam * exW / 100).toFixed(1) : "-";
+      const exam =
+        endOfYrExam != null ? ((endOfYrExam * exW) / 100).toFixed(1) : '-';
 
       return [
         sub.subjectName,
@@ -120,20 +125,20 @@ export function buildYearReportPdfBlob(
 
     if (yr.yearEnd.overallAverage != null) {
       body.push([
-        "OVERALL",
-        "",
-        "",
+        'OVERALL',
+        '',
+        '',
         yr.yearEnd.overallAverage.toFixed(1),
         computeLetterGrade(yr.yearEnd.overallAverage),
       ]);
     }
   } else {
     head = [
-      "Subject",
+      'Subject',
       ...termInitials,
-      "End of Yr Exam",
-      "Year Grade",
-      "Grade",
+      'End of Yr Exam',
+      'Year Grade',
+      'Grade',
     ];
 
     body = yr.yearEnd.subjects.map((sub: YearEndSubjectResult) => {
@@ -155,11 +160,11 @@ export function buildYearReportPdfBlob(
 
     if (yr.yearEnd.overallAverage != null) {
       body.push([
-        "OVERALL",
+        'OVERALL',
         ...yr.terms.map((t) =>
-          t.overallAverage != null ? t.overallAverage.toFixed(1) : "-",
+          t.overallAverage != null ? t.overallAverage.toFixed(1) : '-',
         ),
-        "",
+        '',
         yr.yearEnd.overallAverage.toFixed(1),
         computeLetterGrade(yr.yearEnd.overallAverage),
       ]);
@@ -173,14 +178,11 @@ export function buildYearReportPdfBlob(
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [66, 66, 66] },
     columnStyles: {
-      0: { halign: "left", cellWidth: 35 },
+      0: { halign: 'left', cellWidth: 35 },
     },
     didParseCell(data) {
-      if (
-        data.section === "body" &&
-        data.row.index === body.length - 1
-      ) {
-        data.cell.styles.fontStyle = "bold";
+      if (data.section === 'body' && data.row.index === body.length - 1) {
+        data.cell.styles.fontStyle = 'bold';
         data.cell.styles.fillColor = [235, 235, 235];
       }
     },
@@ -200,7 +202,7 @@ export function buildYearReportPdfBlob(
   } else {
     const legend = termInitials
       .map((ini, i) => `${ini} = ${termNames[i]}`)
-      .join("  |  ");
+      .join('  |  ');
     doc.text(
       `${legend}  |  End of Yr Exam = Exam from final term  |  Year Grade = Weighted year calculation`,
       14,
@@ -208,15 +210,15 @@ export function buildYearReportPdfBlob(
     );
   }
 
-  return doc.output("blob");
+  return Buffer.from(doc.output('arraybuffer'));
 }
 
 export function yearReportPdfFilename(yr: StudentYearReport): string {
-  const name = `${yr.firstName}_${yr.lastName}`.replace(/\s+/g, "_");
+  const name = `${yr.firstName}_${yr.lastName}`.replace(/\s+/g, '_');
   return `${name}_year_report.pdf`;
 }
 
-export function buildYearClassSummaryPdfBlob(
+export function buildYearClassSummaryPdfBuffer(
   students: StudentYearReport[],
   className: string,
   opts: {
@@ -224,7 +226,7 @@ export function buildYearClassSummaryPdfBlob(
     yearCwWeight?: number;
     yearExWeight?: number;
   } = {},
-): Blob {
+): Buffer {
   const subjectSet = new Map<string, string>();
   for (const st of students) {
     for (const sub of st.yearEnd.subjects) {
@@ -239,9 +241,9 @@ export function buildYearClassSummaryPdfBlob(
   }));
 
   const summaryRules = getGradingRules(students[0]?.gradingModel);
-  const isPooledSummary = summaryRules.display.yearEndColumns === "pooled";
+  const isPooledSummary = summaryRules.display.yearEndColumns === 'pooled';
   const termCount = students[0]?.terms.length ?? 0;
-  const colsPerSubject = isPooledSummary ? 3 : (termCount + 2);
+  const colsPerSubject = isPooledSummary ? 3 : termCount + 2;
   const dataCols = 2 + subjectCols.length * colsPerSubject + 1;
   const colWidth = 10;
   const fixedWidth = 6 + 26;
@@ -250,13 +252,13 @@ export function buildYearClassSummaryPdfBlob(
   const pageWidth = Math.max(a4Landscape, minWidth);
 
   const doc = new jsPDF({
-    unit: "mm",
-    orientation: "landscape",
+    unit: 'mm',
+    orientation: 'landscape',
     format: [pageWidth, 210],
   });
 
   doc.setFontSize(16);
-  doc.text("Year-End Class Summary Report", 14, 18);
+  doc.text('Year-End Class Summary Report', 14, 18);
   doc.setFontSize(10);
   let y = 28;
   doc.text(`Class: ${className}`, 14, y);
@@ -287,52 +289,44 @@ export function buildYearClassSummaryPdfBlob(
   y += 4;
 
   if (students.length === 0 || subjectCols.length === 0) {
-    doc.text("No data available.", 14, y);
-    return doc.output("blob");
+    doc.text('No data available.', 14, y);
+    return Buffer.from(doc.output('arraybuffer'));
   }
 
-  const termNames =
-    students[0]?.terms.map((t) => t.termName) ?? [];
+  const termNames = students[0]?.terms.map((t) => t.termName) ?? [];
   const termInitials = termNames.map(termInitial);
-  const termIds =
-    students[0]?.terms.map((t) => t.termId) ?? [];
+  const termIds = students[0]?.terms.map((t) => t.termId) ?? [];
 
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
 
-  const cwWSummary = students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
+  const cwWSummary =
+    students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
   const exWSummary = students[0]?.yearExamWeight ?? opts.yearExWeight ?? 60;
 
   let subHeadersSummary: string[];
   if (isPooledSummary) {
-    subHeadersSummary = [`CA /${cwWSummary}`, `Ex /${exWSummary}`, "Total"];
+    subHeadersSummary = [`CA /${cwWSummary}`, `Ex /${exWSummary}`, 'Total'];
   } else {
-    subHeadersSummary = [...termInitials, "E", "Year"];
+    subHeadersSummary = [...termInitials, 'E', 'Year'];
   }
 
   const groupRow: { content: string; colSpan?: number }[] = [
-    { content: "#" },
-    { content: "Student" },
+    { content: '#' },
+    { content: 'Student' },
     ...subjectCols.flatMap((c) => [
       { content: c.name, colSpan: colsPerSubject },
       ...Array.from({ length: colsPerSubject - 1 }, () => ({
-        content: "",
+        content: '',
         colSpan: 0,
       })),
     ]),
-    { content: "Year Avg" },
+    { content: 'Year Avg' },
   ];
 
-  const subRow = [
-    "",
-    "",
-    ...subjectCols.flatMap(() => subHeadersSummary),
-    "",
-  ];
+  const subRow = ['', '', ...subjectCols.flatMap(() => subHeadersSummary), ''];
 
   const bodyRows = students.map((st) => {
-    const subMap = new Map(
-      st.yearEnd.subjects.map((s) => [s.subjectId, s]),
-    );
+    const subMap = new Map(st.yearEnd.subjects.map((s) => [s.subjectId, s]));
     const lastTerm = lastTermId
       ? st.terms.find((t) => t.termId === lastTermId)
       : undefined;
@@ -344,7 +338,7 @@ export function buildYearClassSummaryPdfBlob(
     }
 
     return [
-      st.position != null ? String(st.position) : "-",
+      st.position != null ? String(st.position) : '-',
       `${st.firstName} ${st.lastName}`.trim(),
       ...subjectCols.flatMap((c) => {
         const sub = subMap.get(c.id);
@@ -353,12 +347,17 @@ export function buildYearClassSummaryPdfBlob(
           const composites = (sub?.termGrades ?? [])
             .map((g) => g.termComposite)
             .filter((v): v is number => v != null);
-          const rawCa = composites.length > 0
-            ? composites.reduce((a, b) => a + b, 0) / composites.length
-            : null;
-          const ca = rawCa != null ? (rawCa * cwWSummary / 100).toFixed(1) : "-";
+          const rawCa =
+            composites.length > 0
+              ? composites.reduce((a, b) => a + b, 0) / composites.length
+              : null;
+          const ca =
+            rawCa != null ? ((rawCa * cwWSummary) / 100).toFixed(1) : '-';
           const endOfYrExam = lastTermExamMapLocal.get(c.id) ?? null;
-          const exam = endOfYrExam != null ? (endOfYrExam * exWSummary / 100).toFixed(1) : "-";
+          const exam =
+            endOfYrExam != null
+              ? ((endOfYrExam * exWSummary) / 100).toFixed(1)
+              : '-';
           return [ca, exam, fmt(sub?.yearGrade ?? null)];
         }
 
@@ -384,11 +383,11 @@ export function buildYearClassSummaryPdfBlob(
     startY: y,
     head: [groupRow.filter((c) => c.colSpan !== 0), subRow],
     body: bodyRows,
-    styles: { fontSize: 5, cellPadding: 1, halign: "center" },
+    styles: { fontSize: 5, cellPadding: 1, halign: 'center' },
     headStyles: { fillColor: [66, 66, 66], fontSize: 5 },
     columnStyles: {
-      0: { halign: "center", cellWidth: 6 },
-      1: { halign: "left", cellWidth: 26 },
+      0: { halign: 'center', cellWidth: 6 },
+      1: { halign: 'left', cellWidth: 26 },
     },
     didParseCell(data) {
       if (borderCols.has(data.column.index)) {
@@ -403,5 +402,5 @@ export function buildYearClassSummaryPdfBlob(
     },
   });
 
-  return doc.output("blob");
+  return Buffer.from(doc.output('arraybuffer'));
 }
