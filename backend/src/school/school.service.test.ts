@@ -1,9 +1,11 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SchoolService } from './school.service';
 import {
   createMockSupabaseService,
   createMockCacheService,
+  createRoutingSupabase,
+  expectRejection,
 } from '@/test/mocks';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
@@ -102,6 +104,100 @@ describe('SchoolService', () => {
           'user-1',
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('createJoinRequest', () => {
+    const userId = 'user-join';
+    const school = { id: 's1', name: 'Orphan School' };
+
+    function makeService(opts: {
+      school?: any;
+      existingRequest?: any;
+      insertResult?: { data: any; error: any };
+    }) {
+      const supabase = createRoutingSupabase({
+        tables: {
+          'public.school': {
+            data: 'school' in opts ? opts.school : school,
+            error: null,
+          },
+          'public.school_join_request': (call) =>
+            call.op === 'insert'
+              ? (opts.insertResult ?? {
+                  data: {
+                    id: 'req-1',
+                    user_id: userId,
+                    school_id: 's1',
+                    status: 'pending',
+                  },
+                  error: null,
+                })
+              : { data: opts.existingRequest ?? null, error: null },
+        },
+      });
+      return {
+        service: new SchoolService(
+          supabase as any,
+          createMockCacheService() as any,
+        ),
+        supabase,
+      };
+    }
+
+    test('creates a join request for a school that has no admin (no auto-takeover)', async () => {
+      const { service: svc, supabase } = makeService({});
+      const result: any = await svc.createJoinRequest(
+        userId,
+        's1',
+        'let me in',
+      );
+
+      expect(result.id).toBe('req-1');
+      expect(result.school).toEqual(school);
+      // The core regression: joining must never grant admin.
+      expect(
+        supabase._calls.some((c: any) => c.table === 'school_management'),
+      ).toBe(false);
+    });
+
+    test('never writes a role anywhere while joining', async () => {
+      const { service: svc, supabase } = makeService({});
+      await svc.createJoinRequest(userId, 's1');
+
+      const wroteRole = supabase._calls.some(
+        (c: any) =>
+          c.payload &&
+          (Array.isArray(c.payload) ? c.payload : [c.payload]).some(
+            (p: any) => 'role' in (p ?? {}),
+          ),
+      );
+      expect(wroteRole).toBe(false);
+    });
+
+    test('throws NotFound when the school does not exist', async () => {
+      const { service: svc } = makeService({ school: null });
+      expect(
+        await expectRejection(svc.createJoinRequest(userId, 'missing')),
+      ).toBeInstanceOf(NotFoundException);
+    });
+
+    test('rejects a duplicate pending request', async () => {
+      const { service: svc } = makeService({
+        existingRequest: { id: 'req-old', school_id: 's1' },
+      });
+      expect(
+        await expectRejection(svc.createJoinRequest(userId, 's1')),
+      ).toBeInstanceOf(BadRequestException);
+    });
+
+    test('surfaces an insert failure', async () => {
+      const { service: svc } = makeService({
+        insertResult: { data: null, error: { message: 'db down' } },
+      });
+      expect(
+        await expectRejection(svc.createJoinRequest(userId, 's1')),
+      ).toBeInstanceOf(BadRequestException);
     });
   });
 });

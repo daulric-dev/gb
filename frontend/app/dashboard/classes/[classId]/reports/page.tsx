@@ -8,6 +8,7 @@ import {
   type ReportType,
   getClassTermResults,
   getClassYearResults,
+  downloadFromUrl,
   type StudentTermResult,
   type StudentYearReport,
 } from "@/lib/reports";
@@ -15,7 +16,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
-import { FileBarChart, RefreshCw } from "lucide-react";
+import { Download, FileBarChart, RefreshCw } from "lucide-react";
 import { type ClassInfo, type Term, type StudentRow } from "./_components/types";
 import { ReportsLoadingSkeleton } from "./_components/ReportsLoadingSkeleton";
 import { ReportsAccessDenied } from "./_components/ReportsAccessDenied";
@@ -36,6 +37,7 @@ export default function ClassReportsPage() {
   const students = useSignal<StudentRow[]>([]);
   const loading = useSignal(true);
   const dataLoading = useSignal(false);
+  const exporting = useSignal(false);
 
   const loadClass = useCallback(() => {
     loading.value = true;
@@ -167,6 +169,36 @@ export default function ClassReportsPage() {
     return `/dashboard/classes/${classId}/reports/student?${q.toString()}`;
   };
 
+  const downloadAllPdfs = async () => {
+    if (!selectedTermId.value) {
+      toast.error("Select a term first");
+      return;
+    }
+    exporting.value = true;
+    try {
+      const q = new URLSearchParams({
+        studentGroupId: classId,
+        termId: selectedTermId.value,
+        reportType: reportType.value,
+      });
+      await downloadFromUrl(
+        `/reports/files/class-zip?${q.toString()}`,
+        `${info.name}_reports.zip`,
+      );
+      toast.success("Report cards downloaded");
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Failed to download report cards",
+      );
+    } finally {
+      exporting.value = false;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <BackTitleToolbar
@@ -183,6 +215,16 @@ export default function ClassReportsPage() {
             >
               <FileBarChart className="mr-2 size-4" />
               Class Report
+            </Button>
+            <Button
+              variant="outline"
+              onClick={downloadAllPdfs}
+              disabled={exporting.value || dataLoading.value}
+            >
+              <Download
+                className={`mr-2 size-4 ${exporting.value ? "animate-pulse" : ""}`}
+              />
+              {exporting.value ? "Preparing…" : "Download all (PDFs)"}
             </Button>
             <Button
               variant="outline"

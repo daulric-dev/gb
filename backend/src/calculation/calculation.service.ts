@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import {
@@ -129,11 +129,36 @@ export class CalculationService {
     return strategy.calculateSubjectTermGrade(ctx);
   }
 
+  /**
+   * Callers are authorized against `studentGroupId` (class teacher / admin),
+   * so a `studentId` must be confined to that class. Without this check a
+   * teacher could supply any student id and read their data cross-tenant.
+   */
+  private async assertStudentInGroup(
+    studentId: string,
+    studentGroupId: string,
+  ): Promise<void> {
+    const { data: enrollment } = await this.supabaseService
+      .getServiceClient()
+      .schema('student')
+      .from('student_group_enrollment')
+      .select('student_id')
+      .eq('student_id', studentId)
+      .eq('student_group_id', studentGroupId)
+      .maybeSingle();
+
+    if (!enrollment) {
+      throw new ForbiddenException('Student is not enrolled in this class');
+    }
+  }
+
   async calculateStudentTermResult(
     studentId: string,
     termId: string,
     studentGroupId: string,
   ): Promise<StudentTermResult> {
+    await this.assertStudentInGroup(studentId, studentGroupId);
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: student } = await supabase
@@ -239,6 +264,8 @@ export class CalculationService {
     academicYearId: string,
     studentGroupId: string,
   ): Promise<StudentYearResult> {
+    await this.assertStudentInGroup(studentId, studentGroupId);
+
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: student } = await supabase

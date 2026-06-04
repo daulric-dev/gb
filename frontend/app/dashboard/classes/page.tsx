@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { Plus, Users, BookOpen } from "lucide-react";
 import type { ClassItem, AcademicYear } from "./_components/types";
 import { ClassTable } from "./_components/ClassTable";
@@ -17,6 +18,7 @@ import { CreateClassForm } from "./_components/CreateClassForm";
 
 export default function ClassesPage() {
   useSignals();
+  const { can } = usePermissions();
   const classes = useSignal<ClassItem[]>([]);
   const yearMap = useSignal<Map<string, string>>(new Map());
   const loading = useSignal(true);
@@ -46,26 +48,28 @@ export default function ClassesPage() {
         title="Classes"
         description="View and Manage Your Assigned Classes"
         action={
-          <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
-            <DialogTrigger render={<Button />}>
-              <Plus className="mr-2 size-4" />
-              New Class
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create Class</DialogTitle>
-                <DialogDescription>
-                  Add a new class for an academic year
-                </DialogDescription>
-              </DialogHeader>
-              <CreateClassForm
-                onSuccess={() => {
-                  dialogOpen.value = false;
-                  fetchData();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
+          can("class", "create") ? (
+            <Dialog open={dialogOpen.value} onOpenChange={(v) => (dialogOpen.value = v)}>
+              <DialogTrigger render={<Button />}>
+                <Plus className="mr-2 size-4" />
+                New Class
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Class</DialogTitle>
+                  <DialogDescription>
+                    Add a new class for an academic year
+                  </DialogDescription>
+                </DialogHeader>
+                <CreateClassForm
+                  onSuccess={() => {
+                    dialogOpen.value = false;
+                    fetchData();
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          ) : undefined
         }
       />
 

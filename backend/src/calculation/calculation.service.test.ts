@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
+import { ForbiddenException } from '@nestjs/common';
 import { CalculationService } from './calculation.service';
 import { GradingSystemFactory } from './grading-systems/grading-system.factory';
 import { WeightedContinuousService } from './grading-systems/weighted-continuous';
@@ -7,6 +8,8 @@ import { ContinuousCumulativeService } from './grading-systems/continuous-cumula
 import {
   createMockSupabaseService,
   createMockCacheService,
+  createRoutingSupabase,
+  expectRejection,
 } from '@/test/mocks';
 
 function createFactory() {
@@ -67,6 +70,82 @@ describe('CalculationService', () => {
 
       const result = await service.calculateClassYearResults('y1', 'sg1');
       expect(result).toEqual(cachedResults);
+    });
+  });
+
+  describe('per-student enrollment guard', () => {
+    function serviceWith(enrolled: boolean) {
+      const supabase = createRoutingSupabase({
+        tables: {
+          'student.student_group_enrollment': enrolled
+            ? { data: { student_id: 'stu1' }, error: null }
+            : { data: null, error: null },
+          // Student lookup returns nothing -> method short-circuits AFTER the
+          // guard, which is enough to prove the guard let it through.
+          'student.student': { data: null, error: null },
+        },
+      });
+      return {
+        service: new CalculationService(
+          supabase as any,
+          createMockCacheService() as any,
+          createFactory(),
+        ),
+        supabase,
+      };
+    }
+
+    test('calculateStudentTermResult throws when student is not in the class', async () => {
+      const { service: svc } = serviceWith(false);
+      expect(
+        await expectRejection(
+          svc.calculateStudentTermResult('stu-other', 't1', 'sg1'),
+        ),
+      ).toBeInstanceOf(ForbiddenException);
+    });
+
+    test('calculateStudentYearResult throws when student is not in the class', async () => {
+      const { service: svc } = serviceWith(false);
+      expect(
+        await expectRejection(
+          svc.calculateStudentYearResult('stu-other', 'y1', 'sg1'),
+        ),
+      ).toBeInstanceOf(ForbiddenException);
+    });
+
+    test('proceeds past the guard when the student is enrolled', async () => {
+      const { service: svc } = serviceWith(true);
+      const result = await svc.calculateStudentTermResult('stu1', 't1', 'sg1');
+      // Guard passed; downstream student lookup was empty -> Unknown student.
+      expect(result.studentId).toBe('stu1');
+      expect(result.firstName).toBe('Unknown');
+    });
+
+    test('the enrollment check is scoped to BOTH student and class', async () => {
+      const { service: svc, supabase } = serviceWith(false);
+      await svc
+        .calculateStudentTermResult('stu1', 't1', 'sg1')
+        .catch(() => undefined);
+
+      const enrollmentCall = supabase._calls.find(
+        (c: any) => c.table === 'student_group_enrollment',
+      );
+      expect(enrollmentCall?.filters).toEqual({
+        student_id: 'stu1',
+        student_group_id: 'sg1',
+      });
+    });
+
+    test('the guard runs before any student data is read', async () => {
+      const { service: svc, supabase } = serviceWith(false);
+      await svc
+        .calculateStudentTermResult('stu1', 't1', 'sg1')
+        .catch(() => undefined);
+
+      // Only the enrollment query should have run; the student row is never read.
+      expect(supabase._calls.map((c: any) => c.table)).toEqual([
+        'student_group_enrollment',
+      ]);
     });
   });
 });

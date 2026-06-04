@@ -19,7 +19,7 @@ export function EditStudentForm({
   useSignals();
   const firstName = useSignal(student.first_name);
   const lastName = useSignal(student.last_name);
-  const gender = useSignal<"male" | "female">(student.gender);
+  const gender = useSignal<"" | "male" | "female">(student.gender ?? "");
   const dateOfBirth = useSignal(student.date_of_birth ?? "");
   const enrollementDate = useSignal(student.enrollement_date ?? "");
   const isActive = useSignal(student.is_active);
@@ -78,9 +78,14 @@ export function EditStudentForm({
           id="editGender"
           className={selectClass}
           value={gender.value}
-          onChange={(e) => (gender.value = e.target.value as "male" | "female")}
+          onChange={(e) =>
+            (gender.value = e.target.value as "" | "male" | "female")
+          }
           required
         >
+          <option value="" disabled>
+            Select gender
+          </option>
           <option value="male">Male</option>
           <option value="female">Female</option>
         </select>

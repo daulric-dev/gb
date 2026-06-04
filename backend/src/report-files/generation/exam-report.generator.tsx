@@ -5,10 +5,13 @@ import {
   Text,
   View,
   StyleSheet,
-  pdf,
+  renderToBuffer,
 } from "@react-pdf/renderer";
-import type { ClassSummary, StudentSubjectGrade } from "./api";
-import { getGradingRules } from "@/lib/grading-rules";
+import type {
+  ClassSummary,
+  StudentSubjectGrade,
+} from "./class-summary.transform";
+import { getGradingRules } from "./grading-rules";
 
 export interface ExamYearRow {
   studentId: string;
@@ -462,11 +465,11 @@ export function EndOfYearExamDocument({
   );
 }
 
-export async function buildEndOfYearExamPdfBlob(
+export async function buildEndOfYearExamPdfBuffer(
   summary: ClassSummary,
   options?: ExamReportOptions,
-): Promise<Blob> {
-  return pdf(
+): Promise<Buffer> {
+  return renderToBuffer(
     <EndOfYearExamDocument summary={summary} options={options} />,
-  ).toBlob();
+  );
 }

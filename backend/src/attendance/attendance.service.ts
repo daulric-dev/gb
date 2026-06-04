@@ -186,6 +186,7 @@ export class AttendanceService {
   }
 
   async update(
+    classId: string,
     recordId: string,
     userId: string,
     dto: UpdateAttendanceDto,
@@ -207,6 +208,7 @@ export class AttendanceService {
       .from('attendance_record')
       .update(patch)
       .eq('id', recordId)
+      .eq('student_group_id', classId)
       .select()
       .single();
 
@@ -225,7 +227,7 @@ export class AttendanceService {
     return this.toItem(row);
   }
 
-  async delete(recordId: string) {
+  async delete(classId: string, recordId: string) {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: existing, error: findErr } = await supabase
@@ -233,6 +235,7 @@ export class AttendanceService {
       .from('attendance_record')
       .select('student_group_id, attendance_date')
       .eq('id', recordId)
+      .eq('student_group_id', classId)
       .maybeSingle();
 
     if (findErr) {
@@ -249,7 +252,8 @@ export class AttendanceService {
       .schema('student')
       .from('attendance_record')
       .delete()
-      .eq('id', recordId);
+      .eq('id', recordId)
+      .eq('student_group_id', classId);
 
     if (error) {
       this.logger.error(

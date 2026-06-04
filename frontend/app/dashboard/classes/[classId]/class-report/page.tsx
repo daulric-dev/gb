@@ -6,23 +6,16 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import {
   getClassSummaryFiles,
-  uploadClassSummaryFile,
   downloadClassSummaryFile,
+  downloadFromUrl,
+  downloadBlob,
   type ClassSummary,
   type ClassReportFile,
   type ReportType,
-  buildClassSummaryPdfBlob,
-  downloadBlob,
-  buildClassSummaryCsv,
-  buildClassSummaryXlsx,
   getClassTermResults,
   getClassYearResults,
   termResultsToClassSummary,
   type StudentYearReport,
-  buildYearClassSummaryPdfBlob,
-  buildYearClassSummaryCsv,
-  buildYearClassSummaryXlsx,
-  buildEndOfYearExamPdfBlob,
 } from "@/lib/reports";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -175,127 +168,74 @@ export default function ClassReportPage() {
   }, [fetchSummary]);
 
   const className = classInfo.value?.name ?? "Class";
-  const selectedTermName =
-    terms.value.find((t) => t.id === selectedTermId.value)?.name ?? "";
-
-  const yearOpts = {
-    academicYearName: academicYearName.value || undefined,
-    yearCwWeight: yearCwWeight.value ?? undefined,
-    yearExWeight: yearExWeight.value ?? undefined,
-  };
-
   const isYearEnd = reportType.value === "year_end";
 
-  const downloadPdf = () => {
-    if (isYearEnd && yearResults.value.length > 0) {
-      const blob = buildYearClassSummaryPdfBlob(
-        yearResults.value,
-        className,
-        yearOpts,
-      );
-      downloadBlob(blob, `${className}_year_summary.pdf`);
-      return;
-    }
-    const s = summary.value;
-    if (!s) return;
-    const blob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName, gradingModel.value);
-    downloadBlob(blob, `${className}_summary.pdf`);
+  const summarySuffix = isYearEnd ? "year_summary" : "summary";
+
+  const summaryUrl = (format: "pdf" | "csv" | "xlsx") => {
+    const q = new URLSearchParams({
+      studentGroupId: classId,
+      termId: selectedTermId.value,
+      reportType: reportType.value,
+      format,
+    });
+    return `/reports/files/class-summary?${q.toString()}`;
   };
+
+  const downloadSummary = async (format: "pdf" | "csv" | "xlsx") => {
+    try {
+      await downloadFromUrl(
+        summaryUrl(format),
+        `${className}_${summarySuffix}.${format}`,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Download failed");
+    }
+  };
+
+  const downloadPdf = () => downloadSummary("pdf");
+  const downloadCsv = () => downloadSummary("csv");
+  const downloadXlsx = () => downloadSummary("xlsx");
 
   const downloadExamReportPdf = async () => {
-    const s = summary.value;
-    if (!s) return;
     try {
-      const blob = await buildEndOfYearExamPdfBlob(s, {
-        className,
-        termName: selectedTermName || undefined,
-        academicYear: academicYearName.value || undefined,
-        scoreField: isYearEnd ? "yearGrade" : "termComposite",
-        yearResults: isYearEnd ? yearResults.value : undefined,
-        gradingModel: gradingModel.value,
+      const q = new URLSearchParams({
+        studentGroupId: classId,
+        termId: selectedTermId.value,
+        reportType: reportType.value,
       });
-      downloadBlob(blob, `${className}_exam_report.pdf`);
+      await downloadFromUrl(
+        `/reports/files/exam-report.pdf?${q.toString()}`,
+        `${className}_exam_report.pdf`,
+      );
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to generate exam report PDF";
-      toast.error(msg);
-    }
-  };
-
-  const downloadCsv = () => {
-    if (isYearEnd && yearResults.value.length > 0) {
-      const blob = buildYearClassSummaryCsv(
-        yearResults.value,
-        className,
-        yearOpts,
+      toast.error(
+        e instanceof Error ? e.message : "Failed to download exam report PDF",
       );
-      downloadBlob(blob, `${className}_year_summary.csv`);
-      return;
     }
-    const s = summary.value;
-    if (!s) return;
-    const blob = buildClassSummaryCsv(s, className, reportType.value, selectedTermName, gradingModel.value);
-    downloadBlob(blob, `${className}_summary.csv`);
-  };
-
-  const downloadXlsx = () => {
-    if (isYearEnd && yearResults.value.length > 0) {
-      const blob = buildYearClassSummaryXlsx(
-        yearResults.value,
-        className,
-        yearOpts,
-      );
-      downloadBlob(blob, `${className}_year_summary.xlsx`);
-      return;
-    }
-    const s = summary.value;
-    if (!s) return;
-    const blob = buildClassSummaryXlsx(s, className, reportType.value, selectedTermName, gradingModel.value);
-    downloadBlob(blob, `${className}_summary.xlsx`);
   };
 
   const generateAndUploadAll = async () => {
-    const s = summary.value;
-    if (!s || !classInfo.value?.isClassTeacher) return;
+    if (!classInfo.value?.isClassTeacher) return;
 
     generating.value = true;
     try {
-      let pdfBlob: Blob;
-      let csvBlob: Blob;
-      let xlsxBlob: Blob;
-      const suffix = isYearEnd ? "year_summary" : "summary";
-
-      if (isYearEnd && yearResults.value.length > 0) {
-        pdfBlob = buildYearClassSummaryPdfBlob(yearResults.value, className, yearOpts);
-        csvBlob = buildYearClassSummaryCsv(yearResults.value, className, yearOpts);
-        xlsxBlob = buildYearClassSummaryXlsx(yearResults.value, className, yearOpts);
-      } else {
-        pdfBlob = buildClassSummaryPdfBlob(s, className, reportType.value, selectedTermName, gradingModel.value);
-        csvBlob = buildClassSummaryCsv(s, className, reportType.value, selectedTermName, gradingModel.value);
-        xlsxBlob = buildClassSummaryXlsx(s, className, reportType.value, selectedTermName, gradingModel.value);
-      }
-
-      downloadBlob(pdfBlob, `${className}_${suffix}.pdf`);
-      downloadBlob(csvBlob, `${className}_${suffix}.csv`);
-      downloadBlob(xlsxBlob, `${className}_${suffix}.xlsx`);
-
-      await uploadClassSummaryFile(
-        classId, selectedTermId.value, reportType.value,
-        pdfBlob, "pdf", "class-summary.pdf",
-      );
-      await uploadClassSummaryFile(
-        classId, selectedTermId.value, reportType.value,
-        csvBlob, "csv", "class-summary.csv",
-      );
-      await uploadClassSummaryFile(
-        classId, selectedTermId.value, reportType.value,
-        xlsxBlob, "xlsx", "class-summary.xlsx",
-      );
+      await api("/reports/files/class-summary/persist", {
+        method: "POST",
+        body: {
+          studentGroupId: classId,
+          termId: selectedTermId.value,
+          reportType: reportType.value,
+        },
+      });
 
       const files = await getClassSummaryFiles(
-        classId, selectedTermId.value, reportType.value,
+        classId,
+        selectedTermId.value,
+        reportType.value,
       );
       storedFiles.value = files;
-      toast.success("All files generated, downloaded, and uploaded");
+      toast.success("All files generated and saved to storage");
     } catch (e) {
       const msg =
         e instanceof ApiError

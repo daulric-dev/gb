@@ -8,12 +8,14 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { PermissionGuard } from '@/permission/permission.guard';
+import { RequirePermission } from '@/permission/require-permission.decorator';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { VersioningService } from '@/versioning/versioning.service';
 import { CalculationService } from './calculation.service';
 @ApiTags('Calculations')
 @ApiBearerAuth()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 @Controller('calculations')
 export class CalculationController {
   constructor(
@@ -66,6 +68,7 @@ export class CalculationController {
     }
   }
 
+  @RequirePermission('calculation', 'read')
   @Get('student-term')
   async getStudentTermResult(
     @Req() req: any,
@@ -82,6 +85,7 @@ export class CalculationController {
     return this.versioning.resolve(req, 'calculation.studentTerm')(raw);
   }
 
+  @RequirePermission('calculation', 'read')
   @Get('student-year')
   async getStudentYearResult(
     @Req() req: any,
@@ -98,6 +102,7 @@ export class CalculationController {
     return this.versioning.resolve(req, 'calculation.studentYear')(raw);
   }
 
+  @RequirePermission('calculation', 'read')
   @Get('class-term')
   async getClassTermResults(
     @Req() req: any,
@@ -112,6 +117,7 @@ export class CalculationController {
     return this.versioning.resolve(req, 'calculation.classTerm')(raw);
   }
 
+  @RequirePermission('calculation', 'read')
   @Get('class-year')
   async getClassYearResults(
     @Req() req: any,
@@ -126,6 +132,7 @@ export class CalculationController {
     return this.versioning.resolve(req, 'calculation.classYear')(raw);
   }
 
+  @RequirePermission('calculation', 'read')
   @Get('class-summary')
   async getClassSummary(
     @Req() req: any,

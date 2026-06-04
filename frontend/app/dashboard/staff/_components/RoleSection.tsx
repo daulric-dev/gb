@@ -18,12 +18,14 @@ export function RoleSection({
   removingId,
   currentUserId,
   onRemove,
+  onManageRoles,
 }: {
   role: SchoolMember["role"];
   members: SchoolMember[];
   removingId?: string | null;
   currentUserId?: string;
   onRemove?: (member: SchoolMember) => void;
+  onManageRoles?: (member: SchoolMember) => void;
 }) {
   const meta = ROLE_META[role];
   const Icon = meta.icon;
@@ -48,6 +50,7 @@ export function RoleSection({
               member={m}
               removing={removingId === m.id}
               onRemove={!isSelf ? onRemove : undefined}
+              onManageRoles={onManageRoles}
             />
           );
         })}
