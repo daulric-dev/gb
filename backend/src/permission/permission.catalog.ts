@@ -1,13 +1,3 @@
-/**
- * Code-owned catalog of permissionable (resource, action) pairs.
- *
- * This is the single source of truth for what can be permissioned. Schools
- * compose custom roles out of these keys; they do not invent new resources.
- * The catalog is mirrored into the public.permission_catalog table at app boot
- * (see PermissionCatalogSyncService) so the admin UI can list assignable
- * permissions, but the PermissionGuard checks against this constant directly.
- */
-
 export const ACTIONS = ['create', 'read', 'update', 'delete'] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -27,6 +17,7 @@ export const RESOURCES = [
   'grade-scale',
   'calculation',
   'school',
+  'announcement',
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 
@@ -59,6 +50,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   'grade-scale': 'grade scales',
   calculation: 'grade calculations',
   school: 'school settings',
+  announcement: 'announcements',
 };
 
 const ACTION_VERBS: Record<Action, string> = {
@@ -94,20 +86,18 @@ const allKeys = (...resources: Resource[]): PermissionKey[] =>
 const readKeys = (...resources: Resource[]): PermissionKey[] =>
   resources.map((r) => permKey(r, 'read'));
 
-/**
- * Default permission sets for the legacy enum roles. `'*'` means the full
- * catalog. These are the code source of truth for enum-role defaults; the
- * guard unions them with any custom-role grants on the membership.
- */
 export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
-  // Admins implicitly get everything within their own school (the guard
-  // short-circuits before consulting this), but '*' keeps the map honest.
   admin: '*',
 
-  // Teachers run day-to-day classroom workflows: full control over the
-  // records they own, read access to the surrounding structure.
   teacher: [
-    ...allKeys('attendance', 'assessment', 'grade', 'enrollment', 'reporting'),
+    ...allKeys(
+      'attendance',
+      'assessment',
+      'grade',
+      'enrollment',
+      'reporting',
+      'announcement',
+    ),
     ...readKeys(
       'class',
       'student',
@@ -129,6 +119,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
     'grade-scale',
     'reporting',
     'calculation',
+    'announcement',
   ),
 };
 

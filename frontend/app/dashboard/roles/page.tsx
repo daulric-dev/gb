@@ -151,7 +151,7 @@ export default function RolesPage() {
               <CardContent className="mt-auto flex gap-2 pt-0">
                 {role.is_system ? (
                   <p className="text-xs text-muted-foreground">
-                    Built-in role — permissions are managed by the system.
+                    Built-in role - permissions are managed by the system.
                   </p>
                 ) : (
                   <>

@@ -151,7 +151,7 @@ export class ReportFilesController {
       `attachment; filename="${zipFilename}"`,
     );
     // Hijacking bypasses the framework CORS layer, so set the cross-origin
-    // headers manually (mirrors createApp.ts) — otherwise the browser blocks
+    // headers manually (mirrors createApp.ts) - otherwise the browser blocks
     // the response and can't read the download filename.
     reply.raw.setHeader(
       'Access-Control-Allow-Origin',

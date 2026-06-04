@@ -5,7 +5,7 @@ import { PermissionService } from './permission.service';
 
 /**
  * The caller's own effective permissions. Separate from PermissionController so
- * it is guarded by AuthGuard only (not AdminGuard) — every authenticated user
+ * it is guarded by AuthGuard only (not AdminGuard) - every authenticated user
  * may read what they themselves can do, for client-side UI gating.
  */
 @ApiTags('Permissions')

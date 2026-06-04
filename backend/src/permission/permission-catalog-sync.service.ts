@@ -6,7 +6,7 @@ import { PERMISSION_CATALOG, PERMISSION_KEYS } from './permission.catalog';
  * Keeps the public.permission_catalog table in sync with the code-defined
  * catalog on boot. Upserts every code key; logs (does not delete) DB keys that
  * are absent from code so a removed resource is noticed but never silently
- * drops admin-configured grants. The guard never reads this table — it exists
+ * drops admin-configured grants. The guard never reads this table - it exists
  * only as an FK target and for the admin UI to list assignable permissions.
  */
 @Injectable()

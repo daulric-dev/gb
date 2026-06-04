@@ -310,7 +310,7 @@ export class ReportFilesService {
    * Plan a bulk zip of every student's report card for a class+term (or year).
    * Fetches the (cached) class results and context up front so auth/404 errors
    * surface before the response is hijacked, and returns lazy `render()`
-   * closures so the controller can generate one PDF at a time while streaming —
+   * closures so the controller can generate one PDF at a time while streaming -
    * keeping memory flat regardless of class size.
    */
   async prepareClassZip(

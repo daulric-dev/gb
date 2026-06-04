@@ -1,5 +1,5 @@
 /**
- * Grading system display rules — ported verbatim from the frontend
+ * Grading system display rules - ported verbatim from the frontend
  * (frontend/lib/grading-rules.ts) so the migrated report generators behave
  * identically server-side. Each grading model defines term-level behaviour and
  * year-end display rules so generators can be driven by a single config object

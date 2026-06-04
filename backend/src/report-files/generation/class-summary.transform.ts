@@ -4,7 +4,7 @@ import type { StudentTermResult } from '@/calculation/interfaces/calculation.int
  * Class-summary shapes + the pure aggregation transform, ported verbatim from
  * the frontend (frontend/lib/reports/{api,calculations}.ts). This aggregates
  * already-computed per-student results into class-level statistics; it does NOT
- * recompute grades — CalculationService remains the source of truth.
+ * recompute grades - CalculationService remains the source of truth.
  */
 
 export interface ClassSummarySubjectAvg {
