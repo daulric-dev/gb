@@ -22,31 +22,6 @@ export class ImagesService {
     return `avatar:${userId}`;
   }
 
-  /** Verify the leading bytes match the declared (allowed) image format. */
-  private static matchesImageSignature(
-    buffer: Buffer,
-    mimetype: string,
-  ): boolean {
-    if (buffer.length < 12) return false;
-    switch (mimetype) {
-      case 'image/jpeg':
-        return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-      case 'image/png':
-        return buffer
-          .subarray(0, 8)
-          .equals(
-            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-          );
-      case 'image/webp':
-        return (
-          buffer.toString('ascii', 0, 4) === 'RIFF' &&
-          buffer.toString('ascii', 8, 12) === 'WEBP'
-        );
-      default:
-        return false;
-    }
-  }
-
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cacheService: CacheService,
@@ -101,24 +76,8 @@ export class ImagesService {
     if (idx === -1) {
       throw new BadRequestException('Invalid avatar URL format');
     }
-    const raw = publicUrl.slice(idx + marker.length).split('?')[0];
-    // Defense-in-depth: the stored URL must point at an avatar object and
-    // must not contain path-traversal segments.
-    if (!/^avatars\/[A-Za-z0-9._-]+$/.test(raw)) {
-      throw new BadRequestException('Invalid avatar URL format');
-    }
-    return raw;
-  }
-
-  /**
-   * A user may only ever reference their own avatar object. The path is
-   * always `avatars/<userId>.<ext>` (see buildPath); reject anything else so
-   * a client cannot point their profile at another user's object.
-   */
-  private assertOwnedPath(userId: string, path: string): void {
-    if (path !== `avatars/${userId}.${this.safeExtension(path)}`) {
-      throw new BadRequestException('Upload path does not belong to caller');
-    }
+    const raw = publicUrl.slice(idx + marker.length);
+    return raw.split('?')[0];
   }
 
   // ── Standard upload (small files, backend-mediated) ─────────────────
@@ -132,20 +91,9 @@ export class ImagesService {
       );
     }
 
-    if (
-      !file.mimetype ||
-      !ImagesService.ALLOWED_TYPES.includes(file.mimetype)
-    ) {
+    if (file.mimetype && !ImagesService.ALLOWED_TYPES.includes(file.mimetype)) {
       throw new BadRequestException(
-        `Invalid file type "${file.mimetype ?? 'unknown'}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
-      );
-    }
-
-    // Don't trust the client-declared mimetype: confirm the actual bytes are
-    // one of the allowed image formats (prevents smuggling e.g. SVG/HTML).
-    if (!ImagesService.matchesImageSignature(buffer, file.mimetype)) {
-      throw new BadRequestException(
-        'File content does not match an allowed image format',
+        `Invalid file type "${file.mimetype}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
       );
     }
 
@@ -266,8 +214,6 @@ export class ImagesService {
    * user profile with the public URL of the uploaded image.
    */
   async completeResumableUpload(userId: string, path: string) {
-    this.assertOwnedPath(userId, path);
-
     const supabase = this.supabaseService.getServiceClient();
     const storageBucket = supabase.storage.from(ImagesService.BUCKET);
 

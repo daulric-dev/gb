@@ -5,10 +5,10 @@ import {
   Text,
   View,
   StyleSheet,
-  renderToBuffer,
+  pdf,
 } from "@react-pdf/renderer";
-import type { StudentTermResult } from "@/calculation/interfaces/calculation.interfaces";
-import { getGradingRules } from "./grading-rules";
+import type { StudentTermResult } from "./calculations";
+import { getGradingRules } from "@/lib/grading-rules";
 
 export interface StudentReportOptions {
   termName?: string;
@@ -377,11 +377,11 @@ export function StudentReportDocument({
   );
 }
 
-export async function buildStudentReportPdfBuffer(
+export async function buildStudentReportPdfBlob(
   result: StudentTermResult,
   options?: StudentReportOptions,
-): Promise<Buffer> {
-  return renderToBuffer(
+): Promise<Blob> {
+  return pdf(
     <StudentReportDocument result={result} options={options} />,
-  );
+  ).toBlob();
 }

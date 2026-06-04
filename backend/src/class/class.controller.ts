@@ -13,8 +13,6 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ClassService } from './class.service';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
-import { RequirePermission } from '@/permission/require-permission.decorator';
 import { ClassTeacherGuard } from './class-teacher.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { CreateClassDto } from './dto/create-class.dto';
@@ -22,7 +20,7 @@ import { UpdateClassDto } from './dto/update-class.dto';
 import { AddTeacherDto } from './dto/add-teacher.dto';
 @ApiTags('Classes')
 @ApiBearerAuth()
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard)
 @Controller('classes')
 export class ClassController {
   constructor(
@@ -30,7 +28,6 @@ export class ClassController {
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('class', 'read')
   @Get()
   async getMyClasses(
     @Req() req: any,
@@ -43,21 +40,18 @@ export class ClassController {
     return this.versioning.resolve(req, 'class.list')(raw);
   }
 
-  @RequirePermission('class', 'create')
   @Post()
   async createClass(@Req() req: any, @Body() dto: CreateClassDto) {
     const raw = await this.classService.createClass(req.user.id, dto);
     return this.versioning.resolve(req, 'class.created')(raw);
   }
 
-  @RequirePermission('class', 'read')
   @Get(':classId')
   async getClassById(@Req() req: any, @Param('classId') classId: string) {
     const raw = await this.classService.getClassById(classId);
     return this.versioning.resolve(req, 'class.detail')(raw);
   }
 
-  @RequirePermission('class', 'update')
   @UseGuards(ClassTeacherGuard)
   @Patch(':classId')
   async updateClass(
@@ -69,7 +63,6 @@ export class ClassController {
     return this.versioning.resolve(req, 'class.updated')(raw);
   }
 
-  @RequirePermission('class', 'delete')
   @UseGuards(ClassTeacherGuard)
   @Delete(':classId')
   async deleteClass(@Req() req: any, @Param('classId') classId: string) {
@@ -77,14 +70,12 @@ export class ClassController {
     return this.versioning.resolve(req, 'class.deleted')(raw);
   }
 
-  @RequirePermission('class', 'read')
   @Get('school-teachers')
   async getSchoolTeachers(@Req() req: any) {
     const raw = await this.classService.getSchoolTeachers(req.user.id);
     return this.versioning.resolve(req, 'class.teachers')(raw);
   }
 
-  @RequirePermission('class', 'read')
   @Get(':classId/my-subjects')
   async getMySubjects(@Req() req: any, @Param('classId') classId: string) {
     const raw = await this.classService.getMySubjectsForClass(
@@ -94,14 +85,12 @@ export class ClassController {
     return this.versioning.resolve(req, 'class.subjects')(raw);
   }
 
-  @RequirePermission('class', 'read')
   @Get(':classId/teachers')
   async getTeachers(@Req() req: any, @Param('classId') classId: string) {
     const raw = await this.classService.getTeachers(classId);
     return this.versioning.resolve(req, 'class.teachers')(raw);
   }
 
-  @RequirePermission('class', 'update')
   @UseGuards(ClassTeacherGuard)
   @Post(':classId/teachers')
   async addTeacher(
@@ -113,7 +102,6 @@ export class ClassController {
     return this.versioning.resolve(req, 'class.teacherAdded')(raw);
   }
 
-  @RequirePermission('class', 'update')
   @UseGuards(ClassTeacherGuard)
   @Delete(':classId/teachers/:teacherId')
   async removeTeacher(

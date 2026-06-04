@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
@@ -13,8 +13,13 @@ import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, BookOpen, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ListChecks, Download } from "lucide-react";
-import { downloadFromUrl } from "@/lib/reports";
+import { ArrowLeft, Plus, Trash2, BookOpen, UserPlus, ClipboardList, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ScrollText, FileBarChart, ListChecks, Download, CalendarCheck } from "lucide-react";
+import {
+  buildEndOfYearExamPdfBlob,
+  downloadBlob,
+  type ClassSummary,
+  type StudentSubjectGrade,
+} from "@/lib/reports";
 import { EnrollForm } from "./_components/EnrollForm";
 import { ManageSubjects } from "./_components/ManageSubjects";
 import { EditTeacherSubjectsForm } from "./_components/EditTeacherSubjectsForm";
@@ -82,7 +87,6 @@ export default function ClassDetailPage() {
   useSignals();
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const classId = params?.classId as string;
 
   const classInfo = useSignal<ClassInfo | null>(null);
@@ -114,24 +118,88 @@ export default function ClassDetailPage() {
     generatingReport.value = true;
     try {
       const className = info.name;
-      const isYearEnd = summaryView.value === "year";
-      const hasData = isYearEnd
-        ? yearData.value.length > 0
-        : summaryData.value.length > 0;
-      if (!hasData) {
-        toast.error("No data available to generate report");
-        return;
-      }
+      const selectedTerm = terms.value.find((t) => t.id === selectedTermId.value);
+      const termLabel = selectedTerm?.name ?? "";
 
-      const q = new URLSearchParams({
-        studentGroupId: classId,
-        termId: selectedTermId.value,
-        reportType: isYearEnd ? "year_end" : "term",
-      });
-      await downloadFromUrl(
-        `/reports/files/exam-report.pdf?${q.toString()}`,
-        `${className}_${isYearEnd ? "year_exam_report" : "exam_report"}.pdf`,
-      );
+      if (summaryView.value === "year" && yearData.value.length > 0) {
+        const students: ClassSummary["students"] = yearData.value.map((row) => ({
+          studentId: row.studentId,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          overallAverage: row.yearEnd.overallAverage,
+          position: row.position ?? null,
+          subjects: row.yearEnd.subjects.map((sub): StudentSubjectGrade => ({
+            subjectId: sub.subjectId,
+            subjectName: sub.subjectName,
+            courseworkAverage: null,
+            examAverage: null,
+            termComposite: null,
+            yearGrade: sub.yearGrade,
+          })),
+        }));
+
+        const summary: ClassSummary = {
+          classAverage: null,
+          highestAverage: null,
+          lowestAverage: null,
+          totalStudents: students.length,
+          passCount: 0,
+          failCount: 0,
+          courseworkWeight: 0,
+          examWeight: 0,
+          gradingModel: "weighted_cumulative",
+          subjectAverages: [],
+          students,
+        };
+
+        const blob = await buildEndOfYearExamPdfBlob(summary, {
+          title: "END OF YEAR REPORT",
+          className,
+          scoreField: "yearGrade",
+          yearResults: yearData.value,
+          gradingModel: gradingModel.value,
+        });
+        downloadBlob(blob, `${className}_year_exam_report.pdf`);
+      } else if (summaryData.value.length > 0) {
+        const students: ClassSummary["students"] = summaryData.value.map((row) => ({
+          studentId: row.student.id,
+          firstName: row.student.firstName,
+          lastName: row.student.lastName,
+          overallAverage: row.overallAverage,
+          position: row.position,
+          subjects: row.subjects.map((sub): StudentSubjectGrade => ({
+            subjectId: sub.subjectId,
+            subjectName: sub.subjectName,
+            courseworkAverage: null,
+            examAverage: null,
+            termComposite: sub.average,
+            yearGrade: null,
+          })),
+        }));
+
+        const summary: ClassSummary = {
+          classAverage: null,
+          highestAverage: null,
+          lowestAverage: null,
+          totalStudents: students.length,
+          passCount: 0,
+          failCount: 0,
+          courseworkWeight: 0,
+          examWeight: 0,
+          gradingModel: "weighted_continuous",
+          subjectAverages: [],
+          students,
+        };
+
+        const blob = await buildEndOfYearExamPdfBlob(summary, {
+          className,
+          termName: termLabel,
+          scoreField: "termComposite",
+        });
+        downloadBlob(blob, `${className}_${termLabel || "term"}_report.pdf`);
+      } else {
+        toast.error("No data available to generate report");
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to generate report";
       toast.error(msg);
@@ -174,14 +242,6 @@ export default function ClassDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  // The class sidebar's "Enroll Students" deep-links here with ?enroll=1.
-  useEffect(() => {
-    if (searchParams?.get("enroll") === "1") {
-      enrollOpen.value = true;
-      router.replace(`/dashboard/classes/${classId}`);
-    }
-  }, [searchParams, classId, router, enrollOpen]);
 
   useEffect(() => {
     if (summaryView.value !== "term" || !selectedTermId.value || !classId) return;
@@ -255,31 +315,67 @@ export default function ClassDetailPage() {
             : "You teach subjects in this class"
         }
         onBack={() => router.push("/dashboard/classes")}
+        actions={
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/dashboard/classes/${classId}/grading`)}
+            >
+              <ClipboardList className="mr-2 size-4" />
+              Grading
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/dashboard/classes/${classId}/attendance`)}
+            >
+              <CalendarCheck className="mr-2 size-4" />
+              Attendance
+            </Button>
+            {info.isClassTeacher && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(`/dashboard/classes/${classId}/reports`)}
+                >
+                  <ScrollText className="mr-2 size-4" />
+                  Reports
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(`/dashboard/classes/${classId}/class-report`)}
+                >
+                  <FileBarChart className="mr-2 size-4" />
+                  Class Report
+                </Button>
+              </>
+            )}
+            {info.isClassTeacher && (
+              <Dialog open={enrollOpen.value} onOpenChange={(v) => (enrollOpen.value = v)}>
+                <DialogTrigger render={<Button />}>
+                  <UserPlus className="mr-2 size-4" />
+                  Enroll Students
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Enroll Students</DialogTitle>
+                    <DialogDescription>
+                      Select students to enroll in {info.name}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <EnrollForm
+                    classId={classId}
+                    enrolledIds={enrolled.value.map((e) => e.student.id)}
+                    onSuccess={() => {
+                      enrollOpen.value = false;
+                      fetchData();
+                    }}
+                  />
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        }
       />
-
-      {info.isClassTeacher && (
-        <Dialog
-          open={enrollOpen.value}
-          onOpenChange={(v) => (enrollOpen.value = v)}
-        >
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Enroll Students</DialogTitle>
-              <DialogDescription>
-                Select students to enroll in {info.name}
-              </DialogDescription>
-            </DialogHeader>
-            <EnrollForm
-              classId={classId}
-              enrolledIds={enrolled.value.map((e) => e.student.id)}
-              onSuccess={() => {
-                enrollOpen.value = false;
-                fetchData();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
 
       <Card className="animate-fade-in-up-delay-1">
         <CardHeader>

@@ -14,7 +14,6 @@ import * as grade from '@/grading/transformer';
 import * as gradeScale from '@/grade-scale/transformer';
 import * as calculation from '@/calculation/transformer';
 import * as report from '@/reporting/transformer';
-import * as announcement from '@/announcement/transformer';
 import * as images from '@/images/transformer';
 
 @Injectable()
@@ -151,16 +150,6 @@ export class TransformerRegistry implements OnModuleInit {
 
     this.versioning.registerAll('reportEntry', {
       updated: { 1: report.v1ReportEntryUpdated },
-    });
-
-    this.versioning.registerAll('announcement', {
-      list: { 1: announcement.v1AnnouncementList },
-      detail: { 1: announcement.v1AnnouncementDetail },
-      created: { 1: announcement.v1AnnouncementCreated },
-      updated: { 1: announcement.v1AnnouncementUpdated },
-      deleted: { 1: announcement.v1AnnouncementDeleted },
-      unreadCount: { 1: announcement.v1AnnouncementUnreadCount },
-      markRead: { 1: announcement.v1AnnouncementMarkRead },
     });
 
     this.versioning.registerAll('images', {

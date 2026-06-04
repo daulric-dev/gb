@@ -2,23 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useSignals } from "@preact/signals-react/runtime";
-import {
-  unreadAnnouncements,
-  refreshAnnouncementUnread,
-} from "@/lib/announcements";
 import {
   BookOpen,
   CalendarRange,
   ChevronsUpDown,
   FileText,
   GraduationCap,
-  KeyRound,
   LayoutDashboard,
   LogOut,
-  Megaphone,
   Scale,
   Settings,
   Shield,
@@ -57,12 +49,10 @@ const navItems = [
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
   { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
-  { title: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
 ];
 
 const adminNavItems = [
   { title: "Grade Scales", href: "/dashboard/grade-scales", icon: Scale },
-  { title: "Roles", href: "/dashboard/roles", icon: KeyRound },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -78,16 +68,10 @@ function navItemActive(pathname: string, href: string) {
 }
 
 export function AppSidebar({ profile }: { profile: UserProfile | null }) {
-  useSignals();
   const pathname = usePathname();
   const router = useRouter();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-
-  // Keep the unread-announcements badge fresh as the user navigates.
-  useEffect(() => {
-    refreshAnnouncementUnread();
-  }, [pathname]);
 
   async function handleLogout() {
     try {
@@ -150,12 +134,6 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
                     >
                       <Icon className="size-4" />
                       <span>{item.title}</span>
-                      {item.href === "/dashboard/announcements" &&
-                        unreadAnnouncements.value > 0 && (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-                            {unreadAnnouncements.value}
-                          </span>
-                        )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

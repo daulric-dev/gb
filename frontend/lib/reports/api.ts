@@ -72,6 +72,36 @@ export function getClassSummaryFiles(
   return api<ClassReportFile[]>(`/reports/class-summary/files?${q.toString()}`);
 }
 
+export async function uploadClassSummaryFile(
+  studentGroupId: string,
+  termId: string,
+  reportType: ReportType,
+  blob: Blob,
+  fileType: string,
+  filename: string,
+): Promise<ClassReportFile> {
+  const form = new FormData();
+  form.append("file", blob, filename);
+  form.append("studentGroupId", studentGroupId);
+  form.append("termId", termId);
+  form.append("reportType", reportType);
+  form.append("fileType", fileType);
+
+  const res = await fetch(buildUrl("/reports/class-summary/upload"), {
+    method: "POST",
+    headers: { "X-API-Version": "1" },
+    credentials: "include",
+    body: form,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    throw new ApiError(res.status, err.message || res.statusText, err);
+  }
+
+  return res.json();
+}
+
 export async function downloadClassSummaryFile(
   studentGroupId: string,
   termId: string,

@@ -12,8 +12,6 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
-import { RequirePermission } from '@/permission/require-permission.decorator';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { AttendanceService } from './attendance.service';
@@ -25,21 +23,19 @@ import { AttendanceRangeQueryDto } from './dto/attendance-range.dto';
 @ApiTags('Attendance')
 @ApiBearerAuth()
 @Controller('classes/:classId/attendance')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard)
 export class AttendanceController {
   constructor(
     private readonly attendanceService: AttendanceService,
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('attendance', 'read')
   @Get()
   async roster(
     @Req() req: any,
     @Param('classId') classId: string,
     @Query('date') date: string,
   ) {
-    await this.attendanceService.assertCanViewClass(req.user.id, classId);
     const raw = await this.attendanceService.getClassRosterForDate(
       classId,
       date,
@@ -47,7 +43,6 @@ export class AttendanceController {
     return this.versioning.resolve(req, 'attendance.roster')(raw);
   }
 
-  @RequirePermission('attendance', 'create')
   @UseGuards(ClassTeacherGuard)
   @Post()
   async mark(
@@ -59,7 +54,6 @@ export class AttendanceController {
     return this.versioning.resolve(req, 'attendance.marked')(raw);
   }
 
-  @RequirePermission('attendance', 'create')
   @UseGuards(ClassTeacherGuard)
   @Post('bulk')
   async bulkMark(
@@ -75,37 +69,24 @@ export class AttendanceController {
     return this.versioning.resolve(req, 'attendance.bulkMarked')(raw);
   }
 
-  @RequirePermission('attendance', 'update')
   @UseGuards(ClassTeacherGuard)
   @Patch(':recordId')
   async update(
     @Req() req: any,
-    @Param('classId') classId: string,
     @Param('recordId') recordId: string,
     @Body() dto: UpdateAttendanceDto,
   ) {
-    const raw = await this.attendanceService.update(
-      classId,
-      recordId,
-      req.user.id,
-      dto,
-    );
+    const raw = await this.attendanceService.update(recordId, req.user.id, dto);
     return this.versioning.resolve(req, 'attendance.updated')(raw);
   }
 
-  @RequirePermission('attendance', 'delete')
   @UseGuards(ClassTeacherGuard)
   @Delete(':recordId')
-  async remove(
-    @Req() req: any,
-    @Param('classId') classId: string,
-    @Param('recordId') recordId: string,
-  ) {
-    const raw = await this.attendanceService.delete(classId, recordId);
+  async remove(@Req() req: any, @Param('recordId') recordId: string) {
+    const raw = await this.attendanceService.delete(recordId);
     return this.versioning.resolve(req, 'attendance.deleted')(raw);
   }
 
-  @RequirePermission('attendance', 'read')
   @Get('students/:studentId')
   async studentRange(
     @Req() req: any,
@@ -123,7 +104,6 @@ export class AttendanceController {
     return this.versioning.resolve(req, 'attendance.studentRange')(raw);
   }
 
-  @RequirePermission('attendance', 'read')
   @Get('students/:studentId/summary')
   async studentSummary(
     @Req() req: any,

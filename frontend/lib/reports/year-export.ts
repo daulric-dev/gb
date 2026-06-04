@@ -1,9 +1,9 @@
-import * as XLSX from 'xlsx';
-import type { StudentYearResult as StudentYearReport } from '@/calculation/interfaces/calculation.interfaces';
-import { getGradingRules } from './grading-rules';
+import * as XLSX from "xlsx";
+import type { StudentYearReport } from "./calculations";
+import { getGradingRules } from "@/lib/grading-rules";
 
 function fmt(v: number | null): string {
-  return v != null ? v.toFixed(1) : '';
+  return v != null ? v.toFixed(1) : "";
 }
 
 function termInitial(name: string): string {
@@ -32,7 +32,7 @@ function collectSubjectCols(students: StudentYearReport[]) {
   return cols;
 }
 
-export function buildYearClassSummaryCsvBuffer(
+export function buildYearClassSummaryCsv(
   students: StudentYearReport[],
   className: string,
   opts: {
@@ -40,11 +40,11 @@ export function buildYearClassSummaryCsvBuffer(
     yearCwWeight?: number;
     yearExWeight?: number;
   } = {},
-): Buffer {
+): Blob {
   const lines: string[] = [];
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
 
-  lines.push('Year-End Class Summary Report');
+  lines.push("Year-End Class Summary Report");
   lines.push(`Class,${esc(className)}`);
   if (opts.academicYearName)
     lines.push(`Academic Year,${esc(opts.academicYearName)}`);
@@ -61,7 +61,7 @@ export function buildYearClassSummaryCsvBuffer(
     const avg = overalls.reduce((s, v) => s + v, 0) / overalls.length;
     lines.push(`Class Average,${avg.toFixed(2)}`);
   }
-  lines.push('');
+  lines.push("");
 
   const subjectCols = collectSubjectCols(students);
   const termNames = students[0]?.terms.map((t) => t.termName) ?? [];
@@ -71,38 +71,40 @@ export function buildYearClassSummaryCsvBuffer(
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
 
   const rules = getGradingRules(students[0]?.gradingModel);
-  const isPooled = rules.display.yearEndColumns === 'pooled';
+  const isPooled = rules.display.yearEndColumns === "pooled";
   const cwW = students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
   const exW = students[0]?.yearExamWeight ?? opts.yearExWeight ?? 60;
 
   if (students.length > 0 && subjectCols.length > 0) {
-    lines.push('Student Year Grades');
+    lines.push("Student Year Grades");
 
     const subHeadersPerSubject = isPooled
-      ? [`CA /${cwW}`, `Exam /${exW}`, 'Total']
-      : [...termInitials, 'E', 'Year'];
+      ? [`CA /${cwW}`, `Exam /${exW}`, "Total"]
+      : [...termInitials, "E", "Year"];
 
     const groupRow = [
-      '',
-      '',
+      "",
+      "",
       ...subjectCols.flatMap((c) => [
         esc(c.name),
-        ...Array.from({ length: subHeadersPerSubject.length - 1 }, () => ''),
+        ...Array.from({ length: subHeadersPerSubject.length - 1 }, () => ""),
       ]),
-      '',
+      "",
     ];
-    lines.push(groupRow.join(','));
+    lines.push(groupRow.join(","));
 
     const subRow = [
-      'Position',
-      'Student',
+      "Position",
+      "Student",
       ...subjectCols.flatMap(() => subHeadersPerSubject),
-      'Year Average',
+      "Year Average",
     ];
-    lines.push(subRow.map(esc).join(','));
+    lines.push(subRow.map(esc).join(","));
 
     for (const st of students) {
-      const subMap = new Map(st.yearEnd.subjects.map((s) => [s.subjectId, s]));
+      const subMap = new Map(
+        st.yearEnd.subjects.map((s) => [s.subjectId, s]),
+      );
       const lastTerm = lastTermId
         ? st.terms.find((t) => t.termId === lastTermId)
         : undefined;
@@ -114,7 +116,7 @@ export function buildYearClassSummaryCsvBuffer(
       }
 
       const row = [
-        st.position != null ? String(st.position) : '',
+        st.position != null ? String(st.position) : "",
         esc(`${st.firstName} ${st.lastName}`.trim()),
         ...subjectCols.flatMap((c) => {
           const sub = subMap.get(c.id);
@@ -123,14 +125,12 @@ export function buildYearClassSummaryCsvBuffer(
             const composites = (sub?.termGrades ?? [])
               .map((g) => g.termComposite)
               .filter((v): v is number => v != null);
-            const rawCa =
-              composites.length > 0
-                ? composites.reduce((a, b) => a + b, 0) / composites.length
-                : null;
-            const ca = rawCa != null ? fmt((rawCa * cwW) / 100) : '';
+            const rawCa = composites.length > 0
+              ? composites.reduce((a, b) => a + b, 0) / composites.length
+              : null;
+            const ca = rawCa != null ? fmt(rawCa * cwW / 100) : "";
             const endOfYrExam = lastTermExamMap.get(c.id) ?? null;
-            const exam =
-              endOfYrExam != null ? fmt((endOfYrExam * exW) / 100) : '';
+            const exam = endOfYrExam != null ? fmt(endOfYrExam * exW / 100) : "";
             return [ca, exam, fmt(sub?.yearGrade ?? null)];
           }
 
@@ -143,16 +143,16 @@ export function buildYearClassSummaryCsvBuffer(
         }),
         st.yearEnd.overallAverage != null
           ? st.yearEnd.overallAverage.toFixed(2)
-          : '',
+          : "",
       ];
-      lines.push(row.join(','));
+      lines.push(row.join(","));
     }
   }
 
-  return Buffer.from(lines.join('\n'), 'utf-8');
+  return new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
 }
 
-export function buildYearClassSummaryXlsxBuffer(
+export function buildYearClassSummaryXlsx(
   students: StudentYearReport[],
   className: string,
   opts: {
@@ -160,32 +160,32 @@ export function buildYearClassSummaryXlsxBuffer(
     yearCwWeight?: number;
     yearExWeight?: number;
   } = {},
-): Buffer {
+): Blob {
   const wb = XLSX.utils.book_new();
 
   const summaryRows: (string | number | null)[][] = [
-    ['Year-End Class Summary Report'],
-    ['Class', className],
+    ["Year-End Class Summary Report"],
+    ["Class", className],
   ];
   if (opts.academicYearName)
-    summaryRows.push(['Academic Year', opts.academicYearName]);
+    summaryRows.push(["Academic Year", opts.academicYearName]);
   if (opts.yearCwWeight != null)
-    summaryRows.push(['Year Coursework Weight', `${opts.yearCwWeight}%`]);
+    summaryRows.push(["Year Coursework Weight", `${opts.yearCwWeight}%`]);
   if (opts.yearExWeight != null)
-    summaryRows.push(['Year Exam Weight', `${opts.yearExWeight}%`]);
-  summaryRows.push(['Total Students', students.length]);
+    summaryRows.push(["Year Exam Weight", `${opts.yearExWeight}%`]);
+  summaryRows.push(["Total Students", students.length]);
 
   const overalls = students
     .map((s) => s.yearEnd.overallAverage)
     .filter((a): a is number => a != null);
   if (overalls.length > 0) {
     const avg = overalls.reduce((s, v) => s + v, 0) / overalls.length;
-    summaryRows.push(['Class Average', r2(avg)]);
+    summaryRows.push(["Class Average", r2(avg)]);
   }
 
   const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
-  ws1['!cols'] = [{ wch: 24 }, { wch: 14 }];
-  XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+  ws1["!cols"] = [{ wch: 24 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws1, "Summary");
 
   const subjectCols = collectSubjectCols(students);
   const termNames = students[0]?.terms.map((t) => t.termName) ?? [];
@@ -195,34 +195,36 @@ export function buildYearClassSummaryXlsxBuffer(
   const lastTermId = termIds.length > 0 ? termIds[termIds.length - 1] : null;
 
   const xlsxRules = getGradingRules(students[0]?.gradingModel);
-  const isPooledXlsx = xlsxRules.display.yearEndColumns === 'pooled';
+  const isPooledXlsx = xlsxRules.display.yearEndColumns === "pooled";
   const cwWXlsx = students[0]?.yearCourseworkWeight ?? opts.yearCwWeight ?? 40;
   const exWXlsx = students[0]?.yearExamWeight ?? opts.yearExWeight ?? 60;
 
   const subHeadersXlsx = isPooledXlsx
-    ? [`CA /${cwWXlsx}`, `Exam /${exWXlsx}`, 'Total']
-    : [...termInitials, 'E', 'Year'];
+    ? [`CA /${cwWXlsx}`, `Exam /${exWXlsx}`, "Total"]
+    : [...termInitials, "E", "Year"];
   const colsPerSubject = subHeadersXlsx.length;
 
   const groupRow: (string | null)[] = [
-    '',
-    '',
+    "",
+    "",
     ...subjectCols.flatMap((c) => [
       c.name,
       ...Array.from({ length: colsPerSubject - 1 }, () => null),
     ]),
-    '',
+    "",
   ];
   const subRow: (string | null)[] = [
-    'Position',
-    'Student',
+    "Position",
+    "Student",
     ...subjectCols.flatMap(() => subHeadersXlsx),
-    'Year Average',
+    "Year Average",
   ];
   const studentRows: (string | number | null)[][] = [groupRow, subRow];
 
   for (const st of students) {
-    const subMap = new Map(st.yearEnd.subjects.map((s) => [s.subjectId, s]));
+    const subMap = new Map(
+      st.yearEnd.subjects.map((s) => [s.subjectId, s]),
+    );
     const lastTerm = lastTermId
       ? st.terms.find((t) => t.termId === lastTermId)
       : undefined;
@@ -243,14 +245,12 @@ export function buildYearClassSummaryXlsxBuffer(
           const composites = (sub?.termGrades ?? [])
             .map((g) => g.termComposite)
             .filter((v): v is number => v != null);
-          const rawCa =
-            composites.length > 0
-              ? composites.reduce((a, b) => a + b, 0) / composites.length
-              : null;
-          const ca = rawCa != null ? r1((rawCa * cwWXlsx) / 100) : null;
+          const rawCa = composites.length > 0
+            ? composites.reduce((a, b) => a + b, 0) / composites.length
+            : null;
+          const ca = rawCa != null ? r1(rawCa * cwWXlsx / 100) : null;
           const endOfYrExam = lastTermExamMap.get(c.id) ?? null;
-          const exam =
-            endOfYrExam != null ? r1((endOfYrExam * exWXlsx) / 100) : null;
+          const exam = endOfYrExam != null ? r1(endOfYrExam * exWXlsx / 100) : null;
           return [ca, exam, r1(sub?.yearGrade ?? null)];
         }
 
@@ -275,7 +275,7 @@ export function buildYearClassSummaryXlsxBuffer(
       e: { r: 0, c: startCol + colsPerSubject - 1 },
     });
   }
-  ws2['!merges'] = merges;
+  ws2["!merges"] = merges;
 
   const colWidths: { wch: number }[] = [
     { wch: 10 },
@@ -285,8 +285,11 @@ export function buildYearClassSummaryXlsxBuffer(
     ),
     { wch: 16 },
   ];
-  ws2['!cols'] = colWidths;
-  XLSX.utils.book_append_sheet(wb, ws2, 'Students');
+  ws2["!cols"] = colWidths;
+  XLSX.utils.book_append_sheet(wb, ws2, "Students");
 
-  return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useProfile } from "@/providers/AuthProvider";
-import { PermissionsProvider } from "@/providers/PermissionsProvider";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
@@ -33,16 +32,14 @@ export default function DashboardLayout({
   if (loading.value || !profile.value?.school) return null;
 
   return (
-    <PermissionsProvider>
-      <SidebarProvider>
-        <AppSidebar profile={profile.value} />
-        <SidebarInset>
-          <Header />
-          <main className="flex-1 p-4 md:p-6">
-            <div className="mx-auto max-w-6xl">{children}</div>
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
-    </PermissionsProvider>
+    <SidebarProvider>
+      <AppSidebar profile={profile.value} />
+      <SidebarInset>
+        <Header />
+        <main className="flex-1 p-4 md:p-6">
+          <div className="mx-auto max-w-6xl">{children}</div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

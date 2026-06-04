@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { KeyRound, Loader2, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import type { SchoolMember } from "./types";
 
 function getInitials(user: SchoolMember["user"]) {
@@ -17,12 +17,10 @@ export function MemberCard({
   member,
   removing,
   onRemove,
-  onManageRoles,
 }: {
   member: SchoolMember;
   removing?: boolean;
   onRemove?: (member: SchoolMember) => void;
-  onManageRoles?: (member: SchoolMember) => void;
 }) {
   const joined = new Date(member.created_at).toLocaleDateString(undefined, {
     year: "numeric",
@@ -42,17 +40,6 @@ export function MemberCard({
         <p className="font-medium leading-tight truncate">{getName(member.user)}</p>
         <p className="text-xs text-muted-foreground">Joined {joined}</p>
       </div>
-      {onManageRoles && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
-          aria-label="Manage roles"
-          onClick={() => onManageRoles(member)}
-        >
-          <KeyRound className="size-3.5" />
-        </Button>
-      )}
       {onRemove && (
         <Button
           variant="ghost"
