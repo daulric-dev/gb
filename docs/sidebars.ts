@@ -1,4 +1,38 @@
 import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
+import { readdirSync, readFileSync, statSync } from "fs";
+
+function sidebarPosition(file: string): number {
+  try {
+    const match = /sidebar_position:\s*(\d+)/.exec(readFileSync(file, "utf8"));
+    return match ? Number(match[1]) : 999;
+  } catch {
+    return 999;
+  }
+}
+
+function GetChangeLogFiles() {
+  const changelogDir = `${__dirname}/content/changelog`;
+  const dates = readdirSync(changelogDir)
+    .filter((name) => {
+      try {
+        return statSync(`${changelogDir}/${name}`).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort((a, b) => b.localeCompare(a));
+
+  const entries: string[] = [];
+  for (const date of dates) {
+    const dir = `${changelogDir}/${date}`;
+    readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => f.replace(/\.md$/, ""))
+      .sort((a, b) => sidebarPosition(`${dir}/${a}.md`) - sidebarPosition(`${dir}/${b}.md`) || a.localeCompare(b))
+      .forEach((entry) => entries.push(`${date}/${entry}`));
+  }
+  return entries;
+}
 
 const sidebars: SidebarsConfig = {
   docsSidebar: [
@@ -29,6 +63,8 @@ const sidebars: SidebarsConfig = {
         "backend/grading",
         "backend/calculation",
         "backend/reporting",
+        "backend/report-files",
+        "backend/announcement",
         "backend/images",
         "backend/cache",
         "backend/versioning",
@@ -49,6 +85,7 @@ const sidebars: SidebarsConfig = {
         "frontend/classes",
         "frontend/grading",
         "frontend/reporting",
+        "frontend/announcements",
         "frontend/components",
         "frontend/utilities",
       ],
@@ -70,30 +107,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       link: { type: "doc", id: "changelog/overview" },
       items: [
-        {
-          type: "category",
-          label: "2026-05-25",
-          collapsed: false,
-          items: [
-            "changelog/2026-05-25/attendance-tracking",
-            "changelog/2026-05-25/custom-grade-scales",
-            "changelog/2026-05-25/auth-and-dev-ergonomics",
-            "changelog/2026-05-25/per-session-throttling",
-          ],
-        },
-        {
-          type: "category",
-          label: "2026-05-24",
-          collapsed: false,
-          items: [
-            "changelog/2026-05-24/security-fixes",
-            "changelog/2026-05-24/high-fixes",
-            "changelog/2026-05-24/medium-fixes",
-            "changelog/2026-05-24/low-fixes",
-            "changelog/2026-05-24/redis-resilience",
-            "changelog/2026-05-24/infrastructure-ci",
-          ],
-        },
+        ...GetChangeLogFiles().map((file) => `changelog/${file}`),
       ],
     },
   ],
