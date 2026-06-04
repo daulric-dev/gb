@@ -97,7 +97,7 @@ export function MemberRolesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Roles — {memberName(member)}</DialogTitle>
+          <DialogTitle>Roles - {memberName(member)}</DialogTitle>
           <DialogDescription>
             Assign custom roles. Their permissions stack on top of the member&apos;s
             base role.

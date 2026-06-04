@@ -113,7 +113,7 @@ export function PermissionsEditor({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Permissions — {role?.name}</DialogTitle>
+          <DialogTitle>Permissions - {role?.name}</DialogTitle>
           <DialogDescription>
             Choose what this role can do. Changes apply to every member with
             this role.
