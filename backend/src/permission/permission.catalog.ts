@@ -80,12 +80,13 @@ export function isPermissionKey(value: string): value is PermissionKey {
   return PERMISSION_KEYS.has(value as PermissionKey);
 }
 
-const allKeys = (...resources: Resource[]): PermissionKey[] => resources.flatMap((r) => ACTIONS.map((a) => permKey(r, a)));
+const allKeys = (...resources: Resource[]): PermissionKey[] =>
+  resources.flatMap((r) => ACTIONS.map((a) => permKey(r, a)));
 
-const readKeys = (...resources: Resource[]): PermissionKey[] => resources.map((r) => permKey(r, 'read'));
+const readKeys = (...resources: Resource[]): PermissionKey[] =>
+  resources.map((r) => permKey(r, 'read'));
 
 export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
-
   admin: '*',
 
   teacher: [

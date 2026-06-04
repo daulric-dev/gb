@@ -49,13 +49,13 @@ export class AnnouncementService {
       );
       throw new BadRequestException('Could not determine your school');
     }
-    return profile as { school_id: string; role: string | null };
+    return profile;
   }
 
   /** Merge live read receipts into cached announcement content. */
-  private async attachReaders<T extends { id: string; author_user_profile_id: string | null }>(
-    items: T[],
-  ): Promise<(T & { readers: ReaderRow[] })[]> {
+  private async attachReaders<
+    T extends { id: string; author_user_profile_id: string | null },
+  >(items: T[]): Promise<(T & { readers: ReaderRow[] })[]> {
     if (items.length === 0) return [];
 
     const { data: reads } = await this.supabaseService
@@ -91,9 +91,7 @@ export class AnnouncementService {
     const supabase = this.supabaseService.getServiceClient();
     const { school_id } = await this.getProfile(userId);
 
-    let content = (await this.cache.get(contentKey(school_id))) as
-      | any[]
-      | null;
+    let content = (await this.cache.get(contentKey(school_id))) as any[] | null;
     if (!content) {
       const { data, error } = await supabase
         .from('announcement')
@@ -179,10 +177,7 @@ export class AnnouncementService {
     const supabase = this.supabaseService.getServiceClient();
     const { school_id } = await this.assertCanManage(userId, id);
 
-    const { error } = await supabase
-      .from('announcement')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.from('announcement').delete().eq('id', id);
 
     if (error) {
       this.logger.error(`Failed to delete announcement: ${error.message}`);
@@ -233,12 +228,10 @@ export class AnnouncementService {
     }));
 
     if (rows.length > 0) {
-      const { error } = await supabase
-        .from('announcement_read')
-        .upsert(rows, {
-          onConflict: 'announcement_id,user_profile_id',
-          ignoreDuplicates: true,
-        });
+      const { error } = await supabase.from('announcement_read').upsert(rows, {
+        onConflict: 'announcement_id,user_profile_id',
+        ignoreDuplicates: true,
+      });
       if (error) {
         this.logger.error(`Failed to mark read: ${error.message}`);
         throw new BadRequestException('Failed to mark announcements read');
