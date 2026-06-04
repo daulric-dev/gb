@@ -6,11 +6,15 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
   type ReportType,
-  downloadFromUrl,
+  buildReportPdfBlob,
+  downloadBlob,
+  buildYearReportPdfBlob,
+  yearReportPdfFilename,
   getStudentTermResult,
   getStudentYearResult,
   type StudentTermResult,
   type StudentYearReport,
+  buildStudentReportPdfBlob,
 } from "@/lib/reports";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -119,58 +123,55 @@ export default function StudentReportPage() {
       ? `${yr.firstName} ${yr.lastName}`
       : "Student";
 
-  const safeName = studentName.replace(/\s+/g, "_");
-
-  const downloadPdf = async () => {
-    try {
-      if (reportType === "year_end") {
-        const academicYearId = classInfo.value?.academicYearId;
-        if (!academicYearId) {
-          toast.error("No academic year available");
-          return;
-        }
-        const q = new URLSearchParams({
-          studentId,
-          academicYearId,
-          studentGroupId: classId,
+  const downloadPdf = () => {
+    if (isYearEnd && yr) {
+      try {
+        const blob = buildYearReportPdfBlob(yr, {
+          className: classInfo.value?.name,
         });
-        await downloadFromUrl(
-          `/reports/files/student-year.pdf?${q.toString()}`,
-          `${safeName}_year_report.pdf`,
-        );
-        toast.success("Year-End PDF downloaded");
-      } else {
-        const q = new URLSearchParams({
-          studentId,
-          termId,
-          studentGroupId: classId,
-        });
-        await downloadFromUrl(
-          `/reports/files/student-term.pdf?${q.toString()}`,
-          `${safeName}_report.pdf`,
-        );
-        toast.success("PDF downloaded");
+        downloadBlob(blob, yearReportPdfFilename(yr));
+        toast.success("Year-end PDF downloaded");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not generate PDF";
+        toast.error(msg);
       }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not download PDF");
+      return;
+    }
+
+    if (tr) {
+      try {
+        const blob = buildReportPdfBlob(tr, {
+          termName: termName.value || undefined,
+          gradingModel: gradingModel.value,
+        });
+        const safeName = `${tr.firstName}_${tr.lastName}`.replace(/\s+/g, "_");
+        downloadBlob(blob, `${safeName}_report.pdf`);
+        toast.success("PDF downloaded");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not generate PDF";
+        toast.error(msg);
+      }
+    } else {
+      toast.error("No calculated grades available for PDF");
     }
   };
 
   const downloadReportCard = async () => {
+    if (!tr) {
+      toast.error("No calculated grades available");
+      return;
+    }
     try {
-      const q = new URLSearchParams({
-        studentId,
-        termId,
-        studentGroupId: classId,
+      const blob = await buildStudentReportPdfBlob(tr, {
+        termName: termName.value || undefined,
+        className: classInfo.value?.name,
+        gradingModel: gradingModel.value,
       });
-      await downloadFromUrl(
-        `/reports/files/student-report-card.pdf?${q.toString()}`,
-        `${safeName}_report_card.pdf`,
-      );
+      const safeName = `${tr.firstName}_${tr.lastName}`.replace(/\s+/g, "_");
+      downloadBlob(blob, `${safeName}_report_card.pdf`);
       toast.success("Report card downloaded");
     } catch (e) {
-      const msg =
-        e instanceof Error ? e.message : "Could not download report card";
+      const msg = e instanceof Error ? e.message : "Could not generate report card";
       toast.error(msg);
     }
   };

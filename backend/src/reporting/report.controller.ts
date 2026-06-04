@@ -14,8 +14,6 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
-import { RequirePermission } from '@/permission/require-permission.decorator';
 import { ClassTeacherGuard } from '@/class/class-teacher.guard';
 import { ReportGuard } from './report.guard';
 import { VersioningService } from '@/versioning/versioning.service';
@@ -27,14 +25,13 @@ import { SavePdfDto } from './dto/save-pdf.dto';
 @ApiTags('Reports')
 @ApiBearerAuth()
 @Controller('reports')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard)
 export class ReportController {
   constructor(
     private readonly reportService: ReportService,
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('reporting', 'create')
   @Post('generate')
   @UseGuards(ClassTeacherGuard)
   async generate(@Req() req: any, @Body() dto: GenerateReportDto) {
@@ -42,7 +39,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.generated')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get()
   @UseGuards(ClassTeacherGuard)
   async findByClassAndTerm(
@@ -62,7 +58,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.list')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get('class-summary')
   @UseGuards(ClassTeacherGuard)
   async getClassSummary(
@@ -82,7 +77,48 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.classSummary')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
+  @Post('class-summary/upload')
+  @UseGuards(ClassTeacherGuard)
+  async uploadClassSummaryFile(
+    @Req()
+    req: any,
+  ) {
+    const file = await req.file();
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    const buffer = await file.toBuffer();
+    if (!buffer.length) {
+      throw new BadRequestException('Empty file');
+    }
+
+    const fields = file.fields as Record<
+      string,
+      { value?: string } | undefined
+    >;
+    const studentGroupId = fields?.studentGroupId?.value;
+    const termId = fields?.termId?.value;
+    const reportType = fields?.reportType?.value;
+    const fileType = fields?.fileType?.value;
+
+    if (!studentGroupId || !termId || !reportType || !fileType) {
+      throw new BadRequestException(
+        'Missing required fields: studentGroupId, termId, reportType, fileType',
+      );
+    }
+
+    const raw = await this.reportService.uploadClassSummaryFile(
+      studentGroupId,
+      termId,
+      reportType,
+      fileType,
+      req.user.id,
+      buffer,
+    );
+    return this.versioning.resolve(req, 'report.classSummaryUploaded')(raw);
+  }
+
   @Get('class-summary/download')
   @UseGuards(ClassTeacherGuard)
   async downloadClassSummaryFile(
@@ -106,7 +142,6 @@ export class ReportController {
       .send(buffer);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get('class-summary/files')
   @UseGuards(ClassTeacherGuard)
   async getClassSummaryFiles(
@@ -126,7 +161,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.classSummaryFiles')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get('student')
   @UseGuards(ClassTeacherGuard)
   async findStudentReport(
@@ -146,7 +180,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.studentReport')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get(':id/pdfs')
   @UseGuards(ClassTeacherGuard)
   async getPdfHistory(
@@ -158,7 +191,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.pdfHistory')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get(':id/pdf/latest')
   @UseGuards(ClassTeacherGuard)
   async getLatestPdf(
@@ -170,7 +202,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.pdfLatest')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get(':id')
   @UseGuards(ClassTeacherGuard)
   async findOne(
@@ -182,7 +213,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.detail')(raw);
   }
 
-  @RequirePermission('reporting', 'update')
   @Patch(':id')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async updateReport(
@@ -194,7 +224,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
-  @RequirePermission('reporting', 'update')
   @Patch(':id/regenerate')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async regenerate(@Req() req: any, @Param('id') id: string) {
@@ -202,7 +231,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
-  @RequirePermission('reporting', 'update')
   @Patch(':id/publish')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async publish(@Req() req: any, @Param('id') id: string) {
@@ -210,7 +238,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
-  @RequirePermission('reporting', 'update')
   @Patch(':id/send-to-ministry')
   @UseGuards(ClassTeacherGuard)
   async sendToMinistry(@Req() req: any, @Param('id') id: string) {
@@ -218,7 +245,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
-  @RequirePermission('reporting', 'create')
   @Post(':id/pdf')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async savePdf(
@@ -230,7 +256,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.pdfSaved')(raw);
   }
 
-  @RequirePermission('reporting', 'create')
   @Post(':id/pdf/upload')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async uploadPdf(@Param('id') id: string, @Req() req: any) {
@@ -248,7 +273,6 @@ export class ReportController {
     return this.versioning.resolve(req, 'report.pdfUploaded')(raw);
   }
 
-  @RequirePermission('reporting', 'read')
   @Get(':id/pdf/:pdfId/download')
   @UseGuards(ClassTeacherGuard)
   async downloadPdf(
@@ -271,14 +295,13 @@ export class ReportController {
 @ApiTags('Report entries')
 @ApiBearerAuth()
 @Controller('report-entries')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard)
 export class ReportEntriesController {
   constructor(
     private readonly reportService: ReportService,
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('reporting', 'update')
   @Patch(':entryId')
   @UseGuards(ReportGuard)
   async updateEntry(

@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import type { JoinRequest, SchoolMember } from "./_components/types";
 import { RoleSection } from "./_components/RoleSection";
 import { PendingRequestsTab } from "./_components/PendingRequestsTab";
-import { MemberRolesDialog } from "./_components/MemberRolesDialog";
 
 const ROLE_ORDER: SchoolMember["role"][] = ["admin", "teacher", "member"];
 
@@ -84,14 +83,7 @@ export default function StaffPage() {
   const removingId = useSignal<string | null>(null);
   const requests = useSignal<JoinRequest[]>([]);
   const requestsLoading = useSignal(true);
-  const managingMember = useSignal<SchoolMember | null>(null);
-  const rolesDialogOpen = useSignal(false);
   const isAdmin = profile.value?.role === "admin";
-
-  const handleManageRoles = useCallback((member: SchoolMember) => {
-    managingMember.value = member;
-    rolesDialogOpen.value = true;
-  }, []);
 
   const grouped = useComputed(() =>
     ROLE_ORDER.reduce(
@@ -168,7 +160,6 @@ export default function StaffPage() {
           removingId={removingId.value}
           currentUserId={profile.value?.id}
           onRemove={isAdmin ? handleRemove : undefined}
-          onManageRoles={isAdmin ? handleManageRoles : undefined}
         />
       ))}
     </div>
@@ -240,12 +231,6 @@ export default function StaffPage() {
           />
         </TabsContent>
       </Tabs>
-
-      <MemberRolesDialog
-        open={rolesDialogOpen.value}
-        member={managingMember.value}
-        onOpenChange={(v) => (rolesDialogOpen.value = v)}
-      />
     </div>
   );
 }

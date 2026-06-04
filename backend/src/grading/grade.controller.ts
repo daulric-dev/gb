@@ -13,8 +13,6 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
-import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
 import { GradeService } from './grade.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
@@ -25,14 +23,13 @@ import { ExcludeDto } from './dto/exclude.dto';
 @ApiTags('Grades')
 @ApiBearerAuth()
 @Controller('grades')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard)
 export class GradeController {
   constructor(
     private readonly gradeService: GradeService,
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('grade', 'read')
   @Get()
   async findByAssessment(
     @Query('assessmentId') assessmentId: string,
@@ -47,7 +44,6 @@ export class GradeController {
     return this.versioning.resolve(req, 'grade.byAssessment')(raw);
   }
 
-  @RequirePermission('grade', 'read')
   @Get('by-term')
   async findByTermAndSubject(
     @Query('termId') termId: string,
@@ -64,7 +60,6 @@ export class GradeController {
     return this.versioning.resolve(req, 'grade.byTermSubject')(raw);
   }
 
-  @RequirePermission('grade', 'create')
   @Post()
   async create(
     @Body() dto: CreateGradeDto,
@@ -75,7 +70,6 @@ export class GradeController {
     return this.versioning.resolve(req, 'grade.created')(raw);
   }
 
-  @RequirePermission('grade', 'create')
   @Post('bulk')
   async bulkCreate(
     @Body() dto: BulkGradeDto,
@@ -91,7 +85,6 @@ export class GradeController {
     return this.versioning.resolve(req, 'grade.bulkGraded')(raw);
   }
 
-  @RequirePermission('grade', 'update')
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -109,7 +102,6 @@ export class GradeController {
     return this.versioning.resolve(req, 'grade.updated')(raw);
   }
 
-  @RequirePermission('grade', 'update')
   @Patch(':id/exclude')
   async exclude(
     @Param('id') id: string,
