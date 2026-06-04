@@ -121,21 +121,21 @@ describe('class summary generators', () => {
     expect(csv).toContain('Math');
   });
 
-  test('class summary XLSX is a zip container', () => {
+  test('class summary XLSX is a zip container', async () => {
     expect(
-      isZip(buildClassSummaryXlsxBuffer(summary, '5A', 'term', 'Term 1')),
+      isZip(await buildClassSummaryXlsxBuffer(summary, '5A', 'term', 'Term 1')),
     ).toBe(true);
   });
 
-  test('year class summary PDF/CSV/XLSX', () => {
+  test('year class summary PDF/CSV/XLSX', async () => {
     expect(isPdf(buildYearClassSummaryPdfBuffer([yearResult], '5A'))).toBe(
       true,
     );
     expect(
       buildYearClassSummaryCsvBuffer([yearResult], '5A').toString('utf-8'),
     ).toContain('Year-End Class Summary Report');
-    expect(isZip(buildYearClassSummaryXlsxBuffer([yearResult], '5A'))).toBe(
-      true,
-    );
+    expect(
+      isZip(await buildYearClassSummaryXlsxBuffer([yearResult], '5A')),
+    ).toBe(true);
   });
 });

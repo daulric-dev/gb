@@ -50,6 +50,8 @@ backend/
 │   ├── grading/               # Assessments and grades
 │   ├── calculation/           # Grade calculations and summaries
 │   ├── reporting/             # Report generation, status workflow, file storage
+│   ├── report-files/          # Server-side PDF/CSV/XLSX/zip generation + streaming
+│   ├── announcement/          # School-wide announcement board + read receipts
 │   ├── images/                # Image upload service (avatar, resumable TUS uploads)
 │   └── cache/                 # Pluggable caching (memory or Redis)
 ```
@@ -115,7 +117,9 @@ AppModule
 ├── EnrollmentModule (imports ClassModule for guard)
 ├── GradingModule
 ├── CalculationModule
-├── ReportingModule
+├── ReportingModule (exports ReportService - used by ReportFilesModule)
+├── ReportFilesModule (server-side report file generation + streaming)
+├── AnnouncementModule (announcement board + read receipts)
 ├── ImagesModule (exports ImagesService - used by AuthModule for avatar uploads)
 ├── PaginationModule (global - exports PaginationService for offset/cursor pagination)
 ├── VersioningModule (global - exports VersioningService; includes TransformerRegistry and VersioningGuard)
@@ -139,7 +143,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 
 | Schema | Contains |
 |--------|----------|
-| `public` | `user_profile`, `school`, `academic_year`, `term`, `subject`, `student_group` |
+| `public` | `user_profile`, `school`, `academic_year`, `term`, `subject`, `student_group`, `announcement`, `announcement_read` |
 | `student` | `student`, `student_group_enrollment`, `student_subject_profile` |
 | `staff` | `teacher_group_assignment`, `teacher_subject_assignment` |
 | `grading` | `assessment`, `grade` |

@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+import writeXlsxFile from 'write-excel-file/node';
+import type { Cell, Row, SheetData } from 'write-excel-file/node';
 import type { StudentYearResult as StudentYearReport } from '@/calculation/interfaces/calculation.interfaces';
 import { getGradingRules } from './grading-rules';
 
@@ -160,9 +161,7 @@ export function buildYearClassSummaryXlsxBuffer(
     yearCwWeight?: number;
     yearExWeight?: number;
   } = {},
-): Buffer {
-  const wb = XLSX.utils.book_new();
-
+): Promise<Buffer> {
   const summaryRows: (string | number | null)[][] = [
     ['Year-End Class Summary Report'],
     ['Class', className],
@@ -183,9 +182,7 @@ export function buildYearClassSummaryXlsxBuffer(
     summaryRows.push(['Class Average', r2(avg)]);
   }
 
-  const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
-  ws1['!cols'] = [{ wch: 24 }, { wch: 14 }];
-  XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+  const summaryColumns = [{ width: 24 }, { width: 14 }];
 
   const subjectCols = collectSubjectCols(students);
   const termNames = students[0]?.terms.map((t) => t.termName) ?? [];
@@ -204,11 +201,13 @@ export function buildYearClassSummaryXlsxBuffer(
     : [...termInitials, 'E', 'Year'];
   const colsPerSubject = subHeadersXlsx.length;
 
-  const groupRow: (string | null)[] = [
+  // The subject name cell spans its sub-columns; the trailing `null`s are the
+  // cells covered by the span (write-excel-file's merge convention).
+  const groupRow: Row = [
     '',
     '',
-    ...subjectCols.flatMap((c) => [
-      c.name,
+    ...subjectCols.flatMap((c): Cell[] => [
+      { value: c.name, columnSpan: colsPerSubject },
       ...Array.from({ length: colsPerSubject - 1 }, () => null),
     ]),
     '',
@@ -219,7 +218,7 @@ export function buildYearClassSummaryXlsxBuffer(
     ...subjectCols.flatMap(() => subHeadersXlsx),
     'Year Average',
   ];
-  const studentRows: (string | number | null)[][] = [groupRow, subRow];
+  const studentRows: SheetData = [groupRow, subRow];
 
   for (const st of students) {
     const subMap = new Map(st.yearEnd.subjects.map((s) => [s.subjectId, s]));
@@ -265,28 +264,25 @@ export function buildYearClassSummaryXlsxBuffer(
     ]);
   }
 
-  const ws2 = XLSX.utils.aoa_to_sheet(studentRows);
-
-  const merges: XLSX.Range[] = [];
-  for (let i = 0; i < subjectCols.length; i++) {
-    const startCol = 2 + i * colsPerSubject;
-    merges.push({
-      s: { r: 0, c: startCol },
-      e: { r: 0, c: startCol + colsPerSubject - 1 },
-    });
-  }
-  ws2['!merges'] = merges;
-
-  const colWidths: { wch: number }[] = [
-    { wch: 10 },
-    { wch: 28 },
+  const studentColumns = [
+    { width: 10 },
+    { width: 28 },
     ...subjectCols.flatMap(() =>
-      Array.from({ length: colsPerSubject }, () => ({ wch: 12 })),
+      Array.from({ length: colsPerSubject }, () => ({ width: 12 })),
     ),
-    { wch: 16 },
+    { width: 16 },
   ];
-  ws2['!cols'] = colWidths;
-  XLSX.utils.book_append_sheet(wb, ws2, 'Students');
 
-  return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
+  return writeXlsxFile([
+    {
+      data: summaryRows,
+      sheet: 'Summary',
+      columns: summaryColumns,
+    },
+    {
+      data: studentRows,
+      sheet: 'Students',
+      columns: studentColumns,
+    },
+  ]).toBuffer();
 }
