@@ -5,8 +5,8 @@ import { api, ApiError } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -74,9 +74,7 @@ export function PermissionsEditor({
   const groups = useComputed(() => {
     const byResource = new Map<string, Map<string, CatalogEntry>>();
     for (const entry of catalog) {
-      if (!byResource.has(entry.resource)) {
-        byResource.set(entry.resource, new Map());
-      }
+      if (!byResource.has(entry.resource)) byResource.set(entry.resource, new Map());
       byResource.get(entry.resource)!.set(entry.action, entry);
     }
     return [...byResource.entries()];
@@ -111,7 +109,7 @@ export function PermissionsEditor({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[90vh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto]">
         <DialogHeader>
           <DialogTitle>Permissions - {role?.name}</DialogTitle>
           <DialogDescription>
@@ -123,41 +121,43 @@ export function PermissionsEditor({
         {loading.value ? (
           <div className="space-y-2 py-2">
             {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-9 w-full" />
+              <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
         ) : (
-          <ScrollArea className="h-[55vh] pr-3">
-            <div className="space-y-1">
-              <div className="sticky top-0 z-10 grid grid-cols-[1fr_repeat(4,4rem)] items-center gap-1 border-b bg-background py-2 text-xs font-medium text-muted-foreground">
-                <span>Resource</span>
-                {ACTION_ORDER.map((a) => (
-                  <span key={a} className="text-center">
-                    {ACTION_LABEL[a]}
-                  </span>
-                ))}
-              </div>
+          <ScrollArea className="min-h-0 pr-1">
+            <div className="divide-y rounded-lg border">
               {groups.value.map(([resource, actions]) => (
                 <div
                   key={resource}
-                  className="grid grid-cols-[1fr_repeat(4,4rem)] items-center gap-1 rounded-md px-1 py-1.5 hover:bg-muted/50"
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
                 >
                   <span className="text-sm font-medium">
                     {prettyResource(resource)}
                   </span>
-                  {ACTION_ORDER.map((action) => {
-                    const entry = actions.get(action);
-                    if (!entry) return <span key={action} />;
-                    return (
-                      <div key={action} className="flex justify-center">
-                        <Checkbox
-                          checked={selected.value.has(entry.key)}
-                          onCheckedChange={(v) => toggle(entry.key, v === true)}
-                          aria-label={`${ACTION_LABEL[action]} ${resource}`}
-                        />
-                      </div>
-                    );
-                  })}
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {ACTION_ORDER.map((action) => {
+                      const entry = actions.get(action);
+                      if (!entry) return null;
+                      const on = selected.value.has(entry.key);
+                      return (
+                        <button
+                          key={action}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => toggle(entry.key, !on)}
+                          className={cn(
+                            "rounded-full border px-1 py-1 text-xs font-medium transition-colors",
+                            on
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                        >
+                          {ACTION_LABEL[action]}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
@@ -179,7 +179,7 @@ export function PermissionsEditor({
             </Button>
             <Button onClick={handleSave} disabled={saving.value || loading.value}>
               {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Save permissions
+              Save Permissions
             </Button>
           </div>
         </DialogFooter>
