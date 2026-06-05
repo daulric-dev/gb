@@ -1,15 +1,4 @@
-name = "gbv2-backend"
+name = "gb"
 main = "src/worker.ts"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
-
-[dev]
-port = 8787
-
-# Stub out optional NestJS dependencies that aren't installed
-[alias]
-"@nestjs/websockets/socket-module" = "./src/stubs/empty.js"
-"@nestjs/microservices/microservices-module" = "./src/stubs/empty.js"
-"@nestjs/microservices" = "./src/stubs/empty.js"
-"class-transformer/storage" = "./src/stubs/empty.js"
-"@fastify/view" = "./src/stubs/empty.js"
