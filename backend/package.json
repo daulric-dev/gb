@@ -46,8 +46,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "wrangler": "^4.90.0",
-    "write-excel-file": "^4.0.7",
-    "bun": "^1.3.10"
+    "write-excel-file": "^4.0.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
