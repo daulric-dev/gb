@@ -45,7 +45,7 @@
     "react": "^19.2.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "wrangler": "^4.90.0",
+    "wrangler": "^4.100.0",
     "write-excel-file": "^4.0.7"
   },
   "devDependencies": {
