@@ -55,7 +55,7 @@
     "happy-dom": "^20.9.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "wrangler": "^4.100.0"
+    "wrangler": "^4.101.0"
   },
   "ignoreScripts": [
     "sharp",
