@@ -32,6 +32,15 @@ export function AddSubjectsForm({
     selected.value = next;
   }
 
+  const allSelected =
+    available.length > 0 && available.every((s) => selected.value.has(s.id));
+
+  function toggleAll() {
+    selected.value = allSelected
+      ? new Set()
+      : new Set(available.map((s) => s.id));
+  }
+
   async function handleAssign() {
     if (selected.value.size === 0) return;
     submitting.value = true;
@@ -53,7 +62,19 @@ export function AddSubjectsForm({
 
   return (
     <div className="space-y-3 rounded-md border p-3">
-      <div className="max-h-48 overflow-y-auto divide-y">
+      <label className="flex items-center gap-3 px-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={toggleAll}
+          className="size-4 rounded border-input"
+        />
+        <span className="text-sm font-medium">Select all</span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {selected.value.size} of {available.length} selected
+        </span>
+      </label>
+      <div className="max-h-48 overflow-y-auto divide-y border-t pt-1">
         {available.map((s) => (
           <label
             key={s.id}

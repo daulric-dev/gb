@@ -7,7 +7,13 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { selectClass } from "./types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function CreateAssessmentForm({
   termId,
@@ -67,17 +73,24 @@ export function CreateAssessmentForm({
       </div>
       <div className="space-y-2">
         <Label htmlFor="type">Type</Label>
-        <select
-          id="type"
-          className={selectClass}
+        <Select
           value={assessmentType.value}
-          onChange={(e) =>
-            (assessmentType.value = e.target.value as "exam" | "coursework")
+          onValueChange={(v) =>
+            (assessmentType.value = v as "exam" | "coursework")
           }
+          items={[
+            { value: "exam", label: "Exam" },
+            { value: "coursework", label: "Coursework" },
+          ]}
         >
-          <option value="exam">Exam</option>
-          <option value="coursework">Coursework</option>
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="exam">Exam</SelectItem>
+            <SelectItem value="coursework">Coursework</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

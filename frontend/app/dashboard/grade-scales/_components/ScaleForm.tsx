@@ -9,14 +9,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   BandInput,
   GradeScaleDetail,
   GradeScaleType,
 } from "./types";
-
-const selectCls =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 function emptyBand(): BandInput {
   return {
@@ -174,16 +178,25 @@ export function ScaleForm({
         </div>
         <div className="space-y-1">
           <Label>Type</Label>
-          <select
-            className={selectCls}
+          <Select
             value={scaleType.value}
-            onChange={(e) => (scaleType.value = e.target.value as GradeScaleType)}
+            onValueChange={(v) => (scaleType.value = v as GradeScaleType)}
             disabled={!!existing}
+            items={[
+              { value: "letter", label: "Letter (A–F)" },
+              { value: "gpa", label: "GPA" },
+              { value: "pass_fail", label: "Pass / Fail" },
+            ]}
           >
-            <option value="letter">Letter (A–F)</option>
-            <option value="gpa">GPA</option>
-            <option value="pass_fail">Pass / Fail</option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="letter">Letter (A–F)</SelectItem>
+              <SelectItem value="gpa">GPA</SelectItem>
+              <SelectItem value="pass_fail">Pass / Fail</SelectItem>
+            </SelectContent>
+          </Select>
           {existing && (
             <p className="text-xs text-muted-foreground">
               Type can&apos;t be changed after creation.

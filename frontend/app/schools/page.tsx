@@ -25,6 +25,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { GraduationCap, Loader2, LogOut, Plus, Search } from "lucide-react";
@@ -79,15 +86,22 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
       </div>
       <div className="space-y-2">
         <Label htmlFor="schoolType">Type</Label>
-        <select
-          id="schoolType"
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        <Select
           value={schoolType.value}
-          onChange={(e) => (schoolType.value = e.target.value as "primary" | "secondary")}
+          onValueChange={(v) => (schoolType.value = v as "primary" | "secondary")}
+          items={[
+            { value: "primary", label: "Primary" },
+            { value: "secondary", label: "Secondary" },
+          ]}
         >
-          <option value="primary">Primary</option>
-          <option value="secondary">Secondary</option>
-        </select>
+          <SelectTrigger id="schoolType" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="primary">Primary</SelectItem>
+            <SelectItem value="secondary">Secondary</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <Button type="submit" className="w-full" disabled={loading.value}>
         {loading.value ? "Creating..." : "Create School"}

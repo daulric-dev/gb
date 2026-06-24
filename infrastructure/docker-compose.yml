@@ -1,33 +1,90 @@
-version: '3'
+# Fixed project name so `docker compose` resolves the same project across all
+# workflow steps (up / ps / logs / down), regardless of working directory.
+name: gb
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: infrastructure/Dockerfile
+  # Supabase keys, FRONTEND_URL, NODE_ENV, etc. come from .env (see env.example).
+  env_file:
+    - .env
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+  networks:
+    - appnet
+  healthcheck:
+    test:
+      - CMD
+      - bun
+      - -e
+      - "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 40s
+
+
+x-app-env: &app-env
+  USE_REDIS: "true"
+  REDIS_URL: "redis://redis:6379"
+
 services:
   app1:
-    build:
-      context: ..
-      dockerfile: infrastructure/Dockerfile
+    <<: *app
     environment:
-      - PORT=3004
+      <<: *app-env
+      PORT: "3004"
 
   app2:
-    build:
-      context: ..
-      dockerfile: infrastructure/Dockerfile
+    <<: *app
     environment:
-      - PORT=3005
+      <<: *app-env
+      PORT: "3005"
 
   app3:
-    build:
-      context: ..
-      dockerfile: infrastructure/Dockerfile
+    <<: *app
     environment:
-      - PORT=3006
+      <<: *app-env
+      PORT: "3006"
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
+    restart: unless-stopped
     ports:
       - "80:80"
+      # - "443:443"   # enable once TLS is terminated here (see default.conf)
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - appnet
     depends_on:
-      - app1
-      - app2
-      - app3
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+      app3:
+        condition: service_healthy
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  redis-data:

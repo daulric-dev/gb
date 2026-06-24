@@ -8,7 +8,14 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { selectClass, type Subject } from "./types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { type Subject } from "./types";
 
 interface SchoolTeacher {
   id: string;
@@ -95,18 +102,25 @@ export function AssignTeacherForm({
     <div className="space-y-4">
       <div className="space-y-2">
         <label className="text-sm font-medium">Teacher</label>
-        <select
-          className={selectClass}
+        <Select
           value={selectedTeacher.value}
-          onChange={(e) => (selectedTeacher.value = e.target.value)}
+          onValueChange={(v) => (selectedTeacher.value = v as string)}
+          items={schoolTeachers.value.map((t) => ({
+            value: t.id,
+            label: `${t.first_name} ${t.last_name}`,
+          }))}
         >
-          <option value="">Select a teacher...</option>
-          {schoolTeachers.value.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.first_name} {t.last_name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select a teacher..." />
+          </SelectTrigger>
+          <SelectContent>
+            {schoolTeachers.value.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.first_name} {t.last_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">

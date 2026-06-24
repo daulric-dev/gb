@@ -9,6 +9,13 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-06-24
+
+- [Subject scoping & ordering](./2026-06-24/subject-scoping-and-ordering.md) - the "Manage Grades" Subject dropdown was leaking every school's subjects (with duplicates) for admins and class teachers; `getMySubjectsForClass` now scopes by the class's school. Separately, the calculation engine now orders subjects by `sort_order` then `name`, matching the subject list and dropdown, so the report card and class report use one consistent order.
+- [Theme-aware dropdowns & modal UX](./2026-06-24/theme-aware-dropdowns.md) - replaced native `<select>` elements (whose OS-drawn option popups were invisible on light-theme devices) with the theme-aware `Select` component across 18 files. Added "Select all" to the Enroll Students and student Subjects modals, capped the assigned-subjects list with a scroll, and sorted the enrolled students table by last name.
+- [Foreign-key indexes](./2026-06-24/foreign-key-indexes.md) - new migration adding 16 indexes for the foreign keys flagged by Supabase's Performance Advisor that sit on query paths or back cascade deletes; pure audit-column FKs were intentionally skipped. A stray pre-existing index migration was made idempotent.
+- [Docker image builds via turbo](./2026-06-24/docker-build-via-turbo.md) - the backend image now builds the whole monorepo with `turbo run build` and ships the backend with its non-hoisted `node_modules` (fixing a boot crash on missing `@nestjs/core`); added a root `.dockerignore`, modernized the Compose stack (fixed project name, redis service, healthchecks, service-name nginx upstreams), added `env.example`, and simplified the infrastructure CI to a build.
+
 ## 2026-06-04
 
 - [Announcement board](./2026-06-04/announcement-board.md) - new school-wide notice board: `announcement` + `announcement_read` tables with RLS, an `announcement` RBAC resource, `AnnouncementModule` (CRUD + unread-count + mark-read), a `/dashboard/announcements` board with a permission-gated composer, a sidebar unread badge, and per-announcement read receipts (reader avatars with name tooltips). Content is cached per school; read receipts are merged in live.

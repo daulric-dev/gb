@@ -9,6 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckSquare, Search } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { selectClass, type EnrolledStudent, type Subject } from "./types";
 
 export function BulkAssignSubjects({
@@ -122,21 +129,28 @@ export function BulkAssignSubjects({
     <div className="space-y-4">
       <div className="space-y-2">
         <label className="text-sm font-medium">Subject</label>
-        <select
-          className={selectClass}
+        <Select
           value={selectedSubjectId.value}
-          onChange={(e) => {
-            selectedSubjectId.value = e.target.value;
+          onValueChange={(v) => {
+            selectedSubjectId.value = v as string;
             selectedStudents.value = new Set();
           }}
+          items={allSubjects.value.map((s) => ({
+            value: s.id,
+            label: `${s.name} ${s.code ? `(${s.code})` : ""}`,
+          }))}
         >
-          <option value="">Select a subject...</option>
-          {allSubjects.value.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} {s.code ? `(${s.code})` : ""}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select a subject..." />
+          </SelectTrigger>
+          <SelectContent>
+            {allSubjects.value.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name} {s.code ? `(${s.code})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {selectedSubjectId.value && (

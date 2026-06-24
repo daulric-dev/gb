@@ -86,7 +86,7 @@ export function ManageSubjects({
           No subjects assigned yet
         </div>
       ) : (
-        <div className="rounded-md border divide-y">
+        <div className="max-h-56 overflow-y-auto rounded-md border divide-y">
           {assigned.value.map((a) =>
             a.subject ? (
               <div

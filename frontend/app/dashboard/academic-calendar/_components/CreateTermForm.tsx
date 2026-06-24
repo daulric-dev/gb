@@ -7,7 +7,8 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { selectClass, termLabel, type Term } from "./types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { termLabel, type Term } from "./types";
 
 interface CreateTermFormProps {
   academicYearId: string;
@@ -59,19 +60,23 @@ export function CreateTermForm({ academicYearId, existingNames, onSuccess }: Cre
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="termName">Term</Label>
-        <select
-          id="termName"
-          className={selectClass}
+        <Select
           value={name.value}
-          onChange={(e) => (name.value = e.target.value as Term["name"])}
+          onValueChange={(v) => (name.value = v as Term["name"])}
+          items={availableNames.map((n) => ({ value: n, label: termLabel[n] }))}
           required
         >
-          {availableNames.map((n) => (
-            <option key={n} value={n}>
-              {termLabel[n]}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="termName" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {availableNames.map((n) => (
+              <SelectItem key={n} value={n}>
+                {termLabel[n]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

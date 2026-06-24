@@ -225,7 +225,8 @@ export class CalculationService {
       .from('subject')
       .select('id, name, code, is_graded, sort_order')
       .in('id', subjectIds)
-      .order('sort_order', { ascending: true });
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
 
     const subjectResults: SubjectGradeSummary[] = [];
 
@@ -486,7 +487,8 @@ export class CalculationService {
       supabase
         .from('subject')
         .select('id, name, code, is_graded, sort_order')
-        .order('sort_order', { ascending: true }),
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true }),
       supabase
         .schema('grading')
         .from('assessment')
@@ -611,7 +613,12 @@ export class CalculationService {
       subjectResults.sort((a, b) => {
         const sa = subjectMap.get(a.subjectId)?.sort_order ?? 0;
         const sb = subjectMap.get(b.subjectId)?.sort_order ?? 0;
-        return sa - sb;
+        return (
+          sa - sb ||
+          (subjectMap.get(a.subjectId)?.name ?? '').localeCompare(
+            subjectMap.get(b.subjectId)?.name ?? '',
+          )
+        );
       });
 
       const gradedComposites = subjectResults
@@ -693,7 +700,8 @@ export class CalculationService {
       supabase
         .from('subject')
         .select('id, name, code, is_graded, sort_order')
-        .order('sort_order', { ascending: true }),
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true }),
     ]);
 
     const studentMap = new Map<
@@ -852,7 +860,12 @@ export class CalculationService {
         subjectResults.sort((a, b) => {
           const sa = subjectMap.get(a.subjectId)?.sort_order ?? 0;
           const sb = subjectMap.get(b.subjectId)?.sort_order ?? 0;
-          return sa - sb;
+          return (
+            sa - sb ||
+            (subjectMap.get(a.subjectId)?.name ?? '').localeCompare(
+              subjectMap.get(b.subjectId)?.name ?? '',
+            )
+          );
         });
 
         const gradedComposites = subjectResults

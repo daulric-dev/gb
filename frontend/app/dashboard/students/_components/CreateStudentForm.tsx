@@ -7,7 +7,13 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { selectClass } from "./types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
   useSignals();
@@ -68,16 +74,23 @@ export function CreateStudentForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
       <div className="space-y-2">
         <Label htmlFor="gender">Gender</Label>
-        <select
-          id="gender"
-          className={selectClass}
+        <Select
           value={gender.value}
-          onChange={(e) => (gender.value = e.target.value as "male" | "female")}
+          onValueChange={(v) => (gender.value = v as "male" | "female")}
+          items={[
+            { value: "male", label: "Male" },
+            { value: "female", label: "Female" },
+          ]}
           required
         >
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
+          <SelectTrigger id="gender" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="male">Male</SelectItem>
+            <SelectItem value="female">Female</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

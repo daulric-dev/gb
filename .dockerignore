@@ -1,0 +1,20 @@
+# Build context is the repo root (infrastructure/docker-compose.yml uses context: ..).
+# Keep host-built artifacts out of the image: node_modules are reinstalled inside
+# the Linux container (copying macOS/host modules would ship wrong-arch binaries),
+# and dist/.next are rebuilt by turbo.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+.turbo
+.git
+.github
+**/*.log
+
+# Local env / secrets - never bake into an image.
+**/.env
+**/.env.*
+
+# Supabase local state and migrations are not needed by the backend image.
+supabase/.branches
+supabase/.temp

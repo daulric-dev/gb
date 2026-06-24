@@ -9,6 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { AcademicYear } from "./types";
 
 export function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
@@ -72,19 +79,26 @@ export function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
             No academic years found. Create one first.
           </p>
         ) : (
-          <select
-            id="academicYear"
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          <Select
             value={academicYearId.value}
-            onChange={(e) => (academicYearId.value = e.target.value)}
+            onValueChange={(v) => (academicYearId.value = v as string)}
+            items={academicYears.value.map((y) => ({
+              value: y.id,
+              label: y.name,
+            }))}
             required
           >
-            {academicYears.value.map((y) => (
-              <option key={y.id} value={y.id}>
-                {y.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="academicYear" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {academicYears.value.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  {y.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
       <Button

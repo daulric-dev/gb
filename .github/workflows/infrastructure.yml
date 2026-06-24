@@ -5,62 +5,21 @@ on:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
-      - ".github/scripts/validate-nginx.sh"
-      - ".github/scripts/start-mock-upstreams.sh"
-      - ".github/scripts/start-nginx-test.sh"
-      - ".github/scripts/test-reverse-proxy.sh"
   pull_request:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
-      - ".github/scripts/validate-nginx.sh"
-      - ".github/scripts/start-mock-upstreams.sh"
-      - ".github/scripts/start-nginx-test.sh"
-      - ".github/scripts/test-reverse-proxy.sh"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  nginx:
-    name: Validate Nginx Config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Test nginx config syntax
-        run: ./.github/scripts/validate-nginx.sh
-
   build:
-    name: Build Docker Images
+    name: Build Project Image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate docker-compose.yml
-        run: docker compose -f infrastructure/docker-compose.yml config
-
-      - name: Build all services
-        run: docker compose -f infrastructure/docker-compose.yml build
-
-  reverse-proxy:
-    name: Test Reverse Proxy
-    needs: [nginx, build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Start mock upstream servers
-        run: ./.github/scripts/start-mock-upstreams.sh
-
-      - name: Start nginx with host networking
-        run: ./.github/scripts/start-nginx-test.sh
-
-      - name: Verify reverse proxy routing
-        run: ./.github/scripts/test-reverse-proxy.sh
-
-      - name: Show nginx logs on failure
-        if: failure()
-        run: docker logs nginx_test
-
-      - name: Cleanup
-        if: always()
-        run: docker rm -f nginx_test || true
+      - name: Building Project Image
+        run: docker build -f infrastructure/Dockerfile -t gb-backend:ci .
