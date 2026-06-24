@@ -12,21 +12,17 @@ x-app: &app
   networks:
     - appnet
   healthcheck:
-    # Hits the backend root route (returns 200). No curl/wget in the bun image,
-    # so use bun itself.
     test:
       - CMD
       - bun
       - -e
-      - "fetch('http://localhost:'+(process.env.PORT||3001)).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-    interval: 30s
+      - "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    interval: 10s
     timeout: 5s
-    retries: 3
-    start_period: 20s
+    retries: 5
+    start_period: 40s
 
-# Redis connection for the app replicas, resolved over the Compose network.
-# Overrides whatever REDIS_URL/USE_REDIS may be in .env so the in-cluster
-# Redis is always used regardless of the host-oriented .env values.
+
 x-app-env: &app-env
   USE_REDIS: "true"
   REDIS_URL: "redis://redis:6379"
