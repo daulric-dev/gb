@@ -16,10 +16,10 @@ permissions:
 
 jobs:
   build:
-    name: Build Backend Image
+    name: Build Project Image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build backend image
+      - name: Building Project Image
         run: docker build -f infrastructure/Dockerfile -t gb-backend:ci .
