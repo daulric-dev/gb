@@ -16,6 +16,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Check, Loader2, UserPlus, X } from "lucide-react";
 import type { JoinRequest } from "./types";
 
@@ -205,18 +212,24 @@ export function PendingRequestsTab({
           </DialogHeader>
           <div className="space-y-2 py-2">
             <Label htmlFor="role">Role</Label>
-            <select
-              id="role"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <Select
               value={selectedRole.value}
-              onChange={(e) =>
-                (selectedRole.value = e.target.value as Role)
-              }
+              onValueChange={(v) => (selectedRole.value = v as Role)}
+              items={[
+                { value: "member", label: "Member" },
+                { value: "teacher", label: "Teacher" },
+                { value: "admin", label: "Admin" },
+              ]}
             >
-              <option value="member">Member</option>
-              <option value="teacher">Teacher</option>
-              <option value="admin">Admin</option>
-            </select>
+              <SelectTrigger id="role" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="teacher">Teacher</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
             <Button

@@ -233,9 +233,19 @@ export class ClassService {
     }
 
     if (isAdmin || isClassTeacher) {
+      const { data: studentGroup } = await supabase
+        .from('student_group')
+        .select('academic_year:academic_year_id(school_id)')
+        .eq('id', classId)
+        .maybeSingle();
+
+      const schoolId = (studentGroup?.academic_year as any)?.school_id;
+      if (!schoolId) return [];
+
       const { data: subjects } = await supabase
         .from('subject')
         .select('id, name, code, is_graded, sort_order')
+        .eq('school_id', schoolId)
         .order('sort_order')
         .order('name');
 

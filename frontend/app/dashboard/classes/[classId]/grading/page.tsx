@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
-import { selectClass } from "./_components/types";
 import type { Term, Subject, Assessment, GradeRow, AcademicYear, ClassInfo } from "./_components/types";
 import { GradeEntryTable } from "./_components/GradeEntryTable";
 import { CreateAssessmentForm } from "./_components/CreateAssessmentForm";
@@ -172,37 +172,53 @@ export default function GradingPage() {
       <div className="grid grid-cols-2 gap-4 animate-fade-in-up-delay-1">
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Term</Label>
-          <select
-            className={selectClass}
+          <Select
             value={selectedTermId.value}
-            onChange={(e) => {
-              selectedTermId.value = e.target.value;
+            onValueChange={(v) => {
+              selectedTermId.value = v as string;
               selectedAssessment.value = null;
             }}
+            items={terms.value.map((t) => ({
+              value: t.id,
+              label: termLabel[t.name] ?? t.name,
+            }))}
           >
-            {terms.value.map((t) => (
-              <option key={t.id} value={t.id}>
-                {termLabel[t.name] ?? t.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {terms.value.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {termLabel[t.name] ?? t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Subject</Label>
-          <select
-            className={selectClass}
+          <Select
             value={selectedSubjectId.value}
-            onChange={(e) => {
-              selectedSubjectId.value = e.target.value;
+            onValueChange={(v) => {
+              selectedSubjectId.value = v as string;
               selectedAssessment.value = null;
             }}
+            items={subjects.value.map((s) => ({
+              value: s.id,
+              label: s.code ? `${s.name} (${s.code})` : s.name,
+            }))}
           >
-            {subjects.value.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} {s.code ? `(${s.code})` : ""}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {subjects.value.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.code ? `${s.name} (${s.code})` : s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

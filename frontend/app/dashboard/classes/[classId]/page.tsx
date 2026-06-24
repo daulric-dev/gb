@@ -13,6 +13,7 @@ import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Plus, Trash2, BookOpen, GraduationCap, Pencil, BarChart3, ChevronLeft, ChevronRight, ListChecks, Download } from "lucide-react";
 import { downloadFromUrl } from "@/lib/reports";
 import { EnrollForm } from "./_components/EnrollForm";
@@ -75,8 +76,6 @@ interface YearResultRow {
   };
   position?: number;
 }
-
-const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export default function ClassDetailPage() {
   useSignals();
@@ -442,7 +441,13 @@ export default function ClassDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {enrolled.value.map((e) => (
+                  {[...enrolled.value]
+                    .sort(
+                      (a, b) =>
+                        a.student.last_name.localeCompare(b.student.last_name) ||
+                        a.student.first_name.localeCompare(b.student.first_name),
+                    )
+                    .map((e) => (
                     <TableRow key={e.id}>
                       <TableCell className="font-medium">
                         {e.student.first_name} {e.student.last_name}
@@ -535,17 +540,25 @@ export default function ClassDetailPage() {
                 </Button>
               </div>
               {summaryView.value === "term" && (
-                <select
-                  className={`${selectClass} w-auto min-w-[140px]`}
+                <Select
                   value={selectedTermId.value}
-                  onChange={(e) => (selectedTermId.value = e.target.value)}
+                  onValueChange={(v) => (selectedTermId.value = v as string)}
+                  items={terms.value.map((t) => ({
+                    value: t.id,
+                    label: t.name.charAt(0).toUpperCase() + t.name.slice(1),
+                  }))}
                 >
-                  {terms.value.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-auto min-w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {terms.value.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
               <Button
                 size="sm"
@@ -644,15 +657,24 @@ export default function ClassDetailPage() {
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <span>Rows per page</span>
-                          <select
-                            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                          <Select
                             value={ps}
-                            onChange={(e) => { summaryPageSize.value = Number(e.target.value); summaryPage.value = 0; }}
+                            onValueChange={(v) => { summaryPageSize.value = v as number; summaryPage.value = 0; }}
+                            items={[
+                              { value: 10, label: "10" },
+                              { value: 20, label: "20" },
+                              { value: 50, label: "50" },
+                            ]}
                           >
-                            <option value={10}>10</option>
-                            <option value={20}>20</option>
-                            <option value={50}>50</option>
-                          </select>
+                            <SelectTrigger className="h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={10}>10</SelectItem>
+                              <SelectItem value={20}>20</SelectItem>
+                              <SelectItem value={50}>50</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">
@@ -842,15 +864,24 @@ export default function ClassDetailPage() {
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <span>Rows per page</span>
-                          <select
-                            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                          <Select
                             value={ps}
-                            onChange={(e) => { yearPageSize.value = Number(e.target.value); yearPage.value = 0; }}
+                            onValueChange={(v) => { yearPageSize.value = v as number; yearPage.value = 0; }}
+                            items={[
+                              { value: 10, label: "10" },
+                              { value: 20, label: "20" },
+                              { value: 50, label: "50" },
+                            ]}
                           >
-                            <option value={10}>10</option>
-                            <option value={20}>20</option>
-                            <option value={50}>50</option>
-                          </select>
+                            <SelectTrigger className="h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={10}>10</SelectItem>
+                              <SelectItem value={20}>20</SelectItem>
+                              <SelectItem value={50}>50</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">

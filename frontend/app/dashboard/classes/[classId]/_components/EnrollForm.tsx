@@ -50,6 +50,15 @@ export function EnrollForm({
     selected.value = next;
   }
 
+  const allSelected =
+    available.length > 0 && available.every((s) => selected.value.has(s.id));
+
+  function toggleAll() {
+    selected.value = allSelected
+      ? new Set()
+      : new Set(available.map((s) => s.id));
+  }
+
   async function handleEnroll() {
     if (selected.value.size === 0) return;
     submitting.value = true;
@@ -97,6 +106,18 @@ export function EnrollForm({
 
   return (
     <div className="space-y-4">
+      <label className="flex items-center gap-3 px-1 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={toggleAll}
+          className="size-4 rounded border-input"
+        />
+        <span className="text-sm font-medium">Select all</span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {selected.value.size} of {available.length} selected
+        </span>
+      </label>
       <div className="max-h-64 overflow-y-auto rounded-md border divide-y">
         {available.map((s) => (
           <label

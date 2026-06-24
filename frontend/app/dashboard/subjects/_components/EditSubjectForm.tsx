@@ -7,7 +7,14 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { selectClass, type Subject } from "./types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { type Subject } from "./types";
 
 interface EditSubjectFormProps {
   subject: Subject;
@@ -69,15 +76,22 @@ export function EditSubjectForm({ subject, onSuccess }: EditSubjectFormProps) {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="editIsGraded">Grading</Label>
-          <select
-            id="editIsGraded"
-            className={selectClass}
+          <Select
             value={isGraded.value ? "true" : "false"}
-            onChange={(e) => (isGraded.value = e.target.value === "true")}
+            onValueChange={(v) => (isGraded.value = v === "true")}
+            items={[
+              { value: "true", label: "Graded" },
+              { value: "false", label: "Not Graded (remarks only)" },
+            ]}
           >
-            <option value="true">Graded</option>
-            <option value="false">Not Graded (remarks only)</option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="true">Graded</SelectItem>
+              <SelectItem value="false">Not Graded (remarks only)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label htmlFor="editSortOrder">Display Order</Label>

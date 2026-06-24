@@ -7,7 +7,14 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { selectClass, type Student } from "./types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { type Student } from "./types";
 
 export function EditStudentForm({
   student,
@@ -74,21 +81,25 @@ export function EditStudentForm({
       </div>
       <div className="space-y-2">
         <Label htmlFor="editGender">Gender</Label>
-        <select
-          id="editGender"
-          className={selectClass}
+        <Select
           value={gender.value}
-          onChange={(e) =>
-            (gender.value = e.target.value as "" | "male" | "female")
+          onValueChange={(v) =>
+            (gender.value = v as "" | "male" | "female")
           }
+          items={[
+            { value: "male", label: "Male" },
+            { value: "female", label: "Female" },
+          ]}
           required
         >
-          <option value="" disabled>
-            Select gender
-          </option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select gender" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="male">Male</SelectItem>
+            <SelectItem value="female">Female</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

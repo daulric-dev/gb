@@ -7,6 +7,13 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { type AcademicYear, type GradingModel, GRADING_MODEL_LABELS } from "./types";
 
 interface EditYearFormProps {
@@ -84,20 +91,25 @@ export function EditYearForm({ year, onSuccess }: EditYearFormProps) {
       </div>
       <div className="space-y-2">
         <Label htmlFor="editGradingModel">Grading Model</Label>
-        <select
-          id="editGradingModel"
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        <Select
           value={gradingModel.value}
-          onChange={(e) =>
-            (gradingModel.value = e.target.value as GradingModel)
-          }
+          onValueChange={(v) => (gradingModel.value = v as GradingModel)}
+          items={Object.entries(GRADING_MODEL_LABELS).map(([value, label]) => ({
+            value,
+            label,
+          }))}
         >
-          {Object.entries(GRADING_MODEL_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(GRADING_MODEL_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

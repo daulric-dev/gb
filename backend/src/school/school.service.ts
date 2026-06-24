@@ -27,7 +27,7 @@ export class SchoolService {
 
     const { data, error } = await supabase
       .from('school')
-      .select('id, name, parish, school_type')
+      .select('id, name, school_type')
       .eq('is_active', true)
       .order('name', { ascending: true });
 
