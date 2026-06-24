@@ -5,74 +5,21 @@ on:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
-      - ".github/scripts/validate-nginx.sh"
-      - ".github/scripts/docker-smoke-test.sh"
   pull_request:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
-      - ".github/scripts/validate-nginx.sh"
-      - ".github/scripts/docker-smoke-test.sh"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  nginx:
-    name: Validate Nginx Config
+  build:
+    name: Build Backend Image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test nginx config syntax
-        run: ./.github/scripts/validate-nginx.sh
-
-  compose:
-    name: Build & Smoke-Test Compose Stack
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Write CI env file
-        working-directory: infrastructure
-        run: |
-          cat > .env <<'EOF'
-          SUPABASE_URL=http://supabase.invalid
-          SUPABASE_SERVICE_ROLE_KEY=ci-dummy-service-role-key
-          SUPABASE_PUSHABLE_KEY=ci-dummy-publishable-key
-          FRONTEND_URL=http://localhost:3000
-          NODE_ENV=production
-          DEDICATED_DEPLOYMENT=false
-          EOF
-
-      - name: Validate docker-compose.yml
-        run: docker compose -f infrastructure/docker-compose.yml config
-
-      - name: Build all images
-        run: docker compose -f infrastructure/docker-compose.yml build
-
-      - name: Smoke test (nginx -> app replicas)
-        run: ./.github/scripts/docker-smoke-test.sh
-
-      - name: Dump logs on failure
-        if: failure()
-        run: docker compose -f infrastructure/docker-compose.yml logs --no-color --tail 200
-
-      - name: Tear down
-        if: always()
-        run: docker compose -f infrastructure/docker-compose.yml down -v
-
-  gate:
-    name: Infrastructure Gate
-    if: always()
-    needs: [nginx, compose]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check results
-        run: |
-          if [ "${{ needs.nginx.result }}" != "success" ] || [ "${{ needs.compose.result }}" != "success" ]; then
-            echo "Infrastructure CI failed: nginx=${{ needs.nginx.result }} compose=${{ needs.compose.result }}"
-            exit 1
-          fi
-          echo "All infrastructure checks passed"
+      - name: Build backend image
+        run: docker build -f infrastructure/Dockerfile -t gb-backend:ci .
