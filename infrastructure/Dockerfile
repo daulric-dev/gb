@@ -1,29 +1,28 @@
 FROM oven/bun:1.3.13-alpine AS base
 WORKDIR /app
 
+# --- install: resolve the whole workspace (turbo + every workspace's deps) ---
 FROM base AS install
 COPY package.json bun.lock ./
 COPY backend/package.json backend/package.json
 COPY frontend/package.json frontend/package.json
 COPY docs/package.json docs/package.json
-RUN bun install
+RUN bun install --frozen-lockfile
 
-FROM base AS build
-COPY --from=install /app ./
-COPY package.json bun.lock tsconfig*.json ./
+# --- build: compile the backend through turbo ---
+FROM install AS build
+COPY turbo.json tsconfig*.json ./
 COPY backend ./backend
-RUN cd backend && bunx nest build
+RUN bunx turbo run build --filter=backend
 
+# --- production: run the compiled backend ---
 FROM base AS production
 ENV NODE_ENV=production
-COPY --from=install /app/node_modules ./node_modules
-COPY --from=build /app/backend/dist ./dist
-COPY --from=build /app/backend/package.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/backend ./backend
+WORKDIR /app/backend
 
-# Run as the unprivileged `bun` user shipped in the base image.
 USER bun
 
-# The actual listen port is set per-replica via the PORT env var (see
-# docker-compose.yml); this EXPOSE is just the default for documentation.
 EXPOSE 3004
 CMD ["bun", "--bun", "dist/src/main"]
