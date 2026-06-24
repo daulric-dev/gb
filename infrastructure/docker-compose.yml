@@ -1,3 +1,7 @@
+# Fixed project name so `docker compose` resolves the same project across all
+# workflow steps (up / ps / logs / down), regardless of working directory.
+name: gb
+
 x-app: &app
   build:
     context: ..
