@@ -97,6 +97,8 @@ Returns all classes the authenticated user is assigned to (as class teacher or s
 
 Creates a new class. The creator is automatically assigned as the class teacher.
 
+**Requires:** `class:create`. As of 2026-06-25 this is a default permission for the `teacher` role (previously admin-only), so teachers can create classes and become their class teacher. Editing/deleting still require `class:update` / `class:delete` plus the `ClassTeacherGuard`.
+
 **Body:**
 ```json
 {

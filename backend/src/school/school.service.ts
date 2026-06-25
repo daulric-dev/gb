@@ -309,7 +309,10 @@ export class SchoolService {
       .from('school_management')
       .select(
         `id, role, created_at,
-         user:user_id ( id, first_name, last_name, avatar_url )`,
+         user:user_id ( id, first_name, last_name, avatar_url ),
+         role_links:school_management_role (
+           school_role:school_role_id ( id, name, is_system )
+         )`,
       )
       .eq('school_id', profile.school_id)
       .order('role', { ascending: true })
@@ -320,7 +323,23 @@ export class SchoolService {
       throw new BadRequestException('Failed to fetch school members');
     }
 
-    return data ?? [];
+    type RoleRow = { id: string; name: string; is_system: boolean };
+    return (data ?? []).map((member) => {
+      const { role_links, ...rest } = member as typeof member & {
+        role_links?: { school_role: RoleRow | RoleRow[] | null }[];
+      };
+      // Only the custom (non-system) roles are worth surfacing — the base
+      // enum role is already conveyed by the section the member sits under.
+      const roles = (role_links ?? [])
+        .map((link) =>
+          Array.isArray(link.school_role)
+            ? (link.school_role[0] ?? null)
+            : link.school_role,
+        )
+        .filter((r): r is RoleRow => Boolean(r) && !r.is_system)
+        .map((r) => ({ id: r.id, name: r.name }));
+      return { ...rest, roles };
+    });
   }
 
   async leaveSchool(userId: string) {

@@ -197,6 +197,28 @@ Submits a request to join a school. Fails with `400` if the user already has any
 
 ---
 
+### `GET /api/schools/members`
+
+Lists every `school_management` row for the caller's active school, ordered by `role` then `created_at`, with the member's `user` joined in.
+
+Each member also carries a `roles` array of the **custom** (non-system) roles assigned on top of their base enum role, resolved through the `school_management_role → school_role` join:
+
+```json
+[
+  {
+    "id": "…",
+    "role": "teacher",
+    "created_at": "2026-06-25T…",
+    "user": { "id": "…", "first_name": "Test", "last_name": "Hmm", "avatar_url": null },
+    "roles": [{ "id": "…", "name": "Student Registrar" }]
+  }
+]
+```
+
+System roles are filtered out of `roles` - the base role is already conveyed by `role`. The staff page renders these as badges on each member card.
+
+---
+
 ### `GET /api/schools/join-requests`
 
 **Requires:** `AdminGuard`

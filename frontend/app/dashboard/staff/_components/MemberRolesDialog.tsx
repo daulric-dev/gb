@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import type { SchoolMember } from "./types";
 
 interface CustomRole {
@@ -37,10 +37,12 @@ export function MemberRolesDialog({
   open,
   member,
   onOpenChange,
+  onRolesChanged,
 }: {
   open: boolean;
   member: SchoolMember | null;
   onOpenChange: (open: boolean) => void;
+  onRolesChanged?: () => void;
 }) {
   useSignals();
   const roles = useSignal<CustomRole[]>([]);
@@ -84,6 +86,7 @@ export function MemberRolesDialog({
       if (on) next.add(roleId);
       else next.delete(roleId);
       assigned.value = next;
+      onRolesChanged?.();
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to update role",
@@ -134,7 +137,11 @@ export function MemberRolesDialog({
                     disabled={busy}
                     onClick={() => toggle(role.id, !isOn)}
                   >
-                    {busy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    {busy ? (
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    ) : (
+                      isOn && <Check className="mr-1.5 size-3.5" />
+                    )}
                     {isOn ? "Assigned" : "Assign"}
                   </Button>
                 </div>

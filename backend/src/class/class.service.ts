@@ -205,7 +205,7 @@ export class ClassService {
   }
 
   async getMySubjectsForClass(userId: string, classId: string) {
-    const cacheKey = `my-subjects:${userId}:${classId}`;
+    const cacheKey = `my-subjects:${classId}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 

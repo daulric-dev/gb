@@ -9,6 +9,11 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-06-25
+
+- [Login redirect fix & middleware cleanup](./2026-06-25/login-redirect-and-middleware.md) - fixed the intermittent bounce back to `/login` after a successful OTP login: the root-layout `AuthProvider` fetches `/auth/me` once and persists, so after a soft navigation to `/dashboard` it still held the stale logged-out `profile` and the dashboard guard redirected; the verify page now `await`s `refresh()` before navigating. Also a no-behavior-change cleanup of `proxy.ts` (lazy path matching, deduped set-cookie tails).
+- [Staff roles & permissions](./2026-06-25/staff-roles-and-permissions.md) - teachers now get `class:create` by default (create-class was admin-only), so they can create a class and become its class teacher (edit/delete still gated); `GET /schools/members` now returns each member's custom `roles`, rendered as badges on the staff cards; and the "Manage roles" dialog shows a tick on already-assigned roles and refreshes the cards on change.
+
 ## 2026-06-24
 
 - [Subject scoping & ordering](./2026-06-24/subject-scoping-and-ordering.md) - the "Manage Grades" Subject dropdown was leaking every school's subjects (with duplicates) for admins and class teachers; `getMySubjectsForClass` now scopes by the class's school. Separately, the calculation engine now orders subjects by `sort_order` then `name`, matching the subject list and dropdown, so the report card and class report use one consistent order.

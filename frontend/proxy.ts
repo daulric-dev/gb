@@ -93,55 +93,33 @@ async function validateOnBackend(request: NextRequest): Promise<Response> {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const publicPath = isPublic(pathname);
-  const guestOnly = isGuestOnly(pathname);
   const state = readSessionState(request);
 
-  // Fast path: no cookie at all.
+  const toDashboard = () =>  NextResponse.redirect(new URL("/dashboard", request.url));
+  const toLogin = () => NextResponse.redirect(new URL("/login", request.url));
+
   if (state.kind === "missing") {
-    if (publicPath) return NextResponse.next();
-    return NextResponse.redirect(new URL("/login", request.url));
+    return isPublic(pathname) ? NextResponse.next() : toLogin();
   }
 
-  // Fast path: token still has plenty of life left. Trust the cookie locally,
-  // skip the /auth/me round-trip. The backend will validate on the actual
-  // request the user is making.
   if (state.kind === "fresh") {
-    if (guestOnly) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
-    return NextResponse.next();
+    return isGuestOnly(pathname) ? toDashboard() : NextResponse.next();
   }
 
-  // Slow path: token is near expiry or the cookie is malformed. Hit the
-  // backend to trigger a refresh (or definitively reject the session).
   const res = await validateOnBackend(request);
-  const isLoggedIn = res.ok;
 
-  if (isLoggedIn) {
-    const target = guestOnly
-      ? NextResponse.redirect(new URL("/dashboard", request.url))
-      : NextResponse.next();
-    applySetCookies(target, res);
-    return target;
+  let target: NextResponse;
+  if (res.ok) {
+    target = isGuestOnly(pathname) ? toDashboard() : NextResponse.next();
+  } else {
+    target = isPublic(pathname) ? NextResponse.next() : toLogin();
   }
-
-  if (publicPath) {
-    const next = NextResponse.next();
-    applySetCookies(next, res);
-    return next;
-  }
-
-  const redirect = NextResponse.redirect(new URL("/login", request.url));
-  applySetCookies(redirect, res);
-  return redirect;
+  applySetCookies(target, res);
+  return target;
 }
 
 export const config = {
   matcher: [
-    // Skip RSC payload requests (Next.js refetches), API, static assets, and
-    // anything with a file extension. The middleware only runs for actual
-    // page navigations.
     {
       source: "/((?!api|_next/static|_next/image|_next/data|favicon\\.ico|.*\\..*).*)",
       missing: [

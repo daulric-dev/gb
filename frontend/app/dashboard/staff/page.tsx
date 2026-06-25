@@ -245,6 +245,7 @@ export default function StaffPage() {
         open={rolesDialogOpen.value}
         member={managingMember.value}
         onOpenChange={(v) => (rolesDialogOpen.value = v)}
+        onRolesChanged={fetchMembers}
       />
     </div>
   );
