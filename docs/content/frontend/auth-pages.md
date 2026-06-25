@@ -36,6 +36,7 @@ The verification page shows an 8-digit OTP input. The email is read from the URL
 3. Calls `POST /api/auth/otp/verify` with email + token
 4. On success:
    - The backend writes the Supabase session cookies (`sb-*-auth-token*`) on the response - the frontend doesn't need to store anything
+   - `await refresh()` (from `useAuth()`) re-fetches `/auth/me` so the persistent `AuthProvider` profile is populated **before** navigating - otherwise the dashboard layout reads the stale logged-out profile and bounces straight back to `/login`
    - If `user.is_onboarded` is false → redirect to `/onboard`
    - Otherwise → redirect to `/dashboard`
 5. On failure, shows a toast error
@@ -77,6 +78,8 @@ The frontend has **no token storage** - there is no `lib/auth.ts`, no `localStor
 The access token expires after 1 hour, but the backend's `AuthGuard` calls `auth.getUser()` on every authenticated request, which silently refreshes the token and writes new cookies on the response. The frontend never sees a 401 unless the refresh token itself is invalid (30+ days inactive, revoked, or cookies manually cleared).
 
 When a 401 does occur, `lib/api.ts` bounces to `/login` automatically.
+
+`AuthProvider` (mounted in the root layout) fetches `/auth/me` **once** and shares the resulting `profile` signal app-wide, so it survives soft navigations. Because it doesn't re-fetch on its own, any flow that changes the session - logging in via the OTP page - must call `refresh()` afterwards so the profile reflects the new cookie before the next guarded route reads it.
 
 ## Route Protection
 

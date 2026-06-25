@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KeyRound, Loader2, X } from "lucide-react";
 import type { SchoolMember } from "./types";
@@ -41,6 +42,19 @@ export function MemberCard({
       <div className="min-w-0 flex-1">
         <p className="font-medium leading-tight truncate">{getName(member.user)}</p>
         <p className="text-xs text-muted-foreground">Joined {joined}</p>
+        {member.roles.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {member.roles.map((role) => (
+              <Badge
+                key={role.id}
+                variant="secondary"
+                className="capitalize font-normal"
+              >
+                {role.name}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
       {onManageRoles && (
         <Button

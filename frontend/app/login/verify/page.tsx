@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/providers/AuthProvider";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
@@ -16,6 +17,7 @@ const RESEND_COOLDOWN = 60;
 function VerifyOtpForm() {
   useSignals();
   const router = useRouter();
+  const { refresh } = useAuth();
   const searchParams = useSearchParams();
   const email = searchParams?.get("email") || "";
   const code = useSignal("");
@@ -38,14 +40,16 @@ function VerifyOtpForm() {
         body: { email, token: code.value },
       });
 
+      // call refresh after login
+      await refresh();
+
       if (data.user.is_onboarded) {
         router.push("/dashboard");
       } else {
         router.push("/onboard");
       }
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Verification failed";
+      const message = err instanceof ApiError ? err.message : "Verification failed";
       toast.error(message);
     } finally {
       loading.value = false;
@@ -54,10 +58,6 @@ function VerifyOtpForm() {
 
   function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
     e.preventDefault();
-    // Keep only digits, cap at 8 chars. Don't auto-submit - the user
-    // must explicitly click Verify. A clipboard-watcher script that
-    // injects values shouldn't be able to trigger a verify attempt
-    // just by triggering a paste event.
     const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 8);
     code.value = text;
   }

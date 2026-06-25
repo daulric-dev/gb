@@ -8,6 +8,7 @@ export interface SchoolMember {
     last_name: string | null;
     avatar_url: string | null;
   } | null;
+  roles: { id: string; name: string }[];
 }
 
 export interface JoinRequest {
