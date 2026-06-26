@@ -18,6 +18,7 @@ export const RESOURCES = [
   'calculation',
   'school',
   'announcement',
+  'file',
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 
@@ -51,6 +52,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   calculation: 'grade calculations',
   school: 'school settings',
   announcement: 'announcements',
+  file: 'files',
 };
 
 const ACTION_VERBS: Record<Action, string> = {
@@ -80,8 +82,10 @@ export function isPermissionKey(value: string): value is PermissionKey {
   return PERMISSION_KEYS.has(value as PermissionKey);
 }
 
-const allKeys = (...resources: Resource[]): PermissionKey[] => resources.flatMap((r) => ACTIONS.map((a) => permKey(r, a)));
-const readKeys = (...resources: Resource[]): PermissionKey[] => resources.map((r) => permKey(r, 'read'));
+const allKeys = (...resources: Resource[]): PermissionKey[] =>
+  resources.flatMap((r) => ACTIONS.map((a) => permKey(r, a)));
+const readKeys = (...resources: Resource[]): PermissionKey[] =>
+  resources.map((r) => permKey(r, 'read'));
 
 export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   admin: '*',
@@ -94,6 +98,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
       'enrollment',
       'reporting',
       'announcement',
+      'file',
     ),
     permKey('class', 'create'),
     ...readKeys(
@@ -107,18 +112,26 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
     ),
   ],
 
-  // Members get read-only visibility into the structures they belong to.
-  member: readKeys(
-    'class',
-    'student',
-    'subject',
-    'term',
-    'academic-year',
-    'grade-scale',
-    'reporting',
-    'calculation',
-    'announcement',
-  ),
+  // Members get read-only visibility into the structures they belong to,
+  // plus the ability to manage their own files (upload, view, share own).
+  member: [
+    ...readKeys(
+      'class',
+      'student',
+      'subject',
+      'term',
+      'academic-year',
+      'grade-scale',
+      'reporting',
+      'calculation',
+      'announcement',
+      'file',
+    ),
+    // Own-file management: ownership is enforced per-file in the service.
+    permKey('file', 'create'),
+    permKey('file', 'update'),
+    permKey('file', 'delete'),
+  ],
 };
 
 /** Resolve the effective key set for an enum role. */

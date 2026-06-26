@@ -36,7 +36,12 @@ describe('ReportService', () => {
 
   beforeEach(() => {
     mockSupabase = createMockSupabaseService();
-    service = new ReportService(mockSupabase as any, mockCalc as any);
+    const mockFileQueue = { enqueueIngest: () => Promise.resolve() };
+    service = new ReportService(
+      mockSupabase as any,
+      mockCalc as any,
+      mockFileQueue as any,
+    );
   });
 
   test('generateTermReports returns { generated: 0 } for empty enrollment', async () => {

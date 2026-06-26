@@ -7,10 +7,118 @@ export type Json =
   | Json[];
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: '14.5';
+  file_manager: {
+    Tables: {
+      file: {
+        Row: {
+          bucket: string;
+          content_type: string;
+          created_at: string | null;
+          deleted_at: string | null;
+          id: string;
+          name: string;
+          owner_id: string;
+          scan_detail: string | null;
+          school_id: string;
+          size_bytes: number;
+          source: Database['file_manager']['Enums']['file_source'];
+          source_ref: string | null;
+          status: Database['file_manager']['Enums']['file_status'];
+          storage_path: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          bucket?: string;
+          content_type?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+          id?: string;
+          name: string;
+          owner_id: string;
+          scan_detail?: string | null;
+          school_id: string;
+          size_bytes?: number;
+          source?: Database['file_manager']['Enums']['file_source'];
+          source_ref?: string | null;
+          status?: Database['file_manager']['Enums']['file_status'];
+          storage_path: string;
+          updated_at?: string | null;
+        };
+        Update: {
+          bucket?: string;
+          content_type?: string;
+          created_at?: string | null;
+          deleted_at?: string | null;
+          id?: string;
+          name?: string;
+          owner_id?: string;
+          scan_detail?: string | null;
+          school_id?: string;
+          size_bytes?: number;
+          source?: Database['file_manager']['Enums']['file_source'];
+          source_ref?: string | null;
+          status?: Database['file_manager']['Enums']['file_status'];
+          storage_path?: string;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      file_share: {
+        Row: {
+          can_download: boolean;
+          created_at: string | null;
+          created_by: string | null;
+          file_id: string;
+          id: string;
+          principal_id: string;
+          principal_type: Database['file_manager']['Enums']['share_principal'];
+          school_id: string;
+        };
+        Insert: {
+          can_download?: boolean;
+          created_at?: string | null;
+          created_by?: string | null;
+          file_id: string;
+          id?: string;
+          principal_id: string;
+          principal_type: Database['file_manager']['Enums']['share_principal'];
+          school_id: string;
+        };
+        Update: {
+          can_download?: boolean;
+          created_at?: string | null;
+          created_by?: string | null;
+          file_id?: string;
+          id?: string;
+          principal_id?: string;
+          principal_type?: Database['file_manager']['Enums']['share_principal'];
+          school_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'file_share_file_id_fkey';
+            columns: ['file_id'];
+            isOneToOne: false;
+            referencedRelation: 'file';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      file_source: 'report' | 'upload';
+      file_status: 'pending' | 'scanning' | 'ready' | 'failed' | 'infected';
+      share_principal: 'user' | 'role' | 'group';
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
   };
   grading: {
     Tables: {
@@ -115,6 +223,89 @@ export type Database = {
           },
         ];
       };
+      grade_scale: {
+        Row: {
+          created_at: string | null;
+          created_by: string | null;
+          id: string;
+          is_default: boolean;
+          name: string;
+          scale_type: Database['public']['Enums']['grade_scale_type'];
+          school_id: string;
+          updated_at: string | null;
+          updated_by: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          created_by?: string | null;
+          id?: string;
+          is_default?: boolean;
+          name: string;
+          scale_type: Database['public']['Enums']['grade_scale_type'];
+          school_id: string;
+          updated_at?: string | null;
+          updated_by?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          created_by?: string | null;
+          id?: string;
+          is_default?: boolean;
+          name?: string;
+          scale_type?: Database['public']['Enums']['grade_scale_type'];
+          school_id?: string;
+          updated_at?: string | null;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
+      grade_scale_band: {
+        Row: {
+          created_at: string | null;
+          gpa_points: number | null;
+          grade_scale_id: string;
+          id: string;
+          is_pass: boolean;
+          label: string;
+          max_percentage: number;
+          min_percentage: number;
+          sort_order: number;
+          updated_at: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          gpa_points?: number | null;
+          grade_scale_id: string;
+          id?: string;
+          is_pass?: boolean;
+          label: string;
+          max_percentage: number;
+          min_percentage: number;
+          sort_order?: number;
+          updated_at?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          gpa_points?: number | null;
+          grade_scale_id?: string;
+          id?: string;
+          is_pass?: boolean;
+          label?: string;
+          max_percentage?: number;
+          min_percentage?: number;
+          sort_order?: number;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'grade_scale_band_scale_fkey';
+            columns: ['grade_scale_id'];
+            isOneToOne: false;
+            referencedRelation: 'grade_scale';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -175,6 +366,111 @@ export type Database = {
           },
         ];
       };
+      announcement: {
+        Row: {
+          author_user_profile_id: string | null;
+          body: string | null;
+          created_at: string | null;
+          id: string;
+          school_id: string;
+          title: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          author_user_profile_id?: string | null;
+          body?: string | null;
+          created_at?: string | null;
+          id?: string;
+          school_id: string;
+          title: string;
+          updated_at?: string | null;
+        };
+        Update: {
+          author_user_profile_id?: string | null;
+          body?: string | null;
+          created_at?: string | null;
+          id?: string;
+          school_id?: string;
+          title?: string;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'announcement_author_user_profile_id_fkey';
+            columns: ['author_user_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'announcement_school_id_fkey';
+            columns: ['school_id'];
+            isOneToOne: false;
+            referencedRelation: 'school';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      announcement_read: {
+        Row: {
+          announcement_id: string;
+          read_at: string | null;
+          user_profile_id: string;
+        };
+        Insert: {
+          announcement_id: string;
+          read_at?: string | null;
+          user_profile_id: string;
+        };
+        Update: {
+          announcement_id?: string;
+          read_at?: string | null;
+          user_profile_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'announcement_read_announcement_id_fkey';
+            columns: ['announcement_id'];
+            isOneToOne: false;
+            referencedRelation: 'announcement';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'announcement_read_user_profile_id_fkey';
+            columns: ['user_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      permission_catalog: {
+        Row: {
+          action: string;
+          created_at: string;
+          description: string | null;
+          id: string;
+          key: string;
+          resource: string;
+        };
+        Insert: {
+          action: string;
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          key: string;
+          resource: string;
+        };
+        Update: {
+          action?: string;
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          key?: string;
+          resource?: string;
+        };
+        Relationships: [];
+      };
       school: {
         Row: {
           address: string | null;
@@ -184,7 +480,6 @@ export type Database = {
           id: string;
           is_active: boolean | null;
           name: string | null;
-          parish: string | null;
           phone: string | null;
           school_type: Database['public']['Enums']['schooltype'] | null;
           updated_at: string | null;
@@ -197,7 +492,6 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
-          parish?: string | null;
           phone?: string | null;
           school_type?: Database['public']['Enums']['schooltype'] | null;
           updated_at?: string | null;
@@ -210,26 +504,238 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
-          parish?: string | null;
           phone?: string | null;
           school_type?: Database['public']['Enums']['schooltype'] | null;
           updated_at?: string | null;
         };
         Relationships: [];
       };
+      school_join_request: {
+        Row: {
+          id: string;
+          message: string | null;
+          requested_at: string;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          school_id: string;
+          status: Database['public']['Enums']['join_request_status'];
+          user_id: string;
+        };
+        Insert: {
+          id?: string;
+          message?: string | null;
+          requested_at?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          school_id: string;
+          status?: Database['public']['Enums']['join_request_status'];
+          user_id: string;
+        };
+        Update: {
+          id?: string;
+          message?: string | null;
+          requested_at?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          school_id?: string;
+          status?: Database['public']['Enums']['join_request_status'];
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_join_request_reviewed_by_fkey';
+            columns: ['reviewed_by'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_join_request_school_id_fkey';
+            columns: ['school_id'];
+            isOneToOne: false;
+            referencedRelation: 'school';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_join_request_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      school_management: {
+        Row: {
+          created_at: string;
+          id: string;
+          role: Database['public']['Enums']['role'];
+          school_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          role: Database['public']['Enums']['role'];
+          school_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          role?: Database['public']['Enums']['role'];
+          school_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_management_school_id_fkey';
+            columns: ['school_id'];
+            isOneToOne: false;
+            referencedRelation: 'school';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_management_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      school_management_role: {
+        Row: {
+          created_at: string;
+          id: string;
+          school_management_id: string;
+          school_role_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          school_management_id: string;
+          school_role_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          school_management_id?: string;
+          school_role_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_management_role_management_fkey';
+            columns: ['school_management_id'];
+            isOneToOne: false;
+            referencedRelation: 'school_management';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_management_role_role_fkey';
+            columns: ['school_role_id'];
+            isOneToOne: false;
+            referencedRelation: 'school_role';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      school_role: {
+        Row: {
+          created_at: string;
+          description: string | null;
+          id: string;
+          is_system: boolean;
+          name: string;
+          school_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          is_system?: boolean;
+          name: string;
+          school_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          is_system?: boolean;
+          name?: string;
+          school_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_role_school_id_fkey';
+            columns: ['school_id'];
+            isOneToOne: false;
+            referencedRelation: 'school';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      school_role_permission: {
+        Row: {
+          created_at: string;
+          id: string;
+          permission_id: string;
+          school_role_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          permission_id: string;
+          school_role_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          permission_id?: string;
+          school_role_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'school_role_permission_permission_fkey';
+            columns: ['permission_id'];
+            isOneToOne: false;
+            referencedRelation: 'permission_catalog';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'school_role_permission_role_fkey';
+            columns: ['school_role_id'];
+            isOneToOne: false;
+            referencedRelation: 'school_role';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       student_group: {
         Row: {
           academic_year_id: string | null;
+          created_at: string | null;
+          created_by: string | null;
           id: string;
           name: string;
         };
         Insert: {
           academic_year_id?: string | null;
+          created_at?: string | null;
+          created_by?: string | null;
           id?: string;
           name: string;
         };
         Update: {
           academic_year_id?: string | null;
+          created_at?: string | null;
+          created_by?: string | null;
           id?: string;
           name?: string;
         };
@@ -239,6 +745,13 @@ export type Database = {
             columns: ['academic_year_id'];
             isOneToOne: false;
             referencedRelation: 'academic_year';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'student_group_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
             referencedColumns: ['id'];
           },
         ];
@@ -322,96 +835,6 @@ export type Database = {
           },
         ];
       };
-      school_management: {
-        Row: {
-          id: string;
-          user_id: string;
-          school_id: string;
-          role: Database['public']['Enums']['role'];
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          school_id: string;
-          role: Database['public']['Enums']['role'];
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          school_id?: string;
-          role?: Database['public']['Enums']['role'];
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'school_management_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'user_profile';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'school_management_school_id_fkey';
-            columns: ['school_id'];
-            isOneToOne: false;
-            referencedRelation: 'school';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      school_join_request: {
-        Row: {
-          id: string;
-          user_id: string;
-          school_id: string;
-          status: Database['public']['Enums']['join_request_status'];
-          message: string | null;
-          requested_at: string;
-          reviewed_at: string | null;
-          reviewed_by: string | null;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          school_id: string;
-          status?: Database['public']['Enums']['join_request_status'];
-          message?: string | null;
-          requested_at?: string;
-          reviewed_at?: string | null;
-          reviewed_by?: string | null;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          school_id?: string;
-          status?: Database['public']['Enums']['join_request_status'];
-          message?: string | null;
-          requested_at?: string;
-          reviewed_at?: string | null;
-          reviewed_by?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'school_join_request_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'user_profile';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'school_join_request_school_id_fkey';
-            columns: ['school_id'];
-            isOneToOne: false;
-            referencedRelation: 'school';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
       user_profile: {
         Row: {
           avatar_url: string | null;
@@ -474,7 +897,9 @@ export type Database = {
     };
     Enums: {
       assessment_type: 'exam' | 'coursework';
+      attendance_status: 'present' | 'absent' | 'late';
       gender: 'male' | 'female';
+      grade_scale_type: 'letter' | 'gpa' | 'pass_fail';
       gradingmodel:
         | 'weighted_continuous'
         | 'weighted_cumulative'
@@ -493,6 +918,42 @@ export type Database = {
   };
   reporting: {
     Tables: {
+      class_report_file: {
+        Row: {
+          file_path: string;
+          file_size: number;
+          file_type: string;
+          generated_at: string | null;
+          generated_by: string | null;
+          id: string;
+          report_type: string;
+          student_group_id: string;
+          term_id: string;
+        };
+        Insert: {
+          file_path: string;
+          file_size: number;
+          file_type: string;
+          generated_at?: string | null;
+          generated_by?: string | null;
+          id?: string;
+          report_type: string;
+          student_group_id: string;
+          term_id: string;
+        };
+        Update: {
+          file_path?: string;
+          file_size?: number;
+          file_type?: string;
+          generated_at?: string | null;
+          generated_by?: string | null;
+          id?: string;
+          report_type?: string;
+          student_group_id?: string;
+          term_id?: string;
+        };
+        Relationships: [];
+      };
       report_book: {
         Row: {
           academic_year_id: string | null;
@@ -502,12 +963,16 @@ export type Database = {
           general_remarks: string | null;
           generated_at: string | null;
           id: string;
+          overall_average: number | null;
+          position: number | null;
           published_at: string | null;
           report_type: Database['public']['Enums']['report_book_type'] | null;
           status: Database['public']['Enums']['report_book_status'] | null;
+          student_group_id: string | null;
           student_id: string | null;
           term_id: string | null;
           total_school_days: number | null;
+          total_students: number | null;
         };
         Insert: {
           academic_year_id?: string | null;
@@ -517,12 +982,16 @@ export type Database = {
           general_remarks?: string | null;
           generated_at?: string | null;
           id?: string;
+          overall_average?: number | null;
+          position?: number | null;
           published_at?: string | null;
           report_type?: Database['public']['Enums']['report_book_type'] | null;
           status?: Database['public']['Enums']['report_book_status'] | null;
+          student_group_id?: string | null;
           student_id?: string | null;
           term_id?: string | null;
           total_school_days?: number | null;
+          total_students?: number | null;
         };
         Update: {
           academic_year_id?: string | null;
@@ -532,46 +1001,103 @@ export type Database = {
           general_remarks?: string | null;
           generated_at?: string | null;
           id?: string;
+          overall_average?: number | null;
+          position?: number | null;
           published_at?: string | null;
           report_type?: Database['public']['Enums']['report_book_type'] | null;
           status?: Database['public']['Enums']['report_book_status'] | null;
+          student_group_id?: string | null;
           student_id?: string | null;
           term_id?: string | null;
           total_school_days?: number | null;
+          total_students?: number | null;
         };
         Relationships: [];
       };
       report_book_entry: {
         Row: {
+          coursework_average: number | null;
+          exam_average: number | null;
           id: string;
           is_graded: boolean | null;
           letter_grade: string | null;
           report_book_id: string | null;
+          sort_order: number | null;
           subject_id: string | null;
           teacher_remark: string | null;
           term_average: number | null;
+          term_composite: number | null;
+          term_grade: number | null;
+          year_grade: number | null;
         };
         Insert: {
+          coursework_average?: number | null;
+          exam_average?: number | null;
           id?: string;
           is_graded?: boolean | null;
           letter_grade?: string | null;
           report_book_id?: string | null;
+          sort_order?: number | null;
           subject_id?: string | null;
           teacher_remark?: string | null;
           term_average?: number | null;
+          term_composite?: number | null;
+          term_grade?: number | null;
+          year_grade?: number | null;
         };
         Update: {
+          coursework_average?: number | null;
+          exam_average?: number | null;
           id?: string;
           is_graded?: boolean | null;
           letter_grade?: string | null;
           report_book_id?: string | null;
+          sort_order?: number | null;
           subject_id?: string | null;
           teacher_remark?: string | null;
           term_average?: number | null;
+          term_composite?: number | null;
+          term_grade?: number | null;
+          year_grade?: number | null;
         };
         Relationships: [
           {
             foreignKeyName: 'report_book_entry_report_book_id_fkey';
+            columns: ['report_book_id'];
+            isOneToOne: false;
+            referencedRelation: 'report_book';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      report_book_pdf: {
+        Row: {
+          file_path: string;
+          file_size: number | null;
+          generated_at: string;
+          generated_by: string;
+          id: string;
+          report_book_id: string;
+        };
+        Insert: {
+          file_path: string;
+          file_size?: number | null;
+          generated_at?: string;
+          generated_by: string;
+          id?: string;
+          report_book_id: string;
+        };
+        Update: {
+          file_path?: string;
+          file_size?: number | null;
+          generated_at?: string;
+          generated_by?: string;
+          id?: string;
+          report_book_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'report_book_pdf_report_book_id_fkey';
             columns: ['report_book_id'];
             isOneToOne: false;
             referencedRelation: 'report_book';
@@ -659,6 +1185,53 @@ export type Database = {
   };
   student: {
     Tables: {
+      attendance_record: {
+        Row: {
+          attendance_date: string;
+          created_at: string | null;
+          created_by: string | null;
+          id: string;
+          notes: string | null;
+          status: Database['public']['Enums']['attendance_status'];
+          student_group_id: string;
+          student_id: string;
+          updated_at: string | null;
+          updated_by: string | null;
+        };
+        Insert: {
+          attendance_date: string;
+          created_at?: string | null;
+          created_by?: string | null;
+          id?: string;
+          notes?: string | null;
+          status: Database['public']['Enums']['attendance_status'];
+          student_group_id: string;
+          student_id: string;
+          updated_at?: string | null;
+          updated_by?: string | null;
+        };
+        Update: {
+          attendance_date?: string;
+          created_at?: string | null;
+          created_by?: string | null;
+          id?: string;
+          notes?: string | null;
+          status?: Database['public']['Enums']['attendance_status'];
+          student_group_id?: string;
+          student_id?: string;
+          updated_at?: string | null;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'attendance_record_student_id_fkey';
+            columns: ['student_id'];
+            isOneToOne: false;
+            referencedRelation: 'student';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       parent_student_link: {
         Row: {
           id: string;
@@ -759,16 +1332,19 @@ export type Database = {
           academic_year_id: string | null;
           id: number;
           student_id: string | null;
+          subject_id: string | null;
         };
         Insert: {
           academic_year_id?: string | null;
           id?: number;
           student_id?: string | null;
+          subject_id?: string | null;
         };
         Update: {
           academic_year_id?: string | null;
           id?: number;
           student_id?: string | null;
+          subject_id?: string | null;
         };
         Relationships: [
           {
@@ -917,13 +1493,22 @@ export type CompositeTypes<
     : never;
 
 export const Constants = {
+  file_manager: {
+    Enums: {
+      file_source: ['report', 'upload'],
+      file_status: ['pending', 'scanning', 'ready', 'failed', 'infected'],
+      share_principal: ['user', 'role', 'group'],
+    },
+  },
   grading: {
     Enums: {},
   },
   public: {
     Enums: {
       assessment_type: ['exam', 'coursework'],
+      attendance_status: ['present', 'absent', 'late'],
       gender: ['male', 'female'],
+      grade_scale_type: ['letter', 'gpa', 'pass_fail'],
       gradingmodel: [
         'weighted_continuous',
         'weighted_cumulative',
