@@ -28,6 +28,8 @@ import { ReportFilesModule } from '@/report-files/report-files.module';
 import { PermissionModule } from '@/permission/permission.module';
 import { AnnouncementModule } from '@/announcement/announcement.module';
 import { ImagesModule } from '@/images/images.module';
+import { FileManagerModule } from '@/file-manager/file-manager.module';
+import { QueueModule } from '@/queue/queue.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
@@ -63,6 +65,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     SupabaseModule,
     AuthModule,
     CacheModule,
+    QueueModule.forRoot(),
     PaginationModule,
     VersioningModule,
     ClassModule,
@@ -82,6 +85,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     PermissionModule,
     AnnouncementModule,
     ImagesModule,
+    FileManagerModule,
   ],
   controllers: [AppController],
   providers: [

@@ -8,6 +8,7 @@ import {
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CalculationService } from '@/calculation/calculation.service';
+import { FileQueueService } from '@/queue/file-queue.service';
 import { StudentTermResult } from '@/calculation/interfaces/calculation.interfaces';
 import { GenerateReportDto } from './dto/generate-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
@@ -21,6 +22,7 @@ export class ReportService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly calculationService: CalculationService,
+    private readonly fileQueue: FileQueueService,
   ) {}
 
   async generateTermReports(
@@ -652,6 +654,10 @@ export class ReportService {
 
     const objectPath = `${reportId}/${Date.now()}-${crypto.randomUUID()}.pdf`;
 
+    // Create the (private) bucket on first use so uploads don't fail with
+    // "Bucket not found" — buckets aren't provisioned by migrations.
+    await this.supabaseService.ensureBucket(ReportService.PDF_BUCKET);
+
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
       .upload(objectPath, fileBuffer, {
@@ -684,7 +690,51 @@ export class ReportService {
       throw new BadRequestException(error.message);
     }
 
+    // Surface the generated report in the owner's file manager.
+    await this.enqueueFileManagerIngest({
+      userId,
+      storagePath: objectPath,
+      name: `Report card (${new Date().toISOString().slice(0, 10)}).pdf`,
+      contentType: 'application/pdf',
+      sizeBytes: fileBuffer.length,
+      sourceRef: reportId,
+    });
+
     return data;
+  }
+
+  /**
+   * Best-effort hand-off of a stored report object to the file-manager ingest
+   * queue, so it appears in the owner's Files. Out of band: a queue/storage
+   * hiccup here must never fail report generation.
+   */
+  private async enqueueFileManagerIngest(params: {
+    userId: string;
+    storagePath: string;
+    name: string;
+    contentType: string;
+    sizeBytes: number;
+    sourceRef?: string;
+  }): Promise<void> {
+    try {
+      const schoolId = await this.supabaseService.getUserSchoolId(
+        params.userId,
+      );
+      await this.fileQueue.enqueueIngest({
+        schoolId,
+        ownerId: params.userId,
+        bucket: ReportService.PDF_BUCKET,
+        storagePath: params.storagePath,
+        name: params.name,
+        contentType: params.contentType,
+        sizeBytes: params.sizeBytes,
+        sourceRef: params.sourceRef,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not enqueue file-manager ingest for ${params.storagePath}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /** Download a PDF from Supabase Storage and return the raw bytes. */
@@ -1028,6 +1078,10 @@ export class ReportService {
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
 
+    // Create the (private) bucket on first use so uploads don't fail with
+    // "Bucket not found" — buckets aren't provisioned by migrations.
+    await this.supabaseService.ensureBucket(ReportService.PDF_BUCKET);
+
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
       .upload(objectPath, fileBuffer, {
@@ -1072,6 +1126,16 @@ export class ReportService {
         this.logger.error(`uploadClassSummaryFile update: ${error.message}`);
         throw new BadRequestException(error.message);
       }
+
+      await this.enqueueFileManagerIngest({
+        userId,
+        storagePath: objectPath,
+        name: `Class summary (${ext.toUpperCase()}).${ext}`,
+        contentType: contentTypeMap[ext] ?? 'application/octet-stream',
+        sizeBytes: fileBuffer.length,
+        sourceRef: existing.id,
+      });
+
       return data;
     }
 
@@ -1095,6 +1159,16 @@ export class ReportService {
       this.logger.error(`uploadClassSummaryFile insert: ${error.message}`);
       throw new BadRequestException(error.message);
     }
+
+    await this.enqueueFileManagerIngest({
+      userId,
+      storagePath: objectPath,
+      name: `Class summary (${ext.toUpperCase()}).${ext}`,
+      contentType: contentTypeMap[ext] ?? 'application/octet-stream',
+      sizeBytes: fileBuffer.length,
+      sourceRef: data?.id,
+    });
+
     return data;
   }
 

@@ -1,5 +1,5 @@
 [api]
-schemas = ["public", "student", "staff", "grading", "reporting"]
+schemas = ["public", "student", "staff", "grading", "reporting", "file_manager"]
 
 [auth.email]
 otp_length = 8

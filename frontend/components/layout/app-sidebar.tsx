@@ -14,6 +14,7 @@ import {
   CalendarRange,
   ChevronsUpDown,
   FileText,
+  FolderOpen,
   GraduationCap,
   KeyRound,
   LayoutDashboard,
@@ -57,6 +58,7 @@ const navItems = [
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
   { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
+  { title: "Files", href: "/dashboard/files", icon: FolderOpen },
   { title: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
 ];
 

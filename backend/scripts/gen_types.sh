@@ -45,6 +45,7 @@ supabase gen types typescript \
   --schema grading \
   --schema reporting \
   --schema staff \
+  --schema file_manager \
   > src/types/database.types.ts
 
 if [ $? -eq 0 ]; then
@@ -56,6 +57,7 @@ if [ $? -eq 0 ]; then
   echo "     - grading (assessment, grade)"
   echo "     - reporting (report_book, report_book_entry)"
   echo "     - staff (teacher_group_assignment, teacher_subject_assignment)"
+  echo "     - file_manager (file, file_share)"
   echo ""
   echo "   Import in your code:"
   echo "     import { Database } from '../types/database.types';"
