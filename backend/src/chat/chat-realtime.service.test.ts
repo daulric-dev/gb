@@ -68,7 +68,9 @@ describe('ChatRealtimeService (over in-process bus)', () => {
 
 describe('ChatService.directKey', () => {
   test('is stable regardless of argument order', () => {
-    expect(ChatService.directKey('a', 'b')).toBe(ChatService.directKey('b', 'a'));
+    expect(ChatService.directKey('a', 'b')).toBe(
+      ChatService.directKey('b', 'a'),
+    );
   });
 
   test('sorts the two ids ascending', () => {

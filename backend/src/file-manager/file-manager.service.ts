@@ -219,7 +219,7 @@ export class FileManagerService {
       .select(FILE_COLUMNS)
       .single();
     if (error || !data) throw new BadRequestException('Failed to move file');
-    return this.present(data as FileRecord, true);
+    return this.present(data, true);
   }
 
   // ── Manual upload ──────────────────────────────────────────────────────────

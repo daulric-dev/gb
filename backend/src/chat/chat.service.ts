@@ -96,10 +96,6 @@ export class ChatService {
     const ids = (memberships ?? []).map((m: any) => m.conversation_id);
     if (ids.length === 0) return [];
 
-    const readMap = new Map<string, string | null>(
-      (memberships ?? []).map((m: any) => [m.conversation_id, m.last_read_at]),
-    );
-
     const { data: conversations } = await client
       .schema('chat')
       .from('conversation')
@@ -108,23 +104,29 @@ export class ChatService {
       .order('last_message_at', { ascending: false });
 
     const rows = (conversations ?? []) as ConversationRow[];
-    const participantsByConversation = await this.participantsFor(ids);
+    const membershipRows = (memberships ?? []) as {
+      conversation_id: string;
+      last_read_at: string | null;
+    }[];
 
-    // Preview + unread are resolved per-conversation in parallel. A user's
-    // conversation count is small (school-scale DMs); documented as the place
-    // to add a windowed/aggregated query if a user accrues many channels.
+    // Unread counts for the whole set resolve in one round-trip (RPC) rather
+    // than one COUNT query per conversation. Participants likewise batch.
+    const [participantsByConversation, unreadByConversation] =
+      await Promise.all([
+        this.participantsFor(ids),
+        this.unreadCountsFor(userId, membershipRows),
+      ]);
+
+    // Message previews are still fetched per-conversation (in parallel); a
+    // windowed DISTINCT-ON RPC would collapse these too if it becomes hot.
     return Promise.all(
       rows.map(async (conv) => {
-        const lastReadAt = readMap.get(conv.id) ?? null;
-        const [lastMessage, unreadCount] = await Promise.all([
-          this.lastMessageFor(conv.id),
-          this.unreadFor(conv.id, userId, lastReadAt),
-        ]);
+        const lastMessage = await this.lastMessageFor(conv.id);
         return this.presentConversation(
           conv,
           participantsByConversation.get(conv.id) ?? [],
           lastMessage,
-          unreadCount,
+          unreadByConversation.get(conv.id) ?? 0,
         );
       }),
     );
@@ -183,7 +185,7 @@ export class ChatService {
       throw new BadRequestException('Failed to start conversation');
     }
 
-    const summary = await this.summarize(created as ConversationRow, userId);
+    const summary = await this.summarize(created, userId);
     // Both sides should see the new conversation appear immediately.
     await this.realtime.publishToUsers([userId, otherUserId], {
       type: ChatEventType.Conversation,
@@ -253,7 +255,7 @@ export class ChatService {
       .single();
     if (error || !data) throw new BadRequestException('Failed to edit message');
 
-    const present = this.presentMessage(data as MessageRow);
+    const present = this.presentMessage(data);
     await this.fanOutMessage(message.conversation_id, present);
     return present;
   }
@@ -273,7 +275,7 @@ export class ChatService {
       throw new BadRequestException('Failed to delete message');
     }
 
-    const present = this.presentMessage(data as MessageRow);
+    const present = this.presentMessage(data);
     await this.fanOutMessage(message.conversation_id, present);
     return present;
   }
@@ -316,18 +318,12 @@ export class ChatService {
     }[];
     if (rows.length === 0) return { count: 0 };
 
-    const counts = await Promise.all(
-      rows.map((m) => this.unreadFor(m.conversation_id, userId, m.last_read_at)),
-    );
-    return { count: counts.reduce((a, b) => a + b, 0) };
+    const counts = await this.unreadCountsFor(userId, rows);
+    let total = 0;
+    for (const n of counts.values()) total += n;
+    return { count: total };
   }
 
-  // ── System messages (used by ChatSystemService) ─────────────────────────────
-
-  /**
-   * Insert a message, bump the conversation, and fan it out. Shared by normal
-   * sends and system messages. The sender is treated as having read it.
-   */
   async postMessage(input: {
     conversation: ConversationRow;
     senderId: string;
@@ -375,7 +371,7 @@ export class ChatService {
       .eq('conversation_id', conversation.id)
       .eq('user_id', senderId);
 
-    const present = this.presentMessage(data as MessageRow);
+    const present = this.presentMessage(data);
     await this.fanOutMessage(conversation.id, present);
     return present;
   }
@@ -390,7 +386,7 @@ export class ChatService {
       .eq('id', conversationId)
       .maybeSingle();
     if (!data) throw new NotFoundException('Conversation not found');
-    return data as ConversationRow;
+    return data;
   }
 
   /**
@@ -435,7 +431,7 @@ export class ChatService {
         { conversation_id: created.id, user_id: userB, role: 'member' },
       ]);
 
-    return created as ConversationRow;
+    return created;
   }
 
   /** Set a system message's action state and fan the change out. */
@@ -478,11 +474,11 @@ export class ChatService {
       throw new BadRequestException('Failed to update action');
     }
 
-    const present = this.presentMessage(data as MessageRow);
-    await this.realtime.publishToUsers(
-      await this.memberIds(conversation.id),
-      { type: ChatEventType.MessageAction, data: present },
-    );
+    const present = this.presentMessage(data);
+    await this.realtime.publishToUsers(await this.memberIds(conversation.id), {
+      type: ChatEventType.MessageAction,
+      data: present,
+    });
     return present;
   }
 
@@ -526,7 +522,7 @@ export class ChatService {
         })),
       );
 
-    const summary = await this.summarize(created as ConversationRow, userId);
+    const summary = await this.summarize(created, userId);
     await this.realtime.publishToUsers(uniqueMembers, {
       type: ChatEventType.Conversation,
       data: summary,
@@ -581,7 +577,7 @@ export class ChatService {
     if (data.sender_id !== userId) {
       throw new ForbiddenException('You can only modify your own messages');
     }
-    return data as MessageRow;
+    return data;
   }
 
   private async memberIds(conversationId: string): Promise<string[]> {
@@ -607,7 +603,7 @@ export class ChatService {
       .eq('type', 'direct')
       .eq('direct_key', directKey)
       .maybeSingle();
-    return (data as ConversationRow) ?? null;
+    return data ?? null;
   }
 
   private async lastMessageFor(
@@ -622,7 +618,42 @@ export class ChatService {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    return data ? this.presentMessage(data as MessageRow) : null;
+    return data ? this.presentMessage(data) : null;
+  }
+
+  private async unreadCountsFor(
+    userId: string,
+    memberships: { conversation_id: string; last_read_at: string | null }[],
+  ): Promise<Map<string, number>> {
+    const client = this.supabase.getServiceClient();
+    try {
+      const { data, error } = await client
+        .schema('chat')
+        .rpc('unread_counts', { p_user_id: userId });
+      if (error) throw error;
+      const map = new Map<string, number>();
+      for (const row of (data ?? []) as {
+        conversation_id: string;
+        unread: number | string;
+      }[]) {
+        map.set(row.conversation_id, Number(row.unread) || 0);
+      }
+      return map;
+    } catch (err) {
+      this.logger.warn(
+        `unread_counts RPC unavailable, falling back to per-conversation counts: ${String(err)}`,
+      );
+      const entries = await Promise.all(
+        memberships.map(
+          async (m) =>
+            [
+              m.conversation_id,
+              await this.unreadFor(m.conversation_id, userId, m.last_read_at),
+            ] as const,
+        ),
+      );
+      return new Map(entries);
+    }
   }
 
   private async unreadFor(
@@ -675,7 +706,7 @@ export class ChatService {
           firstName: p.first_name,
           lastName: p.last_name,
           avatarUrl: p.avatar_url,
-        } as ChatParticipant,
+        },
       ]),
     );
 
@@ -755,7 +786,7 @@ export class ChatService {
       senderId: m.sender_id,
       type: m.type,
       body: this.cipher.decrypt(m.body),
-      metadata: (m.metadata ?? {}) as Record<string, unknown>,
+      metadata: m.metadata ?? {},
       actionState: m.action_state,
       createdAt: m.created_at,
       editedAt: m.edited_at,

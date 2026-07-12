@@ -82,7 +82,12 @@ export class SupabaseService {
     return data.school_id;
   }
 
-  async uploadFile(bucketName: string, path: string, file: Buffer,contentType: string): Promise<{ path: string; publicUrl: string } | null> {
+  async uploadFile(
+    bucketName: string,
+    path: string,
+    file: Buffer,
+    contentType: string,
+  ): Promise<{ path: string; publicUrl: string } | null> {
     await this.scanOrThrow(file, `${bucketName}/${path}`);
 
     const { data, error } = await this.getServiceClient()

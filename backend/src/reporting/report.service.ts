@@ -77,89 +77,105 @@ export class ReportService {
       return { generated: 0, message: 'Reports generated' };
     }
 
-    const termResults: StudentTermResult[] = [];
+    // Compute the whole class once (batched + Redis-cached) instead of issuing
+    // ~5+5×subjects queries per student in a loop. Positions/ranks are class-wide
+    // and already assigned by the calculation service.
+    const classResults =
+      await this.calculationService.calculateClassTermResults(
+        dto.termId,
+        dto.studentGroupId,
+      );
+    const resultByStudentId = new Map(
+      classResults.map((r) => [r.studentId, r]),
+    );
+    const totalStudents = classResults.length;
+
+    // Year-end grades: one batched call for the whole class, keyed by student.
     const yearGradeMaps = new Map<string, Map<string, number | null>>();
-
-    for (const studentId of studentIds) {
-      const termResult =
-        await this.calculationService.calculateStudentTermResult(
-          studentId,
-          dto.termId,
-          dto.studentGroupId,
-        );
-      termResults.push(termResult);
-
-      if (dto.reportType === 'year_end') {
-        const yearResult =
-          await this.calculationService.calculateStudentYearResult(
-            studentId,
-            academicYearId,
-            dto.studentGroupId,
-          );
+    if (dto.reportType === 'year_end') {
+      const classYear = await this.calculationService.calculateClassYearResults(
+        academicYearId,
+        dto.studentGroupId,
+      );
+      for (const yr of classYear) {
         const m = new Map<string, number | null>();
-        for (const ys of yearResult.yearEnd.subjects) {
-          m.set(ys.subjectId, ys.yearGrade);
-        }
-        yearGradeMaps.set(studentId, m);
+        for (const ys of yr.yearEnd.subjects) m.set(ys.subjectId, ys.yearGrade);
+        yearGradeMaps.set(yr.studentId, m);
       }
     }
 
-    const sorted = [...termResults].sort((a, b) => {
-      const diff = (b.overallAverage ?? -1) - (a.overallAverage ?? -1);
-      if (diff !== 0) return diff;
-      return (a.lastName ?? '').localeCompare(b.lastName ?? '');
-    });
+    const targetResults = studentIds
+      .map((id) => resultByStudentId.get(id))
+      .filter((r): r is StudentTermResult => !!r);
 
-    const rankByStudentId = new Map<string, number>();
-    sorted.forEach((r, i) => {
-      rankByStudentId.set(r.studentId, i + 1);
-    });
+    if (targetResults.length === 0) {
+      return { generated: 0, message: 'Reports generated' };
+    }
 
-    const totalStudents = termResults.length;
+    // Bulk-upsert every report book in one round-trip, then map student → book id.
+    const bookRows = targetResults.map((result) => ({
+      student_id: result.studentId,
+      academic_year_id: academicYearId,
+      term_id: dto.termId,
+      student_group_id: dto.studentGroupId,
+      report_type: dto.reportType,
+      status: 'draft',
+      overall_average: result.overallAverage,
+      position: result.position ?? null,
+      total_students: totalStudents,
+    }));
 
-    for (const result of termResults) {
-      const rank = rankByStudentId.get(result.studentId)!;
+    const { data: books, error: bookErr } = await serviceClient
+      .schema('reporting')
+      .from('report_book')
+      .upsert(bookRows, { onConflict: 'student_id,term_id,report_type' })
+      .select('id, student_id');
+
+    if (bookErr) {
+      this.logger.error(`Failed to upsert report books: ${bookErr.message}`);
+      throw new BadRequestException(bookErr.message);
+    }
+
+    const bookIdByStudentId = new Map<string, string>();
+    for (const b of books ?? []) {
+      bookIdByStudentId.set(b.student_id as string, b.id as string);
+    }
+
+    // Build every entry across all students, then upsert them in one round-trip.
+    const entryRows = targetResults.flatMap((result) => {
+      const reportBookId = bookIdByStudentId.get(result.studentId);
+      if (!reportBookId) return [];
       const yearMap = yearGradeMaps.get(result.studentId);
-
-      const reportBookId = await this.upsertReportBookNaturalKey(
-        serviceClient,
-        {
-          student_id: result.studentId,
-          academic_year_id: academicYearId,
-          term_id: dto.termId,
-          student_group_id: dto.studentGroupId,
-          report_type: dto.reportType,
-          status: 'draft',
-          overall_average: result.overallAverage,
-          position: rank,
-          total_students: totalStudents,
-        },
-      );
-
-      for (
-        let subjectIndex = 0;
-        subjectIndex < result.subjects.length;
-        subjectIndex++
-      ) {
-        const subject = result.subjects[subjectIndex];
-        const yearGrade =
+      return result.subjects.map((subject, subjectIndex) => ({
+        report_book_id: reportBookId,
+        subject_id: subject.subjectId,
+        coursework_average: subject.courseworkAverage,
+        exam_average: subject.examAverage,
+        term_composite: subject.termComposite,
+        year_grade:
           dto.reportType === 'year_end' && yearMap
             ? (yearMap.get(subject.subjectId) ?? null)
-            : null;
+            : null,
+        sort_order: subjectIndex,
+      }));
+    });
 
-        await this.upsertReportEntryNaturalKey(serviceClient, reportBookId, {
-          subject_id: subject.subjectId,
-          coursework_average: subject.courseworkAverage,
-          exam_average: subject.examAverage,
-          term_composite: subject.termComposite,
-          year_grade: yearGrade,
-          sort_order: subjectIndex,
-        });
+    if (entryRows.length > 0) {
+      const { error: entryErr } = await serviceClient
+        .schema('reporting')
+        .from('report_book_entry')
+        .upsert(entryRows, { onConflict: 'report_book_id,subject_id' });
+
+      if (entryErr) {
+        this.logger.error(
+          `Failed to upsert report entries: ${entryErr.message}`,
+        );
+        throw new BadRequestException(entryErr.message);
       }
     }
 
     return {
-      generated: studentIds.length,
+      generated: targetResults.length,
       message: 'Reports generated',
     };
   }
@@ -528,22 +544,24 @@ export class ReportService {
       lastName: string;
     };
 
-    const rankRows: RankRow[] = [];
+    const classResults =
+      await this.calculationService.calculateClassTermResults(
+        term_id,
+        student_group_id,
+      );
+    const resultByStudentId = new Map(
+      classResults.map((r) => [r.studentId, r]),
+    );
 
-    for (const row of cohort) {
-      const termResult =
-        await this.calculationService.calculateStudentTermResult(
-          row.student_id,
-          term_id,
-          student_group_id,
-        );
-      rankRows.push({
+    const rankRows: RankRow[] = cohort.map((row) => {
+      const r = resultByStudentId.get(row.student_id);
+      return {
         reportId: row.id,
         studentId: row.student_id,
-        overallAverage: termResult.overallAverage,
-        lastName: termResult.lastName,
-      });
-    }
+        overallAverage: r?.overallAverage ?? null,
+        lastName: r?.lastName ?? '',
+      };
+    });
 
     rankRows.sort((a, b) => {
       const diff = (b.overallAverage ?? -1) - (a.overallAverage ?? -1);
@@ -559,64 +577,75 @@ export class ReportService {
         .map((r: { id: string }) => r.id),
     );
 
-    for (let i = 0; i < rankRows.length; i++) {
-      const { reportId: rid, overallAverage } = rankRows[i];
-      if (lockedIds.has(rid)) continue;
+    const rankUpdates = rankRows.flatMap((rankRow, i) => {
+      if (lockedIds.has(rankRow.reportId)) return [];
+      return [
+        serviceClient
+          .schema('reporting')
+          .from('report_book')
+          .update({
+            overall_average: rankRow.overallAverage,
+            position: i + 1,
+            total_students: totalStudents,
+          })
+          .eq('id', rankRow.reportId)
+          .then(({ error }) => {
+            if (error) {
+              this.logger.error(
+                `regenerateReport rank update: ${error.message}`,
+              );
+              throw new BadRequestException(error.message);
+            }
+          }),
+      ];
+    });
+    await Promise.all(rankUpdates);
 
-      const { error: rankError } = await serviceClient
-        .schema('reporting')
-        .from('report_book')
-        .update({
-          overall_average: overallAverage,
-          position: i + 1,
-          total_students: totalStudents,
-        })
-        .eq('id', rid);
-
-      if (rankError) {
-        this.logger.error(`regenerateReport rank update: ${rankError.message}`);
-        throw new BadRequestException(rankError.message);
-      }
-    }
-
-    const termResult = await this.calculationService.calculateStudentTermResult(
-      student_id,
-      term_id,
-      student_group_id,
-    );
+    const termResult =
+      resultByStudentId.get(student_id) ??
+      (await this.calculationService.calculateStudentTermResult(
+        student_id,
+        term_id,
+        student_group_id,
+      ));
 
     let yearGradeMap: Map<string, number | null> | null = null;
     if (report_type === 'year_end' && academic_year_id) {
-      const yearResult =
-        await this.calculationService.calculateStudentYearResult(
-          student_id,
-          academic_year_id,
-          student_group_id,
-        );
-      yearGradeMap = new Map(
-        yearResult.yearEnd.subjects.map((s) => [s.subjectId, s.yearGrade]),
+      const classYear = await this.calculationService.calculateClassYearResults(
+        academic_year_id,
+        student_group_id,
       );
+      const yr = classYear.find((y) => y.studentId === student_id);
+      if (yr) {
+        yearGradeMap = new Map(
+          yr.yearEnd.subjects.map((s) => [s.subjectId, s.yearGrade]),
+        );
+      }
     }
 
-    for (
-      let subjectIndex = 0;
-      subjectIndex < termResult.subjects.length;
-      subjectIndex++
-    ) {
-      const subject = termResult.subjects[subjectIndex];
-      const yearGrade =
+    const entryRows = termResult.subjects.map((subject, subjectIndex) => ({
+      report_book_id: reportId,
+      subject_id: subject.subjectId,
+      coursework_average: subject.courseworkAverage,
+      exam_average: subject.examAverage,
+      term_composite: subject.termComposite,
+      year_grade:
         report_type === 'year_end' && yearGradeMap
           ? (yearGradeMap.get(subject.subjectId) ?? null)
-          : null;
+          : null,
+      sort_order: subjectIndex,
+    }));
 
-      await this.upsertReportEntryNaturalKey(serviceClient, reportId, {
-        subject_id: subject.subjectId,
-        coursework_average: subject.courseworkAverage,
-        exam_average: subject.examAverage,
-        term_composite: subject.termComposite,
-        year_grade: yearGrade,
-        sort_order: subjectIndex,
-      });
+    if (entryRows.length > 0) {
+      const { error: entryErr } = await serviceClient
+        .schema('reporting')
+        .from('report_book_entry')
+        .upsert(entryRows, { onConflict: 'report_book_id,subject_id' });
+
+      if (entryErr) {
+        this.logger.error(`regenerateReport entry upsert: ${entryErr.message}`);
+        throw new BadRequestException(entryErr.message);
+      }
     }
 
     return this.loadFullReportWithServiceClient(reportId);
@@ -1433,137 +1462,6 @@ export class ReportService {
       entries,
       pdfs: pdfs ?? [],
     };
-  }
-
-  private async upsertReportBookNaturalKey(
-    serviceClient: ReturnType<SupabaseService['getServiceClient']>,
-    row: {
-      student_id: string;
-      academic_year_id: string;
-      term_id: string;
-      student_group_id: string;
-      report_type: string;
-      status: string;
-      overall_average: number | null;
-      position: number;
-      total_students: number;
-    },
-  ): Promise<string> {
-    const { data: existing, error: findErr } = await serviceClient
-      .schema('reporting')
-      .from('report_book')
-      .select('id')
-      .eq('student_id', row.student_id)
-      .eq('term_id', row.term_id)
-      .eq('report_type', row.report_type)
-      .maybeSingle();
-
-    if (findErr) {
-      throw new BadRequestException(findErr.message);
-    }
-
-    if (existing?.id) {
-      const { data: updated, error } = await serviceClient
-        .schema('reporting')
-        .from('report_book')
-        .update({
-          academic_year_id: row.academic_year_id,
-          student_group_id: row.student_group_id,
-          overall_average: row.overall_average,
-          position: row.position,
-          total_students: row.total_students,
-        })
-        .eq('id', existing.id)
-        .select('id')
-        .single();
-
-      if (error) {
-        throw new BadRequestException(error.message);
-      }
-      const id = updated?.id as string | undefined;
-      if (!id) {
-        throw new BadRequestException('Failed to update report book');
-      }
-      return id;
-    }
-
-    const { data: inserted, error } = await serviceClient
-      .schema('reporting')
-      .from('report_book')
-      .insert(row)
-      .select('id')
-      .single();
-
-    if (error) {
-      throw new BadRequestException(error.message);
-    }
-    const id = inserted?.id as string | undefined;
-    if (!id) {
-      throw new BadRequestException('Failed to create report book');
-    }
-    return id;
-  }
-
-  /** Insert or update grade columns by (report_book_id, subject_id). */
-  private async upsertReportEntryNaturalKey(
-    serviceClient: ReturnType<SupabaseService['getServiceClient']>,
-    reportBookId: string,
-    fields: {
-      subject_id: string;
-      coursework_average: number | null;
-      exam_average: number | null;
-      term_composite: number | null;
-      year_grade: number | null;
-      sort_order: number;
-    },
-  ): Promise<void> {
-    const { data: existing, error: findErr } = await serviceClient
-      .schema('reporting')
-      .from('report_book_entry')
-      .select('id')
-      .eq('report_book_id', reportBookId)
-      .eq('subject_id', fields.subject_id)
-      .maybeSingle();
-
-    if (findErr) {
-      throw new BadRequestException(findErr.message);
-    }
-
-    if (existing?.id) {
-      const { error } = await serviceClient
-        .schema('reporting')
-        .from('report_book_entry')
-        .update({
-          coursework_average: fields.coursework_average,
-          exam_average: fields.exam_average,
-          term_composite: fields.term_composite,
-          year_grade: fields.year_grade,
-          sort_order: fields.sort_order,
-        })
-        .eq('id', existing.id);
-
-      if (error) {
-        throw new BadRequestException(error.message);
-      }
-      return;
-    }
-
-    const { error } = await serviceClient
-      .schema('reporting')
-      .from('report_book_entry')
-      .insert({
-        report_book_id: reportBookId,
-        subject_id: fields.subject_id,
-        coursework_average: fields.coursework_average,
-        exam_average: fields.exam_average,
-        term_composite: fields.term_composite,
-        year_grade: fields.year_grade,
-        sort_order: fields.sort_order,
-      });
-
-    if (error) {
-      throw new BadRequestException(error.message);
-    }
   }
 
   /** PostgREST embeds need FK metadata; we query `student.student` explicitly. */

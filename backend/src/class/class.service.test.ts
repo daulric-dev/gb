@@ -17,7 +17,11 @@ describe('ClassService', () => {
   beforeEach(() => {
     mockSupabase = createMockSupabaseService();
     mockCache = createMockCacheService();
-    service = new ClassService(mockSupabase as any, mockCache as any, {} as any);
+    service = new ClassService(
+      mockSupabase as any,
+      mockCache as any,
+      {} as any,
+    );
   });
 
   describe('getMyClasses', () => {
@@ -48,7 +52,11 @@ describe('ClassService', () => {
         queryResult: { data: group, error: null },
       });
       mockCache = createMockCacheService();
-      service = new ClassService(mockSupabase as any, mockCache as any, {} as any);
+      service = new ClassService(
+        mockSupabase as any,
+        mockCache as any,
+        {} as any,
+      );
 
       const existing = [{ id: 'old', name: 'Old' }];
       await mockCache.set('my-classes:user1', existing, TTL);
@@ -75,7 +83,11 @@ describe('ClassService', () => {
         queryResult: { data: updated, error: null },
       });
       mockCache = createMockCacheService();
-      service = new ClassService(mockSupabase as any, mockCache as any, {} as any);
+      service = new ClassService(
+        mockSupabase as any,
+        mockCache as any,
+        {} as any,
+      );
 
       await mockCache.set('class-teachers:c1', [{ teacherId: 't1' }], TTL);
       await service.updateClass('c1', { name: 'Updated' });
@@ -90,7 +102,11 @@ describe('ClassService', () => {
         queryResult: { data: null, error: null },
       });
       mockCache = createMockCacheService();
-      service = new ClassService(mockSupabase as any, mockCache as any, {} as any);
+      service = new ClassService(
+        mockSupabase as any,
+        mockCache as any,
+        {} as any,
+      );
 
       await mockCache.set('class-teachers:c1', [{ teacherId: 't1' }], TTL);
       await service.deleteClass('c1');
@@ -119,7 +135,11 @@ describe('ClassService', () => {
       mockSupabase = createMockSupabaseService();
       mockSupabase._client.from = () => builder;
       mockCache = createMockCacheService();
-      service = new ClassService(mockSupabase as any, mockCache as any, {} as any);
+      service = new ClassService(
+        mockSupabase as any,
+        mockCache as any,
+        {} as any,
+      );
 
       const cached = [{ id: 't1', first_name: 'Jane' }];
       await mockCache.set('school-teachers:s1', cached, TTL);
@@ -138,7 +158,11 @@ describe('ClassService', () => {
       });
       mockSupabase = createMockSupabaseService();
       mockSupabase._client.schema = () => ({ from: () => builder });
-      service = new ClassService(mockSupabase as any, mockCache as any, {} as any);
+      service = new ClassService(
+        mockSupabase as any,
+        mockCache as any,
+        {} as any,
+      );
 
       expect(service.removeTeacher('c1', 't1')).rejects.toBeInstanceOf(
         ForbiddenException,

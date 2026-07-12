@@ -97,8 +97,9 @@ export class FileIngestHandler {
           .eq('owner_id', ownerId)
           .eq('name', name)
           .is('deleted_at', null);
-        return (parentId ? q.eq('parent_id', parentId) : q.is('parent_id', null))
-          .maybeSingle();
+        return (
+          parentId ? q.eq('parent_id', parentId) : q.is('parent_id', null)
+        ).maybeSingle();
       };
 
       const { data: existing } = await find();
