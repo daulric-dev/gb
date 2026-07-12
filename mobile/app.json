@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "GradeBook",
+    "slug": "gradebook-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "gradebook",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.daulric.gradebook"
+    },
+    "android": {
+      "package": "dev.daulric.gradebook",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#ffffff",
+          "dark": { "backgroundColor": "#0a0a0a" }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
