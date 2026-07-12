@@ -18,10 +18,30 @@ Postgres (Supabase) is the source of truth for every message. Redis is only a fa
 | `chat.controller.ts` | `/chat` REST surface + the `GET /chat/stream` SSE endpoint |
 | `chat.service.ts` | Conversations, messages, read state, unread counts, membership checks; the shared `postMessage` path |
 | `chat-system.service.ts` | Bridges other features in as system messages (file share, class invite) |
-| `chat-realtime.service.ts` | The Redis pub/sub bus + per-replica SSE subscription registry |
+| `chat-realtime.service.ts` | Maps chat events onto per-user pub/sub channels (thin layer over `RedisPubSubService`) |
+| `message-cipher.service.ts` | AES-256-GCM encryption of message content at rest (versioned keyring) |
 | `chat.constants.ts` | Channel naming, SSE event names, the channels feature flag |
+
+The Redis pub/sub transport itself is a **shared, generic service**, not chat-specific:
+
+| File | Purpose |
+|------|---------|
+| `realtime/redis-pubsub.service.ts` | `RedisPubSubService` — `publish(channel, payload)` / `subscribe(channel, handler)` over a dedicated ioredis publisher + subscriber, with an in-process fallback. Reusable by any feature (`RealtimeModule` is `@Global`). |
+| `realtime/presence.service.ts` | `PresenceService` — tracks who is online (per-user connection count + per-school online set in Redis), broadcasts online/offline over the bus, and answers `onlineUserIds(schoolId)`. |
+| `realtime/redis.util.ts` | Shared `REDIS_URL` connection options + `redisEnabled()`. |
 | `chat.types.ts` | Shared response/event shapes |
 | `dto/` | Request validation (create conversation, send message, message action, list query, create channel) |
+
+## Message encryption at rest
+
+Message content is encrypted before it is stored and decrypted on read, so a database dump, a leaked backup, or a direct SQL read yields ciphertext. This is **defense-in-depth** on top of TLS in transit and Supabase's disk encryption — it is **not** end-to-end: the server holds the key (it must, to render previews, unread, system messages, and SSE), the same trust already placed in this backend for grades and PII.
+
+- **`MessageCipher`** ([message-cipher.service.ts](../../../../backend/src/chat/message-cipher.service.ts)) encrypts with **AES-256-GCM** (random 12-byte IV per message, GCM auth tag). Hooked at exactly three points: `ChatService.postMessage` and `editMessage` encrypt the `body` before write; `presentMessage` decrypts on the way out — which covers every read path, including conversation-list previews.
+- **Envelope** (stored in the existing `body` column, no schema change): `enc:v<version>:<iv_b64>:<tag_b64>:<ciphertext_b64>`. A value without the `enc:` prefix is treated as **legacy plaintext and passed through**, so enabling encryption doesn't break rows already in the DB.
+- **Keys** are base64 of 32 bytes, from the environment, and **versioned for rotation**: `CHAT_ENCRYPTION_KEY` (single → v1) or `CHAT_ENCRYPTION_KEYS` (`1:<b64>,2:<b64>`). New rows encrypt with the current version; old rows decrypt by the version tag in their envelope. See [Environment Variables](../environment-variables.md).
+- **Fail-closed:** in production a missing key **stops the app from booting** (never silently store plaintext). In dev, a missing key logs a warning and passes through. A tampered ciphertext fails GCM auth and yields no plaintext (never the raw bytes).
+
+Scope: message **body** is encrypted (this includes system-message captions, e.g. the shared file's name). System-message `metadata` keeps ids (`fileId`, `classId`) as plaintext — they're needed for navigation and aren't message content. The Redis bus carries decrypted events between the app and its SSE edges (internal, transient); the encryption boundary is the database.
 
 ## Data model
 
@@ -51,11 +71,24 @@ The transport has to satisfy three constraints: **3 stateless replicas behind ng
 1. The client opens `GET /chat/stream`. The request lands on one replica; `AuthGuard` authenticates it from the session cookie.
 2. That replica **subscribes to the user's Redis channel** `chat:u:<userId>` for the life of the connection and relays every event it receives as an SSE frame (`event: <type>\ndata: <json>`). A `: ping` heartbeat every 25s keeps the connection and any proxy alive.
 3. Sending goes over the normal `POST` routes. `ChatService.postMessage` writes the row, bumps `last_message_at`, marks the sender read, and **publishes** one event to each participant's channel.
-4. Redis delivers that event to whichever replica currently holds each participant's SSE stream — no sticky sessions needed. `ChatRealtimeService` reference-counts local handlers so a channel is subscribed while ≥1 local stream wants it and unsubscribed when the last disconnects.
+4. Redis delivers that event to whichever replica currently holds each participant's SSE stream — no sticky sessions needed. `RedisPubSubService` reference-counts local handlers so a channel is subscribed while ≥1 local stream wants it and unsubscribed when the last disconnects.
+
+**Two layers.** `RedisPubSubService` (`realtime/`) is the generic transport — `publish`/`subscribe` over Redis with an in-process fallback. `ChatRealtimeService` is a thin chat-specific layer that maps a user id to a `chat:u:<id>` channel. New realtime features publish/subscribe on the same bus.
 
 **Fallback.** When `USE_REDIS` is not `true`, the bus dispatches in-process only (correct for single-process dev). `ioredis` is used (not Bun's `RedisClient`) because a subscriber connection must be dedicated to pub/sub.
 
-**SSE frames emitted:** `message`, `conversation`, `read`, `message_action` (see `ChatEventType`).
+**SSE frames emitted:** `message`, `conversation`, `read`, `message_action`, `presence` (see `ChatEventType`).
+
+### Presence (who's online)
+
+A user is **online while they hold ≥1 open SSE stream** (any tab/device/replica). The stream handler drives `PresenceService`:
+
+- on connect → `presence.connect(userId, schoolId)`; on each 25s heartbeat → `presence.heartbeat(...)`; on close → `presence.disconnect(...)`.
+- each stream also subscribes to its **school** presence channel (`presence:school:<schoolId>`) and relays online/offline changes as `presence` SSE frames, so everyone in the school updates live.
+
+State is shared across replicas in Redis: a per-user connection counter (`presence:count:<userId>`, `INCR`/`DECR`, TTL-refreshed by the heartbeat) drives the online/offline **transition** (publish on 1st connect, on last disconnect), and a per-school sorted set (`presence:online:<schoolId>`, scored by last-seen) answers `GET /chat/presence`. If a replica dies without a clean disconnect, the counter TTL lapses and the stale sorted-set entry is pruned on the next query — and the frontend reconciles presence every 45s as a backstop. With `USE_REDIS` off it all runs in-process.
+
+> **CORS on the stream.** `GET /chat/stream` calls `reply.hijack()` to own the socket, which **skips Fastify's onSend hooks — including the global CORS plugin**. The handler therefore writes `Access-Control-Allow-Origin` (the exact `FRONTEND_URL`, never `*`) and `Access-Control-Allow-Credentials: true` itself. Without this the browser blocks the cross-origin `EventSource` (frontend and API are different origins) and **no events are delivered** — the symptom is "messages only appear after you click into the conversation," because only the on-open fetch runs.
 
 > The SSE endpoint requires the long-lived Node deployment (`infrastructure/docker-compose.yml`). It does **not** work on the Worker entrypoint (`worker.ts`), which replays requests through `fastify.inject()` and cannot stream. The frontend degrades to polling if the stream can't be established.
 
@@ -67,6 +100,7 @@ All routes are under `/chat`, guarded by `AuthGuard` + `PermissionGuard` and req
 |--------|------|------------|---------|
 | `GET` | `/chat/stream` | `chat:read` | SSE event stream (see above) |
 | `GET` | `/chat/users` | `chat:read` | Active users in your school you can message |
+| `GET` | `/chat/presence` | `chat:read` | `{ online: string[] }` — user ids currently online in your school |
 | `GET` | `/chat/unread-count` | `chat:read` | `{ count }` total unread, for the sidebar badge |
 | `GET` | `/chat/conversations` | `chat:read` | Your conversations, newest first, with preview + unread |
 | `POST` | `/chat/conversations` | `chat:create` | Start (or reuse) a DM: `{ userId }` |

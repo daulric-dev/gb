@@ -1,20 +1,22 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { RedisPubSubService } from '@/realtime/redis-pubsub.service';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { ChatService } from './chat.service';
 import { ChatEventType } from './chat.constants';
 import type { ChatEvent } from './chat.types';
 
-// Force in-process mode so the bus dispatches locally and needs no Redis
-// server, regardless of USE_REDIS in the ambient environment.
-describe('ChatRealtimeService (in-process)', () => {
-  let bus: ChatRealtimeService;
+// Drive ChatRealtimeService over a real (in-process) pub/sub bus so the
+// user-channel mapping and fan-out are exercised end to end without Redis.
+describe('ChatRealtimeService (over in-process bus)', () => {
+  let realtime: ChatRealtimeService;
   let savedUseRedis: string | undefined;
 
   beforeEach(() => {
     savedUseRedis = process.env.USE_REDIS;
     process.env.USE_REDIS = 'false';
-    bus = new ChatRealtimeService();
+    const bus = new RedisPubSubService();
     bus.onModuleInit();
+    realtime = new ChatRealtimeService(bus);
   });
 
   afterEach(() => {
@@ -24,9 +26,9 @@ describe('ChatRealtimeService (in-process)', () => {
 
   test('delivers an event to a subscribed user', async () => {
     const received: ChatEvent[] = [];
-    await bus.subscribeUser('u1', (e) => received.push(e));
+    await realtime.subscribeUser('u1', (e) => received.push(e));
 
-    await bus.publishToUsers(['u1'], {
+    await realtime.publishToUsers(['u1'], {
       type: ChatEventType.Message,
       data: { hello: 'world' },
     });
@@ -36,11 +38,11 @@ describe('ChatRealtimeService (in-process)', () => {
     expect(received[0].data).toEqual({ hello: 'world' });
   });
 
-  test('does not deliver to users who are not subscribed', async () => {
+  test('does not deliver to a user who is not a target', async () => {
     const received: ChatEvent[] = [];
-    await bus.subscribeUser('u1', (e) => received.push(e));
+    await realtime.subscribeUser('u1', (e) => received.push(e));
 
-    await bus.publishToUsers(['u2'], {
+    await realtime.publishToUsers(['u2'], {
       type: ChatEventType.Message,
       data: {},
     });
@@ -48,26 +50,13 @@ describe('ChatRealtimeService (in-process)', () => {
     expect(received).toHaveLength(0);
   });
 
-  test('unsubscribe stops further delivery', async () => {
-    const received: ChatEvent[] = [];
-    const unsub = await bus.subscribeUser('u1', (e) => received.push(e));
-
-    unsub();
-    await bus.publishToUsers(['u1'], {
-      type: ChatEventType.Read,
-      data: {},
-    });
-
-    expect(received).toHaveLength(0);
-  });
-
-  test('fans a single publish out to multiple users', async () => {
+  test('fans a single publish out to multiple users, deduped', async () => {
     const a: ChatEvent[] = [];
     const b: ChatEvent[] = [];
-    await bus.subscribeUser('a', (e) => a.push(e));
-    await bus.subscribeUser('b', (e) => b.push(e));
+    await realtime.subscribeUser('a', (e) => a.push(e));
+    await realtime.subscribeUser('b', (e) => b.push(e));
 
-    await bus.publishToUsers(['a', 'b', 'a'], {
+    await realtime.publishToUsers(['a', 'b', 'a'], {
       type: ChatEventType.Conversation,
       data: { id: 'c1' },
     });

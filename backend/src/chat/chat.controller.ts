@@ -16,6 +16,8 @@ import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
+import { SupabaseService } from '@/supabase/supabase.service';
+import { PresenceService } from '@/realtime/presence.service';
 import { ChatService } from './chat.service';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
@@ -35,30 +37,33 @@ export class ChatController {
   constructor(
     private readonly chat: ChatService,
     private readonly realtime: ChatRealtimeService,
+    private readonly presence: PresenceService,
+    private readonly supabase: SupabaseService,
   ) {}
 
-  // ── Realtime stream (declared before param routes) ─────────────────────────
-
-  /**
-   * Server-Sent Events stream of this user's chat events. The connection lands
-   * on one replica, which subscribes to the user's Redis channel for its
-   * lifetime and relays every event as an SSE frame. Sends go over the normal
-   * POST routes below. Requires the long-lived Node deployment (not the Worker
-   * entrypoint, which cannot hold a streaming response).
-   */
   @RequirePermission('chat', 'read')
   @Get('stream')
   async stream(@Req() req: any, @Res() reply: FastifyReply): Promise<void> {
     const userId = req.user.id;
-    // Take over the socket so Fastify does not try to send its own response.
+    let schoolId: string | null = null;
+    try {
+      schoolId = await this.supabase.getUserSchoolId(userId);
+    } catch {
+      schoolId = null;
+    }
+
     reply.hijack();
     const raw = reply.raw;
+    const origin = req.headers?.origin;
+    const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
     raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
-      // Defeat any proxy buffering (nginx honours this header explicitly).
       'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': origin === allowedOrigin ? origin : allowedOrigin,
+      'Access-Control-Allow-Credentials': 'true',
+      Vary: 'Origin',
     });
     // Ask the browser to reconnect ~5s after a drop, and open the stream.
     raw.write('retry: 5000\n\n');
@@ -68,14 +73,46 @@ export class ChatController {
     };
 
     const unsubscribe = await this.realtime.subscribeUser(userId, send);
-    const heartbeat = setInterval(() => raw.write(': ping\n\n'), SSE_HEARTBEAT_MS);
 
+    // Presence: mark the user online, relay the school's online/offline events,
+    // and keep the user fresh on each heartbeat.
+    let unsubPresence: (() => void) | null = null;
+    if (schoolId) {
+      unsubPresence = await this.presence.subscribeSchool(schoolId, (e) =>
+        send(e as unknown as ChatEvent),
+      );
+      await this.presence.connect(userId, schoolId);
+    }
+
+    const heartbeat = setInterval(() => {
+      raw.write(': ping\n\n');
+      if (schoolId) void this.presence.heartbeat(userId, schoolId);
+    }, SSE_HEARTBEAT_MS);
+
+    let closed = false;
     const cleanup = () => {
+      if (closed) return;
+      closed = true;
       clearInterval(heartbeat);
       unsubscribe();
+      unsubPresence?.();
+      if (schoolId) void this.presence.disconnect(userId, schoolId);
     };
     req.raw.on('close', cleanup);
     req.raw.on('error', cleanup);
+  }
+
+  /** User ids currently online in the caller's school. */
+  @RequirePermission('chat', 'read')
+  @Get('presence')
+  async presenceList(@Req() req: any): Promise<{ online: string[] }> {
+    let schoolId: string;
+    try {
+      schoolId = await this.supabase.getUserSchoolId(req.user.id);
+    } catch {
+      return { online: [] };
+    }
+    return { online: await this.presence.onlineUserIds(schoolId) };
   }
 
   // ── Directory / counters ────────────────────────────────────────────────────

@@ -47,6 +47,12 @@ export const messagesByConversation = signal<Record<string, ChatMessage[]>>({});
 export const activeConversationId = signal<string | null>(null);
 export const unreadChat = signal(0);
 export const chatConnected = signal(false);
+/** User ids currently online in the caller's school. */
+export const onlineUsers = signal<Set<string>>(new Set());
+
+export function isOnline(userId: string | null | undefined): boolean {
+  return !!userId && onlineUsers.value.has(userId);
+}
 
 /** Set once the SSE stream is up so we know whose messages are "mine". */
 let currentUserId: string | null = null;
@@ -68,6 +74,15 @@ export async function refreshChatUnread() {
     unreadChat.value = count;
   } catch {
     // Non-fatal.
+  }
+}
+
+export async function refreshPresence() {
+  try {
+    const { online } = await api<{ online: string[] }>("/chat/presence");
+    onlineUsers.value = new Set(online);
+  } catch {
+    // Non-fatal: keep the last known set.
   }
 }
 
@@ -161,6 +176,7 @@ export async function actOnMessage(
 
 let source: EventSource | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let presenceTimer: ReturnType<typeof setInterval> | null = null;
 let errorCount = 0;
 
 const STREAM_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/chat/stream`;
@@ -171,6 +187,11 @@ export function connectChat(userId: string) {
 
   void refreshConversations();
   void refreshChatUnread();
+  void refreshPresence();
+
+  // Reconcile presence periodically so a user whose replica crashed (no clean
+  // offline event) still drops off within a minute, even while SSE is healthy.
+  presenceTimer = setInterval(() => void refreshPresence(), 45_000);
 
   try {
     source = new EventSource(STREAM_URL, { withCredentials: true });
@@ -200,6 +221,14 @@ export function connectChat(userId: string) {
     patchConversation(data.conversationId, { unreadCount: 0 });
     recomputeUnread();
   });
+  source.addEventListener("presence", (e) => {
+    const data = parse<{ userId: string; online: boolean }>(e.data);
+    if (!data) return;
+    const next = new Set(onlineUsers.value);
+    if (data.online) next.add(data.userId);
+    else next.delete(data.userId);
+    onlineUsers.value = next;
+  });
 
   source.onerror = () => {
     chatConnected.value = false;
@@ -213,6 +242,11 @@ export function disconnectChat() {
   source = null;
   chatConnected.value = false;
   stopPollingFallback();
+  if (presenceTimer) {
+    clearInterval(presenceTimer);
+    presenceTimer = null;
+  }
+  onlineUsers.value = new Set();
 }
 
 function startPollingFallback() {

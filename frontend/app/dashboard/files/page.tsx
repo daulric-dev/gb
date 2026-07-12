@@ -25,6 +25,7 @@ import { FolderOpen } from "lucide-react";
 import type { FileItem } from "./_components/types";
 import { UploadButton } from "./_components/UploadButton";
 import { FilesTable } from "./_components/FilesTable";
+import { FolderBrowser } from "./_components/FolderBrowser";
 import { FileViewerDialog } from "./_components/FileViewerDialog";
 import { ShareDialog } from "./_components/ShareDialog";
 import { RenameDialog } from "./_components/RenameDialog";
@@ -39,13 +40,18 @@ export default function FilesPage() {
   const files = useSignal<FileItem[]>([]);
   const loading = useSignal(true);
   const filter = useSignal<Filter>("all");
+  // Bumped after a file mutation so the folder browser (own tab) refetches.
+  const reloadKey = useSignal(0);
 
   const viewFile = useSignal<FileItem | null>(null);
   const shareFile = useSignal<FileItem | null>(null);
   const renameFile = useSignal<FileItem | null>(null);
   const deleteFile = useSignal<FileItem | null>(null);
 
+  // The "My files" tab is a folder browser that fetches its own contents; the
+  // flat list backs the "All" and "Shared with me" tabs only.
   const fetchFiles = useCallback((f: Filter) => {
+    if (f === "own") return;
     loading.value = true;
     api<FileItem[]>(`/files?filter=${f}`)
       .then((data) => (files.value = data))
@@ -63,13 +69,18 @@ export default function FilesPage() {
     markFilesRead();
   }, []);
 
+  function refresh() {
+    reloadKey.value += 1; // folder browser
+    fetchFiles(filter.value); // flat tabs
+  }
+
   async function confirmDelete() {
     const file = deleteFile.value;
     if (!file) return;
     try {
       await api(`/files/${file.id}`, { method: "DELETE" });
       toast.success("File deleted");
-      fetchFiles(filter.value);
+      refresh();
     } catch {
       toast.error("Failed to delete");
     } finally {
@@ -77,13 +88,16 @@ export default function FilesPage() {
     }
   }
 
+  const isBrowser = filter.value === "own";
+
   return (
     <div className="space-y-6">
       <DashboardPageHeader
         title="Files"
         description="Your reports and uploads, and files shared with you"
         action={
-          can("file", "create") ? (
+          // The browser has its own folder-aware upload button.
+          can("file", "create") && !isBrowser ? (
             <UploadButton onUploaded={() => fetchFiles(filter.value)} />
           ) : undefined
         }
@@ -100,7 +114,17 @@ export default function FilesPage() {
         </TabsList>
       </Tabs>
 
-      {loading.value ? (
+      {isBrowser ? (
+        <FolderBrowser
+          currentUserId={profile.value?.id}
+          canCreate={can("file", "create")}
+          reloadKey={reloadKey.value}
+          onView={(f) => (viewFile.value = f)}
+          onShare={(f) => (shareFile.value = f)}
+          onRename={(f) => (renameFile.value = f)}
+          onDelete={(f) => (deleteFile.value = f)}
+        />
+      ) : loading.value ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
@@ -136,7 +160,7 @@ export default function FilesPage() {
       <RenameDialog
         file={renameFile.value}
         onClose={() => (renameFile.value = null)}
-        onRenamed={() => fetchFiles(filter.value)}
+        onRenamed={() => refresh()}
       />
 
       <AlertDialog

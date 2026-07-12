@@ -4,7 +4,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,  DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Eye, Share2, Pencil, Trash2, MoreHorizontal, FileText } from "lucide-react";
+import { Eye, Share2, Pencil, Trash2, MoreHorizontal, FileText, FolderInput } from "lucide-react";
 import type { FileItem } from "./types";
 
 function formatBytes(bytes: number): string {
@@ -43,6 +43,7 @@ export function FilesTable({
   onShare,
   onRename,
   onDelete,
+  onMove,
 }: {
   files: FileItem[];
   currentUserId: string | undefined;
@@ -50,6 +51,8 @@ export function FilesTable({
   onShare: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
+  /** When provided, adds a "Move to…" action (folder browser only). */
+  onMove?: (file: FileItem) => void;
 }) {
   return (
     <div className="rounded-md border">
@@ -121,6 +124,12 @@ export function FilesTable({
                             <Pencil className="mr-2 size-4" />
                             Rename
                           </DropdownMenuItem>
+                          {onMove && (
+                            <DropdownMenuItem onClick={() => onMove(file)}>
+                              <FolderInput className="mr-2 size-4" />
+                              Move to…
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive"

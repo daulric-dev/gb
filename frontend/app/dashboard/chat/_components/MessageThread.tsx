@@ -23,8 +23,11 @@ import {
   sendChatMessage,
   actOnMessage,
   conversationTitle,
+  otherParticipant,
+  isOnline,
   type ChatMessage,
 } from "@/lib/chat";
+import { PresenceDot } from "./PresenceDot";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -83,9 +86,22 @@ export function MessageThread({ selfId }: { selfId: string | null }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b px-4 py-3">
-        <span className="truncate font-medium">
-          {conversationTitle(conversation, selfId)}
-        </span>
+        <div className="min-w-0">
+          <div className="truncate font-medium">
+            {conversationTitle(conversation, selfId)}
+          </div>
+          {conversation.type === "direct" &&
+            (() => {
+              const other = otherParticipant(conversation, selfId);
+              const online = isOnline(other?.userId);
+              return (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <PresenceDot online={online} />
+                  {online ? "Online" : "Offline"}
+                </div>
+              );
+            })()}
+        </div>
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">

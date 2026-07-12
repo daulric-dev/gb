@@ -17,8 +17,10 @@ import {
   listMessageableUsers,
   openDirectConversation,
   participantName,
+  isOnline,
   type ChatParticipant,
 } from "@/lib/chat";
+import { AvatarPresenceDot } from "./PresenceDot";
 
 function initials(p: ChatParticipant) {
   return (
@@ -94,14 +96,15 @@ export function NewChatDialog({
                     onClick={() => start(u)}
                     className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
                   >
-                    <Avatar className="size-8 shrink-0">
-                      {u.avatarUrl && (
-                        <AvatarImage src={u.avatarUrl} alt="" />
-                      )}
-                      <AvatarFallback className="text-xs">
-                        {initials(u)}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative shrink-0">
+                      <Avatar className="size-8">
+                        {u.avatarUrl && <AvatarImage src={u.avatarUrl} alt="" />}
+                        <AvatarFallback className="text-xs">
+                          {initials(u)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <AvatarPresenceDot online={isOnline(u.userId)} />
+                    </div>
                     <span className="truncate">{participantName(u)}</span>
                   </button>
                 </li>

@@ -727,6 +727,9 @@ export class ReportService {
         contentType: params.contentType,
         sizeBytes: params.sizeBytes,
         sourceRef: params.sourceRef,
+        // File generated reports under Reports/<generation date> in the owner's
+        // file manager. Folders are created on demand by the ingest handler.
+        folderPath: ['Reports', new Date().toISOString().slice(0, 10)],
       });
     } catch (err) {
       this.logger.warn(

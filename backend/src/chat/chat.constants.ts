@@ -20,6 +20,7 @@ export const ChatEventType = {
   Conversation: 'conversation', // a conversation was created or bumped
   Read: 'read', // a member advanced their read marker
   MessageAction: 'message_action', // a system-message action changed state
+  Presence: 'presence', // a user in the school came online / went offline
 } as const;
 
 export type ChatEventType = (typeof ChatEventType)[keyof typeof ChatEventType];

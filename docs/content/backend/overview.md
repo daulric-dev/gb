@@ -125,6 +125,7 @@ AppModule
 ├── ReportFilesModule (server-side report file generation + streaming)
 ├── AnnouncementModule (announcement board + read receipts)
 ├── FileManagerModule (personal files, sharing, notifications)
+├── RealtimeModule (global - exports RedisPubSubService + PresenceService; Redis pub/sub bus + online-presence tracking)
 ├── ChatModule (global - real-time DMs over SSE + Redis pub/sub; exports ChatSystemService)
 ├── QueueModule (global - BullMQ file ingest/share-notify with inline fallback)
 ├── ScanModule (global - exports ClamavScanner; scans every storage upload)
@@ -156,7 +157,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | `staff` | `teacher_group_assignment`, `teacher_subject_assignment` |
 | `grading` | `assessment`, `grade` |
 | `reporting` | `report_book`, `report_book_entry`, `report_book_pdf`, `class_report_file` |
-| `file_manager` | `file`, `file_share`, `notification` |
+| `file_manager` | `file`, `file_share`, `notification`, `folder` |
 | `chat` | `conversation`, `conversation_member`, `message` |
 
 ## Guards

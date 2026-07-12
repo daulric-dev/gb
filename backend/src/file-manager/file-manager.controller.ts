@@ -18,10 +18,15 @@ import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { FileManagerService } from './file-manager.service';
 import { FileNotificationService } from './file-notification.service';
+import { FolderService } from './folder.service';
 import { ListFilesQueryDto } from './dto/list-files.query.dto';
 import { RenameFileDto } from './dto/rename-file.dto';
 import { ShareFileDto } from './dto/share-file.dto';
 import { UpdateShareDto } from './dto/update-share.dto';
+import { CreateFolderDto } from './dto/create-folder.dto';
+import { RenameFolderDto } from './dto/rename-folder.dto';
+import { MoveFileDto } from './dto/move-file.dto';
+import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
 
 @ApiTags('File Manager')
 @ApiBearerAuth()
@@ -31,6 +36,7 @@ export class FileManagerController {
   constructor(
     private readonly files: FileManagerService,
     private readonly notifications: FileNotificationService,
+    private readonly folders: FolderService,
   ) {}
 
   @RequirePermission('file', 'read')
@@ -45,9 +51,49 @@ export class FileManagerController {
   @RequirePermission('file', 'create')
   @Post()
   @ApiConsumes('multipart/form-data')
-  async upload(@Req() req: any, @Query('name') name?: string) {
+  async upload(
+    @Req() req: any,
+    @Query('name') name?: string,
+    @Query('folderId') folderId?: string,
+  ) {
     const file = await req.file();
-    return this.files.uploadManual(req.user.id, file, name);
+    return this.files.uploadManual(req.user.id, file, name, folderId);
+  }
+
+  // ── Folders (declared before :id so the literal path wins) ────────────────
+
+  @RequirePermission('file', 'read')
+  @Get('folders/contents')
+  async browseFolder(@Req() req: any, @Query() query: BrowseFolderQueryDto) {
+    return this.files.browseFolder(req.user.id, query.folderId ?? null);
+  }
+
+  @RequirePermission('file', 'read')
+  @Get('folders')
+  async listFolders(@Req() req: any) {
+    return this.folders.listAll(req.user.id);
+  }
+
+  @RequirePermission('file', 'create')
+  @Post('folders')
+  async createFolder(@Req() req: any, @Body() dto: CreateFolderDto) {
+    return this.folders.create(req.user.id, dto.name, dto.parentId ?? null);
+  }
+
+  @RequirePermission('file', 'update')
+  @Patch('folders/:folderId')
+  async renameFolder(
+    @Req() req: any,
+    @Param('folderId') folderId: string,
+    @Body() dto: RenameFolderDto,
+  ) {
+    return this.folders.rename(req.user.id, folderId, dto.name);
+  }
+
+  @RequirePermission('file', 'delete')
+  @Delete('folders/:folderId')
+  async deleteFolder(@Req() req: any, @Param('folderId') folderId: string) {
+    return this.folders.remove(req.user.id, folderId);
   }
 
   // ── Notifications (declared before :id so the literal path wins) ──────────
@@ -127,6 +173,17 @@ export class FileManagerController {
     @Body() dto: RenameFileDto,
   ) {
     return this.files.rename(req.user.id, id, dto.name);
+  }
+
+  /** Move a file into a folder (or to the root with `folderId: null`). */
+  @RequirePermission('file', 'update')
+  @Patch(':id/move')
+  async move(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: MoveFileDto,
+  ) {
+    return this.files.move(req.user.id, id, dto.folderId);
   }
 
   @RequirePermission('file', 'delete')

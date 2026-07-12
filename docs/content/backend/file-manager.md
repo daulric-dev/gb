@@ -17,6 +17,7 @@ The file manager gives each user a personal file space: generated report files l
 | `file-manager.service.ts` | Orchestration: listing, upload, rename/delete, content delivery, ownership checks |
 | `file-access.service.ts` | Access resolution - owner / role / group / user shares, view vs. download |
 | `file-share.service.ts` | Share CRUD (create/list/update/revoke) for a known-owned file |
+| `folder.service.ts` | The owner's folder tree — browse, create, rename, delete (recursive), move, and find-or-create system paths |
 | `file-notification.service.ts` | Read side of in-app "shared with you" notifications |
 | `file-content.ts` | Allowed content types + magic-byte verification (used on upload) |
 | `dto/` | Request validation (list filter + pagination, rename, share, update-share) |
@@ -41,8 +42,14 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 
 | Method | Path | Permission | Purpose |
 |--------|------|------------|---------|
-| `GET` | `/files` | `file:read` | List files (`filter=all\|own\|shared`; optional `page`/`pageSize`) |
-| `POST` | `/files` | `file:create` | Upload a file (`multipart/form-data`, optional `?name=`) |
+| `GET` | `/files` | `file:read` | Flat list (`filter=all\|own\|shared`; optional `page`/`pageSize`) — backs the All / Shared tabs |
+| `POST` | `/files` | `file:create` | Upload a file (`multipart/form-data`, optional `?name=`, optional `?folderId=`) |
+| `GET` | `/files/folders/contents` | `file:read` | Browse a folder: `{ folder, breadcrumb, folders, files }` (`?folderId=`, omit for root) |
+| `GET` | `/files/folders` | `file:read` | Flat list of the caller's folders (move-target picker) |
+| `POST` | `/files/folders` | `file:create` | Create a folder (`{ name, parentId? }`) |
+| `PATCH` | `/files/folders/:folderId` | `file:update` | Rename a folder (not system folders) |
+| `DELETE` | `/files/folders/:folderId` | `file:delete` | Delete a folder **and everything inside it** (recursive soft-delete) |
+| `PATCH` | `/files/:id/move` | `file:update` | Move a file into a folder (`{ folderId: string \| null }`) |
 | `GET` | `/files/notifications` | `file:read` | Recent share notifications for the caller |
 | `GET` | `/files/notifications/unread-count` | `file:read` | Unread notification count (drives the sidebar badge) |
 | `POST` | `/files/notifications/mark-read` | `file:read` | Mark all notifications read |
@@ -54,7 +61,21 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 | `GET`/`POST` | `/files/:id/shares` | `file:update` | List / create shares (owner only) |
 | `PATCH`/`DELETE` | `/files/:id/shares/:shareId` | `file:update` | Toggle download / revoke a share (owner only) |
 
-> The notification routes are declared **before** `/:id` so the literal path is not captured by the `:id` param route.
+> The `folders/*` and `notifications/*` routes are declared **before** `/:id` so the literal paths are not captured by the `:id` param route.
+
+## Folders
+
+Migration `20260712140000_file_manager_folders.sql` adds `file_manager.folder` (nested via `parent_id`) and a nullable `file.folder_id`.
+
+Folders are an **owner-private organization layer** — a folder is never shared, and `folder_id` is the owner's placement of a file, irrelevant to recipients. Every `FolderService` method is scoped to `owner_id = userId` (plus RLS as defense-in-depth). Folder names are unique within a parent per owner, enforced by two partial unique indexes (one for nested folders, one for roots, since a `NULL` parent would otherwise never collide).
+
+- **Browsing** — the **My files** tab calls `GET /files/folders/contents`, which returns the current folder's subfolders, the files directly inside it (`folder_id = current`, or `IS NULL` at the root), and a breadcrumb trail. The **All** and **Shared with me** tabs stay flat (`GET /files`) and ignore folders.
+- **Delete is recursive** — deleting a folder soft-deletes the folder, all descendant folders, and every file within them. The subtree is walked in JS (trees are shallow) so contained files are soft-deleted the same way a direct file delete is, rather than being hard-deleted by the FK cascade.
+- **System folders** (`is_system = true`) are auto-created for server reports (below). They can't be renamed, but the owner may still delete them.
+
+### Server reports are filed by date
+
+When a report is generated, `ReportService.enqueueFileManagerIngest` passes `folderPath: ['Reports', '<YYYY-MM-DD>']` on the ingest job. `FileIngestHandler` find-or-creates that per-owner system-folder path (idempotent via the unique indexes) and sets the new file's `folder_id` to the leaf — so each user's generated reports land under **Reports / \<generation date\>** in their file manager. The folder resolution is inlined in the handler (rather than reusing `FolderService`) so the queue module stays independent of the file-manager module.
 
 ## Listing
 

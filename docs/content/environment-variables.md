@@ -24,6 +24,9 @@ No `.env` files are committed to the repository. You must create them manually i
 | `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica). |
 | `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
 | `CHAT_CHANNELS_ENABLED` | No | `false` | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md). |
+| `CHAT_ENCRYPTION_KEY` | **Prod** | - | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning). |
+| `CHAT_ENCRYPTION_KEYS` | No | - | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version. |
+| `CHAT_ENCRYPTION_KEY_VERSION` | No | highest | Which key version to encrypt new messages with. |
 | `CLAMAV_HOST` | No | - | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
 | `CLAMAV_PORT` | No | `3310` | `clamd` TCP port. |
 | `CLAMAV_TIMEOUT_MS` | No | `30000` | Socket timeout for a scan, in milliseconds. |
@@ -42,6 +45,9 @@ USE_REDIS=false
 
 # Chat: DMs are always on; channels are gated off until their UI ships
 # CHAT_CHANNELS_ENABLED=false
+# Message encryption at rest (AES-256-GCM). Required in production.
+#   openssl rand -base64 32
+# CHAT_ENCRYPTION_KEY=base64-of-32-bytes
 
 # Virus scanning for file-manager uploads (optional; passthrough if unset)
 # CLAMAV_HOST=127.0.0.1

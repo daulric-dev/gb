@@ -10,7 +10,14 @@ import { useSignals } from "@preact/signals-react/runtime";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 
-export function UploadButton({ onUploaded }: { onUploaded: () => void }) {
+export function UploadButton({
+  onUploaded,
+  folderId = null,
+}: {
+  onUploaded: () => void;
+  /** Place the upload into this folder; null uploads to the root. */
+  folderId?: string | null;
+}) {
   useSignals();
   const inputRef = useRef<HTMLInputElement>(null);
   const uploading = useSignal(false);
@@ -29,7 +36,9 @@ export function UploadButton({ onUploaded }: { onUploaded: () => void }) {
     try {
       const formData = new FormData();
       formData.append("file", file, file.name);
-      await apiUpload(`/files?name=${encodeURIComponent(file.name)}`, formData);
+      const params = new URLSearchParams({ name: file.name });
+      if (folderId) params.set("folderId", folderId);
+      await apiUpload(`/files?${params.toString()}`, formData);
       toast.success("File uploaded — it will be available once scanned");
       onUploaded();
     } catch {

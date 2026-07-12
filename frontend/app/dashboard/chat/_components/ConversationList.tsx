@@ -9,8 +9,10 @@ import {
   activeConversationId,
   conversationTitle,
   otherParticipant,
+  isOnline,
   type ChatConversation,
 } from "@/lib/chat";
+import { AvatarPresenceDot } from "./PresenceDot";
 
 function previewText(conv: ChatConversation): string {
   const m = conv.lastMessage;
@@ -63,12 +65,17 @@ export function ConversationList({
                   active && "bg-accent",
                 )}
               >
-                <Avatar className="size-9 shrink-0">
-                  {other?.avatarUrl && <AvatarImage src={other.avatarUrl} alt="" />}
-                  <AvatarFallback className="text-xs">
-                    {(title[0] ?? "?").toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative shrink-0">
+                  <Avatar className="size-9">
+                    {other?.avatarUrl && <AvatarImage src={other.avatarUrl} alt="" />}
+                    <AvatarFallback className="text-xs">
+                      {(title[0] ?? "?").toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {conv.type === "direct" && (
+                    <AvatarPresenceDot online={isOnline(other?.userId)} />
+                  )}
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-sm font-medium">{title}</span>

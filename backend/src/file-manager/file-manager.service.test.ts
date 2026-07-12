@@ -46,11 +46,15 @@ function makeService(
     tables: { 'file_manager.file': fileResult },
   });
   const chatSystem = { notifyFileShares: () => Promise.resolve() };
+  const folders = {
+    getOwned: () => Promise.resolve({ id: "folder-1", owner_id: USER }),
+  };
   const svc = new FileManagerService(
     supabase as any,
     access as any,
     {} as any,
     chatSystem as any,
+    folders as any,
   );
   return { svc, supabase };
 }

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { ChatRealtimeService } from './chat-realtime.service';
+import { MessageCipher } from './message-cipher.service';
 import { ChatEventType, channelsEnabled } from './chat.constants';
 import type {
   ChatConversation,
@@ -55,6 +56,7 @@ export class ChatService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly realtime: ChatRealtimeService,
+    private readonly cipher: MessageCipher,
   ) {}
 
   // ── Users you can message ──────────────────────────────────────────────────
@@ -242,7 +244,10 @@ export class ChatService {
       .getServiceClient()
       .schema('chat')
       .from('message')
-      .update({ body, edited_at: new Date().toISOString() })
+      .update({
+        body: this.cipher.encrypt(body),
+        edited_at: new Date().toISOString(),
+      })
       .eq('id', messageId)
       .select(MESSAGE_COLUMNS)
       .single();
@@ -343,7 +348,8 @@ export class ChatService {
         school_id: conversation.school_id,
         sender_id: senderId,
         type: input.type,
-        body: input.body,
+        // Encrypted at rest; presentMessage decrypts on the way out.
+        body: this.cipher.encrypt(input.body),
         metadata: input.metadata ?? {},
         action_state: input.actionState ?? null,
       })
@@ -748,7 +754,7 @@ export class ChatService {
       conversationId: m.conversation_id,
       senderId: m.sender_id,
       type: m.type,
-      body: m.body,
+      body: this.cipher.decrypt(m.body),
       metadata: (m.metadata ?? {}) as Record<string, unknown>,
       actionState: m.action_state,
       createdAt: m.created_at,

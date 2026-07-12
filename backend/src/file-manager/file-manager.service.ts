@@ -11,6 +11,7 @@ import { SupabaseService } from '@/supabase/supabase.service';
 import { ChatSystemService } from '@/chat/chat-system.service';
 import { FileAccessService } from './file-access.service';
 import { FileShareService } from './file-share.service';
+import { FolderService } from './folder.service';
 import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
 import { verifyContent } from './file-content';
@@ -19,7 +20,7 @@ const BUCKET = 'file-manager';
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
 const FILE_COLUMNS =
-  'id, school_id, owner_id, name, bucket, storage_path, content_type, size_bytes, source, source_ref, status, scan_detail, created_at, updated_at';
+  'id, school_id, owner_id, name, bucket, storage_path, content_type, size_bytes, source, source_ref, status, scan_detail, folder_id, created_at, updated_at';
 
 interface FileRecord {
   id: string;
@@ -34,6 +35,7 @@ interface FileRecord {
   source_ref: string | null;
   status: string;
   scan_detail: string | null;
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +49,7 @@ export class FileManagerService {
     private readonly access: FileAccessService,
     private readonly shares: FileShareService,
     private readonly chatSystem: ChatSystemService,
+    private readonly folders: FolderService,
   ) {}
 
   // ── Listing ──────────────────────────────────────────────────────────────
@@ -156,14 +159,81 @@ export class FileManagerService {
     };
   }
 
+  // ── Folder browsing ────────────────────────────────────────────────────────
+
+  /**
+   * Browse one folder of the caller's own tree: its subfolders, the files
+   * directly inside it, and the breadcrumb path. `folderId` null is the root
+   * ("My files"), which holds files with no folder_id.
+   */
+  async browseFolder(userId: string, folderId: string | null) {
+    // A non-root folder must exist and belong to the caller.
+    const current = folderId
+      ? await this.folders.getOwned(userId, folderId)
+      : null;
+
+    const [folders, breadcrumb] = await Promise.all([
+      this.folders.listChildren(userId, folderId),
+      this.folders.breadcrumb(userId, folderId),
+    ]);
+
+    let query = this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .select(FILE_COLUMNS)
+      .eq('owner_id', userId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    query = folderId
+      ? query.eq('folder_id', folderId)
+      : query.is('folder_id', null);
+
+    const { data } = await query;
+    const files = ((data ?? []) as FileRecord[]).map((f) =>
+      this.present(f, true),
+    );
+
+    return {
+      folder: current
+        ? { id: current.id, name: current.name, parentId: current.parent_id }
+        : null,
+      breadcrumb,
+      folders,
+      files,
+    };
+  }
+
+  /** Move an owned file into a folder (or to the root with folderId null). */
+  async move(userId: string, fileId: string, folderId: string | null) {
+    await this.loadOwned(userId, fileId);
+    if (folderId) await this.folders.getOwned(userId, folderId);
+
+    const { data, error } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+      .eq('id', fileId)
+      .select(FILE_COLUMNS)
+      .single();
+    if (error || !data) throw new BadRequestException('Failed to move file');
+    return this.present(data as FileRecord, true);
+  }
+
   // ── Manual upload ──────────────────────────────────────────────────────────
 
   async uploadManual(
     userId: string,
     file: MultipartFile,
     displayName?: string,
+    folderId?: string,
   ) {
     if (!file) throw new BadRequestException('No file provided');
+
+    // A target folder must be one of the caller's own folders.
+    if (folderId) await this.folders.getOwned(userId, folderId);
 
     const buffer = await file.toBuffer();
     if (buffer.byteLength === 0) {
@@ -216,6 +286,7 @@ export class FileManagerService {
         content_type: contentType,
         size_bytes: buffer.byteLength,
         source: 'upload',
+        folder_id: folderId ?? null,
         // Bytes were virus-scanned synchronously in uploadFile above, so the
         // file is immediately viewable — no async scan step.
         status: 'ready',
@@ -383,6 +454,7 @@ export class FileManagerService {
       sourceRef: f.source_ref,
       status: f.status,
       ownerId: f.owner_id,
+      folderId: f.folder_id,
       canDownload,
       createdAt: f.created_at,
       updatedAt: f.updated_at,
