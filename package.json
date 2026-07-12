@@ -2,7 +2,7 @@
     "name": "gb",
     "devDependencies": {
         "@types/bun": "^1.3.14",
-        "turbo": "^2.9.16"
+        "turbo": "^2.10.4"
     },
     "private": true,
     "packageManager": "bun@1.3.13",
@@ -10,8 +10,9 @@
         "gb": "./command/index.ts"
     },
     "scripts": {
-        "gb": "bun ./command/index.ts",
-        "dev": "supabase start && turbo run dev start:dev",
+        "preload": "docker compose -f docker-compose.dev.yml up -d && supabase start",
+        "postload": "docker compose -f docker-compose.dev.yml down && supabase stop",
+        "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",
         "build": "turbo run build",

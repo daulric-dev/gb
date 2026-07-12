@@ -16,11 +16,14 @@ function makeSupabase(
     profile?: { data: any; error: any };
     exists?: boolean;
     downloadType?: string;
+    /** When set, scanOrThrow rejects with it (simulates an infected object). */
+    scanError?: Error;
   } = {},
 ) {
   const builder = createMockQueryBuilder(
     opts.profile ?? { data: { id: 'u', avatar_url: 'x' }, error: null },
   );
+  let removeCalls = 0;
   const storage = {
     exists: () => Promise.resolve({ data: opts.exists ?? true, error: null }),
     getPublicUrl: (p: string) => ({
@@ -28,9 +31,17 @@ function makeSupabase(
     }),
     download: () =>
       Promise.resolve({
-        data: { type: opts.downloadType ?? 'image/png' },
+        // A real Blob exposes both `.type` and `.arrayBuffer()`.
+        data: {
+          type: opts.downloadType ?? 'image/png',
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        },
         error: null,
       }),
+    remove: () => {
+      removeCalls++;
+      return Promise.resolve({ data: null, error: null });
+    },
   };
   const client = {
     from: () => builder,
@@ -41,13 +52,15 @@ function makeSupabase(
   return {
     svc: {
       getServiceClient: () => client,
-      ensureBucket: () => Promise.resolve(true),
+      scanOrThrow: () =>
+        opts.scanError ? Promise.reject(opts.scanError) : Promise.resolve(),
       uploadFile: (_b: string, path: string) => {
         uploadCalls++;
         return Promise.resolve({ path, publicUrl: `${PUBLIC_PREFIX}${path}` });
       },
     },
     uploadCount: () => uploadCalls,
+    removeCount: () => removeCalls,
   };
 }
 
@@ -118,6 +131,20 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
         svc().completeResumableUpload('user-1', 'avatars/victim.png'),
       ),
     ).toBeInstanceOf(BadRequestException);
+  });
+
+  test('rejects and deletes an infected resumable upload', async () => {
+    const mock = makeSupabase({
+      scanError: new BadRequestException('File rejected: failed virus scan'),
+    });
+    const service = new ImagesService(mock.svc as any, cache as any, config);
+    expect(
+      await expectRejection(
+        service.completeResumableUpload('user-1', 'avatars/user-1.png'),
+      ),
+    ).toBeInstanceOf(BadRequestException);
+    // The rejected object must be removed from storage, not left dangling.
+    expect(mock.removeCount()).toBe(1);
   });
 
   test('rejects a path outside the avatars/ namespace', async () => {

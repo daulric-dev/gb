@@ -7,9 +7,7 @@
  */
 
 export type GradingModel =
-  | 'weighted_continuous'
-  | 'weighted_cumulative'
-  | 'continuous_cumulative';
+  'weighted_continuous' | 'weighted_cumulative' | 'continuous_cumulative';
 
 export interface GradingDisplayRules {
   /** Scale each term's coursework to the year CW weight in year-end views */

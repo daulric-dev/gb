@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
+import { ChatSystemService } from '@/chat/chat-system.service';
 import { CreateClassDto } from './dto/create-class.dto';
 import { UpdateClassDto } from './dto/update-class.dto';
 import { AddTeacherDto } from './dto/add-teacher.dto';
@@ -20,6 +21,7 @@ export class ClassService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly chatSystem: ChatSystemService,
   ) {}
 
   async createClass(userId: string, dto: CreateClassDto) {
@@ -385,12 +387,12 @@ export class ClassService {
     return result;
   }
 
-  async addTeacher(classId: string, dto: AddTeacherDto) {
+  async addTeacher(inviterId: string, classId: string, dto: AddTeacherDto) {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: group, error: groupError } = await supabase
       .from('student_group')
-      .select('academic_year_id')
+      .select('academic_year_id, name, academic_year:academic_year_id(school_id)')
       .eq('id', classId)
       .single();
 
@@ -410,6 +412,8 @@ export class ClassService {
       .eq('user_profile_id', dto.teacherId)
       .eq('student_group_id', classId)
       .maybeSingle();
+
+    const wasNewlyAdded = !existingAssignment;
 
     if (!existingAssignment) {
       const { error: assignError } = await supabase
@@ -461,6 +465,20 @@ export class ClassService {
     await this.cache.delete(`class-teachers:${classId}`);
     await this.cache.delete(`my-classes:${dto.teacherId}`);
     await this.cache.delete(`my-subjects:${dto.teacherId}:${classId}`);
+
+    // Only greet the teacher the first time they are added to this class.
+    if (wasNewlyAdded) {
+      const schoolId = (group.academic_year as { school_id?: string } | null)
+        ?.school_id;
+      if (schoolId) {
+        await this.chatSystem.notifyClassInvite(inviterId, dto.teacherId, {
+          classId,
+          className: group.name ?? 'a class',
+          schoolId,
+        });
+      }
+    }
+
     return { teacherId: dto.teacherId, classId, subjectIds: dto.subjectIds };
   }
 

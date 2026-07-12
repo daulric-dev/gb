@@ -1,5 +1,20 @@
 [api]
-schemas = ["public", "student", "staff", "grading", "reporting"]
+schemas = ["public", "student", "staff", "grading", "reporting", "file_manager", "chat"]
+
+[auth]
+enabled = true
 
 [auth.email]
 otp_length = 8
+
+[storage.buckets.images]
+public = true
+file_size_limit = "5MiB"
+allowed_mime_types = ['image/jpeg', 'image/png', 'image/webp']
+
+[storage.buckets.report-books]
+public = false
+
+[storage.buckets.file-manager]
+public = false
+file_size_limit = "50MiB"

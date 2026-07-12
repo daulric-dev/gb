@@ -13,6 +13,8 @@ x-app: &app
   depends_on:
     redis:
       condition: service_healthy
+    clamav:
+      condition: service_healthy
   networks:
     - appnet
   healthcheck:
@@ -30,6 +32,11 @@ x-app: &app
 x-app-env: &app-env
   USE_REDIS: "true"
   REDIS_URL: "redis://redis:6379"
+  CLAMAV_HOST: "clamav"
+  CLAMAV_PORT: "3310"
+  # Chat DMs are always on and share USE_REDIS/REDIS_URL for pub/sub fan-out.
+  # Multi-participant channels are gated off until the channel UI ships.
+  CHAT_CHANNELS_ENABLED: "false"
 
 services:
   app1:
@@ -64,6 +71,24 @@ services:
       timeout: 3s
       retries: 5
 
+  clamav:
+    image: clamav/clamav:1.4
+    # Image is amd64-only; force it so the stack also comes up on arm64 hosts.
+    platform: linux/amd64
+    restart: unless-stopped
+    volumes:
+      # Persist signatures so freshclam doesn't re-download on every restart.
+      - clamav-db:/var/lib/clamav
+    networks:
+      - appnet
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      # First boot downloads the signature database before clamd answers.
+      start_period: 300s
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -88,3 +113,4 @@ networks:
 
 volumes:
   redis-data:
+  clamav-db:

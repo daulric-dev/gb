@@ -9,16 +9,20 @@ import {
   unreadAnnouncements,
   refreshAnnouncementUnread,
 } from "@/lib/announcements";
+import { unreadFiles, refreshFileUnread } from "@/lib/file-notifications";
+import { unreadChat, refreshChatUnread } from "@/lib/chat";
 import {
   BookOpen,
   CalendarRange,
   ChevronsUpDown,
   FileText,
+  FolderOpen,
   GraduationCap,
   KeyRound,
   LayoutDashboard,
   LogOut,
   Megaphone,
+  MessagesSquare,
   Scale,
   Settings,
   Shield,
@@ -57,6 +61,8 @@ const navItems = [
   { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
   { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
   { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
+  { title: "Files", href: "/dashboard/files", icon: FolderOpen },
+  { title: "Messages", href: "/dashboard/chat", icon: MessagesSquare },
   { title: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
 ];
 
@@ -84,9 +90,11 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
 
-  // Keep the unread-announcements badge fresh as the user navigates.
+  // Keep the unread badges fresh as the user navigates.
   useEffect(() => {
     refreshAnnouncementUnread();
+    refreshFileUnread();
+    refreshChatUnread();
   }, [pathname]);
 
   async function handleLogout() {
@@ -154,6 +162,18 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
                         unreadAnnouncements.value > 0 && (
                           <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
                             {unreadAnnouncements.value}
+                          </span>
+                        )}
+                      {item.href === "/dashboard/files" &&
+                        unreadFiles.value > 0 && (
+                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                            {unreadFiles.value}
+                          </span>
+                        )}
+                      {item.href === "/dashboard/chat" &&
+                        unreadChat.value > 0 && (
+                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                            {unreadChat.value}
                           </span>
                         )}
                     </SidebarMenuButton>

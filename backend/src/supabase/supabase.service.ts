@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createServerClient } from '@supabase/ssr';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { ClamavScanner } from '@/scan/clamav.scanner';
 
 type Schema = 'public' | 'student' | 'grading' | 'reporting' | 'staff';
 
 @Injectable()
 export class SupabaseService {
+  private readonly logger = new Logger(SupabaseService.name);
   private serviceClient: SupabaseClient = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  constructor(private readonly scanner: ClamavScanner) {}
 
   createUserClient(req: FastifyRequest, reply: FastifyReply, schema: Schema) {
     return createServerClient(
@@ -78,33 +82,9 @@ export class SupabaseService {
     return data.school_id;
   }
 
-  async ensureBucket(bucketName: string, isPublic = false): Promise<boolean> {
-    const supabase = this.getServiceClient();
+  async uploadFile(bucketName: string, path: string, file: Buffer,contentType: string): Promise<{ path: string; publicUrl: string } | null> {
+    await this.scanOrThrow(file, `${bucketName}/${path}`);
 
-    const { data: bucket, error } =
-      await supabase.storage.getBucket(bucketName);
-    if (bucket) return true;
-
-    if (error && !error.message.toLowerCase().includes('not found')) {
-      throw error;
-    }
-
-    const { error: createError } =
-      await this.getServiceClient().storage.createBucket(bucketName, {
-        public: isPublic,
-      });
-
-    if (createError) throw createError;
-    return true;
-  }
-
-  async uploadFile(
-    bucketName: string,
-    path: string,
-    file: Buffer,
-    contentType: string,
-  ): Promise<{ path: string; publicUrl: string } | null> {
-    await this.ensureBucket(bucketName);
     const { data, error } = await this.getServiceClient()
       .storage.from(bucketName)
       .upload(path, file, {
@@ -121,9 +101,18 @@ export class SupabaseService {
     return { path: data.path, publicUrl: publicUrl.publicUrl };
   }
 
-  // Transitional: clear the old gb_refresh_token cookie if it's still hanging
-  // around in clients from the previous auth implementation. Safe to remove
-  // after a few weeks once active users have rotated through.
+  async scanOrThrow(file: Buffer, label: string): Promise<void> {
+    const verdict = await this.scanner.scan(file);
+    if (!verdict.clean) {
+      this.logger.warn(
+        `Upload blocked (infected): ${label} — ${verdict.signature ?? 'threat detected'}`,
+      );
+      throw new BadRequestException(
+        `File rejected: failed virus scan${verdict.signature ? ` (${verdict.signature})` : ''}`,
+      );
+    }
+  }
+
   private clearLegacyRefreshCookie(reply: FastifyReply) {
     reply.setCookie('gb_refresh_token', '', {
       path: '/',

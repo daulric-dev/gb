@@ -9,6 +9,14 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-07-12
+
+- [Scan all storage uploads](./2026-07-12/scan-all-storage-uploads.md) - virus scanning moved to the storage boundary, so every file written to a bucket is scanned, not just file-manager uploads. `ClamavScanner` moved to a global `ScanModule`; `SupabaseService.uploadFile`/`scanOrThrow` scan before storing (fail-closed); report writers and the resumable-avatar completion step scan too (the TUS path downloads + deletes + rejects if infected). The file manager's async `file-scan` queue was removed - uploads scan synchronously and record `ready` directly.
+
+## 2026-07-11
+
+- [File manager hardening](./2026-07-11/file-manager-hardening.md) - the file manager went production-ready: real ClamAV virus scanning (INSTREAM over TCP, fail-closed, passthrough when unconfigured), magic-byte content-type verification on upload (the client MIME type is no longer trusted alone), and real in-app share notifications (new `file_manager.notification` table + `/files/notifications` endpoints + a Files sidebar unread badge). Also fixed an N+1 in `GET /files` (principals resolved once, download flags batched) and added optional pagination, plus tests for the previously-untested access logic (212 → 234).
+
 ## 2026-06-25
 
 - [Login redirect fix & middleware cleanup](./2026-06-25/login-redirect-and-middleware.md) - fixed the intermittent bounce back to `/login` after a successful OTP login: the root-layout `AuthProvider` fetches `/auth/me` once and persists, so after a soft navigation to `/dashboard` it still held the stale logged-out `profile` and the dashboard guard redirected; the verify page now `await`s `refresh()` before navigating. Also a no-behavior-change cleanup of `proxy.ts` (lazy path matching, deduped set-cookie tails).

@@ -21,8 +21,15 @@ No `.env` files are committed to the repository. You must create them manually i
 | `SUPABASE_PUSHABLE_KEY` | **Yes** | - | Supabase anon/public key. Used for user-context clients that respect RLS policies. |
 | `FRONTEND_URL` | No | `http://localhost:3000` | Allowed CORS origin. Set to your frontend's production URL in deployment. |
 | `PORT` | No | `3001` | Port the backend server listens on. |
-| `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching instead of in-memory. |
+| `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica). |
 | `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
+| `CHAT_CHANNELS_ENABLED` | No | `false` | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md). |
+| `CHAT_ENCRYPTION_KEY` | **Prod** | - | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning). |
+| `CHAT_ENCRYPTION_KEYS` | No | - | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version. |
+| `CHAT_ENCRYPTION_KEY_VERSION` | No | highest | Which key version to encrypt new messages with. |
+| `CLAMAV_HOST` | No | - | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
+| `CLAMAV_PORT` | No | `3310` | `clamd` TCP port. |
+| `CLAMAV_TIMEOUT_MS` | No | `30000` | Socket timeout for a scan, in milliseconds. |
 | `DEDICATED_DEPLOYMENT` | No | `false` | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md). |
 
 ### Example `backend/.env`
@@ -35,6 +42,17 @@ FRONTEND_URL=http://localhost:3000
 PORT=3001
 USE_REDIS=false
 # REDIS_URL=redis://localhost:6379
+
+# Chat: DMs are always on; channels are gated off until their UI ships
+# CHAT_CHANNELS_ENABLED=false
+# Message encryption at rest (AES-256-GCM). Required in production.
+#   openssl rand -base64 32
+# CHAT_ENCRYPTION_KEY=base64-of-32-bytes
+
+# Virus scanning for file-manager uploads (optional; passthrough if unset)
+# CLAMAV_HOST=127.0.0.1
+# CLAMAV_PORT=3310
+# CLAMAV_TIMEOUT_MS=30000
 
 # Dedicated deployment (single-school instance)
 # DEDICATED_DEPLOYMENT=true
@@ -51,6 +69,7 @@ USE_REDIS=false
 | `PORT` | `src/main.ts` | Fastify listen port (local dev only; not used in serverless) |
 | `USE_REDIS` | `src/cache/cache.service.ts` | Selects Redis store when `true` |
 | `REDIS_URL` | `src/cache/cache.service.ts` | Redis connection URL for `ioredis` |
+| `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_TIMEOUT_MS` | `src/scan/clamav.scanner.ts` | clamd connection for the storage-upload virus scan |
 
 ---
 

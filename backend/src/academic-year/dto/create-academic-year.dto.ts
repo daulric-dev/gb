@@ -43,9 +43,7 @@ export class CreateAcademicYearDto {
   ])
   @IsNotEmpty()
   gradingModel!:
-    | 'weighted_continuous'
-    | 'weighted_cumulative'
-    | 'continuous_cumulative';
+    'weighted_continuous' | 'weighted_cumulative' | 'continuous_cumulative';
 
   @ApiPropertyOptional({ example: 40 })
   @ValidateIf((o) => o.gradingModel !== undefined)

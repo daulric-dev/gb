@@ -4,9 +4,7 @@ import type {
 } from './calculation.interfaces';
 
 export type GradingModel =
-  | 'weighted_continuous'
-  | 'weighted_cumulative'
-  | 'continuous_cumulative';
+  'weighted_continuous' | 'weighted_cumulative' | 'continuous_cumulative';
 
 export interface AssessmentRecord {
   id: string;

@@ -109,7 +109,7 @@ export class ClassController {
     @Param('classId') classId: string,
     @Body() dto: AddTeacherDto,
   ) {
-    const raw = await this.classService.addTeacher(classId, dto);
+    const raw = await this.classService.addTeacher(req.user.id, classId, dto);
     return this.versioning.resolve(req, 'class.teacherAdded')(raw);
   }
 
