@@ -23,6 +23,9 @@ No `.env` files are committed to the repository. You must create them manually i
 | `PORT` | No | `3001` | Port the backend server listens on. |
 | `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching instead of in-memory. |
 | `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
+| `CLAMAV_HOST` | No | - | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
+| `CLAMAV_PORT` | No | `3310` | `clamd` TCP port. |
+| `CLAMAV_TIMEOUT_MS` | No | `30000` | Socket timeout for a scan, in milliseconds. |
 | `DEDICATED_DEPLOYMENT` | No | `false` | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md). |
 
 ### Example `backend/.env`
@@ -35,6 +38,11 @@ FRONTEND_URL=http://localhost:3000
 PORT=3001
 USE_REDIS=false
 # REDIS_URL=redis://localhost:6379
+
+# Virus scanning for file-manager uploads (optional; passthrough if unset)
+# CLAMAV_HOST=127.0.0.1
+# CLAMAV_PORT=3310
+# CLAMAV_TIMEOUT_MS=30000
 
 # Dedicated deployment (single-school instance)
 # DEDICATED_DEPLOYMENT=true
@@ -51,6 +59,7 @@ USE_REDIS=false
 | `PORT` | `src/main.ts` | Fastify listen port (local dev only; not used in serverless) |
 | `USE_REDIS` | `src/cache/cache.service.ts` | Selects Redis store when `true` |
 | `REDIS_URL` | `src/cache/cache.service.ts` | Redis connection URL for `ioredis` |
+| `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_TIMEOUT_MS` | `src/scan/clamav.scanner.ts` | clamd connection for the storage-upload virus scan |
 
 ---
 

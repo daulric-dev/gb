@@ -1,0 +1,59 @@
+# Local development supporting services.
+#
+# Runs just the infrastructure the backend depends on (Redis + ClamAV) as
+# containers, with ports published to localhost, so you can run the backend
+# itself on the host (`cd backend && bun start:dev`). This matches the default
+# backend/.env:
+#   REDIS_URL=redis://localhost:6379
+#   CLAMAV_HOST=127.0.0.1   CLAMAV_PORT=3310
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d      # start
+#   docker compose -f docker-compose.dev.yml ps         # status/health
+#   docker compose -f docker-compose.dev.yml logs -f clamav
+#   docker compose -f docker-compose.dev.yml down        # stop (keep data)
+#   docker compose -f docker-compose.dev.yml down -v     # stop + wipe volumes
+#
+# NOTE: the full app stack (3 replicas + nginx) lives in
+# infrastructure/docker-compose.yml — this file is dev infra only.
+name: gb-dev
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  clamav:
+    image: clamav/clamav:1.4
+    # The official ClamAV image only ships amd64; force emulation so it runs on
+    # Apple Silicon / arm64 hosts (Docker Desktop uses Rosetta/qemu).
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "3310:3310"
+    volumes:
+      # Persist virus definitions so freshclam doesn't re-download on restart.
+      - clamav-db:/var/lib/clamav
+    healthcheck:
+      # Ships with the image; returns non-zero until clamd is accepting scans.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      # First boot downloads the signature database (~1GB decompressed) before
+      # clamd starts answering, which can take a few minutes.
+      start_period: 300s
+
+volumes:
+  redis-data:
+  clamav-db:

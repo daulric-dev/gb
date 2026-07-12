@@ -46,6 +46,8 @@ export class FileShareNotifyHandler {
     // Never notify the owner about their own share.
     const targets = recipients.filter((id) => id !== file.owner_id);
     await this.deliver(targets, {
+      schoolId: share.school_id,
+      shareId: share.id,
       fileId: file.id,
       fileName: file.name,
       canDownload: share.can_download,
@@ -96,19 +98,57 @@ export class FileShareNotifyHandler {
     );
   }
 
-  private deliver(
+  /**
+   * Persist one in-app notification per recipient. Idempotent on
+   * (user_id, share_id): a retried job or a re-share upserts the same rows
+   * without creating duplicates or resurrecting a read notification.
+   */
+  private async deliver(
     recipientIds: string[],
-    payload: { fileId: string; fileName: string; canDownload: boolean },
+    payload: {
+      schoolId: string;
+      shareId: string;
+      fileId: string;
+      fileName: string;
+      canDownload: boolean;
+    },
   ): Promise<void> {
     if (recipientIds.length === 0) {
       this.logger.log(`Share ${payload.fileId}: no recipients to notify`);
-      return Promise.resolve();
+      return;
     }
-    // TODO: wire to the real notification channel. For now, log.
+
+    const rows = recipientIds.map((userId) => ({
+      school_id: payload.schoolId,
+      user_id: userId,
+      file_id: payload.fileId,
+      share_id: payload.shareId,
+      type: 'file_share',
+      title: `"${payload.fileName}" was shared with you`,
+      body: payload.canDownload
+        ? 'You can view and download this file.'
+        : 'You can view this file.',
+      can_download: payload.canDownload,
+    }));
+
+    const { error } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('notification')
+      .upsert(rows, {
+        onConflict: 'user_id,share_id',
+        ignoreDuplicates: true,
+      });
+
+    if (error) {
+      this.logger.error(
+        `Failed to write notifications for share ${payload.shareId}: ${error.message}`,
+      );
+      throw new Error(error.message);
+    }
+
     this.logger.log(
-      `Notify ${recipientIds.length} user(s) of shared file "${payload.fileName}" ` +
-        `(${payload.canDownload ? 'view+download' : 'view-only'}): ${recipientIds.join(', ')}`,
+      `Notified ${recipientIds.length} user(s) of shared file "${payload.fileName}"`,
     );
-    return Promise.resolve();
   }
 }

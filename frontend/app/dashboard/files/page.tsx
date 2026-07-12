@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { markFilesRead } from "@/lib/file-notifications";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
@@ -56,6 +57,11 @@ export default function FilesPage() {
   useEffect(() => {
     fetchFiles(filter.value);
   }, [filter.value, fetchFiles]);
+
+  // Opening Files acknowledges any share notifications, clearing the badge.
+  useEffect(() => {
+    markFilesRead();
+  }, []);
 
   async function confirmDelete() {
     const file = deleteFile.value;

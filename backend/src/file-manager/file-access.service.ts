@@ -10,9 +10,7 @@ export interface UserPrincipals {
 
 export interface FileAccess {
   isOwner: boolean;
-  /** May render the file inline. Owner always; recipients only once ready. */
   canView: boolean;
-  /** May download the original bytes. Owner always; recipients per share flag. */
   canDownload: boolean;
 }
 
@@ -22,11 +20,6 @@ interface FileRow {
   status: string;
 }
 
-/**
- * Resolves what a user may do with a file: owner, view-only recipient, or
- * view+download recipient. Shares can target the user directly, a school role
- * they hold, or a class/group they teach.
- */
 @Injectable()
 export class FileAccessService {
   constructor(private readonly supabase: SupabaseService) {}
@@ -68,10 +61,6 @@ export class FileAccessService {
     return { userId, roleIds, groupIds };
   }
 
-  /**
-   * Best matching share for this user against one file. Returns null if none.
-   * `can_download` is OR-ed across all matching shares (most permissive wins).
-   */
   private async bestShare(
     fileId: string,
     principals: UserPrincipals,
@@ -133,12 +122,10 @@ export class FileAccessService {
     };
   }
 
-  /**
-   * File ids shared with the user (directly, by role, or by group), used to
-   * build the "shared with me" listing.
-   */
-  async sharedFileIds(userId: string, schoolId: string): Promise<string[]> {
-    const principals = await this.principalsFor(userId, schoolId);
+  async sharedFileIdsFor(
+    principals: UserPrincipals,
+    schoolId: string,
+  ): Promise<string[]> {
     const client = this.supabase.getServiceClient();
 
     const orClauses = [
@@ -164,6 +151,46 @@ export class FileAccessService {
 
     return [
       ...new Set((shares ?? []).map((s: { file_id: string }) => s.file_id)),
-    ];
+    ] as string[];
+  }
+
+  /** Convenience wrapper that resolves principals then the shared ids. */
+  async sharedFileIds(userId: string, schoolId: string): Promise<string[]> {
+    const principals = await this.principalsFor(userId, schoolId);
+    return this.sharedFileIdsFor(principals, schoolId);
+  }
+
+  async downloadFlagsFor(
+    fileIds: string[],
+    principals: UserPrincipals,
+  ): Promise<Map<string, boolean>> {
+    const flags = new Map<string, boolean>();
+    if (fileIds.length === 0) return flags;
+
+    const { data: shares } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file_share')
+      .select('file_id, principal_type, principal_id, can_download')
+      .in('file_id', fileIds);
+
+    for (const s of (shares ?? []) as Array<{
+      file_id: string;
+      principal_type: 'user' | 'role' | 'group';
+      principal_id: string;
+      can_download: boolean;
+    }>) {
+      const isMatch =
+        (s.principal_type === 'user' && s.principal_id === principals.userId) ||
+        (s.principal_type === 'role' &&
+          principals.roleIds.includes(s.principal_id)) ||
+        (s.principal_type === 'group' &&
+          principals.groupIds.includes(s.principal_id));
+      if (!isMatch) continue;
+      // Most permissive wins: OR can_download across all matching shares.
+      flags.set(s.file_id, (flags.get(s.file_id) ?? false) || s.can_download);
+    }
+
+    return flags;
   }
 }

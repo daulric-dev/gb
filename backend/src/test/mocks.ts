@@ -13,6 +13,7 @@ export function createMockQueryBuilder(
     'eq',
     'neq',
     'in',
+    'is',
     'ilike',
     'or',
     'not',
@@ -157,6 +158,7 @@ export function createRoutingSupabase(
     for (const m of [
       'neq',
       'in',
+      'is',
       'ilike',
       'or',
       'not',
@@ -199,6 +201,7 @@ export function createRoutingSupabase(
     createUserClient: () => client,
     getUser: config.getUser ?? (() => Promise.resolve(null)),
     getUserSchoolId: () => Promise.resolve(config.userSchoolId ?? 'school-1'),
+    scanOrThrow: () => Promise.resolve(),
     _calls: calls,
     _client: client,
   };

@@ -191,7 +191,8 @@ GRANT ALL ON TABLE "file_manager"."file_share" TO "service_role";
 -- ── Storage bucket policy ──────────────────────────────────────────────────
 -- Private 'file-manager' bucket, isolated by school: the first path segment of
 -- every object name is the owner's school id (mirrors the 'report-books'
--- bucket policy). The bucket itself is created by the app via ensureBucket().
+-- bucket policy). The bucket itself is declared in supabase/config.toml and
+-- must exist in each environment before uploads run.
 
 CREATE POLICY "file_manager_school_isolation"
   ON "storage"."objects"

@@ -17,6 +17,7 @@ import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { FileManagerService } from './file-manager.service';
+import { FileNotificationService } from './file-notification.service';
 import { ListFilesQueryDto } from './dto/list-files.query.dto';
 import { RenameFileDto } from './dto/rename-file.dto';
 import { ShareFileDto } from './dto/share-file.dto';
@@ -27,12 +28,18 @@ import { UpdateShareDto } from './dto/update-share.dto';
 @Controller('files')
 @UseGuards(AuthGuard, PermissionGuard)
 export class FileManagerController {
-  constructor(private readonly files: FileManagerService) {}
+  constructor(
+    private readonly files: FileManagerService,
+    private readonly notifications: FileNotificationService,
+  ) {}
 
   @RequirePermission('file', 'read')
   @Get()
   async list(@Req() req: any, @Query() query: ListFilesQueryDto) {
-    return this.files.list(req.user.id, query.filter);
+    return this.files.list(req.user.id, query.filter, {
+      page: query.page,
+      pageSize: query.pageSize,
+    });
   }
 
   @RequirePermission('file', 'create')
@@ -41,6 +48,26 @@ export class FileManagerController {
   async upload(@Req() req: any, @Query('name') name?: string) {
     const file = await req.file();
     return this.files.uploadManual(req.user.id, file, name);
+  }
+
+  // ── Notifications (declared before :id so the literal path wins) ──────────
+
+  @RequirePermission('file', 'read')
+  @Get('notifications')
+  async listNotifications(@Req() req: any) {
+    return this.notifications.list(req.user.id);
+  }
+
+  @RequirePermission('file', 'read')
+  @Get('notifications/unread-count')
+  async unreadNotifications(@Req() req: any) {
+    return this.notifications.unreadCount(req.user.id);
+  }
+
+  @RequirePermission('file', 'read')
+  @Post('notifications/mark-read')
+  async markNotificationsRead(@Req() req: any) {
+    return this.notifications.markAllRead(req.user.id);
   }
 
   @RequirePermission('file', 'read')

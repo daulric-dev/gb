@@ -30,6 +30,7 @@ import { AnnouncementModule } from '@/announcement/announcement.module';
 import { ImagesModule } from '@/images/images.module';
 import { FileManagerModule } from '@/file-manager/file-manager.module';
 import { QueueModule } from '@/queue/queue.module';
+import { ScanModule } from '@/scan/scan.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
@@ -65,6 +66,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     SupabaseModule,
     AuthModule,
     CacheModule,
+    ScanModule,
     QueueModule.forRoot(),
     PaginationModule,
     VersioningModule,

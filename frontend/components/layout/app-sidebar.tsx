@@ -9,6 +9,7 @@ import {
   unreadAnnouncements,
   refreshAnnouncementUnread,
 } from "@/lib/announcements";
+import { unreadFiles, refreshFileUnread } from "@/lib/file-notifications";
 import {
   BookOpen,
   CalendarRange,
@@ -86,9 +87,10 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
 
-  // Keep the unread-announcements badge fresh as the user navigates.
+  // Keep the unread badges fresh as the user navigates.
   useEffect(() => {
     refreshAnnouncementUnread();
+    refreshFileUnread();
   }, [pathname]);
 
   async function handleLogout() {
@@ -156,6 +158,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
                         unreadAnnouncements.value > 0 && (
                           <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
                             {unreadAnnouncements.value}
+                          </span>
+                        )}
+                      {item.href === "/dashboard/files" &&
+                        unreadFiles.value > 0 && (
+                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                            {unreadFiles.value}
                           </span>
                         )}
                     </SidebarMenuButton>

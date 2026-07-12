@@ -10,8 +10,9 @@
         "gb": "./command/index.ts"
     },
     "scripts": {
-        "gb": "bun ./command/index.ts",
-        "dev": "supabase start && turbo run dev start:dev",
+        "preload": "supabase start && docker compose -f docker-compose.dev.yml up -d",
+        "postload": "docker compose -f docker-compose.dev.yml down && supabase stop",
+        "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",
         "build": "turbo run build",

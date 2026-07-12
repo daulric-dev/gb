@@ -38,8 +38,8 @@ The `ImagesModule` exports `ImagesService` and is imported by `AuthModule`. This
 For files under 5MB. The entire file passes through the backend.
 
 1. Client sends `multipart/form-data` to `POST /auth/avatar`
-2. Backend reads the file buffer, validates size and MIME type
-3. Uploads to Supabase Storage (`images` bucket) with `upsert: true`
+2. Backend reads the file buffer, validates size, MIME type, and magic-byte signature
+3. Uploads to Supabase Storage (`images` bucket) with `upsert: true` - the upload goes through `SupabaseService.uploadFile`, which **virus-scans the bytes** before storing them
 4. Generates a cache-busted public URL (`?t={timestamp}`)
 5. Updates `user_profile.avatar_url` in the database
 6. Updates the avatar and profile caches
@@ -54,7 +54,7 @@ For larger files or unreliable connections. The file uploads directly from the c
 3. Returns TUS endpoint, token, headers, and metadata
 4. Client uses `tus-js-client` or Uppy to upload directly to Supabase
 5. Client calls `POST /auth/avatar/complete` with the storage path
-6. Backend verifies the file exists and updates the profile
+6. Backend verifies the file exists, **downloads and virus-scans it** (deleting + rejecting it if infected, since the bytes never passed through the backend during upload), then updates the profile
 
 ## Validation
 

@@ -263,6 +263,23 @@ export class ImagesService {
       );
     }
 
+    // The bytes went straight from the client to Supabase, so scan them now
+    // that the upload is complete. An infected object is deleted and rejected.
+    const { data: blob, error: dlError } = await storageBucket.download(path);
+    if (dlError || !blob) {
+      throw new BadRequestException('Uploaded file could not be read');
+    }
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    try {
+      await this.supabaseService.scanOrThrow(
+        buffer,
+        `${ImagesService.BUCKET}/${path}`,
+      );
+    } catch (err) {
+      await storageBucket.remove([path]);
+      throw err;
+    }
+
     const {
       data: { publicUrl },
     } = storageBucket.getPublicUrl(path);

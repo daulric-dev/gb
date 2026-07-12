@@ -8,11 +8,11 @@ import {
 import crypto from 'node:crypto';
 import type { MultipartFile } from '@fastify/multipart';
 import { SupabaseService } from '@/supabase/supabase.service';
-import { FileQueueService } from '@/queue/file-queue.service';
 import { FileAccessService } from './file-access.service';
 import { FileShareService } from './file-share.service';
-import { FileListFilter } from './dto/list-files.query.dto';
+import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
+import { verifyContent } from './file-content';
 
 const BUCKET = 'file-manager';
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -43,57 +43,107 @@ export class FileManagerService {
 
   constructor(
     private readonly supabase: SupabaseService,
-    private readonly queue: FileQueueService,
     private readonly access: FileAccessService,
     private readonly shares: FileShareService,
   ) {}
 
   // ── Listing ──────────────────────────────────────────────────────────────
 
-  async list(userId: string, filter: FileListFilter = FileListFilter.All) {
+  /**
+   * List the files a user can see. Returns a bare array by default; pass
+   * `page` to get a paginated envelope instead (backward-compatible).
+   *
+   * Access is resolved without an N+1: principals are resolved once, then the
+   * download flag for every non-owned row on the page is resolved in a single
+   * batched query.
+   */
+  async list(
+    userId: string,
+    filter: FileListFilter = FileListFilter.All,
+    pagination?: { page?: number; pageSize?: number },
+  ) {
     const schoolId = await this.supabase.getUserSchoolId(userId);
     const client = this.supabase.getServiceClient();
-    const out: Array<FileRecord & { access: 'owner' | 'shared' }> = [];
+    const principals = await this.access.principalsFor(userId, schoolId);
 
-    if (filter === FileListFilter.Own || filter === FileListFilter.All) {
-      const { data } = await client
-        .schema('file_manager')
-        .from('file')
-        .select(FILE_COLUMNS)
-        .eq('owner_id', userId)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      for (const f of (data ?? []) as FileRecord[]) {
-        out.push({ ...f, access: 'owner' });
-      }
-    }
+    const paginated = pagination?.page !== undefined;
+    const pageSize = Math.min(pagination?.pageSize ?? 20, 100);
+    const page = pagination?.page ?? 1;
 
-    if (filter === FileListFilter.Shared || filter === FileListFilter.All) {
-      const sharedIds = await this.access.sharedFileIds(userId, schoolId);
-      if (sharedIds.length > 0) {
-        const { data } = await client
-          .schema('file_manager')
-          .from('file')
-          .select(FILE_COLUMNS)
+    let query = client
+      .schema('file_manager')
+      .from('file')
+      .select(FILE_COLUMNS, paginated ? { count: 'exact' } : undefined)
+      .is('deleted_at', null);
+
+    // A shared row is only visible once 'ready'; an owned row is always
+    // visible to its owner. `all` unions both in one query so it can paginate.
+    if (filter === FileListFilter.Own) {
+      query = query.eq('owner_id', userId);
+    } else {
+      const sharedIds = await this.access.sharedFileIdsFor(
+        principals,
+        schoolId,
+      );
+      if (filter === FileListFilter.Shared) {
+        if (sharedIds.length === 0)
+          return this.emptyList(paginated, page, pageSize);
+        query = query
           .in('id', sharedIds)
-          .neq('owner_id', userId) // exclude anything I own (already listed)
-          .eq('status', 'ready') // recipients only see ready files
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false });
-        for (const f of (data ?? []) as FileRecord[]) {
-          out.push({ ...f, access: 'shared' });
-        }
+          .neq('owner_id', userId)
+          .eq('status', 'ready');
+      } else {
+        query =
+          sharedIds.length === 0
+            ? query.eq('owner_id', userId)
+            : query.or(
+                `owner_id.eq.${userId},and(id.in.(${sharedIds.join(',')}),status.eq.ready)`,
+              );
       }
     }
 
-    // canDownload is resolved per-file so the client knows which affordances
-    // to show. Owners always can; recipients depend on their share.
-    return Promise.all(
-      out.map(async (f) => {
-        const access = await this.access.accessFor(userId, schoolId, f);
-        return this.present(f, access.canDownload);
-      }),
+    query = query.order('created_at', { ascending: false });
+    if (paginated) {
+      const from = (page - 1) * pageSize;
+      query = query.range(from, from + pageSize - 1);
+    }
+
+    const { data, count } = await query;
+    const rows = (data ?? []) as FileRecord[];
+
+    const nonOwnedIds = rows
+      .filter((f) => f.owner_id !== userId)
+      .map((f) => f.id);
+    const dlFlags = await this.access.downloadFlagsFor(nonOwnedIds, principals);
+
+    const items = rows.map((f) =>
+      this.present(
+        f,
+        f.owner_id === userId ? true : (dlFlags.get(f.id) ?? false),
+      ),
     );
+
+    if (!paginated) return items;
+
+    const total = count ?? 0;
+    return {
+      data: items,
+      meta: {
+        total,
+        page,
+        pageSize,
+        pageCount: Math.ceil(total / pageSize),
+        hasMore: page * pageSize < total,
+      },
+    };
+  }
+
+  private emptyList(paginated: boolean, page: number, pageSize: number) {
+    if (!paginated) return [];
+    return {
+      data: [],
+      meta: { total: 0, page, pageSize, pageCount: 0, hasMore: false },
+    };
   }
 
   async getMetadata(userId: string, fileId: string) {
@@ -123,13 +173,21 @@ export class FileManagerService {
       );
     }
 
+    // Reject unsupported or mislabelled files up front (the async scan repeats
+    // this as defence in depth). The declared MIME type is not trusted alone:
+    // for fingerprintable formats the leading bytes must match.
+    const contentType = file.mimetype || 'application/octet-stream';
+    const check = verifyContent(buffer, contentType);
+    if (!check.ok) {
+      throw new BadRequestException(check.reason);
+    }
+
     const schoolId = await this.supabase.getUserSchoolId(userId);
     const id = crypto.randomUUID();
     const name = (displayName?.trim() || file.filename || 'untitled').slice(
       0,
       255,
     );
-    const contentType = file.mimetype || 'application/octet-stream';
     const storagePath = `${schoolId}/${userId}/${id}-${this.slug(name)}`;
 
     const uploaded = await this.supabase.uploadFile(
@@ -156,7 +214,9 @@ export class FileManagerService {
         content_type: contentType,
         size_bytes: buffer.byteLength,
         source: 'upload',
-        status: 'pending',
+        // Bytes were virus-scanned synchronously in uploadFile above, so the
+        // file is immediately viewable — no async scan step.
+        status: 'ready',
       })
       .select(FILE_COLUMNS)
       .single();
@@ -165,9 +225,6 @@ export class FileManagerService {
       this.logger.error(`Failed to record uploaded file: ${error?.message}`);
       throw new BadRequestException('Failed to record file');
     }
-
-    // Validate + scan out of band; the file becomes viewable once ready.
-    await this.queue.enqueueScan({ fileId: id });
 
     return this.present(data, true);
   }
