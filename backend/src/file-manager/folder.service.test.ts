@@ -71,6 +71,59 @@ describe('FolderService.rename', () => {
   });
 });
 
+describe('FolderService.move', () => {
+  test('rejects moving a folder into itself', async () => {
+    const svc = service((state) =>
+      state.op === 'select'
+        ? { data: folderRow({ id: 'A' }), error: null }
+        : { data: folderRow(), error: null },
+    );
+    const err = await expectRejection(svc.move(USER, 'A', 'A'));
+    expect(err).toBeInstanceOf(BadRequestException);
+  });
+
+  test('is a no-op when the folder is already in the destination', async () => {
+    const svc = service((state) => {
+      if (state.op === 'update') {
+        throw new Error('should not update on a no-op move');
+      }
+      return { data: folderRow({ id: 'A', parent_id: 'P' }), error: null };
+    });
+    const out = await svc.move(USER, 'A', 'P');
+    expect(out.parentId).toBe('P');
+  });
+
+  test('moves a folder to the root', async () => {
+    const svc = service((state) =>
+      state.op === 'update'
+        ? { data: folderRow({ id: 'A', parent_id: null }), error: null }
+        : { data: folderRow({ id: 'A', parent_id: 'P' }), error: null },
+    );
+    const out = await svc.move(USER, 'A', null);
+    expect(out.parentId).toBeNull();
+  });
+
+  test('rejects moving a folder into one of its own descendants', async () => {
+    let subtreeCalls = 0;
+    const svc = service((state) => {
+      if (state.op === 'update') return { data: folderRow(), error: null };
+      // getOwned queries filter by id; collectSubtree does not.
+      if (state.filters.id === 'A') {
+        return { data: folderRow({ id: 'A', parent_id: null }), error: null };
+      }
+      if (state.filters.id === 'B') {
+        return { data: folderRow({ id: 'B', parent_id: 'A' }), error: null };
+      }
+      // collectSubtree BFS: first level returns B, then nothing.
+      subtreeCalls += 1;
+      return { data: subtreeCalls === 1 ? [{ id: 'B' }] : [], error: null };
+    });
+    // B is a child of A; moving A under B would create a cycle.
+    const err = await expectRejection(svc.move(USER, 'A', 'B'));
+    expect(err).toBeInstanceOf(BadRequestException);
+  });
+});
+
 describe('FolderService.findOrCreateSystemPath', () => {
   test('creates each missing segment and returns the leaf id', async () => {
     const svc = service((state) => {

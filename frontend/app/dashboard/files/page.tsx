@@ -39,7 +39,9 @@ export default function FilesPage() {
 
   const files = useSignal<FileItem[]>([]);
   const loading = useSignal(true);
-  const filter = useSignal<Filter>("all");
+  // Default to the folder browser so creating/organizing folders is the first
+  // thing you see, rather than the flat "All" list.
+  const filter = useSignal<Filter>("own");
   // Bumped after a file mutation so the folder browser (own tab) refetches.
   const reloadKey = useSignal(0);
 

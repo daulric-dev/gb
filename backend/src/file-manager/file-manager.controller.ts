@@ -26,6 +26,7 @@ import { UpdateShareDto } from './dto/update-share.dto';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { RenameFolderDto } from './dto/rename-folder.dto';
 import { MoveFileDto } from './dto/move-file.dto';
+import { MoveFolderDto } from './dto/move-folder.dto';
 import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
 
 @ApiTags('File Manager')
@@ -88,6 +89,17 @@ export class FileManagerController {
     @Body() dto: RenameFolderDto,
   ) {
     return this.folders.rename(req.user.id, folderId, dto.name);
+  }
+
+  /** Re-parent a folder (drag a folder into another folder, or to the root). */
+  @RequirePermission('file', 'update')
+  @Patch('folders/:folderId/move')
+  async moveFolder(
+    @Req() req: any,
+    @Param('folderId') folderId: string,
+    @Body() dto: MoveFolderDto,
+  ) {
+    return this.folders.move(req.user.id, folderId, dto.parentId);
   }
 
   @RequirePermission('file', 'delete')

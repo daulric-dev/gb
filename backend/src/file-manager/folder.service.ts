@@ -152,6 +152,52 @@ export class FolderService {
   }
 
   /**
+   * Re-parent a folder. `newParentId` null moves it to the root. Guards against
+   * moving a folder into itself or into one of its own descendants (which would
+   * orphan a cycle), and against a name collision in the destination.
+   */
+  async move(userId: string, folderId: string, newParentId: string | null) {
+    const folder = await this.getOwned(userId, folderId);
+
+    if (newParentId === folderId) {
+      throw new BadRequestException('A folder cannot contain itself');
+    }
+    if ((folder.parent_id ?? null) === (newParentId ?? null)) {
+      return this.present(folder); // no-op: already there
+    }
+
+    if (newParentId) {
+      await this.getOwned(userId, newParentId); // must be the caller's folder
+      const subtree = await this.collectSubtree(userId, folderId);
+      if (subtree.includes(newParentId)) {
+        throw new BadRequestException(
+          'A folder cannot be moved into one of its own subfolders',
+        );
+      }
+    }
+
+    const { data, error } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('folder')
+      .update({ parent_id: newParentId, updated_at: new Date().toISOString() })
+      .eq('id', folderId)
+      .eq('owner_id', userId)
+      .select(FOLDER_COLUMNS)
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        throw new BadRequestException(
+          'A folder with that name already exists there',
+        );
+      }
+      throw new BadRequestException('Failed to move folder');
+    }
+    return this.present(data as FolderRow);
+  }
+
+  /**
    * Soft-delete a folder and everything inside it: all descendant folders and
    * every file within any of them. The subtree is walked in JS (folder trees
    * are shallow) so we can soft-delete files the same way a direct file delete
