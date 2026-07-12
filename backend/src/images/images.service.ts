@@ -15,7 +15,6 @@ export class ImagesService {
     'image/webp',
   ];
   private static readonly BUCKET = 'images';
-  private static readonly BUCKET_PUBLIC = true;
   private static readonly TUS_CHUNK_SIZE = 6 * 1024 * 1024; // Supabase requires 6MB chunks
   private static readonly CACHE_TTL = 3600; // 1 hour
   private static cacheKey(userId: string) {
@@ -152,14 +151,6 @@ export class ImagesService {
     const ext = this.safeExtension(file.filename);
     const path = this.buildPath(userId, ext);
 
-    // Make sure the bucket exists as public BEFORE uploadFile runs,
-    // because uploadFile's internal ensureBucket defaults to private.
-    // If the bucket already exists, this is a cheap no-op.
-    await this.supabaseService.ensureBucket(
-      ImagesService.BUCKET,
-      ImagesService.BUCKET_PUBLIC,
-    );
-
     this.logger.log(
       `Uploading to bucket "${ImagesService.BUCKET}" at path "${path}" (${buffer.byteLength} bytes, ${file.mimetype})`,
     );
@@ -217,12 +208,6 @@ export class ImagesService {
 
     const ext = this.safeExtension(filename);
     const path = this.buildPath(userId, ext);
-
-    // Ensure bucket exists (and is public) before issuing a signed upload URL.
-    await this.supabaseService.ensureBucket(
-      ImagesService.BUCKET,
-      ImagesService.BUCKET_PUBLIC,
-    );
 
     const supabase = this.supabaseService.getServiceClient();
     const storageBucket = supabase.storage.from(ImagesService.BUCKET);

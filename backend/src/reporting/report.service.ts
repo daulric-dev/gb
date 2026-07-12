@@ -654,10 +654,6 @@ export class ReportService {
 
     const objectPath = `${reportId}/${Date.now()}-${crypto.randomUUID()}.pdf`;
 
-    // Create the (private) bucket on first use so uploads don't fail with
-    // "Bucket not found" — buckets aren't provisioned by migrations.
-    await this.supabaseService.ensureBucket(ReportService.PDF_BUCKET);
-
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
       .upload(objectPath, fileBuffer, {
@@ -1077,10 +1073,6 @@ export class ReportService {
       csv: 'text/csv',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
-
-    // Create the (private) bucket on first use so uploads don't fail with
-    // "Bucket not found" — buckets aren't provisioned by migrations.
-    await this.supabaseService.ensureBucket(ReportService.PDF_BUCKET);
 
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)

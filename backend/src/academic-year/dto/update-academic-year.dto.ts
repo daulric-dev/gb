@@ -42,10 +42,7 @@ export class UpdateAcademicYearDto {
     'weighted_cumulative',
     'continuous_cumulative',
   ])
-  gradingModel?:
-    | 'weighted_continuous'
-    | 'weighted_cumulative'
-    | 'continuous_cumulative';
+  gradingModel?: 'weighted_continuous' | 'weighted_cumulative' | 'continuous_cumulative';
 
   @ApiPropertyOptional({ example: 40 })
   @IsOptional()

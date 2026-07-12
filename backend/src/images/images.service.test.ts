@@ -41,7 +41,6 @@ function makeSupabase(
   return {
     svc: {
       getServiceClient: () => client,
-      ensureBucket: () => Promise.resolve(true),
       uploadFile: (_b: string, path: string) => {
         uploadCalls++;
         return Promise.resolve({ path, publicUrl: `${PUBLIC_PREFIX}${path}` });

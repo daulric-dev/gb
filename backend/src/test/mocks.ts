@@ -95,8 +95,7 @@ type RoutingCall = {
 };
 
 type RouteValue =
-  | QueryResult
-  | ((call: RoutingCall) => QueryResult | Promise<QueryResult>);
+  QueryResult | ((call: RoutingCall) => QueryResult | Promise<QueryResult>);
 
 export function createRoutingSupabase(
   config: {

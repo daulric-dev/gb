@@ -126,8 +126,7 @@ export type Database = {
         Row: {
           assessment_date: string | null;
           assessment_type:
-            | Database['public']['Enums']['assessment_type']
-            | null;
+            Database['public']['Enums']['assessment_type'] | null;
           exclusion_reason: string | null;
           id: string;
           is_excluded: boolean | null;
@@ -141,8 +140,7 @@ export type Database = {
         Insert: {
           assessment_date?: string | null;
           assessment_type?:
-            | Database['public']['Enums']['assessment_type']
-            | null;
+            Database['public']['Enums']['assessment_type'] | null;
           exclusion_reason?: string | null;
           id?: string;
           is_excluded?: boolean | null;
@@ -156,8 +154,7 @@ export type Database = {
         Update: {
           assessment_date?: string | null;
           assessment_type?:
-            | Database['public']['Enums']['assessment_type']
-            | null;
+            Database['public']['Enums']['assessment_type'] | null;
           exclusion_reason?: string | null;
           id?: string;
           is_excluded?: boolean | null;
@@ -901,9 +898,7 @@ export type Database = {
       gender: 'male' | 'female';
       grade_scale_type: 'letter' | 'gpa' | 'pass_fail';
       gradingmodel:
-        | 'weighted_continuous'
-        | 'weighted_cumulative'
-        | 'continuous_cumulative';
+        'weighted_continuous' | 'weighted_cumulative' | 'continuous_cumulative';
       join_request_status: 'pending' | 'approved' | 'rejected';
       relationship_type: 'mother' | 'father' | 'guardian';
       report_book_status: 'draft' | 'published' | 'sent_to_ministry';
@@ -1242,16 +1237,14 @@ export type Database = {
         Insert: {
           id?: string;
           relationship?:
-            | Database['public']['Enums']['relationship_type']
-            | null;
+            Database['public']['Enums']['relationship_type'] | null;
           student_id?: string | null;
           user_profile_id?: string | null;
         };
         Update: {
           id?: string;
           relationship?:
-            | Database['public']['Enums']['relationship_type']
-            | null;
+            Database['public']['Enums']['relationship_type'] | null;
           student_id?: string | null;
           user_profile_id?: string | null;
         };
@@ -1383,12 +1376,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -1410,13 +1403,12 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema['Tables']
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -1435,13 +1427,12 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema['Tables']
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -1460,13 +1451,12 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema['Enums']
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    keyof DefaultSchema['Enums'] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums']
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -1479,11 +1469,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema['CompositeTypes']
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
