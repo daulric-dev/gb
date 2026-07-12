@@ -45,7 +45,13 @@ function makeService(
     userSchoolId: 'school-1',
     tables: { 'file_manager.file': fileResult },
   });
-  const svc = new FileManagerService(supabase as any, access as any, {} as any);
+  const chatSystem = { notifyFileShares: () => Promise.resolve() };
+  const svc = new FileManagerService(
+    supabase as any,
+    access as any,
+    {} as any,
+    chatSystem as any,
+  );
   return { svc, supabase };
 }
 

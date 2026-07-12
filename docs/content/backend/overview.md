@@ -53,6 +53,7 @@ backend/
 │   ├── report-files/          # Server-side PDF/CSV/XLSX/zip generation + streaming
 │   ├── announcement/          # School-wide announcement board + read receipts
 │   ├── file-manager/          # Personal files, sharing, virus scan, notifications
+│   ├── chat/                  # Real-time DMs (SSE + Redis pub/sub) + system messages
 │   ├── images/                # Image upload service (avatar, resumable TUS uploads)
 │   ├── queue/                 # BullMQ file pipeline: ingest, share-notify
 │   ├── scan/                  # ClamAV virus scanner (global; used at every upload)
@@ -124,6 +125,7 @@ AppModule
 ├── ReportFilesModule (server-side report file generation + streaming)
 ├── AnnouncementModule (announcement board + read receipts)
 ├── FileManagerModule (personal files, sharing, notifications)
+├── ChatModule (global - real-time DMs over SSE + Redis pub/sub; exports ChatSystemService)
 ├── QueueModule (global - BullMQ file ingest/share-notify with inline fallback)
 ├── ScanModule (global - exports ClamavScanner; scans every storage upload)
 ├── ImagesModule (exports ImagesService - used by AuthModule for avatar uploads)
@@ -155,6 +157,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | `grading` | `assessment`, `grade` |
 | `reporting` | `report_book`, `report_book_entry`, `report_book_pdf`, `class_report_file` |
 | `file_manager` | `file`, `file_share`, `notification` |
+| `chat` | `conversation`, `conversation_member`, `message` |
 
 ## Guards
 

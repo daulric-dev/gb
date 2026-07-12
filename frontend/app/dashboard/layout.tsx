@@ -2,6 +2,7 @@
 
 import { useProfile } from "@/providers/AuthProvider";
 import { PermissionsProvider } from "@/providers/PermissionsProvider";
+import { ChatProvider } from "@/providers/ChatProvider";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
@@ -9,11 +10,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({children}: { children: React.ReactNode }) {
   useSignals();
   const { profile, loading } = useProfile();
   const router = useRouter();
@@ -34,6 +31,7 @@ export default function DashboardLayout({
 
   return (
     <PermissionsProvider>
+      <ChatProvider />
       <SidebarProvider>
         <AppSidebar profile={profile.value} />
         <SidebarInset>

@@ -34,6 +34,9 @@ x-app-env: &app-env
   REDIS_URL: "redis://redis:6379"
   CLAMAV_HOST: "clamav"
   CLAMAV_PORT: "3310"
+  # Chat DMs are always on and share USE_REDIS/REDIS_URL for pub/sub fan-out.
+  # Multi-participant channels are gated off until the channel UI ships.
+  CHAT_CHANNELS_ENABLED: "false"
 
 services:
   app1:

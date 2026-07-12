@@ -21,8 +21,9 @@ No `.env` files are committed to the repository. You must create them manually i
 | `SUPABASE_PUSHABLE_KEY` | **Yes** | - | Supabase anon/public key. Used for user-context clients that respect RLS policies. |
 | `FRONTEND_URL` | No | `http://localhost:3000` | Allowed CORS origin. Set to your frontend's production URL in deployment. |
 | `PORT` | No | `3001` | Port the backend server listens on. |
-| `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching instead of in-memory. |
+| `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica). |
 | `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
+| `CHAT_CHANNELS_ENABLED` | No | `false` | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md). |
 | `CLAMAV_HOST` | No | - | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
 | `CLAMAV_PORT` | No | `3310` | `clamd` TCP port. |
 | `CLAMAV_TIMEOUT_MS` | No | `30000` | Socket timeout for a scan, in milliseconds. |
@@ -38,6 +39,9 @@ FRONTEND_URL=http://localhost:3000
 PORT=3001
 USE_REDIS=false
 # REDIS_URL=redis://localhost:6379
+
+# Chat: DMs are always on; channels are gated off until their UI ships
+# CHAT_CHANNELS_ENABLED=false
 
 # Virus scanning for file-manager uploads (optional; passthrough if unset)
 # CLAMAV_HOST=127.0.0.1

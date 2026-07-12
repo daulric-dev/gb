@@ -8,6 +8,7 @@ import {
 import crypto from 'node:crypto';
 import type { MultipartFile } from '@fastify/multipart';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { ChatSystemService } from '@/chat/chat-system.service';
 import { FileAccessService } from './file-access.service';
 import { FileShareService } from './file-share.service';
 import { FileListFilter } from './dto/list-files.filter';
@@ -45,6 +46,7 @@ export class FileManagerService {
     private readonly supabase: SupabaseService,
     private readonly access: FileAccessService,
     private readonly shares: FileShareService,
+    private readonly chatSystem: ChatSystemService,
   ) {}
 
   // ── Listing ──────────────────────────────────────────────────────────────
@@ -288,7 +290,20 @@ export class FileManagerService {
 
   async share(userId: string, fileId: string, targets: ShareTargetDto[]) {
     const file = await this.loadOwned(userId, fileId);
-    return this.shares.share(fileId, file.school_id, userId, targets);
+    const created = await this.shares.share(
+      fileId,
+      file.school_id,
+      userId,
+      targets,
+    );
+    // Drop a "file shared with you" chat message (with an accept+view action)
+    // into each direct-user share's DM. Best-effort; never blocks the share.
+    await this.chatSystem.notifyFileShares(
+      userId,
+      { id: file.id, name: file.name, school_id: file.school_id },
+      created,
+    );
+    return created;
   }
 
   async updateShare(

@@ -19,6 +19,7 @@ export const RESOURCES = [
   'school',
   'announcement',
   'file',
+  'chat',
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 
@@ -53,6 +54,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   school: 'school settings',
   announcement: 'announcements',
   file: 'files',
+  chat: 'chat messages',
 };
 
 const ACTION_VERBS: Record<Action, string> = {
@@ -99,6 +101,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
       'reporting',
       'announcement',
       'file',
+      'chat',
     ),
     permKey('class', 'create'),
     ...readKeys(
@@ -131,6 +134,9 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
     permKey('file', 'create'),
     permKey('file', 'update'),
     permKey('file', 'delete'),
+    // Everyone can message others in their school; ownership of a given
+    // message/conversation is enforced per-row in the chat service.
+    ...allKeys('chat'),
   ],
 };
 

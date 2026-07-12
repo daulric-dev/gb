@@ -29,6 +29,7 @@ import { PermissionModule } from '@/permission/permission.module';
 import { AnnouncementModule } from '@/announcement/announcement.module';
 import { ImagesModule } from '@/images/images.module';
 import { FileManagerModule } from '@/file-manager/file-manager.module';
+import { ChatModule } from '@/chat/chat.module';
 import { QueueModule } from '@/queue/queue.module';
 import { ScanModule } from '@/scan/scan.module';
 import { CacheModule } from '@/cache/cache.module';
@@ -88,6 +89,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     AnnouncementModule,
     ImagesModule,
     FileManagerModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [
