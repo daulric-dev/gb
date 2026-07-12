@@ -27,7 +27,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
   }
 
   async get(key: string): Promise<any> {
-    this.logger.log(`Getting cache key: ${key}`);
+    this.logger.debug(`Getting cache key: ${key}`);
     try {
       return await this.store.get(key);
     } catch (err) {
@@ -37,7 +37,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
   }
 
   async set(key: string, value: any, ttl: number): Promise<void> {
-    this.logger.log(`Setting cache key: ${key}`);
+    this.logger.debug(`Setting cache key: ${key}`);
     try {
       await this.store.set(key, value, ttl);
     } catch (err) {
@@ -50,7 +50,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
     func: (value: T) => T | Promise<T>,
     ttl: number,
   ): Promise<boolean> {
-    this.logger.log(`Updating cache key: ${key}`);
+    this.logger.debug(`Updating cache key: ${key}`);
     try {
       const value = (await this.store.get(key)) as T | null;
       if (value === null) return false;
@@ -63,7 +63,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
   }
 
   async delete(key: string): Promise<void> {
-    this.logger.log(`Deleting cache key: ${key}`);
+    this.logger.debug(`Deleting cache key: ${key}`);
     try {
       await this.store.delete(key);
     } catch (err) {
@@ -72,7 +72,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
   }
 
   async deleteByPrefix(prefix: string): Promise<void> {
-    this.logger.log(`Deleting cache by prefix: ${prefix}`);
+    this.logger.debug(`Deleting cache by prefix: ${prefix}`);
     try {
       await this.store.deleteByPrefix(prefix);
     } catch (err) {
@@ -83,7 +83,7 @@ export class CacheService implements CacheStore, OnModuleDestroy {
   }
 
   async clear(): Promise<void> {
-    this.logger.log(`Clearing cache`);
+    this.logger.debug(`Clearing cache`);
     try {
       await this.store.clear();
     } catch (err) {

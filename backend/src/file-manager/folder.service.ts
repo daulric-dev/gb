@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 
-const FOLDER_COLUMNS = 'id, school_id, owner_id, parent_id, name, is_system, created_at, updated_at';
+const FOLDER_COLUMNS =
+  'id, school_id, owner_id, parent_id, name, is_system, created_at, updated_at';
 
 interface FolderRow {
   id: string;
@@ -41,7 +42,9 @@ export class FolderService {
       .is('deleted_at', null)
       .order('name', { ascending: true });
 
-    query = parentId ? query.eq('parent_id', parentId) : query.is('parent_id', null);
+    query = parentId
+      ? query.eq('parent_id', parentId)
+      : query.is('parent_id', null);
 
     const { data } = await query;
     return (data ?? []).map((f: FolderRow) => this.present(f));
@@ -72,7 +75,7 @@ export class FolderService {
       .is('deleted_at', null)
       .maybeSingle();
     if (!data) throw new NotFoundException('Folder not found');
-    return data as FolderRow;
+    return data;
   }
 
   /** Root → … → folder path for breadcrumbs. Empty array at the root. */
@@ -121,7 +124,7 @@ export class FolderService {
       this.logger.error(`Failed to create folder: ${error.message}`);
       throw new BadRequestException('Failed to create folder');
     }
-    return this.present(data as FolderRow);
+    return this.present(data);
   }
 
   async rename(userId: string, folderId: string, name: string) {
@@ -148,7 +151,7 @@ export class FolderService {
       }
       throw new BadRequestException('Failed to rename folder');
     }
-    return this.present(data as FolderRow);
+    return this.present(data);
   }
 
   /**
@@ -194,7 +197,7 @@ export class FolderService {
       }
       throw new BadRequestException('Failed to move folder');
     }
-    return this.present(data as FolderRow);
+    return this.present(data);
   }
 
   /**
@@ -255,9 +258,10 @@ export class FolderService {
         .eq('owner_id', userId)
         .eq('name', name)
         .is('deleted_at', null);
-      const { data: existing } = await (parentId
-        ? existingQuery.eq('parent_id', parentId)
-        : existingQuery.is('parent_id', null)
+      const { data: existing } = await (
+        parentId
+          ? existingQuery.eq('parent_id', parentId)
+          : existingQuery.is('parent_id', null)
       ).maybeSingle();
 
       if (existing?.id) {
@@ -287,9 +291,10 @@ export class FolderService {
           .eq('owner_id', userId)
           .eq('name', name)
           .is('deleted_at', null);
-        const { data: raced } = await (parentId
-          ? raceQuery.eq('parent_id', parentId)
-          : raceQuery.is('parent_id', null)
+        const { data: raced } = await (
+          parentId
+            ? raceQuery.eq('parent_id', parentId)
+            : raceQuery.is('parent_id', null)
         ).maybeSingle();
         if (!raced?.id) {
           this.logger.warn(

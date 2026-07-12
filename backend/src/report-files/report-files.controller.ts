@@ -168,10 +168,21 @@ export class ReportFilesController {
     });
     archive.pipe(reply.raw);
 
+    // If the client disconnects mid-download, stop rendering/buffering the
+    // remaining PDFs instead of running the whole class to completion for a
+    // connection that's already gone.
+    let aborted = false;
+    reply.raw.on('close', () => {
+      if (aborted || reply.raw.writableEnded) return;
+      aborted = true;
+      archive.abort();
+    });
+
     // Generate one PDF at a time: append the next entry only after the previous
     // one has been consumed by the archiver, so at most one PDF buffer is live.
     let i = 0;
     const appendNext = () => {
+      if (aborted) return;
       if (i >= entries.length) {
         void archive.finalize();
         return;

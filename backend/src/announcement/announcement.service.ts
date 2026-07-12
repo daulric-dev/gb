@@ -10,9 +10,6 @@ import { CacheService } from '@/cache/cache.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
-// Announcement content (title/body/author) is read-heavy and changes rarely,
-// so it's cached per school and invalidated only on create/update/delete. Read
-// receipts change constantly and are fetched live, then merged in.
 const CONTENT_SELECT =
   'id, school_id, author_user_profile_id, title, body, created_at, updated_at, author:author_user_profile_id(first_name, last_name, avatar_url)';
 const CONTENT_TTL = 60 * 60 * 24 * 30;
@@ -191,6 +188,21 @@ export class AnnouncementService {
   async getUnreadCount(userId: string): Promise<{ count: number }> {
     const supabase = this.supabaseService.getServiceClient();
     const { school_id } = await this.getProfile(userId);
+
+    // Server-side anti-join in one round-trip. Falls back to the id-diff-in-JS
+    // approach if the RPC isn't available yet (migration not applied).
+    try {
+      const { data, error } = await supabase.rpc('announcement_unread_count', {
+        p_user_id: userId,
+        p_school_id: school_id,
+      });
+      if (error) throw error;
+      return { count: Number(data) || 0 };
+    } catch (err) {
+      this.logger.warn(
+        `announcement_unread_count RPC unavailable, falling back: ${String(err)}`,
+      );
+    }
 
     const { data: anns } = await supabase
       .from('announcement')

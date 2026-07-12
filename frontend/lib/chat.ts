@@ -1,11 +1,7 @@
-// Chat client: a signal-based store, the REST calls, and the Server-Sent
-// Events connection that keeps everything live. Mirrors the module-level-signal
-// pattern used by lib/file-notifications.ts and lib/announcements.ts.
-
 import { signal } from "@preact/signals-react";
 import { api } from "@/lib/api";
 
-// ── Types (mirror the backend chat DTOs) ─────────────────────────────────────
+// Types (mirror the backend chat DTOs)
 
 export type ChatMessageType = "text" | "file_share" | "class_invite" | "system";
 export type ChatActionState = "pending" | "accepted" | "dismissed" | null;
@@ -57,7 +53,10 @@ export function isOnline(userId: string | null | undefined): boolean {
 /** Set once the SSE stream is up so we know whose messages are "mine". */
 let currentUserId: string | null = null;
 
-// ── REST ─────────────────────────────────────────────────────────────────────
+/** Upper bound on messages retained per thread from the live SSE feed. */
+const MAX_LIVE_MESSAGES = 500;
+
+// REST
 
 export async function refreshConversations() {
   try {
@@ -95,9 +94,7 @@ export async function listMessageableUsers(): Promise<ChatParticipant[]> {
 }
 
 /** Start (or reuse) a DM with a user, select it, and load its history. */
-export async function openDirectConversation(
-  userId: string,
-): Promise<ChatConversation | null> {
+export async function openDirectConversation(userId: string): Promise<ChatConversation | null> {
   try {
     const conv = await api<ChatConversation>("/chat/conversations", {
       method: "POST",
@@ -172,7 +169,7 @@ export async function actOnMessage(
   }
 }
 
-// ── SSE stream ───────────────────────────────────────────────────────────────
+// SSE Stream
 
 let source: EventSource | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -247,6 +244,10 @@ export function disconnectChat() {
     presenceTimer = null;
   }
   onlineUsers.value = new Set();
+  conversations.value = [];
+  messagesByConversation.value = {};
+  activeConversationId.value = null;
+  unreadChat.value = 0;
 }
 
 function startPollingFallback() {
@@ -273,9 +274,13 @@ function applyIncomingMessage(message: ChatMessage | null) {
   const list = messagesByConversation.value[conversationId];
   // Only append to an already-loaded thread; unloaded threads fetch on open.
   if (list) {
+    const appended = dedupeMessages([...list, message]);
     messagesByConversation.value = {
       ...messagesByConversation.value,
-      [conversationId]: dedupeMessages([...list, message]),
+      [conversationId]:
+        appended.length > MAX_LIVE_MESSAGES
+          ? appended.slice(appended.length - MAX_LIVE_MESSAGES)
+          : appended,
     };
   }
 

@@ -63,7 +63,10 @@ export class RedisPubSubService implements OnModuleInit, OnModuleDestroy {
     this.deliver(channel, payload);
   }
 
-  async subscribe(channel: string, handler: PubSubHandler): Promise<() => void> {
+  async subscribe(
+    channel: string,
+    handler: PubSubHandler,
+  ): Promise<() => void> {
     let set = this.handlers.get(channel);
     if (!set) {
       set = new Set();

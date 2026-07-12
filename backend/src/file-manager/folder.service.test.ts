@@ -31,7 +31,10 @@ describe('FolderService.create', () => {
   test('creates a root folder and sanitizes the name', async () => {
     const svc = service((state) =>
       state.op === 'insert'
-        ? { data: folderRow({ name: state.payload.name, parent_id: null }), error: null }
+        ? {
+            data: folderRow({ name: state.payload.name, parent_id: null }),
+            error: null,
+          }
         : { data: null, error: null },
     );
     const out = await svc.create(USER, '  Term / Reports  ');
@@ -143,7 +146,8 @@ describe('FolderService.findOrCreateSystemPath', () => {
 
   test('reuses an existing folder without inserting', async () => {
     const svc = service((state) => {
-      if (state.op === 'select') return { data: { id: 'existing' }, error: null };
+      if (state.op === 'select')
+        return { data: { id: 'existing' }, error: null };
       throw new Error('should not insert when the folder already exists');
     });
     const leaf = await svc.findOrCreateSystemPath(USER, 's1', ['Reports']);

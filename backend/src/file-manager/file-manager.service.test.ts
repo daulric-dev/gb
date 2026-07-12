@@ -47,7 +47,7 @@ function makeService(
   });
   const chatSystem = { notifyFileShares: () => Promise.resolve() };
   const folders = {
-    getOwned: () => Promise.resolve({ id: "folder-1", owner_id: USER }),
+    getOwned: () => Promise.resolve({ id: 'folder-1', owner_id: USER }),
   };
   const svc = new FileManagerService(
     supabase as any,

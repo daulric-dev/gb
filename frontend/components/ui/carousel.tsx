@@ -102,6 +102,7 @@ function Carousel({
 
     return () => {
       cancelAnimationFrame(timer)
+      api?.off("reInit", onSelect)
       api?.off("select", onSelect)
     }
   }, [api, onSelect])

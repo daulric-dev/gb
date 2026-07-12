@@ -15,7 +15,6 @@ export interface PresenceEvent {
 
 type PresenceHandler = (event: PresenceEvent) => void;
 
-
 const TTL_SECONDS = 60;
 const STALE_MS = TTL_SECONDS * 1000;
 
@@ -84,7 +83,11 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     const count = (this.localCounts.get(userId) ?? 1) - 1;
     if (count <= 0) {
       this.localCounts.delete(userId);
-      this.localMembers(schoolId).delete(userId);
+      const members = this.localMembers(schoolId);
+      members.delete(userId);
+      // Drop the now-empty school bucket so localSchools can't accrete empty
+      // Sets for schools that no longer have anyone connected.
+      if (members.size === 0) this.localSchools.delete(schoolId);
       await this.publish(schoolId, userId, false, now);
     } else {
       this.localCounts.set(userId, count);
@@ -117,7 +120,10 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     online: boolean,
     at: number,
   ): Promise<void> {
-    const event: PresenceEvent = { type: 'presence', data: { userId, online, at } };
+    const event: PresenceEvent = {
+      type: 'presence',
+      data: { userId, online, at },
+    };
     await this.bus.publish(this.schoolChannel(schoolId), event);
   }
 

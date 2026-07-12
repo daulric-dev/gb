@@ -392,7 +392,9 @@ export class ClassService {
 
     const { data: group, error: groupError } = await supabase
       .from('student_group')
-      .select('academic_year_id, name, academic_year:academic_year_id(school_id)')
+      .select(
+        'academic_year_id, name, academic_year:academic_year_id(school_id)',
+      )
       .eq('id', classId)
       .single();
 

@@ -61,7 +61,8 @@ export class ChatController {
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': origin === allowedOrigin ? origin : allowedOrigin,
+      'Access-Control-Allow-Origin':
+        origin === allowedOrigin ? origin : allowedOrigin,
       'Access-Control-Allow-Credentials': 'true',
       Vary: 'Origin',
     });
@@ -69,17 +70,17 @@ export class ChatController {
     raw.write('retry: 5000\n\n');
 
     const send = (event: ChatEvent) => {
-      raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+      raw.write(
+        `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`,
+      );
     };
 
     const unsubscribe = await this.realtime.subscribeUser(userId, send);
 
-    // Presence: mark the user online, relay the school's online/offline events,
-    // and keep the user fresh on each heartbeat.
     let unsubPresence: (() => void) | null = null;
     if (schoolId) {
       unsubPresence = await this.presence.subscribeSchool(schoolId, (e) =>
-        send(e as unknown as ChatEvent),
+        send(e),
       );
       await this.presence.connect(userId, schoolId);
     }
@@ -98,11 +99,17 @@ export class ChatController {
       unsubPresence?.();
       if (schoolId) void this.presence.disconnect(userId, schoolId);
     };
+
+    if (req.raw.destroyed) {
+      cleanup();
+      return;
+    }
+
     req.raw.on('close', cleanup);
     req.raw.on('error', cleanup);
   }
 
-  /** User ids currently online in the caller's school. */
+  //User ids currently online in the caller's school.
   @RequirePermission('chat', 'read')
   @Get('presence')
   async presenceList(@Req() req: any): Promise<{ online: string[] }> {
@@ -115,7 +122,7 @@ export class ChatController {
     return { online: await this.presence.onlineUserIds(schoolId) };
   }
 
-  // ── Directory / counters ────────────────────────────────────────────────────
+  // Directory / counters
 
   @RequirePermission('chat', 'read')
   @Get('users')
@@ -129,7 +136,7 @@ export class ChatController {
     return this.chat.totalUnread(req.user.id);
   }
 
-  // ── Conversations ────────────────────────────────────────────────────────────
+  // Conversations
 
   @RequirePermission('chat', 'read')
   @Get('conversations')
