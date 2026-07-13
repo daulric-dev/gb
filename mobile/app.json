@@ -6,14 +6,12 @@
     "orientation": "portrait",
     "scheme": "gradebook",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.daulric.gradebook"
     },
     "android": {
-      "package": "dev.daulric.gradebook",
-      "edgeToEdgeEnabled": true
+      "package": "dev.daulric.gradebook"
     },
     "web": {
       "bundler": "metro",
@@ -27,6 +25,12 @@
         {
           "backgroundColor": "#ffffff",
           "dark": { "backgroundColor": "#0a0a0a" }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GradeBook to access your photos to set a profile picture."
         }
       ]
     ],

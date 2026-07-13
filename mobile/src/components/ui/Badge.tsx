@@ -8,9 +8,12 @@ type Variant = "default" | "secondary" | "outline";
 export function Badge({
   children,
   variant = "secondary",
+  color,
 }: {
   children: ReactNode;
   variant?: Variant;
+  /** Accent colour for text (and border, on the outline variant). */
+  color?: string;
 }) {
   const { colors, radius } = useTheme();
 
@@ -20,11 +23,13 @@ export function Badge({
     outline: "transparent",
   }[variant];
 
-  const fg = {
-    default: colors.primaryForeground,
-    secondary: colors.secondaryForeground,
-    outline: colors.foreground,
-  }[variant];
+  const fg =
+    color ??
+    {
+      default: colors.primaryForeground,
+      secondary: colors.secondaryForeground,
+      outline: colors.foreground,
+    }[variant];
 
   return (
     <View
@@ -34,7 +39,7 @@ export function Badge({
           backgroundColor: bg,
           borderRadius: radius.full,
           borderWidth: variant === "outline" ? StyleSheet.hairlineWidth : 0,
-          borderColor: colors.border,
+          borderColor: color ?? colors.border,
         },
       ]}
     >

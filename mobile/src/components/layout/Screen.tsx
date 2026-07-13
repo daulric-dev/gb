@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArrowLeft } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Text } from "@/components/ui/Text";
 
@@ -15,6 +17,7 @@ export function Screen({
   title,
   description,
   action,
+  onBack,
   scroll = true,
   refreshing,
   onRefresh,
@@ -24,6 +27,7 @@ export function Screen({
   title?: string;
   description?: string;
   action?: ReactNode;
+  onBack?: () => void;
   scroll?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -33,18 +37,30 @@ export function Screen({
   const insets = useSafeAreaInsets();
 
   const header = title ? (
-    <View style={styles.header}>
-      <View style={styles.headerText}>
-        <Text variant="heading" style={{ fontSize: 26 }}>
-          {title}
-        </Text>
-        {description ? (
-          <Text variant="muted" style={{ marginTop: 4 }}>
-            {description}
+    <View style={{ gap: 8 }}>
+      {onBack ? (
+        <Pressable
+          onPress={onBack}
+          hitSlop={8}
+          style={({ pressed }) => [styles.back, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <ArrowLeft size={20} color={colors.mutedForeground} />
+          <Text variant="muted">Back</Text>
+        </Pressable>
+      ) : null}
+      <View style={styles.header}>
+        <View style={styles.headerText}>
+          <Text variant="heading" style={{ fontSize: 26 }}>
+            {title}
           </Text>
-        ) : null}
+          {description ? (
+            <Text variant="muted" style={{ marginTop: 4 }}>
+              {description}
+            </Text>
+          ) : null}
+        </View>
+        {action}
       </View>
-      {action}
     </View>
   ) : null;
 
@@ -101,5 +117,11 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+  },
+  back: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginLeft: -4,
   },
 });

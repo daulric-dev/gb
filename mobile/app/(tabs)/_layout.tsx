@@ -4,6 +4,7 @@ import {
   Users,
   UserRoundSearch,
   Settings,
+  LayoutGrid,
 } from "lucide-react-native";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -15,7 +16,8 @@ export default function TabsLayout() {
 
   if (loading) return <Loading />;
   if (!profile) return <Redirect href="/(auth)/login" />;
-  if (!profile.school) return <Redirect href="/(auth)/needs-setup" />;
+  if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
+  if (!profile.school) return <Redirect href="/(auth)/schools" />;
 
   return (
     <Tabs
@@ -53,6 +55,15 @@ export default function TabsLayout() {
           title: "Students",
           tabBarIcon: ({ color, size }) => (
             <UserRoundSearch color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{
+          title: "More",
+          tabBarIcon: ({ color, size }) => (
+            <LayoutGrid color={color} size={size} />
           ),
         }}
       />

@@ -7,6 +7,15 @@ enabled = true
 [auth.email]
 otp_length = 8
 
+[auth.email.template.magic_link]
+subject = "Your GradeBook sign-in code"
+content_path = "./supabase/templates/otp-code.html"
+
+[auth.email.template.confirmation]
+subject = "Your GradeBook sign-in code"
+content_path = "./supabase/templates/otp-code.html"
+
+
 [storage.buckets.images]
 public = true
 file_size_limit = "5MiB"

@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
+import { PermissionsProvider } from "@/providers/PermissionsProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
 import { setUnauthorizedHandler } from "@/lib/api";
 
@@ -22,16 +23,23 @@ function RootNavigator() {
   return (
     <>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+      {/*
+        Default animation is a slide, so every pushed secondary section
+        (announcements, chat, files, staff, subjects, academic-calendar,
+        grade-scales, roles, class/[classId]) drills in with a slide. The app
+        shell routes below opt back into "fade". Sections auto-register from the
+        filesystem, so they need no explicit <Stack.Screen> here.
+      */}
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
-          animation: "fade",
+          animation: "slide_from_right",
         }}
       >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="index" options={{ animation: "fade" }} />
+        <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
+        <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
       </Stack>
     </>
   );
@@ -44,7 +52,9 @@ export default function RootLayout() {
         <ThemeProvider>
           <ToastProvider>
             <AuthProvider>
-              <RootNavigator />
+              <PermissionsProvider>
+                <RootNavigator />
+              </PermissionsProvider>
             </AuthProvider>
           </ToastProvider>
         </ThemeProvider>

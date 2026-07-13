@@ -59,19 +59,24 @@ export default function VerifyScreen() {
     if (code.length !== CODE_LENGTH) return;
     setLoading(true);
     try {
-      const data = await api<{ user: { is_onboarded: boolean } }>(
-        "/auth/otp/verify",
-        {
-          method: "POST",
-          body: { email, token: code },
-          skipAuthRedirect: true,
-        },
-      );
+      const data = await api<{
+        user: {
+          is_onboarded: boolean;
+          first_name: string | null;
+          school: { id: string } | null;
+        };
+      }>("/auth/otp/verify", {
+        method: "POST",
+        body: { email, token: code },
+        skipAuthRedirect: true,
+      });
       await refresh();
-      if (data.user.is_onboarded) {
+      if (data.user.school) {
         router.replace("/(tabs)");
+      } else if (data.user.first_name) {
+        router.replace("/(auth)/schools");
       } else {
-        router.replace("/(auth)/needs-setup");
+        router.replace("/(auth)/onboard");
       }
     } catch (err) {
       toast.error(

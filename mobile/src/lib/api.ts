@@ -77,6 +77,38 @@ export async function api<T = unknown>(
   }
 }
 
+/**
+ * Multipart upload (mirror of the web `apiUpload`). Pass a ready FormData; on
+ * React Native, append files as `{ uri, name, type }`. Content-Type is left
+ * unset so fetch adds the multipart boundary itself.
+ */
+export async function apiUpload<T = unknown>(
+  path: string,
+  formData: FormData,
+  options: { skipAuthRedirect?: boolean } = {},
+): Promise<T> {
+  const res = await fetch(buildUrl(path), {
+    method: "POST",
+    headers: { "X-API-Version": "1" },
+    credentials: "include",
+    body: formData,
+  });
+
+  if (res.status === 401) handleUnauthorized(options.skipAuthRedirect ?? false);
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: res.statusText }));
+    throw new ApiError(res.status, error.message || res.statusText, error);
+  }
+
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text as T;
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

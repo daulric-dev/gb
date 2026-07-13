@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
-import { BookOpen } from "lucide-react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { useRouter, type Href } from "expo-router";
+import { BookOpen, ChevronRight } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import type { AcademicYear, ClassItem } from "@/lib/types";
@@ -22,22 +23,30 @@ function ClassCard({
   item: ClassItem;
   yearName?: string;
 }) {
+  const router = useRouter();
+  const { colors } = useTheme();
   return (
-    <Card>
-      <CardHeader style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <CardTitle>{item.name ?? "Untitled class"}</CardTitle>
-          {yearName ? (
-            <Text variant="muted" style={{ marginTop: 2 }}>
-              {yearName}
-            </Text>
+    <Pressable
+      onPress={() => router.push(`/class/${item.id}` as Href)}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <Card>
+        <CardHeader style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <CardTitle>{item.name ?? "Untitled class"}</CardTitle>
+            {yearName ? (
+              <Text variant="muted" style={{ marginTop: 2 }}>
+                {yearName}
+              </Text>
+            ) : null}
+          </View>
+          {item.isClassTeacher ? (
+            <Badge variant="secondary">Class Teacher</Badge>
           ) : null}
-        </View>
-        {item.isClassTeacher ? (
-          <Badge variant="secondary">Class Teacher</Badge>
-        ) : null}
-      </CardHeader>
-    </Card>
+          <ChevronRight size={20} color={colors.mutedForeground} />
+        </CardHeader>
+      </Card>
+    </Pressable>
   );
 }
 

@@ -1,52 +1,74 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
-import { Search } from "lucide-react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Search, Plus } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import type { Student } from "@/lib/types";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Sheet } from "@/components/ui/Sheet";
+import { StudentForm } from "@/features/students/StudentForm";
 import { getInitials, capitalize } from "@/lib/utils";
 
-function StudentRow({ student }: { student: Student }) {
+function StudentRow({
+  student,
+  onPress,
+}: {
+  student: Student;
+  onPress?: () => void;
+}) {
   const fullName = `${student.first_name} ${student.last_name}`.trim();
   return (
-    <Card>
-      <CardContent style={styles.row}>
-        <Avatar
-          fallback={getInitials(student.first_name, student.last_name)}
-          size={40}
-        />
-        <View style={{ flex: 1 }}>
-          <Text weight="600" numberOfLines={1}>
-            {fullName || "Unnamed student"}
-          </Text>
-          {student.gender ? (
-            <Text variant="muted" style={{ fontSize: 12 }}>
-              {capitalize(student.gender)}
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <Card>
+        <CardContent style={styles.row}>
+          <Avatar
+            fallback={getInitials(student.first_name, student.last_name)}
+            size={40}
+          />
+          <View style={{ flex: 1 }}>
+            <Text weight="600" numberOfLines={1}>
+              {fullName || "Unnamed student"}
             </Text>
-          ) : null}
-        </View>
-        {!student.is_active && <Badge variant="outline">Inactive</Badge>}
-      </CardContent>
-    </Card>
+            {student.gender ? (
+              <Text variant="muted" style={{ fontSize: 12 }}>
+                {capitalize(student.gender)}
+              </Text>
+            ) : null}
+          </View>
+          {!student.is_active && <Badge variant="outline">Inactive</Badge>}
+        </CardContent>
+      </Card>
+    </Pressable>
   );
 }
 
 export default function StudentsScreen() {
   const { colors } = useTheme();
   const toast = useToast();
+  const { can } = usePermissions();
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Student | null>(null);
   const initial = useRef(true);
+
+  const canCreate = can("student", "create");
+  const canUpdate = can("student", "update");
 
   const fetchStudents = useCallback(
     async (query?: string) => {
@@ -84,12 +106,31 @@ export default function StudentsScreen() {
     fetchStudents(search).finally(() => setRefreshing(false));
   }, [fetchStudents, search]);
 
+  const closeForm = () => {
+    setFormOpen(false);
+    setEditing(null);
+  };
+
   return (
     <Screen
       title="Students"
       description="Students in your school"
       refreshing={refreshing}
       onRefresh={onRefresh}
+      action={
+        canCreate ? (
+          <Button
+            size="sm"
+            onPress={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+            icon={<Plus size={16} color={colors.primaryForeground} />}
+          >
+            New
+          </Button>
+        ) : undefined
+      }
     >
       <View style={styles.searchWrap}>
         <Search
@@ -120,10 +161,35 @@ export default function StudentsScreen() {
       ) : (
         <View style={{ gap: 12 }}>
           {students.map((s) => (
-            <StudentRow key={s.id} student={s} />
+            <StudentRow
+              key={s.id}
+              student={s}
+              onPress={
+                canUpdate
+                  ? () => {
+                      setEditing(s);
+                      setFormOpen(true);
+                    }
+                  : undefined
+              }
+            />
           ))}
         </View>
       )}
+
+      <Sheet
+        open={formOpen}
+        onClose={closeForm}
+        title={editing ? "Edit Student" : "Add Student"}
+      >
+        <StudentForm
+          student={editing ?? undefined}
+          onSuccess={() => {
+            closeForm();
+            fetchStudents(search);
+          }}
+        />
+      </Sheet>
     </Screen>
   );
 }
