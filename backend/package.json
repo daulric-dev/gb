@@ -34,7 +34,7 @@
     "@nestjs/swagger": "^11.4.3",
     "@nestjs/throttler": "^6.5.0",
     "@react-pdf/renderer": "^4.5.1",
-    "@supabase/ssr": "^0.10.3",
+    "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.108.2",
     "archiver": "^7",
     "bullmq": "^5.80.1",
