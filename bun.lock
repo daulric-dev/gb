@@ -103,7 +103,7 @@
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
         "@opennextjs/cloudflare": "^1.20.1",
-        "@preact/signals-react": "^3.10.1",
+        "@preact/signals-react": "^3.11.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cmdk": "^1.1.1",
@@ -1322,7 +1322,7 @@
 
     "@preact/signals-core": ["@preact/signals-core@1.14.4", "", {}, "sha512-HNB6HYeYKhQbJ1aKl+YRjrS4+QWHLKX6qKoUsfS/m0vqzsVaEBiZiaKbG/e+NKk2ch5ALQr/ihWaMHxiCuuWHA=="],
 
-    "@preact/signals-react": ["@preact/signals-react@3.10.3", "", { "dependencies": { "@preact/signals-core": "^1.14.4", "use-sync-external-store": "^1.2.0" }, "peerDependencies": { "react": "^16.14.0 || 17.x || 18.x || 19.x" } }, "sha512-/Hr3kdVKHMUFmwsb4hmnx6JQP1rxWCuLrOPT6LW4IE+CDFc4UNGks6HzxriNpn/S06iNjx/O+az1AhOB3aqizQ=="],
+    "@preact/signals-react": ["@preact/signals-react@3.11.0", "", { "dependencies": { "@preact/signals-core": "^1.14.4", "use-sync-external-store": "^1.2.0" }, "peerDependencies": { "react": "^16.14.0 || 17.x || 18.x || 19.x" } }, "sha512-r1hgiw0VOrYAGYuERXsXFstGzOH9L628JwcTAda7DnHr1218bQHuJvmwdhOTU3LJzXiCJIlDvN+wrz/1GqIIEg=="],
 
     "@radix-ui/primitive": ["@radix-ui/primitive@1.1.5", "", {}, "sha512-d86WIWFYNtGA0H/d8exstrTRTp7eWJYlYJbtNofxr/3ljupZYn6EFDG/Qgu/0Kc8v7yMUxySagqJsL1+PdYjWg=="],
 
