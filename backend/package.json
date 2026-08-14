@@ -30,7 +30,7 @@
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.1.28",
     "@nestjs/platform-express": "^11.1.27",
-    "@nestjs/platform-fastify": "^11.1.23",
+    "@nestjs/platform-fastify": "^11.1.29",
     "@nestjs/swagger": "^11.4.6",
     "@nestjs/throttler": "^6.5.0",
     "@react-pdf/renderer": "^4.5.1",
