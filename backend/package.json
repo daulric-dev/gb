@@ -20,7 +20,7 @@
     "test:watch": "bun test src --watch"
   },
   "dependencies": {
-    "@fastify/aws-lambda": "^6.4.0",
+    "@fastify/aws-lambda": "^6.4.1",
     "@fastify/cookie": "^11.1.2",
     "@fastify/multipart": "^10.0.0",
     "@fastify/swagger": "^9.8.1",
