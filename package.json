@@ -37,7 +37,8 @@
     "overrides": {
         "webpackbar": "^7.0.0",
         "react": "19.2.7",
-        "react-dom": "19.2.7"
+        "react-dom": "19.2.7",
+        "fastify": "5.11.3"
     },
     "dependencies": {
         "typescript": "^6.0.3"
