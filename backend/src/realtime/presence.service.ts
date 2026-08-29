@@ -99,7 +99,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     if (this.redis) {
       const cutoff = Date.now() - STALE_MS;
       await this.redis.zremrangebyscore(this.schoolKey(schoolId), 0, cutoff);
-      return this.redis.zrange(this.schoolKey(schoolId), 0, -1);
+      return this.redis.zrange(this.schoolKey(schoolId), '0', '-1');
     }
     return [...this.localMembers(schoolId)];
   }
