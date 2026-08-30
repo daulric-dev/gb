@@ -27,6 +27,7 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
   // In-process fallback state (single replica).
   private readonly localCounts = new Map<string, number>();
   private readonly localSchools = new Map<string, Set<string>>();
+  private localQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly bus: RedisPubSubService) {}
 
@@ -41,6 +42,8 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     await this.redis?.quit();
+    this.localCounts.clear();
+    this.localSchools.clear();
   }
 
   /** Mark a new SSE connection for a user. Publishes on the first connection. */
@@ -53,10 +56,12 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
       if (count === 1) await this.publish(schoolId, userId, true, now);
       return;
     }
-    const count = (this.localCounts.get(userId) ?? 0) + 1;
-    this.localCounts.set(userId, count);
-    this.localMembers(schoolId).add(userId);
-    if (count === 1) await this.publish(schoolId, userId, true, now);
+    await this.runSerialized(async () => {
+      const count = (this.localCounts.get(userId) ?? 0) + 1;
+      this.localCounts.set(userId, count);
+      this.localMembers(schoolId).add(userId);
+      if (count === 1) await this.publish(schoolId, userId, true, now);
+    });
   }
 
   /** Keep a user's presence fresh (called on each SSE heartbeat). */
@@ -80,18 +85,20 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
       }
       return;
     }
-    const count = (this.localCounts.get(userId) ?? 1) - 1;
-    if (count <= 0) {
-      this.localCounts.delete(userId);
-      const members = this.localMembers(schoolId);
-      members.delete(userId);
-      // Drop the now-empty school bucket so localSchools can't accrete empty
-      // Sets for schools that no longer have anyone connected.
-      if (members.size === 0) this.localSchools.delete(schoolId);
-      await this.publish(schoolId, userId, false, now);
-    } else {
-      this.localCounts.set(userId, count);
-    }
+    await this.runSerialized(async () => {
+      const count = (this.localCounts.get(userId) ?? 1) - 1;
+      if (count <= 0) {
+        this.localCounts.delete(userId);
+        const members = this.localMembers(schoolId);
+        members.delete(userId);
+        // Drop the now-empty school bucket so localSchools can't accrete empty
+        // Sets for schools that no longer have anyone connected.
+        if (members.size === 0) this.localSchools.delete(schoolId);
+        await this.publish(schoolId, userId, false, now);
+      } else {
+        this.localCounts.set(userId, count);
+      }
+    });
   }
 
   /** The user ids currently online in a school (stale entries pruned). */
@@ -125,6 +132,20 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
       data: { userId, online, at },
     };
     await this.bus.publish(this.schoolChannel(schoolId), event);
+  }
+
+  private async runSerialized<T>(task: () => Promise<T>): Promise<T> {
+    const previous = this.localQueue;
+    let release!: () => void;
+    this.localQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
   }
 
   private localMembers(schoolId: string): Set<string> {

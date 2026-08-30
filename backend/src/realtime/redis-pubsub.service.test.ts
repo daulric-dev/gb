@@ -58,4 +58,13 @@ describe('RedisPubSubService (in-process)', () => {
     expect(a).toHaveLength(1);
     expect(b).toHaveLength(1);
   });
+
+  test('clears handler registrations on destroy to prevent stale subscriptions', async () => {
+    await bus.subscribe('c1', () => undefined);
+    await bus.subscribe('c2', () => undefined);
+
+    await bus.onModuleDestroy();
+
+    expect((bus as any).handlers.size).toBe(0);
+  });
 });

@@ -44,6 +44,7 @@ export class RedisPubSubService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.handlers.clear();
     await Promise.allSettled([this.publisher?.quit(), this.subscriber?.quit()]);
   }
 
