@@ -44,7 +44,7 @@ export class ChatController {
   @RequirePermission('chat', 'read')
   @Get('stream')
   async stream(@Req() req: any, @Res() reply: FastifyReply): Promise<void> {
-    const userId = req.user.id;
+    const userId = req.user.id as string;
     let schoolId: string | null = null;
     try {
       schoolId = await this.supabase.getUserSchoolId(userId);
@@ -90,6 +90,7 @@ export class ChatController {
       if (schoolId) void this.presence.heartbeat(userId, schoolId);
     }, SSE_HEARTBEAT_MS);
 
+    const onClose = () => cleanup();
     let closed = false;
     const cleanup = () => {
       if (closed) return;
@@ -98,6 +99,8 @@ export class ChatController {
       unsubscribe();
       unsubPresence?.();
       if (schoolId) void this.presence.disconnect(userId, schoolId);
+      req.raw.off('close', onClose);
+      req.raw.off('error', onClose);
     };
 
     if (req.raw.destroyed) {
@@ -105,8 +108,8 @@ export class ChatController {
       return;
     }
 
-    req.raw.on('close', cleanup);
-    req.raw.on('error', cleanup);
+    req.raw.on('close', onClose);
+    req.raw.on('error', onClose);
   }
 
   //User ids currently online in the caller's school.
@@ -115,7 +118,8 @@ export class ChatController {
   async presenceList(@Req() req: any): Promise<{ online: string[] }> {
     let schoolId: string;
     try {
-      schoolId = await this.supabase.getUserSchoolId(req.user.id);
+      const userId = req.user.id as string;
+      schoolId = await this.supabase.getUserSchoolId(userId);
     } catch {
       return { online: [] };
     }
@@ -127,13 +131,15 @@ export class ChatController {
   @RequirePermission('chat', 'read')
   @Get('users')
   async users(@Req() req: any) {
-    return this.chat.listMessageableUsers(req.user.id);
+    const userId = req.user.id as string;
+    return this.chat.listMessageableUsers(userId);
   }
 
   @RequirePermission('chat', 'read')
   @Get('unread-count')
   async unreadCount(@Req() req: any) {
-    return this.chat.totalUnread(req.user.id);
+    const userId = req.user.id as string;
+    return this.chat.totalUnread(userId);
   }
 
   // Conversations
@@ -141,7 +147,8 @@ export class ChatController {
   @RequirePermission('chat', 'read')
   @Get('conversations')
   async listConversations(@Req() req: any) {
-    return this.chat.listConversations(req.user.id);
+    const userId = req.user.id as string;
+    return this.chat.listConversations(userId);
   }
 
   @RequirePermission('chat', 'create')
@@ -150,13 +157,15 @@ export class ChatController {
     @Req() req: any,
     @Body() dto: CreateConversationDto,
   ) {
-    return this.chat.getOrCreateDirect(req.user.id, dto.userId);
+    const userId = req.user.id as string;
+    return this.chat.getOrCreateDirect(userId, dto.userId);
   }
 
   @RequirePermission('chat', 'create')
   @Post('channels')
   async createChannel(@Req() req: any, @Body() dto: CreateChannelDto) {
-    return this.chat.createChannel(req.user.id, dto.title, dto.memberIds);
+    const userId = req.user.id as string;
+    return this.chat.createChannel(userId, dto.title, dto.memberIds);
   }
 
   @RequirePermission('chat', 'read')
@@ -166,7 +175,8 @@ export class ChatController {
     @Param('id') id: string,
     @Query() query: ListMessagesQueryDto,
   ) {
-    return this.chat.listMessages(req.user.id, id, {
+    const userId = req.user.id as string;
+    return this.chat.listMessages(userId, id, {
       before: query.before,
       limit: query.limit,
     });
@@ -179,13 +189,15 @@ export class ChatController {
     @Param('id') id: string,
     @Body() dto: SendMessageDto,
   ) {
-    return this.chat.sendMessage(req.user.id, id, dto.body);
+    const userId = req.user.id as string;
+    return this.chat.sendMessage(userId, id, dto.body);
   }
 
   @RequirePermission('chat', 'update')
   @Post('conversations/:id/read')
   async markRead(@Req() req: any, @Param('id') id: string) {
-    return this.chat.markRead(req.user.id, id);
+    const userId = req.user.id as string;
+    return this.chat.markRead(userId, id);
   }
 
   // ── Messages ─────────────────────────────────────────────────────────────────
@@ -197,13 +209,15 @@ export class ChatController {
     @Param('id') id: string,
     @Body() dto: SendMessageDto,
   ) {
-    return this.chat.editMessage(req.user.id, id, dto.body);
+    const userId = req.user.id as string;
+    return this.chat.editMessage(userId, id, dto.body);
   }
 
   @RequirePermission('chat', 'delete')
   @Delete('messages/:id')
   async deleteMessage(@Req() req: any, @Param('id') id: string) {
-    return this.chat.deleteMessage(req.user.id, id);
+    const userId = req.user.id as string;
+    return this.chat.deleteMessage(userId, id);
   }
 
   @RequirePermission('chat', 'update')
@@ -214,6 +228,7 @@ export class ChatController {
     @Body() dto: MessageActionDto,
   ) {
     const state = dto.action === 'accept' ? 'accepted' : 'dismissed';
-    return this.chat.setActionState(req.user.id, id, state);
+    const userId = req.user.id as string;
+    return this.chat.setActionState(userId, id, state);
   }
 }

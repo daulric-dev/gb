@@ -69,4 +69,14 @@ describe('PresenceService (in-process)', () => {
     const online = await presence.onlineUserIds(SCHOOL);
     expect(new Set(online)).toEqual(new Set(['u1', 'u2']));
   });
+
+  test('concurrent connect calls do not double-broadcast the same user', async () => {
+    await Promise.all([
+      presence.connect('u1', SCHOOL),
+      presence.connect('u1', SCHOOL),
+    ]);
+
+    expect(events.filter((e) => e.data.online)).toHaveLength(1);
+    expect(await presence.onlineUserIds(SCHOOL)).toEqual(['u1']);
+  });
 });
