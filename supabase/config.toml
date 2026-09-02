@@ -8,13 +8,12 @@ enabled = true
 otp_length = 8
 
 [auth.email.template.magic_link]
-subject = "Your GradeBook sign-in code"
-content_path = "./supabase/templates/otp-code.html"
+subject = "Your GradeBook Login Code"
+content_path = "./supabase/templates/magic-link.html"
 
 [auth.email.template.confirmation]
-subject = "Your GradeBook sign-in code"
+subject = "Your GradeBook Login Code"
 content_path = "./supabase/templates/otp-code.html"
-
 
 [storage.buckets.images]
 public = true
