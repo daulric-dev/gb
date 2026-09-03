@@ -31,7 +31,7 @@ Students are stored in the `student` schema (not `public`).
 | `date_of_birth` | date? | Optional date of birth |
 | `school_id` | UUID | The school the student belongs to |
 | `is_active` | boolean | Whether the student is currently active |
-| `enrollement_date` | date? | Optional enrollment date |
+| `enrollment_date` | date? | Optional enrollment date |
 
 ## API Endpoints
 

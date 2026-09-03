@@ -28,7 +28,7 @@ function makeStudent(overrides: Record<string, any> = {}) {
     last_name: 'Doe',
     gender: 'male',
     date_of_birth: null,
-    enrollement_date: null,
+    enrollment_date: null,
     ...overrides,
   };
 }

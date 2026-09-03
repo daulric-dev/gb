@@ -1505,7 +1505,7 @@ export type Database = {
       student: {
         Row: {
           date_of_birth: string | null;
-          enrollement_date: string | null;
+          enrollment_date: string | null;
           first_name: string | null;
           gender: string | null;
           id: string;
@@ -1515,7 +1515,7 @@ export type Database = {
         };
         Insert: {
           date_of_birth?: string | null;
-          enrollement_date?: string | null;
+          enrollment_date?: string | null;
           first_name?: string | null;
           gender?: string | null;
           id?: string;
@@ -1525,7 +1525,7 @@ export type Database = {
         };
         Update: {
           date_of_birth?: string | null;
-          enrollement_date?: string | null;
+          enrollment_date?: string | null;
           first_name?: string | null;
           gender?: string | null;
           id?: string;

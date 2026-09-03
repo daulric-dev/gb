@@ -5,7 +5,7 @@ export interface Student {
   last_name: string;
   gender: "male" | "female" | null;
   date_of_birth: string | null;
-  enrollement_date: string | null;
+  enrollment_date: string | null;
   is_active: boolean;
 }
 
