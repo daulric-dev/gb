@@ -395,6 +395,25 @@ export class AttendanceService {
     };
   }
 
+  async getClassSummary(classId: string, from: string, to: string) {
+    this.assertRange(from, to);
+
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
+      .functions.invoke('attendance-summary', {
+        body: { classId, from, to },
+      });
+
+    if (error || !data) {
+      this.logger.error(
+        `Failed to load class attendance summary: ${error?.message ?? 'empty response'}`,
+      );
+      throw new BadRequestException('Failed to load attendance summary');
+    }
+
+    return data;
+  }
+
   async assertCanViewClass(userId: string, classId: string) {
     const supabase = this.supabaseService.getServiceClient();
 

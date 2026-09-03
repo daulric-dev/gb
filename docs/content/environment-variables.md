@@ -14,23 +14,23 @@ No `.env` files are committed to the repository. You must create them manually i
 
 **File**: `backend/.env`
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SUPABASE_URL` | **Yes** | - | Your Supabase project URL (e.g., `https://abcdef.supabase.co`) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Yes** | - | Supabase service role key. Has full database access, bypasses RLS. **Keep secret.** |
-| `SUPABASE_PUSHABLE_KEY` | **Yes** | - | Supabase anon/public key. Used for user-context clients that respect RLS policies. |
-| `FRONTEND_URL` | No | `http://localhost:3000` | Allowed CORS origin. Set to your frontend's production URL in deployment. |
-| `PORT` | No | `3001` | Port the backend server listens on. |
-| `USE_REDIS` | No | `false` | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica). |
-| `REDIS_URL` | Only if `USE_REDIS=true` | - | Redis connection URL (e.g., `redis://localhost:6379`). |
-| `CHAT_CHANNELS_ENABLED` | No | `false` | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md). |
-| `CHAT_ENCRYPTION_KEY` | **Prod** | - | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning). |
-| `CHAT_ENCRYPTION_KEYS` | No | - | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version. |
-| `CHAT_ENCRYPTION_KEY_VERSION` | No | highest | Which key version to encrypt new messages with. |
-| `CLAMAV_HOST` | No | - | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
-| `CLAMAV_PORT` | No | `3310` | `clamd` TCP port. |
-| `CLAMAV_TIMEOUT_MS` | No | `30000` | Socket timeout for a scan, in milliseconds. |
-| `DEDICATED_DEPLOYMENT` | No | `false` | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md). |
+| Variable                      | Required                 | Default                 | Description                                                                                                                                                                                                                                                           |
+| ----------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_URL`                | **Yes**                  | -                       | Your Supabase project URL (e.g., `https://abcdef.supabase.co`)                                                                                                                                                                                                        |
+| `SUPABASE_SERVICE_ROLE_KEY`   | **Yes**                  | -                       | Supabase service role key. Has full database access, bypasses RLS. **Keep secret.**                                                                                                                                                                                   |
+| `SUPABASE_PUSHABLE_KEY`       | **Yes**                  | -                       | Supabase anon/public key. Used for user-context clients that respect RLS policies.                                                                                                                                                                                    |
+| `FRONTEND_URL`                | No                       | `http://localhost:3000` | Allowed CORS origin. Set to your frontend's production URL in deployment.                                                                                                                                                                                             |
+| `PORT`                        | No                       | `3001`                  | Port the backend server listens on.                                                                                                                                                                                                                                   |
+| `USE_REDIS`                   | No                       | `false`                 | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica).                                                                                                    |
+| `REDIS_URL`                   | Only if `USE_REDIS=true` | -                       | Redis connection URL (e.g., `redis://localhost:6379`).                                                                                                                                                                                                                |
+| `CHAT_CHANNELS_ENABLED`       | No                       | `false`                 | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md).                                                                                                                                                |
+| `CHAT_ENCRYPTION_KEY`         | **Prod**                 | -                       | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning).                                  |
+| `CHAT_ENCRYPTION_KEYS`        | No                       | -                       | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version.                                                                                                                        |
+| `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with.                                                                                                                                                                                                                       |
+| `CLAMAV_HOST`                 | No                       | -                       | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
+| `CLAMAV_PORT`                 | No                       | `3310`                  | `clamd` TCP port.                                                                                                                                                                                                                                                     |
+| `CLAMAV_TIMEOUT_MS`           | No                       | `30000`                 | Socket timeout for a scan, in milliseconds.                                                                                                                                                                                                                           |
+| `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
 ### Example `backend/.env`
 
@@ -60,16 +60,16 @@ USE_REDIS=false
 
 ### Where Each Variable Is Used
 
-| Variable | File | Usage |
-|----------|------|-------|
-| `SUPABASE_URL` | `src/supabase/supabase.service.ts` | Creating both service and user Supabase clients |
-| `SUPABASE_SERVICE_ROLE_KEY` | `src/supabase/supabase.service.ts` | Service client - bypasses RLS for admin operations |
-| `SUPABASE_PUSHABLE_KEY` | `src/supabase/supabase.service.ts` | User client - respects RLS using the user's JWT |
-| `FRONTEND_URL` | `src/createApp.ts` | CORS `origin` configuration |
-| `PORT` | `src/main.ts` | Fastify listen port (local dev only; not used in serverless) |
-| `USE_REDIS` | `src/cache/cache.service.ts` | Selects Redis store when `true` |
-| `REDIS_URL` | `src/cache/cache.service.ts` | Redis connection URL for `ioredis` |
-| `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_TIMEOUT_MS` | `src/scan/clamav.scanner.ts` | clamd connection for the storage-upload virus scan |
+| Variable                                            | File                               | Usage                                                        |
+| --------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
+| `SUPABASE_URL`                                      | `src/supabase/supabase.service.ts` | Creating both service and user Supabase clients              |
+| `SUPABASE_SERVICE_ROLE_KEY`                         | `src/supabase/supabase.service.ts` | Service client - bypasses RLS for admin operations           |
+| `SUPABASE_PUSHABLE_KEY`                             | `src/supabase/supabase.service.ts` | User client - respects RLS using the user's JWT              |
+| `FRONTEND_URL`                                      | `src/createApp.ts`                 | CORS `origin` configuration                                  |
+| `PORT`                                              | `src/main.ts`                      | Fastify listen port (local dev only; not used in serverless) |
+| `USE_REDIS`                                         | `src/cache/cache.service.ts`       | Selects Redis store when `true`                              |
+| `REDIS_URL`                                         | `src/cache/cache.service.ts`       | Redis connection URL for `ioredis`                           |
+| `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_TIMEOUT_MS` | `src/scan/clamav.scanner.ts`       | clamd connection for the storage-upload virus scan           |
 
 ---
 
@@ -77,10 +77,10 @@ USE_REDIS=false
 
 **File**: `frontend/.env.local`
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically) |
-| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No | `false` | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
+| Variable                           | Required | Default                 | Description                                                                                                                                                                         |
+| ---------------------------------- | -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`              | No       | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically)                                                                                                               |
+| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No       | `false`                 | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
 
 ### Example `frontend/.env.local`
 
@@ -93,10 +93,10 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 ### Where It Is Used
 
-| Variable | File | Usage |
-|----------|------|-------|
-| `NEXT_PUBLIC_API_URL` | `lib/api.ts` | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
-| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | `app/onboard/page.tsx`, `components/layout/app-sidebar.tsx` | Hides school selection UI on dedicated instances |
+| Variable                           | File                                                        | Usage                                                       |
+| ---------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`              | `lib/api.ts`                                                | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
+| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | `app/onboard/page.tsx`, `components/layout/app-sidebar.tsx` | Hides school selection UI on dedicated instances            |
 
 > **Note**: The `NEXT_PUBLIC_` prefix makes this variable available in the browser bundle. Do **not** put secrets in `NEXT_PUBLIC_` variables.
 
@@ -106,10 +106,10 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 These secrets must be configured in the repository's **Settings → Secrets and variables → Actions**.
 
-| Secret | Required For | Description |
-|--------|-------------|-------------|
-| `CODECOV_TOKEN` | `codecov.yml` | Upload token from [codecov.io](https://codecov.io) for test coverage reports |
-| `DISCORD_WEBHOOK_URL` | `discord-merge-main.yml`, `success.yml` | Discord webhook URL for sending PR merge and workflow success notifications |
+| Secret                | Required For                            | Description                                                                  |
+| --------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| `CODECOV_TOKEN`       | `codecov.yml`                           | Upload token from [codecov.io](https://codecov.io) for test coverage reports |
+| `DISCORD_WEBHOOK_URL` | `discord-merge-main.yml`, `success.yml` | Discord webhook URL for sending PR merge and workflow success notifications  |
 
 ### CI Build Variables
 
@@ -161,6 +161,13 @@ Repository → Settings → Secrets and variables → Actions → New repository
 ```
 
 Add `CODECOV_TOKEN` and `DISCORD_WEBHOOK_URL` if using those workflows.
+
+## Supabase Edge Functions
+
+The current data-processing Edge Functions do not require application secrets.
+They use the public Supabase URL and anon key with the caller's JWT; row-level
+security remains active. See [Supabase Edge Functions](./edge-functions.md) for
+the deployment and authentication model.
 
 ---
 

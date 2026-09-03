@@ -33,6 +33,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { UserProfile } from "@/providers/AuthProvider";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import {
   Sidebar,
   SidebarContent,
@@ -56,18 +57,63 @@ import {
 } from "@/components/ui/dropdown-menu";
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Academic Calendar", href: "/dashboard/academic-calendar", icon: CalendarRange },
-  { title: "Classes", href: "/dashboard/classes", icon: Users },
-  { title: "Students", href: "/dashboard/students", icon: UserRoundSearch },
-  { title: "Staff", href: "/dashboard/staff", icon: UsersRound },
-  { title: "Subjects", href: "/dashboard/subjects", icon: BookOpen },
-  { title: "Files", href: "/dashboard/files", icon: FolderOpen },
-  { title: "Messages", href: "/dashboard/chat", icon: MessagesSquare },
-  { title: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
+  {
+    title: "Academic Calendar",
+    href: "/dashboard/academic-calendar",
+    icon: CalendarRange,
+    permission: ["academic-year", "read"],
+  },
+  {
+    title: "Classes",
+    href: "/dashboard/classes",
+    icon: Users,
+    permission: ["class", "read"],
+  },
+  {
+    title: "Students",
+    href: "/dashboard/students",
+    icon: UserRoundSearch,
+    permission: ["student", "read"],
+  },
+  {
+    title: "Staff",
+    href: "/dashboard/staff",
+    icon: UsersRound,
+    permission: ["school", "read"],
+  },
+  {
+    title: "Subjects",
+    href: "/dashboard/subjects",
+    icon: BookOpen,
+    permission: ["subject", "read"],
+  },
+  {
+    title: "Files",
+    href: "/dashboard/files",
+    icon: FolderOpen,
+    permission: ["file", "read"],
+  },
+  {
+    title: "Messages",
+    href: "/dashboard/chat",
+    icon: MessagesSquare,
+    permission: ["chat", "read"],
+  },
+  {
+    title: "Announcements",
+    href: "/dashboard/announcements",
+    icon: Megaphone,
+    permission: ["announcement", "read"],
+  },
 ];
 
 const adminNavItems = [
-  { title: "Grade Scales", href: "/dashboard/grade-scales", icon: Scale },
+  {
+    title: "Grade Scales",
+    href: "/dashboard/grade-scales",
+    icon: Scale,
+    permission: ["grade-scale", "read"],
+  },
   { title: "Roles", href: "/dashboard/roles", icon: KeyRound },
 ];
 
@@ -88,6 +134,8 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const { state } = useSidebar();
+  const { can } = usePermissions();
+  const isAdmin = profile?.role === "admin";
   const collapsed = state === "collapsed";
 
   // Keep the unread badges fresh as the user navigates.
@@ -114,7 +162,10 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b px-3 py-3">
-        <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-2 overflow-hidden"
+        >
           <Image
             src="/icons/logo2.png"
             alt=""
@@ -124,7 +175,9 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
           />
           {!collapsed && (
             <div className="min-w-0">
-              <span className="text-lg font-bold tracking-tight truncate block">GradeBook</span>
+              <span className="text-lg font-bold tracking-tight truncate block">
+                GradeBook
+              </span>
               <span className="text-[10px] text-muted-foreground/60 -mt-1 block">
                 by daulric.dev
               </span>
@@ -146,50 +199,13 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = navItemActive(pathname ?? "", item.href);
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      render={<Link href={item.href} />}
-                      isActive={isActive}
-                      tooltip={item.title}
-                    >
-                      <Icon className="size-4" />
-                      <span>{item.title}</span>
-                      {item.href === "/dashboard/announcements" &&
-                        unreadAnnouncements.value > 0 && (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-                            {unreadAnnouncements.value}
-                          </span>
-                        )}
-                      {item.href === "/dashboard/files" &&
-                        unreadFiles.value > 0 && (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-                            {unreadFiles.value}
-                          </span>
-                        )}
-                      {item.href === "/dashboard/chat" &&
-                        unreadChat.value > 0 && (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-                            {unreadChat.value}
-                          </span>
-                        )}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {profile?.role === "admin" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminNavItems.map((item) => {
+              {navItems
+                .filter(
+                  (item) =>
+                    !item.permission ||
+                    can(item.permission[0], item.permission[1]),
+                )
+                .map((item) => {
                   const Icon = item.icon;
                   const isActive = navItemActive(pathname ?? "", item.href);
                   return (
@@ -201,10 +217,59 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
                       >
                         <Icon className="size-4" />
                         <span>{item.title}</span>
+                        {item.href === "/dashboard/announcements" &&
+                          unreadAnnouncements.value > 0 && (
+                            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                              {unreadAnnouncements.value}
+                            </span>
+                          )}
+                        {item.href === "/dashboard/files" &&
+                          unreadFiles.value > 0 && (
+                            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                              {unreadFiles.value}
+                            </span>
+                          )}
+                        {item.href === "/dashboard/chat" &&
+                          unreadChat.value > 0 && (
+                            <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                              {unreadChat.value}
+                            </span>
+                          )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
                 })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavItems
+                  .filter(
+                    (item) =>
+                      !item.permission ||
+                      can(item.permission[0], item.permission[1]),
+                  )
+                  .map((item) => {
+                    const Icon = item.icon;
+                    const isActive = navItemActive(pathname ?? "", item.href);
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          render={<Link href={item.href} />}
+                          isActive={isActive}
+                          tooltip={item.title}
+                        >
+                          <Icon className="size-4" />
+                          <span>{item.title}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -255,7 +320,9 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0 text-left">
-                  <p className="font-medium truncate text-sm leading-tight">{displayName}</p>
+                  <p className="font-medium truncate text-sm leading-tight">
+                    {displayName}
+                  </p>
                   {profile?.role && (
                     <p className="text-xs text-muted-foreground capitalize leading-tight">
                       {profile.role}
@@ -274,10 +341,14 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             <div className="px-2 py-1.5">
               <p className="text-sm font-medium">{displayName}</p>
               {profile?.email && (
-                <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {profile.email}
+                </p>
               )}
             </div>
-            <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
+            <DropdownMenuItem
+              onClick={() => router.push("/dashboard/settings")}
+            >
               <Settings className="mr-2 size-4" />
               Settings
             </DropdownMenuItem>

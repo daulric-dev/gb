@@ -1,15 +1,20 @@
-import { Crown, GraduationCap, User } from "lucide-react";
+import { Crown, GraduationCap, Shield, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { SchoolMember } from "./types";
+import type { SchoolMember, StaffSectionRole } from "./types";
 import { MemberCard } from "./MemberCard";
 
 const ROLE_META: Record<
-  SchoolMember["role"],
-  { label: string; icon: typeof Crown; variant: "default" | "secondary" | "outline" }
+  StaffSectionRole,
+  {
+    label: string;
+    icon: typeof Crown;
+    variant: "default" | "secondary" | "outline";
+  }
 > = {
   admin: { label: "Admins", icon: Crown, variant: "default" },
   teacher: { label: "Teachers", icon: GraduationCap, variant: "secondary" },
   member: { label: "Members", icon: User, variant: "outline" },
+  custom: { label: "Custom roles", icon: Shield, variant: "secondary" },
 };
 
 export function RoleSection({
@@ -20,7 +25,7 @@ export function RoleSection({
   onRemove,
   onManageRoles,
 }: {
-  role: SchoolMember["role"];
+  role: StaffSectionRole;
   members: SchoolMember[];
   removingId?: string | null;
   currentUserId?: string;

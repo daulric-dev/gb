@@ -17,7 +17,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { Lock, Pencil, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import {
+  Lock,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import { RoleFormDialog } from "./_components/RoleFormDialog";
 import { PermissionsEditor } from "./_components/PermissionsEditor";
 import type { CatalogEntry, SchoolRole } from "./_components/types";
@@ -69,7 +76,9 @@ export default function RolesPage() {
   }
 
   async function handleDelete(role: SchoolRole) {
-    if (!window.confirm(`Delete the "${role.name}" role? This cannot be undone.`))
+    if (
+      !window.confirm(`Delete the "${role.name}" role? This cannot be undone.`)
+    )
       return;
     deletingId.value = role.id;
     try {
@@ -77,7 +86,9 @@ export default function RolesPage() {
       roles.value = roles.value.filter((r) => r.id !== role.id);
       toast.success(`"${role.name}" deleted`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete role");
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to delete role",
+      );
     } finally {
       deletingId.value = null;
     }
@@ -150,9 +161,14 @@ export default function RolesPage() {
               </CardHeader>
               <CardContent className="mt-auto flex gap-2 pt-0">
                 {role.is_system ? (
-                  <p className="text-xs text-muted-foreground">
-                    Built-in role - permissions are managed by the system.
-                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openPermissions(role)}
+                  >
+                    <ShieldCheck className="mr-1.5 size-3.5" />
+                    View permissions
+                  </Button>
                 ) : (
                   <>
                     <Button

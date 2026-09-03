@@ -570,6 +570,7 @@ export type Database = {
           id: string;
           is_active: boolean | null;
           name: string | null;
+          owner_id: string | null;
           school_id: string | null;
           start_date: string | null;
           year_coursework_weight: number | null;
@@ -581,6 +582,7 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
+          owner_id?: string | null;
           school_id?: string | null;
           start_date?: string | null;
           year_coursework_weight?: number | null;
@@ -592,6 +594,7 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
+          owner_id?: string | null;
           school_id?: string | null;
           start_date?: string | null;
           year_coursework_weight?: number | null;
@@ -810,7 +813,7 @@ export type Database = {
         Row: {
           created_at: string;
           id: string;
-          role: Database['public']['Enums']['role'];
+          role: Database['public']['Enums']['role'] | null;
           school_id: string;
           updated_at: string;
           user_id: string;
@@ -818,7 +821,7 @@ export type Database = {
         Insert: {
           created_at?: string;
           id?: string;
-          role: Database['public']['Enums']['role'];
+          role?: Database['public']['Enums']['role'] | null;
           school_id: string;
           updated_at?: string;
           user_id: string;
@@ -826,7 +829,7 @@ export type Database = {
         Update: {
           created_at?: string;
           id?: string;
-          role?: Database['public']['Enums']['role'];
+          role?: Database['public']['Enums']['role'] | null;
           school_id?: string;
           updated_at?: string;
           user_id?: string;

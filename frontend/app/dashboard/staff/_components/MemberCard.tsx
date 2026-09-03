@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { KeyRound, Loader2, X } from "lucide-react";
+import { Crown, KeyRound, Loader2, X } from "lucide-react";
 import type { SchoolMember } from "./types";
 
 function getInitials(user: SchoolMember["user"]) {
@@ -11,7 +11,9 @@ function getInitials(user: SchoolMember["user"]) {
 
 function getName(user: SchoolMember["user"]) {
   if (!user) return "Unknown user";
-  return [user.first_name, user.last_name].filter(Boolean).join(" ") || "Unnamed";
+  return (
+    [user.first_name, user.last_name].filter(Boolean).join(" ") || "Unnamed"
+  );
 }
 
 export function MemberCard({
@@ -37,10 +39,19 @@ export function MemberCard({
         {member.user?.avatar_url && (
           <AvatarImage src={member.user.avatar_url} alt="" />
         )}
-        <AvatarFallback className="text-xs">{getInitials(member.user)}</AvatarFallback>
+        <AvatarFallback className="text-xs">
+          {getInitials(member.user)}
+        </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <p className="font-medium leading-tight truncate">{getName(member.user)}</p>
+        <p className="font-medium leading-tight truncate">
+          {getName(member.user)}
+        </p>
+        {member.is_owner && (
+          <Badge variant="outline" className="mt-1 gap-1 font-normal">
+            <Crown className="size-3" /> Owner
+          </Badge>
+        )}
         <p className="text-xs text-muted-foreground">Joined {joined}</p>
         {member.roles.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
@@ -67,7 +78,7 @@ export function MemberCard({
           <KeyRound className="size-3.5" />
         </Button>
       )}
-      {onRemove && (
+      {onRemove && !member.is_owner && (
         <Button
           variant="ghost"
           size="icon"

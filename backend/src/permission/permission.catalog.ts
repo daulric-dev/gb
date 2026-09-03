@@ -112,6 +112,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
       'academic-year',
       'grade-scale',
       'calculation',
+      'school',
     ),
   ],
 
@@ -129,6 +130,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
       'calculation',
       'announcement',
       'file',
+      'school',
     ),
     // Own-file management: ownership is enforced per-file in the service.
     permKey('file', 'create'),

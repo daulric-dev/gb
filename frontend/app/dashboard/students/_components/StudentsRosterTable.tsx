@@ -9,9 +9,11 @@ import type { Student } from "./types";
 export function StudentsRosterTable({
   students,
   onEdit,
+  canEdit = true,
 }: {
   students: Student[];
   onEdit: (student: Student) => void;
+  canEdit?: boolean;
 }) {
   return (
     <div className="animate-fade-in-up-delay-1 rounded-md border">
@@ -22,7 +24,7 @@ export function StudentsRosterTable({
             <TableHead>Gender</TableHead>
             <TableHead>Date of Birth</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            {canEdit && <TableHead className="text-right">Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -48,11 +50,13 @@ export function StudentsRosterTable({
                   <Badge variant="secondary">Inactive</Badge>
                 )}
               </TableCell>
-              <TableCell className="text-right">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(student)}>
-                  <Pencil className="size-4" />
-                </Button>
-              </TableCell>
+              {canEdit && (
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="sm" onClick={() => onEdit(student)}>
+                    <Pencil className="size-4" />
+                  </Button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>

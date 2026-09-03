@@ -26,7 +26,8 @@ import {
 import { Check, Loader2, UserPlus, X } from "lucide-react";
 import type { JoinRequest } from "./types";
 
-type Role = "admin" | "teacher" | "member";
+type Role = "admin" | "teacher" | "member" | null;
+type CustomRole = { id: string; name: string };
 
 function getRequestName(request: JoinRequest) {
   return (
@@ -89,11 +90,21 @@ export function PendingRequestsTab({
   const approveDialogOpen = useSignal(false);
   const selectedRequest = useSignal<JoinRequest | null>(null);
   const selectedRole = useSignal<Role>("member");
+  const customRoles = useSignal<CustomRole[]>([]);
+  const selectedCustomRoleIds = useSignal<Set<string>>(new Set());
   const actionLoading = useSignal(false);
 
   function openApproveDialog(request: JoinRequest) {
     selectedRequest.value = request;
     selectedRole.value = "member";
+    selectedCustomRoleIds.value = new Set();
+    void api<CustomRole[]>("/permissions/roles")
+      .then((roles) => {
+        customRoles.value = roles.filter(
+          (role) => !(role as CustomRole & { is_system?: boolean }).is_system,
+        );
+      })
+      .catch(() => (customRoles.value = []));
     approveDialogOpen.value = true;
   }
 
@@ -104,7 +115,10 @@ export function PendingRequestsTab({
     try {
       await api(`/schools/join-requests/${request.id}/approve`, {
         method: "PATCH",
-        body: { role: selectedRole.value },
+        body: {
+          role: selectedRole.value,
+          customRoleIds: [...selectedCustomRoleIds.value],
+        },
       });
       onChange(requests.filter((r) => r.id !== request.id));
       approveDialogOpen.value = false;
@@ -213,9 +227,13 @@ export function PendingRequestsTab({
           <div className="space-y-2 py-2">
             <Label htmlFor="role">Role</Label>
             <Select
-              value={selectedRole.value}
-              onValueChange={(v) => (selectedRole.value = v as Role)}
+              value={selectedRole.value ?? "none"}
+              onValueChange={(v) =>
+                (selectedRole.value =
+                  (v as string) === "none" ? null : (v as Role))
+              }
               items={[
+                { value: "none", label: "No default role" },
                 { value: "member", label: "Member" },
                 { value: "teacher", label: "Teacher" },
                 { value: "admin", label: "Admin" },
@@ -225,12 +243,38 @@ export function PendingRequestsTab({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">No default role</SelectItem>
                 <SelectItem value="member">Member</SelectItem>
                 <SelectItem value="teacher">Teacher</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          {customRoles.value.length > 0 && (
+            <div className="space-y-2 py-2">
+              <Label>Custom roles</Label>
+              {customRoles.value.map((role) => {
+                const selected = selectedCustomRoleIds.value.has(role.id);
+                return (
+                  <button
+                    key={role.id}
+                    type="button"
+                    aria-pressed={selected}
+                    className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm"
+                    onClick={() => {
+                      const next = new Set(selectedCustomRoleIds.value);
+                      if (selected) next.delete(role.id);
+                      else next.add(role.id);
+                      selectedCustomRoleIds.value = next;
+                    }}
+                  >
+                    <span>{role.name}</span>
+                    {selected && <Check className="size-4" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <DialogFooter>
             <Button
               variant="outline"

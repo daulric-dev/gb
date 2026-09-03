@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Plus } from "lucide-react";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { type Subject } from "./_components/types";
 import { SortableSubjectRow } from "./_components/SortableSubjectRow";
 import { CreateSubjectForm } from "./_components/CreateSubjectForm";
@@ -46,6 +47,7 @@ import { EditSubjectForm } from "./_components/EditSubjectForm";
 
 export default function SubjectsPage() {
   useSignals();
+  const { can } = usePermissions();
   const subjects = useSignal<Subject[]>([]);
   const loading = useSignal(true);
   const createOpen = useSignal(false);
@@ -117,29 +119,31 @@ export default function SubjectsPage() {
         title="Subjects"
         description="Manage Subjects for Your School"
         action={
-          <Dialog
-            open={createOpen.value}
-            onOpenChange={(v) => (createOpen.value = v)}
-          >
-            <DialogTrigger render={<Button />}>
-              <Plus className="mr-2 size-4" />
-              New Subject
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create Subject</DialogTitle>
-                <DialogDescription>
-                  Add a new subject for your school
-                </DialogDescription>
-              </DialogHeader>
-              <CreateSubjectForm
-                onSuccess={() => {
-                  createOpen.value = false;
-                  fetchSubjects();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
+          can("subject", "create") ? (
+            <Dialog
+              open={createOpen.value}
+              onOpenChange={(v) => (createOpen.value = v)}
+            >
+              <DialogTrigger render={<Button />}>
+                <Plus className="mr-2 size-4" />
+                New Subject
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Subject</DialogTitle>
+                  <DialogDescription>
+                    Add a new subject for your school
+                  </DialogDescription>
+                </DialogHeader>
+                <CreateSubjectForm
+                  onSuccess={() => {
+                    createOpen.value = false;
+                    fetchSubjects();
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          ) : undefined
         }
       />
 
@@ -157,7 +161,7 @@ export default function SubjectsPage() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+          onDragEnd={can("subject", "update") ? handleDragEnd : undefined}
         >
           <SortableContext
             items={subjects.value.map((s) => s.id)}
@@ -172,7 +176,9 @@ export default function SubjectsPage() {
                     <TableHead>Code</TableHead>
                     <TableHead>Graded</TableHead>
                     <TableHead>Order</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    {(can("subject", "update") || can("subject", "delete")) && (
+                      <TableHead className="text-right">Actions</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -184,6 +190,8 @@ export default function SubjectsPage() {
                       onDelete={() =>
                         handleDelete(subject.id, subject.name)
                       }
+                      canEdit={can("subject", "update")}
+                      canDelete={can("subject", "delete")}
                     />
                   ))}
                 </TableBody>

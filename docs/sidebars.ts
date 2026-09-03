@@ -28,7 +28,11 @@ function GetChangeLogFiles() {
     readdirSync(dir)
       .filter((f) => f.endsWith(".md"))
       .map((f) => f.replace(/\.md$/, ""))
-      .sort((a, b) => sidebarPosition(`${dir}/${a}.md`) - sidebarPosition(`${dir}/${b}.md`) || a.localeCompare(b))
+      .sort(
+        (a, b) =>
+          sidebarPosition(`${dir}/${a}.md`) -
+            sidebarPosition(`${dir}/${b}.md`) || a.localeCompare(b),
+      )
       .forEach((entry) => entries.push(`${date}/${entry}`));
   }
   return entries;
@@ -44,6 +48,7 @@ const sidebars: SidebarsConfig = {
         "implementation-guide",
         "environment-variables",
         "dedicated-deployment",
+        "edge-functions",
       ],
     },
     {
@@ -106,9 +111,7 @@ const sidebars: SidebarsConfig = {
       label: "Changelog",
       collapsed: false,
       link: { type: "doc", id: "changelog/overview" },
-      items: [
-        ...GetChangeLogFiles().map((file) => `changelog/${file}`),
-      ],
+      items: [...GetChangeLogFiles().map((file) => `changelog/${file}`)],
     },
   ],
 };

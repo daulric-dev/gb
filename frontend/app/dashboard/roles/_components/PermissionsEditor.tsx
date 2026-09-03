@@ -57,6 +57,7 @@ export function PermissionsEditor({
   const selected = useSignal<Set<string>>(new Set());
   const loading = useSignal(true);
   const saving = useSignal(false);
+  const readOnly = role?.is_system ?? false;
 
   const fetchPermissions = useCallback((roleId: string) => {
     loading.value = true;
@@ -74,13 +75,15 @@ export function PermissionsEditor({
   const groups = useComputed(() => {
     const byResource = new Map<string, Map<string, CatalogEntry>>();
     for (const entry of catalog) {
-      if (!byResource.has(entry.resource)) byResource.set(entry.resource, new Map());
+      if (!byResource.has(entry.resource))
+        byResource.set(entry.resource, new Map());
       byResource.get(entry.resource)!.set(entry.action, entry);
     }
     return [...byResource.entries()];
   });
 
   function toggle(key: string, on: boolean) {
+    if (readOnly) return;
     const next = new Set(selected.value);
     if (on) next.add(key);
     else next.delete(key);
@@ -113,8 +116,9 @@ export function PermissionsEditor({
         <DialogHeader>
           <DialogTitle>Permissions - {role?.name}</DialogTitle>
           <DialogDescription>
-            Choose what this role can do. Changes apply to every member with
-            this role.
+            {readOnly
+              ? "These are the system defaults. They cannot be changed."
+              : "Choose what this role can do. Changes apply to every member with this role."}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,6 +149,7 @@ export function PermissionsEditor({
                           key={action}
                           type="button"
                           aria-pressed={on}
+                          disabled={readOnly}
                           onClick={() => toggle(entry.key, !on)}
                           className={cn(
                             "rounded-full border px-1 py-1 text-xs font-medium transition-colors",
@@ -177,10 +182,17 @@ export function PermissionsEditor({
             >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving.value || loading.value}>
-              {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Save Permissions
-            </Button>
+            {!readOnly && (
+              <Button
+                onClick={handleSave}
+                disabled={saving.value || loading.value}
+              >
+                {saving.value && (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                )}
+                Save Permissions
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

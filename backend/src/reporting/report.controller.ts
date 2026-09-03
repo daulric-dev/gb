@@ -83,6 +83,21 @@ export class ReportController {
   }
 
   @RequirePermission('reporting', 'read')
+  @Get('class-summary/analytics')
+  @UseGuards(ClassTeacherGuard)
+  async getGradeAnalytics(
+    @Query('studentGroupId') studentGroupId: string,
+    @Query('termId') termId: string,
+    @Query('reportType') reportType: string,
+  ) {
+    return this.reportService.getGradeAnalytics(
+      studentGroupId,
+      termId,
+      reportType,
+    );
+  }
+
+  @RequirePermission('reporting', 'read')
   @Get('class-summary/download')
   @UseGuards(ClassTeacherGuard)
   async downloadClassSummaryFile(
