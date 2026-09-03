@@ -28,7 +28,7 @@ export function EditStudentForm({
   const lastName = useSignal(student.last_name);
   const gender = useSignal<"" | "male" | "female">(student.gender ?? "");
   const dateOfBirth = useSignal(student.date_of_birth ?? "");
-  const enrollementDate = useSignal(student.enrollement_date ?? "");
+  const enrollementDate = useSignal(student.enrollment_date ?? "");
   const isActive = useSignal(student.is_active);
   const loading = useSignal(false);
 

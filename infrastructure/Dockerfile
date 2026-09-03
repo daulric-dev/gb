@@ -7,17 +7,18 @@ COPY package.json bun.lock ./
 COPY backend/package.json backend/package.json
 COPY frontend/package.json frontend/package.json
 COPY docs/package.json docs/package.json
-RUN bun install --frozen-lockfile
+COPY mobile/package.json mobile/package.json
+RUN bun install
 
-# --- build: build the entire monorepo through turbo ---
+# --- build: compile the backend used by this image ---
 FROM install AS build
 # Public build-time env baked into the frontend (Next.js) bundle.
 ENV NEXT_PUBLIC_API_URL=http://localhost:3001 \
     NEXT_PUBLIC_DEDICATED_DEPLOYMENT=false
 # Copy all source (node_modules/dist/.next/.git excluded via .dockerignore).
 COPY . .
-# Build every workspace (backend, frontend, docs) via the turbo task graph.
-RUN bunx turbo run build
+# The production image only runs the backend; avoid building unrelated clients.
+RUN bunx turbo run build --filter=backend
 
 # --- production: run the compiled backend ---
 FROM base AS production

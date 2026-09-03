@@ -10,8 +10,8 @@
         "gb": "./command/index.ts"
     },
     "scripts": {
-        "preload": "docker compose -f docker-compose.dev.yml up -d && supabase start",
-        "postload": "docker compose -f docker-compose.dev.yml down && supabase stop",
+        "preload": "docker compose -f ./infrastructure/docker-compose.yml up -d && bunx supabase start",
+        "postload": "docker compose -f ./infrastructure/docker-compose.yml down && bunx supabase stop",
         "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",
