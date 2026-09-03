@@ -9,7 +9,7 @@ otp_length = 8
 
 [auth.email.template.magic_link]
 subject = "Your GradeBook Login Code"
-content_path = "./supabase/templates/magic-link.html"
+content_path = "./supabase/templates/otp-code.html"
 
 [auth.email.template.confirmation]
 subject = "Your GradeBook Login Code"

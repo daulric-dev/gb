@@ -66,6 +66,7 @@ export class SchoolService {
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         is_active: true,
+        owner_id: userId,
       })
       .select()
       .single();
@@ -190,7 +191,8 @@ export class SchoolService {
   async approveRequest(
     adminUserId: string,
     requestId: string,
-    role: 'admin' | 'member' | 'teacher',
+    role: 'admin' | 'member' | 'teacher' | null,
+    customRoleIds: string[] = [],
   ) {
     const supabase = this.supabaseService.getServiceClient();
 
@@ -242,6 +244,44 @@ export class SchoolService {
         `Failed to upsert school_management for ${request.user_id}: ${managementError.message}`,
       );
       throw new BadRequestException('Failed to approve request');
+    }
+
+    if (customRoleIds.length > 0) {
+      const uniqueRoleIds = [...new Set(customRoleIds)];
+      const { data: customRoles, error: roleError } = await supabase
+        .from('school_role')
+        .select('id, school_id, is_system')
+        .in('id', uniqueRoleIds);
+      if (
+        roleError ||
+        (customRoles ?? []).length !== uniqueRoleIds.length ||
+        (customRoles ?? []).some(
+          (customRole) =>
+            customRole.school_id !== request.school_id || customRole.is_system,
+        )
+      ) {
+        throw new BadRequestException('Invalid custom role selection');
+      }
+      const { data: membership } = await supabase
+        .from('school_management')
+        .select('id')
+        .eq('user_id', request.user_id)
+        .eq('school_id', request.school_id)
+        .single();
+      if (!membership) {
+        throw new BadRequestException('Failed to load approved membership');
+      }
+      const { error: assignmentError } = await supabase
+        .from('school_management_role')
+        .insert(
+          uniqueRoleIds.map((school_role_id) => ({
+            school_management_id: membership.id,
+            school_role_id,
+          })),
+        );
+      if (assignmentError) {
+        throw new BadRequestException('Failed to assign custom roles');
+      }
     }
 
     // Mirror to user_profile (denormalized cache)
@@ -309,6 +349,7 @@ export class SchoolService {
       .from('school_management')
       .select(
         `id, role, created_at,
+         school:school_id ( owner_id ),
          user:user_id ( id, first_name, last_name, avatar_url ),
          role_links:school_management_role (
            school_role:school_role_id ( id, name, is_system )
@@ -338,7 +379,10 @@ export class SchoolService {
         )
         .filter((r): r is RoleRow => Boolean(r) && !r.is_system)
         .map((r) => ({ id: r.id, name: r.name }));
-      return { ...rest, roles };
+      const school = member.school as { owner_id?: string | null } | null;
+      const user = member.user as { id?: string } | { id?: string }[] | null;
+      const userId = Array.isArray(user) ? user[0]?.id : user?.id;
+      return { ...rest, is_owner: school?.owner_id === userId, roles };
     });
   }
 
@@ -353,6 +397,15 @@ export class SchoolService {
 
     if (!profile?.school_id) {
       throw new BadRequestException('You are not assigned to a school');
+    }
+
+    const { data: school } = await supabase
+      .from('school')
+      .select('owner_id')
+      .eq('id', profile.school_id)
+      .single();
+    if (school?.owner_id === userId) {
+      throw new ForbiddenException('The school owner cannot leave the school');
     }
 
     if (profile.role === 'admin') {
@@ -419,12 +472,17 @@ export class SchoolService {
       );
     }
 
-    if (membership.user_id === adminUserId) {
-      throw new BadRequestException('You cannot remove yourself');
+    const { data: school } = await supabase
+      .from('school')
+      .select('owner_id')
+      .eq('id', adminProfile.school_id)
+      .single();
+    if (school?.owner_id === membership.user_id) {
+      throw new ForbiddenException('The school owner cannot be removed');
     }
 
-    if (membership.role === 'admin') {
-      throw new ForbiddenException('You cannot remove another admin');
+    if (membership.user_id === adminUserId) {
+      throw new BadRequestException('You cannot remove yourself');
     }
 
     const { error } = await supabase

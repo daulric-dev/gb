@@ -97,6 +97,7 @@ export default function StudentsPage() {
         <StudentsRosterTable
           students={students.value}
           onEdit={(student) => (editStudent.value = student)}
+          canEdit={can("student", "update")}
         />
       )}
 

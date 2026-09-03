@@ -106,6 +106,22 @@ export class AttendanceController {
   }
 
   @RequirePermission('attendance', 'read')
+  @Get('summary')
+  async summary(
+    @Req() req: any,
+    @Param('classId') classId: string,
+    @Query() range: AttendanceRangeQueryDto,
+  ) {
+    await this.attendanceService.assertCanViewClass(req.user.id, classId);
+    const raw = await this.attendanceService.getClassSummary(
+      classId,
+      range.from,
+      range.to,
+    );
+    return this.versioning.resolve(req, 'attendance.classSummary')(raw);
+  }
+
+  @RequirePermission('attendance', 'read')
   @Get('students/:studentId')
   async studentRange(
     @Req() req: any,

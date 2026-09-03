@@ -47,7 +47,7 @@ interface AcademicYear {
 
 interface SchoolMember {
   id: string;
-  role: "admin" | "teacher" | "member";
+  role: "admin" | "teacher" | "member" | null;
 }
 
 interface SchoolStudent {
@@ -64,6 +64,7 @@ const STAFF_CONFIG: ChartConfig = {
   admin: { label: "Admins", color: "var(--color-chart-1)" },
   teacher: { label: "Teachers", color: "var(--color-chart-2)" },
   member: { label: "Members", color: "var(--color-chart-3)" },
+  custom: { label: "Custom", color: "var(--color-chart-4)" },
 };
 
 const STUDENT_CONFIG: ChartConfig = {
@@ -179,12 +180,19 @@ export function AdminDashboard() {
   const schoolName = profile.value?.school?.name ?? "your school";
 
   const staffData = (() => {
-    const counts: Record<"admin" | "teacher" | "member", number> = {
+    const counts: Record<"admin" | "teacher" | "member" | "custom", number> = {
       admin: 0,
       teacher: 0,
       member: 0,
+      custom: 0,
     };
-    for (const m of members.value) counts[m.role] += 1;
+    for (const m of members.value) {
+      if (m.role === "admin" || m.role === "teacher" || m.role === "member") {
+        counts[m.role] += 1;
+      } else {
+        counts.custom += 1;
+      }
+    }
     return (Object.keys(counts) as Array<keyof typeof counts>)
       .filter((k) => counts[k] > 0)
       .map((k) => ({

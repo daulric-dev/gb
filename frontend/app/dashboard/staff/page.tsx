@@ -14,12 +14,12 @@ import { Badge } from "@/components/ui/badge";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { RefreshCw, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { JoinRequest, SchoolMember } from "./_components/types";
+import type { JoinRequest, SchoolMember, StaffSectionRole } from "./_components/types";
 import { RoleSection } from "./_components/RoleSection";
 import { PendingRequestsTab } from "./_components/PendingRequestsTab";
 import { MemberRolesDialog } from "./_components/MemberRolesDialog";
 
-const ROLE_ORDER: SchoolMember["role"][] = ["admin", "teacher", "member"];
+const ROLE_ORDER: StaffSectionRole[] = ["admin", "teacher", "member", "custom"];
 
 function RefreshButton({
   onClick,
@@ -93,15 +93,22 @@ export default function StaffPage() {
     rolesDialogOpen.value = true;
   }, []);
 
-  const grouped = useComputed(() =>
-    ROLE_ORDER.reduce(
-      (acc, role) => {
-        acc[role] = members.value.filter((m) => m.role === role);
-        return acc;
-      },
-      {} as Record<SchoolMember["role"], SchoolMember[]>,
-    ),
-  );
+  const grouped = useComputed(() => {
+    const res: Record<StaffSectionRole, SchoolMember[]> = {
+      admin: [],
+      teacher: [],
+      member: [],
+      custom: [],
+    };
+    for (const m of members.value) {
+      if (m.role === "admin" || m.role === "teacher" || m.role === "member") {
+        res[m.role].push(m);
+      } else {
+        res.custom.push(m);
+      }
+    }
+    return res;
+  });
 
   const fetchMembers = useCallback(() => {
     loading.value = true;
@@ -131,28 +138,28 @@ export default function StaffPage() {
     }
   }, [isAdmin, fetchRequests]);
 
-  const handleRemove = useCallback(
-    async (member: SchoolMember) => {
-      const name = member.user
-        ? [member.user.first_name, member.user.last_name].filter(Boolean).join(" ") || "This member"
-        : "This member";
+  const handleRemove = useCallback(async (member: SchoolMember) => {
+    const name = member.user
+      ? [member.user.first_name, member.user.last_name]
+          .filter(Boolean)
+          .join(" ") || "This member"
+      : "This member";
 
-      if (!window.confirm(`Remove ${name} from the school?`)) return;
+    if (!window.confirm(`Remove ${name} from the school?`)) return;
 
-      removingId.value = member.id;
-      try {
-        await api(`/schools/members/${member.id}`, { method: "DELETE" });
-        members.value = members.value.filter((m) => m.id !== member.id);
-        toast.success(`${name} has been removed.`);
-      } catch (err) {
-        const message = err instanceof ApiError ? err.message : "Failed to remove member";
-        toast.error(message);
-      } finally {
-        removingId.value = null;
-      }
-    },
-    [],
-  );
+    removingId.value = member.id;
+    try {
+      await api(`/schools/members/${member.id}`, { method: "DELETE" });
+      members.value = members.value.filter((m) => m.id !== member.id);
+      toast.success(`${name} has been removed.`);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Failed to remove member";
+      toast.error(message);
+    } finally {
+      removingId.value = null;
+    }
+  }, []);
 
   const staffPanel = loading.value ? (
     <StaffSkeleton />

@@ -14,6 +14,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Loader2 } from "lucide-react";
 import type { SchoolMember } from "./types";
@@ -49,6 +57,8 @@ export function MemberRolesDialog({
   const assigned = useSignal<Set<string>>(new Set());
   const loading = useSignal(true);
   const togglingId = useSignal<string | null>(null);
+  const baseRole = useSignal<SchoolMember["role"]>(member?.role ?? null);
+  const baseRoleSaving = useSignal(false);
 
   const load = useCallback((membershipId: string) => {
     loading.value = true;
@@ -57,31 +67,52 @@ export function MemberRolesDialog({
       api<CustomRole[]>(`/permissions/members/${membershipId}/roles`),
     ])
       .then(([all, mine]) => {
-        roles.value = all.filter((r) => !r.is_system);
-        assigned.value = new Set(mine.map((r) => r.id));
+        roles.value = all.filter((role) => !role.is_system);
+        assigned.value = new Set(mine.map((role) => role.id));
       })
       .catch(() => toast.error("Failed to load roles"))
       .finally(() => (loading.value = false));
   }, []);
 
   useEffect(() => {
-    if (open && member) load(member.id);
+    if (open && member) {
+      baseRole.value = member.role;
+      load(member.id);
+    }
   }, [open, member, load]);
+
+  async function saveBaseRole(role: SchoolMember["role"]) {
+    if (!member || member.is_owner || role === member.role) return;
+    baseRoleSaving.value = true;
+    try {
+      await api(`/permissions/members/${member.id}/base-role`, {
+        method: "PATCH",
+        body: { role },
+      });
+      member.role = role;
+      baseRole.value = role;
+      toast.success("Default role updated");
+      onRolesChanged?.();
+    } catch (err) {
+      baseRole.value = member.role;
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to update role",
+      );
+    } finally {
+      baseRoleSaving.value = false;
+    }
+  }
 
   async function toggle(roleId: string, on: boolean) {
     if (!member) return;
     togglingId.value = roleId;
     try {
-      if (on) {
-        await api(`/permissions/members/${member.id}/roles`, {
-          method: "POST",
-          body: { roleId },
-        });
-      } else {
-        await api(`/permissions/members/${member.id}/roles/${roleId}`, {
-          method: "DELETE",
-        });
-      }
+      await api(
+        on
+          ? `/permissions/members/${member.id}/roles`
+          : `/permissions/members/${member.id}/roles/${roleId}`,
+        on ? { method: "POST", body: { roleId } } : { method: "DELETE" },
+      );
       const next = new Set(assigned.value);
       if (on) next.add(roleId);
       else next.delete(roleId);
@@ -102,12 +133,49 @@ export function MemberRolesDialog({
         <DialogHeader>
           <DialogTitle>Roles - {memberName(member)}</DialogTitle>
           <DialogDescription>
-            Assign custom roles. Their permissions stack on top of the member&apos;s
-            base role.
+            Manage the built-in role and custom permissions for this member.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2 py-2">
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="base-role">Default role</Label>
+            <Select
+              value={baseRole.value ?? "none"}
+              onValueChange={(value) => {
+                const selectedValue = value as string;
+                const role =
+                  selectedValue === "none"
+                    ? null
+                    : (selectedValue as SchoolMember["role"]);
+                baseRole.value = role;
+                void saveBaseRole(role);
+              }}
+              disabled={member?.is_owner || baseRoleSaving.value}
+              items={[
+                { value: "none", label: "No default role" },
+                { value: "member", label: "Member" },
+                { value: "teacher", label: "Teacher" },
+                { value: "admin", label: "Admin" },
+              ]}
+            >
+              <SelectTrigger id="base-role" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No default role</SelectItem>
+                <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="teacher">Teacher</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            {member?.is_owner && (
+              <p className="text-xs text-muted-foreground">
+                The school owner cannot be changed.
+              </p>
+            )}
+          </div>
+
           {loading.value ? (
             [1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)
           ) : roles.value.length === 0 ? (
@@ -124,7 +192,9 @@ export function MemberRolesDialog({
                   className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium capitalize">{role.name}</p>
+                    <p className="text-sm font-medium capitalize">
+                      {role.name}
+                    </p>
                     {role.description && (
                       <p className="truncate text-xs text-muted-foreground">
                         {role.description}

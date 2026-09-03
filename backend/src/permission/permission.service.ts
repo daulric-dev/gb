@@ -11,7 +11,11 @@ import {
   loadEffectivePermissions,
   PERM_CACHE_PREFIX,
 } from './permission.effective';
-import { isPermissionKey, PERMISSION_CATALOG } from './permission.catalog';
+import {
+  defaultsForRole,
+  isPermissionKey,
+  PERMISSION_CATALOG,
+} from './permission.catalog';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
@@ -131,7 +135,11 @@ export class PermissionService {
 
   async getRolePermissions(adminUserId: string, roleId: string) {
     const supabase = this.supabaseService.getServiceClient();
-    await this.requireRoleInSchool(adminUserId, roleId);
+    const role = await this.requireRoleInSchool(adminUserId, roleId);
+
+    if (role.is_system) {
+      return [...defaultsForRole(role.name)];
+    }
 
     const { data, error } = await supabase
       .from('school_role_permission')
@@ -241,6 +249,56 @@ export class PermissionService {
 
     await this.invalidate();
     return { assigned: true };
+  }
+
+  async changeMemberRole(
+    adminUserId: string,
+    membershipId: string,
+    role: 'admin' | 'member' | 'teacher' | null,
+  ) {
+    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.requireAdminSchool(adminUserId);
+    const membership = await this.requireMembershipInSchool(
+      membershipId,
+      schoolId,
+    );
+    const { data: school } = await supabase
+      .from('school')
+      .select('owner_id')
+      .eq('id', schoolId)
+      .single();
+    if (school?.owner_id === membership.user_id) {
+      throw new ForbiddenException('The school owner role cannot be changed');
+    }
+
+    const { error } = await supabase
+      .from('school_management')
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', membershipId);
+    if (error) {
+      this.logger.error(
+        `Failed to change member role ${membershipId}: ${error.message}`,
+      );
+      throw new BadRequestException(
+        role === null && error.code === '23502'
+          ? 'The database must allow members without a default role. Apply the nullable membership role migration first.'
+          : `Failed to change member role: ${error.message}`,
+      );
+    }
+
+    const { error: profileError } = await supabase
+      .from('user_profile')
+      .update({ role })
+      .eq('id', membership.user_id);
+    if (profileError) {
+      this.logger.error(
+        `Failed to mirror member role ${membership.user_id}: ${profileError.message}`,
+      );
+      throw new BadRequestException('Failed to synchronize member role');
+    }
+    await this.cache.delete(`profile:${membership.user_id}`);
+    await this.invalidate();
+    return { role };
   }
 
   async unassignRoleFromMember(
@@ -375,7 +433,7 @@ export class PermissionService {
     const supabase = this.supabaseService.getServiceClient();
     const { data: membership } = await supabase
       .from('school_management')
-      .select('id, school_id')
+      .select('id, user_id, school_id')
       .eq('id', membershipId)
       .maybeSingle();
 

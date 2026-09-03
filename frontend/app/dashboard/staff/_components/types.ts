@@ -1,6 +1,10 @@
+export type BaseRole = "admin" | "teacher" | "member";
+export type StaffSectionRole = BaseRole | "custom";
+
 export interface SchoolMember {
   id: string;
-  role: "admin" | "teacher" | "member";
+  role: BaseRole | null;
+  is_owner?: boolean;
   created_at: string;
   user: {
     id: string;

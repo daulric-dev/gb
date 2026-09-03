@@ -46,7 +46,7 @@ export class ReportService {
       );
     }
 
-    const academicYearId = group?.academic_year_id;
+    const academicYearId: string = group?.academic_year_id;
     if (!academicYearId) {
       throw new BadRequestException(
         'Class has no academic year; cannot generate reports',
@@ -260,10 +260,10 @@ export class ReportService {
       const stMap = await this.fetchStudentsByIdsForUser(
         req,
         reply,
-        [report.student_id],
+        [report.student_id as string],
         'id, first_name, last_name, gender, date_of_birth',
       );
-      student = stMap.get(report.student_id) ?? null;
+      student = stMap.get(report.student_id as string) ?? null;
     }
 
     const { entries, pdfs } = await this.loadReportEntriesAndPdfs(
@@ -310,10 +310,10 @@ export class ReportService {
       const stMap = await this.fetchStudentsByIdsForUser(
         req,
         reply,
-        [report.student_id],
+        [report.student_id as string],
         'id, first_name, last_name, gender, date_of_birth',
       );
-      student = stMap.get(report.student_id) ?? null;
+      student = stMap.get(report.student_id as string) ?? null;
     }
 
     const { entries, pdfs } = await this.loadReportEntriesAndPdfs(
@@ -546,18 +546,18 @@ export class ReportService {
 
     const classResults =
       await this.calculationService.calculateClassTermResults(
-        term_id,
-        student_group_id,
+        term_id as string,
+        student_group_id as string,
       );
     const resultByStudentId = new Map(
       classResults.map((r) => [r.studentId, r]),
     );
 
     const rankRows: RankRow[] = cohort.map((row) => {
-      const r = resultByStudentId.get(row.student_id);
+      const r = resultByStudentId.get(row.student_id as string);
       return {
         reportId: row.id,
-        studentId: row.student_id,
+        studentId: row.student_id as string,
         overallAverage: r?.overallAverage ?? null,
         lastName: r?.lastName ?? '',
       };
@@ -602,18 +602,18 @@ export class ReportService {
     await Promise.all(rankUpdates);
 
     const termResult =
-      resultByStudentId.get(student_id) ??
+      resultByStudentId.get(student_id as string) ??
       (await this.calculationService.calculateStudentTermResult(
-        student_id,
-        term_id,
-        student_group_id,
+        student_id as string,
+        term_id as string,
+        student_group_id as string,
       ));
 
     let yearGradeMap: Map<string, number | null> | null = null;
     if (report_type === 'year_end' && academic_year_id) {
       const classYear = await this.calculationService.calculateClassYearResults(
-        academic_year_id,
-        student_group_id,
+        academic_year_id as string,
+        student_group_id as string,
       );
       const yr = classYear.find((y) => y.studentId === student_id);
       if (yr) {
@@ -793,7 +793,7 @@ export class ReportService {
 
     const { data, error: dlError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
-      .download(pdfRow.file_path);
+      .download(pdfRow.file_path as string);
 
     if (dlError) {
       this.logger.error(`downloadPdf storage: ${dlError.message}`);
@@ -887,6 +887,19 @@ export class ReportService {
     req: FastifyRequest,
     reply: FastifyReply,
   ) {
+    const { data: edgeSummary, error: edgeError } = await this.supabaseService
+      .getServiceClient()
+      .functions.invoke('report-class-summary', {
+        body: { studentGroupId, termId, reportType: reportType || null },
+      });
+    if (!edgeError && edgeSummary) return edgeSummary;
+    if (edgeError) {
+      this.logger.error(
+        `report-class-summary Edge Function: ${edgeError.message}`,
+      );
+      throw new BadRequestException(edgeError.message);
+    }
+
     const reporting = this.supabaseService.createUserClient(
       req,
       reply,
@@ -935,7 +948,7 @@ export class ReportService {
       .eq('id', termId)
       .single();
 
-    let courseworkWeight = termRow?.coursework_weight ?? 50;
+    const courseworkWeight = termRow?.coursework_weight ?? 50;
     let examWeight = termRow?.exam_weight ?? 50;
     let gradingModel = 'weighted_continuous';
 
@@ -946,9 +959,7 @@ export class ReportService {
         .eq('id', termRow.academic_year_id)
         .single();
       gradingModel = ayRow?.grading_model ?? 'weighted_continuous';
-
       if (reportType === 'year_end' && gradingModel !== 'weighted_continuous') {
-        courseworkWeight = ayRow?.year_coursework_weight ?? 50;
         examWeight = ayRow?.year_exam_weight ?? 50;
       }
     }
@@ -962,7 +973,6 @@ export class ReportService {
       studentIds,
       'id, first_name, last_name',
     );
-
     const reportIds = list.map((r: { id: string }) => r.id);
     const { data: entryRows, error: entryErr } = await reporting
       .from('report_book_entry')
@@ -971,7 +981,6 @@ export class ReportService {
       )
       .in('report_book_id', reportIds)
       .order('sort_order', { ascending: true });
-
     if (entryErr) {
       this.logger.error(`getClassSummary entries: ${entryErr.message}`);
       throw new BadRequestException(entryErr.message);
@@ -993,7 +1002,6 @@ export class ReportService {
     const averages = list
       .map((r: { overall_average: number | null }) => r.overall_average)
       .filter((a): a is number => a != null);
-
     const classAverage =
       averages.length > 0
         ? averages.reduce((s, v) => s + v, 0) / averages.length
@@ -1011,7 +1019,6 @@ export class ReportService {
       term_composite: number | null;
       year_grade: number | null;
     };
-
     const isYearEnd =
       reportType === 'year_end' && gradingModel !== 'weighted_continuous';
     const subjectScores = new Map<string, number[]>();
@@ -1087,6 +1094,25 @@ export class ReportService {
       subjectAverages,
       students,
     };
+  }
+
+  async getGradeAnalytics(
+    studentGroupId: string,
+    termId: string,
+    reportType: string,
+  ) {
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
+      .functions.invoke('grade-analytics', {
+        body: { studentGroupId, termId, reportType: reportType || null },
+      });
+    if (error || !data) {
+      this.logger.error(
+        `grade-analytics Edge Function: ${error?.message ?? 'empty response'}`,
+      );
+      throw new BadRequestException('Failed to load grade analytics');
+    }
+    return data;
   }
 
   async uploadClassSummaryFile(
@@ -1231,7 +1257,7 @@ export class ReportService {
 
     const { data, error: dlError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
-      .download(fileRow.file_path);
+      .download(fileRow.file_path as string);
 
     if (dlError) {
       this.logger.error(`downloadClassSummaryFile storage: ${dlError.message}`);
@@ -1571,8 +1597,8 @@ export class ReportService {
       { id: string; first_name: string; last_name: string }
     >();
     for (const row of data ?? []) {
-      m.set(row.id, {
-        id: row.id,
+      m.set(row.id as string, {
+        id: row.id as string,
         first_name: row.first_name ?? '',
         last_name: row.last_name ?? '',
       });

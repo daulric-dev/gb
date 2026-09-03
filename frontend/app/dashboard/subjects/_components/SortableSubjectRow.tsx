@@ -12,9 +12,17 @@ interface SortableSubjectRowProps {
   subject: Subject;
   onEdit: () => void;
   onDelete: () => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
-export function SortableSubjectRow({ subject, onEdit, onDelete }: SortableSubjectRowProps) {
+export function SortableSubjectRow({
+  subject,
+  onEdit,
+  onDelete,
+  canEdit = true,
+  canDelete = true,
+}: SortableSubjectRowProps) {
   const {
     attributes,
     listeners,
@@ -33,14 +41,16 @@ export function SortableSubjectRow({ subject, onEdit, onDelete }: SortableSubjec
   return (
     <TableRow ref={setNodeRef} style={style}>
       <TableCell className="w-10 px-2">
-        <button
-          type="button"
-          className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        )}
       </TableCell>
       <TableCell className="font-medium">{subject.name}</TableCell>
       <TableCell>
@@ -60,14 +70,20 @@ export function SortableSubjectRow({ subject, onEdit, onDelete }: SortableSubjec
       <TableCell className="text-muted-foreground">
         {subject.sort_order}
       </TableCell>
-      <TableCell className="text-right space-x-1">
-        <Button variant="ghost" size="sm" onClick={onEdit}>
-          <Pencil className="size-4" />
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onDelete}>
-          <Trash2 className="size-4 text-destructive" />
-        </Button>
-      </TableCell>
+      {(canEdit || canDelete) && (
+        <TableCell className="text-right space-x-1">
+          {canEdit && (
+            <Button variant="ghost" size="sm" onClick={onEdit}>
+              <Pencil className="size-4" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="ghost" size="sm" onClick={onDelete}>
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          )}
+        </TableCell>
+      )}
     </TableRow>
   );
 }

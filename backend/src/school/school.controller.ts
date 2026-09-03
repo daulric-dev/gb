@@ -72,7 +72,12 @@ export class SchoolController {
     @Param('requestId') requestId: string,
     @Body() dto: ApproveJoinRequestDto,
   ) {
-    return this.schoolService.approveRequest(req.user.id, requestId, dto.role);
+    return this.schoolService.approveRequest(
+      req.user.id,
+      requestId,
+      dto.role,
+      dto.customRoleIds,
+    );
   }
 
   @Patch('join-requests/:requestId/reject')

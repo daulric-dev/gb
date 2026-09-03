@@ -36,6 +36,7 @@ import { ScanModule } from '@/scan/scan.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
+import { DashboardModule } from '@/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { VersioningModule } from '@/versioning/versioning.module';
     FileManagerModule,
     RealtimeModule,
     ChatModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [

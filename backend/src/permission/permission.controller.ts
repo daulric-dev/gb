@@ -18,6 +18,7 @@ import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { SetRolePermissionsDto } from './dto/set-role-permissions.dto';
 import { AssignRoleDto } from './dto/assign-role.dto';
+import { ChangeMemberRoleDto } from './dto/change-member-role.dto';
 
 /**
  * Admin-only management of per-school custom roles and permission grants.
@@ -81,6 +82,19 @@ export class PermissionController {
   @Get('members/:membershipId/roles')
   getMemberRoles(@Req() req: any, @Param('membershipId') membershipId: string) {
     return this.permissionService.getMemberRoles(req.user.id, membershipId);
+  }
+
+  @Patch('members/:membershipId/base-role')
+  changeMemberRole(
+    @Req() req: any,
+    @Param('membershipId') membershipId: string,
+    @Body() dto: ChangeMemberRoleDto,
+  ) {
+    return this.permissionService.changeMemberRole(
+      req.user.id,
+      membershipId,
+      dto.role,
+    );
   }
 
   @Post('members/:membershipId/roles')
