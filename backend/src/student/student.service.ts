@@ -78,7 +78,7 @@ export class StudentService {
         last_name: dto.lastName,
         gender: dto.gender,
         date_of_birth: dto.dateOfBirth || null,
-        enrollement_date: dto.enrollementDate || null,
+        enrollment_date: dto.enrollementDate || null,
       })
       .select()
       .single();
@@ -226,7 +226,7 @@ export class StudentService {
     if (dto.dateOfBirth !== undefined)
       updateData.date_of_birth = dto.dateOfBirth;
     if (dto.enrollementDate !== undefined)
-      updateData.enrollement_date = dto.enrollementDate;
+      updateData.enrollment_date = dto.enrollementDate;
     if (dto.isActive !== undefined) updateData.is_active = dto.isActive;
 
     const { data, error } = await supabase
