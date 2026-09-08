@@ -41,17 +41,20 @@ function memberName(member: SchoolMember | null) {
   );
 }
 
+type MemberRolesDialogActionProps = {
+  open: boolean;
+  member: SchoolMember | null;
+  onOpenChangeAction: (open: boolean) => void;
+  onRolesChangedAction: () => void;
+};
+
 export function MemberRolesDialog({
   open,
   member,
-  onOpenChange,
-  onRolesChanged,
-}: {
-  open: boolean;
-  member: SchoolMember | null;
-  onOpenChange: (open: boolean) => void;
-  onRolesChanged?: () => void;
-}) {
+  onOpenChangeAction,
+  onRolesChangedAction,
+}: MemberRolesDialogActionProps) {
+  
   useSignals();
   const roles = useSignal<CustomRole[]>([]);
   const assigned = useSignal<Set<string>>(new Set());
@@ -72,14 +75,14 @@ export function MemberRolesDialog({
       })
       .catch(() => toast.error("Failed to load roles"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, assigned, roles]);
 
   useEffect(() => {
     if (open && member) {
       baseRole.value = member.role;
       load(member.id);
     }
-  }, [open, member, load]);
+  }, [open, member, load, baseRole]);
 
   async function saveBaseRole(role: SchoolMember["role"]) {
     if (!member || member.is_owner || role === member.role) return;
@@ -92,7 +95,7 @@ export function MemberRolesDialog({
       member.role = role;
       baseRole.value = role;
       toast.success("Default role updated");
-      onRolesChanged?.();
+      onRolesChangedAction?.();
     } catch (err) {
       baseRole.value = member.role;
       toast.error(
@@ -117,7 +120,7 @@ export function MemberRolesDialog({
       if (on) next.add(roleId);
       else next.delete(roleId);
       assigned.value = next;
-      onRolesChanged?.();
+      onRolesChangedAction?.();
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to update role",
@@ -128,7 +131,7 @@ export function MemberRolesDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChangeAction}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Roles - {memberName(member)}</DialogTitle>
@@ -221,7 +224,7 @@ export function MemberRolesDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChangeAction(false)}>
             Done
           </Button>
         </DialogFooter>

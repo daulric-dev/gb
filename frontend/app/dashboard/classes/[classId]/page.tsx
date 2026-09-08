@@ -168,7 +168,7 @@ export default function ClassDetailPage() {
           .catch(() => {});
       }
     });
-  }, [classId]);
+  }, [classId, classInfo, enrolled, gradingModel, loading, selectedTermId, teachers, terms]);
 
   useEffect(() => {
     fetchData();
@@ -193,7 +193,7 @@ export default function ClassDetailPage() {
       .then((data) => (summaryData.value = data))
       .catch(() => (summaryData.value = []))
       .finally(() => (summaryLoading.value = false));
-  }, [selectedTermId.value, classId, summaryView.value]);
+  }, [selectedTermId, classId, summaryView, summaryData, summaryLoading, summaryPage]);
 
   useEffect(() => {
     if (summaryView.value !== "year" || !classInfo.value?.academicYearId || !classId) return;
@@ -205,7 +205,7 @@ export default function ClassDetailPage() {
       .then((data) => (yearData.value = data))
       .catch(() => (yearData.value = []))
       .finally(() => (yearLoading.value = false));
-  }, [summaryView.value, classInfo.value?.academicYearId, classId]);
+  }, [summaryView, classInfo, classId, yearData, yearLoading, yearPage]);
 
   async function handleUnenroll(studentId: string, name: string) {
     if (!confirm(`Unenroll ${name}? This will also remove their subject assignments.`)) return;
@@ -271,7 +271,7 @@ export default function ClassDetailPage() {
             <EnrollForm
               classId={classId}
               enrolledIds={enrolled.value.map((e) => e.student.id)}
-              onSuccess={() => {
+              onSuccessAction={() => {
                 enrollOpen.value = false;
                 fetchData();
               }}
@@ -308,7 +308,7 @@ export default function ClassDetailPage() {
                   <AssignTeacherForm
                     classId={classId}
                     existingTeacherIds={teachers.value.map((t) => t.teacherId)}
-                    onSuccess={() => {
+                    onSuccessAction={() => {
                       assignTeacherOpen.value = false;
                       fetchData();
                     }}
@@ -411,7 +411,7 @@ export default function ClassDetailPage() {
                   <BulkAssignSubjects
                     classId={classId}
                     enrolled={enrolled.value}
-                    onSuccess={() => {
+                    onSuccessAction={() => {
                       bulkAssignOpen.value = false;
                       fetchData();
                     }}
@@ -924,7 +924,7 @@ export default function ClassDetailPage() {
             <EditTeacherSubjectsForm
               classId={classId}
               teacher={editingTeacher.value}
-              onSuccess={() => {
+              onSuccessAction={() => {
                 editingTeacher.value = null;
                 fetchData();
               }}

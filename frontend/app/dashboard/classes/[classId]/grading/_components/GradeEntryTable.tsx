@@ -19,14 +19,14 @@ export function GradeEntryTable({
   existingGrades,
   classId,
   subjectId,
-  onSaved,
+  onSavedAction,
 }: {
   assessmentId: string;
   maxScore: number;
   existingGrades: GradeRow[];
   classId: string;
   subjectId: string;
-  onSaved: () => void;
+  onSavedAction: () => void;
 }) {
   useSignals();
   const enrolled = useSignal<
@@ -48,7 +48,7 @@ export function GradeEntryTable({
       .then((data) => (enrolled.value = data))
       .catch(() => {})
       .finally(() => (loadingStudents.value = false));
-  }, [classId, subjectId]);
+  }, [classId, subjectId, enrolled, loadingStudents]);
 
   useEffect(() => {
     const map = new Map<string, { score: string; remarks: string }>();
@@ -59,7 +59,7 @@ export function GradeEntryTable({
       });
     }
     scores.value = map;
-  }, [existingGrades]);
+  }, [existingGrades, scores]);
 
   function updateScore(studentId: string, field: "score" | "remarks", value: string) {
     const next = new Map(scores.value);
@@ -98,7 +98,7 @@ export function GradeEntryTable({
         body: { assessmentId, grades: gradeEntries },
       });
       toast.success(`${gradeEntries.length} grade${gradeEntries.length > 1 ? "s" : ""} saved`);
-      onSaved();
+      onSavedAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to save";
       toast.error(msg);
@@ -120,7 +120,7 @@ export function GradeEntryTable({
       toast.success(
         grade.is_excluded ? "Grade included" : "Grade excluded",
       );
-      onSaved();
+      onSavedAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);

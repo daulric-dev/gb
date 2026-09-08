@@ -73,7 +73,7 @@ export default function AttendancePage() {
         classInfo.value = null;
       })
       .finally(() => (loading.value = false));
-  }, [classId]);
+  }, [classId, classInfo, loading]);
 
   const fetchRoster = useCallback(() => {
     if (!date.value) return;
@@ -93,7 +93,7 @@ export default function AttendancePage() {
         toast.error("Failed to load roster");
       })
       .finally(() => (rosterLoading.value = false));
-  }, [classId, date.value]);
+  }, [classId, date, marks, roster, rosterLoading]);
 
   useEffect(() => {
     fetchRoster();

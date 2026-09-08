@@ -77,7 +77,7 @@ export function TermsTab({
     } finally {
       loading.value = false;
     }
-  }, [years]);
+  }, [years, loading, termsByYear]);
 
   useEffect(() => {
     fetchAllTerms();

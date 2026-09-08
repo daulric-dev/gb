@@ -32,7 +32,7 @@ export default function ClassLayout({ children }: { children: React.ReactNode}) 
       .catch(() => {
         info.value = null;
       });
-  }, [classId]);
+  }, [classId, info]);
 
   const base = `/dashboard/classes/${classId}`;
   const isTeacher = info.value?.isClassTeacher ?? false;

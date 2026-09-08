@@ -68,7 +68,7 @@ export default function SubjectsPage() {
       .then((data) => (subjects.value = data))
       .catch(() => toast.error("Failed to load subjects"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, subjects]);
 
   useEffect(() => {
     fetchSubjects();

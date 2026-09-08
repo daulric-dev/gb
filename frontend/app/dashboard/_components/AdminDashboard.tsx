@@ -175,7 +175,7 @@ export function AdminDashboard() {
         pendingRequests.value = reqs;
       })
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, activeYear, members, pendingRequests, students]);
 
   const schoolName = profile.value?.school?.name ?? "your school";
 

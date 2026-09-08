@@ -151,7 +151,7 @@ export default function SchoolsPage() {
       })
       .catch(() => toast.error("Failed to load schools"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, pendingSchoolId, schools]);
 
   async function handleJoin(school: School) {
     joiningId.value = school.id;

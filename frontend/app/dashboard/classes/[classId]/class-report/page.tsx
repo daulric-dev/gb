@@ -94,7 +94,7 @@ export default function ClassReportPage() {
       .finally(() => {
         loading.value = false;
       });
-  }, [classId]);
+  }, [classId, academicYearName, classInfo, gradingModel, loading, selectedTermId, yearCwWeight, yearExWeight, terms]);
 
   useEffect(() => {
     loadClass();
@@ -161,7 +161,7 @@ export default function ClassReportPage() {
         })
         .finally(() => { dataLoading.value = false; });
     }
-  }, [classId, selectedTermId.value, reportType.value, gradingModel.value, classInfo.value?.academicYearId]);
+  }, [classId, selectedTermId, reportType, gradingModel, classInfo, dataLoading, storedFiles, summary, terms, yearResults]);
 
   useEffect(() => {
     fetchSummary();

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useSignal, type Signal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api } from "@/lib/api";
@@ -26,7 +26,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const loading = useSignal<boolean>(true);
   const inFlight = useRef<Promise<void> | null>(null);
 
-  const fetchPermissions = () => {
+  const fetchPermissions = useCallback(() => {
     if (inFlight.current) return inFlight.current;
     loading.value = true;
     inFlight.current = api<MyPermissions>("/permissions/me", {
@@ -43,11 +43,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         inFlight.current = null;
       });
     return inFlight.current;
-  };
+  }, [data, loading]);
 
   useEffect(() => {
     void fetchPermissions();
-  }, []);
+  }, [fetchPermissions]);
 
   const value: PermissionsContextValue = {
     data,

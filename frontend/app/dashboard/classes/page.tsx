@@ -33,7 +33,7 @@ export default function ClassesPage() {
       yearMap.value = new Map(years.map((y) => [y.id, y.name]));
       loading.value = false;
     });
-  }, []);
+  }, [loading, classes, yearMap]);
 
   useEffect(() => {
     fetchData();
@@ -62,7 +62,7 @@ export default function ClassesPage() {
                   </DialogDescription>
                 </DialogHeader>
                 <CreateClassForm
-                  onSuccess={() => {
+                  onSuccessAction={() => {
                     dialogOpen.value = false;
                     fetchData();
                   }}

@@ -71,7 +71,7 @@ export default function ClassReportsPage() {
       .finally(() => {
         loading.value = false;
       });
-  }, [classId]);
+  }, [classId, classInfo, gradingModel, loading, selectedTermId, terms]);
 
   useEffect(() => {
     loadClass();
@@ -133,13 +133,7 @@ export default function ClassReportsPage() {
       .finally(() => {
         dataLoading.value = false;
       });
-  }, [
-    classId,
-    selectedTermId.value,
-    reportType.value,
-    gradingModel.value,
-    classInfo.value?.academicYearId,
-  ]);
+  }, [classId, selectedTermId, reportType, classInfo, dataLoading, students]);
 
   useEffect(() => {
     fetchGrades();

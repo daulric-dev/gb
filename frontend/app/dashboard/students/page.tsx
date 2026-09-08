@@ -32,7 +32,7 @@ export default function StudentsPage() {
       .then((data) => (students.value = data))
       .catch(() => toast.error("Failed to load students"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, students]);
 
   useEffect(() => {
     fetchStudents();

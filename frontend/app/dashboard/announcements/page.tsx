@@ -57,7 +57,7 @@ export default function AnnouncementsPage() {
       .then((data) => (announcements.value = data))
       .catch(() => toast.error("Failed to load announcements"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [announcements, loading]);
 
   useEffect(() => {
     fetchAnnouncements();

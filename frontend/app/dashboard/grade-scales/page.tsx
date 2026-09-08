@@ -38,7 +38,7 @@ export default function GradeScalesPage() {
       .then((data) => (scales.value = data))
       .catch(() => toast.error("Failed to load grade scales"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, scales]);
 
   useEffect(() => {
     fetchScales();
@@ -199,11 +199,11 @@ export default function GradeScalesPage() {
           {creating.value && (
             <ScaleForm
               existing={null}
-              onSaved={() => {
+              onSavedAction={() => {
                 creating.value = false;
                 fetchScales();
               }}
-              onCancel={() => (creating.value = false)}
+              onCancelAction={() => (creating.value = false)}
             />
           )}
         </DialogContent>
@@ -225,11 +225,11 @@ export default function GradeScalesPage() {
           {editing.value && (
             <ScaleForm
               existing={editing.value}
-              onSaved={() => {
+              onSavedAction={() => {
                 editing.value = null;
                 fetchScales();
               }}
-              onCancel={() => (editing.value = null)}
+              onCancelAction={() => (editing.value = null)}
             />
           )}
         </DialogContent>

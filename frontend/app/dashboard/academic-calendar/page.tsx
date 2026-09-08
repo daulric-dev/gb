@@ -47,7 +47,7 @@ export default function AcademicYearsPage() {
       .then((data) => (years.value = data))
       .catch(() => toast.error("Failed to load academic years"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, years]);
 
   useEffect(() => {
     fetchYears();

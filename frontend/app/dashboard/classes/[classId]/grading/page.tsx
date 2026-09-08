@@ -61,7 +61,7 @@ export default function GradingPage() {
       if (subs.length > 0) selectedSubjectId.value = subs[0].id;
       loading.value = false;
     });
-  }, [classId]);
+  }, [classId, classInfo, selectedSubjectId, subjects, loading, selectedTermId, terms]);
 
   const fetchAssessments = useCallback(() => {
     if (!selectedTermId.value || !selectedSubjectId.value) return;
@@ -82,7 +82,7 @@ export default function GradingPage() {
       })
       .catch(() => toast.error("Failed to load assessments"))
       .finally(() => (assessmentsLoading.value = false));
-  }, [selectedTermId.value, selectedSubjectId.value]);
+  }, [selectedTermId, selectedSubjectId, assessments, assessmentsLoading, selectedAssessment]);
 
   useEffect(() => {
     fetchAssessments();
@@ -98,7 +98,7 @@ export default function GradingPage() {
       .then((data) => (grades.value = data))
       .catch(() => toast.error("Failed to load grades"))
       .finally(() => (gradesLoading.value = false));
-  }, [selectedAssessment.value]);
+  }, [selectedAssessment, grades, gradesLoading]);
 
   useEffect(() => {
     fetchGrades();
@@ -371,7 +371,7 @@ export default function GradingPage() {
                 existingGrades={grades.value}
                 classId={classId}
                 subjectId={selectedSubjectId.value}
-                onSaved={fetchGrades}
+                onSavedAction={fetchGrades}
               />
             )}
           </CardContent>

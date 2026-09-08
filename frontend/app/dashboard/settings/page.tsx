@@ -59,7 +59,7 @@ export default function SettingsPage() {
       })
       .catch(() => toast.error("Failed to load profile"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, avatarUrl, firstName, lastName, profile]);
 
   useEffect(() => {
     fetchProfile();

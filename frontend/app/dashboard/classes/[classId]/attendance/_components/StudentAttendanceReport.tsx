@@ -77,7 +77,7 @@ export function StudentAttendanceReport({
         records.value = [];
       })
       .finally(() => (loading.value = false));
-  }, [from.value, to.value, classId, studentId]);
+  }, [from, to, classId, studentId, loading, records, summary]);
 
   return (
     <div className="space-y-4">

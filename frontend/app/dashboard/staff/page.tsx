@@ -91,7 +91,7 @@ export default function StaffPage() {
   const handleManageRoles = useCallback((member: SchoolMember) => {
     managingMember.value = member;
     rolesDialogOpen.value = true;
-  }, []);
+  }, [managingMember, rolesDialogOpen]);
 
   const grouped = useComputed(() => {
     const res: Record<StaffSectionRole, SchoolMember[]> = {
@@ -116,7 +116,7 @@ export default function StaffPage() {
       .then((data) => (members.value = data))
       .catch(() => toast.error("Failed to load staff"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, members]);
 
   const fetchRequests = useCallback(() => {
     requestsLoading.value = true;
@@ -124,7 +124,7 @@ export default function StaffPage() {
       .then((data) => (requests.value = data))
       .catch(() => toast.error("Failed to load pending requests"))
       .finally(() => (requestsLoading.value = false));
-  }, []);
+  }, [requestsLoading, requests]);
 
   useEffect(() => {
     fetchMembers();
@@ -136,7 +136,7 @@ export default function StaffPage() {
     } else {
       requestsLoading.value = false;
     }
-  }, [isAdmin, fetchRequests]);
+  }, [isAdmin, fetchRequests, requestsLoading]);
 
   const handleRemove = useCallback(async (member: SchoolMember) => {
     const name = member.user
@@ -159,7 +159,7 @@ export default function StaffPage() {
     } finally {
       removingId.value = null;
     }
-  }, []);
+  }, [members, removingId]);
 
   const staffPanel = loading.value ? (
     <StaffSkeleton />
@@ -251,8 +251,8 @@ export default function StaffPage() {
       <MemberRolesDialog
         open={rolesDialogOpen.value}
         member={managingMember.value}
-        onOpenChange={(v) => (rolesDialogOpen.value = v)}
-        onRolesChanged={fetchMembers}
+        onOpenChangeAction={(v) => (rolesDialogOpen.value = v)}
+        onRolesChangedAction={fetchMembers}
       />
     </div>
   );

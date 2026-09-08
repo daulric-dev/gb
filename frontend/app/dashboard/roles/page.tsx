@@ -50,7 +50,7 @@ export default function RolesPage() {
       .then((data) => (roles.value = data))
       .catch(() => toast.error("Failed to load roles"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, roles]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -58,7 +58,7 @@ export default function RolesPage() {
     api<CatalogEntry[]>("/permissions/catalog")
       .then((data) => (catalog.value = data))
       .catch(() => toast.error("Failed to load permission catalog"));
-  }, [isAdmin, fetchRoles]);
+  }, [isAdmin, fetchRoles, catalog]);
 
   function openCreate() {
     editingRole.value = null;
@@ -213,8 +213,8 @@ export default function RolesPage() {
         open={permsOpen.value}
         role={permsRole.value}
         catalog={catalog.value}
-        onOpenChange={(v) => (permsOpen.value = v)}
-        onSaved={fetchRoles}
+        onOpenChangeAction={(v) => (permsOpen.value = v)}
+        onSavedAction={fetchRoles}
       />
     </div>
   );

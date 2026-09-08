@@ -40,6 +40,9 @@ export class ClassController {
       req.user.id as string,
       academicYearId,
     );
+
+    const hi: string = "hello";
+    console.log(hi);
     return this.versioning.resolve(req, 'class.list')(raw);
   }
 

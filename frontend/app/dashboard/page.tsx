@@ -42,7 +42,7 @@ export default function DashboardPage() {
       .then((data) => (classes.value = data))
       .catch(() => (classes.value = []))
       .finally(() => (classesLoading.value = false));
-  }, []);
+  }, [classes, classesLoading]);
 
   const displayName = profile.value?.first_name
     ? profile.value.first_name

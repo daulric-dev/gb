@@ -49,7 +49,7 @@ export default function PendingPage() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [router, schoolName]);
 
   async function handleLogout() {
     try {
