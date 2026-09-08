@@ -24,14 +24,14 @@
         "test": "turbo run test",
         "test:frontend": "turbo run test --filter=frontend",
         "test:backend": "turbo run test --filter=backend",
-        "preview": "supabase start && turbo run start:prod",
-        "db:start": "supabase start",
-        "db:stop": "supabase stop",
+        "preview": "turbo run start:prod",
+        "db:start": "bunx supabase start",
+        "db:stop": "bunx supabase stop",
         "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh",
         "dev:docs": "turbo run dev --filter=docs",
         "build:docs": "turbo run build --filter=docs",
-        "db:diff": "supabase db diff --schema '*',storage -f",
-        "db:pull": "supabase db pull --schema '*',storage"
+        "db:diff": "bunx supabase db diff --schema '*',storage -f",
+        "db:pull": "bunx supabase db pull --schema '*',storage"
     },
     "workspaces": ["backend", "frontend", "docs", "mobile"],
     "overrides": {
