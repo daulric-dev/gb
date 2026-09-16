@@ -81,31 +81,6 @@ export default function AcademicYearsPage() {
 
   const yearsPanel = (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Dialog
-          open={dialogOpen.value}
-          onOpenChange={(v) => (dialogOpen.value = v)}
-        >
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 size-4" />
-            New Academic Year
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Academic Year</DialogTitle>
-              <DialogDescription>
-                Add a new academic year for your school
-              </DialogDescription>
-            </DialogHeader>
-            <CreateYearForm
-              onSuccess={() => {
-                dialogOpen.value = false;
-                fetchYears();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
       {can("academic-year", "create") && (
         <div className="flex justify-end">
           <Dialog
@@ -154,7 +129,6 @@ export default function AcademicYearsPage() {
                 <TableHead>End</TableHead>
                 <TableHead>Model</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
                 {can("academic-year", "update") && (
                   <TableHead className="text-right">Actions</TableHead>
                 )}
@@ -172,14 +146,16 @@ export default function AcademicYearsPage() {
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      {year.grading_model
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (c) => c.toUpperCase())}
                     </Badge>
                     {year.year_exam_weight != null && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          Exam {year.year_exam_weight}% / CW{" "}
-                          {year.year_coursework_weight}%
-                        </span>
-                      )}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        Exam {year.year_exam_weight}% / CW{" "}
+                        {year.year_coursework_weight}%
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {year.is_active ? (
@@ -188,37 +164,15 @@ export default function AcademicYearsPage() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => (editYear.value = year)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    {year.is_active ? (
                   {can("academic-year", "update") && (
                     <TableCell className="text-right space-x-2">
                       <Button
-                        variant="outline"
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeactivate(year.id)}
                         onClick={() => (editYear.value = year)}
                       >
-                        Deactivate
                         <Pencil className="size-4" />
                       </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleActivate(year.id)}
-                      >
-                        Activate
-                      </Button>
-                    )}
-                  </TableCell>
                       {year.is_active ? (
                         <Button
                           variant="outline"
