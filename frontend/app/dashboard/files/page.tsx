@@ -120,6 +120,8 @@ export default function FilesPage() {
         <FolderBrowser
           currentUserId={profile.value?.id}
           canCreate={can("file", "create")}
+          canUpdate={can("file", "update")}
+          canDelete={can("file", "delete")}
           reloadKey={reloadKey.value}
           onView={(f) => (viewFile.value = f)}
           onShare={(f) => (shareFile.value = f)}
@@ -144,6 +146,8 @@ export default function FilesPage() {
         <FilesTable
           files={files.value}
           currentUserId={profile.value?.id}
+          canUpdate={can("file", "update")}
+          canDelete={can("file", "delete")}
           onView={(f) => (viewFile.value = f)}
           onShare={(f) => (shareFile.value = f)}
           onRename={(f) => (renameFile.value = f)}
