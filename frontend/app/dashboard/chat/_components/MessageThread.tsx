@@ -28,6 +28,7 @@ import {
   type ChatMessage,
 } from "@/lib/chat";
 import { PresenceDot } from "./PresenceDot";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -45,6 +46,7 @@ function messageTime(iso: string) {
 
 export function MessageThread({ selfId }: { selfId: string | null }) {
   useSignals();
+  const { can } = usePermissions();
   const router = useRouter();
   const draft = useSignal("");
   const sending = useSignal(false);
@@ -134,24 +136,30 @@ export function MessageThread({ selfId }: { selfId: string | null }) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="flex items-end gap-2 border-t p-3">
-        <Textarea
-          value={draft.value}
-          onChange={(e) => (draft.value = e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          placeholder="Type a message…  (Enter to send, Shift+Enter for a new line)"
-          rows={1}
-          className="max-h-40 min-h-10 resize-none"
-        />
-        <Button onClick={send} disabled={sending.value || !draft.value.trim()}>
-          Send
-        </Button>
-      </div>
+      {can("chat", "create") ? (
+        <div className="flex items-end gap-2 border-t p-3">
+          <Textarea
+            value={draft.value}
+            onChange={(e) => (draft.value = e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+            placeholder="Type a message…  (Enter to send, Shift+Enter for a new line)"
+            rows={1}
+            className="max-h-40 min-h-10 resize-none"
+          />
+          <Button onClick={send} disabled={sending.value || !draft.value.trim()}>
+            Send
+          </Button>
+        </div>
+      ) : (
+        <div className="border-t p-3 text-center text-xs text-muted-foreground">
+          You do not have permission to send messages.
+        </div>
+      )}
     </div>
   );
 }

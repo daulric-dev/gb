@@ -33,9 +33,11 @@ import { StatsSummaryCards } from "./_components/StatsSummaryCards";
 import { SubjectAveragesCard } from "./_components/SubjectAveragesCard";
 import { StudentRankingsCard } from "./_components/StudentRankingsCard";
 import { ExportCard } from "./_components/ExportCard";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 export default function ClassReportPage() {
   useSignals();
+  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const classId = params?.classId as string;
@@ -216,7 +218,7 @@ export default function ClassReportPage() {
   };
 
   const generateAndUploadAll = async () => {
-    if (!classInfo.value?.isClassTeacher) return;
+    if (!classInfo.value?.isClassTeacher || !can("reporting", "create")) return;
 
     generating.value = true;
     try {
@@ -266,7 +268,7 @@ export default function ClassReportPage() {
     return <LoadingSkeleton />;
   }
 
-  if (!classInfo.value || !classInfo.value.isClassTeacher) {
+  if (!classInfo.value || (!classInfo.value.isClassTeacher && !can("reporting", "read"))) {
     return <AccessDenied classInfo={classInfo.value} />;
   }
 
@@ -333,6 +335,8 @@ export default function ClassReportPage() {
           <ExportCard
             isClassTeacher={isClassTeacher}
             generating={generating.value}
+            canCreateReport={can("reporting", "create")}
+            canReadReport={can("reporting", "read")}
             storedFiles={storedFiles.value}
             storedFileTypes={storedFileTypes}
             onDownloadPdf={downloadPdf}

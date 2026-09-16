@@ -19,9 +19,11 @@ import type { Term, Subject, Assessment, GradeRow, AcademicYear, ClassInfo } fro
 import { GradeEntryTable } from "./_components/GradeEntryTable";
 import { CreateAssessmentForm } from "./_components/CreateAssessmentForm";
 import { EditAssessmentForm } from "./_components/EditAssessmentForm";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 export default function GradingPage() {
   useSignals();
+  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const classId = params?.classId as string;
@@ -232,35 +234,37 @@ export default function GradingPage() {
                 {assessments.value.length !== 1 ? "s" : ""}
               </CardDescription>
             </div>
-            <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-              <DialogTrigger
-                render={
-                  <Button
-                    size="sm"
-                    disabled={!selectedTermId.value || !selectedSubjectId.value}
+            {can("assessment", "create") && (
+              <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
+                <DialogTrigger
+                  render={
+                    <Button
+                      size="sm"
+                      disabled={!selectedTermId.value || !selectedSubjectId.value}
+                    />
+                  }
+                >
+                  <Plus className="mr-2 size-4" />
+                  New Assessment
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Assessment</DialogTitle>
+                    <DialogDescription>
+                      Add an exam or coursework assessment
+                    </DialogDescription>
+                  </DialogHeader>
+                  <CreateAssessmentForm
+                    termId={selectedTermId.value}
+                    subjectId={selectedSubjectId.value}
+                    onSuccess={() => {
+                      createOpen.value = false;
+                      fetchAssessments();
+                    }}
                   />
-                }
-              >
-                <Plus className="mr-2 size-4" />
-                New Assessment
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Assessment</DialogTitle>
-                  <DialogDescription>
-                    Add an exam or coursework assessment
-                  </DialogDescription>
-                </DialogHeader>
-                <CreateAssessmentForm
-                  termId={selectedTermId.value}
-                  subjectId={selectedSubjectId.value}
-                  onSuccess={() => {
-                    createOpen.value = false;
-                    fetchAssessments();
-                  }}
-                />
-              </DialogContent>
-            </Dialog>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -324,40 +328,46 @@ export default function GradingPage() {
                 </CardDescription>
               </div>
               <div className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    handleToggleExcludeAssessment(selectedAssessment.value!)
-                  }
-                  title={
-                    selectedAssessment.value.is_excluded
-                      ? "Include in calculations"
-                      : "Exclude from calculations"
-                  }
-                >
-                  {selectedAssessment.value.is_excluded ? (
-                    <Eye className="size-4" />
-                  ) : (
-                    <EyeOff className="size-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => (editAssessment.value = selectedAssessment.value)}
-                >
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    handleDeleteAssessment(selectedAssessment.value!)
-                  }
-                >
-                  <Trash2 className="size-4 text-destructive" />
-                </Button>
+                {can("assessment", "update") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      handleToggleExcludeAssessment(selectedAssessment.value!)
+                    }
+                    title={
+                      selectedAssessment.value.is_excluded
+                        ? "Include in calculations"
+                        : "Exclude from calculations"
+                    }
+                  >
+                    {selectedAssessment.value.is_excluded ? (
+                      <Eye className="size-4" />
+                    ) : (
+                      <EyeOff className="size-4" />
+                    )}
+                  </Button>
+                )}
+                {can("assessment", "update") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => (editAssessment.value = selectedAssessment.value)}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                )}
+                {can("assessment", "delete") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      handleDeleteAssessment(selectedAssessment.value!)
+                    }
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -372,6 +382,7 @@ export default function GradingPage() {
                 classId={classId}
                 subjectId={selectedSubjectId.value}
                 onSavedAction={fetchGrades}
+                canEdit={can("grade", "update") || can("grade", "create")}
               />
             )}
           </CardContent>

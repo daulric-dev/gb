@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Save, BarChart3 } from "lucide-react";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { StudentAttendanceReport } from "./_components/StudentAttendanceReport";
 
 type AttendanceStatus = "present" | "absent" | "late";
@@ -51,6 +52,7 @@ const STATUSES: AttendanceStatus[] = ["present", "absent", "late"];
 
 export default function AttendancePage() {
   useSignals();
+  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const classId = params?.classId as string;
@@ -151,7 +153,7 @@ export default function AttendancePage() {
     );
   }
 
-  const canMark = classInfo.value.isClassTeacher;
+  const canMark = can("attendance", "create") && classInfo.value.isClassTeacher;
   const totalMarked = Object.keys(marks.value).length;
   const totalStudents = roster.value.length;
 

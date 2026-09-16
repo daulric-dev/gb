@@ -27,6 +27,7 @@ import { Calendar, Pencil, Plus, Trash2 } from "lucide-react";
 import { termLabel, type AcademicYear, type Term } from "./types";
 import { CreateTermForm } from "./CreateTermForm";
 import { EditTermForm } from "./EditTermForm";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 const TERM_SLOTS = 3;
 
@@ -50,6 +51,7 @@ export function TermsTab({
   yearsLoading: boolean;
 }) {
   useSignals();
+  const { can } = usePermissions();
 
   const termsByYear = useSignal<Record<string, Term[]>>({});
   const loading = useSignal(true);
@@ -138,19 +140,21 @@ export function TermsTab({
                   {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
                 </Badge>
               </div>
-              <Button
-                size="sm"
-                onClick={() => (createForYear.value = year)}
-                disabled={!canAdd}
-                title={
-                  !canAdd
-                    ? "Maximum of 3 terms per year"
-                    : undefined
-                }
-              >
-                <Plus className="mr-1.5 size-3.5" />
-                Add Term
-              </Button>
+              {can("term", "create") && (
+                <Button
+                  size="sm"
+                  onClick={() => (createForYear.value = year)}
+                  disabled={!canAdd}
+                  title={
+                    !canAdd
+                      ? "Maximum of 3 terms per year"
+                      : undefined
+                  }
+                >
+                  <Plus className="mr-1.5 size-3.5" />
+                  Add Term
+                </Button>
+              )}
             </div>
 
             {yearTerms.length === 0 ? (
@@ -167,7 +171,9 @@ export function TermsTab({
                       <TableHead>End</TableHead>
                       <TableHead>Exam / CW</TableHead>
                       <TableHead>Ministry</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      {(can("term", "update") || can("term", "delete")) && (
+                        <TableHead className="text-right">Actions</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -194,22 +200,28 @@ export function TermsTab({
                             <span className="text-muted-foreground">No</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => (editTerm.value = term)}
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(term)}
-                          >
-                            <Trash2 className="size-4 text-destructive" />
-                          </Button>
-                        </TableCell>
+                        {(can("term", "update") || can("term", "delete")) && (
+                          <TableCell className="text-right space-x-1">
+                            {can("term", "update") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => (editTerm.value = term)}
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                            )}
+                            {can("term", "delete") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(term)}
+                              >
+                                <Trash2 className="size-4 text-destructive" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>

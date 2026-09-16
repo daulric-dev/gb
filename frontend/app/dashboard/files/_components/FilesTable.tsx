@@ -42,6 +42,8 @@ type RowProps = {
   file: FileItem;
   currentUserId: string | undefined;
   dnd: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
   onView: (file: FileItem) => void;
   onShare: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
@@ -53,6 +55,8 @@ function FileTableRow({
   file,
   currentUserId,
   dnd,
+  canUpdate = true,
+  canDelete = true,
   onView,
   onShare,
   onRename,
@@ -122,24 +126,30 @@ function FileTableRow({
                   <Share2 className="mr-2 size-4" />
                   Share
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onRename(file)}>
-                  <Pencil className="mr-2 size-4" />
-                  Rename
-                </DropdownMenuItem>
-                {onMove && (
+                {canUpdate && (
+                  <DropdownMenuItem onClick={() => onRename(file)}>
+                    <Pencil className="mr-2 size-4" />
+                    Rename
+                  </DropdownMenuItem>
+                )}
+                {canUpdate && onMove && (
                   <DropdownMenuItem onClick={() => onMove(file)}>
                     <FolderInput className="mr-2 size-4" />
                     Move to…
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => onDelete(file)}
-                >
-                  <Trash2 className="mr-2 size-4" />
-                  Delete
-                </DropdownMenuItem>
+                {canDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => onDelete(file)}
+                    >
+                      <Trash2 className="mr-2 size-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -152,6 +162,8 @@ function FileTableRow({
 export function FilesTable({
   files,
   currentUserId,
+  canUpdate = true,
+  canDelete = true,
   onView,
   onShare,
   onRename,
@@ -161,6 +173,8 @@ export function FilesTable({
 }: {
   files: FileItem[];
   currentUserId: string | undefined;
+  canUpdate?: boolean;
+  canDelete?: boolean;
   onView: (file: FileItem) => void;
   onShare: (file: FileItem) => void;
   onRename: (file: FileItem) => void;
@@ -189,6 +203,8 @@ export function FilesTable({
               file={file}
               currentUserId={currentUserId}
               dnd={dnd}
+              canUpdate={canUpdate}
+              canDelete={canDelete}
               onView={onView}
               onShare={onShare}
               onRename={onRename}

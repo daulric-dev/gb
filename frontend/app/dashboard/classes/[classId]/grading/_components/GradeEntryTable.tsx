@@ -20,6 +20,7 @@ export function GradeEntryTable({
   classId,
   subjectId,
   onSavedAction,
+  canEdit = true,
 }: {
   assessmentId: string;
   maxScore: number;
@@ -27,6 +28,7 @@ export function GradeEntryTable({
   classId: string;
   subjectId: string;
   onSavedAction: () => void;
+  canEdit?: boolean;
 }) {
   useSignals();
   const enrolled = useSignal<
@@ -201,6 +203,7 @@ export function GradeEntryTable({
                             ev.target.value,
                           )
                         }
+                        disabled={!canEdit}
                         className="w-24 h-8 text-sm"
                         placeholder="-"
                       />
@@ -229,12 +232,13 @@ export function GradeEntryTable({
                           ev.target.value,
                         )
                       }
+                      disabled={!canEdit}
                       className="h-8 text-sm"
                       placeholder="Optional remarks"
                     />
                   </TableCell>
                   <TableCell>
-                    {existingGrade && (
+                    {canEdit && existingGrade && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -260,10 +264,12 @@ export function GradeEntryTable({
           </TableBody>
         </Table>
       </div>
-      <Button onClick={handleSave} disabled={saving.value} className="w-full">
-        <Save className="mr-2 size-4" />
-        {saving.value ? "Saving..." : "Save All Grades"}
-      </Button>
+      {canEdit && (
+        <Button onClick={handleSave} disabled={saving.value} className="w-full">
+          <Save className="mr-2 size-4" />
+          {saving.value ? "Saving..." : "Save All Grades"}
+        </Button>
+      )}
     </div>
   );
 }

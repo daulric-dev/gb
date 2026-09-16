@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, MessageSquarePlus } from "lucide-react";
@@ -19,6 +20,7 @@ import { NewChatDialog } from "./_components/NewChatDialog";
 export default function ChatPage() {
   useSignals();
   const { profile } = useProfile();
+  const { can } = usePermissions();
   const selfId = profile.value?.id ?? null;
   const newChatOpen = useSignal(false);
 
@@ -38,10 +40,12 @@ export default function ChatPage() {
             Chat with anyone at your school in real time.
           </p>
         </div>
-        <Button onClick={() => (newChatOpen.value = true)}>
-          <MessageSquarePlus className="size-4" />
-          New message
-        </Button>
+        {can("chat", "create") && (
+          <Button onClick={() => (newChatOpen.value = true)}>
+            <MessageSquarePlus className="size-4" />
+            New message
+          </Button>
+        )}
       </div>
 
       <div className="grid h-[calc(100dvh-12rem)] min-h-[28rem] grid-cols-1 overflow-hidden rounded-xl border md:grid-cols-[20rem_1fr]">
