@@ -4,7 +4,8 @@ import { useRouter } from "expo-router";
 import { GraduationCap, LogOut, Plus, Search } from "lucide-react-native";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
-import { homeRouteFor } from "@/lib/routing";
+import { homeRouteFor, isStudentProfile } from "@/lib/routing";
+import { ClaimCodeForm } from "@/components/auth/ClaimCodeForm";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -182,6 +183,29 @@ export default function SchoolsScreen() {
     ? `${profile.first_name} ${profile.last_name ?? ""}`.trim()
     : "";
   const anyPending = pendingId !== null;
+
+  // A student joins by redeeming the code their school issued, so they get the
+  // code field alone - no school list, no create-a-school option.
+  if (isStudentProfile(profile)) {
+    return (
+      <AuthShell>
+        <View style={{ gap: 20 }}>
+          <View style={{ alignItems: "center", gap: 6 }}>
+            <GraduationCap size={36} color={colors.primary} />
+            <Text variant="title" style={{ textAlign: "center" }}>
+              {displayName ? `Welcome, ${displayName}` : "Join your school"}
+            </Text>
+          </View>
+
+          <ClaimCodeForm />
+
+          <Button variant="ghost" onPress={handleLogout}>
+            Log out
+          </Button>
+        </View>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell>

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { createHmac, randomInt } from 'node:crypto';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { CacheService } from '@/cache/cache.service';
 
 /**
  * Ambiguous glyphs are omitted: these codes get read off paper and typed by
@@ -27,7 +28,10 @@ export class StudentClaimService {
   private readonly logger = new Logger(StudentClaimService.name);
   private readonly pepper: string;
 
-  constructor(private readonly supabaseService: SupabaseService) {
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cache: CacheService,
+  ) {
     const configured = process.env.STUDENT_CLAIM_CODE_PEPPER?.trim();
 
     if (!configured) {
@@ -309,6 +313,12 @@ export class StudentClaimService {
     if (!row?.student_id || !row?.school_id) {
       throw new BadRequestException('Invalid or expired claim code');
     }
+
+    // Redemption sets school_id and account_type, but getProfile serves
+    // `profile:<id>` for thirty days. Without this the client keeps seeing a
+    // school-less profile and never routes to the portal.
+    await this.cache.delete(`profile:${userId}`);
+    await this.cache.delete(`student-context:${userId}`);
 
     this.logger.log(`User ${userId} claimed student ${row.student_id}`);
 

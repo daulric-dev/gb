@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
-import { homePathFor } from "@/lib/routing";
+import { homePathFor, isStudentProfile } from "@/lib/routing";
+import { ClaimCodeForm } from "@/components/auth/claim-code-form";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -210,6 +211,34 @@ export default function SchoolsPage() {
   const displayName = profile.value?.first_name
     ? `${profile.value.first_name} ${profile.value.last_name ?? ""}`.trim()
     : "";
+
+  // A student joins by redeeming the code their school issued, so they get the
+  // code field alone - no school list, no create-a-school option.
+  if (isStudentProfile(profile.value)) {
+    return (
+      <AuthPageShell>
+        <div className="w-full max-w-md space-y-6">
+          <div className="space-y-2 text-center">
+            <GraduationCap className="mx-auto size-10 text-primary" />
+            <h1 className="text-2xl font-bold">
+              {displayName ? `Welcome, ${displayName}` : "Join your school"}
+            </h1>
+          </div>
+
+          <ClaimCodeForm />
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mx-auto flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <LogOut className="size-4" />
+            Log out
+          </button>
+        </div>
+      </AuthPageShell>
+    );
+  }
 
   return (
     <AuthPageShell>

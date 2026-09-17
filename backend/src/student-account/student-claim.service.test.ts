@@ -12,8 +12,15 @@ const SCHOOL = 'school-1';
 const STUDENT = 'student-1';
 const USER = 'user-1';
 
-function service(sb: any) {
-  return new StudentClaimService(sb as any);
+const noopCache = {
+  get: () => Promise.resolve(null),
+  set: async () => {},
+  delete: async () => {},
+  deleteByPrefix: async () => {},
+} as any;
+
+function service(sb: any, cache: any = noopCache) {
+  return new StudentClaimService(sb as any, cache);
 }
 
 describe('StudentClaimService.issue', () => {
@@ -292,6 +299,40 @@ describe('StudentClaimService.redeem', () => {
     expect(
       await expectRejection(svc.redeem(USER, 'ABCD-EFGH-JKMN')),
     ).toBeInstanceOf(ConflictException);
+  });
+
+  test('clears the cached profile so the client stops seeing no school', async () => {
+    const deleted: string[] = [];
+    const cache = {
+      get: () => Promise.resolve(null),
+      set: async () => {},
+      delete: async (key: string) => {
+        deleted.push(key);
+      },
+      deleteByPrefix: async () => {},
+    } as any;
+
+    const sb = createRoutingSupabase({
+      tables: {
+        user_profile: {
+          data: { school_id: null, account_type: 'staff' },
+          error: null,
+        },
+      },
+      rpc: {
+        redeem_student_claim_code: () => ({
+          data: [{ student_id: STUDENT, school_id: SCHOOL }],
+          error: null,
+        }),
+      },
+    });
+
+    await service(sb, cache).redeem(USER, 'ABCD-EFGH-JKMN');
+
+    // getProfile caches for thirty days; without this the redeemed student is
+    // stranded on the join screen.
+    expect(deleted).toContain(`profile:${USER}`);
+    expect(deleted).toContain(`student-context:${USER}`);
   });
 
   test('requires a profile to exist first', async () => {
