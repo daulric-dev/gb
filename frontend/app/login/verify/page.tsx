@@ -34,6 +34,8 @@ function VerifyOtpForm() {
       const data = await api<{
         user: {
           is_onboarded: boolean;
+          account_type: "staff" | "student" | null;
+          first_name: string | null;
         };
       }>("/auth/otp/verify", {
         method: "POST",
@@ -43,8 +45,14 @@ function VerifyOtpForm() {
       // call refresh after login
       await refresh();
 
+      const isStudent = data.user.account_type === "student";
+
       if (data.user.is_onboarded) {
-        router.push("/dashboard");
+        router.push(isStudent ? "/portal" : "/dashboard");
+      } else if (isStudent && data.user.first_name) {
+        // Named but school-less: they picked student and still owe a claim
+        // code. Sending them back to /onboard would just loop.
+        router.push("/claim");
       } else {
         router.push("/onboard");
       }

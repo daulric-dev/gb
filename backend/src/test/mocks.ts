@@ -107,9 +107,12 @@ export function createRoutingSupabase(
     verifyOtpResult?: QueryResult;
     getUserByIdResult?: QueryResult;
     authResult?: QueryResult;
+    /** Results per RPC name, fixed or computed from the args. */
+    rpc?: Record<string, RouteValue | ((args: any) => QueryResult)>;
   } = {},
 ) {
   const calls: RoutingCall[] = [];
+  const rpcCalls: { name: string; args: any }[] = [];
 
   function resolveRoute(state: RoutingCall) {
     calls.push({ ...state, filters: { ...state.filters } });
@@ -178,6 +181,13 @@ export function createRoutingSupabase(
   const noResult: QueryResult = { data: null, error: null };
   const client: any = {
     from: (t: string) => makeBuilder().from(t),
+    rpc: (name: string, args: any) => {
+      rpcCalls.push({ name, args });
+      const route = config.rpc?.[name];
+      const result =
+        typeof route === 'function' ? (route as any)(args) : (route ?? noResult);
+      return Promise.resolve(result);
+    },
     schema: (s: string) => ({
       from: (t: string) => makeBuilder().schema(s).from(t),
     }),
@@ -203,6 +213,7 @@ export function createRoutingSupabase(
     getUserSchoolId: () => Promise.resolve(config.userSchoolId ?? 'school-1'),
     scanOrThrow: () => Promise.resolve(),
     _calls: calls,
+    _rpcCalls: rpcCalls,
     _client: client,
   };
 }

@@ -18,6 +18,8 @@ export interface UserProfile {
   first_name: string | null;
   last_name: string | null;
   role: string | null;
+  /** 'staff' | 'student' - students use /portal, staff use /dashboard. */
+  account_type: "staff" | "student" | null;
   avatar_url: string | null;
   school_management: {
     role: string | null;

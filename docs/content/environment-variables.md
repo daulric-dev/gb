@@ -30,6 +30,7 @@ No `.env` files are committed to the repository. You must create them manually i
 | `CLAMAV_HOST`                 | No                       | -                       | Host of a ClamAV daemon (`clamd`). When set, **every** file uploaded to storage (avatars, file-manager uploads, report files) is virus-scanned before it is stored. **When unset, scanning is disabled and uploads pass through** - configure this before production. |
 | `CLAMAV_PORT`                 | No                       | `3310`                  | `clamd` TCP port.                                                                                                                                                                                                                                                     |
 | `CLAMAV_TIMEOUT_MS`           | No                       | `30000`                 | Socket timeout for a scan, in milliseconds.                                                                                                                                                                                                                           |
+| `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes student claim codes (`openssl rand -base64 32`). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
 | `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
 ### Example `backend/.env`
@@ -53,6 +54,11 @@ USE_REDIS=false
 # CLAMAV_HOST=127.0.0.1
 # CLAMAV_PORT=3310
 # CLAMAV_TIMEOUT_MS=30000
+
+# Student claim codes: keyed hash for codes students redeem to link their
+# account to a student record. Required in production.
+#   openssl rand -base64 32
+# STUDENT_CLAIM_CODE_PEPPER=base64-of-32-bytes
 
 # Dedicated deployment (single-school instance)
 # DEDICATED_DEPLOYMENT=true

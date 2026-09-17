@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsUUID,
   IsOptional,
+  IsIn,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -24,4 +25,15 @@ export class OnboardDto {
   @IsOptional()
   @IsUUID()
   schoolId?: string;
+
+  /**
+   * Which onboarding flow to enter. This only chooses a route, never a
+   * privilege: staff still require an admin to approve their join request,
+   * and students still require a valid school-issued claim code. Defaults to
+   * 'staff' so existing clients keep working.
+   */
+  @ApiPropertyOptional({ example: 'staff', enum: ['staff', 'student'] })
+  @IsOptional()
+  @IsIn(['staff', 'student'])
+  accountType?: 'staff' | 'student';
 }

@@ -24,6 +24,8 @@ import { ImagesService } from '@/images/images.service';
 import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
+import { ClaimStudentDto } from '@/auth/dto/claim-student.dto';
+import { StudentClaimService } from '@/student-account/student-claim.service';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
@@ -39,6 +41,7 @@ export class AuthController {
     private readonly imagesService: ImagesService,
     private readonly supabaseService: SupabaseService,
     private readonly versioning: VersioningService,
+    private readonly studentClaimService: StudentClaimService,
   ) {}
 
   @Post('otp/send')
@@ -85,6 +88,20 @@ export class AuthController {
     const userId: string = req.user.id;
     const raw = await this.authService.onboard(userId, dto);
     return this.versioning.resolve(req, 'auth.profile')(raw);
+  }
+
+  /**
+   * Redeem a school-issued claim code, binding this login to a student record.
+   * Throttled per session/IP: a 12-character code is guessable given enough
+   * attempts, and this is the only endpoint that accepts one.
+   */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 15 * 60 * 1000 } })
+  @Post('claim-student')
+  async claimStudent(@Req() req: any, @Body() dto: ClaimStudentDto) {
+    const userId: string = req.user.id;
+    return this.studentClaimService.redeem(userId, dto.code);
   }
 
   @ApiBearerAuth()

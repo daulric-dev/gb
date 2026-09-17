@@ -11,6 +11,7 @@ import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
 import { SupabaseModule } from '@/supabase/supabase.module';
+import { StudentAccountModule } from '@/student-account/student-account.module';
 import { AuthModule } from '@/auth/auth.module';
 import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
@@ -68,6 +69,7 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
 
     SupabaseModule,
     AuthModule,
+    StudentAccountModule,
     CacheModule,
     ScanModule,
     QueueModule.forRoot(),

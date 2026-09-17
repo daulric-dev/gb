@@ -192,6 +192,30 @@ export class AuthService {
   async onboard(userId: string, dto: OnboardDto) {
     const supabase = this.supabaseService.getServiceClient();
 
+    if (dto.accountType === 'student') {
+      const { data, error } = await supabase
+        .from('user_profile')
+        .upsert({
+          id: userId,
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+          account_type: 'student',
+          role: null,
+        })
+        .select('*, school:school_id(*)')
+        .single();
+
+      if (error || !data) {
+        this.logger.error(
+          `Failed to onboard student ${userId}: ${error?.message}`,
+        );
+        throw new BadRequestException('Failed to complete onboarding');
+      }
+
+      await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
+      return data;
+    }
+
     if (process.env.DEDICATED_DEPLOYMENT === 'true') {
       const { data: school } = await supabase
         .from('school')

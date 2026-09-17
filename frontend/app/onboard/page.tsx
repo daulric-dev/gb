@@ -16,6 +16,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
+import { cn } from "@/lib/utils";
+import { GraduationCap, Briefcase } from "lucide-react";
+
+type AccountType = "staff" | "student";
+
+const OPTIONS: {
+  value: AccountType;
+  title: string;
+  description: string;
+  icon: typeof GraduationCap;
+}[] = [
+  {
+    value: "staff",
+    title: "Staff or faculty",
+    description: "Teacher, administrator or other school staff",
+    icon: Briefcase,
+  },
+  {
+    value: "student",
+    title: "Student",
+    description: "You have a claim code from your school",
+    icon: GraduationCap,
+  },
+];
 
 export default function OnboardPage() {
   useSignals();
@@ -23,6 +47,7 @@ export default function OnboardPage() {
   const router = useRouter();
   const firstName = useSignal("");
   const lastName = useSignal("");
+  const accountType = useSignal<AccountType>("staff");
   const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -35,9 +60,12 @@ export default function OnboardPage() {
         body: {
           firstName: firstName.value,
           lastName: lastName.value,
+          accountType: accountType.value,
         },
       });
-      router.push("/schools");
+      // Neither branch grants anything on its own: staff still need an admin to
+      // approve their join request, students still need a valid claim code.
+      router.push(accountType.value === "student" ? "/claim" : "/schools");
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Onboarding failed";
@@ -81,6 +109,51 @@ export default function OnboardPage() {
                 />
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>I am joining as</Label>
+              <div
+                role="radiogroup"
+                aria-label="Account type"
+                className="grid gap-2"
+              >
+                {OPTIONS.map((option) => {
+                  const Icon = option.icon;
+                  const selected = accountType.value === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => (accountType.value = option.value)}
+                      className={cn(
+                        "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors",
+                        selected
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted",
+                      )}
+                    >
+                      <Icon
+                        className={cn(
+                          "mt-0.5 size-5 shrink-0",
+                          selected ? "text-primary" : "text-muted-foreground",
+                        )}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">
+                          {option.title}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {option.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <Button type="submit" className="w-full" disabled={loading.value}>
               {loading.value ? "Saving..." : "Continue"}
             </Button>

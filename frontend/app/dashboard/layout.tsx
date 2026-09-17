@@ -22,12 +22,20 @@ export default function DashboardLayout({children}: { children: React.ReactNode 
       router.replace("/login");
       return;
     }
+    // Students get the self-scoped portal, not the staff app. The API would
+    // deny them here anyway (no school_management row means PermissionGuard
+    // fails closed), so this is about not showing them a wall of 403s.
+    if (profile.value.account_type === "student") {
+      router.replace("/portal");
+      return;
+    }
     if (!profile.value.school) {
       router.replace("/schools");
     }
   }, [loading.value, profile.value, router]);
 
   if (loading.value || !profile.value?.school) return null;
+  if (profile.value.account_type === "student") return null;
 
   return (
     <PermissionsProvider>
