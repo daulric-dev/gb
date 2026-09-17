@@ -93,6 +93,20 @@ describe('PermissionGuard', () => {
     expect(await guard.canActivate(ctx)).toBe(true);
   });
 
+  test('a student is denied every staff route', async () => {
+    // A claimed student has a school_id, so the guard resolves a school - but
+    // students have no school_management row, which is what fails them closed.
+    const sb = createRoutingSupabase({
+      tables: { school_management: { data: null, error: null } },
+    });
+    const guard = guardWith(sb, 'student:read');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
+
+    const err = await expectRejection(guard.canActivate(ctx));
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(String((err as Error).message)).toContain('not a member');
+  });
+
   test('a non-member of the resolved school is denied', async () => {
     const sb = createRoutingSupabase({
       tables: { school_management: { data: null, error: null } },

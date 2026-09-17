@@ -173,6 +173,33 @@ describe('PermissionService', () => {
     expect(result).toEqual({
       schoolId: null,
       role: null,
+      accountType: 'staff',
+      isAdmin: false,
+      permissions: [],
+    });
+  });
+
+  test('getMyPermissions gives a student no catalog permissions', async () => {
+    const sb = createRoutingSupabase({
+      tables: {
+        user_profile: {
+          data: { school_id: 's1', account_type: 'student' },
+          error: null,
+        },
+        // Reaching for a membership would mean the student path was not taken.
+        school_management: () => {
+          throw new Error('should not query membership for a student');
+        },
+      },
+    });
+    const { cache } = makeCache();
+    const svc = new PermissionService(sb as any, cache);
+
+    const result = await svc.getMyPermissions('u1');
+    expect(result).toEqual({
+      schoolId: 's1',
+      role: null,
+      accountType: 'student',
       isAdmin: false,
       permissions: [],
     });

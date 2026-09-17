@@ -9,6 +9,8 @@ import { useProfile } from "@/providers/AuthProvider";
 export interface MyPermissions {
   schoolId: string | null;
   role: string | null;
+  /** 'staff' | 'student'. Students hold no catalog permissions at all. */
+  accountType: "staff" | "student";
   isAdmin: boolean;
   permissions: string[];
 }
@@ -89,6 +91,8 @@ export function usePermissions() {
     can,
     isAdmin: data?.isAdmin ?? false,
     role: data?.role ?? null,
+    accountType: data?.accountType ?? "staff",
+    isStudent: data?.accountType === "student",
     permissions: data?.permissions ?? [],
     loading: ctx.loading,
     refresh: ctx.refresh,
