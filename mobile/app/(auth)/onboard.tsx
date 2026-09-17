@@ -15,6 +15,10 @@ import {
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Text } from "@/components/ui/Text";
+
+type AccountType = "staff" | "student";
 
 export default function OnboardScreen() {
   const router = useRouter();
@@ -22,6 +26,7 @@ export default function OnboardScreen() {
   const { refresh } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("staff");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
@@ -33,11 +38,19 @@ export default function OnboardScreen() {
     try {
       await api("/auth/onboard", {
         method: "PATCH",
-        body: { firstName: firstName.trim(), lastName: lastName.trim() },
+        body: {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          accountType,
+        },
         skipAuthRedirect: true,
       });
       await refresh();
-      router.replace("/(auth)/schools");
+      // Neither branch grants anything: staff still need an admin to approve
+      // their join request, students still need a valid claim code.
+      router.replace(
+        accountType === "student" ? "/(auth)/claim" : "/(auth)/schools",
+      );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Onboarding failed");
     } finally {
@@ -76,6 +89,22 @@ export default function OnboardScreen() {
               returnKeyType="done"
               onSubmitEditing={handleSubmit}
             />
+          </View>
+          <View style={{ gap: 8 }}>
+            <Label>I am joining as</Label>
+            <SegmentedControl<AccountType>
+              value={accountType}
+              onChange={setAccountType}
+              options={[
+                { value: "staff", label: "Staff" },
+                { value: "student", label: "Student" },
+              ]}
+            />
+            <Text variant="muted" style={{ fontSize: 12 }}>
+              {accountType === "student"
+                ? "You will need the claim code your school gave you."
+                : "An administrator approves staff before you get access."}
+            </Text>
           </View>
           <Button onPress={handleSubmit} loading={loading}>
             Continue

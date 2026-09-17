@@ -63,6 +63,7 @@ export default function VerifyScreen() {
         user: {
           is_onboarded: boolean;
           first_name: string | null;
+          account_type: "staff" | "student" | null;
           school: { id: string } | null;
         };
       }>("/auth/otp/verify", {
@@ -71,10 +72,14 @@ export default function VerifyScreen() {
         skipAuthRedirect: true,
       });
       await refresh();
+      const isStudent = data.user.account_type === "student";
+
       if (data.user.school) {
-        router.replace("/(tabs)");
+        router.replace(isStudent ? "/(portal)" : "/(tabs)");
       } else if (data.user.first_name) {
-        router.replace("/(auth)/schools");
+        // Named but school-less: students still owe a claim code, staff still
+        // owe a school. Sending either back to onboard would just loop.
+        router.replace(isStudent ? "/(auth)/claim" : "/(auth)/schools");
       } else {
         router.replace("/(auth)/onboard");
       }

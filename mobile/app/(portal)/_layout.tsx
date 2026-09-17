@@ -1,26 +1,28 @@
 import { Redirect, Tabs } from "expo-router";
 import {
   LayoutDashboard,
-  Users,
-  UserRoundSearch,
+  ClipboardList,
+  CalendarCheck,
+  ScrollText,
   Settings,
-  LayoutGrid,
 } from "lucide-react-native";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
 
-export default function TabsLayout() {
+/**
+ * The student area. Staff are sent to the tabs; a student with no school has
+ * not redeemed a claim code yet, so there is nothing to show them here.
+ */
+export default function PortalLayout() {
   const { profile, loading } = useAuth();
   const { colors } = useTheme();
 
   if (loading) return <Loading />;
   if (!profile) return <Redirect href="/(auth)/login" />;
   if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
-  // The staff API denies students everything, so show them the portal rather
-  // than a tab bar of permission errors.
-  if (profile.account_type === "student") return <Redirect href="/(portal)" />;
-  if (!profile.school) return <Redirect href="/(auth)/schools" />;
+  if (profile.account_type !== "student") return <Redirect href="/(tabs)" />;
+  if (!profile.school) return <Redirect href="/(auth)/claim" />;
 
   return (
     <Tabs
@@ -39,34 +41,36 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
+          title: "Overview",
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
-        name="classes"
+        name="grades"
         options={{
-          title: "Classes",
-          tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="students"
-        options={{
-          title: "Students",
+          title: "Grades",
           tabBarIcon: ({ color, size }) => (
-            <UserRoundSearch color={color} size={size} />
+            <ClipboardList color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
-        name="more"
+        name="attendance"
         options={{
-          title: "More",
+          title: "Attendance",
           tabBarIcon: ({ color, size }) => (
-            <LayoutGrid color={color} size={size} />
+            <CalendarCheck color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          title: "Reports",
+          tabBarIcon: ({ color, size }) => (
+            <ScrollText color={color} size={size} />
           ),
         }}
       />

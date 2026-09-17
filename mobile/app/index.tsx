@@ -8,6 +8,14 @@ export default function Index() {
   if (loading) return <Loading />;
   if (!profile) return <Redirect href="/(auth)/login" />;
   if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
+
+  // Students live in the portal; without a school they have not redeemed a
+  // claim code yet, which is a different fix from picking a school.
+  if (profile.account_type === "student") {
+    if (!profile.school) return <Redirect href="/(auth)/claim" />;
+    return <Redirect href="/(portal)" />;
+  }
+
   if (!profile.school) return <Redirect href="/(auth)/schools" />;
   return <Redirect href="/(tabs)" />;
 }
