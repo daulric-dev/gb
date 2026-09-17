@@ -136,9 +136,9 @@ export function ClaimCodeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {loading.value ? (
-          <Skeleton className="h-24 w-full" />
-        ) : issuedCode.value ? (
+        {/* The issued code outranks the loading state: issuing triggers a
+            status refetch, and this is the only moment the code is visible. */}
+        {issuedCode.value ? (
           <div className="space-y-3">
             <div className="rounded-lg border bg-muted/40 p-4 text-center">
               <p className="font-mono text-2xl font-semibold tracking-widest">
@@ -168,6 +168,8 @@ export function ClaimCodeDialog({
               again - if it is lost, issue a new one.
             </p>
           </div>
+        ) : loading.value ? (
+          <Skeleton className="h-24 w-full" />
         ) : status.value?.hasAccount ? (
           <div className="flex items-start gap-3 rounded-lg border p-4">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />

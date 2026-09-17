@@ -56,6 +56,15 @@ export function StudentsRosterTable({
               <TableCell>
                 {student.user_profile_id ? (
                   <Badge variant="secondary">Linked</Badge>
+                ) : onManageAccount ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onManageAccount(student)}
+                  >
+                    <KeyRound className="mr-1.5 size-3.5" />
+                    Claim code
+                  </Button>
                 ) : (
                   <span className="text-xs text-muted-foreground">
                     No account
@@ -64,7 +73,7 @@ export function StudentsRosterTable({
               </TableCell>
               {canEdit && (
                 <TableCell className="text-right">
-                  {onManageAccount && (
+                  {onManageAccount && student.user_profile_id && (
                     <Button
                       variant="ghost"
                       size="sm"
