@@ -372,12 +372,91 @@ export type Database = {
   };
   grading: {
     Tables: {
+      activity: {
+        Row: {
+          allow_file: boolean;
+          allow_text: boolean;
+          assessment_id: string | null;
+          created_at: string;
+          created_by: string;
+          due_at: string | null;
+          grading_group_id: string | null;
+          id: string;
+          instructions: string | null;
+          kind: Database['grading']['Enums']['activity_kind'];
+          points: number;
+          published_at: string | null;
+          status: Database['grading']['Enums']['activity_status'];
+          student_group_id: string;
+          subject_id: string;
+          term_id: string;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          allow_file?: boolean;
+          allow_text?: boolean;
+          assessment_id?: string | null;
+          created_at?: string;
+          created_by: string;
+          due_at?: string | null;
+          grading_group_id?: string | null;
+          id?: string;
+          instructions?: string | null;
+          kind: Database['grading']['Enums']['activity_kind'];
+          points?: number;
+          published_at?: string | null;
+          status?: Database['grading']['Enums']['activity_status'];
+          student_group_id: string;
+          subject_id: string;
+          term_id: string;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          allow_file?: boolean;
+          allow_text?: boolean;
+          assessment_id?: string | null;
+          created_at?: string;
+          created_by?: string;
+          due_at?: string | null;
+          grading_group_id?: string | null;
+          id?: string;
+          instructions?: string | null;
+          kind?: Database['grading']['Enums']['activity_kind'];
+          points?: number;
+          published_at?: string | null;
+          status?: Database['grading']['Enums']['activity_status'];
+          student_group_id?: string;
+          subject_id?: string;
+          term_id?: string;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'activity_assessment_id_fkey';
+            columns: ['assessment_id'];
+            isOneToOne: false;
+            referencedRelation: 'assessment';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'activity_grading_group_id_fkey';
+            columns: ['grading_group_id'];
+            isOneToOne: false;
+            referencedRelation: 'grading_group';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       assessment: {
         Row: {
           assessment_date: string | null;
           assessment_type:
             Database['public']['Enums']['assessment_type'] | null;
           exclusion_reason: string | null;
+          grading_group_id: string | null;
           id: string;
           is_excluded: boolean | null;
           max_score: number | null;
@@ -392,6 +471,7 @@ export type Database = {
           assessment_type?:
             Database['public']['Enums']['assessment_type'] | null;
           exclusion_reason?: string | null;
+          grading_group_id?: string | null;
           id?: string;
           is_excluded?: boolean | null;
           max_score?: number | null;
@@ -406,6 +486,7 @@ export type Database = {
           assessment_type?:
             Database['public']['Enums']['assessment_type'] | null;
           exclusion_reason?: string | null;
+          grading_group_id?: string | null;
           id?: string;
           is_excluded?: boolean | null;
           max_score?: number | null;
@@ -415,7 +496,15 @@ export type Database = {
           title?: string | null;
           weight?: number | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'assessment_grading_group_id_fkey';
+            columns: ['grading_group_id'];
+            isOneToOne: false;
+            referencedRelation: 'grading_group';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       grade: {
         Row: {
@@ -553,15 +642,233 @@ export type Database = {
           },
         ];
       };
+      grading_group: {
+        Row: {
+          created_at: string;
+          id: string;
+          name: string;
+          sort_order: number;
+          subject_id: string | null;
+          term_id: string;
+          weight: number;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          name: string;
+          sort_order?: number;
+          subject_id?: string | null;
+          term_id: string;
+          weight?: number;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          name?: string;
+          sort_order?: number;
+          subject_id?: string | null;
+          term_id?: string;
+          weight?: number;
+        };
+        Relationships: [];
+      };
+      quiz_answer: {
+        Row: {
+          id: string;
+          option_id: string | null;
+          question_id: string;
+          submission_id: string;
+        };
+        Insert: {
+          id?: string;
+          option_id?: string | null;
+          question_id: string;
+          submission_id: string;
+        };
+        Update: {
+          id?: string;
+          option_id?: string | null;
+          question_id?: string;
+          submission_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'quiz_answer_option_id_fkey';
+            columns: ['option_id'];
+            isOneToOne: false;
+            referencedRelation: 'quiz_option';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'quiz_answer_question_id_fkey';
+            columns: ['question_id'];
+            isOneToOne: false;
+            referencedRelation: 'quiz_question';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'quiz_answer_submission_id_fkey';
+            columns: ['submission_id'];
+            isOneToOne: false;
+            referencedRelation: 'submission';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      quiz_option: {
+        Row: {
+          id: string;
+          is_correct: boolean;
+          label: string;
+          question_id: string;
+          sort_order: number;
+        };
+        Insert: {
+          id?: string;
+          is_correct?: boolean;
+          label: string;
+          question_id: string;
+          sort_order?: number;
+        };
+        Update: {
+          id?: string;
+          is_correct?: boolean;
+          label?: string;
+          question_id?: string;
+          sort_order?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'quiz_option_question_id_fkey';
+            columns: ['question_id'];
+            isOneToOne: false;
+            referencedRelation: 'quiz_question';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      quiz_question: {
+        Row: {
+          activity_id: string;
+          created_at: string;
+          id: string;
+          kind: Database['grading']['Enums']['question_kind'];
+          points: number;
+          prompt: string;
+          sort_order: number;
+        };
+        Insert: {
+          activity_id: string;
+          created_at?: string;
+          id?: string;
+          kind: Database['grading']['Enums']['question_kind'];
+          points?: number;
+          prompt: string;
+          sort_order?: number;
+        };
+        Update: {
+          activity_id?: string;
+          created_at?: string;
+          id?: string;
+          kind?: Database['grading']['Enums']['question_kind'];
+          points?: number;
+          prompt?: string;
+          sort_order?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'quiz_question_activity_id_fkey';
+            columns: ['activity_id'];
+            isOneToOne: false;
+            referencedRelation: 'activity';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      submission: {
+        Row: {
+          activity_id: string;
+          created_at: string;
+          feedback: string | null;
+          file_id: string | null;
+          graded_at: string | null;
+          graded_by: string | null;
+          id: string;
+          score: number | null;
+          status: Database['grading']['Enums']['submission_status'];
+          student_id: string;
+          submitted_at: string | null;
+          text_body: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          activity_id: string;
+          created_at?: string;
+          feedback?: string | null;
+          file_id?: string | null;
+          graded_at?: string | null;
+          graded_by?: string | null;
+          id?: string;
+          score?: number | null;
+          status?: Database['grading']['Enums']['submission_status'];
+          student_id: string;
+          submitted_at?: string | null;
+          text_body?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          activity_id?: string;
+          created_at?: string;
+          feedback?: string | null;
+          file_id?: string | null;
+          graded_at?: string | null;
+          graded_by?: string | null;
+          id?: string;
+          score?: number | null;
+          status?: Database['grading']['Enums']['submission_status'];
+          student_id?: string;
+          submitted_at?: string | null;
+          text_body?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'submission_activity_id_fkey';
+            columns: ['activity_id'];
+            isOneToOne: false;
+            referencedRelation: 'activity';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      resolve_grading_groups: {
+        Args: { p_subject_id: string; p_term_id: string };
+        Returns: {
+          id: string;
+          is_subject_specific: boolean;
+          name: string;
+          sort_order: number;
+          weight: number;
+        }[];
+      };
+      submit_quiz: {
+        Args: { p_student_id: string; p_submission_id: string };
+        Returns: {
+          points: number;
+          score: number;
+        }[];
+      };
     };
     Enums: {
-      [_ in never]: never;
+      activity_kind: 'quiz' | 'assignment';
+      activity_status: 'draft' | 'published' | 'closed';
+      question_kind: 'multiple_choice' | 'true_false';
+      submission_status: 'draft' | 'submitted' | 'graded';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -1159,6 +1466,32 @@ export type Database = {
         Args: { p_group_id: string; p_subject_id: string };
         Returns: boolean;
       };
+      is_staff: { Args: never; Returns: boolean };
+      merge_student_records: {
+        Args: {
+          p_admin_id: string;
+          p_existing_id: string;
+          p_joined_id: string;
+        };
+        Returns: {
+          student_id: string;
+        }[];
+      };
+      redeem_school_join_code: {
+        Args: { p_code_hash: string; p_user_id: string };
+        Returns: {
+          school_id: string;
+          student_id: string;
+        }[];
+      };
+      student_duplicate_candidates: {
+        Args: { p_school_id: string };
+        Returns: {
+          existing_id: string;
+          full_name: string;
+          joined_id: string;
+        }[];
+      };
     };
     Enums: {
       account_type: 'staff' | 'student';
@@ -1527,6 +1860,36 @@ export type Database = {
           },
         ];
       };
+      school_join_code: {
+        Row: {
+          code_hash: string;
+          created_at: string;
+          created_by: string;
+          expires_at: string;
+          id: string;
+          revoked_at: string | null;
+          school_id: string;
+        };
+        Insert: {
+          code_hash: string;
+          created_at?: string;
+          created_by: string;
+          expires_at: string;
+          id?: string;
+          revoked_at?: string | null;
+          school_id: string;
+        };
+        Update: {
+          code_hash?: string;
+          created_at?: string;
+          created_by?: string;
+          expires_at?: string;
+          id?: string;
+          revoked_at?: string | null;
+          school_id?: string;
+        };
+        Relationships: [];
+      };
       student: {
         Row: {
           date_of_birth: string | null;
@@ -1562,50 +1925,6 @@ export type Database = {
           user_profile_id?: string | null;
         };
         Relationships: [];
-      };
-      student_claim_code: {
-        Row: {
-          code_hash: string;
-          created_at: string;
-          created_by: string;
-          expires_at: string;
-          id: string;
-          redeemed_at: string | null;
-          redeemed_by: string | null;
-          school_id: string;
-          student_id: string;
-        };
-        Insert: {
-          code_hash: string;
-          created_at?: string;
-          created_by: string;
-          expires_at: string;
-          id?: string;
-          redeemed_at?: string | null;
-          redeemed_by?: string | null;
-          school_id: string;
-          student_id: string;
-        };
-        Update: {
-          code_hash?: string;
-          created_at?: string;
-          created_by?: string;
-          expires_at?: string;
-          id?: string;
-          redeemed_at?: string | null;
-          redeemed_by?: string | null;
-          school_id?: string;
-          student_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'student_claim_code_student_id_fkey';
-            columns: ['student_id'];
-            isOneToOne: false;
-            referencedRelation: 'student';
-            referencedColumns: ['id'];
-          },
-        ];
       };
       student_group_enrollment: {
         Row: {
@@ -1814,7 +2133,12 @@ export const Constants = {
     },
   },
   grading: {
-    Enums: {},
+    Enums: {
+      activity_kind: ['quiz', 'assignment'],
+      activity_status: ['draft', 'published', 'closed'],
+      question_kind: ['multiple_choice', 'true_false'],
+      submission_status: ['draft', 'submitted', 'graded'],
+    },
   },
   public: {
     Enums: {
