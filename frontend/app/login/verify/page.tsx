@@ -49,10 +49,10 @@ function VerifyOtpForm() {
 
       if (data.user.is_onboarded) {
         router.push(isStudent ? "/portal" : "/dashboard");
-      } else if (isStudent && data.user.first_name) {
-        // Named but school-less: they picked student and still owe a claim
-        // code. Sending them back to /onboard would just loop.
-        router.push("/claim");
+      } else if (data.user.first_name) {
+        // Named but school-less: they still have to join one. Sending them
+        // back to /onboard would just loop.
+        router.push("/schools");
       } else {
         router.push("/onboard");
       }

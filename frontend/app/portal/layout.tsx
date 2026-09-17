@@ -61,7 +61,7 @@ export default function PortalLayout({
       return;
     }
     if (!profile.value.school) {
-      router.replace("/claim");
+      router.replace("/schools");
     }
   }, [loading.value, profile.value, router]);
 

@@ -173,7 +173,7 @@ export class SchoolService {
       .from('school_join_request')
       .select(
         `id, status, message, requested_at,
-         user:user_id ( id, first_name, last_name ),
+         user:user_id ( id, first_name, last_name, account_type ),
          school:school_id ( id, name )`,
       )
       .eq('school_id', adminProfile.school_id)
@@ -188,11 +188,70 @@ export class SchoolService {
     return data ?? [];
   }
 
+  /**
+   * Approve a student join request: link the login to an existing student
+   * record, or create one when the school has none for them yet. The database
+   * function does all of it in one transaction.
+   */
+  private async approveStudentRequest(
+    adminUserId: string,
+    requestId: string,
+    studentId?: string,
+  ) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase.rpc('approve_student_join_request', {
+      p_admin_id: adminUserId,
+      p_request_id: requestId,
+      p_student_id: studentId ?? undefined,
+    });
+
+    if (error) {
+      const detail = `${error.code ?? ''} ${error.message ?? ''}`;
+
+      if (detail.includes('student_unavailable')) {
+        throw new BadRequestException(
+          'That student record is already linked to an account, or belongs to another school',
+        );
+      }
+      if (detail.includes('request_already_reviewed')) {
+        throw new BadRequestException('This request has already been reviewed');
+      }
+      if (detail.includes('request_other_school')) {
+        throw new ForbiddenException(
+          'This request does not belong to your school',
+        );
+      }
+      if (detail.includes('request_not_found')) {
+        throw new NotFoundException('Join request not found');
+      }
+
+      this.logger.error(
+        `Failed to approve student request ${requestId}: ${error.message}`,
+      );
+      throw new BadRequestException('Failed to approve request');
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+
+    this.logger.log(
+      `Student join request ${requestId} approved; linked student ${row?.student_id}`,
+    );
+
+    return {
+      id: requestId,
+      status: 'approved' as const,
+      studentId: row?.student_id ?? null,
+      schoolId: row?.school_id ?? null,
+    };
+  }
+
   async approveRequest(
     adminUserId: string,
     requestId: string,
     role: 'admin' | 'member' | 'teacher' | null,
     customRoleIds: string[] = [],
+    studentId?: string,
   ) {
     const supabase = this.supabaseService.getServiceClient();
 
@@ -214,6 +273,18 @@ export class SchoolService {
 
     if (!request) {
       throw new NotFoundException('Join request not found');
+    }
+
+    // A student joins with a record, not a role. Everything below - membership,
+    // custom roles, the profile role - is staff-shaped and does not apply.
+    const { data: requester } = await supabase
+      .from('user_profile')
+      .select('account_type')
+      .eq('id', request.user_id)
+      .maybeSingle();
+
+    if (requester?.account_type === 'student') {
+      return this.approveStudentRequest(adminUserId, requestId, studentId);
     }
 
     if (request.school_id !== adminProfile.school_id) {

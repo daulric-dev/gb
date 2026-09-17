@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
+import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import { GraduationCap, Briefcase } from "lucide-react";
 
@@ -36,7 +37,7 @@ const OPTIONS: {
   {
     value: "student",
     title: "Student",
-    description: "You have a claim code from your school",
+    description: "Join your school and see your own grades",
     icon: GraduationCap,
   },
 ];
@@ -45,6 +46,7 @@ export default function OnboardPage() {
   useSignals();
 
   const router = useRouter();
+  const { refresh } = useAuth();
   const firstName = useSignal("");
   const lastName = useSignal("");
   const accountType = useSignal<AccountType>("staff");
@@ -63,9 +65,12 @@ export default function OnboardPage() {
           accountType: accountType.value,
         },
       });
-      // Neither branch grants anything on its own: staff still need an admin to
-      // approve their join request, students still need a valid claim code.
-      router.push(accountType.value === "student" ? "/claim" : "/schools");
+      // Onboarding sets account_type server-side, so the cached profile is
+      // stale until this resolves and the next page would misroute.
+      await refresh();
+      // Both branches land on the school list and request to join; an admin
+      // approves either way. Neither choice grants anything by itself.
+      router.push("/schools");
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Onboarding failed";

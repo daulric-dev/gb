@@ -12,7 +12,7 @@ export default function Index() {
   // Students live in the portal; without a school they have not redeemed a
   // claim code yet, which is a different fix from picking a school.
   if (profile.account_type === "student") {
-    if (!profile.school) return <Redirect href="/(auth)/claim" />;
+    if (!profile.school) return <Redirect href="/(auth)/schools" />;
     return <Redirect href="/(portal)" />;
   }
 

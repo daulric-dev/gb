@@ -79,7 +79,7 @@ export default function VerifyScreen() {
       } else if (data.user.first_name) {
         // Named but school-less: students still owe a claim code, staff still
         // owe a school. Sending either back to onboard would just loop.
-        router.replace(isStudent ? "/(auth)/claim" : "/(auth)/schools");
+        router.replace("/(auth)/schools");
       } else {
         router.replace("/(auth)/onboard");
       }

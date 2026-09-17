@@ -98,9 +98,25 @@ Updates a student. All fields are optional, plus `isActive` can be toggled.
 
 ## Student accounts and RLS
 
-A student logs in with the same email OTP as staff, then redeems a
-school-issued claim code that links the login to a `student.student` row and
-sets `user_profile.account_type = 'student'`. Students get **no**
+A student logs in with the same email OTP as staff and picks "Student" at
+onboarding, then joins a school one of two ways:
+
+- **Self-join (the usual path).** They pick the school on `/schools` and
+  request to join, exactly as staff do. An admin approves under
+  **Staff -> Pending Members** and, in the same dialog, either links them to
+  the student record the school already has or creates a new one.
+- **Claim code.** A staff member issues a per-student code from the roster
+  (**Students -> Account -> Claim code**) and the student redeems it. Useful
+  when the school wants to hand out credentials directly.
+
+Either way the login ends up linked to a `student.student` row with
+`user_profile.account_type = 'student'`.
+
+Approval matters because of reconciliation: grades and attendance are keyed to
+`student.student.id`, so a self-joining student who is already on the roster
+must be matched to that row or their history is stranded on a record nobody is
+linked to. `approve_student_join_request` does the match, the profile update
+and the request close in one transaction. Students get **no**
 `school_management` row and **no** catalog permissions, so `PermissionGuard`
 denies them every staff route; their access comes from `StudentGuard` and the
 self-scoped `/portal/me/*` endpoints.

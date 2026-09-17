@@ -25,6 +25,8 @@ export interface JoinRequest {
     first_name: string | null;
     last_name: string | null;
     email: string | null;
+    /** Students join with a student record, not a role. */
+    account_type?: "staff" | "student" | null;
   } | null;
   school: { id: string; name: string } | null;
 }

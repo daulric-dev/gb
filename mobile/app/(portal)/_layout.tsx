@@ -22,7 +22,7 @@ export default function PortalLayout() {
   if (!profile) return <Redirect href="/(auth)/login" />;
   if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
   if (profile.account_type !== "student") return <Redirect href="/(tabs)" />;
-  if (!profile.school) return <Redirect href="/(auth)/claim" />;
+  if (!profile.school) return <Redirect href="/(auth)/schools" />;
 
   return (
     <Tabs

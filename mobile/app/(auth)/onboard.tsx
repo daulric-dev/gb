@@ -46,11 +46,9 @@ export default function OnboardScreen() {
         skipAuthRedirect: true,
       });
       await refresh();
-      // Neither branch grants anything: staff still need an admin to approve
-      // their join request, students still need a valid claim code.
-      router.replace(
-        accountType === "student" ? "/(auth)/claim" : "/(auth)/schools",
-      );
+      // Both branches request to join a school and wait for an admin; the
+      // choice decides what they are approved as, not whether they get in.
+      router.replace("/(auth)/schools");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Onboarding failed");
     } finally {
@@ -102,7 +100,7 @@ export default function OnboardScreen() {
             />
             <Text variant="muted" style={{ fontSize: 12 }}>
               {accountType === "student"
-                ? "You will need the claim code your school gave you."
+                ? "Request to join your school; an administrator approves you."
                 : "An administrator approves staff before you get access."}
             </Text>
           </View>

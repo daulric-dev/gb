@@ -134,7 +134,9 @@ export default function SchoolsPage() {
 
   useEffect(() => {
     if (!profileLoading.value && profile.value?.school) {
-      router.replace("/dashboard");
+      router.replace(
+        profile.value.account_type === "student" ? "/portal" : "/dashboard",
+      );
     }
   }, [profileLoading.value, profile.value?.school, router]);
 

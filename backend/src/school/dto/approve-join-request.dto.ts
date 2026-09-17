@@ -17,4 +17,14 @@ export class ApproveJoinRequestDto {
   @IsArray()
   @IsUUID('4', { each: true })
   customRoleIds?: string[];
+
+  /**
+   * Student requests only: the existing student record to link this login to.
+   * Omit to create a new record. Ignored for staff requests, which take a role
+   * instead.
+   */
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsUUID()
+  studentId?: string;
 }
