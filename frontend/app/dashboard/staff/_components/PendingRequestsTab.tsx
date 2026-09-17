@@ -24,13 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, Loader2, UserPlus, X } from "lucide-react";
-interface UnlinkedStudent {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  user_profile_id: string | null;
-}
-
 import type { JoinRequest } from "./types";
 
 type Role = "admin" | "teacher" | "member" | null;
@@ -95,9 +88,6 @@ export function PendingRequestsTab({
   useSignals();
 
   const approveDialogOpen = useSignal(false);
-  /** Unlinked student records offered when approving a student request. */
-  const studentOptions = useSignal<UnlinkedStudent[]>([]);
-  const selectedStudentId = useSignal<string>("new");
   const selectedRequest = useSignal<JoinRequest | null>(null);
   const selectedRole = useSignal<Role>("member");
   const customRoles = useSignal<CustomRole[]>([]);
@@ -115,56 +105,25 @@ export function PendingRequestsTab({
         );
       })
       .catch(() => (customRoles.value = []));
-    if (request.user?.account_type === "student") loadStudentOptions();
     approveDialogOpen.value = true;
   }
-
-  /**
-   * Schools usually already have the roster, so a self-joining student is
-   * normally an existing record rather than a new one. Offer the unlinked
-   * records so their grades and attendance stay attached.
-   */
-  function loadStudentOptions() {
-    selectedStudentId.value = "new";
-    studentOptions.value = [];
-    void api<UnlinkedStudent[]>("/students")
-      .then((all) => {
-        studentOptions.value = all.filter((s) => !s.user_profile_id);
-      })
-      .catch(() => (studentOptions.value = []));
-  }
-
-  const isStudentRequest =
-    selectedRequest.value?.user?.account_type === "student";
 
   async function handleApprove() {
     const request = selectedRequest.value;
     if (!request) return;
     actionLoading.value = true;
     try {
-      const isStudent = request.user?.account_type === "student";
-
       await api(`/schools/join-requests/${request.id}/approve`, {
         method: "PATCH",
-        body: isStudent
-          ? {
-              role: null,
-              studentId:
-                selectedStudentId.value === "new"
-                  ? undefined
-                  : selectedStudentId.value,
-            }
-          : {
-              role: selectedRole.value,
-              customRoleIds: [...selectedCustomRoleIds.value],
-            },
+        body: {
+          role: selectedRole.value,
+          customRoleIds: [...selectedCustomRoleIds.value],
+        },
       });
       onChange(requests.filter((r) => r.id !== request.id));
       approveDialogOpen.value = false;
       toast.success(
-        isStudent
-          ? `${getRequestName(request)} has been approved as a student.`
-          : `${getRequestName(request)} has been approved as ${selectedRole.value}.`,
+        `${getRequestName(request)} has been approved as ${selectedRole.value}.`,
       );
       onApproved?.();
     } catch (err) {
@@ -258,52 +217,14 @@ export function PendingRequestsTab({
           <DialogHeader>
             <DialogTitle>Approve Join Request</DialogTitle>
             <DialogDescription>
-              {isStudentRequest
-                ? "Choose which student record this login belongs to."
-                : "Assign a role to "}
-              {isStudentRequest
-                ? ""
-                : selectedRequest.value
-                  ? getRequestName(selectedRequest.value)
-                  : "this user"}
-              {isStudentRequest ? "" : "."}
+              Assign a role to{" "}
+              {selectedRequest.value
+                ? getRequestName(selectedRequest.value)
+                : "this user"}
+              .
             </DialogDescription>
           </DialogHeader>
 
-          {isStudentRequest ? (
-            <div className="space-y-2 py-2">
-              <Label htmlFor="studentRecord">Student record</Label>
-              <Select
-                value={selectedStudentId.value}
-                onValueChange={(v) => (selectedStudentId.value = v as string)}
-                items={[
-                  { value: "new", label: "Create a new record" },
-                  ...studentOptions.value.map((s) => ({
-                    value: s.id,
-                    label: `${s.first_name ?? ""} ${s.last_name ?? ""}`.trim(),
-                  })),
-                ]}
-              >
-                <SelectTrigger id="studentRecord" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new">Create a new record</SelectItem>
-                  {studentOptions.value.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {`${s.first_name ?? ""} ${s.last_name ?? ""}`.trim()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Link them to the record the school already has, so their grades
-                and attendance stay attached. Create a new one only if they are
-                not on the roster yet.
-              </p>
-            </div>
-          ) : (
-            <>
           <div className="space-y-2 py-2">
             <Label htmlFor="role">Role</Label>
             <Select
@@ -354,8 +275,6 @@ export function PendingRequestsTab({
                 );
               })}
             </div>
-          )}
-            </>
           )}
           <DialogFooter>
             <Button

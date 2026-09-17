@@ -5,7 +5,7 @@ import { GraduationCap, LogOut, Plus, Search } from "lucide-react-native";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { homeRouteFor, isStudentProfile } from "@/lib/routing";
-import { ClaimCodeForm } from "@/components/auth/ClaimCodeForm";
+import { JoinCodeForm } from "@/components/auth/JoinCodeForm";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -197,7 +197,7 @@ export default function SchoolsScreen() {
             </Text>
           </View>
 
-          <ClaimCodeForm />
+          <JoinCodeForm />
 
           <Button variant="ghost" onPress={handleLogout}>
             Log out

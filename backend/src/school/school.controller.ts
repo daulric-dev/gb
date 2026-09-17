@@ -89,7 +89,6 @@ export class SchoolController {
       requestId,
       dto.role,
       dto.customRoleIds,
-      dto.studentId,
     );
   }
 

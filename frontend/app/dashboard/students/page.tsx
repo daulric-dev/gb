@@ -17,8 +17,8 @@ import { StudentsSearchField } from "./_components/StudentsSearchField";
 import { StudentsRosterTable } from "./_components/StudentsRosterTable";
 import { CreateStudentForm } from "./_components/CreateStudentForm";
 import { EditStudentForm } from "./_components/EditStudentForm";
-import { ClaimCodeDialog } from "./_components/ClaimCodeDialog";
 import { SchoolJoinCodeDialog } from "./_components/SchoolJoinCodeDialog";
+import { DuplicateStudentsCard } from "./_components/DuplicateStudentsCard";
 
 export default function StudentsPage() {
   useSignals();
@@ -28,7 +28,6 @@ export default function StudentsPage() {
   const search = useSignal("");
   const createOpen = useSignal(false);
   const editStudent = useSignal<Student | null>(null);
-  const accountStudent = useSignal<Student | null>(null);
   const joinCodeOpen = useSignal(false);
 
   const fetchStudents = useCallback((query?: string) => {
@@ -100,6 +99,11 @@ export default function StudentsPage() {
         }
       />
 
+      <DuplicateStudentsCard
+        canMerge={can("student", "update")}
+        onMergedAction={() => fetchStudents(search.value)}
+      />
+
       <StudentsSearchField
         value={search.value}
         onChange={(e) => (search.value = e.target.value)}
@@ -121,11 +125,6 @@ export default function StudentsPage() {
         <StudentsRosterTable
           students={students.value}
           onEdit={(student) => (editStudent.value = student)}
-          onManageAccount={
-            can("student", "update")
-              ? (student) => (accountStudent.value = student)
-              : undefined
-          }
           canEdit={can("student", "update")}
         />
       )}
@@ -159,14 +158,6 @@ export default function StudentsPage() {
         open={joinCodeOpen.value}
         onOpenChangeAction={(v) => (joinCodeOpen.value = v)}
         canIssue={can("student", "create")}
-      />
-
-      <ClaimCodeDialog
-        student={accountStudent.value}
-        onOpenChangeAction={(open) => {
-          if (!open) accountStudent.value = null;
-        }}
-        onChangedAction={() => fetchStudents(search.value)}
       />
     </div>
   );

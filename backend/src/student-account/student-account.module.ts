@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
-import { StudentClaimController } from './student-claim.controller';
-import { SchoolJoinCodeController } from './school-join-code.controller';
-import { StudentClaimService } from './student-claim.service';
+import {
+  SchoolJoinCodeController,
+  StudentDuplicateController,
+} from './school-join-code.controller';
+import { StudentMembershipService } from './student-membership.service';
 
 @Module({
-  controllers: [StudentClaimController, SchoolJoinCodeController],
-  providers: [StudentClaimService],
-  // AuthModule redeems codes during the student onboarding flow.
-  exports: [StudentClaimService],
+  controllers: [SchoolJoinCodeController, StudentDuplicateController],
+  providers: [StudentMembershipService],
+  // AuthModule redeems the join code during student onboarding.
+  exports: [StudentMembershipService],
 })
 export class StudentAccountModule {}

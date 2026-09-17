@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { homePathFor, isStudentProfile } from "@/lib/routing";
-import { ClaimCodeForm } from "@/components/auth/claim-code-form";
+import { JoinCodeForm } from "@/components/auth/join-code-form";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -226,7 +226,7 @@ export default function SchoolsPage() {
             </h1>
           </div>
 
-          <ClaimCodeForm />
+          <JoinCodeForm />
 
           <button
             type="button"

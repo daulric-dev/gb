@@ -25,7 +25,7 @@ import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
 import { ClaimStudentDto } from '@/auth/dto/claim-student.dto';
-import { StudentClaimService } from '@/student-account/student-claim.service';
+import { StudentMembershipService } from '@/student-account/student-membership.service';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
@@ -41,7 +41,7 @@ export class AuthController {
     private readonly imagesService: ImagesService,
     private readonly supabaseService: SupabaseService,
     private readonly versioning: VersioningService,
-    private readonly studentClaimService: StudentClaimService,
+    private readonly membership: StudentMembershipService,
   ) {}
 
   @Post('otp/send')
@@ -90,31 +90,13 @@ export class AuthController {
     return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
-  /**
-   * Redeem a school-issued claim code, binding this login to a student record.
-   * Throttled per session/IP: a 12-character code is guessable given enough
-   * attempts, and this is the only endpoint that accepts one.
-   */
-  @ApiBearerAuth()
-  @UseGuards(AuthGuard)
-  @Throttle({ 'claim-code': { limit: 10, ttl: 15 * 60 * 1000 } })
-  @Post('claim-student')
-  async claimStudent(@Req() req: any, @Body() dto: ClaimStudentDto) {
-    const userId: string = req.user.id;
-    return this.studentClaimService.redeem(userId, dto.code);
-  }
-
-  /**
-   * Redeem the school's join code: creates this caller's student record and
-   * binds them to the school. Throttled like the claim route.
-   */
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Throttle({ 'claim-code': { limit: 10, ttl: 15 * 60 * 1000 } })
   @Post('join-school')
   async joinSchool(@Req() req: any, @Body() dto: ClaimStudentDto) {
     const userId: string = req.user.id;
-    return this.studentClaimService.redeemSchoolCode(userId, dto.code);
+    return this.membership.joinByCode(userId, dto.code);
   }
 
   @ApiBearerAuth()

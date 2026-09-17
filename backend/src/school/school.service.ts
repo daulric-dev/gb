@@ -188,89 +188,11 @@ export class SchoolService {
     return data ?? [];
   }
 
-  /**
-   * Approve a student join request: link the login to an existing student
-   * record, or create one when the school has none for them yet. The database
-   * function does all of it in one transaction.
-   */
-  private async approveStudentRequest(
-    adminUserId: string,
-    requestId: string,
-    userId: string,
-    studentId?: string,
-  ) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data, error } = await supabase.rpc('approve_student_join_request', {
-      p_admin_id: adminUserId,
-      p_request_id: requestId,
-      p_student_id: studentId ?? undefined,
-    });
-
-    if (error) {
-      const detail = `${error.code ?? ''} ${error.message ?? ''}`;
-
-      if (detail.includes('student_unavailable')) {
-        throw new BadRequestException(
-          'That student record is already linked to an account, or belongs to another school',
-        );
-      }
-      if (detail.includes('request_already_reviewed')) {
-        throw new BadRequestException('This request has already been reviewed');
-      }
-      if (detail.includes('request_other_school')) {
-        throw new ForbiddenException(
-          'This request does not belong to your school',
-        );
-      }
-      if (detail.includes('request_not_found')) {
-        throw new NotFoundException('Join request not found');
-      }
-
-      // PGRST202 means the function is not in the schema cache - almost always
-      // a database that has not had the student-account migrations applied.
-      // Without this the operator sees only "Failed to approve request".
-      if (error.code === 'PGRST202') {
-        this.logger.error(
-          `approve_student_join_request is missing from the database. Apply the student-account migrations (supabase db push / db reset). Detail: ${error.message}`,
-        );
-        throw new BadRequestException(
-          'Student approval is unavailable: the database is missing approve_student_join_request. Apply the pending migrations.',
-        );
-      }
-
-      this.logger.error(
-        `Failed to approve student request ${requestId}: ${error.message}`,
-      );
-      throw new BadRequestException('Failed to approve request');
-    }
-
-    const row = Array.isArray(data) ? data[0] : data;
-
-    // The staff path clears this further down; the student path returns before
-    // reaching it. Without this the profile stays cached without a school for
-    // the full TTL, and the student is never routed to the portal.
-    await this.cache.delete(`profile:${userId}`);
-    await this.cache.delete(`student-context:${userId}`);
-
-    this.logger.log(
-      `Student join request ${requestId} approved; linked student ${row?.student_id}`,
-    );
-
-    return {
-      id: requestId,
-      status: 'approved' as const,
-      studentId: row?.student_id ?? null,
-      schoolId: row?.school_id ?? null,
-    };
-  }
-
   async approveRequest(
     adminUserId: string,
     requestId: string,
     role: 'admin' | 'member' | 'teacher' | null,
     customRoleIds: string[] = [],
-    studentId?: string,
   ) {
     const supabase = this.supabaseService.getServiceClient();
 
@@ -294,8 +216,8 @@ export class SchoolService {
       throw new NotFoundException('Join request not found');
     }
 
-    // A student joins with a record, not a role. Everything below - membership,
-    // custom roles, the profile role - is staff-shaped and does not apply.
+    // Students do not arrive this way: they join with the school's code, which
+    // creates their record directly. Join requests are staff only.
     const { data: requester } = await supabase
       .from('user_profile')
       .select('account_type')
@@ -303,11 +225,8 @@ export class SchoolService {
       .maybeSingle();
 
     if (requester?.account_type === 'student') {
-      return this.approveStudentRequest(
-        adminUserId,
-        requestId,
-        request.user_id,
-        studentId,
+      throw new BadRequestException(
+        'Students join with the school join code, not a join request',
       );
     }
 

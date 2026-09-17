@@ -31,17 +31,11 @@ function format(value: string) {
 }
 
 /**
- * The student's way into a school.
- *
- * `school` redeems the school-wide join code and creates their record;
- * `student` redeems a code issued against one existing roster row. Same shape
- * and same field, so the caller picks which endpoint the code goes to.
+ * The student's only way into a school: redeem the code their school issued.
+ * Redemption creates their student record, so nobody has to add them to the
+ * roster first.
  */
-export function ClaimCodeForm({
-  mode = "school",
-}: {
-  mode?: "school" | "student";
-}) {
+export function JoinCodeForm() {
   useSignals();
 
   const router = useRouter();
@@ -57,14 +51,14 @@ export function ClaimCodeForm({
     loading.value = true;
 
     try {
-      await api(mode === "school" ? "/auth/join-school" : "/auth/claim-student", {
+      await api("/auth/join-school", {
         method: "POST",
         body: { code: code.value },
       });
       // The claim sets school and account type server-side, so the cached
       // profile is stale until this resolves.
       await refresh();
-      toast.success("Account linked");
+      toast.success("You have joined the school");
       router.push("/portal");
     } catch (err) {
       const message =
@@ -80,9 +74,7 @@ export function ClaimCodeForm({
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Enter your join code</CardTitle>
         <CardDescription>
-          {mode === "school"
-            ? "Your school gives you a code that lets you join it."
-            : "Your school gives you a code that links this login to your student record."}
+          Your school gives you a code that lets you join it.
         </CardDescription>
       </CardHeader>
       <CardContent>
