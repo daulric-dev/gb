@@ -13,6 +13,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { SchoolService } from './school.service';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AdminGuard } from '@/auth/admin.guard';
+import { PermissionGuard } from '@/permission/permission.guard';
+import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { CreateJoinRequestDto } from './dto/create-join-request.dto';
@@ -20,7 +22,7 @@ import { ApproveJoinRequestDto } from './dto/approve-join-request.dto';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 @Controller('schools')
 export class SchoolController {
   constructor(
@@ -40,6 +42,10 @@ export class SchoolController {
     return this.schoolService.getMyPendingRequest(userId);
   }
 
+  // The only school route a catalog permission can guard: every other route
+  // here is self-service onboarding (no school context to resolve yet) or
+  // staff management behind AdminGuard.
+  @RequirePermission('school', 'read')
   @Get('members')
   async getMembers(@Req() req: any) {
     const userId: string = req.user.id;

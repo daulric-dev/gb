@@ -153,6 +153,14 @@ export default function AttendancePage() {
     );
   }
 
+  if (!can("attendance", "read")) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        You do not have permission to view attendance for this class.
+      </div>
+    );
+  }
+
   const canMark = can("attendance", "create") && classInfo.value.isClassTeacher;
   const totalMarked = Object.keys(marks.value).length;
   const totalStudents = roster.value.length;

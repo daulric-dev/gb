@@ -32,6 +32,7 @@ import { CreateYearForm } from "./_components/CreateYearForm";
 import { EditYearForm } from "./_components/EditYearForm";
 import { TermsTab } from "./_components/TermsTab";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { PermissionDenied } from "@/components/dashboard/permission-denied";
 
 export default function AcademicYearsPage() {
   useSignals();
@@ -200,6 +201,16 @@ export default function AcademicYearsPage() {
       )}
     </div>
   );
+
+  if (!can("academic-year", "read")) {
+    return (
+      <PermissionDenied
+        title="Academic Calendar"
+        description="Manage academic years and terms"
+        message="You do not have permission to view the academic calendar."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

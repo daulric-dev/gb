@@ -25,6 +25,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Loader2 } from "lucide-react";
 import type { SchoolMember } from "./types";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 interface CustomRole {
   id: string;
@@ -54,8 +55,8 @@ export function MemberRolesDialog({
   onOpenChangeAction,
   onRolesChangedAction,
 }: MemberRolesDialogActionProps) {
-  
   useSignals();
+  const { refresh: refreshPermissions } = usePermissions();
   const roles = useSignal<CustomRole[]>([]);
   const assigned = useSignal<Set<string>>(new Set());
   const loading = useSignal(true);
@@ -95,6 +96,7 @@ export function MemberRolesDialog({
       member.role = role;
       baseRole.value = role;
       toast.success("Default role updated");
+      await refreshPermissions();
       onRolesChangedAction?.();
     } catch (err) {
       baseRole.value = member.role;
@@ -120,6 +122,7 @@ export function MemberRolesDialog({
       if (on) next.add(roleId);
       else next.delete(roleId);
       assigned.value = next;
+      await refreshPermissions();
       onRolesChangedAction?.();
     } catch (err) {
       toast.error(

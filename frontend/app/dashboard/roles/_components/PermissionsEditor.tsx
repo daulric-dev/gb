@@ -18,6 +18,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import type { CatalogEntry, SchoolRole } from "./types";
 
 const ACTION_ORDER: CatalogEntry["action"][] = [
@@ -54,6 +55,7 @@ export function PermissionsEditor({
   onSavedAction: () => void;
 }) {
   useSignals();
+  const { refresh: refreshPermissions } = usePermissions();
   const selected = useSignal<Set<string>>(new Set());
   const loading = useSignal(true);
   const saving = useSignal(false);
@@ -99,6 +101,9 @@ export function PermissionsEditor({
         body: { keys: [...selected.value] },
       });
       toast.success(`Permissions updated for ${role.name}`);
+      // The edited role may be one the current user holds, so their own
+      // effective permissions can change with this save.
+      await refreshPermissions();
       onOpenChangeAction(false);
       onSavedAction();
     } catch (err) {

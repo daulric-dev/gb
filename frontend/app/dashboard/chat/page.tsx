@@ -5,6 +5,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, MessageSquarePlus } from "lucide-react";
@@ -30,6 +31,16 @@ export default function ChatPage() {
   }, []);
 
   const hasActive = activeConversationId.value !== null;
+
+  if (!can("chat", "read")) {
+    return (
+      <PermissionDenied
+        title="Messages"
+        description="Message others at your school"
+        message="You do not have permission to view messages."
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { useProfile } from "@/providers/AuthProvider";
 import { markAnnouncementsRead } from "@/lib/announcements";
 import { Plus, Megaphone, Pencil, Trash2 } from "lucide-react";
@@ -78,6 +79,16 @@ export default function AnnouncementsPage() {
       toast.error(err instanceof ApiError ? err.message : "Failed to delete");
     }
   };
+
+  if (!can("announcement", "read")) {
+    return (
+      <PermissionDenied
+        title="Announcements"
+        description="School-wide announcements"
+        message="You do not have permission to view announcements."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

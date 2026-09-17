@@ -29,6 +29,7 @@ import {
   UserRoundSearch,
   Users,
   UsersRound,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -55,7 +56,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-const navItems = [
+type NavItem = {
+  title: string;
+  href: string;
+  icon: LucideIcon;
+  /** Catalog permission required to see this item, as [resource, action]. */
+  permission?: [string, string];
+  /** Mirrors a backend AdminGuard rather than a catalog permission. */
+  adminOnly?: boolean;
+};
+
+const navItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
     title: "Academic Calendar",
@@ -107,14 +118,15 @@ const navItems = [
   },
 ];
 
-const adminNavItems = [
+const adminNavItems: NavItem[] = [
   {
     title: "Grade Scales",
     href: "/dashboard/grade-scales",
     icon: Scale,
     permission: ["grade-scale", "read"],
   },
-  { title: "Roles", href: "/dashboard/roles", icon: KeyRound },
+
+  { title: "Roles", href: "/dashboard/roles", icon: KeyRound, adminOnly: true },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -134,8 +146,7 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const { state } = useSidebar();
-  const { can } = usePermissions();
-  const isAdmin = profile?.role === "admin";
+  const { can, isAdmin } = usePermissions();
   const collapsed = state === "collapsed";
 
   // Keep the unread badges fresh as the user navigates.
@@ -154,6 +165,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     router.push("/login");
     toast.success("Logged out");
   }
+
+  const visibleAdminNavItems = adminNavItems.filter((item) =>
+    item.adminOnly
+      ? isAdmin
+      : !item.permission || can(item.permission[0], item.permission[1]),
+  );
 
   const displayName = profile?.first_name
     ? `${profile.first_name} ${profile.last_name || ""}`.trim()
@@ -243,17 +260,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin && (
+        {visibleAdminNavItems.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>Admin</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminNavItems
-                  .filter(
-                    (item) =>
-                      !item.permission ||
-                      can(item.permission[0], item.permission[1]),
-                  )
+                {visibleAdminNavItems
                   .map((item) => {
                     const Icon = item.icon;
                     const isActive = navItemActive(pathname ?? "", item.href);

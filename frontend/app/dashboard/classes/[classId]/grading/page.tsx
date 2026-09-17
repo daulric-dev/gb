@@ -157,6 +157,14 @@ export default function GradingPage() {
     );
   }
 
+  if (!can("assessment", "read")) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        You do not have permission to view grading for this class.
+      </div>
+    );
+  }
+
   const termLabel: Record<string, string> = {
     michaelmas: "Michaelmas",
     hilary: "Hilary",

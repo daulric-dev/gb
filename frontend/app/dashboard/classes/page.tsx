@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { Plus, Users, BookOpen } from "lucide-react";
 import type { ClassItem, AcademicYear } from "./_components/types";
 import { ClassTable } from "./_components/ClassTable";
@@ -41,6 +42,16 @@ export default function ClassesPage() {
 
   const myClasses = classes.value.filter((c) => c.isClassTeacher);
   const subjectClasses = classes.value.filter((c) => !c.isClassTeacher);
+
+  if (!can("class", "read")) {
+    return (
+      <PermissionDenied
+        title="Classes"
+        description="View and Manage Your Assigned Classes"
+        message="You do not have permission to view classes."
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">

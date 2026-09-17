@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -86,7 +87,9 @@ export default function StaffPage() {
   const requestsLoading = useSignal(true);
   const managingMember = useSignal<SchoolMember | null>(null);
   const rolesDialogOpen = useSignal(false);
-  const isAdmin = profile.value?.role === "admin";
+  // Member management (remove, roles, join requests) is AdminGuard-backed;
+  // viewing the roster only needs school:read.
+  const { can, isAdmin } = usePermissions();
 
   const handleManageRoles = useCallback((member: SchoolMember) => {
     managingMember.value = member;
@@ -180,6 +183,22 @@ export default function StaffPage() {
       ))}
     </div>
   );
+
+  if (!can("school", "read")) {
+    return (
+      <div className="space-y-6">
+        <DashboardPageHeader
+          title="Staff"
+          description="View teachers and administrators at your school"
+        />
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            You do not have permission to view staff.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (

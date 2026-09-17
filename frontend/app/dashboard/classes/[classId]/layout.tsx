@@ -41,8 +41,8 @@ export default function ClassLayout({ children }: { children: React.ReactNode}) 
 
   const items = [
     { href: base, label: "Overview", icon: LayoutDashboard, exact: true, show: true },
-    { href: `${base}/grading`, label: "Grading", icon: ClipboardList, show: true },
-    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck, show: true },
+    { href: `${base}/grading`, label: "Grading", icon: ClipboardList, show: can("assessment", "read") },
+    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck, show: can("attendance", "read") },
     { href: `${base}/reports`, label: "Reports", icon: ScrollText, show: isTeacher || can("reporting", "read") },
     { href: `${base}/class-report`, label: "Class Report", icon: FileBarChart, show: isTeacher || can("reporting", "read") },
   ].filter((i) => i.show);
