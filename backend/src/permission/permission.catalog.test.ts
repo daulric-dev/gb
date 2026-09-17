@@ -5,6 +5,7 @@ import {
   defaultsForRole,
   isPermissionKey,
   PERMISSION_CATALOG,
+  permKey,
   RESOURCES,
 } from './permission.catalog';
 
@@ -24,7 +25,7 @@ describe('permission catalog', () => {
 
   test('catalog contains exactly the supported resource/action pairs', () => {
     const expected = RESOURCES.flatMap((r) =>
-      actionsFor(r).map((a) => `${r}:${a}`),
+      actionsFor(r).map((a) => permKey(r, a)),
     );
     expect(PERMISSION_CATALOG.map((e) => e.key).sort()).toEqual(
       expected.sort(),
