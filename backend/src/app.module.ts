@@ -12,6 +12,7 @@ import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
 import { SupabaseModule } from '@/supabase/supabase.module';
 import { StudentAccountModule } from '@/student-account/student-account.module';
+import { StudentPortalModule } from '@/student-portal/student-portal.module';
 import { AuthModule } from '@/auth/auth.module';
 import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
@@ -70,6 +71,7 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
     SupabaseModule,
     AuthModule,
     StudentAccountModule,
+    StudentPortalModule,
     CacheModule,
     ScanModule,
     QueueModule.forRoot(),
