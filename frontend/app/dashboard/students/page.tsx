@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { Plus } from "lucide-react";
 import type { Student } from "./_components/types";
 import { StudentsSearchField } from "./_components/StudentsSearchField";
@@ -32,7 +33,7 @@ export default function StudentsPage() {
       .then((data) => (students.value = data))
       .catch(() => toast.error("Failed to load students"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, students]);
 
   useEffect(() => {
     fetchStudents();
@@ -44,6 +45,16 @@ export default function StudentsPage() {
     }, 300);
     return () => clearTimeout(timeout);
   }, [search.value, fetchStudents]);
+
+  if (!can("student", "read")) {
+    return (
+      <PermissionDenied
+        title="Students"
+        description="Manage student records for your school"
+        message="You do not have permission to view students."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

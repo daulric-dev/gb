@@ -67,7 +67,7 @@ describe('PermissionGuard', () => {
         school_management_role: { data: [], error: null },
       },
     });
-    const guard = guardWith(sb, 'school:delete');
+    const guard = guardWith(sb, 'class:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
       ForbiddenException,
@@ -83,12 +83,12 @@ describe('PermissionGuard', () => {
           error: null,
         },
         school_role_permission: {
-          data: [{ permission_catalog: { key: 'school:delete' } }],
+          data: [{ permission_catalog: { key: 'class:delete' } }],
           error: null,
         },
       },
     });
-    const guard = guardWith(sb, 'school:delete');
+    const guard = guardWith(sb, 'class:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });

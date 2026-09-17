@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import type { AcademicYear } from "./types";
 
-export function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
+export function CreateClassForm({ onSuccessAction }: { onSuccessAction: () => void }) {
   useSignals();
   const name = useSignal("");
   const academicYearId = useSignal("");
@@ -37,7 +37,7 @@ export function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
       })
       .catch(() => toast.error("Failed to load academic years"))
       .finally(() => (yearsLoading.value = false));
-  }, []);
+  }, [academicYearId, academicYears, yearsLoading]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,7 +49,7 @@ export function CreateClassForm({ onSuccess }: { onSuccess: () => void }) {
         body: { name: name.value, academicYearId: academicYearId.value },
       });
       toast.success("Class created");
-      onSuccess();
+      onSuccessAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to create";
       toast.error(msg);

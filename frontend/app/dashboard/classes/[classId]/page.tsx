@@ -23,6 +23,7 @@ import { AssignTeacherForm } from "./_components/AssignTeacherForm";
 import { BulkAssignSubjects } from "./_components/BulkAssignSubjects";
 import type { EnrolledStudent, TeacherAssignment } from "./_components/types";
 import { getGradingRules } from "@/lib/grading-rules";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 interface ClassInfo {
   id: string;
@@ -79,6 +80,7 @@ interface YearResultRow {
 
 export default function ClassDetailPage() {
   useSignals();
+  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -168,7 +170,7 @@ export default function ClassDetailPage() {
           .catch(() => {});
       }
     });
-  }, [classId]);
+  }, [classId, classInfo, enrolled, gradingModel, loading, selectedTermId, teachers, terms]);
 
   useEffect(() => {
     fetchData();
@@ -193,7 +195,7 @@ export default function ClassDetailPage() {
       .then((data) => (summaryData.value = data))
       .catch(() => (summaryData.value = []))
       .finally(() => (summaryLoading.value = false));
-  }, [selectedTermId.value, classId, summaryView.value]);
+  }, [selectedTermId, classId, summaryView, summaryData, summaryLoading, summaryPage]);
 
   useEffect(() => {
     if (summaryView.value !== "year" || !classInfo.value?.academicYearId || !classId) return;
@@ -205,7 +207,7 @@ export default function ClassDetailPage() {
       .then((data) => (yearData.value = data))
       .catch(() => (yearData.value = []))
       .finally(() => (yearLoading.value = false));
-  }, [summaryView.value, classInfo.value?.academicYearId, classId]);
+  }, [summaryView, classInfo, classId, yearData, yearLoading, yearPage]);
 
   async function handleUnenroll(studentId: string, name: string) {
     if (!confirm(`Unenroll ${name}? This will also remove their subject assignments.`)) return;
@@ -256,7 +258,7 @@ export default function ClassDetailPage() {
         onBack={() => router.push("/dashboard/classes")}
       />
 
-      {info.isClassTeacher && (
+      {info.isClassTeacher && can("enrollment", "create") && (
         <Dialog
           open={enrollOpen.value}
           onOpenChange={(v) => (enrollOpen.value = v)}
@@ -271,7 +273,7 @@ export default function ClassDetailPage() {
             <EnrollForm
               classId={classId}
               enrolledIds={enrolled.value.map((e) => e.student.id)}
-              onSuccess={() => {
+              onSuccessAction={() => {
                 enrollOpen.value = false;
                 fetchData();
               }}
@@ -292,7 +294,7 @@ export default function ClassDetailPage() {
                 Teachers assigned to subjects in this class
               </CardDescription>
             </div>
-            {info.isClassTeacher && (
+            {info.isClassTeacher && can("class", "update") && (
               <Dialog open={assignTeacherOpen.value} onOpenChange={(v) => (assignTeacherOpen.value = v)}>
                 <DialogTrigger render={<Button size="sm" />}>
                   <Plus className="mr-2 size-4" />
@@ -308,7 +310,7 @@ export default function ClassDetailPage() {
                   <AssignTeacherForm
                     classId={classId}
                     existingTeacherIds={teachers.value.map((t) => t.teacherId)}
-                    onSuccess={() => {
+                    onSuccessAction={() => {
                       assignTeacherOpen.value = false;
                       fetchData();
                     }}
@@ -348,7 +350,7 @@ export default function ClassDetailPage() {
                       <p className="text-xs text-muted-foreground mt-0.5">No subjects assigned</p>
                     )}
                   </div>
-                  {info.isClassTeacher && (
+                  {info.isClassTeacher && can("class", "update") && (
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
@@ -395,7 +397,7 @@ export default function ClassDetailPage() {
                 {enrolled.value.length} student{enrolled.value.length !== 1 ? "s" : ""} enrolled
               </CardDescription>
             </div>
-            {info.isClassTeacher && enrolled.value.length > 0 && (
+            {info.isClassTeacher && can("enrollment", "create") && enrolled.value.length > 0 && (
               <Dialog open={bulkAssignOpen.value} onOpenChange={(v) => (bulkAssignOpen.value = v)}>
                 <DialogTrigger render={<Button size="sm" variant="outline" />}>
                   <ListChecks className="mr-2 size-4" />
@@ -411,7 +413,7 @@ export default function ClassDetailPage() {
                   <BulkAssignSubjects
                     classId={classId}
                     enrolled={enrolled.value}
-                    onSuccess={() => {
+                    onSuccessAction={() => {
                       bulkAssignOpen.value = false;
                       fetchData();
                     }}
@@ -424,7 +426,7 @@ export default function ClassDetailPage() {
         <CardContent>
           {enrolled.value.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              No students enrolled yet. {info.isClassTeacher ? "Click \"Enroll Students\" to add some." : ""}
+              No students enrolled yet. {info.isClassTeacher && can("enrollment", "create") ? "Click \"Enroll Students\" to add some." : ""}
             </div>
           ) : (
             <div className="rounded-md border">
@@ -435,7 +437,7 @@ export default function ClassDetailPage() {
                     <TableHead>Gender</TableHead>
                     <TableHead>Enrolled</TableHead>
                     <TableHead>Subjects</TableHead>
-                    {info.isClassTeacher && (
+                    {info.isClassTeacher && can("enrollment", "delete") && (
                       <TableHead className="text-right">Actions</TableHead>
                     )}
                   </TableRow>
@@ -443,7 +445,7 @@ export default function ClassDetailPage() {
                 <TableBody>
                   {[...enrolled.value]
                     .sort(
-                      (a, b) =>
+                        (a, b) =>
                         a.student.last_name.localeCompare(b.student.last_name) ||
                         a.student.first_name.localeCompare(b.student.first_name),
                     )
@@ -461,7 +463,7 @@ export default function ClassDetailPage() {
                         {new Date(e.enrolled_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        {info.isClassTeacher ? (
+                        {info.isClassTeacher && (can("enrollment", "create") || can("enrollment", "delete")) ? (
                           <Button
                             variant="outline"
                             size="sm"
@@ -482,7 +484,7 @@ export default function ClassDetailPage() {
                           <span className="text-xs text-muted-foreground">None</span>
                         )}
                       </TableCell>
-                      {info.isClassTeacher && (
+                      {info.isClassTeacher && can("enrollment", "delete") && (
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
@@ -560,15 +562,17 @@ export default function ClassDetailPage() {
                   </SelectContent>
                 </Select>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={generatingReport.value || (summaryView.value === "term" ? summaryData.value.length === 0 : yearData.value.length === 0)}
-                onClick={generateReport}
-              >
-                <Download className="mr-2 size-4" />
-                {generatingReport.value ? "Generating…" : "Generate Report"}
-              </Button>
+              {can("reporting", "read") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={generatingReport.value || (summaryView.value === "term" ? summaryData.value.length === 0 : yearData.value.length === 0)}
+                  onClick={generateReport}
+                >
+                  <Download className="mr-2 size-4" />
+                  {generatingReport.value ? "Generating…" : "Generate Report"}
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -924,7 +928,7 @@ export default function ClassDetailPage() {
             <EditTeacherSubjectsForm
               classId={classId}
               teacher={editingTeacher.value}
-              onSuccess={() => {
+              onSuccessAction={() => {
                 editingTeacher.value = null;
                 fetchData();
               }}

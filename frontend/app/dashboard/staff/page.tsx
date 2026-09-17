@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
+import { usePermissions } from "@/providers/PermissionsProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -86,12 +87,14 @@ export default function StaffPage() {
   const requestsLoading = useSignal(true);
   const managingMember = useSignal<SchoolMember | null>(null);
   const rolesDialogOpen = useSignal(false);
-  const isAdmin = profile.value?.role === "admin";
+  // Member management (remove, roles, join requests) is AdminGuard-backed;
+  // viewing the roster only needs school:read.
+  const { can, isAdmin } = usePermissions();
 
   const handleManageRoles = useCallback((member: SchoolMember) => {
     managingMember.value = member;
     rolesDialogOpen.value = true;
-  }, []);
+  }, [managingMember, rolesDialogOpen]);
 
   const grouped = useComputed(() => {
     const res: Record<StaffSectionRole, SchoolMember[]> = {
@@ -116,7 +119,7 @@ export default function StaffPage() {
       .then((data) => (members.value = data))
       .catch(() => toast.error("Failed to load staff"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, members]);
 
   const fetchRequests = useCallback(() => {
     requestsLoading.value = true;
@@ -124,7 +127,7 @@ export default function StaffPage() {
       .then((data) => (requests.value = data))
       .catch(() => toast.error("Failed to load pending requests"))
       .finally(() => (requestsLoading.value = false));
-  }, []);
+  }, [requestsLoading, requests]);
 
   useEffect(() => {
     fetchMembers();
@@ -136,7 +139,7 @@ export default function StaffPage() {
     } else {
       requestsLoading.value = false;
     }
-  }, [isAdmin, fetchRequests]);
+  }, [isAdmin, fetchRequests, requestsLoading]);
 
   const handleRemove = useCallback(async (member: SchoolMember) => {
     const name = member.user
@@ -159,7 +162,7 @@ export default function StaffPage() {
     } finally {
       removingId.value = null;
     }
-  }, []);
+  }, [members, removingId]);
 
   const staffPanel = loading.value ? (
     <StaffSkeleton />
@@ -180,6 +183,22 @@ export default function StaffPage() {
       ))}
     </div>
   );
+
+  if (!can("school", "read")) {
+    return (
+      <div className="space-y-6">
+        <DashboardPageHeader
+          title="Staff"
+          description="View teachers and administrators at your school"
+        />
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            You do not have permission to view staff.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
@@ -251,8 +270,8 @@ export default function StaffPage() {
       <MemberRolesDialog
         open={rolesDialogOpen.value}
         member={managingMember.value}
-        onOpenChange={(v) => (rolesDialogOpen.value = v)}
-        onRolesChanged={fetchMembers}
+        onOpenChangeAction={(v) => (rolesDialogOpen.value = v)}
+        onRolesChangedAction={fetchMembers}
       />
     </div>
   );

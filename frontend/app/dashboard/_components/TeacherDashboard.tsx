@@ -286,7 +286,7 @@ export function TeacherDashboard({ classes }: { classes: ClassItem[] }) {
     return () => {
       cancelled = true;
     };
-  }, [classes]);
+  }, [classes, activeYear, currentTerm, loading, reports]);
 
   if (classes.length === 0) {
     return (
