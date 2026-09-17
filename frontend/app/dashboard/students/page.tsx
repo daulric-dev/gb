@@ -17,6 +17,7 @@ import { StudentsSearchField } from "./_components/StudentsSearchField";
 import { StudentsRosterTable } from "./_components/StudentsRosterTable";
 import { CreateStudentForm } from "./_components/CreateStudentForm";
 import { EditStudentForm } from "./_components/EditStudentForm";
+import { ClaimCodeDialog } from "./_components/ClaimCodeDialog";
 
 export default function StudentsPage() {
   useSignals();
@@ -26,6 +27,7 @@ export default function StudentsPage() {
   const search = useSignal("");
   const createOpen = useSignal(false);
   const editStudent = useSignal<Student | null>(null);
+  const accountStudent = useSignal<Student | null>(null);
 
   const fetchStudents = useCallback((query?: string) => {
     const params = query ? `?search=${encodeURIComponent(query)}` : "";
@@ -108,6 +110,11 @@ export default function StudentsPage() {
         <StudentsRosterTable
           students={students.value}
           onEdit={(student) => (editStudent.value = student)}
+          onManageAccount={
+            can("student", "update")
+              ? (student) => (accountStudent.value = student)
+              : undefined
+          }
           canEdit={can("student", "update")}
         />
       )}
@@ -136,6 +143,14 @@ export default function StudentsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ClaimCodeDialog
+        student={accountStudent.value}
+        onOpenChangeAction={(open) => {
+          if (!open) accountStudent.value = null;
+        }}
+        onChangedAction={() => fetchStudents(search.value)}
+      />
     </div>
   );
 }

@@ -134,6 +134,75 @@ describe('StudentClaimService.issue', () => {
   });
 });
 
+describe('StudentClaimService.getStatus', () => {
+  function statusFor(student: any, code: any) {
+    return service(
+      createRoutingSupabase({
+        tables: {
+          user_profile: { data: { school_id: SCHOOL }, error: null },
+          'student.student': { data: student, error: null },
+          'student.student_claim_code': { data: code, error: null },
+        },
+      }),
+    ).getStatus(ACTOR, STUDENT);
+  }
+
+  const unlinked = { id: STUDENT, school_id: SCHOOL, user_profile_id: null };
+
+  test('reports an outstanding code without revealing it', async () => {
+    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
+    const out = await statusFor(unlinked, {
+      expires_at: expiresAt,
+      created_at: '2026-09-01',
+    });
+
+    expect(out).toEqual({
+      hasAccount: false,
+      outstandingCode: { expiresAt, issuedAt: '2026-09-01' },
+      expiredCode: false,
+    });
+    // Nothing in the payload could be redeemed.
+    expect(JSON.stringify(out)).not.toContain('hash');
+  });
+
+  test('treats a past expiry as no outstanding code', async () => {
+    const out = await statusFor(unlinked, {
+      expires_at: new Date(Date.now() - 1000).toISOString(),
+      created_at: '2026-09-01',
+    });
+
+    expect(out.outstandingCode).toBeNull();
+    expect(out.expiredCode).toBe(true);
+  });
+
+  test('reports a linked account', async () => {
+    const out = await statusFor(
+      { id: STUDENT, school_id: SCHOOL, user_profile_id: 'u1' },
+      null,
+    );
+    expect(out.hasAccount).toBe(true);
+    expect(out.outstandingCode).toBeNull();
+  });
+
+  test('refuses a student from another school', async () => {
+    const svc = service(
+      createRoutingSupabase({
+        tables: {
+          user_profile: { data: { school_id: SCHOOL }, error: null },
+          'student.student': {
+            data: { id: STUDENT, school_id: 'elsewhere', user_profile_id: null },
+            error: null,
+          },
+        },
+      }),
+    );
+
+    expect(
+      await expectRejection(svc.getStatus(ACTOR, STUDENT)),
+    ).toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('StudentClaimService.redeem', () => {
   let rpcArgs: any;
 

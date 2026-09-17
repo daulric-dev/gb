@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   Param,
   Post,
@@ -26,6 +27,13 @@ import { IssueClaimCodeDto } from './dto/issue-claim-code.dto';
 @UseGuards(AuthGuard, PermissionGuard)
 export class StudentClaimController {
   constructor(private readonly studentClaimService: StudentClaimService) {}
+
+  @RequirePermission('student', 'read')
+  @Get()
+  async status(@Req() req: any, @Param('studentId') studentId: string) {
+    const userId: string = req.user.id;
+    return this.studentClaimService.getStatus(userId, studentId);
+  }
 
   /** Returns the plaintext code once; only its hash is stored. */
   @RequirePermission('student', 'update')

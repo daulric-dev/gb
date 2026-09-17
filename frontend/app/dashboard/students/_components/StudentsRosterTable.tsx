@@ -3,16 +3,18 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pencil } from "lucide-react";
+import { KeyRound, Pencil } from "lucide-react";
 import type { Student } from "./types";
 
 export function StudentsRosterTable({
   students,
   onEdit,
+  onManageAccount,
   canEdit = true,
 }: {
   students: Student[];
   onEdit: (student: Student) => void;
+  onManageAccount?: (student: Student) => void;
   canEdit?: boolean;
 }) {
   return (
@@ -24,6 +26,7 @@ export function StudentsRosterTable({
             <TableHead>Gender</TableHead>
             <TableHead>Date of Birth</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Account</TableHead>
             {canEdit && <TableHead className="text-right">Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -50,8 +53,27 @@ export function StudentsRosterTable({
                   <Badge variant="secondary">Inactive</Badge>
                 )}
               </TableCell>
+              <TableCell>
+                {student.user_profile_id ? (
+                  <Badge variant="secondary">Linked</Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    No account
+                  </span>
+                )}
+              </TableCell>
               {canEdit && (
                 <TableCell className="text-right">
+                  {onManageAccount && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Student account"
+                      onClick={() => onManageAccount(student)}
+                    >
+                      <KeyRound className="size-4" />
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => onEdit(student)}>
                     <Pencil className="size-4" />
                   </Button>

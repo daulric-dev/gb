@@ -7,6 +7,8 @@ export interface Student {
   date_of_birth: string | null;
   enrollment_date: string | null;
   is_active: boolean;
+  /** Set once a student redeems a claim code and links a login. */
+  user_profile_id: string | null;
 }
 
 export const selectClass =

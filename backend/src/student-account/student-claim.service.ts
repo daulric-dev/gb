@@ -169,6 +169,54 @@ export class StudentClaimService {
     return { code: this.format(code), expiresAt };
   }
 
+  /**
+   * Whether this student has an account and whether a code is outstanding.
+   * Never returns the code itself - only its hash is stored, so a lost code is
+   * reissued rather than recovered.
+   */
+  async getStatus(actorUserId: string, studentId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: actor } = await supabase
+      .from('user_profile')
+      .select('school_id')
+      .eq('id', actorUserId)
+      .maybeSingle();
+
+    if (!actor?.school_id) {
+      throw new BadRequestException('You are not assigned to a school');
+    }
+
+    const { data: student } = await supabase
+      .schema('student')
+      .from('student')
+      .select('id, school_id, user_profile_id')
+      .eq('id', studentId)
+      .maybeSingle();
+
+    if (!student || student.school_id !== actor.school_id) {
+      throw new NotFoundException('Student not found');
+    }
+
+    const { data: code } = await supabase
+      .schema('student')
+      .from('student_claim_code')
+      .select('expires_at, created_at')
+      .eq('student_id', studentId)
+      .is('redeemed_at', null)
+      .maybeSingle();
+
+    const expired = code ? new Date(code.expires_at) <= new Date() : false;
+
+    return {
+      hasAccount: !!student.user_profile_id,
+      outstandingCode: code && !expired
+        ? { expiresAt: code.expires_at, issuedAt: code.created_at }
+        : null,
+      expiredCode: !!code && expired,
+    };
+  }
+
   /** Invalidate the outstanding code for a student, if any. */
   async revoke(actorUserId: string, studentId: string): Promise<void> {
     const supabase = this.supabaseService.getServiceClient();
