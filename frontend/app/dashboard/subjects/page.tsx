@@ -40,7 +40,6 @@ import {
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Plus } from "lucide-react";
 import { usePermissions } from "@/providers/PermissionsProvider";
-import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { type Subject } from "./_components/types";
 import { SortableSubjectRow } from "./_components/SortableSubjectRow";
 import { CreateSubjectForm } from "./_components/CreateSubjectForm";
@@ -69,7 +68,7 @@ export default function SubjectsPage() {
       .then((data) => (subjects.value = data))
       .catch(() => toast.error("Failed to load subjects"))
       .finally(() => (loading.value = false));
-  }, [loading, subjects]);
+  }, []);
 
   useEffect(() => {
     fetchSubjects();
@@ -112,16 +111,6 @@ export default function SubjectsPage() {
     } finally {
       reordering.value = false;
     }
-  }
-
-  if (!can("subject", "read")) {
-    return (
-      <PermissionDenied
-        title="Subjects"
-        description="Manage the subjects taught at your school"
-        message="You do not have permission to view subjects."
-      />
-    );
   }
 
   return (

@@ -26,11 +26,11 @@ interface SchoolTeacher {
 export function AssignTeacherForm({
   classId,
   existingTeacherIds,
-  onSuccessAction,
+  onSuccess,
 }: {
   classId: string;
   existingTeacherIds: string[];
-  onSuccessAction: () => void;
+  onSuccess: () => void;
 }) {
   useSignals();
   const schoolTeachers = useSignal<SchoolTeacher[]>([]);
@@ -49,7 +49,7 @@ export function AssignTeacherForm({
       allSubjects.value = subjects;
       loading.value = false;
     });
-  }, [existingTeacherIds, allSubjects, loading, schoolTeachers]);
+  }, [existingTeacherIds]);
 
   function toggleSubject(id: string) {
     const next = new Set(selectedSubjects.value);
@@ -71,7 +71,7 @@ export function AssignTeacherForm({
         },
       });
       toast.success("Teacher assigned");
-      onSuccessAction();
+      onSuccess();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to assign";
       toast.error(msg);

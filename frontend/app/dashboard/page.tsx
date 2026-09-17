@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { api } from "@/lib/api";
 import { useProfile } from "@/providers/AuthProvider";
-import { usePermissions } from "@/providers/PermissionsProvider";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,7 +19,11 @@ interface ClassItem {
 
 type DashboardMode = "admin-only" | "teacher-only" | "both";
 
-function pickMode(isAdmin: boolean, classes: ClassItem[]): DashboardMode {
+function pickMode(
+  role: string | null | undefined,
+  classes: ClassItem[],
+): DashboardMode {
+  const isAdmin = role === "admin";
   const hasClasses = classes.length > 0;
 
   if (isAdmin && hasClasses) return "both";
@@ -31,7 +34,6 @@ function pickMode(isAdmin: boolean, classes: ClassItem[]): DashboardMode {
 export default function DashboardPage() {
   useSignals();
   const { profile, loading: profileLoading } = useProfile();
-  const { isAdmin } = usePermissions();
   const classes = useSignal<ClassItem[]>([]);
   const classesLoading = useSignal(true);
 
@@ -40,7 +42,7 @@ export default function DashboardPage() {
       .then((data) => (classes.value = data))
       .catch(() => (classes.value = []))
       .finally(() => (classesLoading.value = false));
-  }, [classes, classesLoading]);
+  }, []);
 
   const displayName = profile.value?.first_name
     ? profile.value.first_name
@@ -48,7 +50,7 @@ export default function DashboardPage() {
 
   const ready = !profileLoading.value && !classesLoading.value;
   const mode: DashboardMode | null = ready
-    ? pickMode(isAdmin, classes.value)
+    ? pickMode(profile.value?.role, classes.value)
     : null;
 
   return (

@@ -7,7 +7,6 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, LayoutDashboard,  ClipboardList,  CalendarCheck,  ScrollText,  FileBarChart, UserPlus } from "lucide-react";
-import { usePermissions } from "@/providers/PermissionsProvider";
 
 interface ClassInfo {
   id: string;
@@ -18,7 +17,6 @@ interface ClassInfo {
 
 export default function ClassLayout({ children }: { children: React.ReactNode}) {
   useSignals();
-  const { can } = usePermissions();
   const params = useParams();
   const pathname = usePathname() ?? "";
   const router = useRouter();
@@ -34,17 +32,17 @@ export default function ClassLayout({ children }: { children: React.ReactNode}) 
       .catch(() => {
         info.value = null;
       });
-  }, [classId, info]);
+  }, [classId]);
 
   const base = `/dashboard/classes/${classId}`;
   const isTeacher = info.value?.isClassTeacher ?? false;
 
   const items = [
     { href: base, label: "Overview", icon: LayoutDashboard, exact: true, show: true },
-    { href: `${base}/grading`, label: "Grading", icon: ClipboardList, show: can("assessment", "read") },
-    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck, show: can("attendance", "read") },
-    { href: `${base}/reports`, label: "Reports", icon: ScrollText, show: isTeacher || can("reporting", "read") },
-    { href: `${base}/class-report`, label: "Class Report", icon: FileBarChart, show: isTeacher || can("reporting", "read") },
+    { href: `${base}/grading`, label: "Grading", icon: ClipboardList, show: true },
+    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck, show: true },
+    { href: `${base}/reports`, label: "Reports", icon: ScrollText, show: isTeacher },
+    { href: `${base}/class-report`, label: "Class Report", icon: FileBarChart, show: isTeacher },
   ].filter((i) => i.show);
 
   const isActive = (href: string, exact?: boolean) =>
@@ -106,7 +104,7 @@ export default function ClassLayout({ children }: { children: React.ReactNode}) 
               </Button>
             );
           })}
-          {isTeacher && can("enrollment", "create") && (
+          {isTeacher && (
             <Button
               variant="ghost"
               size="sm"

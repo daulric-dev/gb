@@ -73,7 +73,7 @@ export default function StudentReportPage() {
       .finally(() => {
         loading.value = false;
       });
-  }, [classId, termId, classInfo, gradingModel, loading, termName]);
+  }, [classId, termId]);
 
   const fetchCalc = useCallback(() => {
     if (!studentId || !termId) return;
@@ -99,7 +99,7 @@ export default function StudentReportPage() {
           yearResult.value = null;
         });
     }
-  }, [studentId, termId, classId, classInfo, reportType, termResult, yearResult]);
+  }, [studentId, termId, classId, gradingModel.value, classInfo.value?.academicYearId, reportType]);
 
   useEffect(() => {
     loadContext();

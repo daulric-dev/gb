@@ -39,8 +39,7 @@ export class AttendanceController {
     @Param('classId') classId: string,
     @Query('date') date: string,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
+    await this.attendanceService.assertCanViewClass(req.user.id, classId);
     const raw = await this.attendanceService.getClassRosterForDate(
       classId,
       date,
@@ -56,8 +55,7 @@ export class AttendanceController {
     @Param('classId') classId: string,
     @Body() dto: MarkAttendanceDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.attendanceService.mark(classId, userId, dto);
+    const raw = await this.attendanceService.mark(classId, req.user.id, dto);
     return this.versioning.resolve(req, 'attendance.marked')(raw);
   }
 
@@ -69,8 +67,11 @@ export class AttendanceController {
     @Param('classId') classId: string,
     @Body() dto: BulkMarkAttendanceDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.attendanceService.bulkMark(classId, userId, dto);
+    const raw = await this.attendanceService.bulkMark(
+      classId,
+      req.user.id,
+      dto,
+    );
     return this.versioning.resolve(req, 'attendance.bulkMarked')(raw);
   }
 
@@ -83,11 +84,10 @@ export class AttendanceController {
     @Param('recordId') recordId: string,
     @Body() dto: UpdateAttendanceDto,
   ) {
-    const userId: string = req.user.id;
     const raw = await this.attendanceService.update(
       classId,
       recordId,
-      userId,
+      req.user.id,
       dto,
     );
     return this.versioning.resolve(req, 'attendance.updated')(raw);
@@ -112,8 +112,7 @@ export class AttendanceController {
     @Param('classId') classId: string,
     @Query() range: AttendanceRangeQueryDto,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
+    await this.attendanceService.assertCanViewClass(req.user.id, classId);
     const raw = await this.attendanceService.getClassSummary(
       classId,
       range.from,
@@ -130,8 +129,7 @@ export class AttendanceController {
     @Param('studentId') studentId: string,
     @Query() range: AttendanceRangeQueryDto,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
+    await this.attendanceService.assertCanViewClass(req.user.id, classId);
     const raw = await this.attendanceService.getStudentRange(
       classId,
       studentId,
@@ -149,8 +147,7 @@ export class AttendanceController {
     @Param('studentId') studentId: string,
     @Query() range: AttendanceRangeQueryDto,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
+    await this.attendanceService.assertCanViewClass(req.user.id, classId);
     const raw = await this.attendanceService.getStudentSummary(
       classId,
       studentId,

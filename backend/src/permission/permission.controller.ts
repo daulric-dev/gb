@@ -39,14 +39,12 @@ export class PermissionController {
 
   @Get('roles')
   listRoles(@Req() req: any) {
-    const userId: string = req.user.id;
-    return this.permissionService.listRoles(userId);
+    return this.permissionService.listRoles(req.user.id);
   }
 
   @Post('roles')
   createRole(@Req() req: any, @Body() dto: CreateRoleDto) {
-    const userId: string = req.user.id;
-    return this.permissionService.createRole(userId, dto);
+    return this.permissionService.createRole(req.user.id, dto);
   }
 
   @Patch('roles/:roleId')
@@ -55,20 +53,17 @@ export class PermissionController {
     @Param('roleId') roleId: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    const userId: string = req.user.id;
-    return this.permissionService.updateRole(userId, roleId, dto);
+    return this.permissionService.updateRole(req.user.id, roleId, dto);
   }
 
   @Delete('roles/:roleId')
   deleteRole(@Req() req: any, @Param('roleId') roleId: string) {
-    const userId: string = req.user.id;
-    return this.permissionService.deleteRole(userId, roleId);
+    return this.permissionService.deleteRole(req.user.id, roleId);
   }
 
   @Get('roles/:roleId/permissions')
   getRolePermissions(@Req() req: any, @Param('roleId') roleId: string) {
-    const userId: string = req.user.id;
-    return this.permissionService.getRolePermissions(userId, roleId);
+    return this.permissionService.getRolePermissions(req.user.id, roleId);
   }
 
   @Put('roles/:roleId/permissions')
@@ -77,14 +72,16 @@ export class PermissionController {
     @Param('roleId') roleId: string,
     @Body() dto: SetRolePermissionsDto,
   ) {
-    const userId: string = req.user.id;
-    return this.permissionService.setRolePermissions(userId, roleId, dto.keys);
+    return this.permissionService.setRolePermissions(
+      req.user.id,
+      roleId,
+      dto.keys,
+    );
   }
 
   @Get('members/:membershipId/roles')
   getMemberRoles(@Req() req: any, @Param('membershipId') membershipId: string) {
-    const userId: string = req.user.id;
-    return this.permissionService.getMemberRoles(userId, membershipId);
+    return this.permissionService.getMemberRoles(req.user.id, membershipId);
   }
 
   @Patch('members/:membershipId/base-role')
@@ -93,9 +90,8 @@ export class PermissionController {
     @Param('membershipId') membershipId: string,
     @Body() dto: ChangeMemberRoleDto,
   ) {
-    const userId: string = req.user.id;
     return this.permissionService.changeMemberRole(
-      userId,
+      req.user.id,
       membershipId,
       dto.role,
     );
@@ -107,9 +103,8 @@ export class PermissionController {
     @Param('membershipId') membershipId: string,
     @Body() dto: AssignRoleDto,
   ) {
-    const userId: string = req.user.id;
     return this.permissionService.assignRoleToMember(
-      userId,
+      req.user.id,
       membershipId,
       dto.roleId,
     );
@@ -121,9 +116,8 @@ export class PermissionController {
     @Param('membershipId') membershipId: string,
     @Param('roleId') roleId: string,
   ) {
-    const userId: string = req.user.id;
     return this.permissionService.unassignRoleFromMember(
-      userId,
+      req.user.id,
       membershipId,
       roleId,
     );

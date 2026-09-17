@@ -34,24 +34,21 @@ export class GradeScaleController {
   @RequirePermission('grade-scale', 'read')
   @Get()
   async list(@Req() req: any) {
-    const userId: string = req.user.id;
-    const raw = await this.service.list(userId);
+    const raw = await this.service.list(req.user.id);
     return this.versioning.resolve(req, 'gradeScale.list')(raw);
   }
 
   @RequirePermission('grade-scale', 'read')
   @Get('default')
   async getDefault(@Req() req: any) {
-    const userId: string = req.user.id;
-    const raw = await this.service.getDefault(userId);
+    const raw = await this.service.getDefault(req.user.id);
     return this.versioning.resolve(req, 'gradeScale.detail')(raw);
   }
 
   @RequirePermission('grade-scale', 'read')
   @Get(':id')
   async get(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.service.get(id, userId);
+    const raw = await this.service.get(id, req.user.id);
     return this.versioning.resolve(req, 'gradeScale.detail')(raw);
   }
 
@@ -59,8 +56,7 @@ export class GradeScaleController {
   @UseGuards(AdminGuard)
   @Post()
   async create(@Req() req: any, @Body() dto: CreateGradeScaleDto) {
-    const userId: string = req.user.id;
-    const raw = await this.service.create(userId, dto);
+    const raw = await this.service.create(req.user.id, dto);
     return this.versioning.resolve(req, 'gradeScale.created')(raw);
   }
 
@@ -72,8 +68,7 @@ export class GradeScaleController {
     @Param('id') id: string,
     @Body() dto: UpdateGradeScaleDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.service.update(id, userId, dto);
+    const raw = await this.service.update(id, req.user.id, dto);
     return this.versioning.resolve(req, 'gradeScale.updated')(raw);
   }
 
@@ -85,8 +80,7 @@ export class GradeScaleController {
     @Param('id') id: string,
     @Body() dto: ReplaceBandsDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.service.replaceBands(id, userId, dto);
+    const raw = await this.service.replaceBands(id, req.user.id, dto);
     return this.versioning.resolve(req, 'gradeScale.bandsReplaced')(raw);
   }
 
@@ -94,8 +88,7 @@ export class GradeScaleController {
   @UseGuards(AdminGuard)
   @Post(':id/set-default')
   async setDefault(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.service.setDefault(id, userId);
+    const raw = await this.service.setDefault(id, req.user.id);
     return this.versioning.resolve(req, 'gradeScale.defaultSet')(raw);
   }
 
@@ -103,8 +96,7 @@ export class GradeScaleController {
   @UseGuards(AdminGuard)
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.service.delete(id, userId);
+    const raw = await this.service.delete(id, req.user.id);
     return this.versioning.resolve(req, 'gradeScale.deleted')(raw);
   }
 }

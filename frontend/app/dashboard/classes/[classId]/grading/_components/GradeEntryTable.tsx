@@ -19,16 +19,14 @@ export function GradeEntryTable({
   existingGrades,
   classId,
   subjectId,
-  onSavedAction,
-  canEdit = true,
+  onSaved,
 }: {
   assessmentId: string;
   maxScore: number;
   existingGrades: GradeRow[];
   classId: string;
   subjectId: string;
-  onSavedAction: () => void;
-  canEdit?: boolean;
+  onSaved: () => void;
 }) {
   useSignals();
   const enrolled = useSignal<
@@ -50,7 +48,7 @@ export function GradeEntryTable({
       .then((data) => (enrolled.value = data))
       .catch(() => {})
       .finally(() => (loadingStudents.value = false));
-  }, [classId, subjectId, enrolled, loadingStudents]);
+  }, [classId, subjectId]);
 
   useEffect(() => {
     const map = new Map<string, { score: string; remarks: string }>();
@@ -61,7 +59,7 @@ export function GradeEntryTable({
       });
     }
     scores.value = map;
-  }, [existingGrades, scores]);
+  }, [existingGrades]);
 
   function updateScore(studentId: string, field: "score" | "remarks", value: string) {
     const next = new Map(scores.value);
@@ -100,7 +98,7 @@ export function GradeEntryTable({
         body: { assessmentId, grades: gradeEntries },
       });
       toast.success(`${gradeEntries.length} grade${gradeEntries.length > 1 ? "s" : ""} saved`);
-      onSavedAction();
+      onSaved();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to save";
       toast.error(msg);
@@ -122,7 +120,7 @@ export function GradeEntryTable({
       toast.success(
         grade.is_excluded ? "Grade included" : "Grade excluded",
       );
-      onSavedAction();
+      onSaved();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);
@@ -203,7 +201,6 @@ export function GradeEntryTable({
                             ev.target.value,
                           )
                         }
-                        disabled={!canEdit}
                         className="w-24 h-8 text-sm"
                         placeholder="-"
                       />
@@ -232,13 +229,12 @@ export function GradeEntryTable({
                           ev.target.value,
                         )
                       }
-                      disabled={!canEdit}
                       className="h-8 text-sm"
                       placeholder="Optional remarks"
                     />
                   </TableCell>
                   <TableCell>
-                    {canEdit && existingGrade && (
+                    {existingGrade && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -264,12 +260,10 @@ export function GradeEntryTable({
           </TableBody>
         </Table>
       </div>
-      {canEdit && (
-        <Button onClick={handleSave} disabled={saving.value} className="w-full">
-          <Save className="mr-2 size-4" />
-          {saving.value ? "Saving..." : "Save All Grades"}
-        </Button>
-      )}
+      <Button onClick={handleSave} disabled={saving.value} className="w-full">
+        <Save className="mr-2 size-4" />
+        {saving.value ? "Saving..." : "Save All Grades"}
+      </Button>
     </div>
   );
 }

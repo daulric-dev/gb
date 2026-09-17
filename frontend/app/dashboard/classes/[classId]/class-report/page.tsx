@@ -33,11 +33,9 @@ import { StatsSummaryCards } from "./_components/StatsSummaryCards";
 import { SubjectAveragesCard } from "./_components/SubjectAveragesCard";
 import { StudentRankingsCard } from "./_components/StudentRankingsCard";
 import { ExportCard } from "./_components/ExportCard";
-import { usePermissions } from "@/providers/PermissionsProvider";
 
 export default function ClassReportPage() {
   useSignals();
-  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const classId = params?.classId as string;
@@ -96,7 +94,7 @@ export default function ClassReportPage() {
       .finally(() => {
         loading.value = false;
       });
-  }, [classId, academicYearName, classInfo, gradingModel, loading, selectedTermId, yearCwWeight, yearExWeight, terms]);
+  }, [classId]);
 
   useEffect(() => {
     loadClass();
@@ -163,7 +161,7 @@ export default function ClassReportPage() {
         })
         .finally(() => { dataLoading.value = false; });
     }
-  }, [classId, selectedTermId, reportType, gradingModel, classInfo, dataLoading, storedFiles, summary, terms, yearResults]);
+  }, [classId, selectedTermId.value, reportType.value, gradingModel.value, classInfo.value?.academicYearId]);
 
   useEffect(() => {
     fetchSummary();
@@ -218,7 +216,7 @@ export default function ClassReportPage() {
   };
 
   const generateAndUploadAll = async () => {
-    if (!classInfo.value?.isClassTeacher || !can("reporting", "create")) return;
+    if (!classInfo.value?.isClassTeacher) return;
 
     generating.value = true;
     try {
@@ -268,7 +266,7 @@ export default function ClassReportPage() {
     return <LoadingSkeleton />;
   }
 
-  if (!classInfo.value || (!classInfo.value.isClassTeacher && !can("reporting", "read"))) {
+  if (!classInfo.value || !classInfo.value.isClassTeacher) {
     return <AccessDenied classInfo={classInfo.value} />;
   }
 
@@ -335,8 +333,6 @@ export default function ClassReportPage() {
           <ExportCard
             isClassTeacher={isClassTeacher}
             generating={generating.value}
-            canCreateReport={can("reporting", "create")}
-            canReadReport={can("reporting", "read")}
             storedFiles={storedFiles.value}
             storedFileTypes={storedFileTypes}
             onDownloadPdf={downloadPdf}

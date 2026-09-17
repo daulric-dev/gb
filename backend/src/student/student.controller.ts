@@ -39,15 +39,13 @@ export class StudentController {
     const hasPaginationParams =
       pagination?.page !== undefined || pagination?.cursor !== undefined;
 
-    const userId: string = req.user.id;
-
     if (!hasPaginationParams) {
-      const raw = await this.studentService.findAll(userId, search);
+      const raw = await this.studentService.findAll(req.user.id, search);
       return this.versioning.resolve(req, 'student.list')(raw);
     }
 
     const raw = await this.studentService.findAllPaginated(
-      userId,
+      req.user.id,
       pagination,
       search,
     );
@@ -57,16 +55,14 @@ export class StudentController {
   @RequirePermission('student', 'read')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.studentService.findOne(userId, id);
+    const raw = await this.studentService.findOne(req.user.id, id);
     return this.versioning.resolve(req, 'student.detail')(raw);
   }
 
   @RequirePermission('student', 'create')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateStudentDto) {
-    const userId: string = req.user.id;
-    const raw = await this.studentService.create(userId, dto);
+    const raw = await this.studentService.create(req.user.id, dto);
     return this.versioning.resolve(req, 'student.created')(raw);
   }
 
@@ -77,8 +73,7 @@ export class StudentController {
     @Param('id') id: string,
     @Body() dto: UpdateStudentDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.studentService.update(userId, id, dto);
+    const raw = await this.studentService.update(req.user.id, id, dto);
     return this.versioning.resolve(req, 'student.updated')(raw);
   }
 }

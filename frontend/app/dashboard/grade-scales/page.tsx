@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, Star } from "lucide-react";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { usePermissions } from "@/providers/PermissionsProvider";
+import { useProfile } from "@/providers/AuthProvider";
 import { ScaleForm } from "./_components/ScaleForm";
 import type { GradeScaleDetail, GradeScaleSummary } from "./_components/types";
 
@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function GradeScalesPage() {
   useSignals();
-  const { can, loading: permissionsLoading } = usePermissions();
+  const { profile, loading: profileLoading } = useProfile();
 
   const scales = useSignal<GradeScaleSummary[]>([]);
   const loading = useSignal(true);
@@ -38,7 +38,7 @@ export default function GradeScalesPage() {
       .then((data) => (scales.value = data))
       .catch(() => toast.error("Failed to load grade scales"))
       .finally(() => (loading.value = false));
-  }, [loading, scales]);
+  }, []);
 
   useEffect(() => {
     fetchScales();
@@ -79,11 +79,11 @@ export default function GradeScalesPage() {
     }
   };
 
-  if (permissionsLoading.value) {
+  if (profileLoading.value) {
     return <Skeleton className="h-24 w-full" />;
   }
 
-  if (!can("grade-scale", "read")) {
+  if (profile.value?.role !== "admin") {
     return (
       <div className="space-y-6">
         <DashboardPageHeader
@@ -92,7 +92,7 @@ export default function GradeScalesPage() {
         />
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            You do not have permission to view grade scales.
+            Only school administrators can manage grade scales.
           </CardContent>
         </Card>
       </div>
@@ -105,12 +105,10 @@ export default function GradeScalesPage() {
         title="Grade Scales"
         description="Configure how numeric grades are displayed in your school"
         action={
-          can("grade-scale", "create") ? (
-            <Button onClick={() => (creating.value = true)}>
-              <Plus className="mr-2 size-4" />
-              New scale
-            </Button>
-          ) : undefined
+          <Button onClick={() => (creating.value = true)}>
+            <Plus className="mr-2 size-4" />
+            New scale
+          </Button>
         }
       />
 
@@ -151,41 +149,35 @@ export default function GradeScalesPage() {
                       {TYPE_LABEL[s.scaleType] ?? s.scaleType}
                     </p>
                   </div>
-                  {(can("grade-scale", "update") || can("grade-scale", "delete")) && (
-                    <div className="flex items-center gap-1">
-                      {can("grade-scale", "update") && !s.isDefault && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={settingDefault.value === s.id}
-                          onClick={() => setAsDefault(s.id)}
-                          title="Set as default"
-                        >
-                          <Star className="size-4" />
-                        </Button>
-                      )}
-                      {can("grade-scale", "update") && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => startEdit(s.id)}
-                          title="Edit"
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
-                      )}
-                      {can("grade-scale", "delete") && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => remove(s)}
-                          title="Delete"
-                        >
-                          <Trash2 className="size-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {!s.isDefault && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={settingDefault.value === s.id}
+                        onClick={() => setAsDefault(s.id)}
+                        title="Set as default"
+                      >
+                        <Star className="size-4" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => startEdit(s.id)}
+                      title="Edit"
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => remove(s)}
+                      title="Delete"
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -207,11 +199,11 @@ export default function GradeScalesPage() {
           {creating.value && (
             <ScaleForm
               existing={null}
-              onSavedAction={() => {
+              onSaved={() => {
                 creating.value = false;
                 fetchScales();
               }}
-              onCancelAction={() => (creating.value = false)}
+              onCancel={() => (creating.value = false)}
             />
           )}
         </DialogContent>
@@ -233,11 +225,11 @@ export default function GradeScalesPage() {
           {editing.value && (
             <ScaleForm
               existing={editing.value}
-              onSavedAction={() => {
+              onSaved={() => {
                 editing.value = null;
                 fetchScales();
               }}
-              onCancelAction={() => (editing.value = null)}
+              onCancel={() => (editing.value = null)}
             />
           )}
         </DialogContent>

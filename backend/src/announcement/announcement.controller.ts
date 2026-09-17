@@ -31,40 +31,35 @@ export class AnnouncementController {
   @RequirePermission('announcement', 'read')
   @Get()
   async findAll(@Req() req: any) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.findAll(userId);
+    const raw = await this.announcementService.findAll(req.user.id);
     return this.versioning.resolve(req, 'announcement.list')(raw);
   }
 
   @RequirePermission('announcement', 'read')
   @Get('unread-count')
   async unreadCount(@Req() req: any) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.getUnreadCount(userId);
+    const raw = await this.announcementService.getUnreadCount(req.user.id);
     return this.versioning.resolve(req, 'announcement.unreadCount')(raw);
   }
 
   @RequirePermission('announcement', 'read')
   @Post('mark-read')
   async markRead(@Req() req: any) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.markRead(userId);
+    const raw = await this.announcementService.markRead(req.user.id);
     return this.versioning.resolve(req, 'announcement.markRead')(raw);
   }
 
   @RequirePermission('announcement', 'read')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.findOne(userId, id);
+    const raw = await this.announcementService.findOne(req.user.id, id);
     return this.versioning.resolve(req, 'announcement.detail')(raw);
   }
 
   @RequirePermission('announcement', 'create')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateAnnouncementDto) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.create(userId, dto);
+    const raw = await this.announcementService.create(req.user.id, dto);
     return this.versioning.resolve(req, 'announcement.created')(raw);
   }
 
@@ -75,16 +70,14 @@ export class AnnouncementController {
     @Param('id') id: string,
     @Body() dto: UpdateAnnouncementDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.update(userId, id, dto);
+    const raw = await this.announcementService.update(req.user.id, id, dto);
     return this.versioning.resolve(req, 'announcement.updated')(raw);
   }
 
   @RequirePermission('announcement', 'delete')
   @Delete(':id')
   async delete(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.announcementService.delete(userId, id);
+    const raw = await this.announcementService.delete(req.user.id, id);
     return this.versioning.resolve(req, 'announcement.deleted')(raw);
   }
 }

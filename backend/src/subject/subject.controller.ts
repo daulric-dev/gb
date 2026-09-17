@@ -32,32 +32,28 @@ export class SubjectController {
   @RequirePermission('subject', 'read')
   @Get()
   async findAll(@Req() req: any) {
-    const userId: string = req.user.id;
-    const raw = await this.subjectService.findAll(userId);
+    const raw = await this.subjectService.findAll(req.user.id);
     return this.versioning.resolve(req, 'subject.list')(raw);
   }
 
   @RequirePermission('subject', 'update')
   @Patch('reorder')
   async reorder(@Req() req: any, @Body() dto: ReorderSubjectsDto) {
-    const userId: string = req.user.id;
-    const raw = await this.subjectService.reorder(userId, dto);
+    const raw = await this.subjectService.reorder(req.user.id, dto);
     return this.versioning.resolve(req, 'subject.reordered')(raw);
   }
 
   @RequirePermission('subject', 'read')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.subjectService.findOne(userId, id);
+    const raw = await this.subjectService.findOne(req.user.id, id);
     return this.versioning.resolve(req, 'subject.detail')(raw);
   }
 
   @RequirePermission('subject', 'create')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateSubjectDto) {
-    const userId: string = req.user.id;
-    const raw = await this.subjectService.create(userId, dto);
+    const raw = await this.subjectService.create(req.user.id, dto);
     return this.versioning.resolve(req, 'subject.created')(raw);
   }
 
@@ -68,16 +64,14 @@ export class SubjectController {
     @Param('id') id: string,
     @Body() dto: UpdateSubjectDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.subjectService.update(userId, id, dto);
+    const raw = await this.subjectService.update(req.user.id, id, dto);
     return this.versioning.resolve(req, 'subject.updated')(raw);
   }
 
   @RequirePermission('subject', 'delete')
   @Delete(':id')
   async delete(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    const raw = await this.subjectService.delete(userId, id);
+    const raw = await this.subjectService.delete(req.user.id, id);
     return this.versioning.resolve(req, 'subject.deleted')(raw);
   }
 }

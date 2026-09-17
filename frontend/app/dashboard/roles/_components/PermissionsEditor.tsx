@@ -18,7 +18,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
-import { usePermissions } from "@/providers/PermissionsProvider";
 import type { CatalogEntry, SchoolRole } from "./types";
 
 const ACTION_ORDER: CatalogEntry["action"][] = [
@@ -45,17 +44,16 @@ export function PermissionsEditor({
   open,
   role,
   catalog,
-  onOpenChangeAction,
-  onSavedAction,
+  onOpenChange,
+  onSaved,
 }: {
   open: boolean;
   role: SchoolRole | null;
   catalog: CatalogEntry[];
-  onOpenChangeAction: (open: boolean) => void;
-  onSavedAction: () => void;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
 }) {
   useSignals();
-  const { refresh: refreshPermissions } = usePermissions();
   const selected = useSignal<Set<string>>(new Set());
   const loading = useSignal(true);
   const saving = useSignal(false);
@@ -67,7 +65,7 @@ export function PermissionsEditor({
       .then((keys) => (selected.value = new Set(keys)))
       .catch(() => toast.error("Failed to load role permissions"))
       .finally(() => (loading.value = false));
-  }, [loading, selected]);
+  }, []);
 
   useEffect(() => {
     if (open && role) fetchPermissions(role.id);
@@ -101,11 +99,8 @@ export function PermissionsEditor({
         body: { keys: [...selected.value] },
       });
       toast.success(`Permissions updated for ${role.name}`);
-      // The edited role may be one the current user holds, so their own
-      // effective permissions can change with this save.
-      await refreshPermissions();
-      onOpenChangeAction(false);
-      onSavedAction();
+      onOpenChange(false);
+      onSaved();
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to save permissions",
@@ -116,7 +111,7 @@ export function PermissionsEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChangeAction}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto]">
         <DialogHeader>
           <DialogTitle>Permissions - {role?.name}</DialogTitle>
@@ -182,7 +177,7 @@ export function PermissionsEditor({
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => onOpenChangeAction(false)}
+              onClick={() => onOpenChange(false)}
               disabled={saving.value}
             >
               Cancel

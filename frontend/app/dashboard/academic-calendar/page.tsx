@@ -31,12 +31,9 @@ import { sortYearsActiveFirst, type AcademicYear } from "./_components/types";
 import { CreateYearForm } from "./_components/CreateYearForm";
 import { EditYearForm } from "./_components/EditYearForm";
 import { TermsTab } from "./_components/TermsTab";
-import { usePermissions } from "@/providers/PermissionsProvider";
-import { PermissionDenied } from "@/components/dashboard/permission-denied";
 
 export default function AcademicYearsPage() {
   useSignals();
-  const { can } = usePermissions();
   const years = useSignal<AcademicYear[]>([]);
   const loading = useSignal(true);
   const dialogOpen = useSignal(false);
@@ -50,7 +47,7 @@ export default function AcademicYearsPage() {
       .then((data) => (years.value = data))
       .catch(() => toast.error("Failed to load academic years"))
       .finally(() => (loading.value = false));
-  }, [loading, years]);
+  }, []);
 
   useEffect(() => {
     fetchYears();
@@ -82,33 +79,31 @@ export default function AcademicYearsPage() {
 
   const yearsPanel = (
     <div className="space-y-4">
-      {can("academic-year", "create") && (
-        <div className="flex justify-end">
-          <Dialog
-            open={dialogOpen.value}
-            onOpenChange={(v) => (dialogOpen.value = v)}
-          >
-            <DialogTrigger render={<Button />}>
-              <Plus className="mr-2 size-4" />
-              New Academic Year
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create Academic Year</DialogTitle>
-                <DialogDescription>
-                  Add a new academic year for your school
-                </DialogDescription>
-              </DialogHeader>
-              <CreateYearForm
-                onSuccess={() => {
-                  dialogOpen.value = false;
-                  fetchYears();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
-        </div>
-      )}
+      <div className="flex justify-end">
+        <Dialog
+          open={dialogOpen.value}
+          onOpenChange={(v) => (dialogOpen.value = v)}
+        >
+          <DialogTrigger render={<Button />}>
+            <Plus className="mr-2 size-4" />
+            New Academic Year
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Academic Year</DialogTitle>
+              <DialogDescription>
+                Add a new academic year for your school
+              </DialogDescription>
+            </DialogHeader>
+            <CreateYearForm
+              onSuccess={() => {
+                dialogOpen.value = false;
+                fetchYears();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      </div>
 
       {loading.value ? (
         <div className="space-y-2">
@@ -130,9 +125,7 @@ export default function AcademicYearsPage() {
                 <TableHead>End</TableHead>
                 <TableHead>Model</TableHead>
                 <TableHead>Status</TableHead>
-                {can("academic-year", "update") && (
-                  <TableHead className="text-right">Actions</TableHead>
-                )}
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -147,16 +140,14 @@ export default function AcademicYearsPage() {
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {year.grading_model
-                        .replace(/_/g, " ")
-                        .replace(/\b\w/g, (c) => c.toUpperCase())}
+                      {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     </Badge>
                     {year.year_exam_weight != null && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        Exam {year.year_exam_weight}% / CW{" "}
-                        {year.year_coursework_weight}%
-                      </span>
-                    )}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          Exam {year.year_exam_weight}% / CW{" "}
+                          {year.year_coursework_weight}%
+                        </span>
+                      )}
                   </TableCell>
                   <TableCell>
                     {year.is_active ? (
@@ -165,34 +156,32 @@ export default function AcademicYearsPage() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </TableCell>
-                  {can("academic-year", "update") && (
-                    <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => (editYear.value = year)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    {year.is_active ? (
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={() => (editYear.value = year)}
+                        onClick={() => handleDeactivate(year.id)}
                       >
-                        <Pencil className="size-4" />
+                        Deactivate
                       </Button>
-                      {year.is_active ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeactivate(year.id)}
-                        >
-                          Deactivate
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleActivate(year.id)}
-                        >
-                          Activate
-                        </Button>
-                      )}
-                    </TableCell>
-                  )}
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleActivate(year.id)}
+                      >
+                        Activate
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -201,16 +190,6 @@ export default function AcademicYearsPage() {
       )}
     </div>
   );
-
-  if (!can("academic-year", "read")) {
-    return (
-      <PermissionDenied
-        title="Academic Calendar"
-        description="Manage academic years and terms"
-        message="You do not have permission to view the academic calendar."
-      />
-    );
-  }
 
   return (
     <div className="space-y-6">

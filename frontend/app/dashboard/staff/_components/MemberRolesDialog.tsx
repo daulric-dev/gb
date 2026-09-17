@@ -25,7 +25,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Loader2 } from "lucide-react";
 import type { SchoolMember } from "./types";
-import { usePermissions } from "@/providers/PermissionsProvider";
 
 interface CustomRole {
   id: string;
@@ -42,21 +41,18 @@ function memberName(member: SchoolMember | null) {
   );
 }
 
-type MemberRolesDialogActionProps = {
-  open: boolean;
-  member: SchoolMember | null;
-  onOpenChangeAction: (open: boolean) => void;
-  onRolesChangedAction: () => void;
-};
-
 export function MemberRolesDialog({
   open,
   member,
-  onOpenChangeAction,
-  onRolesChangedAction,
-}: MemberRolesDialogActionProps) {
+  onOpenChange,
+  onRolesChanged,
+}: {
+  open: boolean;
+  member: SchoolMember | null;
+  onOpenChange: (open: boolean) => void;
+  onRolesChanged?: () => void;
+}) {
   useSignals();
-  const { refresh: refreshPermissions } = usePermissions();
   const roles = useSignal<CustomRole[]>([]);
   const assigned = useSignal<Set<string>>(new Set());
   const loading = useSignal(true);
@@ -76,14 +72,14 @@ export function MemberRolesDialog({
       })
       .catch(() => toast.error("Failed to load roles"))
       .finally(() => (loading.value = false));
-  }, [loading, assigned, roles]);
+  }, []);
 
   useEffect(() => {
     if (open && member) {
       baseRole.value = member.role;
       load(member.id);
     }
-  }, [open, member, load, baseRole]);
+  }, [open, member, load]);
 
   async function saveBaseRole(role: SchoolMember["role"]) {
     if (!member || member.is_owner || role === member.role) return;
@@ -96,8 +92,7 @@ export function MemberRolesDialog({
       member.role = role;
       baseRole.value = role;
       toast.success("Default role updated");
-      await refreshPermissions();
-      onRolesChangedAction?.();
+      onRolesChanged?.();
     } catch (err) {
       baseRole.value = member.role;
       toast.error(
@@ -122,8 +117,7 @@ export function MemberRolesDialog({
       if (on) next.add(roleId);
       else next.delete(roleId);
       assigned.value = next;
-      await refreshPermissions();
-      onRolesChangedAction?.();
+      onRolesChanged?.();
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to update role",
@@ -134,7 +128,7 @@ export function MemberRolesDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChangeAction}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Roles - {memberName(member)}</DialogTitle>
@@ -227,7 +221,7 @@ export function MemberRolesDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChangeAction(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Done
           </Button>
         </DialogFooter>

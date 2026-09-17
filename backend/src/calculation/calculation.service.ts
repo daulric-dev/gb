@@ -65,9 +65,9 @@ export class CalculationService {
     ]);
 
     const subject = subjectRes.data;
-    const subjectName: string = subject?.name ?? 'Unknown';
-    const subjectCode: string = subject?.code ?? null;
-    const isGraded: boolean = subject?.is_graded ?? true;
+    const subjectName = subject?.name ?? 'Unknown';
+    const subjectCode = subject?.code ?? null;
+    const isGraded = subject?.is_graded ?? true;
 
     if (!isGraded) {
       return this.nonGradedResult(subjectId, subjectName, subjectCode);
@@ -231,18 +231,16 @@ export class CalculationService {
     const subjectResults: SubjectGradeSummary[] = [];
 
     for (const subj of subjects ?? []) {
-      const id: string = subj.id;
-      const name: string = subj.name;
-      const code: string = subj.code;
-
       if (!subj.is_graded) {
-        subjectResults.push(this.nonGradedResult(id, name, code));
+        subjectResults.push(
+          this.nonGradedResult(subj.id, subj.name, subj.code),
+        );
         continue;
       }
 
       const result = await this.calculateSubjectTermGrade(
         studentId,
-        id,
+        subj.id,
         termId,
       );
       subjectResults.push(result);
@@ -321,10 +319,9 @@ export class CalculationService {
     }[] = [];
 
     for (const term of terms) {
-      const term_id: string = term.id;
       const result = await this.calculateStudentTermResult(
         studentId,
-        term_id,
+        term.id,
         studentGroupId,
       );
       termResults.push({
@@ -507,7 +504,7 @@ export class CalculationService {
         .single(),
     ]);
 
-    const gradingModel: string =
+    const gradingModel =
       academicYearRes.data?.grading_model ?? 'weighted_continuous';
     const strategy = this.getStrategy(gradingModel);
 
@@ -515,23 +512,19 @@ export class CalculationService {
       string,
       { id: string; first_name: string; last_name: string }
     >();
-
-    for (const s of studentsRes.data ?? []) studentMap.set(s.id as string, s);
+    for (const s of studentsRes.data ?? []) studentMap.set(s.id, s);
 
     const cwWeight = termRes.data?.coursework_weight ?? 50;
     const exWeight = termRes.data?.exam_weight ?? 50;
 
     const subjectMap = new Map<string, any>();
-    for (const s of allSubjectsRes.data ?? [])
-      subjectMap.set(s.id as string, s);
+    for (const s of allSubjectsRes.data ?? []) subjectMap.set(s.id, s);
 
     const studentSubjects = new Map<string, Set<string>>();
     for (const sp of subjectProfilesRes.data ?? []) {
-      const student_id: string = sp.student_id;
-
-      if (!studentSubjects.has(sp.student_id as string))
-        studentSubjects.set(sp.student_id as string, new Set());
-      studentSubjects.get(student_id)!.add(sp.subject_id as string);
+      if (!studentSubjects.has(sp.student_id))
+        studentSubjects.set(sp.student_id, new Set());
+      studentSubjects.get(sp.student_id)!.add(sp.subject_id);
     }
 
     const allAssessments = (assessmentsRes.data ?? []) as AssessmentRecord[];
@@ -565,10 +558,10 @@ export class CalculationService {
     const results: StudentTermResult[] = [];
 
     for (const studentId of studentIds) {
-      const student = studentMap.get(studentId as string);
+      const student = studentMap.get(studentId);
       const firstName = student?.first_name ?? 'Unknown';
       const lastName = student?.last_name ?? 'Unknown';
-      const mySubjectIds = studentSubjects.get(studentId as string);
+      const mySubjectIds = studentSubjects.get(studentId);
 
       if (!mySubjectIds || mySubjectIds.size === 0) {
         results.push({
@@ -589,10 +582,8 @@ export class CalculationService {
         if (!subj) continue;
 
         if (!subj.is_graded) {
-          const subj_name: string = subj.name as string;
-          const subj_code: string | null = subj.code as string | null;
           subjectResults.push(
-            this.nonGradedResult(subjectId, subj_name, subj_code),
+            this.nonGradedResult(subjectId, subj.name, subj.code),
           );
           continue;
         }
@@ -717,7 +708,7 @@ export class CalculationService {
       string,
       { id: string; first_name: string; last_name: string }
     >();
-    for (const s of studentsRes.data ?? []) studentMap.set(s.id as string, s);
+    for (const s of studentsRes.data ?? []) studentMap.set(s.id, s);
 
     const gradingModel =
       (academicYearRes.data?.grading_model as GradingModel) ??
@@ -731,16 +722,13 @@ export class CalculationService {
     if (terms.length === 0) return [];
 
     const subjectMap = new Map<string, any>();
-    for (const s of allSubjectsRes.data ?? [])
-      subjectMap.set(s.id as string, s);
+    for (const s of allSubjectsRes.data ?? []) subjectMap.set(s.id, s);
 
     const studentSubjects = new Map<string, Set<string>>();
     for (const sp of subjectProfilesRes.data ?? []) {
-      const student_id: string = sp.student_id;
-
-      if (!studentSubjects.has(student_id))
-        studentSubjects.set(student_id, new Set());
-      studentSubjects.get(student_id)!.add(sp.subject_id as string);
+      if (!studentSubjects.has(sp.student_id))
+        studentSubjects.set(sp.student_id, new Set());
+      studentSubjects.get(sp.student_id)!.add(sp.subject_id);
     }
 
     const termIds = terms.map((t: any) => t.id);
@@ -784,7 +772,7 @@ export class CalculationService {
 
     const termWeightMap = new Map<string, { cw: number; ex: number }>();
     for (const t of terms)
-      termWeightMap.set(t.id as string, {
+      termWeightMap.set(t.id, {
         cw: t.coursework_weight ?? 50,
         ex: t.exam_weight ?? 50,
       });
@@ -796,10 +784,11 @@ export class CalculationService {
     ): SubjectGradeSummary => {
       const subj = subjectMap.get(subjectId);
       if (!subj || !subj.is_graded) {
-        const subj_name: string = subj?.name ?? 'Unknown';
-        const subj_code: string = subj?.code ?? null;
-
-        return this.nonGradedResult(subjectId, subj_name, subj_code);
+        return this.nonGradedResult(
+          subjectId,
+          subj?.name ?? 'Unknown',
+          subj?.code ?? null,
+        );
       }
 
       const subjectAssessments =
@@ -829,10 +818,10 @@ export class CalculationService {
     const results: StudentYearResult[] = [];
 
     for (const studentId of studentIds) {
-      const student = studentMap.get(studentId as string);
+      const student = studentMap.get(studentId);
       const firstName = student?.first_name ?? 'Unknown';
       const lastName = student?.last_name ?? 'Unknown';
-      const mySubjectIds = studentSubjects.get(studentId as string);
+      const mySubjectIds = studentSubjects.get(studentId);
 
       if (!mySubjectIds || mySubjectIds.size === 0) {
         results.push({
@@ -864,10 +853,8 @@ export class CalculationService {
       for (const term of terms) {
         const subjectResults: SubjectGradeSummary[] = [];
         for (const subjectId of mySubjectIds) {
-          const term_id: string = term.id;
-
           subjectResults.push(
-            computeSubjectTerm(studentId as string, subjectId, term_id),
+            computeSubjectTerm(studentId, subjectId, term.id),
           );
         }
         subjectResults.sort((a, b) => {

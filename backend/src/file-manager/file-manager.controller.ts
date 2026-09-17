@@ -28,7 +28,6 @@ import { RenameFolderDto } from './dto/rename-folder.dto';
 import { MoveFileDto } from './dto/move-file.dto';
 import { MoveFolderDto } from './dto/move-folder.dto';
 import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
-import { MultipartFile } from '@fastify/multipart';
 
 @ApiTags('File Manager')
 @ApiBearerAuth()
@@ -44,8 +43,7 @@ export class FileManagerController {
   @RequirePermission('file', 'read')
   @Get()
   async list(@Req() req: any, @Query() query: ListFilesQueryDto) {
-    const userId: string = req.user.id;
-    return this.files.list(userId, query.filter, {
+    return this.files.list(req.user.id, query.filter, {
       page: query.page,
       pageSize: query.pageSize,
     });
@@ -59,9 +57,8 @@ export class FileManagerController {
     @Query('name') name?: string,
     @Query('folderId') folderId?: string,
   ) {
-    const userId: string = req.user.id;
-    const file: MultipartFile = await req.file();
-    return this.files.uploadManual(userId, file, name, folderId);
+    const file = await req.file();
+    return this.files.uploadManual(req.user.id, file, name, folderId);
   }
 
   // ── Folders (declared before :id so the literal path wins) ────────────────
@@ -69,22 +66,19 @@ export class FileManagerController {
   @RequirePermission('file', 'read')
   @Get('folders/contents')
   async browseFolder(@Req() req: any, @Query() query: BrowseFolderQueryDto) {
-    const userId: string = req.user.id;
-    return this.files.browseFolder(userId, query.folderId ?? null);
+    return this.files.browseFolder(req.user.id, query.folderId ?? null);
   }
 
   @RequirePermission('file', 'read')
   @Get('folders')
   async listFolders(@Req() req: any) {
-    const userId: string = req.user.id;
-    return this.folders.listAll(userId);
+    return this.folders.listAll(req.user.id);
   }
 
   @RequirePermission('file', 'create')
   @Post('folders')
   async createFolder(@Req() req: any, @Body() dto: CreateFolderDto) {
-    const userId: string = req.user.id;
-    return this.folders.create(userId, dto.name, dto.parentId ?? null);
+    return this.folders.create(req.user.id, dto.name, dto.parentId ?? null);
   }
 
   @RequirePermission('file', 'update')
@@ -94,8 +88,7 @@ export class FileManagerController {
     @Param('folderId') folderId: string,
     @Body() dto: RenameFolderDto,
   ) {
-    const userId: string = req.user.id;
-    return this.folders.rename(userId, folderId, dto.name);
+    return this.folders.rename(req.user.id, folderId, dto.name);
   }
 
   /** Re-parent a folder (drag a folder into another folder, or to the root). */
@@ -106,15 +99,13 @@ export class FileManagerController {
     @Param('folderId') folderId: string,
     @Body() dto: MoveFolderDto,
   ) {
-    const userId: string = req.user.id;
-    return this.folders.move(userId, folderId, dto.parentId);
+    return this.folders.move(req.user.id, folderId, dto.parentId);
   }
 
   @RequirePermission('file', 'delete')
   @Delete('folders/:folderId')
   async deleteFolder(@Req() req: any, @Param('folderId') folderId: string) {
-    const userId: string = req.user.id;
-    return this.folders.remove(userId, folderId);
+    return this.folders.remove(req.user.id, folderId);
   }
 
   // ── Notifications (declared before :id so the literal path wins) ──────────
@@ -122,29 +113,25 @@ export class FileManagerController {
   @RequirePermission('file', 'read')
   @Get('notifications')
   async listNotifications(@Req() req: any) {
-    const userId: string = req.user.id;
-    return this.notifications.list(userId);
+    return this.notifications.list(req.user.id);
   }
 
   @RequirePermission('file', 'read')
   @Get('notifications/unread-count')
   async unreadNotifications(@Req() req: any) {
-    const userId: string = req.user.id;
-    return this.notifications.unreadCount(userId);
+    return this.notifications.unreadCount(req.user.id);
   }
 
   @RequirePermission('file', 'read')
   @Post('notifications/mark-read')
   async markNotificationsRead(@Req() req: any) {
-    const userId: string = req.user.id;
-    return this.notifications.markAllRead(userId);
+    return this.notifications.markAllRead(req.user.id);
   }
 
   @RequirePermission('file', 'read')
   @Get(':id')
   async metadata(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    return this.files.getMetadata(userId, id);
+    return this.files.getMetadata(req.user.id, id);
   }
 
   @RequirePermission('file', 'read')
@@ -154,9 +141,8 @@ export class FileManagerController {
     @Param('id') id: string,
     @Res() reply: FastifyReply,
   ) {
-    const userId: string = req.user.id;
     const { buffer, contentType, filename } = await this.files.getViewContent(
-      userId,
+      req.user.id,
       id,
     );
     reply
@@ -178,9 +164,8 @@ export class FileManagerController {
     @Param('id') id: string,
     @Res() reply: FastifyReply,
   ) {
-    const userId: string = req.user.id;
     const { buffer, contentType, filename } =
-      await this.files.getDownloadContent(userId, id);
+      await this.files.getDownloadContent(req.user.id, id);
     reply
       .header('Content-Type', contentType)
       .header(
@@ -199,8 +184,7 @@ export class FileManagerController {
     @Param('id') id: string,
     @Body() dto: RenameFileDto,
   ) {
-    const userId: string = req.user.id;
-    return this.files.rename(userId, id, dto.name);
+    return this.files.rename(req.user.id, id, dto.name);
   }
 
   /** Move a file into a folder (or to the root with `folderId: null`). */
@@ -211,15 +195,13 @@ export class FileManagerController {
     @Param('id') id: string,
     @Body() dto: MoveFileDto,
   ) {
-    const userId: string = req.user.id;
-    return this.files.move(userId, id, dto.folderId);
+    return this.files.move(req.user.id, id, dto.folderId);
   }
 
   @RequirePermission('file', 'delete')
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    return this.files.softDelete(userId, id);
+    return this.files.softDelete(req.user.id, id);
   }
 
   // ── Shares (owner only; ownership enforced in the service) ─────────────────
@@ -227,8 +209,7 @@ export class FileManagerController {
   @RequirePermission('file', 'update')
   @Get(':id/shares')
   async listShares(@Req() req: any, @Param('id') id: string) {
-    const userId: string = req.user.id;
-    return this.files.listShares(userId, id);
+    return this.files.listShares(req.user.id, id);
   }
 
   @RequirePermission('file', 'update')
@@ -238,8 +219,7 @@ export class FileManagerController {
     @Param('id') id: string,
     @Body() dto: ShareFileDto,
   ) {
-    const userId: string = req.user.id;
-    return this.files.share(userId, id, dto.shares);
+    return this.files.share(req.user.id, id, dto.shares);
   }
 
   @RequirePermission('file', 'update')
@@ -250,8 +230,7 @@ export class FileManagerController {
     @Param('shareId') shareId: string,
     @Body() dto: UpdateShareDto,
   ) {
-    const userId: string = req.user.id;
-    return this.files.updateShare(userId, id, shareId, dto.canDownload);
+    return this.files.updateShare(req.user.id, id, shareId, dto.canDownload);
   }
 
   @RequirePermission('file', 'update')
@@ -261,8 +240,7 @@ export class FileManagerController {
     @Param('id') id: string,
     @Param('shareId') shareId: string,
   ) {
-    const userId: string = req.user.id;
-    return this.files.revokeShare(userId, id, shareId);
+    return this.files.revokeShare(req.user.id, id, shareId);
   }
 
   /** RFC 5987-safe filename for the Content-Disposition header. */

@@ -60,8 +60,6 @@ type DragInfo = { kind: "file" | "folder"; name: string };
 export function FolderBrowser({
   currentUserId,
   canCreate,
-  canUpdate = true,
-  canDelete = true,
   reloadKey,
   onView,
   onShare,
@@ -70,8 +68,6 @@ export function FolderBrowser({
 }: {
   currentUserId: string | undefined;
   canCreate: boolean;
-  canUpdate?: boolean;
-  canDelete?: boolean;
   /** Bumped by the page after a file rename/delete so the browser refetches. */
   reloadKey: number;
   onView: (file: FileItem) => void;
@@ -245,8 +241,6 @@ export function FolderBrowser({
                   <FolderCard
                     key={folder.id}
                     folder={folder}
-                    canUpdate={canUpdate}
-                    canDelete={canDelete}
                     onOpen={() => open(folder.id)}
                     onRename={() => (renameFolder.value = folder)}
                     onDelete={() => (deleteFolder.value = folder)}
@@ -260,8 +254,6 @@ export function FolderBrowser({
               <FilesTable
                 files={data.files}
                 currentUserId={currentUserId}
-                canUpdate={canUpdate}
-                canDelete={canDelete}
                 dnd
                 onView={onView}
                 onShare={onShare}
@@ -346,15 +338,11 @@ export function FolderBrowser({
 /** A folder tile: a drop target for files/folders, and itself draggable. */
 function FolderCard({
   folder,
-  canUpdate = true,
-  canDelete = true,
   onOpen,
   onRename,
   onDelete,
 }: {
   folder: FolderItem;
-  canUpdate?: boolean;
-  canDelete?: boolean;
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
@@ -369,7 +357,7 @@ function FolderCard({
   } = useDraggable({
     id: `folder:${folder.id}`,
     // System folders (e.g. Reports) stay put so auto-filing keeps working.
-    disabled: folder.isSystem || !canUpdate,
+    disabled: folder.isSystem,
     data: {
       kind: "folder",
       id: folder.id,
@@ -386,7 +374,7 @@ function FolderCard({
         isOver && "ring-2 ring-primary bg-accent",
       )}
     >
-      {!folder.isSystem && canUpdate && (
+      {!folder.isSystem && (
         <button
           ref={setDragRef}
           type="button"
@@ -408,36 +396,30 @@ function FolderCard({
           <Lock className="size-3 shrink-0 text-muted-foreground/60" />
         )}
       </button>
-      {(canUpdate || canDelete) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="size-7 p-0 opacity-60 group-hover:opacity-100"
-                aria-label="Folder actions"
-              />
-            }
-          >
-            <MoreVertical className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {canUpdate && (
-              <DropdownMenuItem disabled={folder.isSystem} onClick={onRename}>
-                <Pencil className="mr-2 size-4" />
-                Rename
-              </DropdownMenuItem>
-            )}
-            {canDelete && (
-              <DropdownMenuItem className="text-destructive" onClick={onDelete}>
-                <Trash2 className="mr-2 size-4" />
-                Delete
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="size-7 p-0 opacity-60 group-hover:opacity-100"
+              aria-label="Folder actions"
+            />
+          }
+        >
+          <MoreVertical className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem disabled={folder.isSystem} onClick={onRename}>
+            <Pencil className="mr-2 size-4" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+            <Trash2 className="mr-2 size-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

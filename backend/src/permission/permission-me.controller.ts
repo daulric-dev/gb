@@ -17,7 +17,6 @@ export class PermissionMeController {
 
   @Get('me')
   getMine(@Req() req: any) {
-    const userId: string = req.user.id;
-    return this.permissionService.getMyPermissions(userId);
+    return this.permissionService.getMyPermissions(req.user.id);
   }
 }

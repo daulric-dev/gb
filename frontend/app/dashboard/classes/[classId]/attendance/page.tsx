@@ -13,7 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Save, BarChart3 } from "lucide-react";
-import { usePermissions } from "@/providers/PermissionsProvider";
 import { StudentAttendanceReport } from "./_components/StudentAttendanceReport";
 
 type AttendanceStatus = "present" | "absent" | "late";
@@ -52,7 +51,6 @@ const STATUSES: AttendanceStatus[] = ["present", "absent", "late"];
 
 export default function AttendancePage() {
   useSignals();
-  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const classId = params?.classId as string;
@@ -75,7 +73,7 @@ export default function AttendancePage() {
         classInfo.value = null;
       })
       .finally(() => (loading.value = false));
-  }, [classId, classInfo, loading]);
+  }, [classId]);
 
   const fetchRoster = useCallback(() => {
     if (!date.value) return;
@@ -95,7 +93,7 @@ export default function AttendancePage() {
         toast.error("Failed to load roster");
       })
       .finally(() => (rosterLoading.value = false));
-  }, [classId, date, marks, roster, rosterLoading]);
+  }, [classId, date.value]);
 
   useEffect(() => {
     fetchRoster();
@@ -153,15 +151,7 @@ export default function AttendancePage() {
     );
   }
 
-  if (!can("attendance", "read")) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        You do not have permission to view attendance for this class.
-      </div>
-    );
-  }
-
-  const canMark = can("attendance", "create") && classInfo.value.isClassTeacher;
+  const canMark = classInfo.value.isClassTeacher;
   const totalMarked = Object.keys(marks.value).length;
   const totalStudents = roster.value.length;
 

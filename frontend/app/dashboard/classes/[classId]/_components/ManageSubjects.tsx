@@ -41,7 +41,7 @@ export function ManageSubjects({
       allSubjects.value = subjects;
       loading.value = false;
     });
-  }, [classId, studentId, assigned, allSubjects, loading]);
+  }, [classId, studentId]);
 
   useEffect(() => {
     fetchSubjects();

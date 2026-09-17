@@ -15,8 +15,6 @@ import type { ClassReportFile } from "@/lib/reports";
 interface ExportCardProps {
   isClassTeacher: boolean;
   generating: boolean;
-  canCreateReport?: boolean;
-  canReadReport?: boolean;
   storedFiles: ClassReportFile[];
   storedFileTypes: Set<string>;
   onDownloadPdf: () => void;
@@ -30,8 +28,6 @@ interface ExportCardProps {
 export function ExportCard({
   isClassTeacher,
   generating,
-  canCreateReport = true,
-  canReadReport = true,
   storedFiles,
   storedFileTypes,
   onDownloadPdf,
@@ -53,28 +49,26 @@ export function ExportCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {canReadReport && (
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={onDownloadPdf}>
-              <FileText className="mr-2 size-4" />
-              Download PDF
-            </Button>
-            <Button size="sm" variant="outline" onClick={onDownloadExamReportPdf}>
-              <FileText className="mr-2 size-4" />
-              Exam Report Card
-            </Button>
-            <Button size="sm" variant="outline" onClick={onDownloadCsv}>
-              <FileSpreadsheet className="mr-2 size-4" />
-              Download CSV
-            </Button>
-            <Button size="sm" variant="outline" onClick={onDownloadXlsx}>
-              <FileSpreadsheet className="mr-2 size-4" />
-              Download Excel
-            </Button>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={onDownloadPdf}>
+            <FileText className="mr-2 size-4" />
+            Download PDF
+          </Button>
+          <Button size="sm" variant="outline" onClick={onDownloadExamReportPdf}>
+            <FileText className="mr-2 size-4" />
+            Exam Report Card
+          </Button>
+          <Button size="sm" variant="outline" onClick={onDownloadCsv}>
+            <FileSpreadsheet className="mr-2 size-4" />
+            Download CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={onDownloadXlsx}>
+            <FileSpreadsheet className="mr-2 size-4" />
+            Download Excel
+          </Button>
+        </div>
 
-        {isClassTeacher && canCreateReport && (
+        {isClassTeacher && (
           <div className="flex flex-wrap gap-2 border-t pt-4">
             <Button
               size="sm"

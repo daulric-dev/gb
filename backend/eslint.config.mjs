@@ -6,13 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      'eslint.config.mjs', 
-      'src/stubs/**', 
-      "**/*.test.ts", 
-      "**/*.spec.ts",
-      "**/*mocks.ts"
-    ],
+    ignores: ['eslint.config.mjs', 'src/stubs/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -41,8 +35,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-function-type': 'off',
       '@typescript-eslint/no-redundant-type-constituents': 'off',
-      "prettier/prettier": "off",
-      "quotes": "off"
+      "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
 );

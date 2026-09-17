@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { usePermissions } from "@/providers/PermissionsProvider";
+import { useProfile } from "@/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,9 +31,8 @@ import type { CatalogEntry, SchoolRole } from "./_components/types";
 
 export default function RolesPage() {
   useSignals();
-  // Role management is admin-only on the backend (PermissionController is
-  // behind AdminGuard), so this mirrors that rather than a catalog permission.
-  const { isAdmin } = usePermissions();
+  const { profile, loading: profileLoading } = useProfile();
+  const isAdmin = profile.value?.role === "admin";
 
   const roles = useSignal<SchoolRole[]>([]);
   const catalog = useSignal<CatalogEntry[]>([]);
@@ -51,7 +50,7 @@ export default function RolesPage() {
       .then((data) => (roles.value = data))
       .catch(() => toast.error("Failed to load roles"))
       .finally(() => (loading.value = false));
-  }, [loading, roles]);
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -59,7 +58,7 @@ export default function RolesPage() {
     api<CatalogEntry[]>("/permissions/catalog")
       .then((data) => (catalog.value = data))
       .catch(() => toast.error("Failed to load permission catalog"));
-  }, [isAdmin, fetchRoles, catalog]);
+  }, [isAdmin, fetchRoles]);
 
   function openCreate() {
     editingRole.value = null;
@@ -93,6 +92,10 @@ export default function RolesPage() {
     } finally {
       deletingId.value = null;
     }
+  }
+
+  if (profileLoading.value) {
+    return <Skeleton className="h-40 w-full" />;
   }
 
   if (!isAdmin) {
@@ -210,8 +213,8 @@ export default function RolesPage() {
         open={permsOpen.value}
         role={permsRole.value}
         catalog={catalog.value}
-        onOpenChangeAction={(v) => (permsOpen.value = v)}
-        onSavedAction={fetchRoles}
+        onOpenChange={(v) => (permsOpen.value = v)}
+        onSaved={fetchRoles}
       />
     </div>
   );

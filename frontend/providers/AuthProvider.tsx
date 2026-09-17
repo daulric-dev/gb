@@ -2,7 +2,6 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -41,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loading = useSignal<boolean>(true);
   const inFlight = useRef<Promise<void> | null>(null);
 
-  const fetchProfile = useCallback(() => {
+  const fetchProfile = () => {
     if (inFlight.current) return inFlight.current;
     loading.value = true;
     inFlight.current = api<UserProfile>("/auth/me", {
@@ -58,11 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         inFlight.current = null;
       });
     return inFlight.current;
-  }, [loading, profile]);
+  };
 
   useEffect(() => {
     void fetchProfile();
-  }, [fetchProfile]);
+  }, []);
 
   const value: AuthContextValue = {
     profile,
