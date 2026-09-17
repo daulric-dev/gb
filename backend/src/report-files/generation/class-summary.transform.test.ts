@@ -17,7 +17,8 @@ function subject(
     courseworkAverage,
     examAverage,
     termComposite,
-    gradeCount: 1,
+    groupAverages: [],
+  gradeCount: 1,
     assessments: [],
   };
 }

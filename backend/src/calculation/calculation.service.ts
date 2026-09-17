@@ -9,6 +9,7 @@ import {
   GradingModel,
 } from './interfaces/calculation.interfaces';
 import type {
+  GradingGroup,
   GradingSystemStrategy,
   SubjectTermContext,
   SubjectYearContext,
@@ -31,6 +32,48 @@ export class CalculationService {
     private readonly gradingSystemFactory: GradingSystemFactory,
   ) {}
 
+  /**
+   * The weighted scheme in force for a subject in a term: its own groups if it
+   * defines any, otherwise the term-wide default. Falls back to the legacy
+   * coursework/exam split when a database has not been migrated yet, so a
+   * missing scheme degrades to the old behaviour rather than scoring nothing.
+   */
+  private async loadGroups(
+    termId: string,
+    subjectId: string,
+    courseworkWeight: number,
+    examWeight: number,
+  ): Promise<GradingGroup[]> {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .schema('grading')
+      .rpc('resolve_grading_groups', {
+        p_term_id: termId,
+        p_subject_id: subjectId,
+      });
+
+    if (error || !data || (data as any[]).length === 0) {
+      if (error) {
+        this.logger.warn(
+          `Falling back to coursework/exam weights for term ${termId}: ${error.message}`,
+        );
+      }
+      return [
+        { id: 'legacy-coursework', name: 'Coursework', weight: courseworkWeight, sortOrder: 0, isExam: false },
+        { id: 'legacy-exam', name: 'Exam', weight: examWeight, sortOrder: 1, isExam: true },
+      ];
+    }
+
+    return (data as any[]).map((g) => ({
+      id: g.id,
+      name: g.name,
+      weight: Number(g.weight),
+      sortOrder: g.sort_order,
+      isExam: g.is_exam,
+    }));
+  }
+
   private getStrategy(gradingModel: string): GradingSystemStrategy {
     return this.gradingSystemFactory.getStrategy(gradingModel);
   }
@@ -52,7 +95,7 @@ export class CalculationService {
         .schema('grading')
         .from('assessment')
         .select(
-          'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+          'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
         )
         .eq('term_id', termId)
         .eq('subject_id', subjectId)
@@ -118,6 +161,12 @@ export class CalculationService {
       subjectName,
       subjectCode,
       termId,
+      groups: await this.loadGroups(
+        termId,
+        subjectId,
+        Number(termRes.data?.coursework_weight ?? 50),
+        Number(termRes.data?.exam_weight ?? 50),
+      ),
       termWeights: {
         courseworkWeight: termRes.data?.coursework_weight ?? 50,
         examWeight: termRes.data?.exam_weight ?? 50,
@@ -340,7 +389,7 @@ export class CalculationService {
       .schema('grading')
       .from('assessment')
       .select(
-        'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+        'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
       )
       .in('term_id', termIds);
 
@@ -496,7 +545,7 @@ export class CalculationService {
         .schema('grading')
         .from('assessment')
         .select(
-          'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+          'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
         )
         .eq('term_id', termId)
         .order('sort_order', { ascending: true }),
@@ -611,6 +660,12 @@ export class CalculationService {
           subjectName: subj.name,
           subjectCode: subj.code,
           termId,
+          groups: await this.loadGroups(
+            termId,
+            subjectId,
+            Number(cwWeight),
+            Number(exWeight),
+          ),
           termWeights: { courseworkWeight: cwWeight, examWeight: exWeight },
           assessments: subjectAssessments,
           gradesByAssessmentId: studentGradeMap,
@@ -749,7 +804,7 @@ export class CalculationService {
       .schema('grading')
       .from('assessment')
       .select(
-        'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+        'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
       )
       .in('term_id', termIds)
       .order('sort_order', { ascending: true });
@@ -789,6 +844,18 @@ export class CalculationService {
         ex: t.exam_weight ?? 50,
       });
 
+    // The closure below is synchronous, so schemes are resolved up front - one
+    // lookup per (term, subject) that has assessments, not per student.
+    const groupsByTermSubject = new Map<string, GradingGroup[]>();
+    for (const key of assessmentsByTermSubject.keys()) {
+      const [tId, sId] = key.split(':');
+      const tw = termWeightMap.get(tId) ?? { cw: 50, ex: 50 };
+      groupsByTermSubject.set(
+        key,
+        await this.loadGroups(tId, sId, tw.cw, tw.ex),
+      );
+    }
+
     const computeSubjectTerm = (
       studentId: string,
       subjectId: string,
@@ -818,6 +885,7 @@ export class CalculationService {
         subjectName: subj.name,
         subjectCode: subj.code,
         termId,
+        groups: groupsByTermSubject.get(`${termId}:${subjectId}`) ?? [],
         termWeights: { courseworkWeight: tw.cw, examWeight: tw.ex },
         assessments: subjectAssessments,
         gradesByAssessmentId: studentGradeMap,
@@ -991,6 +1059,7 @@ export class CalculationService {
       courseworkAverage: null,
       examAverage: null,
       termComposite: null,
+      groupAverages: [],
       gradeCount: 0,
       assessments: [],
     };
@@ -1009,6 +1078,7 @@ export class CalculationService {
       courseworkAverage: null,
       examAverage: null,
       termComposite: null,
+      groupAverages: [],
       gradeCount: 0,
       assessments: [],
     };

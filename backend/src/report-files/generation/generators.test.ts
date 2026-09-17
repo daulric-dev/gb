@@ -34,6 +34,7 @@ function subj(id: string, name: string, term: number | null) {
     courseworkAverage: term,
     examAverage: term,
     termComposite: term,
+    groupAverages: [],
     gradeCount: 1,
     assessments: [],
   };
