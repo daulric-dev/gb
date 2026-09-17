@@ -227,6 +227,18 @@ export class SchoolService {
         throw new NotFoundException('Join request not found');
       }
 
+      // PGRST202 means the function is not in the schema cache - almost always
+      // a database that has not had the student-account migrations applied.
+      // Without this the operator sees only "Failed to approve request".
+      if (error.code === 'PGRST202') {
+        this.logger.error(
+          `approve_student_join_request is missing from the database. Apply the student-account migrations (supabase db push / db reset). Detail: ${error.message}`,
+        );
+        throw new BadRequestException(
+          'Student approval is unavailable: the database is missing approve_student_join_request. Apply the pending migrations.',
+        );
+      }
+
       this.logger.error(
         `Failed to approve student request ${requestId}: ${error.message}`,
       );
