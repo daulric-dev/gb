@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { GraduationCap, LogOut, Plus, Search } from "lucide-react-native";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
+import { homeRouteFor } from "@/lib/routing";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -85,6 +86,9 @@ function CreateSchool({ onCreated }: { onCreated: (s: School) => void }) {
   );
 }
 
+/** How often a waiting applicant re-checks whether they have been approved. */
+const POLL_MS = 8000;
+
 export default function SchoolsScreen() {
   const router = useRouter();
   const toast = useToast();
@@ -113,6 +117,21 @@ export default function SchoolsScreen() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // Approval happens on the admin's screen. Without polling, an accepted
+  // applicant sits on "Pending" until they reopen the app.
+  useEffect(() => {
+    if (!pendingId || profile?.school) return;
+    const timer = setInterval(() => {
+      void refresh();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [pendingId, profile?.school, refresh]);
+
+  // Once the profile carries a school they belong in the app proper.
+  useEffect(() => {
+    if (profile?.school) router.replace(homeRouteFor(profile));
+  }, [profile, router]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

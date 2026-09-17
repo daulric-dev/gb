@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { useProfile } from "@/providers/AuthProvider";
+import { useAuth } from "@/providers/AuthProvider";
 import { homePathFor } from "@/lib/routing";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -111,11 +111,14 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
   );
 }
 
+/** How often a waiting applicant re-checks whether they have been approved. */
+const POLL_MS = 8000;
+
 export default function SchoolsPage() {
   useSignals();
 
   const router = useRouter();
-  const { profile, loading: profileLoading } = useProfile();
+  const { profile, loading: profileLoading, refresh } = useAuth();
   const schools = useSignal<School[]>([]);
   const loading = useSignal(true);
   const joiningId = useSignal<string | null>(null);
@@ -138,6 +141,19 @@ export default function SchoolsPage() {
       router.replace(homePathFor(profile.value));
     }
   }, [profileLoading.value, profile.value?.school, router]);
+
+  // Approval happens on the admin's screen, not this one. Without polling, an
+  // accepted student sits on "Pending" until they think to reload; the effect
+  // above then redirects as soon as a school appears on the profile.
+  useEffect(() => {
+    if (!pendingSchoolId.value) return;
+    if (profile.value?.school) return;
+
+    const timer = setInterval(() => {
+      void refresh();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [pendingSchoolId.value, profile.value?.school, refresh]);
 
   useEffect(() => {
     Promise.all([

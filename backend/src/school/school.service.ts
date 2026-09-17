@@ -196,6 +196,7 @@ export class SchoolService {
   private async approveStudentRequest(
     adminUserId: string,
     requestId: string,
+    userId: string,
     studentId?: string,
   ) {
     const supabase = this.supabaseService.getServiceClient();
@@ -233,6 +234,12 @@ export class SchoolService {
     }
 
     const row = Array.isArray(data) ? data[0] : data;
+
+    // The staff path clears this further down; the student path returns before
+    // reaching it. Without this the profile stays cached without a school for
+    // the full TTL, and the student is never routed to the portal.
+    await this.cache.delete(`profile:${userId}`);
+    await this.cache.delete(`student-context:${userId}`);
 
     this.logger.log(
       `Student join request ${requestId} approved; linked student ${row?.student_id}`,
@@ -284,7 +291,12 @@ export class SchoolService {
       .maybeSingle();
 
     if (requester?.account_type === 'student') {
-      return this.approveStudentRequest(adminUserId, requestId, studentId);
+      return this.approveStudentRequest(
+        adminUserId,
+        requestId,
+        request.user_id,
+        studentId,
+      );
     }
 
     if (request.school_id !== adminProfile.school_id) {
