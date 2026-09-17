@@ -135,7 +135,13 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      unread_counts: {
+        Args: { p_user_id: string };
+        Returns: {
+          conversation_id: string;
+          unread: number;
+        }[];
+      };
     };
     Enums: {
       conversation_type: 'direct' | 'channel';
@@ -570,7 +576,6 @@ export type Database = {
           id: string;
           is_active: boolean | null;
           name: string | null;
-          owner_id: string | null;
           school_id: string | null;
           start_date: string | null;
           year_coursework_weight: number | null;
@@ -582,7 +587,6 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
-          owner_id?: string | null;
           school_id?: string | null;
           start_date?: string | null;
           year_coursework_weight?: number | null;
@@ -594,7 +598,6 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
-          owner_id?: string | null;
           school_id?: string | null;
           start_date?: string | null;
           year_coursework_weight?: number | null;
@@ -724,6 +727,7 @@ export type Database = {
           id: string;
           is_active: boolean | null;
           name: string | null;
+          owner_id: string | null;
           phone: string | null;
           school_type: Database['public']['Enums']['schooltype'] | null;
           updated_at: string | null;
@@ -736,6 +740,7 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
+          owner_id?: string | null;
           phone?: string | null;
           school_type?: Database['public']['Enums']['schooltype'] | null;
           updated_at?: string | null;
@@ -748,11 +753,20 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           name?: string | null;
+          owner_id?: string | null;
           phone?: string | null;
           school_type?: Database['public']['Enums']['schooltype'] | null;
           updated_at?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'school_owner_id_fkey';
+            columns: ['owner_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_profile';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       school_join_request: {
         Row: {
@@ -1081,6 +1095,7 @@ export type Database = {
       };
       user_profile: {
         Row: {
+          account_type: Database['public']['Enums']['account_type'];
           avatar_url: string | null;
           created_at: string | null;
           email: string | null;
@@ -1093,6 +1108,7 @@ export type Database = {
           updated_at: string | null;
         };
         Insert: {
+          account_type?: Database['public']['Enums']['account_type'];
           avatar_url?: string | null;
           created_at?: string | null;
           email?: string | null;
@@ -1105,6 +1121,7 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
+          account_type?: Database['public']['Enums']['account_type'];
           avatar_url?: string | null;
           created_at?: string | null;
           email?: string | null;
@@ -1131,6 +1148,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      announcement_unread_count: {
+        Args: { p_school_id: string; p_user_id: string };
+        Returns: number;
+      };
       get_user_school_id: { Args: never; Returns: string };
       is_admin: { Args: never; Returns: boolean };
       is_assigned_to_group: { Args: { p_group_id: string }; Returns: boolean };
@@ -1140,6 +1161,7 @@ export type Database = {
       };
     };
     Enums: {
+      account_type: 'staff' | 'student';
       assessment_type: 'exam' | 'coursework';
       attendance_status: 'present' | 'absent' | 'late';
       gender: 'male' | 'female';
@@ -1515,6 +1537,7 @@ export type Database = {
           is_active: boolean | null;
           last_name: string | null;
           school_id: string | null;
+          user_profile_id: string | null;
         };
         Insert: {
           date_of_birth?: string | null;
@@ -1525,6 +1548,7 @@ export type Database = {
           is_active?: boolean | null;
           last_name?: string | null;
           school_id?: string | null;
+          user_profile_id?: string | null;
         };
         Update: {
           date_of_birth?: string | null;
@@ -1535,8 +1559,53 @@ export type Database = {
           is_active?: boolean | null;
           last_name?: string | null;
           school_id?: string | null;
+          user_profile_id?: string | null;
         };
         Relationships: [];
+      };
+      student_claim_code: {
+        Row: {
+          code_hash: string;
+          created_at: string;
+          created_by: string;
+          expires_at: string;
+          id: string;
+          redeemed_at: string | null;
+          redeemed_by: string | null;
+          school_id: string;
+          student_id: string;
+        };
+        Insert: {
+          code_hash: string;
+          created_at?: string;
+          created_by: string;
+          expires_at: string;
+          id?: string;
+          redeemed_at?: string | null;
+          redeemed_by?: string | null;
+          school_id: string;
+          student_id: string;
+        };
+        Update: {
+          code_hash?: string;
+          created_at?: string;
+          created_by?: string;
+          expires_at?: string;
+          id?: string;
+          redeemed_at?: string | null;
+          redeemed_by?: string | null;
+          school_id?: string;
+          student_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'student_claim_code_student_id_fkey';
+            columns: ['student_id'];
+            isOneToOne: false;
+            referencedRelation: 'student';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       student_group_enrollment: {
         Row: {
@@ -1749,6 +1818,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      account_type: ['staff', 'student'],
       assessment_type: ['exam', 'coursework'],
       attendance_status: ['present', 'absent', 'late'],
       gender: ['male', 'female'],
