@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
+import { isStudentProfile } from "@/lib/routing";
 
 /**
  * The student area. Staff are sent to the tabs; a student with no school has
@@ -21,7 +22,7 @@ export default function PortalLayout() {
   if (loading) return <Loading />;
   if (!profile) return <Redirect href="/(auth)/login" />;
   if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
-  if (profile.account_type !== "student") return <Redirect href="/(tabs)" />;
+  if (!isStudentProfile(profile)) return <Redirect href="/(tabs)" />;
   if (!profile.school) return <Redirect href="/(auth)/schools" />;
 
   return (

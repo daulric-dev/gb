@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useProfile } from "@/providers/AuthProvider";
+import { homePathFor } from "@/lib/routing";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -134,9 +135,7 @@ export default function SchoolsPage() {
 
   useEffect(() => {
     if (!profileLoading.value && profile.value?.school) {
-      router.replace(
-        profile.value.account_type === "student" ? "/portal" : "/dashboard",
-      );
+      router.replace(homePathFor(profile.value));
     }
   }, [profileLoading.value, profile.value?.school, router]);
 

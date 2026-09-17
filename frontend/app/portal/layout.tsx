@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
+import { isStudentProfile } from "@/lib/routing";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,7 @@ export default function PortalLayout({
     }
     // Staff belong in /dashboard; a student with no school has not redeemed a
     // claim code yet, so there is nothing to show them here.
-    if (profile.value.account_type !== "student") {
+    if (!isStudentProfile(profile.value)) {
       router.replace("/dashboard");
       return;
     }
@@ -65,15 +66,17 @@ export default function PortalLayout({
     }
   }, [loading.value, profile.value, router]);
 
-  if (loading.value || profile.value?.account_type !== "student") return null;
-  if (!profile.value.school) return null;
+  // Bound once so the rest of the render has a non-null profile to work with.
+  const student = profile.value;
+  if (loading.value || !isStudentProfile(student) || !student?.school) {
+    return null;
+  }
 
   const name =
-    [profile.value.first_name, profile.value.last_name]
-      .filter(Boolean)
-      .join(" ") || "Student";
+    [student.first_name, student.last_name].filter(Boolean).join(" ") ||
+    "Student";
   const initials =
-    [profile.value.first_name?.[0], profile.value.last_name?.[0]]
+    [student.first_name?.[0], student.last_name?.[0]]
       .filter(Boolean)
       .join("")
       .toUpperCase() || "?";
@@ -103,7 +106,7 @@ export default function PortalLayout({
               className="size-6 shrink-0"
             />
             <span className="truncate text-sm font-semibold">
-              {profile.value.school.name}
+              {student.school.name}
             </span>
           </Link>
 
