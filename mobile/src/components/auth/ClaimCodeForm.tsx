@@ -29,7 +29,12 @@ function format(value: string) {
   return (clean.match(/.{1,4}/g) ?? []).join("-");
 }
 
-export function ClaimCodeForm() {
+export function ClaimCodeForm({
+  mode = "school",
+}: {
+  /** `school` joins by the school-wide code; `student` links an existing record. */
+  mode?: "school" | "student";
+}) {
   const router = useRouter();
   const toast = useToast();
   const { refresh } = useAuth();
@@ -45,7 +50,7 @@ export function ClaimCodeForm() {
     }
     setLoading(true);
     try {
-      await api("/auth/claim-student", {
+      await api(mode === "school" ? "/auth/join-school" : "/auth/claim-student", {
         method: "POST",
         body: { code },
         skipAuthRedirect: true,
@@ -67,15 +72,16 @@ export function ClaimCodeForm() {
   return (
     <Card>
         <CardHeader style={{ alignItems: "center" }}>
-          <CardTitle>Enter your claim code</CardTitle>
+          <CardTitle>Enter your join code</CardTitle>
           <CardDescription>
-            Your school gives you a code that links this login to your student
-            record.
+            {mode === "school"
+              ? "Your school gives you a code that lets you join it."
+              : "Your school gives you a code that links this login to your student record."}
           </CardDescription>
         </CardHeader>
         <CardContent style={{ gap: 16 }}>
           <View>
-            <Label>Claim code</Label>
+            <Label>Join code</Label>
             <Input
               placeholder="RXKT-9WMB-2FQH"
               value={code}
@@ -92,7 +98,7 @@ export function ClaimCodeForm() {
             </Text>
           </View>
           <Button onPress={handleSubmit} loading={loading} disabled={!ready}>
-            Link my account
+            Join school
           </Button>
           <Text
             variant="muted"

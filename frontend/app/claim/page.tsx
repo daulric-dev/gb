@@ -10,7 +10,7 @@ import { ClaimCodeForm } from "@/components/auth/claim-code-form";
 export default function ClaimPage() {
   return (
     <AuthPageShell>
-      <ClaimCodeForm />
+      <ClaimCodeForm mode="student" />
     </AuthPageShell>
   );
 }

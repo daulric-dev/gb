@@ -101,13 +101,19 @@ Updates a student. All fields are optional, plus `isActive` can be toggled.
 A student logs in with the same email OTP as staff and picks "Student" at
 onboarding, then joins a school one of two ways:
 
-- **Self-join (the usual path).** They pick the school on `/schools` and
+- **Join request.** They pick the school on `/schools` and
   request to join, exactly as staff do. An admin approves under
   **Staff -> Pending Members** and, in the same dialog, either links them to
   the student record the school already has or creates a new one.
-- **Claim code.** A staff member issues a per-student code from the roster
-  (**Students -> Account -> Claim code**) and the student redeems it. Useful
-  when the school wants to hand out credentials directly.
+- **School join code (the usual path).** Staff issue one code for the whole
+  school (**Students -> School join code**). Any student who has it joins by
+  entering it, and redemption creates their student record - nobody has to add
+  them to the roster first. The code is reusable until it expires or is
+  revoked, so anyone holding it can join, and a student already on the roster
+  gets a second record rather than being matched to the first.
+- **Per-student claim code.** Issued against one existing roster row
+  (**Students -> Account -> Claim code**) and redeemed at `/claim`. Use it when
+  the student already has a record and their history must stay attached.
 
 Either way the login ends up linked to a `student.student` row with
 `user_profile.account_type = 'student'`.

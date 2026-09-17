@@ -137,11 +137,12 @@ export default function SchoolsPage() {
     );
   });
 
+  const settledProfile = profile.value;
   useEffect(() => {
-    if (!profileLoading.value && profile.value?.school) {
-      router.replace(homePathFor(profile.value));
+    if (!profileLoading.value && settledProfile?.school) {
+      router.replace(homePathFor(settledProfile));
     }
-  }, [profileLoading.value, profile.value?.school, router]);
+  }, [profileLoading.value, settledProfile, router]);
 
   // Approval happens on the admin's screen, not this one. Without polling, an
   // accepted student sits on "Pending" until they think to reload; the effect

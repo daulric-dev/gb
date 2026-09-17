@@ -9,7 +9,7 @@ import { ClaimCodeForm } from "@/components/auth/ClaimCodeForm";
 export default function ClaimScreen() {
   return (
     <AuthShell>
-      <ClaimCodeForm />
+      <ClaimCodeForm mode="student" />
     </AuthShell>
   );
 }

@@ -251,6 +251,190 @@ export class StudentClaimService {
     }
   }
 
+  // ── School-wide join codes ────────────────────────────────────────────────
+  // Issued per school rather than per student. A student redeems one when the
+  // school has no record for them yet; redemption creates it.
+
+  /** Issue (or reissue) the school's join code, superseding any live one. */
+  async issueSchoolCode(
+    actorUserId: string,
+    ttlDays = DEFAULT_TTL_DAYS,
+  ): Promise<{ code: string; expiresAt: string }> {
+    if (!Number.isFinite(ttlDays) || ttlDays < 1 || ttlDays > MAX_TTL_DAYS) {
+      throw new BadRequestException(
+        `Expiry must be between 1 and ${MAX_TTL_DAYS} days`,
+      );
+    }
+
+    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.requireActorSchool(actorUserId);
+
+    // One live code per school is a database constraint; clear the previous.
+    const { error: clearError } = await supabase
+      .schema('student')
+      .from('school_join_code')
+      .delete()
+      .eq('school_id', schoolId)
+      .is('revoked_at', null);
+
+    if (clearError) {
+      this.logger.error(
+        `Failed to clear school join codes for ${schoolId}: ${clearError.message}`,
+      );
+      throw new BadRequestException('Failed to issue join code');
+    }
+
+    const code = this.generateCode();
+    const expiresAt = new Date(
+      Date.now() + ttlDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    const { error } = await supabase
+      .schema('student')
+      .from('school_join_code')
+      .insert({
+        school_id: schoolId,
+        code_hash: this.hash(code),
+        expires_at: expiresAt,
+        created_by: actorUserId,
+      });
+
+    if (error) {
+      this.logger.error(
+        `Failed to issue school join code for ${schoolId}: ${error.message}`,
+      );
+      throw new BadRequestException('Failed to issue join code');
+    }
+
+    return { code: this.format(code), expiresAt };
+  }
+
+  /** Invalidate the school's live join code, if any. */
+  async revokeSchoolCode(actorUserId: string): Promise<void> {
+    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.requireActorSchool(actorUserId);
+
+    const { error } = await supabase
+      .schema('student')
+      .from('school_join_code')
+      .delete()
+      .eq('school_id', schoolId)
+      .is('revoked_at', null);
+
+    if (error) {
+      this.logger.error(
+        `Failed to revoke school join code for ${schoolId}: ${error.message}`,
+      );
+      throw new BadRequestException('Failed to revoke join code');
+    }
+  }
+
+  /** Whether a live code exists, and when it lapses. Never the code itself. */
+  async getSchoolCodeStatus(actorUserId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.requireActorSchool(actorUserId);
+
+    const { data } = await supabase
+      .schema('student')
+      .from('school_join_code')
+      .select('expires_at, created_at')
+      .eq('school_id', schoolId)
+      .is('revoked_at', null)
+      .maybeSingle();
+
+    const expired = data ? new Date(data.expires_at) <= new Date() : false;
+
+    return {
+      activeCode:
+        data && !expired
+          ? { expiresAt: data.expires_at, issuedAt: data.created_at }
+          : null,
+      expired,
+    };
+  }
+
+  /**
+   * Redeem a school join code: creates the caller's student record and binds
+   * their profile to the school. Unlike a claim code this is not consumed - it
+   * stays valid for the next student until it expires or is revoked.
+   */
+  async redeemSchoolCode(
+    userId: string,
+    rawCode: string,
+  ): Promise<{ studentId: string; schoolId: string }> {
+    const normalized = this.normalize(rawCode);
+
+    if (normalized.length !== CODE_LENGTH) {
+      throw new BadRequestException('Invalid or expired join code');
+    }
+
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase.rpc('redeem_school_join_code', {
+      p_user_id: userId,
+      p_code_hash: this.hash(normalized),
+    });
+
+    if (error) {
+      const detail = `${error.code ?? ''} ${error.message ?? ''}`;
+
+      if (detail.includes('already_in_a_school')) {
+        throw new ConflictException('This account already belongs to a school');
+      }
+      if (detail.includes('profile_not_found')) {
+        throw new BadRequestException('Complete your profile first');
+      }
+      if (detail.includes('invalid_join_code')) {
+        throw new BadRequestException('Invalid or expired join code');
+      }
+      if (error.code === 'PGRST202') {
+        this.logger.error(
+          `redeem_school_join_code is missing from the database. Apply the pending migrations. Detail: ${error.message}`,
+        );
+        throw new BadRequestException(
+          'Joining by code is unavailable: the database is missing redeem_school_join_code. Apply the pending migrations.',
+        );
+      }
+
+      this.logger.error(
+        `School join redemption failed for user ${userId}: ${error.message}`,
+      );
+      throw new BadRequestException('Failed to redeem join code');
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row?.student_id || !row?.school_id) {
+      throw new BadRequestException('Invalid or expired join code');
+    }
+
+    await this.cache.delete(`profile:${userId}`);
+    await this.cache.delete(`student-context:${userId}`);
+
+    this.logger.log(
+      `User ${userId} joined school ${row.school_id} by code as student ${row.student_id}`,
+    );
+
+    return { studentId: row.student_id, schoolId: row.school_id };
+  }
+
+  /** The acting staff member's school, which every code is scoped to. */
+  private async requireActorSchool(actorUserId: string): Promise<string> {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: actor } = await supabase
+      .from('user_profile')
+      .select('school_id')
+      .eq('id', actorUserId)
+      .maybeSingle();
+
+    if (!actor?.school_id) {
+      throw new BadRequestException('You are not assigned to a school');
+    }
+
+    return actor.school_id;
+  }
+
   /**
    * Redeem a code: burns it, links the login to the student record, and marks
    * the profile as a student bound to that school. All three happen inside one

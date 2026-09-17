@@ -104,6 +104,19 @@ export class AuthController {
     return this.studentClaimService.redeem(userId, dto.code);
   }
 
+  /**
+   * Redeem the school's join code: creates this caller's student record and
+   * binds them to the school. Throttled like the claim route.
+   */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ 'claim-code': { limit: 10, ttl: 15 * 60 * 1000 } })
+  @Post('join-school')
+  async joinSchool(@Req() req: any, @Body() dto: ClaimStudentDto) {
+    const userId: string = req.user.id;
+    return this.studentClaimService.redeemSchoolCode(userId, dto.code);
+  }
+
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Patch('profile')

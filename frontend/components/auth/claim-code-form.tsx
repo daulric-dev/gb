@@ -31,11 +31,17 @@ function format(value: string) {
 }
 
 /**
- * The student's way into a school: redeem the code their school issued from
- * the students roster. Shared by /claim and by /schools, which shows this
- * instead of the school list when the account is a student.
+ * The student's way into a school.
+ *
+ * `school` redeems the school-wide join code and creates their record;
+ * `student` redeems a code issued against one existing roster row. Same shape
+ * and same field, so the caller picks which endpoint the code goes to.
  */
-export function ClaimCodeForm() {
+export function ClaimCodeForm({
+  mode = "school",
+}: {
+  mode?: "school" | "student";
+}) {
   useSignals();
 
   const router = useRouter();
@@ -51,7 +57,7 @@ export function ClaimCodeForm() {
     loading.value = true;
 
     try {
-      await api("/auth/claim-student", {
+      await api(mode === "school" ? "/auth/join-school" : "/auth/claim-student", {
         method: "POST",
         body: { code: code.value },
       });
@@ -72,16 +78,17 @@ export function ClaimCodeForm() {
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Enter your claim code</CardTitle>
+        <CardTitle className="text-2xl">Enter your join code</CardTitle>
         <CardDescription>
-          Your school gives you a code that links this login to your student
-          record.
+          {mode === "school"
+            ? "Your school gives you a code that lets you join it."
+            : "Your school gives you a code that links this login to your student record."}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="code">Claim code</Label>
+            <Label htmlFor="code">Join code</Label>
             <Input
               id="code"
               placeholder="RXKT-9WMB-2FQH"
@@ -104,12 +111,12 @@ export function ClaimCodeForm() {
             className="w-full"
             disabled={loading.value || !ready}
           >
-            {loading.value ? "Linking..." : "Link my account"}
+            {loading.value ? "Joining..." : "Join school"}
           </Button>
         </form>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Do not have a code? Ask a teacher or the school office to issue one.
+          Do not have a code? Ask a teacher or the school office for one.
         </p>
       </CardContent>
     </Card>
