@@ -59,13 +59,37 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
           getTracker: (req: ThrottlerReq) =>
             req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
         },
+        {
+          // Dedicated bucket for student claim-code redemption. It needs its
+          // own name rather than a tight @Throttle on 'default': the storage
+          // key is `${throttlerName}:${tracker}` with no route in it, so a
+          // per-route override on 'default' shares one counter with every
+          // other default-throttled route and trips on ordinary browsing.
+          // Kept permissive here and tightened on the route, as auth-strict is.
+          name: 'claim-code',
+          ttl: 15 * 60 * 1000,
+          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+          getTracker: (req: ThrottlerReq) =>
+            getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
+        },
       ],
 
+      // Every configured throttler increments on every request, so a bucket
+      // shared across routes fills up during ordinary browsing and then trips
+      // the tight per-route limits that are meant to guard one endpoint.
+      // `default` stays global - it is the blunt per-tracker safety net - while
+      // the purpose-built throttlers are scoped to the route they guard, which
+      // is what `@Throttle({ 'auth-strict': ... })` on a single handler means.
       generateKey: (
-        _context: ExecutionContext,
+        context: ExecutionContext,
         tracker: string,
         throttlerName: string,
-      ) => `${throttlerName}:${tracker}`,
+      ) => {
+        if (throttlerName === 'default') return `default:${tracker}`;
+        const handler = context.getHandler?.()?.name ?? 'unknown';
+        const controller = context.getClass?.()?.name ?? 'unknown';
+        return `${throttlerName}:${controller}.${handler}:${tracker}`;
+      },
     }),
 
     SupabaseModule,

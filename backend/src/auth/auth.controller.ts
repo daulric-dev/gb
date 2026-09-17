@@ -97,7 +97,7 @@ export class AuthController {
    */
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
-  @Throttle({ default: { limit: 10, ttl: 15 * 60 * 1000 } })
+  @Throttle({ 'claim-code': { limit: 10, ttl: 15 * 60 * 1000 } })
   @Post('claim-student')
   async claimStudent(@Req() req: any, @Body() dto: ClaimStudentDto) {
     const userId: string = req.user.id;
