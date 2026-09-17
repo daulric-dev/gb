@@ -95,3 +95,30 @@ Updates a student. All fields are optional, plus `isActive` can be toggled.
   "isActive": false
 }
 ```
+
+## Student accounts and RLS
+
+A student logs in with the same email OTP as staff, then redeems a
+school-issued claim code that links the login to a `student.student` row and
+sets `user_profile.account_type = 'student'`. Students get **no**
+`school_management` row and **no** catalog permissions, so `PermissionGuard`
+denies them every staff route; their access comes from `StudentGuard` and the
+self-scoped `/portal/me/*` endpoints.
+
+Because the API reaches Postgres through the service client, RLS never runs in
+normal operation - it is the layer that has to hold if a user ever talks to
+PostgREST directly with their own JWT. The original policies keyed off
+`school_id = get_user_school_id()`, which a claimed student satisfies, so
+before `20260917140000_student_rls.sql` a student session could read the whole
+roster, edit and delete classmates, and set its own `role` to `admin`.
+
+Policies now distinguish staff from students via `public.is_staff()`, and two
+triggers guard columns that RLS cannot gate per-column:
+
+- `guard_user_profile_privileges` - `role`, `account_type`, `school_id` and
+  `is_active` may only change under the service role.
+- `guard_student_account_link` - `student.user_profile_id` may only change
+  under the service role, so a student cannot re-point their record.
+
+Verify with `bun run rls:check` (from `backend/`, against a local Supabase).
+Unit tests mock Supabase, so policies never execute there.

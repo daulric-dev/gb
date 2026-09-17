@@ -9,6 +9,7 @@
     "build": "nest build",
     "vercel-build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "rls:check": "bun run scripts/rls-check.ts",
     "start": "nest start",
     "start:dev": "bunx cross-env NODE_ENV=development bun --watch src/main.ts",
     "start:debug": "bunx cross-env NODE_ENV=development nest start --debug --watch",
