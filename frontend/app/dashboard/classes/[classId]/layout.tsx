@@ -6,7 +6,8 @@ import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LayoutDashboard,  ClipboardList,  CalendarCheck,  ScrollText,  FileBarChart, UserPlus } from "lucide-react";
+import { ArrowLeft, LayoutDashboard,  ClipboardList,
+  FileText,  CalendarCheck,  ScrollText,  FileBarChart, UserPlus } from "lucide-react";
 import { usePermissions } from "@/providers/PermissionsProvider";
 
 interface ClassInfo {
@@ -42,6 +43,7 @@ export default function ClassLayout({ children }: { children: React.ReactNode}) 
   const items = [
     { href: base, label: "Overview", icon: LayoutDashboard, exact: true, show: true },
     { href: `${base}/grading`, label: "Grading", icon: ClipboardList, show: can("assessment", "read") },
+    { href: `${base}/activities`, label: "Work", icon: FileText, show: can("assessment", "read") },
     { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck, show: can("attendance", "read") },
     { href: `${base}/reports`, label: "Reports", icon: ScrollText, show: isTeacher || can("reporting", "read") },
     { href: `${base}/class-report`, label: "Class Report", icon: FileBarChart, show: isTeacher || can("reporting", "read") },

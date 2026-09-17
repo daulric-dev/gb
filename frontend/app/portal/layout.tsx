@@ -26,6 +26,7 @@ import {
 import {
   CalendarCheck,
   ClipboardList,
+  FileText,
   LayoutDashboard,
   LogOut,
   ScrollText,
@@ -33,6 +34,7 @@ import {
 
 const NAV = [
   { href: "/portal", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/portal/work", label: "Work", icon: FileText },
   { href: "/portal/grades", label: "Grades", icon: ClipboardList },
   { href: "/portal/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/portal/reports", label: "Reports", icon: ScrollText },
