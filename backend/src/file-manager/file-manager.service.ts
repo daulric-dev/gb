@@ -58,7 +58,21 @@ export class FileManagerService {
     private readonly shares: FileShareService,
     private readonly chatSystem: ChatSystemService,
     private readonly folders: FolderService,
-  ) {}
+  ) {
+    if (!process.env.SUPABASE_JWT_SECRET?.trim()) {
+      if (process.env.NODE_ENV === 'production') {
+        // Fail closed at boot, like the other required secrets. Without it
+        // no resumable upload can be authorised, and discovering that when a
+        // student tries to hand in coursework is far worse than at deploy.
+        throw new Error(
+          'SUPABASE_JWT_SECRET is required in production (resumable uploads are authorised with a short-lived token signed by it).',
+        );
+      }
+      this.logger.warn(
+        'No SUPABASE_JWT_SECRET set - resumable uploads will fail until it is.',
+      );
+    }
+  }
 
   // ── Listing ──────────────────────────────────────────────────────────────
 

@@ -65,6 +65,43 @@ export function corsOriginFor(requestOrigin?: string | null): string {
  * The `origin` option for `enableCors`, as a function so development can
  * accept LAN addresses without them being listed.
  */
+/**
+ * The `Domain` attribute for the auth cookie in production, or `undefined` for
+ * a host-only cookie.
+ *
+ * It cannot simply be the API's own host: the web app's middleware reads this
+ * cookie on the *frontend's* domain to decide redirects, so the cookie has to
+ * be visible to both. The default derives a shared parent from the canonical
+ * origin, which is right when the API and the app are subdomains of one
+ * two-label domain.
+ *
+ * `AUTH_COOKIE_DOMAIN` overrides it, and is needed when that assumption does
+ * not hold:
+ *
+ *   - the API is on a different registrable domain from the app, where the
+ *     derived value makes the browser reject the cookie outright;
+ *   - the domain has a multi-part suffix (`app.example.co.uk` derives
+ *     `.co.uk`, a public suffix every browser refuses).
+ *
+ * Set it to `none` for a host-only cookie - correct when the app and API share
+ * one host, and for a native client, which has no frontend domain at all.
+ */
+export function authCookieDomain(): string | undefined {
+  if (process.env.NODE_ENV !== 'production') return undefined;
+
+  const configured = process.env.AUTH_COOKIE_DOMAIN?.trim();
+  if (configured) {
+    return configured.toLowerCase() === 'none' ? undefined : configured;
+  }
+
+  try {
+    const { hostname } = new URL(primaryOrigin());
+    return `.${hostname.split('.').slice(-2).join('.')}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export function isOriginAllowed(origin?: string | null): boolean {
   // No Origin header: same-origin, curl, or a native app. Nothing to check.
   if (!origin) return true;

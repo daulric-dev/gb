@@ -9,6 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "dev": "expo start",
+    "start:prod": "expo start --no-dev --minify",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "build": "expo export --platform web --output-dir dist"

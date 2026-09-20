@@ -3,10 +3,13 @@ import Constants from "expo-constants";
 const API_PORT = 3001;
 
 function resolveBaseUrl(): string {
-  const configured = process.env.EXPO_PUBLIC_API_URL;
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
   if (configured) return `${configured.replace(/\/$/, "")}/api`;
 
-  // e.g. "192.168.0.12:8081" — present whenever the app is served by Metro.
+  // e.g. "192.168.0.12:8081" — present whenever the app is served by Metro,
+  // including a production-mode preview (`expo start --no-dev`). Keyed off
+  // Metro rather than __DEV__ for exactly that reason: a preview is still
+  // served from this machine even though it builds as production.
   const hostUri =
     Constants.expoConfig?.hostUri ??
     (Constants.expoGoConfig as { debuggerHost?: string } | undefined)
@@ -15,7 +18,14 @@ function resolveBaseUrl(): string {
   const host = hostUri?.split(":")[0];
   if (host) return `http://${host}:${API_PORT}/api`;
 
-  return `http://localhost:${API_PORT}/api`;
+  // No override and no Metro: a standalone build. There is no localhost worth
+  // talking to on a phone, so failing here is the only honest option - the
+  // alternative is an app that installs, launches and silently reaches
+  // nothing.
+  throw new Error(
+    "EXPO_PUBLIC_API_URL is required in a standalone build. Set it to the " +
+      "backend's public HTTPS URL (no /api suffix) before building.",
+  );
 }
 
 const BASE_URL = resolveBaseUrl();
