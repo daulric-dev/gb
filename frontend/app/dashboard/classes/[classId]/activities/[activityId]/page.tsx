@@ -17,17 +17,54 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, Loader2, Plus, Send, Trash2, X } from "lucide-react";
+import {
+  Calculator,
+  Download,
+  Loader2,
+  Pencil,
+  Send,
+} from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { buildUrl } from "@/lib/api";
+import { downloadBlob } from "@/lib/reports/download";
 import {
   formatDue,
   STATUS_LABEL,
   type ActivityDetail,
   type SubmissionRow,
 } from "../_components/types";
+import { QuestionCard } from "../_components/QuestionCard";
+import {
+  QuestionForm,
+  type QuestionPayload,
+} from "../_components/QuestionForm";
+
+/**
+ * The handed-in file. It is streamed through the backend rather than linked
+ * directly: the student owns the file, and the teacher's access comes from
+ * owning the class, which only the API can decide.
+ */
+async function downloadSubmissionFile(submissionId: string, name: string) {
+  const res = await fetch(
+    buildUrl(`/activities/submissions/${submissionId}/file`),
+    { headers: { "X-API-Version": "1" }, credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`Failed to download (${res.status})`);
+  downloadBlob(await res.blob(), name);
+}
+
+/** An ISO instant as the local wall clock a datetime-local input expects. */
+function toLocalInput(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 export default function ActivityDetailPage() {
   useSignals();
@@ -43,14 +80,13 @@ export default function ActivityDetailPage() {
   const loading = useSignal(true);
   const working = useSignal(false);
 
-  // new question
-  const prompt = useSignal("");
-  const optionA = useSignal("");
-  const optionB = useSignal("");
-  const optionC = useSignal("");
-  const optionD = useSignal("");
-  const correct = useSignal(0);
-  const questionPoints = useSignal("1");
+  // editing the title and description
+  const editingDetails = useSignal(false);
+  const draftTitle = useSignal("");
+  const draftInstructions = useSignal("");
+  const draftPoints = useSignal("");
+  const draftDueAt = useSignal("");
+  const draftAttempts = useSignal("");
 
   const load = useCallback(() => {
     if (!activityId) return;
@@ -72,44 +108,94 @@ export default function ActivityDetailPage() {
     loadSubmissions();
   }, [load, loadSubmissions]);
 
-  async function addQuestion() {
-    const labels = [optionA, optionB, optionC, optionD]
-      .map((s) => s.value.trim())
-      .filter(Boolean);
+  function openDetails() {
+    const a = activity.value;
+    if (!a) return;
+    draftTitle.value = a.title;
+    draftInstructions.value = a.instructions ?? "";
+    draftPoints.value = String(a.points);
+    // datetime-local wants the local wall clock with no zone, so trim the ISO
+    // string rather than round-tripping through toISOString, which would shift
+    // the displayed time by the offset.
+    draftDueAt.value = a.dueAt ? toLocalInput(a.dueAt) : "";
+    draftAttempts.value = String(a.maxAttempts ?? 1);
+    editingDetails.value = true;
+  }
 
-    if (!prompt.value.trim()) {
-      toast.error("Write the question");
-      return;
-    }
-    if (labels.length < 2) {
-      toast.error("Give at least two options");
-      return;
-    }
-    if (correct.value >= labels.length) {
-      toast.error("Mark which option is correct");
+  // Renaming is allowed after publishing - unlike questions, it changes
+  // nothing that has already been marked - and the backend keeps the
+  // gradebook's copy of the title in step.
+  async function saveDetails() {
+    if (!draftTitle.value.trim()) {
+      toast.error("Give it a title");
       return;
     }
 
     working.value = true;
     try {
-      await api(`/activities/${activityId}/questions`, {
-        method: "POST",
+      const points = Number(draftPoints.value);
+      if (!Number.isFinite(points) || points < 1) {
+        toast.error("Points must be at least 1");
+        return;
+      }
+
+      const attempts = Number(draftAttempts.value);
+      if (!Number.isInteger(attempts) || attempts < 0) {
+        toast.error("Attempts must be 0 or more");
+        return;
+      }
+
+      await api(`/activities/${activityId}`, {
+        method: "PATCH",
         body: {
-          prompt: prompt.value.trim(),
-          kind: "multiple_choice",
-          points: Number(questionPoints.value) || 1,
-          options: labels.map((label, i) => ({
-            label,
-            isCorrect: i === correct.value,
-          })),
+          title: draftTitle.value.trim(),
+          instructions: draftInstructions.value.trim(),
+          points,
+          dueAt: draftDueAt.value
+            ? new Date(draftDueAt.value).toISOString()
+            : null,
+          ...(activity.value?.kind === "quiz"
+            ? { maxAttempts: attempts }
+            : {}),
         },
       });
-      prompt.value = "";
-      optionA.value = "";
-      optionB.value = "";
-      optionC.value = "";
-      optionD.value = "";
-      correct.value = 0;
+      editingDetails.value = false;
+      toast.success("Saved");
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+    } finally {
+      working.value = false;
+    }
+  }
+
+  // Excluding keeps the marks but drops their effect on the term - the escape
+  // hatch for work that went wrong, short of deleting it and the submissions.
+  async function setExcluded(excluded: boolean) {
+    working.value = true;
+    try {
+      await api(`/activities/${activityId}/exclude`, {
+        method: "POST",
+        body: { excluded },
+      });
+      toast.success(
+        excluded ? "Left out of the grade" : "Counting towards the grade",
+      );
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+    } finally {
+      working.value = false;
+    }
+  }
+
+  async function addQuestion(payload: QuestionPayload) {
+    working.value = true;
+    try {
+      await api(`/activities/${activityId}/questions`, {
+        method: "POST",
+        body: payload,
+      });
       load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to add");
@@ -118,16 +204,8 @@ export default function ActivityDetailPage() {
     }
   }
 
-  async function removeQuestion(questionId: string) {
-    try {
-      await api(`/activities/${activityId}/questions/${questionId}`, {
-        method: "DELETE",
-      });
-      load();
-    } catch {
-      toast.error("Failed to remove question");
-    }
-  }
+
+
 
   async function publish() {
     working.value = true;
@@ -211,6 +289,12 @@ export default function ActivityDetailPage() {
               <Badge variant={isDraft ? "secondary" : "default"}>
                 {STATUS_LABEL[a.status]}
               </Badge>
+              {!editingDetails.value && (
+                <Button variant="outline" onClick={openDetails}>
+                  <Pencil className="mr-2 size-4" />
+                  Edit
+                </Button>
+              )}
               {isDraft && (
                 <Button onClick={publish} disabled={working.value}>
                   {working.value ? (
@@ -226,15 +310,124 @@ export default function ActivityDetailPage() {
                   Close
                 </Button>
               )}
+              {!isDraft && (
+                <Button
+                  variant="outline"
+                  onClick={() => setExcluded(!a.isExcluded)}
+                  disabled={working.value}
+                >
+                  <Calculator className="mr-2 size-4" />
+                  {a.isExcluded ? "Count it" : "Do not count"}
+                </Button>
+              )}
             </div>
           ) : undefined
         }
       />
 
-      {a.instructions && (
-        <Card>
-          <CardContent className="py-4 text-sm text-muted-foreground">
-            {a.instructions}
+      {editingDetails.value ? (
+        <Card className="border-primary/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Title and description</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="activityTitle" className="text-xs">
+                Title
+              </Label>
+              <Input
+                id="activityTitle"
+                value={draftTitle.value}
+                onChange={(e) => (draftTitle.value = e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="activityInstructions" className="text-xs">
+                Description
+              </Label>
+              <Textarea
+                id="activityInstructions"
+                rows={4}
+                placeholder="What students need to know before they start"
+                value={draftInstructions.value}
+                onChange={(e) => (draftInstructions.value = e.target.value)}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label htmlFor="activityDue" className="text-xs">
+                  Due
+                </Label>
+                <Input
+                  id="activityDue"
+                  type="datetime-local"
+                  value={draftDueAt.value}
+                  onChange={(e) => (draftDueAt.value = e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="activityPoints" className="text-xs">
+                  Points
+                </Label>
+                <Input
+                  id="activityPoints"
+                  type="number"
+                  min={1}
+                  value={draftPoints.value}
+                  onChange={(e) => (draftPoints.value = e.target.value)}
+                />
+              </div>
+              {a.kind === "quiz" && (
+                <div className="space-y-1">
+                  <Label htmlFor="activityAttempts" className="text-xs">
+                    Attempts
+                  </Label>
+                  <Input
+                    id="activityAttempts"
+                    type="number"
+                    min={0}
+                    value={draftAttempts.value}
+                    onChange={(e) => (draftAttempts.value = e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    0 for unlimited
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => (editingDetails.value = false)}
+                disabled={working.value}
+              >
+                Cancel
+              </Button>
+              <Button onClick={saveDetails} disabled={working.value}>
+                {working.value && (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                )}
+                Save
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        a.instructions && (
+          <Card>
+            <CardContent className="py-4 text-sm text-muted-foreground">
+              {a.instructions}
+            </CardContent>
+          </Card>
+        )
+      )}
+
+      {a.isExcluded && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardContent className="py-3 text-sm">
+            Not counted towards the term grade. The marks are kept, and
+            &ldquo;Count it&rdquo; puts them back.
           </CardContent>
         </Card>
       )}
@@ -254,42 +447,14 @@ export default function ActivityDetailPage() {
         {a.kind === "quiz" && (
           <TabsContent value="questions" className="mt-4 space-y-3">
             {a.questions.map((q, i) => (
-              <Card key={q.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <CardTitle className="text-base">
-                      {i + 1}. {q.prompt}
-                    </CardTitle>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant="secondary">{q.points} pt</Badge>
-                      {canEdit && isDraft && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeQuestion(q.id)}
-                        >
-                          <Trash2 className="size-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-1 pt-0">
-                  {q.options.map((o) => (
-                    <div
-                      key={o.id}
-                      className="flex items-center gap-2 text-sm text-muted-foreground"
-                    >
-                      {o.isCorrect ? (
-                        <Check className="size-4 text-emerald-600" />
-                      ) : (
-                        <X className="size-4 opacity-30" />
-                      )}
-                      {o.label}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+              <QuestionCard
+                key={q.id}
+                question={q}
+                index={i}
+                activityId={activityId}
+                canEdit={canEdit && isDraft}
+                onChangedAction={load}
+              />
             ))}
 
             {canEdit && isDraft && (
@@ -297,57 +462,13 @@ export default function ActivityDetailPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Add a question</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <Textarea
-                    rows={2}
-                    placeholder="What is 2 + 2?"
-                    value={prompt.value}
-                    onChange={(e) => (prompt.value = e.target.value)}
+                <CardContent>
+                  <QuestionForm
+                    key={a.questions.length}
+                    submitLabel="Add"
+                    busy={working.value}
+                    onSubmitAction={addQuestion}
                   />
-                  {[optionA, optionB, optionC, optionD].map((opt, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => (correct.value = i)}
-                        aria-label={`Mark option ${i + 1} correct`}
-                        className={`flex size-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                          correct.value === i
-                            ? "border-emerald-600 bg-emerald-600 text-white"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        <Check className="size-4" />
-                      </button>
-                      <Input
-                        placeholder={`Option ${i + 1}${i > 1 ? " (optional)" : ""}`}
-                        value={opt.value}
-                        onChange={(e) => (opt.value = e.target.value)}
-                      />
-                    </div>
-                  ))}
-                  <div className="flex items-end gap-2">
-                    <div className="w-24 space-y-1">
-                      <Label className="text-xs">Points</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={questionPoints.value}
-                        onChange={(e) => (questionPoints.value = e.target.value)}
-                      />
-                    </div>
-                    <Button
-                      onClick={addQuestion}
-                      disabled={working.value}
-                      className="ml-auto"
-                    >
-                      <Plus className="mr-2 size-4" />
-                      Add
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Tick the circle beside the correct answer. Questions can
-                    only change while this is a draft.
-                  </p>
                 </CardContent>
               </Card>
             )}
@@ -385,6 +506,27 @@ export default function ActivityDetailPage() {
                         <span className="w-full truncate text-xs text-muted-foreground">
                           {row.submission.textBody}
                         </span>
+                      )}
+                      {row.submission.fileId && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          onClick={() => {
+                            const name =
+                              row.submission?.fileName ?? "submission";
+                            downloadSubmissionFile(
+                              row.submission!.id,
+                              name,
+                            ).catch(() => toast.error("Failed to download"));
+                          }}
+                        >
+                          <Download className="mr-2 size-4" />
+                          <span className="max-w-32 truncate">
+                            {row.submission.fileName ?? "File"}
+                          </span>
+                        </Button>
                       )}
                       <Badge
                         variant={

@@ -185,11 +185,16 @@ export function createRoutingSupabase(
       rpcCalls.push({ name, args });
       const route = config.rpc?.[name];
       const result =
-        typeof route === 'function' ? (route as any)(args) : (route ?? noResult);
+        typeof route === 'function'
+          ? (route as any)(args)
+          : (route ?? noResult);
       return Promise.resolve(result);
     },
     schema: (s: string) => ({
       from: (t: string) => makeBuilder().schema(s).from(t),
+      // Real Supabase exposes rpc on the schema accessor as well as the
+      // client, and services call it both ways.
+      rpc: (name: string, args: any) => client.rpc(name, args),
     }),
     auth: {
       signInWithOtp: () => Promise.resolve(config.authResult ?? noResult),

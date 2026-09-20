@@ -378,7 +378,7 @@ export type Database = {
           allow_text: boolean;
           assessment_id: string | null;
           created_at: string;
-          created_by: string;
+          created_by: string | null;
           due_at: string | null;
           grading_group_id: string | null;
           id: string;
@@ -398,7 +398,7 @@ export type Database = {
           allow_text?: boolean;
           assessment_id?: string | null;
           created_at?: string;
-          created_by: string;
+          created_by?: string | null;
           due_at?: string | null;
           grading_group_id?: string | null;
           id?: string;
@@ -418,7 +418,7 @@ export type Database = {
           allow_text?: boolean;
           assessment_id?: string | null;
           created_at?: string;
-          created_by?: string;
+          created_by?: string | null;
           due_at?: string | null;
           grading_group_id?: string | null;
           id?: string;
@@ -646,27 +646,30 @@ export type Database = {
         Row: {
           created_at: string;
           id: string;
+          is_exam: boolean;
           name: string;
           sort_order: number;
-          subject_id: string | null;
+          student_group_id: string | null;
           term_id: string;
           weight: number;
         };
         Insert: {
           created_at?: string;
           id?: string;
+          is_exam?: boolean;
           name: string;
           sort_order?: number;
-          subject_id?: string | null;
+          student_group_id?: string | null;
           term_id: string;
           weight?: number;
         };
         Update: {
           created_at?: string;
           id?: string;
+          is_exam?: boolean;
           name?: string;
           sort_order?: number;
-          subject_id?: string | null;
+          student_group_id?: string | null;
           term_id?: string;
           weight?: number;
         };
@@ -847,10 +850,11 @@ export type Database = {
     };
     Functions: {
       resolve_grading_groups: {
-        Args: { p_subject_id: string; p_term_id: string };
+        Args: { p_student_group_id?: string; p_term_id: string };
         Returns: {
           id: string;
-          is_subject_specific: boolean;
+          is_class_specific: boolean;
+          is_exam: boolean;
           name: string;
           sort_order: number;
           weight: number;
@@ -1615,6 +1619,7 @@ export type Database = {
         Row: {
           coursework_average: number | null;
           exam_average: number | null;
+          group_breakdown: Json | null;
           id: string;
           is_graded: boolean | null;
           letter_grade: string | null;
@@ -1630,6 +1635,7 @@ export type Database = {
         Insert: {
           coursework_average?: number | null;
           exam_average?: number | null;
+          group_breakdown?: Json | null;
           id?: string;
           is_graded?: boolean | null;
           letter_grade?: string | null;
@@ -1645,6 +1651,7 @@ export type Database = {
         Update: {
           coursework_average?: number | null;
           exam_average?: number | null;
+          group_breakdown?: Json | null;
           id?: string;
           is_graded?: boolean | null;
           letter_grade?: string | null;
@@ -1864,7 +1871,7 @@ export type Database = {
         Row: {
           code_hash: string;
           created_at: string;
-          created_by: string;
+          created_by: string | null;
           expires_at: string;
           id: string;
           revoked_at: string | null;
@@ -1873,7 +1880,7 @@ export type Database = {
         Insert: {
           code_hash: string;
           created_at?: string;
-          created_by: string;
+          created_by?: string | null;
           expires_at: string;
           id?: string;
           revoked_at?: string | null;
@@ -1882,7 +1889,7 @@ export type Database = {
         Update: {
           code_hash?: string;
           created_at?: string;
-          created_by?: string;
+          created_by?: string | null;
           expires_at?: string;
           id?: string;
           revoked_at?: string | null;

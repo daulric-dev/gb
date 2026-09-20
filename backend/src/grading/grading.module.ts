@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
+import { FileManagerModule } from '@/file-manager/file-manager.module';
 import { AssessmentService } from './assessment.service';
 import { GradingGroupService } from './grading-group.service';
 import { ActivityService } from './activity.service';
@@ -11,7 +12,7 @@ import { ActivityController } from './activity.controller';
 import { GradeController } from './grade.controller';
 
 @Module({
-  imports: [GradeScaleModule],
+  imports: [GradeScaleModule, FileManagerModule],
   providers: [
     AssessmentService,
     GradeService,

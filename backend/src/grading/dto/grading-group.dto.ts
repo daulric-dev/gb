@@ -18,11 +18,19 @@ export class ResolveSchemeQueryDto {
   @IsUUID()
   termId!: string;
 
-  /** Omit for the term-wide default scheme. */
+  /** Omit for the term-wide default scheme every class inherits. */
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
-  subjectId?: string;
+  studentGroupId?: string;
+}
+
+export class RemoveGradingGroupQueryDto {
+  /** Same forking rule as an update: removing an inherited group forks first. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  studentGroupId?: string;
 }
 
 export class CreateGradingGroupDto {
@@ -30,11 +38,11 @@ export class CreateGradingGroupDto {
   @IsUUID()
   termId!: string;
 
-  /** Omit to edit the term-wide default rather than one subject's scheme. */
+  /** Omit to edit the term-wide default rather than one class's scheme. */
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
-  subjectId?: string;
+  studentGroupId?: string;
 
   @ApiProperty({ example: 'Assignments' })
   @IsString()
@@ -57,6 +65,15 @@ export class CreateGradingGroupDto {
 }
 
 export class UpdateGradingGroupDto {
+  /**
+   * The class being edited. Editing an inherited group with this set forks the
+   * scheme to that class instead of changing the school's default.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  studentGroupId?: string;
+
   @ApiPropertyOptional({ example: 'Assignments' })
   @IsOptional()
   @IsString()

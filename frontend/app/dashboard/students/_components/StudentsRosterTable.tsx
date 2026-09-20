@@ -3,7 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pencil } from "lucide-react";
+import { ChevronRight, Pencil } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { Student } from "./types";
 
 export function StudentsRosterTable({
@@ -15,6 +16,8 @@ export function StudentsRosterTable({
   onEdit: (student: Student) => void;
   canEdit?: boolean;
 }) {
+  const router = useRouter();
+
   return (
     <div className="animate-fade-in-up-delay-1 rounded-md border">
       <Table>
@@ -30,9 +33,18 @@ export function StudentsRosterTable({
         </TableHeader>
         <TableBody>
           {students.map((student) => (
-            <TableRow key={student.id}>
+            <TableRow
+              key={student.id}
+              // The whole row opens the profile; the edit button stops the
+              // click so it does not navigate out from under the dialog.
+              onClick={() => router.push(`/dashboard/students/${student.id}`)}
+              className="cursor-pointer"
+            >
               <TableCell className="font-medium">
-                {student.first_name} {student.last_name}
+                <span className="inline-flex items-center gap-1.5">
+                  {student.first_name} {student.last_name}
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                </span>
               </TableCell>
               <TableCell>
                 <Badge variant="outline" className="capitalize">
@@ -62,7 +74,14 @@ export function StudentsRosterTable({
               </TableCell>
               {canEdit && (
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(student)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(student);
+                    }}
+                  >
                     <Pencil className="size-4" />
                   </Button>
                 </TableCell>

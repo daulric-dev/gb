@@ -23,27 +23,27 @@ import { cn } from "@/lib/utils";
 import type { Scheme } from "./types";
 
 /**
- * The weighted scheme for a subject in a term - Assignments 20%, Quizzes 20%,
- * Exam 60%.
+ * The weighted scheme for a class in a term - Assignments 20%, Quizzes 20%,
+ * Exam 60%. Every subject the class takes follows it.
  *
  * Weights are not forced to total 100; the running total is shown instead,
  * because the engine renormalises and blocking mid-edit would be worse than
- * letting a teacher finish. Adding the first group to a subject copies the
+ * letting a teacher finish. Adding the first group to a class copies the
  * inherited scheme server-side, so this never starts from a blank slate.
  */
 export function SchemeEditor({
   open,
   termId,
-  subjectId,
-  subjectName,
+  classId,
+  className,
   canEdit,
   onOpenChangeAction,
   onChangedAction,
 }: {
   open: boolean;
   termId: string;
-  subjectId: string;
-  subjectName: string;
+  classId: string;
+  className: string;
   canEdit: boolean;
   onOpenChangeAction: (open: boolean) => void;
   onChangedAction?: () => void;
@@ -57,13 +57,13 @@ export function SchemeEditor({
   const newWeight = useSignal("20");
 
   const load = useCallback(() => {
-    if (!termId || !subjectId) return;
+    if (!termId || !classId) return;
     loading.value = true;
-    api<Scheme>(`/grading-groups?termId=${termId}&subjectId=${subjectId}`)
+    api<Scheme>(`/grading-groups?termId=${termId}&studentGroupId=${classId}`)
       .then((data) => (scheme.value = data))
       .catch(() => (scheme.value = null))
       .finally(() => (loading.value = false));
-  }, [termId, subjectId, loading, scheme]);
+  }, [termId, classId, loading, scheme]);
 
   useEffect(() => {
     if (open) load();
@@ -86,7 +86,7 @@ export function SchemeEditor({
     try {
       await api("/grading-groups", {
         method: "POST",
-        body: { termId, subjectId, name, weight },
+        body: { termId, studentGroupId: classId, name, weight },
       });
       newName.value = "";
       load();
@@ -102,7 +102,7 @@ export function SchemeEditor({
     try {
       await api(`/grading-groups/${groupId}`, {
         method: "PATCH",
-        body: { weight },
+        body: { weight, studentGroupId: classId },
       });
       load();
       onChangedAction?.();
@@ -113,7 +113,9 @@ export function SchemeEditor({
 
   async function remove(groupId: string) {
     try {
-      await api(`/grading-groups/${groupId}`, { method: "DELETE" });
+      await api(`/grading-groups/${groupId}?studentGroupId=${classId}`, {
+        method: "DELETE",
+      });
       load();
       onChangedAction?.();
     } catch (err) {
@@ -129,9 +131,9 @@ export function SchemeEditor({
         <DialogHeader>
           <DialogTitle>Grading scheme</DialogTitle>
           <DialogDescription>
-            How {subjectName || "this subject"} is weighted this term. Work is
-            averaged inside each group, then the groups are weighted against
-            each other.
+            How work in {className || "this class"} is weighted this term,
+            across every subject it takes. Work is averaged inside each group,
+            then the groups are weighted against each other.
           </DialogDescription>
         </DialogHeader>
 
@@ -139,11 +141,11 @@ export function SchemeEditor({
           <Skeleton className="h-32 w-full" />
         ) : (
           <div className="space-y-2">
-            {!scheme.value?.isSubjectSpecific &&
+            {!scheme.value?.isClassSpecific &&
               (scheme.value?.groups.length ?? 0) > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Using the school&apos;s default for this term. Adding a group
-                  starts a scheme just for this subject.
+                  Using the school&apos;s default for this term. Changing a
+                  weight or adding a group starts a scheme just for this class.
                 </p>
               )}
 
@@ -190,7 +192,7 @@ export function SchemeEditor({
 
             {(scheme.value?.groups.length ?? 0) === 0 && (
               <p className="py-4 text-center text-sm text-muted-foreground">
-                No groups yet. Add one to start weighting this subject.
+                No groups yet. Add one to start weighting this class.
               </p>
             )}
 

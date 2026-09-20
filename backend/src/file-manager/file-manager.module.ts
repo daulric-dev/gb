@@ -15,6 +15,6 @@ import { FolderService } from './folder.service';
     FileNotificationService,
     FolderService,
   ],
-  exports: [FolderService],
+  exports: [FolderService, FileManagerService],
 })
 export class FileManagerModule {}

@@ -7,22 +7,13 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import type { MultipartFile } from '@fastify/multipart';
 import { AuthGuard } from '@/auth/auth.guard';
 import { StudentGuard, type StudentRequest } from './student.guard';
 import { SubmissionService } from '@/grading/submission.service';
-import {
-  SubmitAssignmentDto,
-  SubmitQuizDto,
-} from '@/grading/dto/activity.dto';
+import { SubmitAssignmentDto, SubmitQuizDto } from '@/grading/dto/activity.dto';
 
-/**
- * The student's view of work set for their classes.
- *
- * Every route resolves the student from StudentGuard, never from the request,
- * and the service checks the activity belongs to a class they are enrolled in.
- * Correct answers are never selected for these responses.
- */
 @ApiTags('Student Portal')
 @ApiBearerAuth()
 @Controller('portal/me/activities')
@@ -42,6 +33,20 @@ export class PortalActivityController {
     @Param('activityId') activityId: string,
   ) {
     return this.submissions.getForStudent(req.student!.studentId, activityId);
+  }
+
+  @Post(':activityId/file')
+  @ApiConsumes('multipart/form-data')
+  async attachFile(
+    @Req() req: StudentRequest & { file: () => Promise<MultipartFile> },
+    @Param('activityId') activityId: string,
+  ) {
+    const file = await req.file();
+    return this.submissions.attachFile(
+      req.student!.studentId,
+      activityId,
+      file,
+    );
   }
 
   @Post(':activityId/submit')

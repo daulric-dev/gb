@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
@@ -452,7 +453,15 @@ export default function ClassDetailPage() {
                     .map((e) => (
                     <TableRow key={e.id}>
                       <TableCell className="font-medium">
-                        {e.student.first_name} {e.student.last_name}
+                        {/* The name opens the profile; the row's own buttons
+                            stay clickable because only this cell links. */}
+                        <Link
+                          href={`/dashboard/students/${e.student.id}`}
+                          className="inline-flex items-center gap-1.5 hover:underline"
+                        >
+                          {e.student.first_name} {e.student.last_name}
+                          <ChevronRight className="size-3.5 text-muted-foreground" />
+                        </Link>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">

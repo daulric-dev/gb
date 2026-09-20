@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Res,
   Delete,
   Get,
   HttpCode,
@@ -11,7 +12,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
@@ -20,9 +22,11 @@ import { SubmissionService } from './submission.service';
 import {
   AddQuestionDto,
   CreateActivityDto,
+  ExcludeActivityDto,
   GradeSubmissionDto,
   ListActivitiesQueryDto,
   UpdateActivityDto,
+  UpdateQuestionDto,
 } from './dto/activity.dto';
 
 /**
@@ -82,6 +86,21 @@ export class ActivityController {
     return this.activities.close(req.user.id as string, activityId);
   }
 
+  /** Leave it out of the calculation without losing the marks. */
+  @RequirePermission('assessment', 'update')
+  @Post(':activityId/exclude')
+  async setExcluded(
+    @Req() req: any,
+    @Param('activityId') activityId: string,
+    @Body() dto: ExcludeActivityDto,
+  ) {
+    return this.activities.setExcluded(
+      req.user.id as string,
+      activityId,
+      dto.excluded,
+    );
+  }
+
   @RequirePermission('assessment', 'delete')
   @Delete(':activityId')
   @HttpCode(204)
@@ -99,6 +118,22 @@ export class ActivityController {
     @Body() dto: AddQuestionDto,
   ) {
     return this.activities.addQuestion(req.user.id as string, activityId, dto);
+  }
+
+  @RequirePermission('assessment', 'update')
+  @Patch(':activityId/questions/:questionId')
+  async updateQuestion(
+    @Req() req: any,
+    @Param('activityId') activityId: string,
+    @Param('questionId') questionId: string,
+    @Body() dto: UpdateQuestionDto,
+  ) {
+    return this.activities.updateQuestion(
+      req.user.id as string,
+      activityId,
+      questionId,
+      dto,
+    );
   }
 
   @RequirePermission('assessment', 'update')
@@ -121,11 +156,30 @@ export class ActivityController {
   /** Every student in the class, with their submission or lack of one. */
   @RequirePermission('grade', 'read')
   @Get(':activityId/submissions')
-  async submissions_(
-    @Req() req: any,
-    @Param('activityId') activityId: string,
-  ) {
+  async submissions_(@Req() req: any, @Param('activityId') activityId: string) {
     return this.submissions.listForTeacher(req.user.id as string, activityId);
+  }
+
+  /** The file a student handed in, for the teacher marking it. */
+  @RequirePermission('grade', 'read')
+  @Get('submissions/:submissionId/file')
+  @ApiProduces('application/octet-stream')
+  async submissionFile(
+    @Req() req: any,
+    @Param('submissionId') submissionId: string,
+    @Res() res: FastifyReply,
+  ) {
+    const { buffer, contentType, filename } =
+      await this.submissions.readSubmissionFile(
+        req.user.id as string,
+        submissionId,
+      );
+
+    return res
+      .header('Content-Type', contentType ?? 'application/octet-stream')
+      .header('Content-Disposition', `inline; filename="${filename ?? 'file'}"`)
+      .header('Cache-Control', 'private, max-age=60')
+      .send(buffer);
   }
 
   @RequirePermission('grade', 'update')

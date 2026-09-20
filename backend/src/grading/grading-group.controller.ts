@@ -18,6 +18,7 @@ import { RequirePermission } from '@/permission/require-permission.decorator';
 import { GradingGroupService } from './grading-group.service';
 import {
   CreateGradingGroupDto,
+  RemoveGradingGroupQueryDto,
   ResolveSchemeQueryDto,
   UpdateGradingGroupDto,
 } from './dto/grading-group.dto';
@@ -35,14 +36,14 @@ import {
 export class GradingGroupController {
   constructor(private readonly groups: GradingGroupService) {}
 
-  /** The scheme in force for a term, or for one subject within it. */
+  /** The scheme in force for a term, or for one class within it. */
   @RequirePermission('assessment', 'read')
   @Get()
   async resolve(@Req() req: any, @Query() query: ResolveSchemeQueryDto) {
     return this.groups.resolve(
       req.user.id as string,
       query.termId,
-      query.subjectId,
+      query.studentGroupId,
     );
   }
 
@@ -65,7 +66,15 @@ export class GradingGroupController {
   @RequirePermission('assessment', 'update')
   @Delete(':groupId')
   @HttpCode(204)
-  async remove(@Req() req: any, @Param('groupId') groupId: string) {
-    await this.groups.remove(req.user.id as string, groupId);
+  async remove(
+    @Req() req: any,
+    @Param('groupId') groupId: string,
+    @Query() query: RemoveGradingGroupQueryDto,
+  ) {
+    await this.groups.remove(
+      req.user.id as string,
+      groupId,
+      query.studentGroupId,
+    );
   }
 }

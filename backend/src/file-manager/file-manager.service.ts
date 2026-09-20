@@ -426,6 +426,28 @@ export class FileManagerService {
     return { file, access };
   }
 
+  /**
+   * Bytes for a caller who has already been authorised by something other than
+   * file sharing - a teacher reading work handed in to their own class, where
+   * the student owns the file and no share exists. The caller must do that
+   * check; this deliberately does none.
+   */
+  async readContentForAuthorisedCaller(fileId: string) {
+    const { data, error } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .select('*')
+      .eq('id', fileId)
+      .maybeSingle();
+
+    if (error || !data) {
+      throw new NotFoundException('File not found');
+    }
+
+    return this.downloadBytes(data as FileRecord);
+  }
+
   private async downloadBytes(file: FileRecord) {
     const { data, error } = await this.supabase
       .getServiceClient()

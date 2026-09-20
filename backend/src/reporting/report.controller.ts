@@ -16,7 +16,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
-import { ClassTeacherGuard } from '@/class/class-teacher.guard';
+import {
+  ClassMemberGuard,
+  ClassTeacherGuard,
+} from '@/class/class-teacher.guard';
 import { ReportGuard } from './report.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { ReportService } from './report.service';
@@ -45,7 +48,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get()
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async findByClassAndTerm(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -65,27 +68,24 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getClassSummary(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
     @Req() req: FastifyRequest,
-    @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.getClassSummary(
       studentGroupId,
       termId,
       reportType,
-      req,
-      reply,
     );
     return this.versioning.resolve(req, 'report.classSummary')(raw);
   }
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary/analytics')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getGradeAnalytics(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -100,7 +100,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary/download')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async downloadClassSummaryFile(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -124,7 +124,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary/files')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getClassSummaryFiles(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -144,7 +144,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('student')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async findStudentReport(
     @Query('studentId') studentId: string,
     @Query('termId') termId: string,
@@ -164,7 +164,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id/pdfs')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getPdfHistory(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
@@ -176,7 +176,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id/pdf/latest')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getLatestPdf(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
@@ -188,7 +188,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async findOne(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
@@ -272,7 +272,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id/pdf/:pdfId/download')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async downloadPdf(
     @Param('id') id: string,
     @Param('pdfId') pdfId: string,

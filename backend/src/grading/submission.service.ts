@@ -7,16 +7,9 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
+import { FileManagerService } from '@/file-manager/file-manager.service';
+import type { MultipartFile } from '@fastify/multipart';
 
-/**
- * Work students hand in, and the marks teachers give it.
- *
- * Two callers with different rules. A student may only ever touch their own
- * submission, and the student id always comes from the guard rather than the
- * request. A teacher may see every submission for a class their school owns,
- * and marking writes through to the gradebook so the weighted groups pick it
- * up - the same path quiz auto-grading takes.
- */
 @Injectable()
 export class SubmissionService {
   private readonly logger = new Logger(SubmissionService.name);
@@ -24,6 +17,7 @@ export class SubmissionService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly files: FileManagerService,
   ) {}
 
   private async invalidate(): Promise<void> {
@@ -58,7 +52,7 @@ export class SubmissionService {
       .schema('grading')
       .from('activity')
       .select(
-        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text',
+        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts',
       )
       .in('student_group_id', classIds)
       .in('status', ['published', 'closed'])
@@ -113,7 +107,8 @@ export class SubmissionService {
           ? {
               id: submission.id,
               status: submission.status,
-              score: submission.score === null ? null : Number(submission.score),
+              score:
+                submission.score === null ? null : Number(submission.score),
               submittedAt: submission.submitted_at,
               gradedAt: submission.graded_at,
             }
@@ -130,7 +125,9 @@ export class SubmissionService {
     const { data: submission } = await supabase
       .schema('grading')
       .from('submission')
-      .select('id, status, text_body, file_id, score, feedback, submitted_at, graded_at')
+      .select(
+        'id, status, text_body, file_id, score, feedback, submitted_at, graded_at, attempt_count',
+      )
       .eq('activity_id', activityId)
       .eq('student_id', studentId)
       .maybeSingle();
@@ -158,16 +155,23 @@ export class SubmissionService {
 
       // is_correct is deliberately not selected: the answer key must not reach
       // the student's browser, where it is one devtools tab from being read.
+      // A short answer goes further and sends no options at all - there its
+      // labels are the accepted wordings, so the labels are the answer key.
       questions = (qs ?? []).map((q: any) => ({
         id: q.id,
         prompt: q.prompt,
         kind: q.kind,
         points: Number(q.points),
-        options: (options ?? [])
-          .filter((o: any) => o.question_id === q.id)
-          .map((o: any) => ({ id: o.id, label: o.label })),
+        options:
+          q.kind === 'short_answer'
+            ? []
+            : (options ?? [])
+                .filter((o: any) => o.question_id === q.id)
+                .map((o: any) => ({ id: o.id, label: o.label })),
       }));
     }
+
+    const names = await this.fileNames([submission?.file_id as string]);
 
     return {
       id: activity.id,
@@ -179,6 +183,9 @@ export class SubmissionService {
       status: activity.status,
       allowFile: activity.allow_file,
       allowText: activity.allow_text,
+      // 0 means unlimited, matching the teacher's editor.
+      maxAttempts: (activity.max_attempts as number | null) ?? 0,
+      attemptsUsed: (submission?.attempt_count as number) ?? 0,
       questions,
       submission: submission
         ? {
@@ -186,13 +193,32 @@ export class SubmissionService {
             status: submission.status,
             textBody: submission.text_body,
             fileId: submission.file_id,
+            fileName: names.get(submission.file_id as string) ?? null,
             score: submission.score === null ? null : Number(submission.score),
             feedback: submission.feedback,
             submittedAt: submission.submitted_at,
             gradedAt: submission.graded_at,
+            attemptCount: submission.attempt_count ?? 0,
           }
         : null,
     };
+  }
+
+  /** Display names for attached files, so the UI can label a download. */
+  private async fileNames(ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return new Map();
+
+    const { data } = await this.supabaseService
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .select('id, name')
+      .in('id', unique);
+
+    return new Map(
+      (data ?? []).map((f: any) => [f.id as string, f.name as string]),
+    );
   }
 
   /** An activity is only this student's if it is set for a class they are in. */
@@ -203,7 +229,7 @@ export class SubmissionService {
       .schema('grading')
       .from('activity')
       .select(
-        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text',
+        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts',
       )
       .eq('id', activityId)
       .maybeSingle();
@@ -237,7 +263,7 @@ export class SubmissionService {
     const { data: existing } = await supabase
       .schema('grading')
       .from('submission')
-      .select('id, status')
+      .select('id, status, file_id, attempt_count')
       .eq('activity_id', activityId)
       .eq('student_id', studentId)
       .maybeSingle();
@@ -247,8 +273,12 @@ export class SubmissionService {
     const { data, error } = await supabase
       .schema('grading')
       .from('submission')
-      .insert({ activity_id: activityId, student_id: studentId, status: 'draft' })
-      .select('id, status')
+      .insert({
+        activity_id: activityId,
+        student_id: studentId,
+        status: 'draft',
+      })
+      .select('id, status, file_id, attempt_count')
       .single();
 
     if (error || !data) {
@@ -256,6 +286,104 @@ export class SubmissionService {
       throw new BadRequestException('Failed to start this work');
     }
     return data;
+  }
+
+  /**
+   * Attach a file to the draft, uploading it as the student's own.
+   *
+   * Students hold no catalog permissions, so they cannot reach the file
+   * manager's own endpoints; this is the one way in, and it only ever writes
+   * to their own draft for an activity set to their class.
+   */
+  async attachFile(studentId: string, activityId: string, file: MultipartFile) {
+    const activity = await this.requireAssignedActivity(studentId, activityId);
+
+    if (activity.kind !== 'assignment') {
+      throw new BadRequestException('This is not an assignment');
+    }
+    if (!activity.allow_file) {
+      throw new BadRequestException('This assignment does not accept files');
+    }
+    if (activity.status !== 'published') {
+      throw new ConflictException('This assignment is closed');
+    }
+
+    const draft = await this.ensureDraft(studentId, activityId);
+    if (draft.status !== 'draft') {
+      throw new ConflictException('You have already submitted this');
+    }
+
+    // Uploading as the student's own user means the usual scanning, quotas and
+    // ownership all apply; nothing here bypasses the file manager.
+    const owner = await this.userIdForStudent(studentId);
+    const uploaded = await this.files.uploadManual(owner, file);
+
+    const supabase = this.supabaseService.getServiceClient();
+    const { error } = await supabase
+      .schema('grading')
+      .from('submission')
+      .update({ file_id: uploaded.id, updated_at: new Date().toISOString() })
+      .eq('id', draft.id);
+
+    if (error) {
+      this.logger.error(`Failed to attach file: ${error.message}`);
+      throw new BadRequestException('Failed to attach the file');
+    }
+
+    return { fileId: uploaded.id, name: uploaded.name };
+  }
+
+  /** The login behind a student record, which owns anything they upload. */
+  private async userIdForStudent(studentId: string): Promise<string> {
+    const supabase = this.supabaseService.getServiceClient();
+    const { data } = await supabase
+      .schema('student')
+      .from('student')
+      .select('user_profile_id')
+      .eq('id', studentId)
+      .maybeSingle();
+
+    if (!data?.user_profile_id) {
+      throw new BadRequestException('This student has no account');
+    }
+    return data.user_profile_id;
+  }
+
+  /**
+   * A submitted file, for the teacher marking it. The student owns the file
+   * and no share exists, so access is decided by who owns the class rather
+   * than by the file manager's sharing rules.
+   */
+  async readSubmissionFile(userId: string, submissionId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: submission } = await supabase
+      .schema('grading')
+      .from('submission')
+      .select('id, activity_id, file_id')
+      .eq('id', submissionId)
+      .maybeSingle();
+
+    if (!submission?.file_id) {
+      throw new NotFoundException('No file was handed in');
+    }
+
+    const { data: activity } = await supabase
+      .schema('grading')
+      .from('activity')
+      .select('student_group_id')
+      .eq('id', submission.activity_id)
+      .maybeSingle();
+
+    if (!activity) throw new NotFoundException('Activity not found');
+    await this.requireClassOwnership(
+      userId,
+      activity.student_group_id as string,
+    );
+
+    return this.files.readContentForAuthorisedCaller(
+      submission.file_id as string,
+    );
   }
 
   /** Hand in an assignment: text, a file, or both. */
@@ -272,20 +400,24 @@ export class SubmissionService {
     if (activity.status !== 'published') {
       throw new ConflictException('This assignment is closed');
     }
-    if (!input.textBody?.trim() && !input.fileId) {
-      throw new BadRequestException('Add your work before submitting');
-    }
-    if (input.fileId && !activity.allow_file) {
-      throw new BadRequestException('This assignment does not accept files');
-    }
-    if (input.textBody?.trim() && !activity.allow_text) {
-      throw new BadRequestException('This assignment does not accept text');
-    }
-
     const draft = await this.ensureDraft(studentId, activityId);
 
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
+    }
+
+    // A file attached earlier stays attached: handing in text as well must not
+    // silently drop it.
+    const fileId = (input.fileId ?? draft.file_id ?? null) as string | null;
+
+    if (!input.textBody?.trim() && !fileId) {
+      throw new BadRequestException('Add your work before submitting');
+    }
+    if (fileId && !activity.allow_file) {
+      throw new BadRequestException('This assignment does not accept files');
+    }
+    if (input.textBody?.trim() && !activity.allow_text) {
+      throw new BadRequestException('This assignment does not accept text');
     }
 
     const supabase = this.supabaseService.getServiceClient();
@@ -296,7 +428,7 @@ export class SubmissionService {
       .update({
         status: 'submitted',
         text_body: input.textBody?.trim() ?? null,
-        file_id: input.fileId ?? null,
+        file_id: fileId,
         submitted_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -320,7 +452,7 @@ export class SubmissionService {
   async submitQuiz(
     studentId: string,
     activityId: string,
-    answers: { questionId: string; optionId: string }[],
+    answers: { questionId: string; optionId?: string; text?: string }[],
   ) {
     const activity = await this.requireAssignedActivity(studentId, activityId);
 
@@ -332,8 +464,19 @@ export class SubmissionService {
     }
 
     const draft = await this.ensureDraft(studentId, activityId);
-    if (draft.status !== 'draft') {
-      throw new ConflictException('You have already submitted this quiz');
+
+    // A retake is allowed while attempts remain, so a graded submission is not
+    // automatically the end of it. The limit is enforced again inside
+    // submit_quiz, which holds the row lock while it counts.
+    const limit = activity.max_attempts as number | null;
+    const used = (draft.attempt_count as number) ?? 0;
+
+    if (limit !== null && used >= limit) {
+      throw new ConflictException(
+        used === 1
+          ? 'You have already submitted this quiz'
+          : `You have used all ${limit} attempts`,
+      );
     }
 
     const supabase = this.supabaseService.getServiceClient();
@@ -343,22 +486,40 @@ export class SubmissionService {
     const { data: questions } = await supabase
       .schema('grading')
       .from('quiz_question')
-      .select('id')
+      .select('id, kind')
       .eq('activity_id', activityId);
 
-    const valid = new Set((questions ?? []).map((q: any) => q.id as string));
-    const accepted = answers.filter((a) => valid.has(a.questionId));
+    // An answer is stored in the shape its question is marked in, whatever the
+    // client sent: text for a short answer, an option for the choice kinds.
+    const kindById = new Map(
+      (questions ?? []).map((q: any) => [q.id as string, q.kind as string]),
+    );
+    const accepted = answers.filter((a) => kindById.has(a.questionId));
+
+    // Clear the previous attempt first: upserting alone would leave answers to
+    // questions this attempt skipped, silently scoring them again.
+    if (used > 0) {
+      await supabase
+        .schema('grading')
+        .from('quiz_answer')
+        .delete()
+        .eq('submission_id', draft.id);
+    }
 
     if (accepted.length > 0) {
       const { error } = await supabase
         .schema('grading')
         .from('quiz_answer')
         .upsert(
-          accepted.map((a) => ({
-            submission_id: draft.id,
-            question_id: a.questionId,
-            option_id: a.optionId,
-          })),
+          accepted.map((a) => {
+            const isText = kindById.get(a.questionId) === 'short_answer';
+            return {
+              submission_id: draft.id,
+              question_id: a.questionId,
+              option_id: isText ? null : (a.optionId ?? null),
+              text_answer: isText ? (a.text?.trim() ?? null) : null,
+            };
+          }),
           { onConflict: 'submission_id,question_id' },
         );
 
@@ -377,8 +538,8 @@ export class SubmissionService {
 
     if (error) {
       const detail = `${error.code ?? ''} ${error.message ?? ''}`;
-      if (detail.includes('already_submitted')) {
-        throw new ConflictException('You have already submitted this quiz');
+      if (detail.includes('no_attempts_left')) {
+        throw new ConflictException('You have no attempts left');
       }
       if (detail.includes('activity_not_open')) {
         throw new ConflictException('This quiz is closed');
@@ -410,7 +571,10 @@ export class SubmissionService {
       .maybeSingle();
 
     if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(userId, activity.student_group_id as string);
+    await this.requireClassOwnership(
+      userId,
+      activity.student_group_id as string,
+    );
 
     const { data: enrolments } = await supabase
       .schema('student')
@@ -434,12 +598,18 @@ export class SubmissionService {
       ? await supabase
           .schema('grading')
           .from('submission')
-          .select('id, student_id, status, text_body, file_id, score, feedback, submitted_at, graded_at')
+          .select(
+            'id, student_id, status, text_body, file_id, score, feedback, submitted_at, graded_at, attempt_count',
+          )
           .eq('activity_id', activityId)
       : { data: [] as any[] };
 
     const byStudent = new Map(
       (submissions ?? []).map((s: any) => [s.student_id as string, s]),
+    );
+
+    const names = await this.fileNames(
+      (submissions ?? []).map((s: any) => s.file_id as string),
     );
 
     return (students ?? [])
@@ -454,11 +624,13 @@ export class SubmissionService {
                 status: submission.status,
                 textBody: submission.text_body,
                 fileId: submission.file_id,
+                fileName: names.get(submission.file_id as string) ?? null,
                 score:
                   submission.score === null ? null : Number(submission.score),
                 feedback: submission.feedback,
                 submittedAt: submission.submitted_at,
                 gradedAt: submission.graded_at,
+                attemptCount: submission.attempt_count ?? 0,
               }
             : null,
         };
@@ -518,7 +690,10 @@ export class SubmissionService {
       .maybeSingle();
 
     if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(userId, activity.student_group_id as string);
+    await this.requireClassOwnership(
+      userId,
+      activity.student_group_id as string,
+    );
 
     if (input.score < 0 || input.score > Number(activity.points)) {
       throw new BadRequestException(

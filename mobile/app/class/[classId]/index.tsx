@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
-import { ClipboardList, CalendarCheck, ChevronRight } from "lucide-react-native";
+import { CalendarCheck, ChevronRight } from "lucide-react-native";
 import type { ComponentType } from "react";
 import type { LucideProps } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -68,12 +68,6 @@ export default function ClassOverviewScreen() {
         </View>
       ) : (
         <View style={{ gap: 12 }}>
-          <NavRow
-            icon={ClipboardList}
-            title="Grading"
-            subtitle="Enter and manage assessment grades"
-            onPress={() => router.push(`${base}/grading` as Href)}
-          />
           <NavRow
             icon={CalendarCheck}
             title="Attendance"

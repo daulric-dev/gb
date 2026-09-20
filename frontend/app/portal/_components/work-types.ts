@@ -28,10 +28,13 @@ export interface PortalWorkDetail {
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
+  /** 0 means unlimited. */
+  maxAttempts: number;
+  attemptsUsed: number;
   questions: {
     id: string;
     prompt: string;
-    kind: "multiple_choice" | "true_false";
+    kind: "multiple_choice" | "true_false" | "short_answer";
     points: number;
     options: { id: string; label: string }[];
   }[];
@@ -40,10 +43,12 @@ export interface PortalWorkDetail {
     status: "draft" | "submitted" | "graded";
     textBody: string | null;
     fileId: string | null;
+    fileName: string | null;
     score: number | null;
     feedback: string | null;
     submittedAt: string | null;
     gradedAt: string | null;
+    attemptCount: number;
   } | null;
 }
 

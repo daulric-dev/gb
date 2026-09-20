@@ -9,9 +9,11 @@ import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 
 type ActivityKind = 'quiz' | 'assignment';
+type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
 type ActivityStatus = 'draft' | 'published' | 'closed';
 
-const ACTIVITY_COLUMNS = 'id, student_group_id, subject_id, term_id, grading_group_id, assessment_id, kind, title, instructions, points, due_at, status, published_at, allow_file, allow_text, created_by, created_at';
+const ACTIVITY_COLUMNS =
+  'id, student_group_id, subject_id, term_id, grading_group_id, assessment_id, kind, title, instructions, points, due_at, status, published_at, allow_file, allow_text, max_attempts, created_by, created_at';
 
 @Injectable()
 export class ActivityService {
@@ -132,8 +134,12 @@ export class ActivityService {
     const activity = await this.requireActivity(userId, activityId);
     const supabase = this.supabaseService.getServiceClient();
 
+    const isExcluded = await this.isExcluded(
+      activity.assessment_id as string | null,
+    );
+
     if (activity.kind !== 'quiz') {
-      return { ...this.toActivity(activity), questions: [] };
+      return { ...this.toActivity(activity), isExcluded, questions: [] };
     }
 
     const { data: questions } = await supabase
@@ -156,6 +162,7 @@ export class ActivityService {
 
     return {
       ...this.toActivity(activity),
+      isExcluded,
       questions: (questions ?? []).map((q: any) => ({
         id: q.id,
         prompt: q.prompt,
@@ -189,6 +196,7 @@ export class ActivityService {
       dueAt?: string;
       allowFile?: boolean;
       allowText?: boolean;
+      maxAttempts?: number;
     },
   ) {
     await this.requireClass(userId, input.classId);
@@ -198,11 +206,7 @@ export class ActivityService {
 
     // The database rejects an assignment accepting nothing, but saying so here
     // is more use than a constraint name.
-    if (
-      input.kind === 'assignment' &&
-      !input.allowFile &&
-      !input.allowText
-    ) {
+    if (input.kind === 'assignment' && !input.allowFile && !input.allowText) {
       throw new BadRequestException(
         'An assignment must accept a file, text, or both',
       );
@@ -218,6 +222,7 @@ export class ActivityService {
         subject_id: input.subjectId,
         term_id: input.termId,
         grading_group_id: input.gradingGroupId ?? null,
+        max_attempts: input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
         kind: input.kind,
         title,
         instructions: input.instructions ?? null,
@@ -249,6 +254,7 @@ export class ActivityService {
       gradingGroupId?: string | null;
       allowFile?: boolean;
       allowText?: boolean;
+      maxAttempts?: number;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -259,13 +265,17 @@ export class ActivityService {
       if (!title) throw new BadRequestException('Give the activity a title');
       changes.title = title;
     }
-    if (patch.instructions !== undefined) changes.instructions = patch.instructions;
+    if (patch.instructions !== undefined)
+      changes.instructions = patch.instructions;
     if (patch.points !== undefined) changes.points = patch.points;
     if (patch.dueAt !== undefined) changes.due_at = patch.dueAt;
     if (patch.gradingGroupId !== undefined)
       changes.grading_group_id = patch.gradingGroupId;
     if (patch.allowFile !== undefined) changes.allow_file = patch.allowFile;
     if (patch.allowText !== undefined) changes.allow_text = patch.allowText;
+    if (patch.maxAttempts !== undefined) {
+      changes.max_attempts = patch.maxAttempts === 0 ? null : patch.maxAttempts;
+    }
 
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
@@ -287,14 +297,21 @@ export class ActivityService {
       throw new BadRequestException('Failed to update activity');
     }
 
-    // Points feed the assessment's max score, so keep them in step.
-    if (patch.points !== undefined && activity.assessment_id) {
-      await supabase
-        .schema('grading')
-        .from('assessment')
-        .update({ max_score: patch.points })
-        .eq('id', activity.assessment_id);
-      await this.invalidate();
+    // Publishing copies the title and points onto the assessment, so a later
+    // edit has to follow or the gradebook keeps showing the old ones.
+    if (activity.assessment_id) {
+      const mirrored: Record<string, unknown> = {};
+      if (patch.points !== undefined) mirrored.max_score = patch.points;
+      if (changes.title !== undefined) mirrored.title = changes.title;
+
+      if (Object.keys(mirrored).length > 0) {
+        await supabase
+          .schema('grading')
+          .from('assessment')
+          .update(mirrored)
+          .eq('id', activity.assessment_id);
+        await this.invalidate();
+      }
     }
 
     return this.toActivity(data);
@@ -460,36 +477,138 @@ export class ActivityService {
 
   // ── quiz questions ────────────────────────────────────────────────────────
 
-  async addQuestion(
-    userId: string,
-    activityId: string,
-    input: {
-      prompt: string;
-      kind: 'multiple_choice' | 'true_false';
-      points?: number;
-      options: { label: string; isCorrect: boolean }[];
-    },
-  ) {
+  /**
+   * Whether the gradebook is currently ignoring this activity. Exclusion lives
+   * on the assessment, which is where the calculation engine reads it, so an
+   * unpublished activity has nothing to exclude yet.
+   */
+  private async isExcluded(assessmentId: string | null): Promise<boolean> {
+    if (!assessmentId) return false;
+
+    const { data } = await this.supabaseService
+      .getServiceClient()
+      .schema('grading')
+      .from('assessment')
+      .select('is_excluded')
+      .eq('id', assessmentId)
+      .maybeSingle();
+
+    return !!data?.is_excluded;
+  }
+
+  /**
+   * Leave an activity out of the calculation without deleting it.
+   *
+   * The escape hatch for work that went wrong - a test with a bad question, a
+   * quiz nobody could sit. Deleting the activity would take the submissions
+   * with it, so the marks stay and only their effect on the term is dropped.
+   */
+  async setExcluded(userId: string, activityId: string, excluded: boolean) {
+    const activity = await this.requireActivity(userId, activityId);
+
+    if (!activity.assessment_id) {
+      throw new ConflictException(
+        'Publish this before excluding it; nothing is counted yet',
+      );
+    }
+
+    const { error } = await this.supabaseService
+      .getServiceClient()
+      .schema('grading')
+      .from('assessment')
+      .update({ is_excluded: excluded })
+      .eq('id', activity.assessment_id);
+
+    if (error) {
+      this.logger.error(`Failed to set exclusion: ${error.message}`);
+      throw new BadRequestException('Failed to update this activity');
+    }
+
+    await this.invalidate();
+
+    return { ...this.toActivity(activity), isExcluded: excluded };
+  }
+
+  /**
+   * The quiz a question belongs to, checked to be the caller's and still a
+   * draft.
+   *
+   * Questions stop being editable at publish: submit_quiz scores an answer
+   * against the option the student picked, so changing prompts, points or the
+   * answer key afterwards would silently rescore work already handed in.
+   */
+  private async requireDraftQuiz(userId: string, activityId: string) {
     const activity = await this.requireActivity(userId, activityId);
 
     if (activity.kind !== 'quiz') {
       throw new BadRequestException('Only quizzes have questions');
     }
+    if (activity.status !== 'draft') {
+      throw new ConflictException(
+        'This quiz is published; questions can only change while it is a draft',
+      );
+    }
 
-    const prompt = input.prompt.trim();
-    if (!prompt) throw new BadRequestException('Give the question a prompt');
+    return activity;
+  }
 
-    if (input.options.length < 2) {
+  /**
+   * Shared by adding and editing. What counts as valid depends on the kind:
+   * the choice kinds need several options with exactly one right, while a
+   * short answer needs at least one accepted wording and every one of them
+   * counts as right.
+   */
+  private validateOptions(
+    kind: QuestionKind,
+    options: { label: string; isCorrect: boolean }[],
+  ) {
+    if (options.some((o) => !o.label.trim())) {
+      throw new BadRequestException('Give every option a label');
+    }
+
+    if (kind === 'short_answer') {
+      if (options.length < 1) {
+        throw new BadRequestException('Add at least one accepted answer');
+      }
+      return;
+    }
+
+    if (options.length < 2) {
       throw new BadRequestException('A question needs at least two options');
     }
-    if (!input.options.some((o) => o.isCorrect)) {
+    if (!options.some((o) => o.isCorrect)) {
       throw new BadRequestException('Mark one option as correct');
     }
     // Auto-grading picks a single option, so several correct ones would make
     // the score ambiguous rather than generous.
-    if (input.options.filter((o) => o.isCorrect).length > 1) {
+    if (options.filter((o) => o.isCorrect).length > 1) {
       throw new BadRequestException('Only one option can be correct');
     }
+  }
+
+  async addQuestion(
+    userId: string,
+    activityId: string,
+    input: {
+      prompt: string;
+      kind: QuestionKind;
+      points?: number;
+      options: { label: string; isCorrect: boolean }[];
+    },
+  ) {
+    await this.requireDraftQuiz(userId, activityId);
+
+    const prompt = input.prompt.trim();
+    if (!prompt) throw new BadRequestException('Give the question a prompt');
+
+    // Every accepted wording of a short answer is a right answer, so the
+    // editor need not flag them one by one.
+    const options =
+      input.kind === 'short_answer'
+        ? input.options.map((o) => ({ ...o, isCorrect: true }))
+        : input.options;
+
+    this.validateOptions(input.kind, options);
 
     const supabase = this.supabaseService.getServiceClient();
 
@@ -523,7 +642,7 @@ export class ActivityService {
       .schema('grading')
       .from('quiz_option')
       .insert(
-        input.options.map((o, i) => ({
+        options.map((o, i) => ({
           question_id: question.id,
           label: o.label,
           is_correct: o.isCorrect,
@@ -550,8 +669,143 @@ export class ActivityService {
     };
   }
 
+  /**
+   * Edit a question in place. Options are replaced wholesale rather than
+   * patched one by one: the editor hands back the whole list, and a draft has
+   * no answers pointing at the old rows.
+   */
+  async updateQuestion(
+    userId: string,
+    activityId: string,
+    questionId: string,
+    patch: {
+      prompt?: string;
+      points?: number;
+      options?: { label: string; isCorrect: boolean }[];
+    },
+  ) {
+    await this.requireDraftQuiz(userId, activityId);
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: existing } = await supabase
+      .schema('grading')
+      .from('quiz_question')
+      .select('id, prompt, kind, points, sort_order')
+      .eq('id', questionId)
+      .eq('activity_id', activityId)
+      .maybeSingle();
+
+    if (!existing) {
+      throw new NotFoundException('Question not found');
+    }
+
+    const changes: Record<string, unknown> = {};
+    if (patch.prompt !== undefined) {
+      const prompt = patch.prompt.trim();
+      if (!prompt) throw new BadRequestException('Give the question a prompt');
+      changes.prompt = prompt;
+    }
+    if (patch.points !== undefined) changes.points = patch.points;
+
+    const kind = existing.kind as QuestionKind;
+    const options =
+      patch.options && kind === 'short_answer'
+        ? patch.options.map((o) => ({ ...o, isCorrect: true }))
+        : patch.options;
+
+    if (options) {
+      this.validateOptions(kind, options);
+    }
+
+    if (Object.keys(changes).length === 0 && !options) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    if (Object.keys(changes).length > 0) {
+      const { error } = await supabase
+        .schema('grading')
+        .from('quiz_question')
+        .update(changes)
+        .eq('id', questionId);
+
+      if (error) {
+        this.logger.error(`Failed to update question: ${error.message}`);
+        throw new BadRequestException('Failed to save the question');
+      }
+    }
+
+    if (options) {
+      const { error: clearError } = await supabase
+        .schema('grading')
+        .from('quiz_option')
+        .delete()
+        .eq('question_id', questionId);
+
+      if (clearError) {
+        this.logger.error(`Failed to clear options: ${clearError.message}`);
+        throw new BadRequestException('Failed to save the options');
+      }
+
+      const { error: insertError } = await supabase
+        .schema('grading')
+        .from('quiz_option')
+        .insert(
+          options.map((o, i) => ({
+            question_id: questionId,
+            label: o.label.trim(),
+            is_correct: o.isCorrect,
+            sort_order: i,
+          })),
+        );
+
+      if (insertError) {
+        // A question with no options is unanswerable, so say so loudly rather
+        // than leaving the quiz quietly broken.
+        this.logger.error(
+          `Question ${questionId} left without options: ${insertError.message}`,
+        );
+        throw new BadRequestException('Failed to save the options');
+      }
+    }
+
+    return this.getQuestion(activityId, questionId);
+  }
+
+  /** One question with its options, as the editor redraws it after a save. */
+  private async getQuestion(activityId: string, questionId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: question } = await supabase
+      .schema('grading')
+      .from('quiz_question')
+      .select('id, prompt, kind, points, sort_order')
+      .eq('id', questionId)
+      .eq('activity_id', activityId)
+      .single();
+
+    const { data: options } = await supabase
+      .schema('grading')
+      .from('quiz_option')
+      .select('id, label, is_correct, sort_order')
+      .eq('question_id', questionId)
+      .order('sort_order', { ascending: true });
+
+    return {
+      id: question!.id,
+      prompt: question!.prompt,
+      kind: question!.kind,
+      points: Number(question!.points),
+      sortOrder: question!.sort_order,
+      options: (options ?? []).map((o: any) => ({
+        id: o.id,
+        label: o.label,
+        isCorrect: o.is_correct,
+      })),
+    };
+  }
+
   async removeQuestion(userId: string, activityId: string, questionId: string) {
-    await this.requireActivity(userId, activityId);
+    await this.requireDraftQuiz(userId, activityId);
     const supabase = this.supabaseService.getServiceClient();
 
     const { error } = await supabase
@@ -583,6 +837,9 @@ export class ActivityService {
       publishedAt: a.published_at,
       allowFile: a.allow_file,
       allowText: a.allow_text,
+      // 0 rather than null over the wire: the editor shows a number, and
+      // "unlimited" reads better as 0 than as an empty box.
+      maxAttempts: a.max_attempts ?? 0,
       createdAt: a.created_at,
     };
   }

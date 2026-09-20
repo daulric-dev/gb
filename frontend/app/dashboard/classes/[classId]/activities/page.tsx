@@ -59,6 +59,7 @@ interface Subject {
 }
 interface ClassInfo {
   id: string;
+  name: string;
   academicYearId: string | null;
 }
 
@@ -76,6 +77,7 @@ export default function ClassActivitiesPage() {
   const scheme = useSignal<Scheme | null>(null);
   const termId = useSignal("");
   const subjectId = useSignal("");
+  const className = useSignal("");
   const loading = useSignal(true);
   const creating = useSignal(false);
   const working = useSignal(false);
@@ -117,6 +119,7 @@ export default function ClassActivitiesPage() {
       }
 
       const info = classes.find((c) => c.id === classId);
+      className.value = info?.name ?? "";
       if (!info?.academicYearId) return;
 
       const termList = await api<Term[]>(
@@ -127,20 +130,30 @@ export default function ClassActivitiesPage() {
     });
 
     loadActivities();
-  }, [classId, loadActivities, terms, subjects, termId, subjectId]);
+  }, [
+    classId,
+    loadActivities,
+    terms,
+    subjects,
+    termId,
+    subjectId,
+    className,
+  ]);
 
+  // The scheme belongs to the class, not the subject: every subject this class
+  // takes is weighted the same way.
   const loadScheme = useCallback(() => {
-    if (!termId.value || !subjectId.value) return;
+    if (!termId.value || !classId) return;
     api<Scheme>(
-      `/grading-groups?termId=${termId.value}&subjectId=${subjectId.value}`,
+      `/grading-groups?termId=${termId.value}&studentGroupId=${classId}`,
     )
       .then((data) => (scheme.value = data))
       .catch(() => (scheme.value = null));
-  }, [termId, subjectId, scheme]);
+  }, [termId, classId, scheme]);
 
   useEffect(() => {
     loadScheme();
-  }, [termId.value, subjectId.value, loadScheme]);
+  }, [termId.value, loadScheme]);
 
   async function create() {
     if (!title.value.trim()) {
@@ -182,9 +195,6 @@ export default function ClassActivitiesPage() {
       working.value = false;
     }
   }
-
-  const subjectName =
-    subjects.value.find((s) => s.id === subjectId.value)?.name ?? "";
 
   return (
     <div className="space-y-6">
@@ -247,7 +257,7 @@ export default function ClassActivitiesPage() {
           <Button
             variant="outline"
             onClick={() => (schemeOpen.value = true)}
-            disabled={!termId.value || !subjectId.value}
+            disabled={!termId.value}
           >
             <Scale className="mr-2 size-4" />
             Scheme
@@ -306,8 +316,8 @@ export default function ClassActivitiesPage() {
       <SchemeEditor
         open={schemeOpen.value}
         termId={termId.value}
-        subjectId={subjectId.value}
-        subjectName={subjectName}
+        classId={classId}
+        className={className.value}
         canEdit={can("assessment", "update")}
         onOpenChangeAction={(v) => (schemeOpen.value = v)}
         onChangedAction={loadScheme}

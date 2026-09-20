@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api, apiUpload, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -15,9 +15,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Paperclip, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { dueLabel, type PortalWorkDetail } from "../../_components/work-types";
 
@@ -31,9 +32,13 @@ export default function PortalWorkDetailPage() {
   const work = useSignal<PortalWorkDetail | null>(null);
   const loading = useSignal(true);
   const working = useSignal(false);
-  /** questionId -> optionId */
+  /** questionId -> chosen optionId */
   const answers = useSignal<Record<string, string>>({});
+  /** questionId -> typed answer, for short-answer questions */
+  const written = useSignal<Record<string, string>>({});
   const text = useSignal("");
+  const uploading = useSignal(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     if (!activityId) return;
@@ -54,7 +59,11 @@ export default function PortalWorkDetailPage() {
     const w = work.value;
     if (!w) return;
 
-    const unanswered = w.questions.filter((q) => !answers.value[q.id]);
+    const unanswered = w.questions.filter((q) =>
+      q.kind === "short_answer"
+        ? !written.value[q.id]?.trim()
+        : !answers.value[q.id],
+    );
     if (unanswered.length > 0) {
       toast.error(
         `Answer every question first (${unanswered.length} left)`,
@@ -69,13 +78,21 @@ export default function PortalWorkDetailPage() {
         {
           method: "POST",
           body: {
-            answers: Object.entries(answers.value).map(
-              ([questionId, optionId]) => ({ questionId, optionId }),
+            answers: w.questions.map((q) =>
+              q.kind === "short_answer"
+                ? {
+                    questionId: q.id,
+                    text: written.value[q.id]?.trim() ?? "",
+                  }
+                : { questionId: q.id, optionId: answers.value[q.id] },
             ),
           },
         },
       );
       toast.success(`Submitted — you scored ${result.score}/${result.points}`);
+      // A retake starts blank rather than pre-filled with the last attempt.
+      answers.value = {};
+      written.value = {};
       load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to submit");
@@ -84,9 +101,31 @@ export default function PortalWorkDetailPage() {
     }
   }
 
+  async function attachFile(file: File) {
+    uploading.value = true;
+    try {
+      await apiUpload(
+        `/portal/me/activities/${activityId}/file`,
+        (() => {
+          const form = new FormData();
+          form.append("file", file, file.name);
+          return form;
+        })(),
+      );
+      toast.success("File attached — hand in when you are ready");
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to upload");
+    } finally {
+      uploading.value = false;
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
+
   async function submitAssignment() {
-    if (!text.value.trim()) {
-      toast.error("Write your answer before handing in");
+    const attached = !!work.value?.submission?.fileId;
+    if (!text.value.trim() && !attached) {
+      toast.error("Add your work before handing in");
       return;
     }
 
@@ -94,7 +133,7 @@ export default function PortalWorkDetailPage() {
     try {
       await api(`/portal/me/activities/${activityId}/submit`, {
         method: "POST",
-        body: { textBody: text.value.trim() },
+        body: { textBody: text.value.trim() || undefined },
       });
       toast.success("Handed in");
       load();
@@ -128,7 +167,13 @@ export default function PortalWorkDetailPage() {
 
   const w = work.value;
   const submitted = !!w.submission && w.submission.status !== "draft";
-  const open = w.status === "published" && !submitted;
+  // A quiz can be sat again while attempts remain; anything else is done once.
+  const attemptsLeft =
+    w.kind === "quiz" && w.maxAttempts === 0
+      ? Infinity
+      : Math.max(0, (w.maxAttempts || 1) - (w.attemptsUsed ?? 0));
+  const canRetake = w.kind === "quiz" && attemptsLeft > 0;
+  const open = w.status === "published" && (!submitted || canRetake);
 
   return (
     <div className="space-y-6">
@@ -151,6 +196,15 @@ export default function PortalWorkDetailPage() {
               {w.submission?.feedback && (
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {w.submission.feedback}
+                </p>
+              )}
+              {w.kind === "quiz" && canRetake && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {attemptsLeft === Infinity
+                    ? "You can try this again as often as you like."
+                    : `You can try again — ${attemptsLeft} attempt${
+                        attemptsLeft === 1 ? "" : "s"
+                      } left.`}
                 </p>
               )}
             </div>
@@ -181,35 +235,49 @@ export default function PortalWorkDetailPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                {q.options.map((o) => {
-                  const chosen = answers.value[q.id] === o.id;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      disabled={!open}
-                      aria-pressed={chosen}
-                      onClick={() =>
-                        (answers.value = { ...answers.value, [q.id]: o.id })
-                      }
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                        chosen
-                          ? "border-primary bg-primary/5 font-medium"
-                          : "hover:bg-muted",
-                        !open && "opacity-70",
-                      )}
-                    >
-                      <span
+                {q.kind === "short_answer" ? (
+                  <Input
+                    placeholder="Type your answer"
+                    value={written.value[q.id] ?? ""}
+                    disabled={!open}
+                    onChange={(e) =>
+                      (written.value = {
+                        ...written.value,
+                        [q.id]: e.target.value,
+                      })
+                    }
+                  />
+                ) : (
+                  q.options.map((o) => {
+                    const chosen = answers.value[q.id] === o.id;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        disabled={!open}
+                        aria-pressed={chosen}
+                        onClick={() =>
+                          (answers.value = { ...answers.value, [q.id]: o.id })
+                        }
                         className={cn(
-                          "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                          chosen && "border-primary bg-primary",
+                          "flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                          chosen
+                            ? "border-primary bg-primary/5 font-medium"
+                            : "hover:bg-muted",
+                          !open && "opacity-70",
                         )}
-                      />
-                      {o.label}
-                    </button>
-                  );
-                })}
+                      >
+                        <span
+                          className={cn(
+                            "flex size-4 shrink-0 items-center justify-center rounded-full border",
+                            chosen && "border-primary bg-primary",
+                          )}
+                        />
+                        {o.label}
+                      </button>
+                        );
+                    })
+                )}
               </CardContent>
             </Card>
           ))}
@@ -221,12 +289,16 @@ export default function PortalWorkDetailPage() {
               disabled={working.value}
             >
               {working.value && <Loader2 className="mr-2 size-4 animate-spin" />}
-              Submit quiz
+              {submitted ? "Try again" : "Submit quiz"}
             </Button>
           )}
           {open && (
             <p className="text-center text-xs text-muted-foreground">
-              You get one attempt, and it is marked as soon as you submit.
+              {w.maxAttempts === 0
+                ? "Marked as soon as you submit, and you can retake it."
+                : w.maxAttempts === 1
+                  ? "You get one attempt, and it is marked as soon as you submit."
+                  : `You get ${w.maxAttempts} attempts, and only the latest counts.`}
             </p>
           )}
         </div>
@@ -251,13 +323,49 @@ export default function PortalWorkDetailPage() {
             )}
 
             {w.allowFile && (
-              <p className="text-xs text-muted-foreground">
-                File upload is not available here yet — hand the file to your
-                teacher, or paste your work above if that is allowed.
-              </p>
+              <div className="space-y-2">
+                {w.submission?.fileId && (
+                  <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                    <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {w.submission.fileName ?? "Attached file"}
+                    </span>
+                  </div>
+                )}
+
+                {open && (
+                  <>
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) attachFile(file);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={uploading.value}
+                      onClick={() => fileInput.current?.click()}
+                    >
+                      {uploading.value ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 size-4" />
+                      )}
+                      {w.submission?.fileId ? "Replace file" : "Attach a file"}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Up to 10MB. Attaching a file does not hand it in.
+                    </p>
+                  </>
+                )}
+              </div>
             )}
 
-            {open && w.allowText && (
+            {open && (
               <Button onClick={submitAssignment} disabled={working.value}>
                 {working.value && (
                   <Loader2 className="mr-2 size-4 animate-spin" />

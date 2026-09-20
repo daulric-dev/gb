@@ -16,6 +16,8 @@ export interface Activity {
   status: ActivityStatus;
   allowFile: boolean;
   allowText: boolean;
+  /** How many times a quiz may be sat. 0 means unlimited. */
+  maxAttempts: number;
   createdAt: string;
 }
 
@@ -25,15 +27,25 @@ export interface QuizOption {
   isCorrect?: boolean;
 }
 
+export type QuestionKind = "multiple_choice" | "true_false" | "short_answer";
+
+export const QUESTION_KIND_LABEL: Record<QuestionKind, string> = {
+  multiple_choice: "Multiple choice",
+  true_false: "True or false",
+  short_answer: "Short answer",
+};
+
 export interface QuizQuestion {
   id: string;
   prompt: string;
-  kind: "multiple_choice" | "true_false";
+  kind: QuestionKind;
   points: number;
   options: QuizOption[];
 }
 
 export interface ActivityDetail extends Activity {
+  /** True when the gradebook is ignoring this; only meaningful once published. */
+  isExcluded: boolean;
   questions: QuizQuestion[];
 }
 
@@ -47,7 +59,7 @@ export interface GradingGroup {
 
 export interface Scheme {
   groups: GradingGroup[];
-  isSubjectSpecific: boolean;
+  isClassSpecific: boolean;
   totalWeight: number;
 }
 
@@ -59,10 +71,12 @@ export interface SubmissionRow {
     status: "draft" | "submitted" | "graded";
     textBody: string | null;
     fileId: string | null;
+    fileName: string | null;
     score: number | null;
     feedback: string | null;
     submittedAt: string | null;
     gradedAt: string | null;
+    attemptCount: number;
   } | null;
 }
 
