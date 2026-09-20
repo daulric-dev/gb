@@ -1,6 +1,7 @@
 import { Redirect, Tabs } from "expo-router";
 import {
   LayoutDashboard,
+  NotebookPen,
   ClipboardList,
   CalendarCheck,
   ScrollText,
@@ -45,6 +46,15 @@ export default function PortalLayout() {
           title: "Overview",
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="work"
+        options={{
+          title: "Work",
+          tabBarIcon: ({ color, size }) => (
+            <NotebookPen color={color} size={size} />
           ),
         }}
       />

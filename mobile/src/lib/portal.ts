@@ -53,6 +53,27 @@ export interface PortalReportSummary {
   academicYear: { id: string; name: string | null } | null;
 }
 
+export interface PortalReportEntry {
+  id: string;
+  subject: { id: string; name: string | null; code: string | null } | null;
+  isGraded: boolean;
+  termAverage: number | null;
+  termGrade: number | null;
+  termComposite: number | null;
+  yearGrade: number | null;
+  examAverage: number | null;
+  courseworkAverage: number | null;
+  letterGrade: string | null;
+  teacherRemark: string | null;
+}
+
+export interface PortalReport extends PortalReportSummary {
+  attendanceDays: number | null;
+  totalSchoolDays: number | null;
+  generalRemarks: string | null;
+  entries: PortalReportEntry[];
+}
+
 const TERM_LABELS: Record<string, string> = {
   michaelmas: "Michaelmas",
   hilary: "Hilary",

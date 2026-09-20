@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
-import { ScrollText } from "lucide-react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
+import { ChevronRight, ScrollText } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useTheme } from "@/theme/ThemeProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   formatDate,
@@ -15,6 +17,8 @@ import {
 } from "@/lib/portal";
 
 export default function PortalReportsScreen() {
+  const router = useRouter();
+  const { colors } = useTheme();
   const [reports, setReports] = useState<PortalReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,13 +60,23 @@ export default function PortalReportsScreen() {
         />
       ) : (
         reports.map((report) => (
-          <Card key={report.id}>
+          <Pressable
+            key={report.id}
+            onPress={() => router.push(`/report/${report.id}`)}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+          <Card>
             <CardHeader>
-              <CardTitle>
-                {report.type === "year_end"
-                  ? "End of year report"
-                  : `${termLabel(report.term?.name)} report`}
-              </CardTitle>
+              <View style={styles.titleRow}>
+                <View style={{ flex: 1 }}>
+                  <CardTitle>
+                    {report.type === "year_end"
+                      ? "End of year report"
+                      : `${termLabel(report.term?.name)} report`}
+                  </CardTitle>
+                </View>
+                <ChevronRight color={colors.mutedForeground} size={16} />
+              </View>
               <Text variant="muted" style={{ fontSize: 12 }}>
                 {[report.academicYear?.name, formatDate(report.publishedAt)]
                   .filter(Boolean)
@@ -84,6 +98,7 @@ export default function PortalReportsScreen() {
               )}
             </CardContent>
           </Card>
+          </Pressable>
         ))
       )}
     </Screen>
@@ -92,4 +107,5 @@ export default function PortalReportsScreen() {
 
 const styles = StyleSheet.create({
   badges: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 12 },
 });
