@@ -26,6 +26,7 @@ import { MessageActionDto } from './dto/message-action.dto';
 import { ListMessagesQueryDto } from './dto/list-messages.query.dto';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import type { ChatEvent } from './chat.types';
+import { corsOriginFor } from '@/config/origins';
 
 const SSE_HEARTBEAT_MS = 25_000;
 
@@ -55,7 +56,7 @@ export class ChatController {
     reply.hijack();
     const raw = reply.raw;
     const origin = req.headers?.origin;
-    const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const allowedOrigin = corsOriginFor(origin as string);
     raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',

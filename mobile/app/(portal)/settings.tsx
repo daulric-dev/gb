@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme, type ThemeMode } from "@/theme/ThemeProvider";
@@ -13,7 +14,13 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
  * record, since the link to it is what the school issued a claim code for.
  */
 export default function PortalSettingsScreen() {
-  const { profile, logout } = useAuth();
+  const { profile, logout, refresh } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void Promise.resolve(refresh()).finally(() => setRefreshing(false));
+  }, [refresh]);
   const { mode, setMode } = useTheme();
 
   const name =
@@ -21,7 +28,11 @@ export default function PortalSettingsScreen() {
     "Student";
 
   return (
-    <Screen title="Settings">
+    <Screen
+      title="Settings"
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <Card>
         <CardHeader>
           <CardTitle>Account</CardTitle>

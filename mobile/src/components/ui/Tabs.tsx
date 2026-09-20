@@ -21,14 +21,14 @@ export function Tabs<T extends string>({
   value: T;
   onChange: (value: T) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, clay } = useTheme();
 
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}
-      style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}
+      style={{ flexGrow: 0 }}
     >
       {tabs.map((tab) => {
         const active = tab.value === value;
@@ -39,7 +39,11 @@ export function Tabs<T extends string>({
             style={[
               styles.tab,
               {
-                borderBottomColor: active ? colors.foreground : "transparent",
+                // Chips rather than an underlined rule: a hairline border is
+                // the one thing clay surfaces never use.
+                borderRadius: clay.radius.pill,
+                backgroundColor: active ? colors.card : "transparent",
+                boxShadow: active ? clay.raised : undefined,
               },
             ]}
           >
@@ -76,9 +80,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
   badge: {
     minWidth: 20,

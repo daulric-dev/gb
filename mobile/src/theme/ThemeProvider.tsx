@@ -17,6 +17,7 @@ import {
   fontSize,
   type ThemeColors,
 } from "./colors";
+import { darkClay, lightClay, type ClayTokens } from "./clay";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -28,6 +29,8 @@ interface ThemeContextValue {
   radius: typeof radius;
   spacing: typeof spacing;
   fontSize: typeof fontSize;
+  /** Claymorphic shadows and radii; see `clay.ts`. */
+  clay: ClayTokens;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -67,6 +70,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       radius,
       spacing,
       fontSize,
+      clay: scheme === "dark" ? darkClay : lightClay,
     }),
     [scheme, mode, setMode],
   );

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
+import { isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 
 export async function createApp(): Promise<NestFastifyApplication> {
@@ -55,11 +56,14 @@ export async function createApp(): Promise<NestFastifyApplication> {
   });
 
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    // A function, because the web app is not the only browser client any more:
+    // the mobile app served over Expo web arrives from its own origin, on an
+    // address that changes with the DHCP lease. Native React Native sends no
+    // Origin header, so CORS never applies there.
+    origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
-    // Let the browser read the server-provided download filename.
     exposedHeaders: ['Content-Disposition'],
   });
 

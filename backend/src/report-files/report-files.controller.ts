@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import archiver from 'archiver';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
@@ -23,6 +23,7 @@ import {
 import { ReportFilesService } from './report-files.service';
 import { PersistClassSummaryDto } from './dto/persist-class-summary.dto';
 import type { GeneratedFile } from './generation/types';
+import { corsOriginFor } from '@/config/origins';
 
 @ApiTags('Report files')
 @ApiBearerAuth()
@@ -138,6 +139,7 @@ export class ReportFilesController {
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
+    @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ) {
     // Fetch data + plan entries BEFORE hijacking, so any auth/404/calc error
@@ -158,7 +160,7 @@ export class ReportFilesController {
     // the response and can't read the download filename.
     reply.raw.setHeader(
       'Access-Control-Allow-Origin',
-      process.env.FRONTEND_URL || 'http://localhost:3000',
+      corsOriginFor(req.headers?.origin),
     );
     reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
     reply.raw.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');

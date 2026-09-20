@@ -30,7 +30,7 @@ export function Sheet({
   description?: string;
   children: ReactNode;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
@@ -52,8 +52,9 @@ export function Sheet({
             styles.sheet,
             {
               backgroundColor: colors.card,
-              borderTopLeftRadius: radius.xl,
-              borderTopRightRadius: radius.xl,
+              borderTopLeftRadius: clay.radius.xl,
+              borderTopRightRadius: clay.radius.xl,
+              boxShadow: clay.surface,
               borderColor: colors.border,
               paddingBottom: insets.bottom + 16,
             },

@@ -210,7 +210,7 @@ export class StudentMembershipService {
       .is('revoked_at', null)
       .maybeSingle();
 
-    const expired = data ? new Date(data.expires_at) <= new Date() : false;
+    const expired = data ? new Date(data.expires_at as string) <= new Date() : false;
 
     return {
       activeCode:
@@ -275,7 +275,7 @@ export class StudentMembershipService {
       throw new BadRequestException('Invalid or expired join code');
     }
 
-    await this.finalise(userId, row.school_id);
+    await this.finalise(userId, row.school_id as string);
 
     this.logger.log(
       `User ${userId} joined school ${row.school_id} as student ${row.student_id}`,
@@ -372,7 +372,7 @@ export class StudentMembershipService {
     const row = Array.isArray(data) ? data[0] : data;
 
     if (joined?.user_profile_id) {
-      await this.finalise(joined.user_profile_id, schoolId);
+      await this.finalise(joined.user_profile_id as string, schoolId);
     } else {
       await this.cache.delete(`students:${schoolId}`);
     }

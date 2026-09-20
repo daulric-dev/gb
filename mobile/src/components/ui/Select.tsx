@@ -27,7 +27,7 @@ export function Select<T extends string>({
   placeholder?: string;
   disabled?: boolean;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
 
@@ -41,9 +41,10 @@ export function Select<T extends string>({
         style={({ pressed }) => [
           styles.field,
           {
-            borderColor: colors.input,
+            borderColor: "transparent",
             backgroundColor: colors.background,
-            borderRadius: radius.md,
+            borderRadius: clay.radius.md,
+            boxShadow: clay.inset,
             opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
           },
         ]}
@@ -75,7 +76,7 @@ export function Select<T extends string>({
                 {
                   backgroundColor: colors.popover,
                   borderColor: colors.border,
-                  borderRadius: radius.lg,
+                  borderRadius: clay.radius.lg,
                   maxHeight: 400,
                   marginBottom: insets.bottom,
                 },

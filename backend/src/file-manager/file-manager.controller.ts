@@ -76,7 +76,11 @@ export class FileManagerController {
     @Body() dto: CreateUploadTicketDto,
   ) {
     const userId: string = req.user.id;
-    return this.files.createUploadTicket(userId, dto);
+    return this.files.createUploadTicket(
+      userId,
+      dto,
+      req.headers?.host as string | undefined,
+    );
   }
 
   /** Scan the uploaded bytes and release the file for use. */

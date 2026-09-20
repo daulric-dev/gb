@@ -25,6 +25,7 @@ export default function WorkDetailScreen() {
 
   const [work, setWork] = useState<PortalWorkDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [working, setWorking] = useState(false);
   const [uploading, setUploading] = useState(false);
   /** questionId -> chosen optionId */
@@ -44,6 +45,11 @@ export default function WorkDetailScreen() {
 
   useEffect(() => {
     load().finally(() => setLoading(false));
+  }, [load]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load().finally(() => setRefreshing(false));
   }, [load]);
 
   async function submitQuiz() {
@@ -167,6 +173,8 @@ export default function WorkDetailScreen() {
       title={work.title}
       description={`${work.points} points · ${dueLabel(work.dueAt)}`}
       onBack={() => router.back()}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
       <View style={{ gap: 12 }}>
         {submitted && (

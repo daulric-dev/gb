@@ -18,7 +18,7 @@ import { isStudentProfile } from "@/lib/routing";
  */
 export default function PortalLayout() {
   const { profile, loading } = useAuth();
-  const { colors } = useTheme();
+  const { colors, clay } = useTheme();
 
   if (loading) return <Loading />;
   if (!profile) return <Redirect href="/(auth)/login" />;
@@ -32,9 +32,12 @@ export default function PortalLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.foreground,
         tabBarInactiveTintColor: colors.mutedForeground,
+        // The bar is a clay surface in its own right: no hairline rule, and
+        // the shadow above it separates it from the content instead.
         tabBarStyle: {
           backgroundColor: colors.card,
-          borderTopColor: colors.border,
+          borderTopWidth: 0,
+          boxShadow: clay.surface,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
         sceneStyle: { backgroundColor: colors.background },

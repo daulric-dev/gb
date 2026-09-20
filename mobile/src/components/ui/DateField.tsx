@@ -51,7 +51,7 @@ export function DateField({
   placeholder?: string;
   clearable?: boolean;
 }) {
-  const { colors, radius, scheme } = useTheme();
+  const { colors, clay, scheme } = useTheme();
   const [show, setShow] = useState(false);
 
   const handleChange = (event: DateTimePickerEvent, date?: Date) => {
@@ -69,7 +69,8 @@ export function DateField({
           {
             borderColor: colors.input,
             backgroundColor: colors.background,
-            borderRadius: radius.md,
+            borderRadius: clay.radius.md,
+            boxShadow: clay.inset,
             opacity: pressed ? 0.85 : 1,
           },
         ]}

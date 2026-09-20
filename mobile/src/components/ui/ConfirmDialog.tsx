@@ -28,7 +28,7 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
 
   return (
     <Modal
@@ -46,7 +46,8 @@ export function ConfirmDialog({
               {
                 backgroundColor: colors.card,
                 borderColor: colors.border,
-                borderRadius: radius.xl,
+                borderRadius: clay.radius.xl,
+                boxShadow: clay.surface,
               },
             ]}
           >

@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { CalendarCheck, ChevronRight } from "lucide-react-native";
@@ -45,7 +46,13 @@ function NavRow({
 
 export default function ClassOverviewScreen() {
   const router = useRouter();
-  const { classId, classInfo, loading } = useClass();
+  const { classId, classInfo, loading, reload } = useClass();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void reload().finally(() => setRefreshing(false));
+  }, [reload]);
 
   const base = `/class/${classId}`;
 
@@ -54,6 +61,8 @@ export default function ClassOverviewScreen() {
       title={loading ? "Class" : (classInfo?.name ?? "Class")}
       description={classInfo?.isClassTeacher ? undefined : "Subject class"}
       onBack={() => router.back()}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
       action={
         classInfo?.isClassTeacher ? (
           <Badge variant="secondary">Class Teacher</Badge>

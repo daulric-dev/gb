@@ -34,6 +34,7 @@ export default function PortalReportDetailScreen() {
 
   const [report, setReport] = useState<PortalReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!reportId) return;
@@ -45,6 +46,11 @@ export default function PortalReportDetailScreen() {
 
   useEffect(() => {
     load().finally(() => setLoading(false));
+  }, [load]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load().finally(() => setRefreshing(false));
   }, [load]);
 
   if (loading) {
@@ -80,6 +86,8 @@ export default function PortalReportDetailScreen() {
         .filter(Boolean)
         .join(" · ")}
       onBack={() => router.back()}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
       <View style={{ gap: 12 }}>
         <View style={styles.stats}>

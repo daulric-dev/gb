@@ -16,6 +16,7 @@ import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
 import { verifyContent, ALLOWED_CONTENT_TYPES } from './file-content';
 import { mintUploadToken } from '@/supabase/upload-token';
+import { storagePublicUrl } from '@/config/storage-url';
 
 const BUCKET = 'file-manager';
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -237,6 +238,8 @@ export class FileManagerService {
       contentType: string;
       folderId?: string;
     },
+    /** The Host this request arrived on; see `storagePublicUrl`. */
+    requestHost?: string,
   ) {
     if (input.folderId) await this.folders.getOwned(userId, input.folderId);
 
@@ -290,7 +293,7 @@ export class FileManagerService {
 
     return {
       fileId: id,
-      endpoint: `${process.env.SUPABASE_URL}/storage/v1/upload/resumable`,
+      endpoint: `${storagePublicUrl(requestHost)}/storage/v1/upload/resumable`,
       token,
       expiresAt,
       bucket: BUCKET,
@@ -321,8 +324,8 @@ export class FileManagerService {
     }
 
     const { data: blob, error: downloadError } = await client.storage
-      .from(record.bucket)
-      .download(record.storage_path);
+      .from(record.bucket as string)
+      .download(record.storage_path as string);
 
     if (downloadError || !blob) {
       await this.failUpload(fileId, 'failed', 'Upload did not complete');
@@ -340,7 +343,7 @@ export class FileManagerService {
       throw new BadRequestException('File too large. Maximum is 10MB.');
     }
 
-    const check = verifyContent(buffer, record.content_type);
+    const check = verifyContent(buffer, record.content_type as string);
     if (!check.ok) {
       await this.discardUpload(record, 'failed', check.reason);
       throw new BadRequestException(check.reason);

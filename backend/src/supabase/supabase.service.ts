@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ClamavScanner } from '@/scan/clamav.scanner';
+import { primaryOrigin } from '@/config/origins';
 
 type Schema = 'public' | 'student' | 'grading' | 'reporting' | 'staff';
 
@@ -34,7 +35,7 @@ export class SupabaseService {
                 ...options,
                 domain:
                   process.env.NODE_ENV === 'production'
-                    ? `.${new URL(process.env.FRONTEND_URL!).hostname.split('.').slice(-2).join('.')}`
+                    ? `.${new URL(primaryOrigin()).hostname.split('.').slice(-2).join('.')}`
                     : undefined,
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',

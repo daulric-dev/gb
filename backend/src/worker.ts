@@ -7,6 +7,7 @@ import {
 import { AppModule } from './app.module';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
+import { allowedOrigins } from './config/origins';
 
 let app: NestFastifyApplication;
 
@@ -43,7 +44,7 @@ async function ensureApp(env: Record<string, string>) {
   );
 
   app.enableCors({
-    origin: env.FRONTEND_URL || 'http://localhost:3000',
+    origin: allowedOrigins(),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],

@@ -53,6 +53,7 @@ export class PortalActivityController {
       req.student!.studentId,
       activityId,
       dto,
+      (req as { headers?: { host?: string } }).headers?.host,
     );
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
@@ -25,21 +25,36 @@ export default function DashboardScreen() {
   const { profile } = useAuth();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>("admin");
 
+  const load = useCallback(
+    () =>
+      api<ClassItem[]>("/classes")
+        .then((data) => setClasses(data))
+        .catch(() => setClasses([])),
+    [],
+  );
+
   useEffect(() => {
-    api<ClassItem[]>("/classes")
-      .then((data) => setClasses(data))
-      .catch(() => setClasses([]))
-      .finally(() => setLoading(false));
-  }, []);
+    load().finally(() => setLoading(false));
+  }, [load]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load().finally(() => setRefreshing(false));
+  }, [load]);
 
   const displayName = profile?.first_name ?? "there";
   const schoolName = profile?.school?.name ?? "your school";
   const mode = loading ? null : pickMode(profile?.role, classes);
 
   return (
-    <Screen title={`Hello ${displayName}`}>
+    <Screen
+      title={`Hello ${displayName}`}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       {!mode ? (
         <View style={styles.skeletonGrid}>
           {[0, 1, 2, 3].map((i) => (

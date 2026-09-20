@@ -337,6 +337,7 @@ export class SubmissionService {
     studentId: string,
     activityId: string,
     input: { name: string; sizeBytes: number; contentType: string },
+    requestHost?: string,
   ) {
     const activity = await this.requireAssignedActivity(studentId, activityId);
 
@@ -356,7 +357,7 @@ export class SubmissionService {
     }
 
     const owner = await this.userIdForStudent(studentId);
-    return this.files.createUploadTicket(owner, input);
+    return this.files.createUploadTicket(owner, input, requestHost);
   }
 
   async finaliseUploadedFile(

@@ -1,15 +1,24 @@
-/**
- * Mobile port of the web frontend's `lib/api.ts`.
- *
- * Auth is cookie-based (Supabase SSR httpOnly cookies set by the backend on
- * `/auth/otp/verify`). React Native's fetch persists and resends cookies via
- * the platform's native cookie store, so no manual token handling is required —
- * the web `credentials: "include"` behaviour is the default here.
- */
+import Constants from "expo-constants";
 
-const BASE_URL = `${
-  process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001"
-}/api`;
+const API_PORT = 3001;
+
+function resolveBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_API_URL;
+  if (configured) return `${configured.replace(/\/$/, "")}/api`;
+
+  // e.g. "192.168.0.12:8081" — present whenever the app is served by Metro.
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants.expoGoConfig as { debuggerHost?: string } | undefined)
+      ?.debuggerHost;
+
+  const host = hostUri?.split(":")[0];
+  if (host) return `http://${host}:${API_PORT}/api`;
+
+  return `http://localhost:${API_PORT}/api`;
+}
+
+const BASE_URL = resolveBaseUrl();
 
 export function buildUrl(path: string): string {
   if (!path.startsWith("/")) {
@@ -38,6 +47,30 @@ function handleUnauthorized(skipAuthRedirect: boolean): never {
   throw new ApiError(401, "Session expired");
 }
 
+/**
+ * A request that never reached the server.
+ *
+ * `fetch` rejects with a bare TypeError when the host is down, the address is
+ * wrong or the network is gone. Screens catch errors and fall back to a
+ * message about whatever they were doing - "Failed to send OTP" - which sends
+ * you looking at the wrong thing entirely. Turning it into an ApiError with a
+ * status of 0 lets every screen say what actually happened.
+ */
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0;
+}
+
+async function fetchOrThrow(
+  input: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError(0, "Can't reach the server. Check your connection.");
+  }
+}
+
 export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
@@ -53,7 +86,7 @@ export async function api<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(buildUrl(path), {
+  const res = await fetchOrThrow(buildUrl(path), {
     ...rest,
     headers,
     credentials: "include",
@@ -87,7 +120,7 @@ export async function apiUpload<T = unknown>(
   formData: FormData,
   options: { skipAuthRedirect?: boolean } = {},
 ): Promise<T> {
-  const res = await fetch(buildUrl(path), {
+  const res = await fetchOrThrow(buildUrl(path), {
     method: "POST",
     headers: { "X-API-Version": "1" },
     credentials: "include",

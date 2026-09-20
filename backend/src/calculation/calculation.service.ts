@@ -657,7 +657,7 @@ export class CalculationService {
       studentSubjects.get(student_id)!.add(sp.subject_id as string);
     }
 
-    const markedSubjects = await this.subjectsWithMarks(termId, studentIds);
+    const markedSubjects = await this.subjectsWithMarks(termId, studentIds as string[]);
     for (const [sid, subjectSet] of markedSubjects) {
       if (!studentSubjects.has(sid)) studentSubjects.set(sid, new Set());
       for (const subjectId of subjectSet) {

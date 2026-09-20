@@ -23,6 +23,30 @@ function handleUnauthorized(skipAuthRedirect: boolean): never {
   throw new ApiError(401, "Session expired");
 }
 
+/**
+ * A request that never reached the server.
+ *
+ * `fetch` rejects with a bare TypeError when the host is down, the address is
+ * wrong or the network is gone. Screens catch errors and fall back to a
+ * message about whatever they were doing - "Failed to send OTP" - which sends
+ * you looking at the wrong thing entirely. Turning it into an ApiError with a
+ * status of 0 lets every screen say what actually happened.
+ */
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0;
+}
+
+async function fetchOrThrow(
+  input: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError(0, "Can't reach the server. Check your connection.");
+  }
+}
+
 export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
@@ -38,7 +62,7 @@ export async function api<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(buildUrl(path), {
+  const res = await fetchOrThrow(buildUrl(path), {
     ...rest,
     headers,
     credentials: "include",
@@ -64,7 +88,7 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const res = await fetch(buildUrl(path), {
+  const res = await fetchOrThrow(buildUrl(path), {
     method: "POST",
     headers: { "X-API-Version": "1" },
     body: formData,
