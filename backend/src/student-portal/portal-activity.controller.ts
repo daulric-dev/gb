@@ -13,6 +13,7 @@ import { AuthGuard } from '@/auth/auth.guard';
 import { StudentGuard, type StudentRequest } from './student.guard';
 import { SubmissionService } from '@/grading/submission.service';
 import { SubmitAssignmentDto, SubmitQuizDto } from '@/grading/dto/activity.dto';
+import { CreateUploadTicketDto } from '@/file-manager/dto/upload-ticket.dto';
 
 @ApiTags('Student Portal')
 @ApiBearerAuth()
@@ -35,6 +36,44 @@ export class PortalActivityController {
     return this.submissions.getForStudent(req.student!.studentId, activityId);
   }
 
+  /**
+   * Start a resumable upload for this assignment. The browser sends the bytes
+   * to Storage over TUS, then calls the complete endpoint below.
+   *
+   * Students hold no catalog permissions, so the portal is the only place they
+   * can obtain a ticket.
+   */
+  @Post(':activityId/upload-ticket')
+  async createUploadTicket(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Body() dto: CreateUploadTicketDto,
+  ) {
+    return this.submissions.createUploadTicket(
+      req.student!.studentId,
+      activityId,
+      dto,
+    );
+  }
+
+  /** Scan the uploaded bytes and attach the file to the draft. */
+  @Post(':activityId/upload-ticket/:fileId/complete')
+  async finaliseUpload(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.submissions.finaliseUploadedFile(
+      req.student!.studentId,
+      activityId,
+      fileId,
+    );
+  }
+
+  /**
+   * Attach a file in one request. Kept for small files and as a fallback when
+   * a resumable upload cannot be used; the path above is preferred.
+   */
   @Post(':activityId/file')
   @ApiConsumes('multipart/form-data')
   async attachFile(

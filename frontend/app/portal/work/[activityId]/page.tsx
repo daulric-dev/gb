@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { api, apiUpload, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { uploadResumable } from "@/lib/files/resumable";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -38,6 +39,7 @@ export default function PortalWorkDetailPage() {
   const written = useSignal<Record<string, string>>({});
   const text = useSignal("");
   const uploading = useSignal(false);
+  const uploadProgress = useSignal(0);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -103,21 +105,30 @@ export default function PortalWorkDetailPage() {
 
   async function attachFile(file: File) {
     uploading.value = true;
+    uploadProgress.value = 0;
     try {
-      await apiUpload(
-        `/portal/me/activities/${activityId}/file`,
-        (() => {
-          const form = new FormData();
-          form.append("file", file, file.name);
-          return form;
-        })(),
+      await uploadResumable(
+        file,
+        {
+          ticket: `/portal/me/activities/${activityId}/upload-ticket`,
+          complete: (fileId) =>
+            `/portal/me/activities/${activityId}/upload-ticket/${fileId}/complete`,
+        },
+        { onProgress: (fraction) => (uploadProgress.value = fraction) },
       );
       toast.success("File attached — hand in when you are ready");
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to upload");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to upload",
+      );
     } finally {
       uploading.value = false;
+      uploadProgress.value = 0;
       if (fileInput.current) fileInput.current.value = "";
     }
   }
@@ -355,10 +366,15 @@ export default function PortalWorkDetailPage() {
                       ) : (
                         <Upload className="mr-2 size-4" />
                       )}
-                      {w.submission?.fileId ? "Replace file" : "Attach a file"}
+                      {uploading.value
+                        ? `Uploading ${Math.round(uploadProgress.value * 100)}%`
+                        : w.submission?.fileId
+                          ? "Replace file"
+                          : "Attach a file"}
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Up to 10MB. Attaching a file does not hand it in.
+                      Up to 10MB, and an interrupted upload picks up where it
+                      stopped. Attaching a file does not hand it in.
                     </p>
                   </>
                 )}

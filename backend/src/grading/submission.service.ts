@@ -333,6 +333,66 @@ export class SubmissionService {
     return { fileId: uploaded.id, name: uploaded.name };
   }
 
+  async createUploadTicket(
+    studentId: string,
+    activityId: string,
+    input: { name: string; sizeBytes: number; contentType: string },
+  ) {
+    const activity = await this.requireAssignedActivity(studentId, activityId);
+
+    if (activity.kind !== 'assignment') {
+      throw new BadRequestException('This is not an assignment');
+    }
+    if (!activity.allow_file) {
+      throw new BadRequestException('This assignment does not accept files');
+    }
+    if (activity.status !== 'published') {
+      throw new ConflictException('This assignment is closed');
+    }
+
+    const draft = await this.ensureDraft(studentId, activityId);
+    if (draft.status !== 'draft') {
+      throw new ConflictException('You have already submitted this');
+    }
+
+    const owner = await this.userIdForStudent(studentId);
+    return this.files.createUploadTicket(owner, input);
+  }
+
+  async finaliseUploadedFile(
+    studentId: string,
+    activityId: string,
+    fileId: string,
+  ) {
+    const activity = await this.requireAssignedActivity(studentId, activityId);
+
+    if (activity.kind !== 'assignment' || !activity.allow_file) {
+      throw new BadRequestException('This assignment does not accept files');
+    }
+
+    const draft = await this.ensureDraft(studentId, activityId);
+    if (draft.status !== 'draft') {
+      throw new ConflictException('You have already submitted this');
+    }
+
+    const owner = await this.userIdForStudent(studentId);
+    const file = await this.files.finaliseUpload(owner, fileId);
+
+    const { error } = await this.supabaseService
+      .getServiceClient()
+      .schema('grading')
+      .from('submission')
+      .update({ file_id: file.id, updated_at: new Date().toISOString() })
+      .eq('id', draft.id);
+
+    if (error) {
+      this.logger.error(`Failed to attach file: ${error.message}`);
+      throw new BadRequestException('Failed to attach the file');
+    }
+
+    return { fileId: file.id, name: file.name };
+  }
+
   /** The login behind a student record, which owns anything they upload. */
   private async userIdForStudent(studentId: string): Promise<string> {
     const supabase = this.supabaseService.getServiceClient();
@@ -349,11 +409,6 @@ export class SubmissionService {
     return data.user_profile_id;
   }
 
-  /**
-   * A submitted file, for the teacher marking it. The student owns the file
-   * and no share exists, so access is decided by who owns the class rather
-   * than by the file manager's sharing rules.
-   */
   async readSubmissionFile(userId: string, submissionId: string) {
     const supabase = this.supabaseService.getServiceClient();
 

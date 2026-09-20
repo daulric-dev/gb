@@ -2,7 +2,8 @@
 
 import { useRef } from "react";
 import { toast } from "sonner";
-import { apiUpload } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+import { uploadResumable } from "@/lib/files/resumable";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
@@ -21,6 +22,7 @@ export function UploadButton({
   useSignals();
   const inputRef = useRef<HTMLInputElement>(null);
   const uploading = useSignal(false);
+  const progress = useSignal(0);
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -33,20 +35,38 @@ export function UploadButton({
     }
 
     uploading.value = true;
+    progress.value = 0;
     try {
-      const formData = new FormData();
-      formData.append("file", file, file.name);
-      const params = new URLSearchParams({ name: file.name });
-      if (folderId) params.set("folderId", folderId);
-      await apiUpload(`/files?${params.toString()}`, formData);
-      toast.success("File uploaded — it will be available once scanned");
+      await uploadResumable(
+        file,
+        {
+          ticket: "/files/upload-ticket",
+          complete: (fileId) => `/files/upload-ticket/${fileId}/complete`,
+        },
+        {
+          folderId: folderId ?? undefined,
+          onProgress: (fraction) => (progress.value = fraction),
+        },
+      );
+      toast.success("File uploaded");
       onUploaded();
-    } catch {
-      toast.error("Upload failed");
+    } catch (err) {
+      // The scan and the signature check both report through here, so the
+      // reason is worth showing rather than a flat "upload failed".
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Upload failed",
+      );
     } finally {
       uploading.value = false;
+      progress.value = 0;
     }
   }
+
+  const percent = Math.round(progress.value * 100);
 
   return (
     <>
@@ -61,7 +81,11 @@ export function UploadButton({
         disabled={uploading.value}
       >
         <Upload className="mr-2 size-4" />
-        {uploading.value ? "Uploading…" : "Upload"}
+        {uploading.value
+          ? percent > 0 && percent < 100
+            ? `Uploading ${percent}%`
+            : "Uploading…"
+          : "Upload"}
       </Button>
     </>
   );

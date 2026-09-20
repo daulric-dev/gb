@@ -29,6 +29,7 @@ import { MoveFileDto } from './dto/move-file.dto';
 import { MoveFolderDto } from './dto/move-folder.dto';
 import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
 import { MultipartFile } from '@fastify/multipart';
+import { CreateUploadTicketDto } from './dto/upload-ticket.dto';
 
 @ApiTags('File Manager')
 @ApiBearerAuth()
@@ -62,6 +63,28 @@ export class FileManagerController {
     const userId: string = req.user.id;
     const file: MultipartFile = await req.file();
     return this.files.uploadManual(userId, file, name, folderId);
+  }
+
+  /**
+   * Start a resumable upload. The browser sends the bytes straight to Storage
+   * over TUS with the returned token, then calls the complete endpoint below.
+   */
+  @RequirePermission('file', 'create')
+  @Post('upload-ticket')
+  async createUploadTicket(
+    @Req() req: any,
+    @Body() dto: CreateUploadTicketDto,
+  ) {
+    const userId: string = req.user.id;
+    return this.files.createUploadTicket(userId, dto);
+  }
+
+  /** Scan the uploaded bytes and release the file for use. */
+  @RequirePermission('file', 'create')
+  @Post('upload-ticket/:fileId/complete')
+  async finaliseUpload(@Req() req: any, @Param('fileId') fileId: string) {
+    const userId: string = req.user.id;
+    return this.files.finaliseUpload(userId, fileId);
   }
 
   // ── Folders (declared before :id so the literal path wins) ────────────────
