@@ -17,21 +17,43 @@ export function OtpInput({
   onChange,
   length = 8,
   autoFocus,
+  error = false,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   length?: number;
   autoFocus?: boolean;
+  /** Paints every box red. The boxes are the cue people actually read. */
+  error?: boolean;
+  disabled?: boolean;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
+  // Eight boxes plus their gaps are wider than a phone's card, so they are
+  // sized to whatever room the row actually gets rather than a fixed width.
+  const [available, setAvailable] = useState(0);
 
   const digits = value.split("");
   const groupSize = Math.ceil(length / 2);
 
+  const GAP = 6;
+  const SEPARATOR = 16;
+  const slotWidth = available
+    ? Math.max(
+        26,
+        Math.min(
+          44,
+          Math.floor(
+            (available - GAP * (length - 2) - SEPARATOR) / length,
+          ),
+        ),
+      )
+    : 34;
+
   function focus() {
-    inputRef.current?.focus();
+    if (!disabled) inputRef.current?.focus();
   }
 
   function renderSlot(index: number) {
@@ -43,9 +65,18 @@ export function OtpInput({
         style={[
           styles.slot,
           {
-            borderColor: isActive ? colors.ring : colors.input,
+            width: slotWidth,
+            height: Math.round(slotWidth * 1.2),
+            borderColor: error
+              ? colors.destructive
+              : isActive
+                ? colors.ring
+                : "transparent",
             backgroundColor: colors.background,
-            borderRadius: radius.md,
+            // The smallest step: on a box this size the larger radii
+            // round it into a pill.
+            borderRadius: clay.radius.sm,
+            boxShadow: clay.inset,
           },
         ]}
       >
@@ -61,14 +92,18 @@ export function OtpInput({
   );
 
   return (
-    <Pressable onPress={focus} style={styles.row}>
-      <View style={styles.group}>{first.map(renderSlot)}</View>
+    <Pressable
+      onPress={focus}
+      style={[styles.row, disabled && { opacity: 0.6 }]}
+      onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}
+    >
+      <View style={[styles.group, { gap: GAP }]}>{first.map(renderSlot)}</View>
       <View style={styles.separator}>
         <Text tone="muted" style={{ fontSize: 20 }}>
           –
         </Text>
       </View>
-      <View style={styles.group}>{second.map(renderSlot)}</View>
+      <View style={[styles.group, { gap: GAP }]}>{second.map(renderSlot)}</View>
 
       <TextInput
         ref={inputRef}
@@ -81,6 +116,7 @@ export function OtpInput({
         autoComplete="sms-otp"
         maxLength={length}
         autoFocus={autoFocus}
+        editable={!disabled}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={styles.hidden}
@@ -94,16 +130,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    width: "100%",
   },
   group: {
     flexDirection: "row",
-    gap: 8,
   },
   slot: {
-    width: 40,
-    height: 48,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
   },

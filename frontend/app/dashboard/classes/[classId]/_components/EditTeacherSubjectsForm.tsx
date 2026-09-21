@@ -13,11 +13,11 @@ import type { Subject, TeacherAssignment } from "./types";
 export function EditTeacherSubjectsForm({
   classId,
   teacher,
-  onSuccess,
+  onSuccessAction,
 }: {
   classId: string;
   teacher: TeacherAssignment;
-  onSuccess: () => void;
+  onSuccessAction: () => void;
 }) {
   useSignals();
   const allSubjects = useSignal<Subject[]>([]);
@@ -32,7 +32,7 @@ export function EditTeacherSubjectsForm({
       .then((data) => (allSubjects.value = data))
       .catch(() => [])
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, allSubjects]);
 
   function toggleSubject(id: string) {
     const next = new Set(selectedSubjects.value);
@@ -52,7 +52,7 @@ export function EditTeacherSubjectsForm({
         },
       });
       toast.success("Subjects updated");
-      onSuccess();
+      onSuccessAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to update";
       toast.error(msg);

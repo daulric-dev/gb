@@ -25,6 +25,14 @@ export type Resource = (typeof RESOURCES)[number];
 
 export type PermissionKey = `${Resource}:${Action}`;
 
+const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
+  school: ['read'],
+};
+
+export function actionsFor(resource: Resource): readonly Action[] {
+  return RESOURCE_ACTIONS[resource] ?? ACTIONS;
+}
+
 export function permKey(resource: Resource, action: Action): PermissionKey {
   return `${resource}:${action}`;
 }
@@ -64,10 +72,10 @@ const ACTION_VERBS: Record<Action, string> = {
   delete: 'Delete',
 };
 
-/** The full catalog: every resource x every action. */
+/** The full catalog: every resource x each action it supports. */
 export const PERMISSION_CATALOG: CatalogEntry[] = RESOURCES.flatMap(
   (resource) =>
-    ACTIONS.map((action) => ({
+    actionsFor(resource).map((action) => ({
       resource,
       action,
       key: permKey(resource, action),
@@ -85,7 +93,7 @@ export function isPermissionKey(value: string): value is PermissionKey {
 }
 
 const allKeys = (...resources: Resource[]): PermissionKey[] =>
-  resources.flatMap((r) => ACTIONS.map((a) => permKey(r, a)));
+  resources.flatMap((r) => actionsFor(r).map((a) => permKey(r, a)));
 const readKeys = (...resources: Resource[]): PermissionKey[] =>
   resources.map((r) => permKey(r, 'read'));
 

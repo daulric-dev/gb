@@ -11,7 +11,7 @@ export function Avatar({
   fallback: string;
   size?: number;
 }) {
-  const { colors } = useTheme();
+  const { colors, clay } = useTheme();
 
   return (
     <View
@@ -22,6 +22,7 @@ export function Avatar({
           height: size,
           borderRadius: size / 2,
           backgroundColor: colors.muted,
+          boxShadow: clay.raised,
         },
       ]}
     >

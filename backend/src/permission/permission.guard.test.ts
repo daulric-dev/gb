@@ -67,7 +67,7 @@ describe('PermissionGuard', () => {
         school_management_role: { data: [], error: null },
       },
     });
-    const guard = guardWith(sb, 'school:delete');
+    const guard = guardWith(sb, 'class:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
       ForbiddenException,
@@ -83,14 +83,28 @@ describe('PermissionGuard', () => {
           error: null,
         },
         school_role_permission: {
-          data: [{ permission_catalog: { key: 'school:delete' } }],
+          data: [{ permission_catalog: { key: 'class:delete' } }],
           error: null,
         },
       },
     });
-    const guard = guardWith(sb, 'school:delete');
+    const guard = guardWith(sb, 'class:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
+  });
+
+  test('a student is denied every staff route', async () => {
+    // A claimed student has a school_id, so the guard resolves a school - but
+    // students have no school_management row, which is what fails them closed.
+    const sb = createRoutingSupabase({
+      tables: { school_management: { data: null, error: null } },
+    });
+    const guard = guardWith(sb, 'student:read');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
+
+    const err = await expectRejection(guard.canActivate(ctx));
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(String((err as Error).message)).toContain('not a member');
   });
 
   test('a non-member of the resolved school is denied', async () => {

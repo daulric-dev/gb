@@ -3,16 +3,23 @@ import type { ReactNode } from "react";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Text } from "./Text";
 
+/**
+ * A clay surface: rounded, inflated, and floating above the background.
+ *
+ * No border - the inset highlight along the top edge and the shadow beneath
+ * define the shape, and a hairline outline on top of that reads as a sticker
+ * rather than a moulded object.
+ */
 export function Card({ style, children, ...rest }: ViewProps) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   return (
     <View
       style={[
         styles.card,
         {
           backgroundColor: colors.card,
-          borderColor: colors.border,
-          borderRadius: radius.xl,
+          borderRadius: clay.radius.xl,
+          boxShadow: clay.surface,
         },
         style,
       ]}
@@ -53,8 +60,9 @@ export function CardContent({ style, children, ...rest }: ViewProps) {
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: "hidden",
+    // Not clipped: an inset shadow is painted inside the view, but clipping
+    // children to the radius would also crop the soft edge it depends on.
+    overflow: "visible",
   },
   header: {
     paddingHorizontal: 20,

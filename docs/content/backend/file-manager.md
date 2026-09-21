@@ -6,7 +6,7 @@ sidebar_label: File Manager
 
 **Location**: `backend/src/file-manager/`
 
-The file manager gives each user a personal file space: generated report files land there automatically, and users can upload their own files. Any file can be shared - view-only or view+download - with a specific user, everyone holding a school role, or every teacher assigned to a class/group. Every uploaded file is virus-scanned synchronously before it is stored (see [Virus scanning](#virus-scanning)).
+The file manager gives each user a personal file space: generated report files land there automatically, and users can upload their own files. Any file can be shared - view-only or view+download - with a specific user, everyone holding a school role, or every teacher assigned to a class/group. Uploads are validated by size and by magic-byte content check before they are stored (see [Upload validation](#upload-validation)).
 
 ## Files
 
@@ -26,7 +26,6 @@ Virus scanning is centralized at the storage boundary, not in this module:
 
 | File | Purpose |
 |------|---------|
-| `scan/clamav.scanner.ts` | Streams bytes to a ClamAV daemon (INSTREAM) and interprets the verdict; provided globally by `ScanModule` |
 | `supabase/supabase.service.ts` | `uploadFile` / `scanOrThrow` scan **every** backend upload before it is stored |
 
 A small async pipeline remains in the queue module for non-upload work:
@@ -105,40 +104,71 @@ that custom role), or a **group** (every teacher assigned to that class/group).
 
 ## Upload validation
 
-On `POST /files` the service checks size (≤10MB), rejects empty files, and
-**verifies the content type against its magic bytes** (`file-content.ts`) - the
-client-declared MIME type is never trusted alone, so a `.html` renamed to
-`.pdf` is rejected up front. The bytes are then virus-scanned inside
-`uploadFile` (below); a clean file is stored and recorded directly as `ready`.
-The `file_status` enum still carries `pending`/`scanning`/`infected`/`failed`
-for historical rows, but a synchronous upload now only ever produces `ready`
-(an infected or unreadable file is rejected before any row is written).
+Every upload is checked in three stages, all in `file-content.ts`, and both
+upload paths share them:
 
-## Virus scanning
+1. **Type allow-list.** Only the entries in `ALLOWED_CONTENT_TYPES` are
+   accepted - PDF, PNG, JPEG, WebP, plain text, CSV, XLSX and DOCX.
+   Executables, scripts and the macro-enabled Office types are refused outright,
+   before a byte is uploaded on the resumable path.
+2. **Magic bytes.** The declared type must match the file's leading bytes, so a
+   `.html` renamed to `.pdf` is rejected. The client MIME type is never trusted
+   alone.
+3. **Structure.** `inspectStructure` looks *inside* the file (below).
 
-Scanning is **centralized at the storage boundary**, so it is not specific to
-the file manager - every backend-mediated upload is covered:
+A single-request upload is stored and recorded directly as `ready`. A resumable
+(TUS) upload reserves the row as `pending`, and `finaliseUpload` re-checks the
+stored bytes before releasing it; anything that fails is deleted from Storage
+and the row is marked `failed` with the reason, so the failure is visible
+rather than silent.
 
-- `SupabaseService.uploadFile` scans each buffer before storing it (avatars,
-  file-manager uploads).
-- `SupabaseService.scanOrThrow` is called directly by the report writers and
-  the resumable-avatar completion step, which upload by other means.
-- The resumable/TUS avatar path can't be scanned inline (bytes go client →
-  Supabase), so `completeResumableUpload` downloads the finished object, scans
-  it, and **deletes + rejects** it if infected.
+### Structural inspection
 
-`ClamavScanner` streams the file to a ClamAV daemon over TCP (the INSTREAM
-command) and interprets the verdict:
+Magic bytes are not enough for container formats, and two of the accepted types
+are containers.
 
-- `CLAMAV_HOST` **set** → a clean verdict lets the upload proceed; a `FOUND`
-  verdict throws a `400` (file rejected, never stored). If clamd is unreachable
-  or replies `ERROR`, the scan **fails closed** (the error propagates and the
-  upload fails rather than storing unscanned bytes).
-- `CLAMAV_HOST` **unset** → scanning is **disabled** and every file passes
-  through, with a startup warning. Intended for local/dev only; configure a
-  scanner before production.
+**Office documents** are ZIPs, so `PK\x03\x04` is all a `.docx` could prove -
+any archive passed as a Word document. The ZIP's **central directory** is now
+walked to check the parts inside:
 
-See [Environment Variables](../environment-variables.md) for `CLAMAV_*`.
+- `vbaProject.bin` present → rejected as macro-enabled (this catches a `.docm`
+  renamed to `.docx`, which the type allow-list alone does not).
+- `[Content_Types].xml` missing → not an Office document.
+- The part matching the declared type must exist: `word/document.xml` for a
+  document, `xl/workbook.xml` for a workbook.
+
+Only the index is read - **nothing is decompressed** - so a crafted archive
+cannot make this expensive. An unreadable directory is rejected, not passed.
+
+**PDFs** are scanned for active content: `/Launch`, `/JavaScript`, `/JS` and
+`/EmbeddedFile` are rejected. `/OpenAction` is deliberately **allowed** - it is
+common and usually benign (open at a page, set a zoom), and only dangerous
+combined with the constructs above.
+
+## No virus scanning
+
+Uploads are **not scanned for malware**. ClamAV was removed because a clamd
+instance holds its entire signature database in memory (~1.5-2GB) and delayed
+every stack start behind a 300-second health check - too much for the size of
+deployment this runs on. See the changelog:
+[ClamAV removed](../changelog/2026-09-21/remove-clamav.md) and
+[Structural content checks](../changelog/2026-09-21/structural-content-checks.md).
+
+Besides the validation above, what stands between a user and a malicious file:
+
+- **No execution path** - files are stored as opaque objects and served back as
+  downloads; nothing in the stack opens or interprets them.
+- **Scoped access** - a file is reachable only by its owner and the people it
+  is explicitly shared with, or for a submission, the teacher who owns the
+  class. `downloadBytes` additionally refuses anything not `ready`.
+
+The residual risk is a **well-formed** PDF/DOCX/XLSX carrying an exploit for the
+recipient's own viewer - nothing here detects that. The PDF scan also reads raw
+bytes, so a token hidden in a compressed object stream is not seen.
+
+`SupabaseService.uploadFile` remains the single storage-write choke point, so
+reinstating signature scanning means one call there plus the two resumable
+completion paths.
 
 ## Notifications
 

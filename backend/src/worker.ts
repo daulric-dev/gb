@@ -1,12 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
+import { allowedOrigins } from './config/origins';
 
 let app: NestFastifyApplication;
 
@@ -23,10 +21,7 @@ async function ensureApp(env: Record<string, string>) {
     { logger: false },
   );
 
-  // Register cookie plugin so the Supabase SSR adapter can read/write
-  // session cookies. Without this, every cookie write silently drops
-  // and sessions break on this entrypoint.
-  await app.register(cookie as any);
+  await app.register(cookie);
 
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -43,7 +38,7 @@ async function ensureApp(env: Record<string, string>) {
   );
 
   app.enableCors({
-    origin: env.FRONTEND_URL || 'http://localhost:3000',
+    origin: allowedOrigins(),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
@@ -54,10 +49,7 @@ async function ensureApp(env: Record<string, string>) {
 }
 
 export default {
-  async fetch(
-    request: Request,
-    env: Record<string, string>,
-  ): Promise<Response> {
+  async fetch(request: Request, env: Record<string, string>): Promise<Response> {
     const nestApp = await ensureApp(env);
     const fastify = nestApp.getHttpAdapter().getInstance();
 

@@ -20,6 +20,7 @@ const termResult: StudentTermResult = {
       courseworkAverage: 70,
       examAverage: 80,
       termComposite: 75,
+      groupAverages: [],
       gradeCount: 1,
       assessments: [],
     },

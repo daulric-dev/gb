@@ -59,12 +59,12 @@ function defaultBandsFor(type: GradeScaleType): BandInput[] {
 
 export function ScaleForm({
   existing,
-  onSaved,
-  onCancel,
+  onSavedAction,
+  onCancelAction,
 }: {
   existing: GradeScaleDetail | null;
-  onSaved: () => void;
-  onCancel: () => void;
+  onSavedAction: () => void;
+  onCancelAction: () => void;
 }) {
   useSignals();
 
@@ -88,7 +88,7 @@ export function ScaleForm({
     // an existing scale and the type didn't change.
     if (existing && existing.scaleType === scaleType.value) return;
     bands.value = defaultBandsFor(scaleType.value);
-  }, [scaleType.value, existing]);
+  }, [scaleType, existing, bands]);
 
   const updateBand = (idx: number, patch: Partial<BandInput>) => {
     bands.value = bands.value.map((b, i) => (i === idx ? { ...b, ...patch } : b));
@@ -154,7 +154,7 @@ export function ScaleForm({
         await api("/grade-scales", { method: "POST", body: payload });
         toast.success("Scale created");
       }
-      onSaved();
+      onSavedAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to save scale";
       toast.error(msg);
@@ -314,7 +314,7 @@ export function ScaleForm({
       </div>
 
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={onCancel} disabled={saving.value}>
+        <Button variant="outline" onClick={onCancelAction} disabled={saving.value}>
           Cancel
         </Button>
         <Button onClick={handleSave} disabled={saving.value}>

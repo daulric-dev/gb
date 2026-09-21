@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -12,6 +13,8 @@ interface ClassContextValue {
   classId: string;
   classInfo: ClassInfo | null;
   loading: boolean;
+  /** Refetch, so the screens sharing this can offer pull to refresh. */
+  reload: () => Promise<void>;
 }
 
 const ClassContext = createContext<ClassContextValue | null>(null);
@@ -31,26 +34,25 @@ export function ClassProvider({
   const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchClass = useCallback(
+    () =>
+      api<ClassInfo[]>("/classes")
+        .then((list) => {
+          setClassInfo(list.find((c) => c.id === classId) ?? null);
+        })
+        .catch(() => setClassInfo(null)),
+    [classId],
+  );
+
   useEffect(() => {
-    let active = true;
     setLoading(true);
-    api<ClassInfo[]>("/classes")
-      .then((list) => {
-        if (active) setClassInfo(list.find((c) => c.id === classId) ?? null);
-      })
-      .catch(() => {
-        if (active) setClassInfo(null);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [classId]);
+    void fetchClass().finally(() => setLoading(false));
+  }, [fetchClass]);
 
   return (
-    <ClassContext.Provider value={{ classId, classInfo, loading }}>
+    <ClassContext.Provider
+      value={{ classId, classInfo, loading, reload: fetchClass }}
+    >
       {children}
     </ClassContext.Provider>
   );

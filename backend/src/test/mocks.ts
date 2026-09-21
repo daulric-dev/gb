@@ -107,9 +107,12 @@ export function createRoutingSupabase(
     verifyOtpResult?: QueryResult;
     getUserByIdResult?: QueryResult;
     authResult?: QueryResult;
+    /** Results per RPC name, fixed or computed from the args. */
+    rpc?: Record<string, RouteValue | ((args: any) => QueryResult)>;
   } = {},
 ) {
   const calls: RoutingCall[] = [];
+  const rpcCalls: { name: string; args: any }[] = [];
 
   function resolveRoute(state: RoutingCall) {
     calls.push({ ...state, filters: { ...state.filters } });
@@ -178,8 +181,20 @@ export function createRoutingSupabase(
   const noResult: QueryResult = { data: null, error: null };
   const client: any = {
     from: (t: string) => makeBuilder().from(t),
+    rpc: (name: string, args: any) => {
+      rpcCalls.push({ name, args });
+      const route = config.rpc?.[name];
+      const result =
+        typeof route === 'function'
+          ? (route as any)(args)
+          : (route ?? noResult);
+      return Promise.resolve(result);
+    },
     schema: (s: string) => ({
       from: (t: string) => makeBuilder().schema(s).from(t),
+      // Real Supabase exposes rpc on the schema accessor as well as the
+      // client, and services call it both ways.
+      rpc: (name: string, args: any) => client.rpc(name, args),
     }),
     auth: {
       signInWithOtp: () => Promise.resolve(config.authResult ?? noResult),
@@ -201,18 +216,12 @@ export function createRoutingSupabase(
     createUserClient: () => client,
     getUser: config.getUser ?? (() => Promise.resolve(null)),
     getUserSchoolId: () => Promise.resolve(config.userSchoolId ?? 'school-1'),
-    scanOrThrow: () => Promise.resolve(),
     _calls: calls,
+    _rpcCalls: rpcCalls,
     _client: client,
   };
 }
 
-/**
- * Await a promise expected to reject and return the thrown value, so callers
- * can assert on it: `expect(await expectRejection(p)).toBeInstanceOf(X)`.
- * Awaits a real promise (unlike bun's `expect(p).rejects`, which is not typed
- * as thenable and trips `@typescript-eslint/await-thenable`).
- */
 export async function expectRejection(
   promise: Promise<unknown>,
 ): Promise<unknown> {

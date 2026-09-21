@@ -1,0 +1,13 @@
+{
+  "$schema": "https://v2-9-7.turborepo.dev/schema.json",
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "start:prod": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": []
+    }
+  }
+}

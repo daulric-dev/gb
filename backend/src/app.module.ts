@@ -2,15 +2,13 @@ import { Module, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import {
-  getClientIp,
-  getSessionTracker,
-  type ThrottlerReq,
-} from '@/throttle/tracker';
+import { getClientIp, getSessionTracker, type ThrottlerReq } from '@/throttle/tracker';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
 import { SupabaseModule } from '@/supabase/supabase.module';
+import { StudentAccountModule } from '@/student-account/student-account.module';
+import { StudentPortalModule } from '@/student-portal/student-portal.module';
 import { AuthModule } from '@/auth/auth.module';
 import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
@@ -32,7 +30,6 @@ import { FileManagerModule } from '@/file-manager/file-manager.module';
 import { RealtimeModule } from '@/realtime/realtime.module';
 import { ChatModule } from '@/chat/chat.module';
 import { QueueModule } from '@/queue/queue.module';
-import { ScanModule } from '@/scan/scan.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
@@ -57,19 +54,32 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
           getTracker: (req: ThrottlerReq) =>
             req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
         },
+        {
+          name: 'claim-code',
+          ttl: 15 * 60 * 1000,
+          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+          getTracker: (req: ThrottlerReq) =>
+            getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
+        },
       ],
 
       generateKey: (
-        _context: ExecutionContext,
+        context: ExecutionContext,
         tracker: string,
         throttlerName: string,
-      ) => `${throttlerName}:${tracker}`,
+      ) => {
+        if (throttlerName === 'default') return `default:${tracker}`;
+        const handler = context.getHandler?.()?.name ?? 'unknown';
+        const controller = context.getClass?.()?.name ?? 'unknown';
+        return `${throttlerName}:${controller}.${handler}:${tracker}`;
+      },
     }),
 
     SupabaseModule,
     AuthModule,
+    StudentAccountModule,
+    StudentPortalModule,
     CacheModule,
-    ScanModule,
     QueueModule.forRoot(),
     PaginationModule,
     VersioningModule,

@@ -9,6 +9,7 @@ import {
   GradingModel,
 } from './interfaces/calculation.interfaces';
 import type {
+  GradingGroup,
   GradingSystemStrategy,
   SubjectTermContext,
   SubjectYearContext,
@@ -31,6 +32,54 @@ export class CalculationService {
     private readonly gradingSystemFactory: GradingSystemFactory,
   ) {}
 
+  private async loadGroups(
+    termId: string,
+    studentGroupId: string | null,
+    courseworkWeight: number,
+    examWeight: number,
+  ): Promise<GradingGroup[]> {
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data, error } = await supabase
+      .schema('grading')
+      .rpc('resolve_grading_groups', {
+        p_term_id: termId,
+        p_student_group_id: studentGroupId,
+      });
+
+    if (error || !data || (data as any[]).length === 0) {
+      if (error) {
+        this.logger.warn(
+          `Falling back to coursework/exam weights for term ${termId}: ${error.message}`,
+        );
+      }
+      return [
+        {
+          id: 'legacy-coursework',
+          name: 'Coursework',
+          weight: courseworkWeight,
+          sortOrder: 0,
+          isExam: false,
+        },
+        {
+          id: 'legacy-exam',
+          name: 'Exam',
+          weight: examWeight,
+          sortOrder: 1,
+          isExam: true,
+        },
+      ];
+    }
+
+    return (data as any[]).map((g) => ({
+      id: g.id,
+      name: g.name,
+      weight: Number(g.weight),
+      sortOrder: g.sort_order,
+      isExam: g.is_exam,
+    }));
+  }
+
   private getStrategy(gradingModel: string): GradingSystemStrategy {
     return this.gradingSystemFactory.getStrategy(gradingModel);
   }
@@ -39,6 +88,7 @@ export class CalculationService {
     studentId: string,
     subjectId: string,
     termId: string,
+    studentGroupId: string | null = null,
   ): Promise<SubjectGradeSummary> {
     const supabase = this.supabaseService.getServiceClient();
 
@@ -52,7 +102,7 @@ export class CalculationService {
         .schema('grading')
         .from('assessment')
         .select(
-          'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+          'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
         )
         .eq('term_id', termId)
         .eq('subject_id', subjectId)
@@ -65,9 +115,9 @@ export class CalculationService {
     ]);
 
     const subject = subjectRes.data;
-    const subjectName = subject?.name ?? 'Unknown';
-    const subjectCode = subject?.code ?? null;
-    const isGraded = subject?.is_graded ?? true;
+    const subjectName: string = subject?.name ?? 'Unknown';
+    const subjectCode: string = subject?.code ?? null;
+    const isGraded: boolean = subject?.is_graded ?? true;
 
     if (!isGraded) {
       return this.nonGradedResult(subjectId, subjectName, subjectCode);
@@ -118,6 +168,12 @@ export class CalculationService {
       subjectName,
       subjectCode,
       termId,
+      groups: await this.loadGroups(
+        termId,
+        studentGroupId,
+        Number(termRes.data?.coursework_weight ?? 50),
+        Number(termRes.data?.exam_weight ?? 50),
+      ),
       termWeights: {
         courseworkWeight: termRes.data?.coursework_weight ?? 50,
         examWeight: termRes.data?.exam_weight ?? 50,
@@ -150,6 +206,57 @@ export class CalculationService {
     if (!enrollment) {
       throw new ForbiddenException('Student is not enrolled in this class');
     }
+  }
+
+  /**
+   * Subjects a student has actually been marked in this term.
+   *
+   * The subject profile records what a student is *meant* to take, and it is
+   * filled in by hand. A recorded mark is evidence they take the subject, so
+   * results are the union of the two: a grade that exists must never be
+   * dropped from a summary or a report because nobody ticked the box.
+   */
+  private async subjectsWithMarks(
+    termId: string,
+    studentIds: string[],
+  ): Promise<Map<string, Set<string>>> {
+    const byStudent = new Map<string, Set<string>>();
+    if (studentIds.length === 0) return byStudent;
+
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: assessments } = await supabase
+      .schema('grading')
+      .from('assessment')
+      .select('id, subject_id')
+      .eq('term_id', termId);
+
+    const subjectByAssessment = new Map(
+      (assessments ?? []).map((a: any) => [
+        a.id as string,
+        a.subject_id as string,
+      ]),
+    );
+
+    if (subjectByAssessment.size === 0) return byStudent;
+
+    const { data: grades } = await supabase
+      .schema('grading')
+      .from('grade')
+      .select('assessment_id, student_id')
+      .in('assessment_id', [...subjectByAssessment.keys()])
+      .in('student_id', studentIds);
+
+    for (const g of grades ?? []) {
+      const subjectId = subjectByAssessment.get(g.assessment_id as string);
+      if (!subjectId) continue;
+
+      const studentId = g.student_id as string;
+      if (!byStudent.has(studentId)) byStudent.set(studentId, new Set());
+      byStudent.get(studentId)!.add(subjectId);
+    }
+
+    return byStudent;
   }
 
   async calculateStudentTermResult(
@@ -208,7 +315,13 @@ export class CalculationService {
       .eq('student_id', studentId)
       .eq('academic_year_id', academicYearId);
 
-    const subjectIds = (subjectProfiles ?? []).map((sp: any) => sp.subject_id);
+    const marked = await this.subjectsWithMarks(termId, [studentId]);
+    const subjectIds = [
+      ...new Set([
+        ...(subjectProfiles ?? []).map((sp: any) => sp.subject_id as string),
+        ...(marked.get(studentId) ?? []),
+      ]),
+    ];
 
     if (subjectIds.length === 0) {
       return {
@@ -231,17 +344,20 @@ export class CalculationService {
     const subjectResults: SubjectGradeSummary[] = [];
 
     for (const subj of subjects ?? []) {
+      const id: string = subj.id;
+      const name: string = subj.name;
+      const code: string = subj.code;
+
       if (!subj.is_graded) {
-        subjectResults.push(
-          this.nonGradedResult(subj.id, subj.name, subj.code),
-        );
+        subjectResults.push(this.nonGradedResult(id, name, code));
         continue;
       }
 
       const result = await this.calculateSubjectTermGrade(
         studentId,
-        subj.id,
+        id,
         termId,
+        studentGroupId,
       );
       subjectResults.push(result);
     }
@@ -319,9 +435,10 @@ export class CalculationService {
     }[] = [];
 
     for (const term of terms) {
+      const term_id: string = term.id;
       const result = await this.calculateStudentTermResult(
         studentId,
-        term.id,
+        term_id,
         studentGroupId,
       );
       termResults.push({
@@ -337,7 +454,7 @@ export class CalculationService {
       .schema('grading')
       .from('assessment')
       .select(
-        'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+        'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
       )
       .in('term_id', termIds);
 
@@ -493,7 +610,7 @@ export class CalculationService {
         .schema('grading')
         .from('assessment')
         .select(
-          'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+          'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
         )
         .eq('term_id', termId)
         .order('sort_order', { ascending: true }),
@@ -504,7 +621,7 @@ export class CalculationService {
         .single(),
     ]);
 
-    const gradingModel =
+    const gradingModel: string =
       academicYearRes.data?.grading_model ?? 'weighted_continuous';
     const strategy = this.getStrategy(gradingModel);
 
@@ -512,19 +629,40 @@ export class CalculationService {
       string,
       { id: string; first_name: string; last_name: string }
     >();
-    for (const s of studentsRes.data ?? []) studentMap.set(s.id, s);
+
+    for (const s of studentsRes.data ?? []) studentMap.set(s.id as string, s);
 
     const cwWeight = termRes.data?.coursework_weight ?? 50;
     const exWeight = termRes.data?.exam_weight ?? 50;
 
+    // One scheme for the whole class: every subject it takes follows it, so
+    // this resolves once rather than per student or per subject.
+    const classScheme = await this.loadGroups(
+      termId,
+      studentGroupId,
+      Number(cwWeight),
+      Number(exWeight),
+    );
+
     const subjectMap = new Map<string, any>();
-    for (const s of allSubjectsRes.data ?? []) subjectMap.set(s.id, s);
+    for (const s of allSubjectsRes.data ?? [])
+      subjectMap.set(s.id as string, s);
 
     const studentSubjects = new Map<string, Set<string>>();
     for (const sp of subjectProfilesRes.data ?? []) {
-      if (!studentSubjects.has(sp.student_id))
-        studentSubjects.set(sp.student_id, new Set());
-      studentSubjects.get(sp.student_id)!.add(sp.subject_id);
+      const student_id: string = sp.student_id;
+
+      if (!studentSubjects.has(sp.student_id as string))
+        studentSubjects.set(sp.student_id as string, new Set());
+      studentSubjects.get(student_id)!.add(sp.subject_id as string);
+    }
+
+    const markedSubjects = await this.subjectsWithMarks(termId, studentIds as string[]);
+    for (const [sid, subjectSet] of markedSubjects) {
+      if (!studentSubjects.has(sid)) studentSubjects.set(sid, new Set());
+      for (const subjectId of subjectSet) {
+        studentSubjects.get(sid)!.add(subjectId);
+      }
     }
 
     const allAssessments = (assessmentsRes.data ?? []) as AssessmentRecord[];
@@ -558,10 +696,10 @@ export class CalculationService {
     const results: StudentTermResult[] = [];
 
     for (const studentId of studentIds) {
-      const student = studentMap.get(studentId);
+      const student = studentMap.get(studentId as string);
       const firstName = student?.first_name ?? 'Unknown';
       const lastName = student?.last_name ?? 'Unknown';
-      const mySubjectIds = studentSubjects.get(studentId);
+      const mySubjectIds = studentSubjects.get(studentId as string);
 
       if (!mySubjectIds || mySubjectIds.size === 0) {
         results.push({
@@ -582,8 +720,10 @@ export class CalculationService {
         if (!subj) continue;
 
         if (!subj.is_graded) {
+          const subj_name: string = subj.name as string;
+          const subj_code: string | null = subj.code as string | null;
           subjectResults.push(
-            this.nonGradedResult(subjectId, subj.name, subj.code),
+            this.nonGradedResult(subjectId, subj_name, subj_code),
           );
           continue;
         }
@@ -602,6 +742,7 @@ export class CalculationService {
           subjectName: subj.name,
           subjectCode: subj.code,
           termId,
+          groups: classScheme,
           termWeights: { courseworkWeight: cwWeight, examWeight: exWeight },
           assessments: subjectAssessments,
           gradesByAssessmentId: studentGradeMap,
@@ -708,7 +849,7 @@ export class CalculationService {
       string,
       { id: string; first_name: string; last_name: string }
     >();
-    for (const s of studentsRes.data ?? []) studentMap.set(s.id, s);
+    for (const s of studentsRes.data ?? []) studentMap.set(s.id as string, s);
 
     const gradingModel =
       (academicYearRes.data?.grading_model as GradingModel) ??
@@ -722,13 +863,16 @@ export class CalculationService {
     if (terms.length === 0) return [];
 
     const subjectMap = new Map<string, any>();
-    for (const s of allSubjectsRes.data ?? []) subjectMap.set(s.id, s);
+    for (const s of allSubjectsRes.data ?? [])
+      subjectMap.set(s.id as string, s);
 
     const studentSubjects = new Map<string, Set<string>>();
     for (const sp of subjectProfilesRes.data ?? []) {
-      if (!studentSubjects.has(sp.student_id))
-        studentSubjects.set(sp.student_id, new Set());
-      studentSubjects.get(sp.student_id)!.add(sp.subject_id);
+      const student_id: string = sp.student_id;
+
+      if (!studentSubjects.has(student_id))
+        studentSubjects.set(student_id, new Set());
+      studentSubjects.get(student_id)!.add(sp.subject_id as string);
     }
 
     const termIds = terms.map((t: any) => t.id);
@@ -737,7 +881,7 @@ export class CalculationService {
       .schema('grading')
       .from('assessment')
       .select(
-        'id, title, assessment_type, max_score, weight, is_excluded, sort_order, subject_id, term_id',
+        'id, title, assessment_type, grading_group_id, max_score, weight, is_excluded, sort_order, subject_id, term_id',
       )
       .in('term_id', termIds)
       .order('sort_order', { ascending: true });
@@ -762,6 +906,21 @@ export class CalculationService {
     for (const g of allGrades)
       gradeIndex.set(`${g.student_id}:${g.assessment_id}`, g);
 
+    // Same rule as the term paths: a mark is evidence the student takes the
+    // subject, whether or not the subject profile says so. Everything needed
+    // is already loaded here, so no extra query.
+    const subjectByAssessment = new Map(
+      allAssessments.map((a) => [a.id, a.subject_id]),
+    );
+    for (const g of allGrades) {
+      const subjectId = subjectByAssessment.get(g.assessment_id);
+      if (!subjectId) continue;
+
+      if (!studentSubjects.has(g.student_id))
+        studentSubjects.set(g.student_id, new Set());
+      studentSubjects.get(g.student_id)!.add(subjectId);
+    }
+
     const assessmentsByTermSubject = new Map<string, AssessmentRecord[]>();
     for (const a of allAssessments) {
       const key = `${a.term_id}:${a.subject_id}`;
@@ -772,10 +931,23 @@ export class CalculationService {
 
     const termWeightMap = new Map<string, { cw: number; ex: number }>();
     for (const t of terms)
-      termWeightMap.set(t.id, {
+      termWeightMap.set(t.id as string, {
         cw: t.coursework_weight ?? 50,
         ex: t.exam_weight ?? 50,
       });
+
+    // The closure below is synchronous, so schemes are resolved up front. The
+    // whole class shares one scheme per term, so that is one lookup per term.
+    const groupsByTerm = new Map<string, GradingGroup[]>();
+    for (const key of assessmentsByTermSubject.keys()) {
+      const tId = key.split(':')[0];
+      if (groupsByTerm.has(tId)) continue;
+      const tw = termWeightMap.get(tId) ?? { cw: 50, ex: 50 };
+      groupsByTerm.set(
+        tId,
+        await this.loadGroups(tId, studentGroupId, tw.cw, tw.ex),
+      );
+    }
 
     const computeSubjectTerm = (
       studentId: string,
@@ -784,11 +956,10 @@ export class CalculationService {
     ): SubjectGradeSummary => {
       const subj = subjectMap.get(subjectId);
       if (!subj || !subj.is_graded) {
-        return this.nonGradedResult(
-          subjectId,
-          subj?.name ?? 'Unknown',
-          subj?.code ?? null,
-        );
+        const subj_name: string = subj?.name ?? 'Unknown';
+        const subj_code: string = subj?.code ?? null;
+
+        return this.nonGradedResult(subjectId, subj_name, subj_code);
       }
 
       const subjectAssessments =
@@ -807,6 +978,7 @@ export class CalculationService {
         subjectName: subj.name,
         subjectCode: subj.code,
         termId,
+        groups: groupsByTerm.get(termId) ?? [],
         termWeights: { courseworkWeight: tw.cw, examWeight: tw.ex },
         assessments: subjectAssessments,
         gradesByAssessmentId: studentGradeMap,
@@ -818,10 +990,10 @@ export class CalculationService {
     const results: StudentYearResult[] = [];
 
     for (const studentId of studentIds) {
-      const student = studentMap.get(studentId);
+      const student = studentMap.get(studentId as string);
       const firstName = student?.first_name ?? 'Unknown';
       const lastName = student?.last_name ?? 'Unknown';
-      const mySubjectIds = studentSubjects.get(studentId);
+      const mySubjectIds = studentSubjects.get(studentId as string);
 
       if (!mySubjectIds || mySubjectIds.size === 0) {
         results.push({
@@ -853,8 +1025,10 @@ export class CalculationService {
       for (const term of terms) {
         const subjectResults: SubjectGradeSummary[] = [];
         for (const subjectId of mySubjectIds) {
+          const term_id: string = term.id;
+
           subjectResults.push(
-            computeSubjectTerm(studentId, subjectId, term.id),
+            computeSubjectTerm(studentId as string, subjectId, term_id),
           );
         }
         subjectResults.sort((a, b) => {
@@ -978,6 +1152,7 @@ export class CalculationService {
       courseworkAverage: null,
       examAverage: null,
       termComposite: null,
+      groupAverages: [],
       gradeCount: 0,
       assessments: [],
     };
@@ -996,6 +1171,7 @@ export class CalculationService {
       courseworkAverage: null,
       examAverage: null,
       termComposite: null,
+      groupAverages: [],
       gradeCount: 0,
       assessments: [],
     };

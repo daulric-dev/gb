@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
@@ -11,12 +12,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { useProfile } from "@/providers/AuthProvider";
+import { homePathFor } from "@/lib/routing";
 
 function LoginEmailForm() {
   useSignals();
   const router = useRouter();
+  const { profile, loading: profileLoading } = useProfile();
   const email = useSignal("");
   const loading = useSignal(false);
+
+  // Someone already signed in has no business on the sign-in form; send them
+  // wherever their account type belongs.
+  useEffect(() => {
+    if (profileLoading.value) return;
+    if (profile.value) router.replace(homePathFor(profile.value));
+  }, [profileLoading.value, profile.value, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

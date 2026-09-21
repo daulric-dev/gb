@@ -32,7 +32,7 @@ export function Button({
   style,
   ...rest
 }: ButtonProps) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   const isDisabled = disabled || loading;
 
   const bg = {
@@ -51,8 +51,18 @@ export function Button({
     destructive: colors.destructiveForeground,
   }[variant];
 
-  const height = { default: 40, sm: 34, lg: 46 }[size];
-  const paddingHorizontal = { default: 16, sm: 12, lg: 20 }[size];
+  const height = { default: 46, sm: 38, lg: 52 }[size];
+  const paddingHorizontal = { default: 20, sm: 14, lg: 24 }[size];
+
+  // A filled button is moulded by its inset edges alone - no outer shadow, so
+  // it never haloes against the surface behind it. Secondary is flat enough to
+  // take the ordinary lift, and outline/ghost have no body to inflate.
+  const resting =
+    variant === "default" || variant === "destructive"
+      ? clay.filled
+      : variant === "secondary"
+        ? clay.raised
+        : undefined;
 
   return (
     <Pressable
@@ -64,10 +74,13 @@ export function Button({
           height,
           paddingHorizontal,
           backgroundColor: bg,
-          borderRadius: radius.md,
+          borderRadius: clay.radius.pill,
           borderWidth: variant === "outline" ? StyleSheet.hairlineWidth : 0,
           borderColor: colors.border,
-          opacity: isDisabled ? 0.5 : state.pressed ? 0.85 : 1,
+          // Pressing deflates the button instead of just fading it.
+          boxShadow: state.pressed && resting ? clay.pressed : resting,
+          opacity: isDisabled ? 0.5 : 1,
+          transform: state.pressed && resting ? [{ translateY: 1 }] : [],
         },
         typeof style === "function" ? style(state) : style,
       ]}

@@ -22,9 +22,11 @@ import { ReportsLoadingSkeleton } from "./_components/ReportsLoadingSkeleton";
 import { ReportsAccessDenied } from "./_components/ReportsAccessDenied";
 import { ReportsFiltersCard } from "./_components/ReportsFiltersCard";
 import { StudentsTableCard } from "./_components/StudentsTableCard";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 export default function ClassReportsPage() {
   useSignals();
+  const { can } = usePermissions();
   const params = useParams();
   const router = useRouter();
   const classId = params?.classId as string;
@@ -71,7 +73,7 @@ export default function ClassReportsPage() {
       .finally(() => {
         loading.value = false;
       });
-  }, [classId]);
+  }, [classId, classInfo, gradingModel, loading, selectedTermId, terms]);
 
   useEffect(() => {
     loadClass();
@@ -133,13 +135,7 @@ export default function ClassReportsPage() {
       .finally(() => {
         dataLoading.value = false;
       });
-  }, [
-    classId,
-    selectedTermId.value,
-    reportType.value,
-    gradingModel.value,
-    classInfo.value?.academicYearId,
-  ]);
+  }, [classId, selectedTermId, reportType, classInfo, dataLoading, students]);
 
   useEffect(() => {
     fetchGrades();
@@ -149,7 +145,7 @@ export default function ClassReportsPage() {
     return <ReportsLoadingSkeleton />;
   }
 
-  if (!classInfo.value || !classInfo.value.isClassTeacher) {
+  if (!classInfo.value || (!classInfo.value.isClassTeacher && !can("reporting", "read"))) {
     return (
       <ReportsAccessDenied
         classInfo={classInfo.value}
@@ -216,16 +212,18 @@ export default function ClassReportsPage() {
               <FileBarChart className="mr-2 size-4" />
               Class Report
             </Button>
-            <Button
-              variant="outline"
-              onClick={downloadAllPdfs}
-              disabled={exporting.value || dataLoading.value}
-            >
-              <Download
-                className={`mr-2 size-4 ${exporting.value ? "animate-pulse" : ""}`}
-              />
-              {exporting.value ? "Preparing…" : "Download all (PDFs)"}
-            </Button>
+            {can("reporting", "read") && (
+              <Button
+                variant="outline"
+                onClick={downloadAllPdfs}
+                disabled={exporting.value || dataLoading.value}
+              >
+                <Download
+                  className={`mr-2 size-4 ${exporting.value ? "animate-pulse" : ""}`}
+                />
+                {exporting.value ? "Preparing…" : "Download all (PDFs)"}
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => fetchGrades()}

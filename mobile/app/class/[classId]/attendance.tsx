@@ -34,6 +34,7 @@ export default function AttendanceScreen() {
   const [roster, setRoster] = useState<AttendanceRosterEntry[]>([]);
   const [marks, setMarks] = useState<Record<string, AttendanceStatus>>({});
   const [rosterLoading, setRosterLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reportStudent, setReportStudent] = useState<{
     id: string;
@@ -44,7 +45,9 @@ export default function AttendanceScreen() {
 
   const fetchRoster = useCallback(() => {
     setRosterLoading(true);
-    api<AttendanceRosterResponse>(`/classes/${classId}/attendance?date=${date}`)
+    return api<AttendanceRosterResponse>(
+      `/classes/${classId}/attendance?date=${date}`,
+    )
       .then((data) => {
         setRoster(data.entries);
         const next: Record<string, AttendanceStatus> = {};
@@ -101,6 +104,11 @@ export default function AttendanceScreen() {
     }
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void fetchRoster().finally(() => setRefreshing(false));
+  }, [fetchRoster]);
+
   const totalMarked = Object.keys(marks).length;
   const totalStudents = roster.length;
 
@@ -115,6 +123,8 @@ export default function AttendanceScreen() {
             : "View attendance records"
       }
       onBack={() => router.back()}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
       action={
         canMark && totalStudents > 0 ? (
           <Button

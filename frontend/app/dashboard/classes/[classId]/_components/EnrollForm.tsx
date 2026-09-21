@@ -20,11 +20,11 @@ interface Student {
 export function EnrollForm({
   classId,
   enrolledIds,
-  onSuccess,
+  onSuccessAction,
 }: {
   classId: string;
   enrolledIds: string[];
-  onSuccess: () => void;
+  onSuccessAction: () => void;
 }) {
   useSignals();
   const allStudents = useSignal<Student[]>([]);
@@ -39,7 +39,7 @@ export function EnrollForm({
       })
       .catch(() => toast.error("Failed to load students"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, allStudents]);
 
   const available = allStudents.value.filter((s) => !enrolledIds.includes(s.id));
 
@@ -77,7 +77,7 @@ export function EnrollForm({
         });
       }
       toast.success(`${selected.value.size} student${selected.value.size > 1 ? "s" : ""} enrolled`);
-      onSuccess();
+      onSuccessAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to enroll";
       toast.error(msg);

@@ -23,7 +23,14 @@ export function AuthShell({ children }: { children: ReactNode }) {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: insets.bottom + 24,
+            // Sideways on a notched phone the cutout is on a side, so the
+            // gutter grows by whatever the system reports.
+            paddingLeft: insets.left + 24,
+            paddingRight: insets.right + 24,
+          },
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -48,7 +55,6 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     justifyContent: "center",
-    paddingHorizontal: 24,
     gap: 28,
   },
   brand: {

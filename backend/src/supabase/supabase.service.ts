@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { createServerClient } from '@supabase/ssr';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { ClamavScanner } from '@/scan/clamav.scanner';
+import { authCookieDomain } from '@/config/origins';
 
 type Schema = 'public' | 'student' | 'grading' | 'reporting' | 'staff';
 
@@ -14,7 +14,7 @@ export class SupabaseService {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  constructor(private readonly scanner: ClamavScanner) {}
+  constructor() {}
 
   createUserClient(req: FastifyRequest, reply: FastifyReply, schema: Schema) {
     return createServerClient(
@@ -32,10 +32,7 @@ export class SupabaseService {
             cookiesToSet.forEach(({ name, value, options }) => {
               reply.setCookie(name, value, {
                 ...options,
-                domain:
-                  process.env.NODE_ENV === 'production'
-                    ? `.${new URL(process.env.FRONTEND_URL!).hostname.split('.').slice(-2).join('.')}`
-                    : undefined,
+                domain: authCookieDomain(),
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'lax',
@@ -88,8 +85,6 @@ export class SupabaseService {
     file: Buffer,
     contentType: string,
   ): Promise<{ path: string; publicUrl: string } | null> {
-    await this.scanOrThrow(file, `${bucketName}/${path}`);
-
     const { data, error } = await this.getServiceClient()
       .storage.from(bucketName)
       .upload(path, file, {
@@ -104,18 +99,6 @@ export class SupabaseService {
       .getPublicUrl(data.path);
 
     return { path: data.path, publicUrl: publicUrl.publicUrl };
-  }
-
-  async scanOrThrow(file: Buffer, label: string): Promise<void> {
-    const verdict = await this.scanner.scan(file);
-    if (!verdict.clean) {
-      this.logger.warn(
-        `Upload blocked (infected): ${label} — ${verdict.signature ?? 'threat detected'}`,
-      );
-      throw new BadRequestException(
-        `File rejected: failed virus scan${verdict.signature ? ` (${verdict.signature})` : ''}`,
-      );
-    }
   }
 
   private clearLegacyRefreshCookie(reply: FastifyReply) {

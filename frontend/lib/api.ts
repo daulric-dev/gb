@@ -12,15 +12,41 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   skipAuthRedirect?: boolean;
 };
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 function redirectToLogin() {
-  if (typeof window !== "undefined") {
-    window.location.href = "/login";
+  if (typeof window === "undefined") return;
+
+  if (unauthorizedHandler) {
+    unauthorizedHandler();
+    return;
   }
+
+  window.location.assign(new URL("/login", window.location.origin));
 }
 
 function handleUnauthorized(skipAuthRedirect: boolean): never {
   if (!skipAuthRedirect) redirectToLogin();
   throw new ApiError(401, "Session expired");
+}
+
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0;
+}
+
+async function fetchOrThrow(
+  input: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError(0, "Can't reach the server. Check your connection.");
+  }
 }
 
 export async function api<T = unknown>(
@@ -38,7 +64,7 @@ export async function api<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(buildUrl(path), {
+  const res = await fetchOrThrow(buildUrl(path), {
     ...rest,
     headers,
     credentials: "include",
@@ -64,7 +90,7 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const res = await fetch(buildUrl(path), {
+  const res = await fetchOrThrow(buildUrl(path), {
     method: "POST",
     headers: { "X-API-Version": "1" },
     body: formData,

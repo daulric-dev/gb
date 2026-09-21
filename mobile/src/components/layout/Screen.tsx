@@ -11,7 +11,16 @@ import { ArrowLeft } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Text } from "@/components/ui/Text";
 
-/** Page shell: safe-area aware, optional title/description header + scroll. */
+/**
+ * Page shell: safe-area aware, optional title/description header, and pull to
+ * refresh wherever a screen can reload itself.
+ *
+ * Insets are applied on all four edges, not just the top. The status bar and
+ * notch are the obvious ones, but a phone held sideways puts the notch on a
+ * side, and the home indicator sits over the bottom of any screen that is not
+ * inside the tab bar. `useSafeAreaInsets` reports all of them, so all of them
+ * are honoured here rather than in every screen.
+ */
 export function Screen({
   children,
   title,
@@ -65,13 +74,26 @@ export function Screen({
   ) : null;
 
   const paddingTop = topInset ? insets.top + 8 : 8;
+  // Landscape on a notched phone puts the cutout on a side, so the horizontal
+  // gutter grows by whatever the system reports rather than being a constant.
+  const paddingLeft = insets.left + GUTTER;
+  const paddingRight = insets.right + GUTTER;
 
   if (!scroll) {
     return (
       <View
         style={[
           styles.container,
-          { backgroundColor: colors.background, paddingTop },
+          {
+            backgroundColor: colors.background,
+            flex: 1,
+            paddingTop,
+            paddingLeft,
+            paddingRight,
+            // A non-scrolling screen has no content inset to fall back on, so
+            // the home indicator would otherwise sit on top of its last row.
+            paddingBottom: insets.bottom,
+          },
         ]}
       >
         {header}
@@ -85,15 +107,27 @@ export function Screen({
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
-        { paddingTop, paddingBottom: insets.bottom + 32 },
+        {
+          paddingTop,
+          paddingLeft,
+          paddingRight,
+          paddingBottom: insets.bottom + 32,
+        },
       ]}
       keyboardShouldPersistTaps="handled"
+      // Content can be shorter than the screen and still need reloading, so
+      // the bounce is always on where a refresh handler exists.
+      alwaysBounceVertical={!!onRefresh}
       refreshControl={
         onRefresh ? (
           <RefreshControl
             refreshing={!!refreshing}
             onRefresh={onRefresh}
             tintColor={colors.mutedForeground}
+            colors={[colors.foreground]}
+            progressBackgroundColor={colors.card}
+            // Otherwise the spinner is hidden behind the notch.
+            progressViewOffset={topInset ? insets.top : 0}
           />
         ) : undefined
       }
@@ -104,9 +138,10 @@ export function Screen({
   );
 }
 
+const GUTTER = 16;
+
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
     gap: 20,
   },
   header: {

@@ -16,8 +16,6 @@ function makeSupabase(
     profile?: { data: any; error: any };
     exists?: boolean;
     downloadType?: string;
-    /** When set, scanOrThrow rejects with it (simulates an infected object). */
-    scanError?: Error;
   } = {},
 ) {
   const builder = createMockQueryBuilder(
@@ -52,8 +50,6 @@ function makeSupabase(
   return {
     svc: {
       getServiceClient: () => client,
-      scanOrThrow: () =>
-        opts.scanError ? Promise.reject(opts.scanError) : Promise.resolve(),
       uploadFile: (_b: string, path: string) => {
         uploadCalls++;
         return Promise.resolve({ path, publicUrl: `${PUBLIC_PREFIX}${path}` });
@@ -131,20 +127,6 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
         svc().completeResumableUpload('user-1', 'avatars/victim.png'),
       ),
     ).toBeInstanceOf(BadRequestException);
-  });
-
-  test('rejects and deletes an infected resumable upload', async () => {
-    const mock = makeSupabase({
-      scanError: new BadRequestException('File rejected: failed virus scan'),
-    });
-    const service = new ImagesService(mock.svc as any, cache as any, config);
-    expect(
-      await expectRejection(
-        service.completeResumableUpload('user-1', 'avatars/user-1.png'),
-      ),
-    ).toBeInstanceOf(BadRequestException);
-    // The rejected object must be removed from storage, not left dangling.
-    expect(mock.removeCount()).toBe(1);
   });
 
   test('rejects a path outside the avatars/ namespace', async () => {

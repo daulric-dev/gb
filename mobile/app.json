@@ -24,7 +24,9 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#ffffff",
-          "dark": { "backgroundColor": "#0a0a0a" }
+          "dark": {
+            "backgroundColor": "#0a0a0a"
+          }
         }
       ],
       [
@@ -32,7 +34,8 @@
         {
           "photosPermission": "Allow GradeBook to access your photos to set a profile picture."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

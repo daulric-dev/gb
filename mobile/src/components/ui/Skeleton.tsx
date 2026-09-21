@@ -3,7 +3,7 @@ import { Animated, type ViewStyle } from "react-native";
 import { useTheme } from "@/theme/ThemeProvider";
 
 export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   const opacity = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
   return (
     <Animated.View
       style={[
-        { backgroundColor: colors.muted, borderRadius: radius.md, opacity },
+        { backgroundColor: colors.muted, borderRadius: clay.radius.md, opacity },
         style,
       ]}
     />

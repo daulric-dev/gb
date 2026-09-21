@@ -17,18 +17,21 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { ImagesService } from '@/images/images.service';
 import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
+import { ClaimStudentDto } from '@/auth/dto/claim-student.dto';
+import { StudentMembershipService } from '@/student-account/student-membership.service';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { VersioningService } from '@/versioning/versioning.service';
+import { MultipartFile } from '@fastify/multipart';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -38,6 +41,7 @@ export class AuthController {
     private readonly imagesService: ImagesService,
     private readonly supabaseService: SupabaseService,
     private readonly versioning: VersioningService,
+    private readonly membership: StudentMembershipService,
   ) {}
 
   @Post('otp/send')
@@ -51,7 +55,7 @@ export class AuthController {
   @Throttle({ 'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 } })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
     const { session, user, profile } = await this.authService.verifyOtp(
@@ -72,7 +76,8 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('me')
   async me(@Req() req: any) {
-    const raw = await this.authService.getProfile(req.user.id);
+    const userId: string = req.user.id;
+    const raw = await this.authService.getProfile(userId);
     return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
@@ -80,15 +85,26 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Patch('onboard')
   async onboard(@Req() req: any, @Body() dto: OnboardDto) {
-    const raw = await this.authService.onboard(req.user.id, dto);
+    const userId: string = req.user.id;
+    const raw = await this.authService.onboard(userId, dto);
     return this.versioning.resolve(req, 'auth.profile')(raw);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ 'claim-code': { limit: 10, ttl: 15 * 60 * 1000 } })
+  @Post('join-school')
+  async joinSchool(@Req() req: any, @Body() dto: ClaimStudentDto) {
+    const userId: string = req.user.id;
+    return this.membership.joinByCode(userId, dto.code);
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Patch('profile')
   async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
-    const raw = await this.authService.updateProfile(req.user.id, dto);
+    const userId: string = req.user.id;
+    const raw = await this.authService.updateProfile(userId, dto);
     return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
@@ -97,14 +113,18 @@ export class AuthController {
   @Delete('account')
   @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } })
   async deleteAccount(@Req() req: any) {
-    const message = await this.authService.deleteAccount(req.user.id);
+    const userId: string = req.user.id;
+    const message = await this.authService.deleteAccount(userId);
     return this.versioning.resolve(req, 'auth.message')(message);
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Post('logout')
-  async logout(@Req() req: any, @Res({ passthrough: true }) res: FastifyReply) {
+  async logout(
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<string> {
     await this.supabaseService.signOut(req, res);
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
@@ -116,8 +136,9 @@ export class AuthController {
   @Get('avatar')
   @ApiProduces('image/*')
   async getAvatar(@Req() req: any, @Res() res: FastifyReply) {
+    const userId: string = req.user.id;
     const { blob, contentType } =
-      await this.imagesService.getImageFromUserProfile(req.user.id);
+      await this.imagesService.getImageFromUserProfile(userId);
 
     const buffer = Buffer.from(await blob.arrayBuffer());
 
@@ -133,15 +154,15 @@ export class AuthController {
   @Post('avatar')
   @ApiConsumes('multipart/form-data')
   async uploadAvatar(@Req() req: any) {
-    const file = await req.file();
+    const file: MultipartFile = await req.file();
+
     if (!file) {
       throw new BadRequestException('No file provided');
     }
 
-    const result = await this.imagesService.setImageToUserProfile(
-      req.user.id,
-      file,
-    );
+    const userId: string = req.user.id;
+
+    const result = await this.imagesService.setImageToUserProfile(userId, file);
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
 
@@ -152,8 +173,9 @@ export class AuthController {
     @Req() req: any,
     @Body() dto: CreateResumableUploadDto,
   ) {
+    const userId: string = req.user.id;
     const result = await this.imagesService.createResumableUpload(
-      req.user.id,
+      userId,
       dto.filename,
       dto.contentType,
       dto.totalSize,
@@ -168,8 +190,9 @@ export class AuthController {
     @Req() req: any,
     @Body() dto: CompleteUploadDto,
   ) {
+    const userId: string = req.user.id;
     const result = await this.imagesService.completeResumableUpload(
-      req.user.id,
+      userId,
       dto.path,
     );
     return this.versioning.resolve(req, 'images.uploaded')(result);

@@ -9,9 +9,18 @@ import { SupabaseService } from '@/supabase/supabase.service';
 
 @Injectable()
 export class ClassTeacherGuard implements CanActivate {
-  private readonly logger = new Logger(ClassTeacherGuard.name);
+  protected readonly logger = new Logger(ClassTeacherGuard.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  /**
+   * Whether teaching one subject in the class is enough.
+   *
+   * Off here: the strict guard protects the actions that belong to whoever
+   * owns the class - generating the report book, submitting to the ministry,
+   * changing the roster. ClassMemberGuard turns it on for reads.
+   */
+  protected readonly allowSubjectTeachers: boolean = false;
+
+  constructor(protected readonly supabaseService: SupabaseService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -92,24 +101,47 @@ export class ClassTeacherGuard implements CanActivate {
       );
     }
 
-    const { data: assignment, error } = await supabase
+    const { data: assignment } = await supabase
       .schema('staff')
       .from('teacher_group_assignment')
       .select('id')
       .eq('user_profile_id', userId)
       .eq('student_group_id', classId)
       .eq('is_class_teacher', true)
-      .single();
+      .maybeSingle();
 
-    if (error || !assignment) {
-      this.logger.warn(
-        `User ${userId} denied class teacher access to ${classId}`,
-      );
-      throw new ForbiddenException(
-        'Only the class teacher can perform this action',
-      );
+    if (assignment) return true;
+
+    if (this.allowSubjectTeachers) {
+      const { data: subjectAssignment } = await supabase
+        .schema('staff')
+        .from('teacher_subject_assignment')
+        .select('id')
+        .eq('user_profile_id', userId)
+        .eq('student_group_id', classId)
+        .limit(1)
+        .maybeSingle();
+
+      if (subjectAssignment) return true;
     }
 
-    return true;
+    this.logger.warn(`User ${userId} denied class access to ${classId}`);
+    throw new ForbiddenException(
+      this.allowSubjectTeachers
+        ? 'You do not teach this class'
+        : 'Only the class teacher can perform this action',
+    );
   }
+}
+
+/**
+ * Reading what a class produces: summaries, analytics, report cards.
+ *
+ * Anyone teaching the class - as its class teacher or in a single subject -
+ * needs to see how it is doing. Writing stays with ClassTeacherGuard, so a
+ * subject teacher cannot regenerate the report book or send it to the ministry.
+ */
+@Injectable()
+export class ClassMemberGuard extends ClassTeacherGuard {
+  protected readonly allowSubjectTeachers = true;
 }

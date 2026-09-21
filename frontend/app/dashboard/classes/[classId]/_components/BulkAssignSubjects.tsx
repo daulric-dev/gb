@@ -21,11 +21,11 @@ import { selectClass, type EnrolledStudent, type Subject } from "./types";
 export function BulkAssignSubjects({
   classId,
   enrolled,
-  onSuccess,
+  onSuccessAction,
 }: {
   classId: string;
   enrolled: EnrolledStudent[];
-  onSuccess: () => void;
+  onSuccessAction: () => void;
 }) {
   useSignals();
   const allSubjects = useSignal<Subject[]>([]);
@@ -40,7 +40,7 @@ export function BulkAssignSubjects({
       .then((data) => (allSubjects.value = data))
       .catch(() => toast.error("Failed to load subjects"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, allSubjects]);
 
   const q = searchQuery.value.toLowerCase();
   const filteredEnrolled = q
@@ -98,7 +98,7 @@ export function BulkAssignSubjects({
       toast.success(
         `Subject assigned to ${selectedStudents.value.size} student${selectedStudents.value.size !== 1 ? "s" : ""}`,
       );
-      onSuccess();
+      onSuccessAction();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to assign";
       toast.error(msg);

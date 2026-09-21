@@ -4,6 +4,8 @@ import { useRouter } from "expo-router";
 import { GraduationCap, LogOut, Plus, Search } from "lucide-react-native";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
+import { homeRouteFor, isStudentProfile } from "@/lib/routing";
+import { JoinCodeForm } from "@/components/auth/JoinCodeForm";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -85,6 +87,9 @@ function CreateSchool({ onCreated }: { onCreated: (s: School) => void }) {
   );
 }
 
+/** How often a waiting applicant re-checks whether they have been approved. */
+const POLL_MS = 8000;
+
 export default function SchoolsScreen() {
   const router = useRouter();
   const toast = useToast();
@@ -113,6 +118,21 @@ export default function SchoolsScreen() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // Approval happens on the admin's screen. Without polling, an accepted
+  // applicant sits on "Pending" until they reopen the app.
+  useEffect(() => {
+    if (!pendingId || profile?.school) return;
+    const timer = setInterval(() => {
+      void refresh();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [pendingId, profile?.school, refresh]);
+
+  // Once the profile carries a school they belong in the app proper.
+  useEffect(() => {
+    if (profile?.school) router.replace(homeRouteFor(profile));
+  }, [profile, router]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -163,6 +183,29 @@ export default function SchoolsScreen() {
     ? `${profile.first_name} ${profile.last_name ?? ""}`.trim()
     : "";
   const anyPending = pendingId !== null;
+
+  // A student joins by redeeming the code their school issued, so they get the
+  // code field alone - no school list, no create-a-school option.
+  if (isStudentProfile(profile)) {
+    return (
+      <AuthShell>
+        <View style={{ gap: 20 }}>
+          <View style={{ alignItems: "center", gap: 6 }}>
+            <GraduationCap size={36} color={colors.primary} />
+            <Text variant="title" style={{ textAlign: "center" }}>
+              {displayName ? `Welcome, ${displayName}` : "Join your school"}
+            </Text>
+          </View>
+
+          <JoinCodeForm />
+
+          <Button variant="ghost" onPress={handleLogout}>
+            Log out
+          </Button>
+        </View>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell>

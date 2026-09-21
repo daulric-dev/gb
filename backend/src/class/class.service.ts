@@ -117,7 +117,21 @@ export class ClassService {
       query = query.eq('academic_year_id', academicYearId);
     }
 
-    const { data: assignments, error } = await query;
+    // A teacher who takes one subject with a class belongs to that class too.
+    // Listing only group assignments hid the class entirely from them, so they
+    // could not reach it to set work, however many subjects they taught there.
+    let subjectQuery = supabase
+      .schema('staff')
+      .from('teacher_subject_assignment')
+      .select('student_group_id, academic_year_id')
+      .eq('user_profile_id', userId);
+
+    if (academicYearId) {
+      subjectQuery = subjectQuery.eq('academic_year_id', academicYearId);
+    }
+
+    const [{ data: assignments, error }, { data: subjectAssignments }] =
+      await Promise.all([query, subjectQuery]);
 
     if (error) {
       this.logger.error(
@@ -126,11 +140,29 @@ export class ClassService {
       return [];
     }
 
-    if (!assignments || assignments.length === 0) {
+    // The group assignment wins where both exist: only it carries the
+    // is_class_teacher flag the rest of the app keys off.
+    const byClass = new Map<string, any>();
+    for (const sa of subjectAssignments ?? []) {
+      const classId = sa.student_group_id as string | null;
+      if (!classId || byClass.has(classId)) continue;
+      byClass.set(classId, {
+        id: null,
+        student_group_id: classId,
+        academic_year_id: sa.academic_year_id,
+        is_class_teacher: false,
+      });
+    }
+    for (const a of assignments ?? []) {
+      byClass.set(a.student_group_id as string, a);
+    }
+
+    const merged = [...byClass.values()];
+    if (merged.length === 0) {
       return [];
     }
 
-    const groupIds = assignments.map((a: any) => a.student_group_id);
+    const groupIds = merged.map((a: any) => a.student_group_id);
     const { data: groups } = await supabase
       .from('student_group')
       .select('*')
@@ -138,7 +170,7 @@ export class ClassService {
 
     const groupMap = new Map((groups || []).map((g: any) => [g.id, g]));
 
-    const result = assignments.map((row: any) => {
+    const result = merged.map((row: any) => {
       const group = groupMap.get(row.student_group_id);
       return {
         id: row.student_group_id,
@@ -206,8 +238,18 @@ export class ClassService {
     return 'Class deleted';
   }
 
+  /**
+   * The subjects this caller may set work in for a class: everything the
+   * school offers for an admin or the class teacher, otherwise the subjects
+   * they are assigned to teach there.
+   *
+   * The key carries the user as well as the class. The answer differs per
+   * caller, so a class-only key served one teacher's list to the next, and the
+   * two invalidation sites below already delete this shape - they were clearing
+   * a key nothing ever wrote.
+   */
   async getMySubjectsForClass(userId: string, classId: string) {
-    const cacheKey = `my-subjects:${classId}`;
+    const cacheKey = `my-subjects:${userId}:${classId}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 
@@ -335,9 +377,11 @@ export class ClassService {
     const subjectsByTeacher = new Map<string, any[]>();
     for (const sa of subjectAssignments ?? []) {
       const tid = sa.user_profile_id;
-      if (!subjectsByTeacher.has(tid)) subjectsByTeacher.set(tid, []);
-      const subject = subjectMap.get(sa.subject_id);
-      if (subject) subjectsByTeacher.get(tid)!.push(subject);
+      if (!subjectsByTeacher.has(tid as string))
+        subjectsByTeacher.set(tid as string, []);
+
+      const subject = subjectMap.get(sa.subject_id as string);
+      if (subject) subjectsByTeacher.get(tid as string)!.push(subject);
     }
 
     const result = assignments
@@ -349,7 +393,7 @@ export class ClassService {
           firstName: profile?.first_name ?? null,
           lastName: profile?.last_name ?? null,
           isClassTeacher: row.is_class_teacher,
-          subjects: subjectsByTeacher.get(row.user_profile_id) ?? [],
+          subjects: subjectsByTeacher.get(row.user_profile_id as string) ?? [],
         };
       });
 
@@ -465,7 +509,10 @@ export class ClassService {
     }
 
     await this.cache.delete(`class-teachers:${classId}`);
-    await this.cache.delete(`my-classes:${dto.teacherId}`);
+    // By prefix, because the class list is cached both bare and per academic
+    // year; deleting only the bare key left the year-scoped one stale, so a
+    // newly assigned teacher kept seeing the old list.
+    await this.cache.deleteByPrefix(`my-classes:${dto.teacherId}`);
     await this.cache.delete(`my-subjects:${dto.teacherId}:${classId}`);
 
     // Only greet the teacher the first time they are added to this class.
@@ -521,7 +568,7 @@ export class ClassService {
     }
 
     await this.cache.delete(`class-teachers:${classId}`);
-    await this.cache.delete(`my-classes:${teacherId}`);
+    await this.cache.deleteByPrefix(`my-classes:${teacherId}`);
     await this.cache.delete(`my-subjects:${teacherId}:${classId}`);
     return 'Teacher removed from class';
   }

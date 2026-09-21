@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================
-# GGBv2 - Generate Supabase Database Types
+# gb - Generate Supabase Database Types
 # Run from the backend/ directory:
 #   chmod +x scripts/gen-types.sh
 #   ./scripts/gen-types.sh
@@ -46,6 +46,7 @@ supabase gen types typescript \
   --schema reporting \
   --schema staff \
   --schema file_manager \
+  --schema chat \
   > src/types/database.types.ts
 
 if [ $? -eq 0 ]; then
@@ -58,6 +59,7 @@ if [ $? -eq 0 ]; then
   echo "     - reporting (report_book, report_book_entry)"
   echo "     - staff (teacher_group_assignment, teacher_subject_assignment)"
   echo "     - file_manager (file, file_share)"
+  echo "     - chat (conversation, conversation_member, message)"
   echo ""
   echo "   Import in your code:"
   echo "     import { Database } from '../types/database.types';"
@@ -71,6 +73,6 @@ else
   echo "     supabase gen types typescript \\"
   echo "       --project-id $PROJECT_ID \\"
   echo "       --schema public --schema student --schema grading \\"
-  echo "       --schema reporting --schema staff \\"
+  echo "       --schema reporting --schema staff --schema file_manager --schema chat \\"
   echo "       > src/types/database.types.ts"
 fi

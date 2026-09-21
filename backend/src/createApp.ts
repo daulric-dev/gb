@@ -1,12 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
+import { isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 
 export async function createApp(): Promise<NestFastifyApplication> {
@@ -15,7 +13,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
     new FastifyAdapter({ trustProxy: true }),
   );
 
-  await app.register(cookie as any);
+  await app.register(cookie);
 
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -46,8 +44,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   const raw_instance = app.getHttpAdapter().getInstance();
 
-  raw_instance.get('/', (req, res) => {
-    res.send('gb for life');
+  raw_instance.get('/', (_, res) => {
+    res.send('gb');
   });
 
   raw_instance.get('/health', (req, res) => {
@@ -55,11 +53,10 @@ export async function createApp(): Promise<NestFastifyApplication> {
   });
 
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
-    // Let the browser read the server-provided download filename.
     exposedHeaders: ['Content-Disposition'],
   });
 

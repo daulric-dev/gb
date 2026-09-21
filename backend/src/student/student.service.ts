@@ -215,6 +215,175 @@ export class StudentService {
     return data;
   }
 
+  /**
+   * Everything about one student on a single screen: who they are, the classes
+   * they sit in, the subjects they take, the login attached to them and the
+   * people linked as guardians.
+   *
+   * Assembled in JS rather than by embedding. The pieces live in three
+   * different schemas, and PostgREST will not follow a foreign key across a
+   * schema boundary however well declared it is, so each piece is fetched and
+   * joined here.
+   *
+   * Classes are ordered current-year-first: a student who has moved up is
+   * mostly asked about where they are now, with last year kept as history.
+   */
+  async profile(userId: string, studentId: string) {
+    const supabase = this.supabaseService.getServiceClient();
+    const student = await this.findOne(userId, studentId);
+
+    const { data: enrolments } = await supabase
+      .schema('student')
+      .from('student_group_enrollment')
+      .select('student_group_id, enrolled_at')
+      .eq('student_id', studentId);
+
+    const classIds = (enrolments ?? [])
+      .map((e: any) => e.student_group_id as string | null)
+      .filter(Boolean) as string[];
+
+    const { data: classes } = classIds.length
+      ? await supabase
+          .from('student_group')
+          .select('id, name, academic_year_id')
+          .in('id', classIds)
+      : { data: [] as any[] };
+
+    const yearIds = [
+      ...new Set(
+        (classes ?? [])
+          .map((c: any) => c.academic_year_id as string | null)
+          .filter(Boolean) as string[],
+      ),
+    ];
+
+    const { data: years } = yearIds.length
+      ? await supabase
+          .from('academic_year')
+          .select('id, name, is_active, start_date')
+          .in('id', yearIds)
+      : { data: [] as any[] };
+
+    const yearById = new Map(
+      (years ?? []).map((y: any) => [y.id as string, y]),
+    );
+    const enrolledAt = new Map(
+      (enrolments ?? []).map((e: any) => [
+        e.student_group_id as string,
+        e.enrolled_at as string | null,
+      ]),
+    );
+
+    const classRows = (classes ?? [])
+      .map((c: any) => {
+        const year = yearById.get(c.academic_year_id as string);
+        return {
+          id: c.id as string,
+          name: c.name as string,
+          enrolledAt: enrolledAt.get(c.id as string) ?? null,
+          academicYear: year
+            ? { id: year.id, name: year.name, isActive: !!year.is_active }
+            : null,
+        };
+      })
+      .sort((a, b) => {
+        const activeDiff =
+          Number(b.academicYear?.isActive ?? false) -
+          Number(a.academicYear?.isActive ?? false);
+        if (activeDiff !== 0) return activeDiff;
+        return (b.academicYear?.name ?? '').localeCompare(
+          a.academicYear?.name ?? '',
+        );
+      });
+
+    // Subjects are recorded per year, so show the ones for the year the
+    // student is currently in rather than everything they have ever taken.
+    const currentYearId =
+      classRows.find((c) => c.academicYear?.isActive)?.academicYear?.id ??
+      classRows[0]?.academicYear?.id ??
+      null;
+
+    const { data: subjectProfiles } = currentYearId
+      ? await supabase
+          .schema('student')
+          .from('student_subject_profile')
+          .select('subject_id')
+          .eq('student_id', studentId)
+          .eq('academic_year_id', currentYearId)
+      : { data: [] as any[] };
+
+    const subjectIds = (subjectProfiles ?? [])
+      .map((sp: any) => sp.subject_id as string | null)
+      .filter(Boolean) as string[];
+
+    const { data: subjects } = subjectIds.length
+      ? await supabase
+          .from('subject')
+          .select('id, name, code, is_graded')
+          .in('id', subjectIds)
+          .order('sort_order', { ascending: true })
+          .order('name', { ascending: true })
+      : { data: [] as any[] };
+
+    const { data: account } = student.user_profile_id
+      ? await supabase
+          .from('user_profile')
+          .select('id, email, first_name, last_name, is_active, account_type')
+          .eq('id', student.user_profile_id as string)
+          .maybeSingle()
+      : { data: null };
+
+    const { data: links } = await supabase
+      .schema('student')
+      .from('parent_student_link')
+      .select('user_profile_id, relationship')
+      .eq('student_id', studentId);
+
+    const guardianIds = (links ?? [])
+      .map((l: any) => l.user_profile_id as string | null)
+      .filter(Boolean) as string[];
+
+    const { data: guardians } = guardianIds.length
+      ? await supabase
+          .from('user_profile')
+          .select('id, first_name, last_name, email')
+          .in('id', guardianIds)
+      : { data: [] as any[] };
+
+    const relationshipById = new Map(
+      (links ?? []).map((l: any) => [
+        l.user_profile_id as string,
+        l.relationship as string | null,
+      ]),
+    );
+
+    return {
+      student,
+      classes: classRows,
+      subjects: (subjects ?? []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        isGraded: s.is_graded,
+      })),
+      account: account
+        ? {
+            id: account.id,
+            email: account.email,
+            name: `${account.first_name ?? ''} ${account.last_name ?? ''}`.trim(),
+            isActive: account.is_active,
+            accountType: account.account_type,
+          }
+        : null,
+      guardians: (guardians ?? []).map((g: any) => ({
+        id: g.id,
+        name: `${g.first_name ?? ''} ${g.last_name ?? ''}`.trim(),
+        email: g.email,
+        relationship: relationshipById.get(g.id as string) ?? null,
+      })),
+    };
+  }
+
   async update(userId: string, studentId: string, dto: UpdateStudentDto) {
     const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.supabaseService.getUserSchoolId(userId);

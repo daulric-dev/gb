@@ -11,12 +11,17 @@ export function SegmentedControl<T extends string>({
   value: T;
   onChange: (value: T) => void;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
   return (
     <View
       style={[
         styles.wrap,
-        { backgroundColor: colors.muted, borderRadius: radius.md },
+        {
+          backgroundColor: colors.muted,
+          borderRadius: clay.radius.pill,
+          // The track is a groove, the selected segment the thing sitting in it.
+          boxShadow: clay.inset,
+        },
       ]}
     >
       {options.map((opt) => {
@@ -28,8 +33,9 @@ export function SegmentedControl<T extends string>({
             style={[
               styles.segment,
               {
-                borderRadius: radius.sm,
-                backgroundColor: active ? colors.background : "transparent",
+                borderRadius: clay.radius.pill,
+                backgroundColor: active ? colors.card : "transparent",
+                boxShadow: active ? clay.raised : undefined,
               },
             ]}
           >

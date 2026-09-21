@@ -683,8 +683,6 @@ export class ReportService {
 
     const objectPath = `${reportId}/${Date.now()}-${crypto.randomUUID()}.pdf`;
 
-    await this.supabaseService.scanOrThrow(fileBuffer, objectPath);
-
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
       .upload(objectPath, fileBuffer, {
@@ -880,12 +878,15 @@ export class ReportService {
     return data;
   }
 
+  /**
+   * Class-wide figures for the report page. Computed by an edge function when
+   * it is reachable and in process otherwise; both answer as service role, and
+   * the controller's guards decide who may ask.
+   */
   async getClassSummary(
     studentGroupId: string,
     termId: string,
     reportType: string,
-    req: FastifyRequest,
-    reply: FastifyReply,
   ) {
     const { data: edgeSummary, error: edgeError } = await this.supabaseService
       .getServiceClient()
@@ -893,19 +894,24 @@ export class ReportService {
         body: { studentGroupId, termId, reportType: reportType || null },
       });
     if (!edgeError && edgeSummary) return edgeSummary;
+
+    // The edge function is an optimisation, not the only way to answer this:
+    // everything below computes the same summary in process. Throwing here
+    // made the whole page fail whenever the function was down or misconfigured
+    // while a working fallback sat unused underneath.
     if (edgeError) {
-      this.logger.error(
-        `report-class-summary Edge Function: ${edgeError.message}`,
+      this.logger.warn(
+        `report-class-summary Edge Function unavailable, computing in process: ${edgeError.message}`,
       );
-      throw new BadRequestException(edgeError.message);
     }
 
-    const reporting = this.supabaseService.createUserClient(
-      req,
-      reply,
-      'reporting',
-    );
-    const pub = this.supabaseService.createUserClient(req, reply, 'public');
+    // Service role, matching the edge path exactly: the backend invokes that
+    // function with the service key, so it answers as service role too. The
+    // caller is already authorised by the permission guard and the class
+    // teacher guard, and the query is pinned to one class and term.
+    const service = this.supabaseService.getServiceClient();
+    const reporting = service.schema('reporting');
+    const pub = service;
 
     let query = reporting
       .from('report_book')
@@ -967,9 +973,7 @@ export class ReportService {
     const studentIds = list
       .map((r: { student_id: string | null }) => r.student_id)
       .filter((id): id is string => Boolean(id));
-    const studentMap = await this.fetchStudentsByIdsForUser(
-      req,
-      reply,
+    const studentMap = await this.fetchStudentsByIdsServiceRole(
       studentIds,
       'id, first_name, last_name',
     );
@@ -993,11 +997,7 @@ export class ReportService {
           .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const subjectMap = await this.fetchSubjectsByIdsForUser(
-      req,
-      reply,
-      subjectIds,
-    );
+    const subjectMap = await this.fetchSubjectsByIdsServiceRole(subjectIds);
 
     const averages = list
       .map((r: { overall_average: number | null }) => r.overall_average)
@@ -1133,8 +1133,6 @@ export class ReportService {
       csv: 'text/csv',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
-
-    await this.supabaseService.scanOrThrow(fileBuffer, objectPath);
 
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
@@ -1508,6 +1506,34 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`fetchStudentsByIdsForUser: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
+
+    const m = new Map<string, Record<string, unknown>>();
+    const rows = (data ?? []) as unknown as { id: string }[];
+    for (const row of rows) {
+      m.set(row.id, row);
+    }
+    return m;
+  }
+
+  /** Service-role twin of the above, for paths already gated by a guard. */
+  private async fetchStudentsByIdsServiceRole(
+    ids: string[],
+    columns: string,
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return new Map();
+
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
+      .schema('student')
+      .from('student')
+      .select(columns)
+      .in('id', unique);
+
+    if (error) {
+      this.logger.error(`fetchStudentsByIdsServiceRole: ${error.message}`);
       throw new BadRequestException(error.message);
     }
 

@@ -4,7 +4,9 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { useProfile } from "@/providers/AuthProvider";
+import { useAuth } from "@/providers/AuthProvider";
+import { homePathFor, isStudentProfile } from "@/lib/routing";
+import { JoinCodeForm } from "@/components/auth/join-code-form";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -110,11 +112,14 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
   );
 }
 
+/** How often a waiting applicant re-checks whether they have been approved. */
+const POLL_MS = 8000;
+
 export default function SchoolsPage() {
   useSignals();
 
   const router = useRouter();
-  const { profile, loading: profileLoading } = useProfile();
+  const { profile, loading: profileLoading, refresh } = useAuth();
   const schools = useSignal<School[]>([]);
   const loading = useSignal(true);
   const joiningId = useSignal<string | null>(null);
@@ -132,11 +137,25 @@ export default function SchoolsPage() {
     );
   });
 
+  const settledProfile = profile.value;
   useEffect(() => {
-    if (!profileLoading.value && profile.value?.school) {
-      router.replace("/dashboard");
+    if (!profileLoading.value && settledProfile?.school) {
+      router.replace(homePathFor(settledProfile));
     }
-  }, [profileLoading.value, profile.value?.school, router]);
+  }, [profileLoading.value, settledProfile, router]);
+
+  // Approval happens on the admin's screen, not this one. Without polling, an
+  // accepted student sits on "Pending" until they think to reload; the effect
+  // above then redirects as soon as a school appears on the profile.
+  useEffect(() => {
+    if (!pendingSchoolId.value) return;
+    if (profile.value?.school) return;
+
+    const timer = setInterval(() => {
+      void refresh();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [pendingSchoolId.value, profile.value?.school, refresh]);
 
   useEffect(() => {
     Promise.all([
@@ -151,7 +170,7 @@ export default function SchoolsPage() {
       })
       .catch(() => toast.error("Failed to load schools"))
       .finally(() => (loading.value = false));
-  }, []);
+  }, [loading, pendingSchoolId, schools]);
 
   async function handleJoin(school: School) {
     joiningId.value = school.id;
@@ -162,7 +181,7 @@ export default function SchoolsPage() {
       );
       if (result?.autoJoined) {
         toast.success(`You've joined ${school.name}!`);
-        window.location.href = "/dashboard";
+        router.push("/dashboard")
       } else {
         pendingSchoolId.value = school.id;
         joiningId.value = null;
@@ -180,7 +199,7 @@ export default function SchoolsPage() {
   function handleSchoolCreated(school: School) {
     createOpen.value = false;
     toast.success(`${school.name} created! You're now the admin.`);
-    window.location.href = "/dashboard";
+    router.push("/dashboard")
   }
 
   async function handleLogout() {
@@ -193,6 +212,34 @@ export default function SchoolsPage() {
   const displayName = profile.value?.first_name
     ? `${profile.value.first_name} ${profile.value.last_name ?? ""}`.trim()
     : "";
+
+  // A student joins by redeeming the code their school issued, so they get the
+  // code field alone - no school list, no create-a-school option.
+  if (isStudentProfile(profile.value)) {
+    return (
+      <AuthPageShell>
+        <div className="w-full max-w-md space-y-6">
+          <div className="space-y-2 text-center">
+            <GraduationCap className="mx-auto size-10 text-primary" />
+            <h1 className="text-2xl font-bold">
+              {displayName ? `Welcome, ${displayName}` : "Join your school"}
+            </h1>
+          </div>
+
+          <JoinCodeForm />
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mx-auto flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <LogOut className="size-4" />
+            Log out
+          </button>
+        </div>
+      </AuthPageShell>
+    );
+  }
 
   return (
     <AuthPageShell>

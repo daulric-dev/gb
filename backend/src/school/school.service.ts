@@ -173,7 +173,7 @@ export class SchoolService {
       .from('school_join_request')
       .select(
         `id, status, message, requested_at,
-         user:user_id ( id, first_name, last_name ),
+         user:user_id ( id, first_name, last_name, account_type ),
          school:school_id ( id, name )`,
       )
       .eq('school_id', adminProfile.school_id)
@@ -214,6 +214,20 @@ export class SchoolService {
 
     if (!request) {
       throw new NotFoundException('Join request not found');
+    }
+
+    // Students do not arrive this way: they join with the school's code, which
+    // creates their record directly. Join requests are staff only.
+    const { data: requester } = await supabase
+      .from('user_profile')
+      .select('account_type')
+      .eq('id', request.user_id)
+      .maybeSingle();
+
+    if (requester?.account_type === 'student') {
+      throw new BadRequestException(
+        'Students join with the school join code, not a join request',
+      );
     }
 
     if (request.school_id !== adminProfile.school_id) {

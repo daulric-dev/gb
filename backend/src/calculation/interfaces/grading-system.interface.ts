@@ -9,7 +9,10 @@ export type GradingModel =
 export interface AssessmentRecord {
   id: string;
   title: string;
+  /** @deprecated superseded by grading_group_id; kept until reports migrate. */
   assessment_type: 'exam' | 'coursework';
+  /** The weighted group this counts toward. Null falls back to the exam flag. */
+  grading_group_id: string | null;
   max_score: number;
   weight: number;
   is_excluded: boolean;
@@ -30,6 +33,19 @@ export interface GradeRecord {
 export interface TermWeights {
   courseworkWeight: number;
   examWeight: number;
+}
+
+/**
+ * One weighted group in the scheme that applies to a subject in a term.
+ * `isExam` marks the terminal exam; everything else feeds the continuous
+ * block at year-end, which is the split all three models are built on.
+ */
+export interface GradingGroup {
+  id: string;
+  name: string;
+  weight: number;
+  sortOrder: number;
+  isExam: boolean;
 }
 
 export interface YearConfig {
@@ -57,6 +73,8 @@ export interface SubjectTermContext {
   subjectCode: string | null;
   termId: string;
   termWeights: TermWeights;
+  /** The resolved scheme: subject-specific if one exists, else the term default. */
+  groups: GradingGroup[];
   assessments: AssessmentRecord[];
   gradesByAssessmentId: Map<string, GradeRecord>;
 }

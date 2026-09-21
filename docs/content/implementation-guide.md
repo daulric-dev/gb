@@ -2,7 +2,7 @@
 sidebar_label: Implementation Guide
 ---
 
-# GGBv2 -Complete Implementation Guide
+# gb - Complete Implementation Guide
 
 ## Project Overview
 

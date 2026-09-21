@@ -14,10 +14,18 @@ import { FileShareService } from './file-share.service';
 import { FolderService } from './folder.service';
 import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
-import { verifyContent } from './file-content';
+import { verifyContent, ALLOWED_CONTENT_TYPES } from './file-content';
+import { mintUploadToken } from '@/supabase/upload-token';
+import { storagePublicUrl } from '@/config/storage-url';
 
 const BUCKET = 'file-manager';
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+/** Storage's TUS implementation requires exactly this chunk size. */
+const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
+
+/** Long enough to start a 10MB upload, short enough to be worth little. */
+const UPLOAD_TOKEN_TTL_SECONDS = 30 * 60;
 
 const FILE_COLUMNS =
   'id, school_id, owner_id, name, bucket, storage_path, content_type, size_bytes, source, source_ref, status, scan_detail, folder_id, created_at, updated_at';
@@ -50,7 +58,21 @@ export class FileManagerService {
     private readonly shares: FileShareService,
     private readonly chatSystem: ChatSystemService,
     private readonly folders: FolderService,
-  ) {}
+  ) {
+    if (!process.env.SUPABASE_JWT_SECRET?.trim()) {
+      if (process.env.NODE_ENV === 'production') {
+        // Fail closed at boot, like the other required secrets. Without it
+        // no resumable upload can be authorised, and discovering that when a
+        // student tries to hand in coursework is far worse than at deploy.
+        throw new Error(
+          'SUPABASE_JWT_SECRET is required in production (resumable uploads are authorised with a short-lived token signed by it).',
+        );
+      }
+      this.logger.warn(
+        'No SUPABASE_JWT_SECRET set - resumable uploads will fail until it is.',
+      );
+    }
+  }
 
   // ── Listing ──────────────────────────────────────────────────────────────
 
@@ -220,6 +242,176 @@ export class FileManagerService {
       .single();
     if (error || !data) throw new BadRequestException('Failed to move file');
     return this.present(data, true);
+  }
+
+  async createUploadTicket(
+    userId: string,
+    input: {
+      name: string;
+      sizeBytes: number;
+      contentType: string;
+      folderId?: string;
+    },
+    /** The Host this request arrived on; see `storagePublicUrl`. */
+    requestHost?: string,
+  ) {
+    if (input.folderId) await this.folders.getOwned(userId, input.folderId);
+
+    if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
+      throw new BadRequestException('File is empty');
+    }
+    if (input.sizeBytes > MAX_UPLOAD_SIZE) {
+      throw new BadRequestException(
+        `File too large (${(input.sizeBytes / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`,
+      );
+    }
+
+    const contentType = input.contentType || 'application/octet-stream';
+    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+      throw new BadRequestException(`${contentType} files are not accepted`);
+    }
+
+    const schoolId = await this.supabase.getUserSchoolId(userId);
+    const id = crypto.randomUUID();
+    const name = (input.name?.trim() || 'untitled').slice(0, 255);
+    const storagePath = `${schoolId}/${userId}/${id}-${this.slug(name)}`;
+
+    const { error } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .insert({
+        id,
+        school_id: schoolId,
+        owner_id: userId,
+        name,
+        bucket: BUCKET,
+        storage_path: storagePath,
+        content_type: contentType,
+        size_bytes: input.sizeBytes,
+        source: 'upload',
+        folder_id: input.folderId ?? null,
+        status: 'pending',
+      });
+
+    if (error) {
+      this.logger.error(`Failed to reserve upload: ${error.message}`);
+      throw new BadRequestException('Failed to start the upload');
+    }
+
+    const { token, expiresAt } = mintUploadToken({
+      userId,
+      ttlSeconds: UPLOAD_TOKEN_TTL_SECONDS,
+      secret: process.env.SUPABASE_JWT_SECRET ?? '',
+    });
+
+    return {
+      fileId: id,
+      endpoint: `${storagePublicUrl(requestHost)}/storage/v1/upload/resumable`,
+      token,
+      expiresAt,
+      bucket: BUCKET,
+      objectName: storagePath,
+      contentType,
+      // Storage's TUS implementation only supports this chunk size.
+      chunkSize: TUS_CHUNK_SIZE,
+    };
+  }
+
+  async finaliseUpload(userId: string, fileId: string) {
+    const client = this.supabase.getServiceClient();
+
+    const { data: file } = await client
+      .schema('file_manager')
+      .from('file')
+      .select(FILE_COLUMNS)
+      .eq('id', fileId)
+      .eq('owner_id', userId)
+      .maybeSingle();
+
+    if (!file) throw new NotFoundException('File not found');
+
+    const record = file;
+    if (record.status === 'ready') return this.present(record, true);
+    if (record.status !== 'pending') {
+      throw new BadRequestException('This upload already failed');
+    }
+
+    const { data: blob, error: downloadError } = await client.storage
+      .from(record.bucket as string)
+      .download(record.storage_path as string);
+
+    if (downloadError || !blob) {
+      await this.failUpload(fileId, 'failed', 'Upload did not complete');
+      throw new BadRequestException('The upload did not complete');
+    }
+
+    const buffer = Buffer.from(await blob.arrayBuffer());
+
+    if (buffer.byteLength === 0) {
+      await this.discardUpload(record, 'failed', 'Uploaded file was empty');
+      throw new BadRequestException('File is empty');
+    }
+    if (buffer.byteLength > MAX_UPLOAD_SIZE) {
+      await this.discardUpload(record, 'failed', 'Uploaded file was too large');
+      throw new BadRequestException('File too large. Maximum is 10MB.');
+    }
+
+    const check = verifyContent(buffer, record.content_type as string);
+    if (!check.ok) {
+      await this.discardUpload(record, 'failed', check.reason);
+      throw new BadRequestException(check.reason);
+    }
+
+    const { data: updated, error } = await client
+      .schema('file_manager')
+      .from('file')
+      .update({
+        status: 'ready',
+        size_bytes: buffer.byteLength,
+        scan_detail: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', fileId)
+      .select(FILE_COLUMNS)
+      .single();
+
+    if (error || !updated) {
+      this.logger.error(`Failed to release upload: ${error?.message}`);
+      throw new BadRequestException('Failed to record file');
+    }
+
+    return this.present(updated, true);
+  }
+
+  /** Mark a reserved row as failed without touching Storage. */
+  private async failUpload(fileId: string, status: string, detail: string) {
+    await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .update({ status, scan_detail: detail })
+      .eq('id', fileId);
+  }
+
+  /** Remove the rejected object, then record why it was rejected. */
+  private async discardUpload(
+    file: FileRecord,
+    status: string,
+    detail: string,
+  ) {
+    const { error } = await this.supabase
+      .getServiceClient()
+      .storage.from(file.bucket)
+      .remove([file.storage_path]);
+
+    if (error) {
+      this.logger.error(
+        `Rejected upload ${file.bucket}/${file.storage_path} could not be removed: ${error.message}`,
+      );
+    }
+
+    await this.failUpload(file.id, status, detail);
   }
 
   // ── Manual upload ──────────────────────────────────────────────────────────
@@ -426,7 +618,33 @@ export class FileManagerService {
     return { file, access };
   }
 
+  /**
+   * Bytes for a caller who has already been authorised by something other than
+   * file sharing - a teacher reading work handed in to their own class, where
+   * the student owns the file and no share exists. The caller must do that
+   * check; this deliberately does none.
+   */
+  async readContentForAuthorisedCaller(fileId: string) {
+    const { data, error } = await this.supabase
+      .getServiceClient()
+      .schema('file_manager')
+      .from('file')
+      .select('*')
+      .eq('id', fileId)
+      .maybeSingle();
+
+    if (error || !data) {
+      throw new NotFoundException('File not found');
+    }
+
+    return this.downloadBytes(data as FileRecord);
+  }
+
   private async downloadBytes(file: FileRecord) {
+    if (file.status !== 'ready') {
+      throw new NotFoundException('File is not available');
+    }
+
     const { data, error } = await this.supabase
       .getServiceClient()
       .storage.from(file.bucket)

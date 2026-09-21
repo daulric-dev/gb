@@ -15,7 +15,7 @@ export function Badge({
   /** Accent colour for text (and border, on the outline variant). */
   color?: string;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
 
   const bg = {
     default: colors.primary,
@@ -37,8 +37,10 @@ export function Badge({
         styles.badge,
         {
           backgroundColor: bg,
-          borderRadius: radius.full,
+          borderRadius: clay.radius.pill,
           borderWidth: variant === "outline" ? StyleSheet.hairlineWidth : 0,
+          // Too small to inflate; a soft lift is enough to keep it in family.
+          boxShadow: variant === "outline" ? undefined : clay.raised,
           borderColor: color ?? colors.border,
         },
       ]}

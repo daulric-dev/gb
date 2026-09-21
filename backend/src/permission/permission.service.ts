@@ -138,7 +138,7 @@ export class PermissionService {
     const role = await this.requireRoleInSchool(adminUserId, roleId);
 
     if (role.is_system) {
-      return [...defaultsForRole(role.name)];
+      return [...defaultsForRole(role.name as string)];
     }
 
     const { data, error } = await supabase
@@ -359,13 +359,35 @@ export class PermissionService {
 
     const { data: profile } = await supabase
       .from('user_profile')
-      .select('school_id')
+      .select('school_id, account_type')
       .eq('id', userId)
       .maybeSingle();
 
-    const schoolId = profile?.school_id ?? null;
+    const accountType = profile?.account_type ?? 'staff';
+    const schoolId: string = profile?.school_id ?? null;
+
     if (!schoolId) {
-      return { schoolId: null, role: null, isAdmin: false, permissions: [] };
+      return {
+        schoolId: null,
+        role: null,
+        accountType,
+        isAdmin: false,
+        permissions: [],
+      };
+    }
+
+    // Students hold no catalog permissions by design: they have no
+    // school_management row, so computing an effective set would query for a
+    // membership that is never there. Their access comes from StudentGuard and
+    // the /portal surface instead.
+    if (accountType === 'student') {
+      return {
+        schoolId,
+        role: null,
+        accountType,
+        isAdmin: false,
+        permissions: [],
+      };
     }
 
     const effective = await loadEffectivePermissions(
@@ -378,6 +400,7 @@ export class PermissionService {
     return {
       schoolId,
       role: effective.role,
+      accountType,
       isAdmin: effective.role === 'admin',
       permissions: effective.keys,
     };

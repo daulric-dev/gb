@@ -13,6 +13,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { SchoolService } from './school.service';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AdminGuard } from '@/auth/admin.guard';
+import { PermissionGuard } from '@/permission/permission.guard';
+import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { CreateJoinRequestDto } from './dto/create-join-request.dto';
@@ -20,7 +22,7 @@ import { ApproveJoinRequestDto } from './dto/approve-join-request.dto';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 @Controller('schools')
 export class SchoolController {
   constructor(
@@ -36,17 +38,24 @@ export class SchoolController {
 
   @Get('my-pending-request')
   async getMyPendingRequest(@Req() req: any) {
-    return this.schoolService.getMyPendingRequest(req.user.id);
+    const userId: string = req.user.id;
+    return this.schoolService.getMyPendingRequest(userId);
   }
 
+  // The only school route a catalog permission can guard: every other route
+  // here is self-service onboarding (no school context to resolve yet) or
+  // staff management behind AdminGuard.
+  @RequirePermission('school', 'read')
   @Get('members')
   async getMembers(@Req() req: any) {
-    return this.schoolService.getMembers(req.user.id);
+    const userId: string = req.user.id;
+    return this.schoolService.getMembers(userId);
   }
 
   @Post('leave')
   async leaveSchool(@Req() req: any) {
-    return this.schoolService.leaveSchool(req.user.id);
+    const userId: string = req.user.id;
+    return this.schoolService.leaveSchool(userId);
   }
 
   @Delete('members/:membershipId')
@@ -55,14 +64,16 @@ export class SchoolController {
     @Req() req: any,
     @Param('membershipId') membershipId: string,
   ) {
-    return this.schoolService.removeMember(req.user.id, membershipId);
+    const userId: string = req.user.id;
+    return this.schoolService.removeMember(userId, membershipId);
   }
 
   // Must be defined before /:schoolId to avoid route conflicts
   @Get('join-requests')
   @UseGuards(AdminGuard)
   async getPendingRequests(@Req() req: any) {
-    return this.schoolService.getPendingRequests(req.user.id);
+    const userId: string = req.user.id;
+    return this.schoolService.getPendingRequests(userId);
   }
 
   @Patch('join-requests/:requestId/approve')
@@ -72,8 +83,9 @@ export class SchoolController {
     @Param('requestId') requestId: string,
     @Body() dto: ApproveJoinRequestDto,
   ) {
+    const userId: string = req.user.id;
     return this.schoolService.approveRequest(
-      req.user.id,
+      userId,
       requestId,
       dto.role,
       dto.customRoleIds,
@@ -83,12 +95,14 @@ export class SchoolController {
   @Patch('join-requests/:requestId/reject')
   @UseGuards(AdminGuard)
   async rejectRequest(@Req() req: any, @Param('requestId') requestId: string) {
-    return this.schoolService.rejectRequest(req.user.id, requestId);
+    const userId: string = req.user.id;
+    return this.schoolService.rejectRequest(userId, requestId);
   }
 
   @Post()
   async create(@Req() req: any, @Body() dto: CreateSchoolDto) {
-    const raw = await this.schoolService.create(dto, req.user.id);
+    const userId: string = req.user.id;
+    const raw = await this.schoolService.create(dto, userId);
     return this.versioning.resolve(req, 'school.detail')(raw);
   }
 
@@ -98,10 +112,7 @@ export class SchoolController {
     @Param('schoolId') schoolId: string,
     @Body() dto: CreateJoinRequestDto,
   ) {
-    return this.schoolService.createJoinRequest(
-      req.user.id,
-      schoolId,
-      dto.message,
-    );
+    const userId: string = req.user.id;
+    return this.schoolService.createJoinRequest(userId, schoolId, dto.message);
   }
 }

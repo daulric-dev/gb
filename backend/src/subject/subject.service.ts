@@ -66,7 +66,18 @@ export class SubjectService {
         ),
       SUBJECT_TTL,
     );
+    await this.invalidateClassSubjectLists();
     return subject;
+  }
+
+  /**
+   * Per-class subject lists are derived from the school's subjects, and admins
+   * and class teachers see all of them, so adding or removing one changes what
+   * every caller may set work in. The lists are keyed by user and class, so
+   * clear the family rather than guess at the members.
+   */
+  private async invalidateClassSubjectLists(): Promise<void> {
+    await this.cache.deleteByPrefix('my-subjects:');
   }
 
   async findAll(userId: string) {
@@ -159,6 +170,7 @@ export class SubjectService {
       (list) => list.map((s) => (s.id === subjectId ? data : s)),
       SUBJECT_TTL,
     );
+    await this.invalidateClassSubjectLists();
     return data;
   }
 
@@ -206,6 +218,7 @@ export class SubjectService {
     }
 
     await this.cache.delete(`subjects:${schoolId}`);
+    await this.invalidateClassSubjectLists();
     return { message: 'Subject deleted' };
   }
 }

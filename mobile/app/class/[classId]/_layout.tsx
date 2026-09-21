@@ -16,7 +16,6 @@ export default function ClassDetailLayout() {
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="grading" />
         <Stack.Screen name="attendance" />
       </Stack>
     </ClassProvider>

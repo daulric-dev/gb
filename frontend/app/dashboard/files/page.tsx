@@ -8,6 +8,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
@@ -92,6 +93,16 @@ export default function FilesPage() {
 
   const isBrowser = filter.value === "own";
 
+  if (!can("file", "read")) {
+    return (
+      <PermissionDenied
+        title="Files"
+        description="Share files with your school"
+        message="You do not have permission to view files."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <DashboardPageHeader
@@ -120,6 +131,8 @@ export default function FilesPage() {
         <FolderBrowser
           currentUserId={profile.value?.id}
           canCreate={can("file", "create")}
+          canUpdate={can("file", "update")}
+          canDelete={can("file", "delete")}
           reloadKey={reloadKey.value}
           onView={(f) => (viewFile.value = f)}
           onShare={(f) => (shareFile.value = f)}
@@ -144,6 +157,8 @@ export default function FilesPage() {
         <FilesTable
           files={files.value}
           currentUserId={profile.value?.id}
+          canUpdate={can("file", "update")}
+          canDelete={can("file", "delete")}
           onView={(f) => (viewFile.value = f)}
           onShare={(f) => (shareFile.value = f)}
           onRename={(f) => (renameFile.value = f)}

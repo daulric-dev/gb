@@ -12,11 +12,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
-import { ClassTeacherGuard } from '@/class/class-teacher.guard';
+import {
+  ClassMemberGuard,
+  ClassTeacherGuard,
+} from '@/class/class-teacher.guard';
 import { ReportGuard } from './report.guard';
 import { VersioningService } from '@/versioning/versioning.service';
 import { ReportService } from './report.service';
@@ -38,18 +41,19 @@ export class ReportController {
   @Post('generate')
   @UseGuards(ClassTeacherGuard)
   async generate(@Req() req: any, @Body() dto: GenerateReportDto) {
-    const raw = await this.reportService.generateTermReports(req.user.id, dto);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.generateTermReports(userId, dto);
     return this.versioning.resolve(req, 'report.generated')(raw);
   }
 
   @RequirePermission('reporting', 'read')
   @Get()
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async findByClassAndTerm(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string | undefined,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.findByClassAndTerm(
@@ -64,27 +68,24 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getClassSummary(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
-    @Req() req: any,
-    @Res({ passthrough: true }) reply: FastifyReply,
+    @Req() req: FastifyRequest,
   ) {
     const raw = await this.reportService.getClassSummary(
       studentGroupId,
       termId,
       reportType,
-      req,
-      reply,
     );
     return this.versioning.resolve(req, 'report.classSummary')(raw);
   }
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary/analytics')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getGradeAnalytics(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -99,7 +100,7 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary/download')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async downloadClassSummaryFile(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -123,12 +124,12 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary/files')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getClassSummaryFiles(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.getClassSummaryFiles(
@@ -143,12 +144,12 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get('student')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async findStudentReport(
     @Query('studentId') studentId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.findStudentReport(
@@ -163,10 +164,10 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id/pdfs')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getPdfHistory(
     @Param('id') id: string,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.getPdfHistory(id, req, reply);
@@ -175,10 +176,10 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id/pdf/latest')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async getLatestPdf(
     @Param('id') id: string,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.getLatestPdf(id, req, reply);
@@ -187,10 +188,10 @@ export class ReportController {
 
   @RequirePermission('reporting', 'read')
   @Get(':id')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async findOne(
     @Param('id') id: string,
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const raw = await this.reportService.findOne(id, req, reply);
@@ -205,7 +206,8 @@ export class ReportController {
     @Param('id') id: string,
     @Body() dto: UpdateReportDto,
   ) {
-    const raw = await this.reportService.updateReport(req.user.id, id, dto);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.updateReport(userId, id, dto);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
@@ -213,7 +215,8 @@ export class ReportController {
   @Patch(':id/regenerate')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async regenerate(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.reportService.regenerateReport(req.user.id, id);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.regenerateReport(userId, id);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
@@ -221,7 +224,8 @@ export class ReportController {
   @Patch(':id/publish')
   @UseGuards(ClassTeacherGuard, ReportGuard)
   async publish(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.reportService.publish(req.user.id, id);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.publish(userId, id);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
@@ -229,7 +233,8 @@ export class ReportController {
   @Patch(':id/send-to-ministry')
   @UseGuards(ClassTeacherGuard)
   async sendToMinistry(@Req() req: any, @Param('id') id: string) {
-    const raw = await this.reportService.sendToMinistry(req.user.id, id);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.sendToMinistry(userId, id);
     return this.versioning.resolve(req, 'report.updated')(raw);
   }
 
@@ -241,7 +246,8 @@ export class ReportController {
     @Req() req: any,
     @Body() dto: SavePdfDto,
   ) {
-    const raw = await this.reportService.savePdf(id, req.user.id, dto);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.savePdf(id, userId, dto);
     return this.versioning.resolve(req, 'report.pdfSaved')(raw);
   }
 
@@ -254,18 +260,19 @@ export class ReportController {
       throw new BadRequestException('No file uploaded');
     }
 
-    const buffer = await file.toBuffer();
+    const buffer: Buffer = await file.toBuffer();
     if (!buffer.length) {
       throw new BadRequestException('Empty file');
     }
 
-    const raw = await this.reportService.uploadPdf(id, req.user.id, buffer);
+    const userId: string = req.user.id;
+    const raw = await this.reportService.uploadPdf(id, userId, buffer);
     return this.versioning.resolve(req, 'report.pdfUploaded')(raw);
   }
 
   @RequirePermission('reporting', 'read')
   @Get(':id/pdf/:pdfId/download')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async downloadPdf(
     @Param('id') id: string,
     @Param('pdfId') pdfId: string,
@@ -297,7 +304,7 @@ export class ReportEntriesController {
   @Patch(':entryId')
   @UseGuards(ReportGuard)
   async updateEntry(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
     @Param('entryId') entryId: string,
     @Body() dto: UpdateReportEntryDto,

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
+import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
 import {
   Card,
@@ -19,9 +20,18 @@ import { Text } from "@/components/ui/Text";
 const CODE_LENGTH = 8;
 const RESEND_COOLDOWN = 60;
 
+/**
+ * Mirrors the web verify screen: one primary action, the two secondary ones as
+ * text links, and failures shown against the boxes rather than in a toast.
+ *
+ * The web version leads with a mail icon. Here the shell already puts the
+ * brand mark directly above the card, and a second icon under it just stacks
+ * two badges down the middle of a phone screen, so it is left out.
+ */
 export default function VerifyScreen() {
   const router = useRouter();
   const toast = useToast();
+  const { colors } = useTheme();
   const { refresh } = useAuth();
   const params = useLocalSearchParams<{ email?: string }>();
   const email = params.email ?? "";
@@ -30,6 +40,7 @@ export default function VerifyScreen() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -55,14 +66,17 @@ export default function VerifyScreen() {
     }, 1000);
   }
 
-  async function handleSubmit() {
-    if (code.length !== CODE_LENGTH) return;
+  const verify = useCallback(async () => {
+    if (code.length !== CODE_LENGTH || loading) return;
+
     setLoading(true);
+    setError(null);
     try {
       const data = await api<{
         user: {
           is_onboarded: boolean;
           first_name: string | null;
+          account_type: "staff" | "student" | null;
           school: { id: string } | null;
         };
       }>("/auth/otp/verify", {
@@ -71,21 +85,34 @@ export default function VerifyScreen() {
         skipAuthRedirect: true,
       });
       await refresh();
+      const isStudent = data.user.account_type === "student";
+
       if (data.user.school) {
-        router.replace("/(tabs)");
+        router.replace(isStudent ? "/(portal)" : "/(tabs)");
       } else if (data.user.first_name) {
+        // Named but school-less: students still owe a claim code, staff still
+        // owe a school. Sending either back to onboard would just loop.
         router.replace("/(auth)/schools");
       } else {
         router.replace("/(auth)/onboard");
       }
     } catch (err) {
-      toast.error(
+      // Shown against the boxes rather than only as a toast: a toast slides
+      // away, and the next thing they do is retype the code right here.
+      setError(
         err instanceof ApiError ? err.message : "Verification failed",
       );
+      setCode("");
     } finally {
       setLoading(false);
     }
-  }
+  }, [code, email, loading, refresh, router]);
+
+  // Submitting is the obvious next step once the last digit lands, so do it
+  // rather than making them reach for the button.
+  useEffect(() => {
+    if (code.length === CODE_LENGTH) void verify();
+  }, [code, verify]);
 
   async function handleResend() {
     setResending(true);
@@ -93,6 +120,7 @@ export default function VerifyScreen() {
       await api("/auth/otp/send", { method: "POST", body: { email } });
       toast.success("New code sent to your email");
       setCode("");
+      setError(null);
       startCooldown();
     } catch (err) {
       toast.error(
@@ -102,14 +130,6 @@ export default function VerifyScreen() {
       setResending(false);
     }
   }
-
-  // Auto-submit once all digits are entered.
-  useEffect(() => {
-    if (code.length === CODE_LENGTH && !loading) {
-      void handleSubmit();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
 
   return (
     <AuthShell>
@@ -121,31 +141,79 @@ export default function VerifyScreen() {
             {email}
           </Text>
         </CardHeader>
-        <CardContent style={{ gap: 16 }}>
-          <View style={{ alignItems: "center", paddingVertical: 4 }}>
-            <OtpInput value={code} onChange={setCode} autoFocus />
+        <CardContent style={{ gap: 20 }}>
+          <View style={{ alignItems: "center", gap: 6 }}>
+            <OtpInput
+              value={code}
+              onChange={(v) => {
+                setCode(v);
+                if (error) setError(null);
+              }}
+              autoFocus
+              error={!!error}
+              disabled={loading}
+            />
+            {/* Reserved height, so the layout does not jump when an error
+                lands mid-typing. */}
+            <View style={{ minHeight: 18, justifyContent: "center" }}>
+              {error ? (
+                <Text tone="destructive" size="sm" style={{ textAlign: "center" }}>
+                  {error}
+                </Text>
+              ) : null}
+            </View>
           </View>
+
           <Button
-            onPress={handleSubmit}
+            onPress={verify}
             loading={loading}
             disabled={code.length !== CODE_LENGTH}
           >
-            Verify
+            {loading ? "Verifying" : "Verify"}
           </Button>
-          <Button
-            variant="ghost"
-            onPress={handleResend}
-            loading={resending}
-            disabled={cooldown > 0}
-          >
-            {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
-          </Button>
-          <Button
-            variant="ghost"
-            onPress={() => router.replace("/(auth)/login")}
-          >
-            Back to login
-          </Button>
+
+          <View style={{ alignItems: "center", gap: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Text tone="muted" size="sm">
+                Didn&apos;t get it?
+              </Text>
+              <Pressable
+                onPress={handleResend}
+                disabled={resending || cooldown > 0}
+                hitSlop={8}
+              >
+                <Text
+                  size="sm"
+                  weight="500"
+                  style={{
+                    color: colors.foreground,
+                    opacity: resending || cooldown > 0 ? 0.6 : 1,
+                    textDecorationLine:
+                      resending || cooldown > 0 ? "none" : "underline",
+                  }}
+                >
+                  {resending
+                    ? "Sending…"
+                    : cooldown > 0
+                      ? `Resend in ${cooldown}s`
+                      : "Resend code"}
+                </Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              onPress={() => router.replace("/(auth)/login")}
+              hitSlop={8}
+            >
+              <Text
+                tone="muted"
+                size="sm"
+                style={{ textDecorationLine: "underline" }}
+              >
+                Use a different email
+              </Text>
+            </Pressable>
+          </View>
         </CardContent>
       </Card>
     </AuthShell>

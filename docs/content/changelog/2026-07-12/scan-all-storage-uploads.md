@@ -5,11 +5,15 @@ sidebar_position: 1
 
 # 2026-07-12 - Virus-scan every storage upload
 
+> **Superseded.** Virus scanning was removed on 2026-09-21 - see
+> [ClamAV removed](../2026-09-21/remove-clamav.md). Everything below is
+> kept as a record of what was true at the time.
+
 Virus scanning was previously wired only into file-manager uploads. It now runs at the storage boundary, so **every** file written to a bucket - avatars, file-manager uploads, and generated report files - is scanned. No migrations.
 
 ## Scanning centralized in `uploadFile`
 
-`ClamavScanner` moved out of the queue module into a small global `ScanModule` ([scan/clamav.scanner.ts](../../../../backend/src/scan/clamav.scanner.ts)) so it has no module-cycle with `SupabaseService`. `SupabaseService` gained a `scanOrThrow` and now scans inside `uploadFile` ([supabase/supabase.service.ts](../../../../backend/src/supabase/supabase.service.ts)): every backend-buffered upload is scanned before it is stored. A `FOUND` verdict throws a `400` (file never stored); an unreachable/`ERROR` clamd **fails closed** (the upload errors rather than storing unscanned bytes). With `CLAMAV_HOST` unset, scanning is disabled and uploads pass through (dev only).
+`ClamavScanner` moved out of the queue module into a small global `ScanModule` (`scan/clamav.scanner.ts`, since removed) so it has no module-cycle with `SupabaseService`. `SupabaseService` gained a `scanOrThrow` and now scans inside `uploadFile` ([supabase/supabase.service.ts](../../../../backend/src/supabase/supabase.service.ts)): every backend-buffered upload is scanned before it is stored. A `FOUND` verdict throws a `400` (file never stored); an unreachable/`ERROR` clamd **fails closed** (the upload errors rather than storing unscanned bytes). With `CLAMAV_HOST` unset, scanning is disabled and uploads pass through (dev only).
 
 Coverage by path:
 

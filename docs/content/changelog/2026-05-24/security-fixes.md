@@ -59,7 +59,9 @@ The `WHERE` clause on `grading.assessment`'s INSERT policy contained `tsa.subjec
 
 ## Still open from the same audit
 
-These were rated High or below and are not yet fixed:
+> **All closed as of 2026-09-21.** Six were fixed in the months after this audit; the last - the pending `WITH CHECK` review - was completed and closed as *not a vulnerability*, but the audit of it turned up a real defect in chat. See [Chat RLS fixed](../2026-09-21/chat-rls.md).
+
+These were rated High or below and were not fixed at the time of writing:
 
 - `PATCH /auth/profile` accepts `schoolId` in the DTO and writes it raw without a membership check ([update-profile.dto.ts](../../../../backend/src/auth/dto/update-profile.dto.ts), [auth.service.ts](../../../../backend/src/auth/auth.service.ts)).
 - First-admin race in `onboard` and `school.createJoinRequest` - non-transactional check-then-insert can produce two admins. Needs a unique partial index `(school_id) WHERE role='admin'`.

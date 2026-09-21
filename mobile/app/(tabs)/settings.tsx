@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -23,6 +23,12 @@ export default function SettingsScreen() {
   const router = useRouter();
   const toast = useToast();
   const { profile, logout, refresh } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void Promise.resolve(refresh()).finally(() => setRefreshing(false));
+  }, [refresh]);
   const { colors, mode, setMode } = useTheme();
 
   const [firstName, setFirstName] = useState(profile?.first_name ?? "");
@@ -136,7 +142,12 @@ export default function SettingsScreen() {
   }
 
   return (
-    <Screen title="Settings" description="Manage your account">
+    <Screen
+      title="Settings"
+      description="Manage your account"
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       {/* Profile picture */}
       <Card>
         <CardContent style={styles.profileRow}>

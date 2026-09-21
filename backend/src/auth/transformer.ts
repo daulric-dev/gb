@@ -8,6 +8,8 @@ export interface ProfileResponse {
   first_name: string | null;
   last_name: string | null;
   role: UserProfile['role'];
+  /** 'staff' | 'student' - decides which app surface the client routes to. */
+  account_type: UserProfile['account_type'];
   avatar_url: string | null;
   school: any | null;
   school_management: {
@@ -37,6 +39,7 @@ export function v1Profile(raw: any): ProfileResponse {
     first_name: raw.first_name ?? null,
     last_name: raw.last_name ?? null,
     role: raw.role ?? null,
+    account_type: raw.account_type ?? 'staff',
     avatar_url: raw.avatar_url ?? null,
     school: raw.school ?? null,
     school_management: raw.school_management ?? null,
@@ -65,6 +68,7 @@ export function v1VerifyOtp(
       first_name: profile?.first_name ?? null,
       last_name: profile?.last_name ?? null,
       role: profile?.role ?? null,
+      account_type: profile?.account_type ?? 'staff',
       avatar_url: profile?.avatar_url ?? null,
       school: profile?.school ?? null,
       is_onboarded: hasOnboarded,

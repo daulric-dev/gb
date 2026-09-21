@@ -1,14 +1,16 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useSignal, type Signal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api } from "@/lib/api";
+import { useProfile } from "@/providers/AuthProvider";
 
-/** The caller's effective permissions in their active school (GET /permissions/me). */
 export interface MyPermissions {
   schoolId: string | null;
   role: string | null;
+  /** 'staff' | 'student'. Students hold no catalog permissions at all. */
+  accountType: "staff" | "student";
   isAdmin: boolean;
   permissions: string[];
 }
@@ -22,11 +24,15 @@ interface PermissionsContextValue {
 const PermissionsContext = createContext<PermissionsContextValue | null>(null);
 
 export function PermissionsProvider({ children }: { children: ReactNode }) {
+  useSignals();
+  const { profile } = useProfile();
   const data = useSignal<MyPermissions | null>(null);
   const loading = useSignal<boolean>(true);
+
+  const initialized = useSignal<boolean>(false);
   const inFlight = useRef<Promise<void> | null>(null);
 
-  const fetchPermissions = () => {
+  const fetchPermissions = useCallback(() => {
     if (inFlight.current) return inFlight.current;
     loading.value = true;
     inFlight.current = api<MyPermissions>("/permissions/me", {
@@ -40,23 +46,25 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         loading.value = false;
+        initialized.value = true;
         inFlight.current = null;
       });
     return inFlight.current;
-  };
+  }, [data, loading, initialized]);
 
+  const refresh = useCallback(async () => {
+    inFlight.current = null;
+    await fetchPermissions();
+  }, [fetchPermissions]);
+
+  const activeSchoolId = profile.value?.school?.id ?? null;
   useEffect(() => {
-    void fetchPermissions();
-  }, []);
+    void refresh();
+  }, [activeSchoolId, refresh]);
 
-  const value: PermissionsContextValue = {
-    data,
-    loading,
-    refresh: async () => {
-      inFlight.current = null;
-      await fetchPermissions();
-    },
-  };
+  const value: PermissionsContextValue = { data, loading, refresh };
+
+  if (!initialized.value) return null;
 
   return (
     <PermissionsContext.Provider value={value}>
@@ -65,11 +73,6 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Read the current user's effective permissions and check them.
- * `can("student", "read")` mirrors the backend: admins get everything; others
- * are checked against their effective `resource:action` keys.
- */
 export function usePermissions() {
   useSignals();
   const ctx = useContext(PermissionsContext);
@@ -88,6 +91,8 @@ export function usePermissions() {
     can,
     isAdmin: data?.isAdmin ?? false,
     role: data?.role ?? null,
+    accountType: data?.accountType ?? "staff",
+    isStudent: data?.accountType === "student",
     permissions: data?.permissions ?? [],
     loading: ctx.loading,
     refresh: ctx.refresh,

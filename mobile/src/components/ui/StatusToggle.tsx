@@ -23,13 +23,17 @@ export function StatusToggle({
   onChange: (status: AttendanceStatus) => void;
   disabled?: boolean;
 }) {
-  const { colors, radius } = useTheme();
+  const { colors, clay } = useTheme();
 
   return (
     <View
       style={[
         styles.wrap,
-        { borderColor: colors.border, borderRadius: radius.md },
+        {
+          borderColor: "transparent",
+          borderRadius: clay.radius.pill,
+          boxShadow: clay.inset,
+        },
       ]}
     >
       {STATUSES.map((s, i) => {

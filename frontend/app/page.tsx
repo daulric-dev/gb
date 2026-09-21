@@ -10,6 +10,7 @@ import { ModeToggle } from "@/components/layout/mode-toggle";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useProfile } from "@/providers/AuthProvider";
+import { homePathFor } from "@/lib/routing";
 
 const features = [
   {
@@ -57,7 +58,7 @@ export default function LandingPage() {
 
   const navigateWithTransition = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
-      const target = profile.value ? "/dashboard" : "/login";
+      const target = homePathFor(profile.value);
       const el = containerRef.current;
       if (!el) {
         router.push(target);

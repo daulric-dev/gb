@@ -1,6 +1,7 @@
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
-import { ClipboardList, CalendarCheck, ChevronRight } from "lucide-react-native";
+import { CalendarCheck, ChevronRight } from "lucide-react-native";
 import type { ComponentType } from "react";
 import type { LucideProps } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -45,7 +46,13 @@ function NavRow({
 
 export default function ClassOverviewScreen() {
   const router = useRouter();
-  const { classId, classInfo, loading } = useClass();
+  const { classId, classInfo, loading, reload } = useClass();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void reload().finally(() => setRefreshing(false));
+  }, [reload]);
 
   const base = `/class/${classId}`;
 
@@ -54,6 +61,8 @@ export default function ClassOverviewScreen() {
       title={loading ? "Class" : (classInfo?.name ?? "Class")}
       description={classInfo?.isClassTeacher ? undefined : "Subject class"}
       onBack={() => router.back()}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
       action={
         classInfo?.isClassTeacher ? (
           <Badge variant="secondary">Class Teacher</Badge>
@@ -68,12 +77,6 @@ export default function ClassOverviewScreen() {
         </View>
       ) : (
         <View style={{ gap: 12 }}>
-          <NavRow
-            icon={ClipboardList}
-            title="Grading"
-            subtitle="Enter and manage assessment grades"
-            onPress={() => router.push(`${base}/grading` as Href)}
-          />
           <NavRow
             icon={CalendarCheck}
             title="Attendance"

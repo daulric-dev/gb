@@ -11,15 +11,19 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import type { FastifyReply } from 'fastify';
-import archiver from 'archiver';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ZipArchive } from 'archiver';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
-import { ClassTeacherGuard } from '@/class/class-teacher.guard';
+import {
+  ClassMemberGuard,
+  ClassTeacherGuard,
+} from '@/class/class-teacher.guard';
 import { ReportFilesService } from './report-files.service';
 import { PersistClassSummaryDto } from './dto/persist-class-summary.dto';
 import type { GeneratedFile } from './generation/types';
+import { corsOriginFor } from '@/config/origins';
 
 @ApiTags('Report files')
 @ApiBearerAuth()
@@ -40,7 +44,7 @@ export class ReportFilesController {
 
   @RequirePermission('reporting', 'read')
   @Get('student-term.pdf')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async studentTermPdf(
     @Query('studentId') studentId: string,
     @Query('termId') termId: string,
@@ -57,7 +61,7 @@ export class ReportFilesController {
 
   @RequirePermission('reporting', 'read')
   @Get('student-year.pdf')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async studentYearPdf(
     @Query('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
@@ -74,7 +78,7 @@ export class ReportFilesController {
 
   @RequirePermission('reporting', 'read')
   @Get('student-report-card.pdf')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async studentReportCard(
     @Query('studentId') studentId: string,
     @Query('termId') termId: string,
@@ -91,7 +95,7 @@ export class ReportFilesController {
 
   @RequirePermission('reporting', 'read')
   @Get('exam-report.pdf')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async examReport(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -108,7 +112,7 @@ export class ReportFilesController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-summary')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async classSummary(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
@@ -130,11 +134,12 @@ export class ReportFilesController {
 
   @RequirePermission('reporting', 'read')
   @Get('class-zip')
-  @UseGuards(ClassTeacherGuard)
+  @UseGuards(ClassMemberGuard)
   async classZip(
     @Query('studentGroupId') studentGroupId: string,
     @Query('termId') termId: string,
     @Query('reportType') reportType: string,
+    @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ) {
     // Fetch data + plan entries BEFORE hijacking, so any auth/404/calc error
@@ -155,13 +160,13 @@ export class ReportFilesController {
     // the response and can't read the download filename.
     reply.raw.setHeader(
       'Access-Control-Allow-Origin',
-      process.env.FRONTEND_URL || 'http://localhost:3000',
+      corsOriginFor(req.headers?.origin),
     );
     reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
     reply.raw.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
     reply.hijack(); // we own reply.raw from here
 
-    const archive = archiver('zip', { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     archive.on('error', (err) => {
       this.logger.error(`class-zip archive error: ${err.message}`);
       reply.raw.destroy(err);
@@ -209,11 +214,12 @@ export class ReportFilesController {
     @Req() req: any,
     @Body() dto: PersistClassSummaryDto,
   ) {
+    const userId: string = req.user.id;
     return this.reportFiles.generateAndPersistClassSummary(
       dto.studentGroupId,
       dto.termId,
       dto.reportType,
-      req.user.id,
+      userId,
     );
   }
 }
