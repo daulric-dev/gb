@@ -37,3 +37,4 @@ Weighting items against each other inside a bucket is the job the [weighted grou
 
 - **Mobile has no grading screen at all** until a mobile Work screen exists. That screen would have 404'd against the retired API anyway.
 - **Per-student grade exclusion** went with the page. The old grade table had a per-row exclude (`/grades/:id/exclude`) for cases like an absent student; the Work submissions tab has no equivalent, so a score can only be zeroed. **The API still exists and is untouched** - only the control is missing.
+  - > **Fixed** on 2026-09-21 - see [Backlog cleanup](../2026-09-21/backlog-cleanup.md). The control is on the submissions tab, behind a new class-authorised route: the existing endpoint's RLS would have refused the same teacher who can already set the mark.

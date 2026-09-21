@@ -3,7 +3,7 @@ import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 globalThis.document ??= { cookie: "" } as unknown as Document;
 globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 
-import { ApiError } from "@/lib/api";
+import { ApiError, api, setUnauthorizedHandler } from "@/lib/api";
 
 type MockedFetch = typeof fetch & {
   mock: {
@@ -102,5 +102,69 @@ describe("api()", () => {
     const { api } = await import("@/lib/api");
     const result = await api("/users/1");
     expect(result).toEqual({ id: 1, name: "Alice" });
+  });
+});
+
+describe("401 handling", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(JSON.stringify({ message: "nope" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    setUnauthorizedHandler(null);
+  });
+
+  test("calls the registered handler instead of touching location", async () => {
+    let called = 0;
+    setUnauthorizedHandler(() => {
+      called += 1;
+    });
+
+    await expect(api("/auth/me")).rejects.toThrow(ApiError);
+    expect(called).toBe(1);
+  });
+
+  test("skipAuthRedirect suppresses it", async () => {
+    let called = 0;
+    setUnauthorizedHandler(() => {
+      called += 1;
+    });
+
+    // The profile fetch uses this: a 401 there is "not signed in", which is an
+    // answer, not a session that just expired.
+    await expect(
+      api("/auth/me", { skipAuthRedirect: true }),
+    ).rejects.toThrow(ApiError);
+    expect(called).toBe(0);
+  });
+
+  test("still throws 401 so callers can react", async () => {
+    setUnauthorizedHandler(() => {});
+    const error = await api("/auth/me").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(401);
+  });
+
+  test("unregistering restores the no-handler path", async () => {
+    let called = 0;
+    setUnauthorizedHandler(() => {
+      called += 1;
+    });
+    setUnauthorizedHandler(null);
+
+    // Without a handler it falls back to a hard navigation, which jsdom-less
+    // bun has no implementation for - the point here is only that the handler
+    // is not called once it has been removed.
+    await api("/auth/me").catch(() => {});
+    expect(called).toBe(0);
   });
 });

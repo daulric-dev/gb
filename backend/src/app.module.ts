@@ -2,11 +2,7 @@ import { Module, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import {
-  getClientIp,
-  getSessionTracker,
-  type ThrottlerReq,
-} from '@/throttle/tracker';
+import { getClientIp, getSessionTracker, type ThrottlerReq } from '@/throttle/tracker';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
@@ -34,7 +30,6 @@ import { FileManagerModule } from '@/file-manager/file-manager.module';
 import { RealtimeModule } from '@/realtime/realtime.module';
 import { ChatModule } from '@/chat/chat.module';
 import { QueueModule } from '@/queue/queue.module';
-import { ScanModule } from '@/scan/scan.module';
 import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
@@ -60,12 +55,6 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
             req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
         },
         {
-          // Dedicated bucket for student claim-code redemption. It needs its
-          // own name rather than a tight @Throttle on 'default': the storage
-          // key is `${throttlerName}:${tracker}` with no route in it, so a
-          // per-route override on 'default' shares one counter with every
-          // other default-throttled route and trips on ordinary browsing.
-          // Kept permissive here and tightened on the route, as auth-strict is.
           name: 'claim-code',
           ttl: 15 * 60 * 1000,
           limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
@@ -74,12 +63,6 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
         },
       ],
 
-      // Every configured throttler increments on every request, so a bucket
-      // shared across routes fills up during ordinary browsing and then trips
-      // the tight per-route limits that are meant to guard one endpoint.
-      // `default` stays global - it is the blunt per-tracker safety net - while
-      // the purpose-built throttlers are scoped to the route they guard, which
-      // is what `@Throttle({ 'auth-strict': ... })` on a single handler means.
       generateKey: (
         context: ExecutionContext,
         tracker: string,
@@ -97,7 +80,6 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
     StudentAccountModule,
     StudentPortalModule,
     CacheModule,
-    ScanModule,
     QueueModule.forRoot(),
     PaginationModule,
     VersioningModule,

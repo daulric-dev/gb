@@ -8,9 +8,10 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { useSignal, type Signal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api } from "@/lib/api";
+import { api, setUnauthorizedHandler } from "@/lib/api";
 
 export interface UserProfile {
   id: string;
@@ -39,6 +40,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const profile = useSignal<UserProfile | null>(null);
   const loading = useSignal<boolean>(true);
   const inFlight = useRef<Promise<void> | null>(null);
@@ -65,6 +67,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void fetchProfile();
   }, [fetchProfile]);
+
+  // `lib/api` throws on a 401 from anywhere in the app, including code with no
+  // component around it. Giving it the router here is what keeps the trip to
+  // /login a client transition instead of a document reload.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      // Drop the stale profile first, so nothing renders as signed in during
+      // the transition.
+      profile.value = null;
+      router.push("/login");
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [router, profile]);
 
   const value: AuthContextValue = {
     profile,

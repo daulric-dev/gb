@@ -683,8 +683,6 @@ export class ReportService {
 
     const objectPath = `${reportId}/${Date.now()}-${crypto.randomUUID()}.pdf`;
 
-    await this.supabaseService.scanOrThrow(fileBuffer, objectPath);
-
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)
       .upload(objectPath, fileBuffer, {
@@ -1135,8 +1133,6 @@ export class ReportService {
       csv: 'text/csv',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
-
-    await this.supabaseService.scanOrThrow(fileBuffer, objectPath);
 
     const { error: uploadError } = await serviceClient.storage
       .from(ReportService.PDF_BUCKET)

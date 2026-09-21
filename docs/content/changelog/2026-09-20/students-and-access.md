@@ -40,4 +40,6 @@ Two of the same shape, both causing "I made a change and the app didn't notice".
 
 ## Known gap
 
+> **Fixed** on 2026-09-21 - see [Backlog cleanup](../2026-09-21/backlog-cleanup.md). The sweep that followed found this was one of **eight** foreign keys with no delete rule, two of which broke school deletion outright.
+
 `student.student_subject_profile.academic_year_id` has **no `ON DELETE CASCADE`**, so deleting an academic year fails while any subject profile references it. The earlier cascade migrations covered enrolments and assessments but missed this table.

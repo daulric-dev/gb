@@ -10,7 +10,7 @@ The backend is a **NestJS** application running on the **Fastify** HTTP adapter.
 
 | Technology | Purpose |
 |------------|---------|
-| NestJS 11 | Application framework |
+| NestJS 12 | Application framework |
 | Fastify | HTTP server (replaces Express for performance) |
 | Supabase | Database (PostgreSQL), authentication, and row-level security |
 | TypeScript 5 | Type safety |

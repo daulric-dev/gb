@@ -5,11 +5,15 @@ sidebar_position: 1
 
 # 2026-07-11 - File manager hardening
 
+> **Superseded.** Virus scanning was removed on 2026-09-21 - see
+> [ClamAV removed](../2026-09-21/remove-clamav.md). Everything below is
+> kept as a record of what was true at the time.
+
 The file manager moved from "structurally complete" to production-ready: real virus scanning, real share notifications, content-type verification on upload, and a fix for an N+1 in the listing. **Two new migrations** (storage-bucket notifications table; no changes to existing tables).
 
 ## Virus scanning is now real
 
-`FileScanHandler` previously passed every upload through a no-op `scanForViruses` stub while still driving the `pending → scanning → ready/infected` lifecycle. It now delegates to a new `ClamavScanner` ([scan/clamav.scanner.ts](../../../../backend/src/scan/clamav.scanner.ts)) that streams the bytes to a ClamAV daemon over TCP (the INSTREAM command) and interprets the verdict:
+`FileScanHandler` previously passed every upload through a no-op `scanForViruses` stub while still driving the `pending → scanning → ready/infected` lifecycle. It now delegates to a new `ClamavScanner` (`scan/clamav.scanner.ts`, since removed) that streams the bytes to a ClamAV daemon over TCP (the INSTREAM command) and interprets the verdict:
 
 - **`CLAMAV_HOST` set** - a clean verdict marks the file `ready`; a `FOUND` verdict marks it `infected` with the signature; an unreachable daemon or `ERROR` reply **fails closed** (the job errors and retries rather than marking untested bytes `ready`).
 - **`CLAMAV_HOST` unset** - scanning is disabled and files pass through, with a startup warning. Local/dev only; see [Environment Variables](../../environment-variables.md) for `CLAMAV_HOST` / `CLAMAV_PORT` / `CLAMAV_TIMEOUT_MS`.

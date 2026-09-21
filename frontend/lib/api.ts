@@ -12,10 +12,21 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   skipAuthRedirect?: boolean;
 };
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 function redirectToLogin() {
-  if (typeof window !== "undefined") {
-    window.location.href = "/login";
+  if (typeof window === "undefined") return;
+
+  if (unauthorizedHandler) {
+    unauthorizedHandler();
+    return;
   }
+
+  window.location.assign(new URL("/login", window.location.origin));
 }
 
 function handleUnauthorized(skipAuthRedirect: boolean): never {
@@ -23,15 +34,6 @@ function handleUnauthorized(skipAuthRedirect: boolean): never {
   throw new ApiError(401, "Session expired");
 }
 
-/**
- * A request that never reached the server.
- *
- * `fetch` rejects with a bare TypeError when the host is down, the address is
- * wrong or the network is gone. Screens catch errors and fall back to a
- * message about whatever they were doing - "Failed to send OTP" - which sends
- * you looking at the wrong thing entirely. Turning it into an ApiError with a
- * status of 0 lets every screen say what actually happened.
- */
 export function isNetworkError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 0;
 }

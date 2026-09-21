@@ -9,7 +9,7 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 | Layer | Technology |
 |-------|-----------|
 | **Frontend** | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Preact Signals, @react-pdf/renderer |
-| **Backend** | NestJS 11, Fastify, Swagger |
+| **Backend** | NestJS 12, Fastify, Swagger |
 | **Caching** | Pluggable - in-memory (default) or Redis via ioredis |
 | **Database** | Supabase (PostgreSQL) with Row-Level Security |
 | **Auth** | Passwordless OTP via email |
@@ -88,7 +88,7 @@ PORT=3001
 NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
-See [`docs/environment-variables.md`](docs/environment-variables.md) for full details on every variable.
+See [`docs/content/environment-variables.md`](docs/content/environment-variables.md) for every variable, and [`docs/content/developer-guide.md`](docs/content/developer-guide.md) for the full path from clone to deployed - local Supabase, migrations, and each deploy target.
 
 ### 3. Run the dev servers
 
@@ -96,13 +96,15 @@ See [`docs/environment-variables.md`](docs/environment-variables.md) for full de
 bun run dev
 ```
 
-This starts both the frontend (port 3000) and backend (port 3001) in parallel via Turborepo.
+This starts **all four** workspaces in parallel via Turborepo: frontend (3000), backend (3001), docs (3002) and Expo's Metro bundler. Use the individual scripts below to run fewer.
 
 ### Individual servers
 
 ```bash
 bun run dev:frontend   # Next.js on :3000
 bun run dev:backend    # NestJS on :3001
+bun run dev:mobile     # Expo / Metro
+bun run dev:docs       # Docs site on :3002
 ```
 
 ### Build

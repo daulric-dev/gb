@@ -1,4 +1,3 @@
-import type { IncomingMessage, ServerResponse } from 'http';
 import { createApp } from '../src/createApp';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 
@@ -10,10 +9,7 @@ async function getApp() {
   return cachedApp;
 }
 
-export default async function handler(
-  req: IncomingMessage,
-  res: ServerResponse,
-) {
+export default async function handler(req: Request, res: Response) {
   const app = await getApp();
   const fastify = app.getHttpAdapter().getInstance();
   await fastify.ready();

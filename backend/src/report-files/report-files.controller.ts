@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
@@ -166,7 +166,7 @@ export class ReportFilesController {
     reply.raw.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
     reply.hijack(); // we own reply.raw from here
 
-    const archive = archiver('zip', { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     archive.on('error', (err) => {
       this.logger.error(`class-zip archive error: ${err.message}`);
       reply.raw.destroy(err);

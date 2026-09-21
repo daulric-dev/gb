@@ -1679,7 +1679,7 @@ export type Database = {
           file_path: string;
           file_size: number | null;
           generated_at: string;
-          generated_by: string;
+          generated_by: string | null;
           id: string;
           report_book_id: string;
         };
@@ -1687,7 +1687,7 @@ export type Database = {
           file_path: string;
           file_size?: number | null;
           generated_at?: string;
-          generated_by: string;
+          generated_by?: string | null;
           id?: string;
           report_book_id: string;
         };
@@ -1695,7 +1695,7 @@ export type Database = {
           file_path?: string;
           file_size?: number | null;
           generated_at?: string;
-          generated_by?: string;
+          generated_by?: string | null;
           id?: string;
           report_book_id?: string;
         };
@@ -1964,22 +1964,22 @@ export type Database = {
       };
       student_subject_profile: {
         Row: {
-          academic_year_id: string | null;
+          academic_year_id: string;
           id: number;
-          student_id: string | null;
-          subject_id: string | null;
+          student_id: string;
+          subject_id: string;
         };
         Insert: {
-          academic_year_id?: string | null;
+          academic_year_id: string;
           id?: number;
-          student_id?: string | null;
-          subject_id?: string | null;
+          student_id: string;
+          subject_id: string;
         };
         Update: {
-          academic_year_id?: string | null;
+          academic_year_id?: string;
           id?: number;
-          student_id?: string | null;
-          subject_id?: string | null;
+          student_id?: string;
+          subject_id?: string;
         };
         Relationships: [
           {

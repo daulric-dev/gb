@@ -77,6 +77,19 @@ export class ExcludeActivityDto {
   excluded!: boolean;
 }
 
+/** One student's mark, rather than the whole activity. */
+export class ExcludeStudentGradeDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  excluded!: boolean;
+
+  @ApiPropertyOptional({ example: 'Absent, sat the makeup instead' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class UpdateActivityDto {
   @ApiPropertyOptional()
   @IsOptional()

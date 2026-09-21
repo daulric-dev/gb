@@ -78,6 +78,21 @@ Both assessments and individual grades can be **excluded** from calculations:
 
 The `ExcludeDto` is shared between assessment and grade exclusion.
 
+### Two routes to a grade exclusion
+
+An individual grade can be excluded through either of two endpoints, which differ in **who is allowed to do it**:
+
+| | `PATCH /api/grades/:id/exclude` | `POST /api/activities/:activityId/students/:studentId/exclude` |
+| --- | --- | --- |
+| Identifies the grade by | its own id | the activity's assessment **and** the student |
+| Client | user client, under RLS | service client |
+| Allowed for | an admin in the school, or a teacher with a `teacher_subject_assignment` for that subject and year | anyone whose school owns the class the activity belongs to |
+| Used by | nothing yet | the class activity's Submissions tab |
+
+The second exists because the activity screens authorise by **class** throughout - marking a submission already does, through the service client. A class teacher who is not that subject's assigned teacher can set the mark and can exclude every mark on the activity at once, but would be refused by the RLS route for the same grade. That route remains the correct one for the gradebook at large, where subject assignment is the rule.
+
+The activity route resolves the grade by assessment and student together, so a student id from another class cannot reach a grade the activity does not own, and it returns `409` if the activity is not published (there is no assessment yet) or `404` if the student has not been marked.
+
 ## Assessment Endpoints
 
 All endpoints require `AuthGuard`.
@@ -222,7 +237,7 @@ Updates a grade's score or remarks. **RLS enforced.**
 
 ### `PATCH /api/grades/:id/exclude`
 
-Toggles the exclusion status of a grade.
+Toggles the exclusion status of a grade. Authorised by RLS - see [Two routes to a grade exclusion](#two-routes-to-a-grade-exclusion).
 
 **Body:**
 ```json
@@ -231,3 +246,36 @@ Toggles the exclusion status of a grade.
   "exclusionReason": "Student was absent"
 }
 ```
+
+---
+
+### `POST /api/activities/:activityId/students/:studentId/exclude`
+
+Leaves one student's mark for an activity out of the term, keeping the mark. Authorised by the class the activity belongs to - see [Two routes to a grade exclusion](#two-routes-to-a-grade-exclusion). Requires `grade:update`.
+
+**Body:**
+```json
+{
+  "excluded": true,
+  "reason": "Absent, sat the makeup instead"
+}
+```
+
+`reason` is optional, trimmed, and stored as null when blank. It is cleared whenever `excluded` is false, so a stale note cannot reappear the next time the mark is excluded.
+
+**Response:**
+```json
+{
+  "studentId": "...",
+  "gradeId": "...",
+  "isExcluded": true,
+  "exclusionReason": "Absent, sat the makeup instead"
+}
+```
+
+| Status | When |
+| --- | --- |
+| `409` | The activity is not published, so there is no assessment and nothing is being counted yet |
+| `404` | The student has no mark for this activity, or the activity is outside the caller's school |
+
+The exclusion appears on `GET /api/activities/:id/submissions`, whose rows carry `grade: { id, isExcluded, exclusionReason } | null`. A null `grade` means there is nothing to exclude yet - not that the mark counts.

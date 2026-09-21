@@ -41,6 +41,25 @@ Files upload straight to Supabase Storage over TUS, so the app needs to reach St
 - `SUPABASE_JWT_SECRET` must be set on the backend, and must belong to the same project as `SUPABASE_URL`, or Storage rejects every upload.
 - In production the upload endpoint is the hosted Supabase URL. The request-host derivation only applies when `SUPABASE_URL` is loopback, i.e. local development.
 
+## Build profiles
+
+`mobile/eas.json` defines three:
+
+| Profile | Distribution | Android artifact | For |
+| --- | --- | --- | --- |
+| `development` | internal | APK | A dev client you can load bundles into. Needs `expo-dev-client`, which is installed. |
+| `preview` | internal | APK | A release-mode build to hand round for testing, installable without a store. |
+| `production` | store | AAB | What goes to the App Store and Play. `autoIncrement` moves the build number. |
+
+```bash
+eas build --profile preview --platform ios
+eas build --profile production --platform all
+```
+
+`appVersionSource` is `remote`, so EAS holds the build number rather than `app.json`. The user-facing version stays in `app.json` (`expo.version`); the build number underneath it is EAS's to increment, which is what stops two uploads colliding.
+
+`EXPO_PUBLIC_API_URL` is present but **empty** in the `preview` and `production` profiles. It is deliberately not a placeholder like `https://api.example.com`: an unnoticed placeholder builds an app that points confidently at the wrong host, while an empty value leaves the launch guard to fire with a message naming the variable. Fill it in, or set it as an EAS environment variable, before building either profile.
+
 ## Checklist
 
 1. Backend deployed over HTTPS with `NODE_ENV=production`, `SUPABASE_SERVICE_ROLE_KEY` (the **JWT**), `SUPABASE_JWT_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` set.
@@ -50,6 +69,5 @@ Files upload straight to Supabase Storage over TUS, so the app needs to reach St
 
 ## Known gaps
 
-- There is no `eas.json` in the repo; build profiles are not yet defined.
-- The mobile OTP screen has not had the layout work the web one received - three stacked buttons, no auto-submit.
 - The claymorphic theme and safe-area handling were verified through Expo web and typechecks, **not on a device**.
+- No build has been run through EAS from this repo, so the profiles are unexercised.

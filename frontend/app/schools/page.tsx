@@ -181,7 +181,7 @@ export default function SchoolsPage() {
       );
       if (result?.autoJoined) {
         toast.success(`You've joined ${school.name}!`);
-        window.location.href = "/dashboard";
+        router.push("/dashboard")
       } else {
         pendingSchoolId.value = school.id;
         joiningId.value = null;
@@ -199,7 +199,7 @@ export default function SchoolsPage() {
   function handleSchoolCreated(school: School) {
     createOpen.value = false;
     toast.success(`${school.name} created! You're now the admin.`);
-    window.location.href = "/dashboard";
+    router.push("/dashboard")
   }
 
   async function handleLogout() {

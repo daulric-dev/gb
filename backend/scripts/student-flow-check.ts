@@ -1,17 +1,3 @@
-/**
- * Student flow check: the whole journey over real HTTP.
- *
- *   bun run scripts/student-flow-check.ts    (backend must be running locally)
- *
- * Staff issue a claim code, a student signs in, onboards, redeems it and reads
- * their portal, and is refused every staff route. Unit tests mock Supabase and
- * never touch the HTTP layer, so this is what exercises AuthGuard,
- * StudentGuard, PermissionGuard, cookie sessions and throttling together.
- *
- * Throttler counters are in-memory and per-process: re-running against a
- * long-lived server accumulates them, so restart the backend if a run starts
- * returning 429.
- */
 import { createClient } from '@supabase/supabase-js';
 
 const API = process.env.API_URL ?? 'http://127.0.0.1:3001/api';

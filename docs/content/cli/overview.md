@@ -28,7 +28,7 @@ All workspaces (frontend, backend, docs) are built via [Turbo](https://turbo.bui
 bun run build              # build all workspaces
 bun run build:frontend     # Next.js production build
 bun run build:backend      # NestJS production build
-bun run build:docs         # Docusaurus static site
+bun run build:docs         # Vite static site
 ```
 
 ### Compiling the backend to a standalone binary
@@ -39,7 +39,7 @@ bun run compile
 
 Runs `turbo run build` across all workspaces, then uses `bun build --compile` to produce a single native binary at `./dist/server`. The binary bundles the backend and all its dependencies - no Bun or Node.js installation required to run it.
 
-The frontend and docs cannot be compiled this way as they depend on the Next.js and Docusaurus runtimes respectively.
+Only the backend compiles this way. The frontend depends on the Next.js runtime, and the docs are already plain static files - `build:docs` emits HTML, CSS and JS that any file server can serve, so there is nothing to compile into a binary.
 
 ## Architecture
 

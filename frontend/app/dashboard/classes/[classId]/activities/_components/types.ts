@@ -66,6 +66,16 @@ export interface Scheme {
 export interface SubmissionRow {
   studentId: string;
   name: string;
+  /**
+   * The gradebook row behind the mark, present once the activity is published
+   * and this student has been marked. Null means there is nothing to exclude
+   * yet, not that the mark counts.
+   */
+  grade: {
+    id: string;
+    isExcluded: boolean;
+    exclusionReason: string | null;
+  } | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";

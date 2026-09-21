@@ -1,24 +1,5 @@
 import { createHmac } from 'node:crypto';
 
-/**
- * A short-lived Supabase session token, minted so a browser can upload
- * straight to Storage over TUS.
- *
- * The browser never holds a Supabase session of its own - this app's auth is
- * httpOnly cookies against the backend - and Storage's resumable endpoint
- * refuses signed upload tokens, so the backend mints one on demand. The token
- * is deliberately weak:
- *
- *   - it lasts minutes, not the life of a session;
- *   - it carries the caller's own id, so `get_user_school_id()` resolves to
- *     their school and the storage RLS policy confines writes to that prefix;
- *   - it is issued only after the caller has passed the usual permission guard.
- *
- * It is still a real `authenticated` token for its lifetime, so it must only
- * ever be handed to the user it was minted for, over the same TLS the rest of
- * the API uses.
- */
-
 const b64url = (input: Buffer | string): string =>
   Buffer.from(input)
     .toString('base64')

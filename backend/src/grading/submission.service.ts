@@ -622,7 +622,7 @@ export class SubmissionService {
     const { data: activity } = await supabase
       .schema('grading')
       .from('activity')
-      .select('id, student_group_id, points, kind')
+      .select('id, student_group_id, points, kind, assessment_id')
       .eq('id', activityId)
       .maybeSingle();
 
@@ -664,6 +664,23 @@ export class SubmissionService {
       (submissions ?? []).map((s: any) => [s.student_id as string, s]),
     );
 
+    // The gradebook row behind each mark. It is a separate table because a
+    // mark can be dropped from the term without touching the submission, so
+    // the exclusion lives here and not on the submission.
+    const { data: grades } =
+      activity.assessment_id && studentIds.length
+        ? await supabase
+            .schema('grading')
+            .from('grade')
+            .select('id, student_id, is_excluded, exclusion_reason')
+            .eq('assessment_id', activity.assessment_id)
+            .in('student_id', studentIds)
+        : { data: [] as any[] };
+
+    const gradeByStudent = new Map(
+      (grades ?? []).map((g: any) => [g.student_id as string, g]),
+    );
+
     const names = await this.fileNames(
       (submissions ?? []).map((s: any) => s.file_id as string),
     );
@@ -671,9 +688,18 @@ export class SubmissionService {
     return (students ?? [])
       .map((s: any) => {
         const submission = byStudent.get(s.id as string);
+        const grade = gradeByStudent.get(s.id as string);
         return {
           studentId: s.id,
           name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
+          grade: grade
+            ? {
+                id: grade.id as string,
+                isExcluded: !!grade.is_excluded,
+                exclusionReason:
+                  (grade.exclusion_reason as string | null) ?? null,
+              }
+            : null,
           submission: submission
             ? {
                 id: submission.id,

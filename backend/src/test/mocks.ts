@@ -216,19 +216,12 @@ export function createRoutingSupabase(
     createUserClient: () => client,
     getUser: config.getUser ?? (() => Promise.resolve(null)),
     getUserSchoolId: () => Promise.resolve(config.userSchoolId ?? 'school-1'),
-    scanOrThrow: () => Promise.resolve(),
     _calls: calls,
     _rpcCalls: rpcCalls,
     _client: client,
   };
 }
 
-/**
- * Await a promise expected to reject and return the thrown value, so callers
- * can assert on it: `expect(await expectRejection(p)).toBeInstanceOf(X)`.
- * Awaits a real promise (unlike bun's `expect(p).rejects`, which is not typed
- * as thenable and trips `@typescript-eslint/await-thenable`).
- */
 export async function expectRejection(
   promise: Promise<unknown>,
 ): Promise<unknown> {

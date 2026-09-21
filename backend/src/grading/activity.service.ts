@@ -530,6 +530,81 @@ export class ActivityService {
   }
 
   /**
+   * Leave one student's mark out of the term, keeping the mark itself.
+   *
+   * The narrow version of the activity-wide toggle above, for the case it
+   * cannot express: the work was fine, one student's result was not - absent
+   * for the test, sat a makeup, a paper lost. Deleting the submission would
+   * lose the mark and the evidence.
+   *
+   * Authorised the same way as marking the submission in the first place, by
+   * the class the activity belongs to. `PATCH /grades/:id/exclude` does the
+   * same thing under RLS keyed to a subject assignment, which is the right
+   * rule for the gradebook at large and the wrong one here: a class teacher
+   * who is not that subject's teacher can already set this mark, and can
+   * already exclude every mark on the activity at once.
+   */
+  async setStudentGradeExcluded(
+    userId: string,
+    activityId: string,
+    studentId: string,
+    excluded: boolean,
+    reason?: string,
+  ) {
+    const activity = await this.requireActivity(userId, activityId);
+
+    if (!activity.assessment_id) {
+      throw new ConflictException(
+        'Publish this before excluding a mark; nothing is counted yet',
+      );
+    }
+
+    const supabase = this.supabaseService.getServiceClient();
+
+    // Scoped to the assessment as well as the student, so an id from another
+    // class cannot be used to reach a grade this activity does not own.
+    const { data: grade } = await supabase
+      .schema('grading')
+      .from('grade')
+      .select('id')
+      .eq('assessment_id', activity.assessment_id)
+      .eq('student_id', studentId)
+      .maybeSingle();
+
+    if (!grade) {
+      throw new NotFoundException(
+        'There is no mark for this student to exclude yet',
+      );
+    }
+
+    const { error } = await supabase
+      .schema('grading')
+      .from('grade')
+      .update({
+        is_excluded: excluded,
+        // Dropping the reason when it goes back in stops a stale note
+        // reappearing the next time it is excluded.
+        exclusion_reason: excluded ? (reason?.trim() || null) : null,
+        updated_by: userId,
+      })
+      .eq('id', grade.id);
+
+    if (error) {
+      this.logger.error(`Failed to exclude grade: ${error.message}`);
+      throw new BadRequestException('Failed to update this mark');
+    }
+
+    await this.invalidate();
+
+    return {
+      studentId,
+      gradeId: grade.id as string,
+      isExcluded: excluded,
+      exclusionReason: excluded ? (reason?.trim() || null) : null,
+    };
+  }
+
+  /**
    * The quiz a question belongs to, checked to be the caller's and still a
    * draft.
    *

@@ -1,10 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
 import { isOriginAllowed } from './config/origins';
@@ -47,8 +44,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   const raw_instance = app.getHttpAdapter().getInstance();
 
-  raw_instance.get('/', (req, res) => {
-    res.send('gb for life');
+  raw_instance.get('/', (_, res) => {
+    res.send('gb');
   });
 
   raw_instance.get('/health', (req, res) => {
@@ -56,10 +53,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
   });
 
   app.enableCors({
-    // A function, because the web app is not the only browser client any more:
-    // the mobile app served over Expo web arrives from its own origin, on an
-    // address that changes with the DHCP lease. Native React Native sends no
-    // Origin header, so CORS never applies there.
     origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

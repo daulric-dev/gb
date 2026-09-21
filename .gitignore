@@ -92,4 +92,10 @@ docs/build/
 *.tsbuildinfo
 next-env.d.ts
 *.env*
+# Example env files are templates with no secrets in them, and the setup steps
+# tell you to copy one - so they have to be committed. Without this, a clone is
+# missing the file the developer guide says to copy, which is how
+# infrastructure/env.example ended up named without a leading dot.
+!**/.env.example
+!.env.example
 .expo

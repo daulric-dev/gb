@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { PassThrough } from 'node:stream';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { ReportFilesService } from './report-files.service';
 import { createMockSupabaseService } from '@/test/mocks';
 import type { StudentTermResult } from '@/calculation/interfaces/calculation.interfaces';
@@ -92,7 +92,7 @@ describe('prepareClassZip', () => {
     const service = makeService([student('A', 'One'), student('B', 'Two')]);
     const { entries } = await service.prepareClassZip('g1', 't1', 'term');
 
-    const archive = archiver('zip', { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     const sink = new PassThrough();
     const chunks: Buffer[] = [];
     sink.on('data', (c) => chunks.push(c as Buffer));

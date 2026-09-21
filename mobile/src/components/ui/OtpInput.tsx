@@ -17,11 +17,16 @@ export function OtpInput({
   onChange,
   length = 8,
   autoFocus,
+  error = false,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   length?: number;
   autoFocus?: boolean;
+  /** Paints every box red. The boxes are the cue people actually read. */
+  error?: boolean;
+  disabled?: boolean;
 }) {
   const { colors, clay } = useTheme();
   const inputRef = useRef<TextInput>(null);
@@ -48,7 +53,7 @@ export function OtpInput({
     : 34;
 
   function focus() {
-    inputRef.current?.focus();
+    if (!disabled) inputRef.current?.focus();
   }
 
   function renderSlot(index: number) {
@@ -62,7 +67,11 @@ export function OtpInput({
           {
             width: slotWidth,
             height: Math.round(slotWidth * 1.2),
-            borderColor: isActive ? colors.ring : "transparent",
+            borderColor: error
+              ? colors.destructive
+              : isActive
+                ? colors.ring
+                : "transparent",
             backgroundColor: colors.background,
             // The smallest step: on a box this size the larger radii
             // round it into a pill.
@@ -85,7 +94,7 @@ export function OtpInput({
   return (
     <Pressable
       onPress={focus}
-      style={styles.row}
+      style={[styles.row, disabled && { opacity: 0.6 }]}
       onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}
     >
       <View style={[styles.group, { gap: GAP }]}>{first.map(renderSlot)}</View>
@@ -107,6 +116,7 @@ export function OtpInput({
         autoComplete="sms-otp"
         maxLength={length}
         autoFocus={autoFocus}
+        editable={!disabled}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={styles.hidden}

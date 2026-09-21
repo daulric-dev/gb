@@ -23,6 +23,7 @@ import {
   AddQuestionDto,
   CreateActivityDto,
   ExcludeActivityDto,
+  ExcludeStudentGradeDto,
   GradeSubmissionDto,
   ListActivitiesQueryDto,
   UpdateActivityDto,
@@ -98,6 +99,24 @@ export class ActivityController {
       req.user.id as string,
       activityId,
       dto.excluded,
+    );
+  }
+
+  /** The same, for one student's mark rather than the whole activity. */
+  @RequirePermission('grade', 'update')
+  @Post(':activityId/students/:studentId/exclude')
+  async setStudentGradeExcluded(
+    @Req() req: any,
+    @Param('activityId') activityId: string,
+    @Param('studentId') studentId: string,
+    @Body() dto: ExcludeStudentGradeDto,
+  ) {
+    return this.activities.setStudentGradeExcluded(
+      req.user.id as string,
+      activityId,
+      studentId,
+      dto.excluded,
+      dto.reason,
     );
   }
 

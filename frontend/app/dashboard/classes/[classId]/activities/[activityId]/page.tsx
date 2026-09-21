@@ -25,7 +25,16 @@ import {
   Loader2,
   Pencil,
   Send,
+  SlashIcon,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { buildUrl } from "@/lib/api";
@@ -87,6 +96,10 @@ export default function ActivityDetailPage() {
   const draftPoints = useSignal("");
   const draftDueAt = useSignal("");
   const draftAttempts = useSignal("");
+
+  // Excluding one student's mark: the row being edited, and its reason.
+  const excludingStudent = useSignal<SubmissionRow | null>(null);
+  const exclusionReason = useSignal("");
 
   const load = useCallback(() => {
     if (!activityId) return;
@@ -182,6 +195,35 @@ export default function ActivityDetailPage() {
         excluded ? "Left out of the grade" : "Counting towards the grade",
       );
       load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+    } finally {
+      working.value = false;
+    }
+  }
+
+  /**
+   * The same escape hatch, for one student. The activity-wide toggle covers
+   * work that went wrong; this covers a result that did - absent for the test,
+   * sat a makeup - where the mark is worth keeping but not counting.
+   */
+  async function setStudentExcluded(
+    studentId: string,
+    excluded: boolean,
+    reason?: string,
+  ) {
+    working.value = true;
+    try {
+      await api(`/activities/${activityId}/students/${studentId}/exclude`, {
+        method: "POST",
+        body: { excluded, reason },
+      });
+      toast.success(
+        excluded ? "Mark left out of the grade" : "Mark counting again",
+      );
+      excludingStudent.value = null;
+      exclusionReason.value = "";
+      loadSubmissions();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to save");
     } finally {
@@ -562,6 +604,40 @@ export default function ActivityDetailPage() {
                           </span>
                         </div>
                       )}
+
+                      {/* Only once there is a gradebook row to act on. Before
+                          that there is no mark to leave out of anything. */}
+                      {can("grade", "update") && row.grade && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-xs"
+                          disabled={working.value}
+                          onClick={() => {
+                            if (row.grade!.isExcluded) {
+                              void setStudentExcluded(row.studentId, false);
+                            } else {
+                              exclusionReason.value = "";
+                              excludingStudent.value = row;
+                            }
+                          }}
+                        >
+                          {row.grade.isExcluded ? "Count it" : "Do not count"}
+                        </Button>
+                      )}
+
+                      {row.grade?.isExcluded && (
+                        <div className="flex w-full items-center gap-2 text-xs text-amber-600 dark:text-amber-500">
+                          <SlashIcon className="size-3.5 shrink-0" />
+                          <span className="truncate">
+                            Not counted towards the term
+                            {row.grade.exclusionReason
+                              ? ` — ${row.grade.exclusionReason}`
+                              : ""}
+                          </span>
+                        </div>
+                      )}
                     </>
                   )}
                 </CardContent>
@@ -570,6 +646,63 @@ export default function ActivityDetailPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={!!excludingStudent.value}
+        onOpenChange={(open) => {
+          if (!open) excludingStudent.value = null;
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Leave {excludingStudent.value?.name}&apos;s mark out
+            </DialogTitle>
+            <DialogDescription>
+              The mark is kept and stays visible here. It stops counting
+              towards the term grade until you put it back.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-1">
+            <Label htmlFor="exclusionReason" className="text-xs">
+              Reason (optional)
+            </Label>
+            <Textarea
+              id="exclusionReason"
+              rows={3}
+              placeholder="Absent, sat the makeup instead"
+              value={exclusionReason.value}
+              onChange={(e) => (exclusionReason.value = e.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => (excludingStudent.value = null)}
+              disabled={working.value}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                void setStudentExcluded(
+                  excludingStudent.value!.studentId,
+                  true,
+                  exclusionReason.value.trim() || undefined,
+                )
+              }
+              disabled={working.value}
+            >
+              {working.value && (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              )}
+              Do not count it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

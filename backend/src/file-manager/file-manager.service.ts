@@ -363,20 +363,6 @@ export class FileManagerService {
       throw new BadRequestException(check.reason);
     }
 
-    try {
-      await this.supabase.scanOrThrow(
-        buffer,
-        `${record.bucket}/${record.storage_path}`,
-      );
-    } catch (err) {
-      await this.discardUpload(
-        record,
-        'infected',
-        err instanceof Error ? err.message : 'Failed virus scan',
-      );
-      throw err;
-    }
-
     const { data: updated, error } = await client
       .schema('file_manager')
       .from('file')

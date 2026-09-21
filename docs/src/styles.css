@@ -1,0 +1,314 @@
+/*
+ * One stylesheet, no framework. The old site pulled in a theme with its own
+ * design system; this is a documentation page, and a documentation page is a
+ * sidebar, a column of text and a code block.
+ *
+ * The accent carries over from the previous theme so the docs still look like
+ * the same product.
+ */
+
+:root {
+  --bg: #ffffff;
+  --fg: #1c1e21;
+  --muted: #5c6370;
+  --border: #e3e6ea;
+  --surface: #f6f7f9;
+  --accent: #2563eb;
+  --accent-soft: #eff4ff;
+  --code-bg: #f6f7f9;
+  --sidebar-width: 17rem;
+}
+
+:root[data-theme="dark"] {
+  --bg: #16181d;
+  --fg: #e6e8eb;
+  --muted: #9aa1ab;
+  --border: #2a2e37;
+  --surface: #1d2027;
+  --accent: #60a5fa;
+  --accent-soft: #1b2739;
+  --code-bg: #1d2027;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Anchored headings clear the sticky header. */
+  scroll-padding-top: 4.5rem;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ── shell ───────────────────────────────────────────────────────────────── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 3.5rem;
+  padding: 0 1rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  color: var(--fg);
+  font-size: 1.05rem;
+}
+.brand span {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.theme-toggle,
+.menu-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 0.3rem 0.55rem;
+  line-height: 1;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.body {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* ── sidebar ─────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  position: sticky;
+  top: 3.5rem;
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  height: calc(100vh - 3.5rem);
+  overflow-y: auto;
+  padding: 1.25rem 0.75rem 3rem;
+  border-right: 1px solid var(--border);
+}
+
+.sidebar .section + .section {
+  margin-top: 1.4rem;
+}
+
+.section-label {
+  margin: 0 0 0.4rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar a {
+  display: block;
+  padding: 0.3rem 0.6rem;
+  border-radius: 7px;
+  color: var(--fg);
+  font-size: 0.89rem;
+}
+.sidebar a:hover {
+  background: var(--surface);
+  text-decoration: none;
+}
+.sidebar a.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── content ─────────────────────────────────────────────────────────────── */
+
+main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1.5rem 5rem;
+}
+
+.doc {
+  width: 100%;
+  max-width: 48rem;
+}
+
+.doc h1 {
+  font-size: 2rem;
+  line-height: 1.2;
+  margin: 0 0 1.25rem;
+}
+.doc h2 {
+  font-size: 1.4rem;
+  margin: 2.4rem 0 0.8rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.doc h3 {
+  font-size: 1.12rem;
+  margin: 1.8rem 0 0.6rem;
+}
+.doc h4 {
+  font-size: 1rem;
+  margin: 1.4rem 0 0.5rem;
+}
+
+/* Section anchors: present for linking, out of the way while reading. */
+.anchor {
+  float: left;
+  margin-left: -1rem;
+  width: 1rem;
+  opacity: 0;
+  color: var(--muted);
+  font-weight: 400;
+}
+h2:hover .anchor,
+h3:hover .anchor,
+h4:hover .anchor,
+.anchor:focus {
+  opacity: 1;
+}
+
+.doc p,
+.doc li {
+  overflow-wrap: break-word;
+}
+
+.doc code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.1rem 0.32rem;
+  font-size: 0.86em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.doc pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+}
+.doc pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.doc blockquote {
+  margin: 1.2rem 0;
+  padding: 0.6rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
+}
+.doc blockquote p {
+  margin: 0.35rem 0;
+}
+
+/* Wide tables are the norm here (env vars, before/after), so they scroll
+   rather than forcing the whole page sideways. */
+.doc table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  font-size: 0.9rem;
+}
+.doc th,
+.doc td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+.doc th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.doc img {
+  max-width: 100%;
+}
+
+.doc hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ── narrow screens ──────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .menu-toggle {
+    display: block;
+  }
+
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: 3.5rem;
+    left: 0;
+    width: min(20rem, 85vw);
+    background: var(--bg);
+    z-index: 15;
+  }
+
+  .body.menu-open .sidebar {
+    display: block;
+  }
+
+  main {
+    padding: 1.5rem 1rem 4rem;
+  }
+}

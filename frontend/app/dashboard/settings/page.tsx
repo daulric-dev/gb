@@ -97,7 +97,7 @@ export default function SettingsPage() {
     try {
       await api("/schools/leave", { method: "POST" });
       toast.success("You have left the school.");
-      window.location.href = "/schools";
+      router.push("/schools")
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Failed to leave school";
