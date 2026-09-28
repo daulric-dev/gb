@@ -38,7 +38,7 @@ jobs:
 
       # Trivy filesystem scan
       - name: Run Trivy (filesystem)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -76,14 +76,14 @@ jobs:
 
       # TruffleHog
       - name: Run TruffleHog
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@4dd8831c5f12599465d4d45c3c447b4018a34c85 # v3.97.9
         with:
           extra_args: --only-verified
         continue-on-error: true
 
       - name: Run TruffleHog (report file)
         run: |
-          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest git file:///repo --only-verified 2>&1 | tee trufflehog-report.txt || true
+          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:3.97.9 git file:///repo --only-verified 2>&1 | tee trufflehog-report.txt || true
         continue-on-error: true
 
       - name: Upload secret detection reports

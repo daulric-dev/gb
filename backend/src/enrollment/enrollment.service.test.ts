@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { EnrollmentService } from './enrollment.service';
 import {
   createMockSupabaseService,
@@ -35,6 +35,34 @@ function withSchoolChecks(
             table === 'student' ? studentBuilder : insertBuilder,
         }
       : { from: () => insertBuilder };
+}
+
+// Subject assignment also checks the subjects belong to the class's school, so
+// public.from() is routed by table: the class lookup, then the subjects.
+function withAssignChecks(
+  mockSupabase: ReturnType<typeof createMockSupabaseService>,
+  writeBuilder: ReturnType<typeof createMockQueryBuilder>,
+  studentIds: string[],
+  subjectIds: string[],
+) {
+  const groupBuilder = createMockQueryBuilder({
+    data: { academic_year_id: 'ay1', academic_year: { school_id: 'school-1' } },
+    error: null,
+  });
+  const subjectBuilder = createMockQueryBuilder({
+    data: subjectIds.map((id) => ({ id })),
+    error: null,
+  });
+  const studentBuilder = createMockQueryBuilder({
+    data: studentIds.map((id) => ({ id, school_id: 'school-1' })),
+    error: null,
+  });
+  mockSupabase._client.from = (table: string) =>
+    table === 'subject' ? subjectBuilder : groupBuilder;
+  (mockSupabase._client as any).schema = () => ({
+    from: (table: string) =>
+      table === 'student' ? studentBuilder : writeBuilder,
+  });
 }
 
 describe('EnrollmentService', () => {
@@ -154,19 +182,12 @@ describe('EnrollmentService', () => {
 
   describe('assignSubjects', () => {
     test('throws ConflictException on duplicate', () => {
-      const okBuilder = createMockQueryBuilder({
-        data: { academic_year_id: 'ay1' },
-        error: null,
-      });
       const errorBuilder = createMockQueryBuilder({
         data: null,
         error: { code: '23505', message: 'duplicate' },
       });
 
-      mockSupabase._client.from = () => okBuilder;
-      mockSupabase._client.schema = () => ({
-        from: () => errorBuilder,
-      });
+      withAssignChecks(mockSupabase, errorBuilder, ['s1'], ['sub1']);
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
       expect(
@@ -174,18 +195,24 @@ describe('EnrollmentService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    test('rejects a subject from another school', () => {
+      const builder = createMockQueryBuilder({ data: [], error: null });
+      // The subject lookup (scoped to the class's school) finds nothing.
+      withAssignChecks(mockSupabase, builder, ['s1'], []);
+      service = new EnrollmentService(mockSupabase as any, mockCache as any);
+
+      expect(
+        service.assignSubjects('c1', { studentId: 's1', subjectIds: ['other'] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     test('uses deleteByPrefix and delete', async () => {
       const builder = createMockQueryBuilder({
         data: [{ id: 'sp1' }],
         error: null,
       });
-      const groupBuilder = createMockQueryBuilder({
-        data: { academic_year_id: 'ay1' },
-        error: null,
-      });
 
-      mockSupabase._client.from = () => groupBuilder;
-      mockSupabase._client.schema = () => ({ from: () => builder });
+      withAssignChecks(mockSupabase, builder, ['s1'], ['sub1']);
       mockCache = createMockCacheService();
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 
@@ -208,13 +235,8 @@ describe('EnrollmentService', () => {
         data: [{ id: 'sp1' }, { id: 'sp2' }],
         error: null,
       });
-      const groupBuilder = createMockQueryBuilder({
-        data: { academic_year_id: 'ay1' },
-        error: null,
-      });
 
-      mockSupabase._client.from = () => groupBuilder;
-      mockSupabase._client.schema = () => ({ from: () => builder });
+      withAssignChecks(mockSupabase, builder, ['s1', 's2'], ['sub1']);
       mockCache = createMockCacheService();
       service = new EnrollmentService(mockSupabase as any, mockCache as any);
 

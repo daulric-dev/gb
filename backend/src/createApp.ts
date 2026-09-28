@@ -7,10 +7,18 @@ import multipart from '@fastify/multipart';
 import { isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 
+const trustProxyHops = (() => {
+  const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+  const value = Number.isInteger(hops) && hops >= 0 ? hops : 1;
+  return () => value;
+})();
+
 export async function createApp(): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ trustProxy: true }),
+    new FastifyAdapter({
+      trustProxy: (_address: string, hop: number) => hop < trustProxyHops(),
+    }),
   );
 
   await app.register(cookie);

@@ -221,6 +221,169 @@ async function main() {
     rename.error?.message ?? 'ok',
   );
 
+  // ── grades, school structure and assignments (20260928120000) ────────────
+  const { data: year } = await admin
+    .from('academic_year')
+    .insert({ school_id: schoolId, name: `RLS ${stamp}` })
+    .select('id')
+    .single();
+  const { data: term } = await admin
+    .from('term')
+    .insert({ academic_year_id: year!.id, name: 'Term 1' })
+    .select('id')
+    .single();
+  const { data: subject } = await admin
+    .from('subject')
+    .insert({ school_id: schoolId, name: 'Maths', code: `M${stamp}` })
+    .select('id')
+    .single();
+  const { data: assessment } = await admin
+    .schema('grading')
+    .from('assessment')
+    .insert({ term_id: term!.id, subject_id: subject!.id, title: 'Test', max_score: 100 })
+    .select('id')
+    .single();
+  const { data: grade } = await admin
+    .schema('grading')
+    .from('grade')
+    .insert({ assessment_id: assessment!.id, student_id: ownRecord!.id, score: 40 })
+    .select('id')
+    .single();
+
+  const bump = await asStudent
+    .schema('grading')
+    .from('grade')
+    .update({ score: 100 })
+    .eq('id', grade!.id)
+    .select('id');
+  check(
+    'student cannot change their own grade',
+    !!bump.error || bump.data.length === 0,
+    bump.error?.code ?? `${bump.data?.length} row(s)`,
+  );
+
+  const peek = await asStudent.schema('grading').from('grade').select('id');
+  check(
+    'student cannot read the gradebook directly',
+    !!peek.error || peek.data.length === 0,
+    peek.error?.code ?? `${peek.data?.length} row(s)`,
+  );
+
+  const teacherGrade = await asTeacher
+    .schema('grading')
+    .from('grade')
+    .update({ score: 55 })
+    .eq('id', grade!.id)
+    .select('id');
+  check(
+    'staff can still write grades',
+    !teacherGrade.error && teacherGrade.data.length === 1,
+    teacherGrade.error?.message ?? `${teacherGrade.data?.length} row(s)`,
+  );
+
+  for (const [who, client] of [
+    ['student', asStudent],
+    ['teacher', asTeacher],
+  ] as const) {
+    const drop = await client.from('school').delete().eq('id', schoolId).select('id');
+    check(
+      `${who} cannot delete the school`,
+      !!drop.error || drop.data.length === 0,
+      drop.error?.code ?? `${drop.data?.length} row(s)`,
+    );
+  }
+
+  const readSchool = await asStudent.from('school').select('id');
+  check(
+    'members still read their school',
+    !readSchool.error && readSchool.data.length === 1,
+    readSchool.error?.message ?? `${readSchool.data?.length} row(s)`,
+  );
+
+  const selfAssign = await asTeacher
+    .schema('staff')
+    .from('teacher_subject_assignment')
+    .insert({ user_profile_id: teacherId, subject_id: subject!.id, academic_year_id: year!.id })
+    .select('id');
+  check(
+    'a teacher cannot assign themselves to a subject',
+    !!selfAssign.error || selfAssign.data.length === 0,
+    selfAssign.error?.code ?? `${selfAssign.data?.length} row(s)`,
+  );
+
+  const dropAdmin = await asTeacher
+    .from('user_profile')
+    .delete()
+    .eq('id', adminId)
+    .select('id');
+  check(
+    "a teacher cannot delete the admin's profile",
+    !!dropAdmin.error || dropAdmin.data.length === 0,
+    dropAdmin.error?.code ?? `${dropAdmin.data?.length} row(s)`,
+  );
+
+  const dropSelf = await asStudent
+    .from('user_profile')
+    .delete()
+    .eq('id', studentId)
+    .select('id');
+  check(
+    'a user cannot delete their own profile row',
+    !!dropSelf.error || dropSelf.data.length === 0,
+    dropSelf.error?.code ?? `${dropSelf.data?.length} row(s)`,
+  );
+
+  const forged = await asStudent
+    .from('user_profile')
+    .insert({ id: studentId, school_id: schoolId, role: 'admin', account_type: 'staff' })
+    .select('id');
+  check(
+    'a user cannot insert a profile (self-promotion via re-insert)',
+    !!forged.error,
+    forged.error?.code ?? JSON.stringify(forged.data),
+  );
+
+  const impersonate = await asStudent
+    .from('announcement')
+    .insert({ school_id: schoolId, title: 'Hi', author_user_profile_id: adminId })
+    .select('id');
+  check(
+    'student cannot post announcements (or as someone else)',
+    !!impersonate.error || impersonate.data.length === 0,
+    impersonate.error?.code ?? `${impersonate.data?.length} row(s)`,
+  );
+
+  // ── storage ──────────────────────────────────────────────────────────────
+  await admin.storage
+    .from('report-books')
+    .upload(`${schoolId}/rls-${stamp}.pdf`, new Blob(['%PDF-1.4']), {
+      contentType: 'application/pdf',
+    });
+  const books = await asStudent.storage.from('report-books').list(schoolId);
+  check(
+    'student cannot list report cards',
+    !!books.error || (books.data ?? []).length === 0,
+    books.error?.message ?? `${books.data?.length} object(s)`,
+  );
+
+  const elsewhere = await asTeacher.storage
+    .from('file-manager')
+    .upload(`${schoolId}/${adminId}/x-${stamp}.txt`, new Blob(['x']), {
+      contentType: 'text/plain',
+    });
+  check(
+    "a user cannot upload into someone else's folder",
+    !!elsewhere.error,
+    elsewhere.error?.message ?? 'uploaded',
+  );
+
+  const own = await asTeacher.storage
+    .from('file-manager')
+    .upload(`${schoolId}/${teacherId}/x-${stamp}.txt`, new Blob(['x']), {
+      contentType: 'text/plain',
+    });
+  check('a user can upload into their own folder', !own.error, own.error?.message ?? 'ok');
+
   // ── the service role is unaffected ───────────────────────────────────────
   const svcRole = await admin
     .from('user_profile')

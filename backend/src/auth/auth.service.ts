@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -191,6 +192,19 @@ export class AuthService {
 
   async onboard(userId: string, dto: OnboardDto) {
     const supabase = this.supabaseService.getServiceClient();
+
+    // Account type is chosen once. Re-onboarding a student account as staff
+    // would hand it a teacher membership (and every default teacher
+    // permission) on dedicated deployments.
+    const { data: current } = await supabase
+      .from('user_profile')
+      .select('account_type')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (current?.account_type === 'student' && dto.accountType !== 'student') {
+      throw new ForbiddenException('Student accounts cannot onboard as staff');
+    }
 
     if (dto.accountType === 'student') {
       const { data, error } = await supabase

@@ -27,6 +27,16 @@ export class ClassService {
   async createClass(userId: string, dto: CreateClassDto) {
     const supabase = this.supabaseService.getServiceClient();
 
+    const schoolId = await this.supabaseService.getUserSchoolId(userId);
+    const { data: year } = await supabase
+      .from('academic_year')
+      .select('id')
+      .eq('id', dto.academicYearId)
+      .eq('school_id', schoolId)
+      .maybeSingle();
+    if (!year) throw new NotFoundException('Academic year not found');
+    await this.assertSubjectsInSchool(dto.subjectIds ?? [], schoolId);
+
     const { data: group, error: groupError } = await supabase
       .from('student_group')
       .insert({
@@ -450,6 +460,20 @@ export class ClassService {
     }
 
     const academicYearId = group.academic_year_id;
+    const classSchoolId = (group.academic_year as { school_id?: string } | null)
+      ?.school_id;
+    if (!classSchoolId) throw new NotFoundException('Class not found');
+
+    const { data: teacherMembership } = await supabase
+      .from('school_management')
+      .select('id')
+      .eq('user_id', dto.teacherId)
+      .eq('school_id', classSchoolId)
+      .maybeSingle();
+    if (!teacherMembership) {
+      throw new BadRequestException('Teacher is not a member of this school');
+    }
+    await this.assertSubjectsInSchool(dto.subjectIds, classSchoolId);
 
     const { data: existingAssignment } = await supabase
       .schema('staff')
@@ -571,5 +595,19 @@ export class ClassService {
     await this.cache.deleteByPrefix(`my-classes:${teacherId}`);
     await this.cache.delete(`my-subjects:${teacherId}:${classId}`);
     return 'Teacher removed from class';
+  }
+
+  private async assertSubjectsInSchool(subjectIds: string[], schoolId: string) {
+    if (subjectIds.length === 0) return;
+    const unique = [...new Set(subjectIds)];
+    const { data } = await this.supabaseService
+      .getServiceClient()
+      .from('subject')
+      .select('id')
+      .in('id', unique)
+      .eq('school_id', schoolId);
+    if ((data ?? []).length !== unique.length) {
+      throw new BadRequestException('One or more subjects were not found');
+    }
   }
 }

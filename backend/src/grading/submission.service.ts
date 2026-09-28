@@ -478,6 +478,21 @@ export class SubmissionService {
 
     const supabase = this.supabaseService.getServiceClient();
 
+    // A client-supplied fileId must be the student's own finished upload;
+    // otherwise any file id - a classmate's work included - could be handed in.
+    if (input.fileId && input.fileId !== draft.file_id) {
+      const owner = await this.userIdForStudent(studentId);
+      const { data: file } = await supabase
+        .schema('file_manager')
+        .from('file')
+        .select('id')
+        .eq('id', input.fileId)
+        .eq('owner_id', owner)
+        .eq('status', 'ready')
+        .maybeSingle();
+      if (!file) throw new BadRequestException('File not found');
+    }
+
     const { data, error } = await supabase
       .schema('grading')
       .from('submission')

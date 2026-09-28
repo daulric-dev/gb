@@ -133,7 +133,7 @@ export class ReportService {
 
     if (bookErr) {
       this.logger.error(`Failed to upsert report books: ${bookErr.message}`);
-      throw new BadRequestException(bookErr.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const bookIdByStudentId = new Map<string, string>();
@@ -170,7 +170,7 @@ export class ReportService {
         this.logger.error(
           `Failed to upsert report entries: ${entryErr.message}`,
         );
-        throw new BadRequestException(entryErr.message);
+        throw new BadRequestException(ReportService.FAILED);
       }
     }
 
@@ -209,7 +209,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`findByClassAndTerm: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const list = reports ?? [];
@@ -248,7 +248,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`findOne: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!report) {
@@ -298,7 +298,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`findStudentReport: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!report) {
@@ -349,7 +349,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`updateReport: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data;
@@ -389,7 +389,7 @@ export class ReportService {
         throw new ForbiddenException('You cannot update this report entry');
       }
       this.logger.error(`updateReportEntry: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data;
@@ -408,7 +408,7 @@ export class ReportService {
 
     if (fetchError) {
       this.logger.error(`publish fetch: ${fetchError.message}`);
-      throw new BadRequestException(fetchError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!existing) {
@@ -432,7 +432,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`publish: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data;
@@ -451,7 +451,7 @@ export class ReportService {
 
     if (fetchError) {
       this.logger.error(`sendToMinistry fetch: ${fetchError.message}`);
-      throw new BadRequestException(fetchError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!existing) {
@@ -478,7 +478,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`sendToMinistry: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data;
@@ -499,7 +499,7 @@ export class ReportService {
 
     if (loadError) {
       this.logger.error(`regenerateReport load: ${loadError.message}`);
-      throw new BadRequestException(loadError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!reportRow) {
@@ -530,7 +530,7 @@ export class ReportService {
 
     if (cohortError) {
       this.logger.error(`regenerateReport cohort: ${cohortError.message}`);
-      throw new BadRequestException(cohortError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!cohort?.length) {
@@ -594,7 +594,7 @@ export class ReportService {
               this.logger.error(
                 `regenerateReport rank update: ${error.message}`,
               );
-              throw new BadRequestException(error.message);
+              throw new BadRequestException(ReportService.FAILED);
             }
           }),
       ];
@@ -644,7 +644,7 @@ export class ReportService {
 
       if (entryErr) {
         this.logger.error(`regenerateReport entry upsert: ${entryErr.message}`);
-        throw new BadRequestException(entryErr.message);
+        throw new BadRequestException(ReportService.FAILED);
       }
     }
 
@@ -652,6 +652,17 @@ export class ReportService {
   }
 
   async savePdf(reportId: string, userId: string, dto: SavePdfDto) {
+    await this.assertReportInCallerSchool(reportId, userId);
+
+    const filePath = dto.filePath.replace(/^report-books\//, '');
+    if (
+      !filePath.startsWith(`${reportId}/`) ||
+      filePath.includes('..') ||
+      filePath.includes('//')
+    ) {
+      throw new BadRequestException('Invalid file path');
+    }
+
     const serviceClient = this.supabaseService.getServiceClient();
 
     const { data, error } = await serviceClient
@@ -659,7 +670,7 @@ export class ReportService {
       .from('report_book_pdf')
       .insert({
         report_book_id: reportId,
-        file_path: dto.filePath,
+        file_path: filePath,
         file_size: dto.fileSize,
         generated_by: userId,
         generated_at: new Date().toISOString(),
@@ -669,7 +680,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`savePdf: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data;
@@ -677,8 +688,13 @@ export class ReportService {
 
   private static readonly PDF_BUCKET = 'report-books';
 
+  /** Database detail is logged, never returned: it exposes schema internals. */
+  private static readonly FAILED = 'Could not complete the report request';
+
   /** Upload a PDF buffer to Supabase Storage and record metadata. */
   async uploadPdf(reportId: string, userId: string, fileBuffer: Buffer) {
+    await this.assertReportInCallerSchool(reportId, userId);
+
     const serviceClient = this.supabaseService.getServiceClient();
 
     const objectPath = `${reportId}/${Date.now()}-${crypto.randomUUID()}.pdf`;
@@ -692,9 +708,7 @@ export class ReportService {
 
     if (uploadError) {
       this.logger.error(`uploadPdf storage: ${uploadError.message}`);
-      throw new BadRequestException(
-        `Storage upload failed: ${uploadError.message}`,
-      );
+      throw new BadRequestException('Storage upload failed');
     }
 
     const { data, error } = await serviceClient
@@ -712,7 +726,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`uploadPdf record: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     // Surface the generated report in the owner's file manager.
@@ -766,7 +780,9 @@ export class ReportService {
   }
 
   /** Download a PDF from Supabase Storage and return the raw bytes. */
-  async downloadPdf(reportId: string, pdfId: string) {
+  async downloadPdf(reportId: string, pdfId: string, userId: string) {
+    await this.assertReportInCallerSchool(reportId, userId);
+
     const serviceClient = this.supabaseService.getServiceClient();
 
     const { data: pdfRow, error: fetchError } = await serviceClient
@@ -778,7 +794,7 @@ export class ReportService {
 
     if (fetchError) {
       this.logger.error(`downloadPdf fetch: ${fetchError.message}`);
-      throw new BadRequestException(fetchError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!pdfRow) {
@@ -795,9 +811,7 @@ export class ReportService {
 
     if (dlError) {
       this.logger.error(`downloadPdf storage: ${dlError.message}`);
-      throw new BadRequestException(
-        `Storage download failed: ${dlError.message}`,
-      );
+      throw new BadRequestException('Storage download failed');
     }
 
     const arrayBuffer = await data.arrayBuffer();
@@ -826,7 +840,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`getPdfHistory: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const list = rows ?? [];
@@ -872,7 +886,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`getLatestPdf: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data;
@@ -928,7 +942,7 @@ export class ReportService {
     });
     if (error) {
       this.logger.error(`getClassSummary reports: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const list = reports ?? [];
@@ -987,7 +1001,7 @@ export class ReportService {
       .order('sort_order', { ascending: true });
     if (entryErr) {
       this.logger.error(`getClassSummary entries: ${entryErr.message}`);
-      throw new BadRequestException(entryErr.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const subjectIds = [
@@ -1145,9 +1159,7 @@ export class ReportService {
       this.logger.error(
         `uploadClassSummaryFile storage: ${uploadError.message}`,
       );
-      throw new BadRequestException(
-        `Storage upload failed: ${uploadError.message}`,
-      );
+      throw new BadRequestException('Storage upload failed');
     }
 
     const { data: existing } = await serviceClient
@@ -1176,7 +1188,7 @@ export class ReportService {
 
       if (error) {
         this.logger.error(`uploadClassSummaryFile update: ${error.message}`);
-        throw new BadRequestException(error.message);
+        throw new BadRequestException(ReportService.FAILED);
       }
 
       await this.enqueueFileManagerIngest({
@@ -1209,7 +1221,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`uploadClassSummaryFile insert: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     await this.enqueueFileManagerIngest({
@@ -1246,7 +1258,7 @@ export class ReportService {
       this.logger.error(
         `downloadClassSummaryFile fetch: ${fetchError.message}`,
       );
-      throw new BadRequestException(fetchError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!fileRow) {
@@ -1259,9 +1271,7 @@ export class ReportService {
 
     if (dlError) {
       this.logger.error(`downloadClassSummaryFile storage: ${dlError.message}`);
-      throw new BadRequestException(
-        `Storage download failed: ${dlError.message}`,
-      );
+      throw new BadRequestException('Storage download failed');
     }
 
     const contentTypeMap: Record<string, string> = {
@@ -1302,7 +1312,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`getClassSummaryFiles: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return data ?? [];
@@ -1321,7 +1331,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`assertReportInCallerSchool fetch: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!report) {
@@ -1354,7 +1364,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`loadFullReportWithServiceClient: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     if (!report) {
@@ -1392,7 +1402,7 @@ export class ReportService {
       this.logger.error(
         `loadReportEntriesAndPdfsServiceRole entries: ${entriesError.message}`,
       );
-      throw new BadRequestException(entriesError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const rawEntries = entryRows ?? [];
@@ -1420,7 +1430,7 @@ export class ReportService {
       this.logger.error(
         `loadReportEntriesAndPdfsServiceRole pdfs: ${pdfsError.message}`,
       );
-      throw new BadRequestException(pdfsError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return {
@@ -1450,7 +1460,7 @@ export class ReportService {
       this.logger.error(
         `loadReportEntriesAndPdfs entries: ${entriesError.message}`,
       );
-      throw new BadRequestException(entriesError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const rawEntries = entryRows ?? [];
@@ -1479,7 +1489,7 @@ export class ReportService {
 
     if (pdfsError) {
       this.logger.error(`loadReportEntriesAndPdfs pdfs: ${pdfsError.message}`);
-      throw new BadRequestException(pdfsError.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     return {
@@ -1506,7 +1516,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`fetchStudentsByIdsForUser: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const m = new Map<string, Record<string, unknown>>();
@@ -1534,7 +1544,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`fetchStudentsByIdsServiceRole: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const m = new Map<string, Record<string, unknown>>();
@@ -1561,7 +1571,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`fetchSubjectsByIdsForUser: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const m = new Map<string, Record<string, unknown>>();
@@ -1586,7 +1596,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`fetchSubjectsByIdsServiceRole: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const m = new Map<string, Record<string, unknown>>();
@@ -1615,7 +1625,7 @@ export class ReportService {
 
     if (error) {
       this.logger.error(`fetchUserProfilesByIdsForUser: ${error.message}`);
-      throw new BadRequestException(error.message);
+      throw new BadRequestException(ReportService.FAILED);
     }
 
     const m = new Map<

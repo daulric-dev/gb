@@ -511,10 +511,12 @@ export class SchoolService {
       throw new BadRequestException('Failed to remove member');
     }
 
+    // Only detach the user if this was their active school.
     await supabase
       .from('user_profile')
       .update({ school_id: null, role: null })
-      .eq('id', membership.user_id);
+      .eq('id', membership.user_id)
+      .eq('school_id', membership.school_id);
 
     await this.cache.delete(`profile:${membership.user_id}`);
     return { removed: true };

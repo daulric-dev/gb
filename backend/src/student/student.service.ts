@@ -421,6 +421,11 @@ export class StudentService {
       (list) => list.map((s) => (s.id === studentId ? data : s)),
       STUDENT_TTL,
     );
+    // StudentGuard caches the linked context; deactivation must take effect
+    // on the student's next request, not when that cache expires.
+    if (dto.isActive !== undefined && data.user_profile_id) {
+      await this.cache.delete(`student-context:${data.user_profile_id}`);
+    }
     return data;
   }
 }

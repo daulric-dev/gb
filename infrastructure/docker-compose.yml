@@ -29,7 +29,8 @@ x-app: &app
 
 x-app-env: &app-env
   USE_REDIS: "true"
-  REDIS_URL: "redis://redis:6379"
+  # REDIS_PASSWORD comes from infrastructure/.env (see env.example).
+  REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379"
   # Chat DMs are always on and share USE_REDIS/REDIS_URL for pub/sub fan-out.
   # Multi-participant channels are gated off until the channel UI ships.
   CHAT_CHANNELS_ENABLED: "false"
@@ -37,10 +38,20 @@ x-app-env: &app-env
 services:
   redis:
     image: redis:7.4-alpine
-    ports:
-      - "6379:6379"
+    # No published port: only the app replicas on appnet need Redis. It
+    # carries chat pub/sub, presence, the cache and the job queue.
     restart: unless-stopped
-    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    environment:
+      REDISCLI_AUTH: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in infrastructure/.env}"
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --appendonly
+      - "no"
+      - --requirepass
+      - "${REDIS_PASSWORD:?Set REDIS_PASSWORD in infrastructure/.env}"
     volumes:
       - redis-data:/data
     networks:

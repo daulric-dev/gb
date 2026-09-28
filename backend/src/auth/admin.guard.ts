@@ -25,12 +25,22 @@ export class AdminGuard implements CanActivate {
 
     const { data: profile } = await supabase
       .from('user_profile')
-      .select('role, is_active')
+      .select('role, is_active, school_id')
       .eq('id', userId)
       .single();
 
-    if (profile?.role === 'admin' && profile?.is_active) {
-      return true;
+    if (profile?.role === 'admin' && profile?.is_active && profile.school_id) {
+      // The profile role is a denormalised copy; the membership in the active
+      // school is the source of truth.
+      const { data: membership } = await supabase
+        .from('school_management')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('school_id', profile.school_id)
+        .eq('role', 'admin')
+        .maybeSingle();
+
+      if (membership) return true;
     }
 
     this.logger.warn(`User ${userId} denied admin access`);

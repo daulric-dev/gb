@@ -276,11 +276,13 @@ export class ReportController {
   async downloadPdf(
     @Param('id') id: string,
     @Param('pdfId') pdfId: string,
+    @Req() req: any,
     @Res() reply: FastifyReply,
   ) {
     const { buffer, filename } = await this.reportService.downloadPdf(
       id,
       pdfId,
+      req.user.id,
     );
     reply
       .header('Content-Type', 'application/pdf')

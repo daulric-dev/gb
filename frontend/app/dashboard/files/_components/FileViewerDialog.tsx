@@ -26,6 +26,7 @@ export function FileViewerDialog({
 }) {
   useSignals();
   const url = useSignal<string | null>(null);
+  const text = useSignal<string | null>(null);
   const loading = useSignal(false);
   const failed = useSignal(false);
   const downloading = useSignal(false);
@@ -36,9 +37,22 @@ export function FileViewerDialog({
     failed.value = false;
     let objectUrl: string | null = null;
 
+    const type = file.contentType ?? "";
     fetchFileBlob(file.id, "content")
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
+      .then(async (blob) => {
+        // Text is shown as text, never framed: a blob: URL runs in this
+        // origin, so an HTML payload in an iframe would have the app's session.
+        if (type.startsWith("text/")) {
+          text.value = await blob.text();
+          return;
+        }
+        // Pin the type the server vouched for, so the browser can't sniff a
+        // "PDF" into something it would render as a document.
+        const typed =
+          type === "application/pdf" || type.startsWith("image/")
+            ? new Blob([blob], { type })
+            : blob;
+        objectUrl = URL.createObjectURL(typed);
         url.value = objectUrl;
       })
       .catch(() => {
@@ -50,6 +64,7 @@ export function FileViewerDialog({
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       url.value = null;
+      text.value = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file?.id]);
@@ -69,8 +84,7 @@ export function FileViewerDialog({
 
   const contentType = file?.contentType ?? "";
   const isImage = contentType.startsWith("image/");
-  const isFrameable =
-    contentType === "application/pdf" || contentType.startsWith("text/");
+  const isPdf = contentType === "application/pdf";
 
   return (
     <Dialog
@@ -87,6 +101,10 @@ export function FileViewerDialog({
         <div className="flex h-[70vh] items-center justify-center overflow-hidden rounded-md border bg-muted/30">
           {loading.value ? (
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          ) : text.value !== null ? (
+            <pre className="h-full w-full overflow-auto whitespace-pre-wrap wrap-break-words p-4 text-left font-mono text-xs">
+              {text.value}
+            </pre>
           ) : failed.value || !url.value ? (
             <p className="text-sm text-muted-foreground">
               Unable to display this file.
@@ -98,7 +116,7 @@ export function FileViewerDialog({
               alt={file?.name ?? ""}
               className="max-h-full max-w-full object-contain"
             />
-          ) : isFrameable ? (
+          ) : isPdf ? (
             <iframe
               src={url.value}
               title={file?.name ?? "file"}

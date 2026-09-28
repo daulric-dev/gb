@@ -42,7 +42,7 @@
     "bullmq": "^6.3.8",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
-    "fastify": "^5.11.3",
+    "fastify": "^5.12.1",
     "ioredis": "^6.0.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

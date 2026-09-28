@@ -498,6 +498,19 @@ export class ChatService {
     const schoolId = await this.supabase.getUserSchoolId(userId);
     const client = this.supabase.getServiceClient();
 
+    // Same rule as direct messages: members come from the creator's school.
+    const invited = [...new Set(memberIds)].filter((id) => id !== userId);
+    if (invited.length > 0) {
+      const { data: sameSchool } = await client
+        .from('user_profile')
+        .select('id')
+        .in('id', invited)
+        .eq('school_id', schoolId);
+      if ((sameSchool ?? []).length !== invited.length) {
+        throw new ForbiddenException('Channel members must be in your school');
+      }
+    }
+
     const { data: created, error } = await client
       .schema('chat')
       .from('conversation')
