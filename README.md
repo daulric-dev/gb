@@ -137,28 +137,6 @@ When the backend is running, Swagger docs are available at:
 http://localhost:3001/docs
 ```
 
-## CLI (`gb`)
-
-The project includes a monorepo-aware Git CLI at `command/index.ts`. It scopes git operations to individual services so you don't accidentally commit cross-service changes.
-
-```bash
-bun link        # registers "gbsh" globally
-bun run gb <command>
-```
-
-| Command | Description |
-|---------|-------------|
-| `gb status` | Show git status grouped by service |
-| `gb affected` | List services with changes vs a base branch |
-| `gb branch` | Create a service-scoped branch |
-| `gb commit` | Stage and commit (multi-service loop) |
-| `gb diff` | Show diff for a service or all |
-| `gb push` | Push current branch to origin |
-| `gb pr` | Create a pull request via GitHub, GitLab, or Bitbucket API |
-| `gb run` | Run a package.json script in a service |
-
-**Full documentation:** [`docs/cli/`](docs/cli/overview.md) - architecture, interactive prompts, and detailed command reference.
-
 ## Scripts
 
 All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and parallel execution.
