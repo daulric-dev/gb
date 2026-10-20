@@ -39,7 +39,7 @@
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "archiver": "^8.0.0",
-    "bullmq": "^6.3.8",
+    "bullmq": "^6.3.14",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "fastify": "^5.12.1",
