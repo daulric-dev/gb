@@ -43,7 +43,7 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
         {
           name: 'default',
           ttl: 60_000,
-          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+          limit: process.env.NODE_ENV === 'production' ? 1_200 : 100_000,
           getTracker: (req: ThrottlerReq) =>
             getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
         },
@@ -53,6 +53,13 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
           limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
           getTracker: (req: ThrottlerReq) =>
             req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
+        },
+        {
+          name: 'auth-ip',
+          ttl: 60 * 60 * 1000,
+          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+          getTracker: (req: ThrottlerReq) =>
+            `ip:${getClientIp(req) ?? 'unknown'}`,
         },
         {
           name: 'claim-code',

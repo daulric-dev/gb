@@ -155,4 +155,44 @@ describe('ReportService', () => {
       service.updateReport('user1', 'r1', { classTeacherRemark: 'x' }),
     ).rejects.toMatchObject({ status: 403 });
   });
+
+  describe('report PDFs', () => {
+    function inSchool(schoolId: string) {
+      const result = {
+        data: { academic_year: { school_id: schoolId } },
+        error: null,
+      };
+      const builder = createMockQueryBuilder(result);
+      mockSupabase.getServiceClient = () =>
+        ({ from: () => builder, schema: () => ({ from: () => builder }) }) as any;
+    }
+
+    test('downloadPdf rejects a report from another school', () => {
+      inSchool('school-2');
+      expect(service.downloadPdf('r1', 'p1', 'user1')).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    test('savePdf rejects a report from another school', () => {
+      inSchool('school-2');
+      expect(
+        service.savePdf('r1', 'user1', { filePath: 'r1/a.pdf', fileSize: 1 }),
+      ).rejects.toMatchObject({ status: 403 });
+    });
+
+    test('savePdf rejects a path outside the report prefix', async () => {
+      inSchool('school-1');
+      for (const filePath of [
+        'other-report/a.pdf',
+        'school-2/secret.pdf',
+        'r1/../other/a.pdf',
+        'r1//a.pdf',
+      ]) {
+        await expect(
+          service.savePdf('r1', 'user1', { filePath, fileSize: 1 }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+    });
+  });
 });

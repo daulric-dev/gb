@@ -6,7 +6,8 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     ports:
-      - "6379:6379"
+      # Loopback only, so the unauthenticated dev Redis isn't on the network.
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:

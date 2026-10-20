@@ -1,160 +1,149 @@
-import { describe, test, expect } from 'bun:test';
+import { afterAll, beforeAll, describe, test, expect } from 'bun:test';
 import {
+  accessTokenFromCookies,
   getClientIp,
   getSessionTracker,
   fingerprint,
-  type ThrottlerReq,
+  verifiedSubject,
 } from './tracker';
+import { mintUploadToken } from '@/supabase/upload-token';
+
+const SECRET = 'test-jwt-secret-with-enough-length';
+
+function token(userId: string, ttlSeconds = 60, secret = SECRET) {
+  return mintUploadToken({ userId, ttlSeconds, secret }).token;
+}
+
+function ssrCookie(accessToken: string) {
+  const json = JSON.stringify({ access_token: accessToken, token_type: 'bearer' });
+  return `base64-${Buffer.from(json).toString('base64url')}`;
+}
 
 describe('getClientIp', () => {
-  test('prefers X-Real-IP (set by the trusted proxy to the true peer)', () => {
-    const req: ThrottlerReq = {
+  test('uses req.ip, which Fastify resolves from trusted proxy hops', () => {
+    expect(getClientIp({ headers: {}, ip: '10.0.0.5' })).toBe('10.0.0.5');
+  });
+
+  test('ignores client-sent X-Real-IP / X-Forwarded-For', () => {
+    const req = {
       headers: {
-        'x-real-ip': '203.0.113.7',
-        'x-forwarded-for': '1.2.3.4, 203.0.113.7',
+        'x-real-ip': '6.6.6.6',
+        'x-forwarded-for': '7.7.7.7, 8.8.8.8',
       },
-      ip: '10.0.0.1',
-    };
-    expect(getClientIp(req)).toBe('203.0.113.7');
-  });
-
-  test('trims whitespace around X-Real-IP', () => {
-    const req: ThrottlerReq = { headers: { 'x-real-ip': '  203.0.113.7  ' } };
-    expect(getClientIp(req)).toBe('203.0.113.7');
-  });
-
-  test('ignores an empty/whitespace X-Real-IP and falls through to XFF', () => {
-    const req: ThrottlerReq = {
-      headers: { 'x-real-ip': '   ', 'x-forwarded-for': '1.1.1.1, 2.2.2.2' },
-    };
-    expect(getClientIp(req)).toBe('2.2.2.2');
-  });
-
-  test('uses the RIGHTMOST X-Forwarded-For entry (proxy-appended, trustworthy)', () => {
-    // Attacker spoofs the leftmost entries; nginx appends the real peer last.
-    const req: ThrottlerReq = {
-      headers: { 'x-forwarded-for': '6.6.6.6, 7.7.7.7, 203.0.113.9' },
+      ip: '203.0.113.9',
     };
     expect(getClientIp(req)).toBe('203.0.113.9');
   });
 
-  test('a spoofed leftmost XFF entry cannot change the bucket', () => {
-    const real = { headers: { 'x-forwarded-for': '203.0.113.9' } };
-    const spoofed = {
-      headers: { 'x-forwarded-for': 'evil-rotating-value, 203.0.113.9' },
-    };
-    expect(getClientIp(spoofed)).toBe(getClientIp(real));
-  });
-
-  test('handles surrounding whitespace in XFF entries', () => {
-    const req: ThrottlerReq = {
-      headers: { 'x-forwarded-for': ' 1.1.1.1 ,  9.9.9.9 ' },
-    };
-    expect(getClientIp(req)).toBe('9.9.9.9');
-  });
-
-  test('handles an array-valued XFF header by taking the last element', () => {
-    const req: ThrottlerReq = {
-      headers: { 'x-forwarded-for': ['1.1.1.1', '8.8.8.8'] },
-    };
-    expect(getClientIp(req)).toBe('8.8.8.8');
-  });
-
-  test('falls back to req.ip when no proxy headers are present', () => {
-    expect(getClientIp({ headers: {}, ip: '10.0.0.5' })).toBe('10.0.0.5');
-  });
-
-  test('falls back to req.ip when there are no headers at all', () => {
-    expect(getClientIp({ ip: '10.0.0.5' })).toBe('10.0.0.5');
-  });
-
-  test('falls back to req.ip when XFF is present but empty', () => {
-    const req: ThrottlerReq = {
-      headers: { 'x-forwarded-for': '   ,  ' },
-      ip: '10.0.0.6',
-    };
-    expect(getClientIp(req)).toBe('10.0.0.6');
-  });
-
-  test('falls back to req.ip when XFF is an empty array', () => {
-    const req: ThrottlerReq = {
-      headers: { 'x-forwarded-for': [] },
-      ip: '10.0.0.7',
-    };
-    expect(getClientIp(req)).toBe('10.0.0.7');
-  });
-
   test('returns undefined when nothing identifies the client', () => {
     expect(getClientIp({ headers: {} })).toBeUndefined();
+    expect(getClientIp({ headers: {}, ip: '' })).toBeUndefined();
+  });
+});
+
+describe('verifiedSubject', () => {
+  test('returns sub for a correctly signed, unexpired token', () => {
+    expect(verifiedSubject(token('user-1'), SECRET)).toBe('user-1');
+  });
+
+  test('rejects a token signed with another secret', () => {
+    expect(verifiedSubject(token('user-1', 60, 'other'), SECRET)).toBeUndefined();
+  });
+
+  test('rejects an expired token', () => {
+    const t = token('user-1', 60);
+    const later = Math.floor(Date.now() / 1000) + 3600;
+    expect(verifiedSubject(t, SECRET, later)).toBeUndefined();
+  });
+
+  test('rejects a tampered payload', () => {
+    const [h, , s] = token('user-1').split('.');
+    const forged = Buffer.from(JSON.stringify({ sub: 'admin' })).toString('base64url');
+    expect(verifiedSubject(`${h}.${forged}.${s}`, SECRET)).toBeUndefined();
+  });
+
+  test('rejects garbage and missing secrets', () => {
+    expect(verifiedSubject('abc.def', SECRET)).toBeUndefined();
+    expect(verifiedSubject('a.b.c', SECRET)).toBeUndefined();
+    expect(verifiedSubject(token('user-1'), undefined)).toBeUndefined();
+    expect(verifiedSubject(token('user-1'), '')).toBeUndefined();
+  });
+});
+
+describe('accessTokenFromCookies', () => {
+  test('reads a base64 @supabase/ssr session cookie', () => {
+    const t = token('user-1');
+    expect(accessTokenFromCookies({ 'sb-ref-auth-token': ssrCookie(t) })).toBe(t);
+  });
+
+  test('reassembles chunked cookies in order', () => {
+    const t = token('user-1');
+    const full = ssrCookie(t);
+    const mid = Math.floor(full.length / 2);
+    expect(
+      accessTokenFromCookies({
+        'sb-ref-auth-token.1': full.slice(mid),
+        'sb-ref-auth-token.0': full.slice(0, mid),
+      }),
+    ).toBe(t);
+  });
+
+  test('ignores unrelated and malformed cookies', () => {
+    expect(accessTokenFromCookies({ theme: 'dark' })).toBeUndefined();
+    expect(accessTokenFromCookies({ 'sb-ref-auth-token': 'junk' })).toBeUndefined();
   });
 });
 
 describe('getSessionTracker', () => {
-  test('derives a stable token from a Bearer header', () => {
-    const a = getSessionTracker({
-      headers: { authorization: 'Bearer abc.def' },
-    });
-    const b = getSessionTracker({
-      headers: { authorization: 'Bearer abc.def' },
-    });
-    expect(a).toBe(b);
-    expect(a).toStartWith('u:');
+  const prev = process.env.SUPABASE_JWT_SECRET;
+  beforeAll(() => {
+    process.env.SUPABASE_JWT_SECRET = SECRET;
+  });
+  afterAll(() => {
+    if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = prev;
   });
 
-  test('is case-insensitive on the Bearer scheme and trims the token', () => {
-    const a = getSessionTracker({
-      headers: { authorization: 'bearer   tok ' },
-    });
-    const b = getSessionTracker({ headers: { authorization: 'Bearer tok' } });
-    expect(a).toBe(b);
+  test('keys a verified Bearer token by user, not by token', () => {
+    const a = getSessionTracker({ headers: { authorization: `Bearer ${token('u1', 60)}` } });
+    const b = getSessionTracker({ headers: { authorization: `bearer  ${token('u1', 120)} ` } });
+    expect(a).toBe(`u:${fingerprint('u1')}`);
+    expect(b).toBe(a);
   });
 
-  test('different tokens map to different trackers', () => {
-    const a = getSessionTracker({ headers: { authorization: 'Bearer one' } });
-    const b = getSessionTracker({ headers: { authorization: 'Bearer two' } });
-    expect(a).not.toBe(b);
-  });
-
-  test('does not leak the raw token (it is hashed and truncated)', () => {
-    const token = 'super-secret-jwt-value';
-    const tracker = getSessionTracker({
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(tracker).not.toContain(token);
-    expect(tracker).toBe(`u:${fingerprint(token)}`);
-  });
-
-  test('falls back to Supabase auth-token cookies when no Bearer header', () => {
-    const tracker = getSessionTracker({
-      cookies: { 'sb-xyz-auth-token': 'v1', unrelated: 'x' },
-    });
-    expect(tracker).toStartWith('u:');
-  });
-
-  test('cookie tracker is order-independent', () => {
-    const a = getSessionTracker({
-      cookies: { 'sb-a-auth-token': '1', 'sb-b-auth-token': '2' },
-    });
-    const b = getSessionTracker({
-      cookies: { 'sb-b-auth-token': '2', 'sb-a-auth-token': '1' },
-    });
-    expect(a).toBe(b);
-  });
-
-  test('ignores non-auth cookies entirely', () => {
+  test('random Bearer values do not get their own bucket', () => {
     expect(
-      getSessionTracker({ cookies: { theme: 'dark', session: 'x' } }),
+      getSessionTracker({ headers: { authorization: 'Bearer rotating-1' } }),
     ).toBeUndefined();
+    expect(
+      getSessionTracker({ headers: { authorization: 'Bearer a.b.c' } }),
+    ).toBeUndefined();
+  });
+
+  test('falls back to the session cookie', () => {
+    const tracker = getSessionTracker({
+      cookies: { 'sb-ref-auth-token': ssrCookie(token('u2')), theme: 'x' },
+    });
+    expect(tracker).toBe(`u:${fingerprint('u2')}`);
+  });
+
+  test('forged cookies do not get their own bucket', () => {
+    expect(
+      getSessionTracker({ cookies: { 'sb-ref-auth-token': ssrCookie('x.y.z') } }),
+    ).toBeUndefined();
+  });
+
+  test('does not leak the user id or token', () => {
+    const t = token('user-secret-id');
+    const tracker = getSessionTracker({ headers: { authorization: `Bearer ${t}` } });
+    expect(tracker).not.toContain('user-secret-id');
+    expect(tracker).not.toContain(t);
   });
 
   test('returns undefined when there is no identifying material', () => {
     expect(getSessionTracker({ headers: {} })).toBeUndefined();
     expect(getSessionTracker({})).toBeUndefined();
+    expect(getSessionTracker({ headers: { authorization: 'Basic xyz' } })).toBeUndefined();
   });
 
-  test('a malformed Authorization header does not produce a tracker', () => {
-    expect(
-      getSessionTracker({ headers: { authorization: 'Basic xyz' } }),
-    ).toBeUndefined();
-  });
 });

@@ -381,8 +381,12 @@ export class EnrollmentService {
     return data.academic_year_id;
   }
 
-  private async assertSameSchool(classId: string, studentIds: string[]) {
-    if (studentIds.length === 0) return;
+  private async assertSameSchool(
+    classId: string,
+    studentIds: string[],
+    subjectIds: string[] = [],
+  ) {
+    if (studentIds.length === 0 && subjectIds.length === 0) return;
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: group, error: groupErr } = await supabase
@@ -398,6 +402,22 @@ export class EnrollmentService {
         'Could not determine school for this class',
       );
     }
+
+    if (subjectIds.length > 0) {
+      const unique = [...new Set(subjectIds)];
+      const { data: subjects, error: subjErr } = await supabase
+        .from('subject')
+        .select('id')
+        .in('id', unique)
+        .eq('school_id', classSchoolId);
+      if (subjErr || (subjects ?? []).length !== unique.length) {
+        throw new BadRequestException(
+          'Subjects must belong to the same school as the class',
+        );
+      }
+    }
+
+    if (studentIds.length === 0) return;
 
     const { data: studentsData, error: studErr } = await supabase
       .schema('student')
@@ -424,6 +444,7 @@ export class EnrollmentService {
   }
 
   async assignSubjects(classId: string, dto: AssignSubjectsDto) {
+    await this.assertSameSchool(classId, [dto.studentId], dto.subjectIds);
     const academicYearId = await this.getAcademicYearId(classId);
     const supabase = this.supabaseService.getServiceClient();
 
@@ -455,6 +476,7 @@ export class EnrollmentService {
   }
 
   async bulkAssignSubjects(classId: string, dto: BulkAssignSubjectsDto) {
+    await this.assertSameSchool(classId, dto.studentIds, dto.subjectIds);
     const academicYearId = await this.getAcademicYearId(classId);
     const supabase = this.supabaseService.getServiceClient();
 

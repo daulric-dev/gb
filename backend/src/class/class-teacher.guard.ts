@@ -10,14 +10,6 @@ import { SupabaseService } from '@/supabase/supabase.service';
 @Injectable()
 export class ClassTeacherGuard implements CanActivate {
   protected readonly logger = new Logger(ClassTeacherGuard.name);
-
-  /**
-   * Whether teaching one subject in the class is enough.
-   *
-   * Off here: the strict guard protects the actions that belong to whoever
-   * owns the class - generating the report book, submitting to the ministry,
-   * changing the roster. ClassMemberGuard turns it on for reads.
-   */
   protected readonly allowSubjectTeachers: boolean = false;
 
   constructor(protected readonly supabaseService: SupabaseService) {}
@@ -26,29 +18,33 @@ export class ClassTeacherGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const userId = request.user?.id;
 
-    let classId =
-      request.params?.classId ??
-      request.body?.studentGroupId ??
-      request.query?.studentGroupId ??
-      undefined;
+    let classId: string | undefined;
 
-    if (!classId) {
-      const url = String(request.url ?? '');
-      const isReportScoped =
-        url.includes('/reports') && !url.includes('/report-entries/');
+    const url = String(request.url ?? '');
+    const isReportScoped = url.includes('/reports') && !url.includes('/report-entries/');
 
+    if (isReportScoped && request.params?.id) {
+      const { data: report } = await this.supabaseService
+        .getServiceClient()
+        .schema('reporting')
+        .from('report_book')
+        .select('student_group_id')
+        .eq('id', request.params.id)
+        .maybeSingle();
+      classId = report?.student_group_id ?? undefined;
+    } else {
+      classId =
+        request.params?.classId ??
+        request.body?.studentGroupId ??
+        request.query?.studentGroupId ??
+        undefined;
+    }
+
+    if (!classId && !request.params?.id) {
       if (isReportScoped) {
         const supabase = this.supabaseService.getServiceClient();
 
-        if (request.params?.id) {
-          const { data: report } = await supabase
-            .schema('reporting')
-            .from('report_book')
-            .select('student_group_id')
-            .eq('id', request.params.id)
-            .maybeSingle();
-          classId = report?.student_group_id ?? undefined;
-        } else if (request.query?.studentId && request.query?.termId) {
+        if (request.query?.studentId && request.query?.termId) {
           const { data: report } = await supabase
             .schema('reporting')
             .from('report_book')

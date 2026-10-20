@@ -286,10 +286,14 @@ export class PermissionService {
       );
     }
 
+    // user_profile.role is the role in the user's *active* school, and
+    // AdminGuard / is_admin() trust it. Only mirror when this membership is
+    // that school, or an admin of any school could grant admin elsewhere.
     const { error: profileError } = await supabase
       .from('user_profile')
       .update({ role })
-      .eq('id', membership.user_id);
+      .eq('id', membership.user_id)
+      .eq('school_id', schoolId);
     if (profileError) {
       this.logger.error(
         `Failed to mirror member role ${membership.user_id}: ${profileError.message}`,

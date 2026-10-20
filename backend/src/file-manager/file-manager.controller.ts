@@ -194,6 +194,10 @@ export class FileManagerController {
       )
       .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
+      // User content on the API origin: never sniff it into HTML, and if it is
+      // opened directly, give it no script or same-origin access.
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Security-Policy', 'sandbox')
       .send(buffer);
   }
 
@@ -216,6 +220,10 @@ export class FileManagerController {
       )
       .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
+      // User content on the API origin: never sniff it into HTML, and if it is
+      // opened directly, give it no script or same-origin access.
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Security-Policy', 'sandbox')
       .send(buffer);
   }
 

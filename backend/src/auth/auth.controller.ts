@@ -45,14 +45,20 @@ export class AuthController {
   ) {}
 
   @Post('otp/send')
-  @Throttle({ 'auth-strict': { limit: 5, ttl: 60 * 60 * 1000 } })
+  @Throttle({
+    'auth-strict': { limit: 5, ttl: 60 * 60 * 1000 },
+    'auth-ip': { limit: 30, ttl: 60 * 60 * 1000 },
+  })
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
     const message = await this.authService.sendOtp(dto.email);
     return this.versioning.resolve(req, 'auth.message')(message);
   }
 
   @Post('otp/verify')
-  @Throttle({ 'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 } })
+  @Throttle({
+    'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 },
+    'auth-ip': { limit: 100, ttl: 15 * 60 * 1000 },
+  })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
     @Req() req: FastifyRequest,
