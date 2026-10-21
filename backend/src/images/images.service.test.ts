@@ -1,66 +1,69 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { Readable } from 'node:stream';
 import { BadRequestException } from '@nestjs/common';
 import { ImagesService } from './images.service';
-import {
-  createMockQueryBuilder,
-  createMockCacheService,
-  expectRejection,
-} from '@/test/mocks';
+import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 
+/** The URL shape avatars were stored under before the move to S3. */
 const PUBLIC_PREFIX =
-  'https://proj.supabase.co/storage/v1/object/public/images/';
+  'https://proj.example.co/storage/v1/object/public/images/';
 
-/** Build a Supabase mock tailored to ImagesService's needs. */
-function makeSupabase(
-  opts: {
-    profile?: { data: any; error: any };
-    exists?: boolean;
-    downloadType?: string;
-  } = {},
-) {
-  const builder = createMockQueryBuilder(
-    opts.profile ?? { data: { id: 'u', avatar_url: 'x' }, error: null },
-  );
-  let removeCalls = 0;
-  const storage = {
-    exists: () => Promise.resolve({ data: opts.exists ?? true, error: null }),
-    getPublicUrl: (p: string) => ({
-      data: { publicUrl: `${PUBLIC_PREFIX}${p}` },
-    }),
-    download: () =>
-      Promise.resolve({
-        // A real Blob exposes both `.type` and `.arrayBuffer()`.
-        data: {
-          type: opts.downloadType ?? 'image/png',
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
-        },
-        error: null,
-      }),
-    remove: () => {
-      removeCalls++;
-      return Promise.resolve({ data: null, error: null });
-    },
-  };
-  const client = {
-    from: () => builder,
-    schema: () => ({ from: () => builder }),
-    storage: { from: () => storage },
-  };
-  let uploadCalls = 0;
-  return {
-    svc: {
-      getServiceClient: () => client,
-      uploadFile: (_b: string, path: string) => {
-        uploadCalls++;
-        return Promise.resolve({ path, publicUrl: `${PUBLIC_PREFIX}${path}` });
-      },
-    },
-    uploadCount: () => uploadCalls,
-    removeCount: () => removeCalls,
-  };
+type MockOpts = {
+  /** The user_profile row the database returns (null: no such row). */
+  profile?: { data: any; error: any };
+  exists?: boolean;
+  downloadType?: string;
+  /** Bytes the stored object holds (for upload completion). */
+  stored?: Buffer;
+};
+
+/** A database mock whose user_profile row is `opts.profile`. */
+function makePrisma(opts: MockOpts = {}) {
+  const prisma = createMockPrisma();
+  const row = opts.profile ? opts.profile.data : { id: 'u', avatar_url: 'x' };
+  prisma.user_profile.findUnique.mockResolvedValue(row);
+  prisma.user_profile.update.mockImplementation(async ({ where, data }) => ({
+    id: where.id,
+    ...data,
+  }));
+  return prisma;
 }
 
-const config = { get: () => 'https://proj.supabase.co' } as any;
+/** Build an ImagesService over storage and database mocks. */
+function makeService(opts: MockOpts, cache: unknown) {
+  return new ImagesService(
+    makeStorage(opts) as any,
+    makePrisma(opts) as any,
+    cache as any,
+  );
+}
+
+/** A StorageService stand-in. */
+function makeStorage(opts: MockOpts = {}) {
+  const type = opts.downloadType ?? 'image/png';
+  const stored = opts.stored ?? pngBytes();
+  return {
+    put: mock(() => Promise.resolve()),
+    delete: mock(() => Promise.resolve()),
+    exists: mock(() =>
+      Promise.resolve(
+        opts.exists === false
+          ? null
+          : { size: stored.byteLength, contentType: type },
+      ),
+    ),
+    get: mock(() =>
+      Promise.resolve({
+        body: Readable.from([Buffer.alloc(8)]),
+        contentType: type,
+        size: 8,
+      }),
+    ),
+    getBuffer: mock(() => Promise.resolve(stored)),
+    uploadUrl: mock((key: string) => Promise.resolve(`https://s3.test/${key}?sig`)),
+  };
+}
 
 // Minimal MultipartFile stand-in.
 function fakeFile(
@@ -98,11 +101,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
   });
 
   function svc(opts = {}) {
-    return new ImagesService(
-      makeSupabase(opts).svc as any,
-      cache as any,
-      config,
-    );
+    return makeService(opts, cache);
   }
 
   test('accepts the caller-owned canonical path', async () => {
@@ -161,11 +160,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
 
   test('rejects the canonical path of a DIFFERENT user even if it exists', async () => {
     // exists() would return true; ownership check must still block it.
-    const s = new ImagesService(
-      makeSupabase({ exists: true }).svc as any,
-      cache as any,
-      config,
-    );
+    const s = makeService({ exists: true }, cache);
     expect(
       await expectRejection(
         s.completeResumableUpload('attacker', 'avatars/owner.png'),
@@ -179,8 +174,7 @@ describe('ImagesService.setImageToUserProfile (content-type validation)', () => 
   beforeEach(() => {
     cache = createMockCacheService();
   });
-  const svc = () =>
-    new ImagesService(makeSupabase().svc as any, cache as any, config);
+  const svc = () => makeService({}, cache);
 
   test('accepts a real PNG', async () => {
     const res = await svc().setImageToUserProfile(
@@ -267,12 +261,9 @@ describe('ImagesService.getImageFromUserProfile (stored path hardening)', () => 
   });
 
   function svcWithAvatar(avatar_url: string | null) {
-    return new ImagesService(
-      makeSupabase({
-        profile: { data: avatar_url ? { avatar_url } : null, error: null },
-      }).svc as any,
-      cache as any,
-      config,
+    return makeService(
+      { profile: { data: avatar_url ? { avatar_url } : null, error: null } },
+      cache,
     );
   }
 
@@ -318,6 +309,78 @@ describe('ImagesService.getImageFromUserProfile (stored path hardening)', () => 
       await expectRejection(
         svcWithAvatar(null).getImageFromUserProfile('user-1'),
       ),
+    ).toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ImagesService avatar URLs and direct uploads', () => {
+  let cache: ReturnType<typeof createMockCacheService>;
+  beforeEach(() => {
+    cache = createMockCacheService();
+  });
+
+  test('a new avatar URL points at the public API route', async () => {
+    const prev = process.env.API_URL;
+    process.env.API_URL = 'https://api.example.com/';
+    try {
+      const res = await makeService({}, cache).setImageToUserProfile(
+        'u',
+        fakeFile(pngBytes(), 'image/png'),
+      );
+      expect(res.avatar_url).toMatch(
+        /^https:\/\/api\.example\.com\/api\/images\/avatars\/u\.png\?t=\d+$/,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.API_URL;
+      else process.env.API_URL = prev;
+    }
+  });
+
+  test('reads an avatar stored under the new URL shape', async () => {
+    const res = await makeService(
+      {
+        profile: {
+          data: { avatar_url: 'http://x/api/images/avatars/user-1.png?t=1' },
+          error: null,
+        },
+      },
+      cache,
+    ).getImageFromUserProfile('user-1');
+    expect(res.contentType).toBe('image/png');
+  });
+
+  test('readAvatar refuses anything outside avatars/', async () => {
+    const svc = makeService({}, cache);
+    expect(await svc.readAvatar('avatars/../x')).toBeNull();
+    expect(await svc.readAvatar('other/x.png')).toBeNull();
+  });
+
+  test('createResumableUpload returns a presigned PUT ticket', async () => {
+    const res = await makeService({}, cache).createResumableUpload(
+      'u',
+      'me.png',
+      'image/png',
+      1000,
+    );
+    expect(res).toMatchObject({
+      path: 'avatars/u.png',
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/png' },
+    });
+    expect(res.uploadUrl).toContain('images/avatars/u.png');
+  });
+
+  test('completion rejects an object that is not the image it claims', async () => {
+    const svc = makeService({ stored: Buffer.from('<svg>nope</svg>....') }, cache);
+    expect(
+      await expectRejection(svc.completeResumableUpload('u', 'avatars/u.png')),
+    ).toBeInstanceOf(BadRequestException);
+  });
+
+  test('completion fails when nothing was uploaded', async () => {
+    const svc = makeService({ exists: false }, cache);
+    expect(
+      await expectRejection(svc.completeResumableUpload('u', 'avatars/u.png')),
     ).toBeInstanceOf(BadRequestException);
   });
 });

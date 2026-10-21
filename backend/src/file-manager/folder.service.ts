@@ -4,21 +4,31 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { userSchoolId } from '@/common/user-school';
+import { isUniqueViolation } from '@/common/db-values';
 
-const FOLDER_COLUMNS =
-  'id, school_id, owner_id, parent_id, name, is_system, created_at, updated_at';
+const FOLDER_COLUMNS = {
+  id: true,
+  school_id: true,
+  owner_id: true,
+  parent_id: true,
+  name: true,
+  is_system: true,
+  created_at: true,
+  updated_at: true,
+} satisfies Prisma.folderSelect;
 
-interface FolderRow {
-  id: string;
-  school_id: string;
-  owner_id: string;
-  parent_id: string | null;
-  name: string;
-  is_system: boolean;
-  created_at: string;
-  updated_at: string;
-}
+type FolderRow = Prisma.folderGetPayload<{ select: typeof FOLDER_COLUMNS }>;
+
+/**
+ * Ids come straight from the URL. Postgres rejects a malformed uuid, which
+ * the API has always reported as "not found" rather than a server error.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (id: string) => UUID_RE.test(id);
 
 /**
  * The owner's folder tree in the file manager. Folders are private to the
@@ -29,51 +39,39 @@ interface FolderRow {
 export class FolderService {
   private readonly logger = new Logger(FolderService.name);
 
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Live child folders of `parentId` (or the roots when null), by name. */
   async listChildren(userId: string, parentId: string | null) {
-    let query = this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('folder')
-      .select(FOLDER_COLUMNS)
-      .eq('owner_id', userId)
-      .is('deleted_at', null)
-      .order('name', { ascending: true });
-
-    query = parentId
-      ? query.eq('parent_id', parentId)
-      : query.is('parent_id', null);
-
-    const { data } = await query;
-    return (data ?? []).map((f: FolderRow) => this.present(f));
+    const data = await this.prisma.folder.findMany({
+      where: {
+        owner_id: userId,
+        deleted_at: null,
+        parent_id: parentId ?? null,
+      },
+      select: FOLDER_COLUMNS,
+      orderBy: { name: 'asc' },
+    });
+    return (data ?? []).map((f) => this.present(f));
   }
 
   /** Every live folder the caller owns (for a move-target picker). */
   async listAll(userId: string) {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('folder')
-      .select(FOLDER_COLUMNS)
-      .eq('owner_id', userId)
-      .is('deleted_at', null)
-      .order('name', { ascending: true });
-    return (data ?? []).map((f: FolderRow) => this.present(f));
+    const data = await this.prisma.folder.findMany({
+      where: { owner_id: userId, deleted_at: null },
+      select: FOLDER_COLUMNS,
+      orderBy: { name: 'asc' },
+    });
+    return (data ?? []).map((f) => this.present(f));
   }
 
   /** Load one of the caller's live folders, or throw. */
   async getOwned(userId: string, folderId: string): Promise<FolderRow> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('folder')
-      .select(FOLDER_COLUMNS)
-      .eq('id', folderId)
-      .eq('owner_id', userId)
-      .is('deleted_at', null)
-      .maybeSingle();
+    if (!isUuid(folderId)) throw new NotFoundException('Folder not found');
+    const data = await this.prisma.folder.findFirst({
+      where: { id: folderId, owner_id: userId, deleted_at: null },
+      select: FOLDER_COLUMNS,
+    });
     if (!data) throw new NotFoundException('Folder not found');
     return data;
   }
@@ -93,7 +91,10 @@ export class FolderService {
 
   async create(userId: string, name: string, parentId?: string | null) {
     const clean = this.cleanName(name);
-    const schoolId = await this.supabase.getUserSchoolId(userId);
+    const schoolId = await userSchoolId(this.prisma, userId);
+    if (!schoolId) {
+      throw new Error(`Could not resolve school for user ${userId}`);
+    }
 
     // A given parent must be one of the caller's own live folders.
     let parent: string | null = null;
@@ -102,29 +103,26 @@ export class FolderService {
       parent = p.id;
     }
 
-    const { data, error } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('folder')
-      .insert({
-        school_id: schoolId,
-        owner_id: userId,
-        parent_id: parent,
-        name: clean,
-      })
-      .select(FOLDER_COLUMNS)
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
+    try {
+      const data = await this.prisma.folder.create({
+        data: {
+          school_id: schoolId,
+          owner_id: userId,
+          parent_id: parent,
+          name: clean,
+        },
+        select: FOLDER_COLUMNS,
+      });
+      return this.present(data);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
         throw new BadRequestException(
           'A folder with that name already exists here',
         );
       }
-      this.logger.error(`Failed to create folder: ${error.message}`);
+      this.logger.error(`Failed to create folder: ${(error as Error).message}`);
       throw new BadRequestException('Failed to create folder');
     }
-    return this.present(data);
   }
 
   async rename(userId: string, folderId: string, name: string) {
@@ -134,24 +132,21 @@ export class FolderService {
     }
     const clean = this.cleanName(name);
 
-    const { data, error } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('folder')
-      .update({ name: clean, updated_at: new Date().toISOString() })
-      .eq('id', folderId)
-      .select(FOLDER_COLUMNS)
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
+    try {
+      const data = await this.prisma.folder.update({
+        where: { id: folderId },
+        data: { name: clean, updated_at: new Date() },
+        select: FOLDER_COLUMNS,
+      });
+      return this.present(data);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
         throw new BadRequestException(
           'A folder with that name already exists here',
         );
       }
       throw new BadRequestException('Failed to rename folder');
     }
-    return this.present(data);
   }
 
   /**
@@ -179,25 +174,21 @@ export class FolderService {
       }
     }
 
-    const { data, error } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('folder')
-      .update({ parent_id: newParentId, updated_at: new Date().toISOString() })
-      .eq('id', folderId)
-      .eq('owner_id', userId)
-      .select(FOLDER_COLUMNS)
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
+    try {
+      const data = await this.prisma.folder.update({
+        where: { id: folderId, owner_id: userId },
+        data: { parent_id: newParentId, updated_at: new Date() },
+        select: FOLDER_COLUMNS,
+      });
+      return this.present(data);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
         throw new BadRequestException(
           'A folder with that name already exists there',
         );
       }
       throw new BadRequestException('Failed to move folder');
     }
-    return this.present(data);
   }
 
   /**
@@ -208,29 +199,28 @@ export class FolderService {
    */
   async remove(userId: string, folderId: string) {
     await this.getOwned(userId, folderId);
-    const client = this.supabase.getServiceClient();
-    const now = new Date().toISOString();
+    const now = new Date();
 
     const ids = await this.collectSubtree(userId, folderId);
 
-    const { error: fileErr } = await client
-      .schema('file_manager')
-      .from('file')
-      .update({ deleted_at: now })
-      .eq('owner_id', userId)
-      .is('deleted_at', null)
-      .in('folder_id', ids);
-    if (fileErr) {
-      throw new BadRequestException('Failed to delete folder contents');
+    // Files and folders go together, so a failure never leaves live files in
+    // a deleted folder.
+    let step = 'Failed to delete folder contents';
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.file.updateMany({
+          where: { owner_id: userId, deleted_at: null, folder_id: { in: ids } },
+          data: { deleted_at: now },
+        });
+        step = 'Failed to delete folder';
+        await tx.folder.updateMany({
+          where: { owner_id: userId, id: { in: ids } },
+          data: { deleted_at: now },
+        });
+      });
+    } catch {
+      throw new BadRequestException(step);
     }
-
-    const { error: folderErr } = await client
-      .schema('file_manager')
-      .from('folder')
-      .update({ deleted_at: now })
-      .eq('owner_id', userId)
-      .in('id', ids);
-    if (folderErr) throw new BadRequestException('Failed to delete folder');
 
     return { id: folderId, deleted: true, folderCount: ids.length };
   }
@@ -245,60 +235,53 @@ export class FolderService {
     schoolId: string,
     path: string[],
   ): Promise<string | null> {
-    const client = this.supabase.getServiceClient();
     let parentId: string | null = null;
 
     for (const rawName of path) {
       const name = this.cleanName(rawName);
+      const where: Prisma.folderWhereInput = {
+        owner_id: userId,
+        name,
+        deleted_at: null,
+        parent_id: parentId,
+      };
 
-      const existingQuery = client
-        .schema('file_manager')
-        .from('folder')
-        .select('id')
-        .eq('owner_id', userId)
-        .eq('name', name)
-        .is('deleted_at', null);
-      const { data: existing } = await (
-        parentId
-          ? existingQuery.eq('parent_id', parentId)
-          : existingQuery.is('parent_id', null)
-      ).maybeSingle();
+      const existing = await this.prisma.folder.findFirst({
+        where,
+        select: { id: true },
+      });
 
       if (existing?.id) {
         parentId = existing.id;
         continue;
       }
 
-      const { data: created, error } = await client
-        .schema('file_manager')
-        .from('folder')
-        .insert({
-          school_id: schoolId,
-          owner_id: userId,
-          parent_id: parentId,
-          name,
-          is_system: true,
+      let error: Error | null = null;
+      const created = await this.prisma.folder
+        .create({
+          data: {
+            school_id: schoolId,
+            owner_id: userId,
+            parent_id: parentId,
+            name,
+            is_system: true,
+          },
+          select: { id: true },
         })
-        .select('id')
-        .single();
+        .catch((err: Error) => {
+          error = err;
+          return null;
+        });
 
       // Lost a race to the unique index — re-read the winner.
-      if (error || !created) {
-        const raceQuery = client
-          .schema('file_manager')
-          .from('folder')
-          .select('id')
-          .eq('owner_id', userId)
-          .eq('name', name)
-          .is('deleted_at', null);
-        const { data: raced } = await (
-          parentId
-            ? raceQuery.eq('parent_id', parentId)
-            : raceQuery.is('parent_id', null)
-        ).maybeSingle();
+      if (!created) {
+        const raced = await this.prisma.folder.findFirst({
+          where,
+          select: { id: true },
+        });
         if (!raced?.id) {
           this.logger.warn(
-            `Could not resolve system folder "${name}": ${error?.message}`,
+            `Could not resolve system folder "${name}": ${(error as Error | null)?.message}`,
           );
           return null;
         }
@@ -316,19 +299,19 @@ export class FolderService {
     userId: string,
     rootId: string,
   ): Promise<string[]> {
-    const client = this.supabase.getServiceClient();
     const ids = [rootId];
     let frontier = [rootId];
 
     while (frontier.length > 0) {
-      const { data } = await client
-        .schema('file_manager')
-        .from('folder')
-        .select('id')
-        .eq('owner_id', userId)
-        .is('deleted_at', null)
-        .in('parent_id', frontier);
-      const children = (data ?? []).map((f: { id: string }) => f.id);
+      const data = await this.prisma.folder.findMany({
+        where: {
+          owner_id: userId,
+          deleted_at: null,
+          parent_id: { in: frontier },
+        },
+        select: { id: true },
+      });
+      const children = (data ?? []).map((f) => f.id);
       if (children.length === 0) break;
       ids.push(...children);
       frontier = children;

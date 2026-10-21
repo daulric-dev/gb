@@ -1,61 +1,75 @@
 import { describe, test, expect } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
+import { Prisma } from '@/generated/prisma/client';
 import { FolderService } from './folder.service';
-import { createRoutingSupabase, expectRejection } from '@/test/mocks';
+import { expectRejection } from '@/test/mocks';
+import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const USER = 'u1';
+// Folder ids come from URLs and must be uuids to be looked up at all.
+const A = '00000000-0000-4000-8000-00000000000a';
+const B = '00000000-0000-4000-8000-00000000000b';
+const P = '00000000-0000-4000-8000-00000000000c';
+const F1 = '00000000-0000-4000-8000-0000000000f1';
 
 function folderRow(over: Record<string, any> = {}) {
   return {
-    id: 'f1',
+    id: F1,
     school_id: 's1',
     owner_id: USER,
     parent_id: null,
     name: 'Folder',
     is_system: false,
-    created_at: 't',
-    updated_at: 't',
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-01T00:00:00Z'),
     ...over,
   };
 }
 
-function service(route: (state: any) => { data: any; error: any }) {
-  const supabase = createRoutingSupabase({
-    userSchoolId: 's1',
-    tables: { 'file_manager.folder': route },
+function uniqueViolation() {
+  return new Prisma.PrismaClientKnownRequestError('duplicate key', {
+    code: 'P2002',
+    clientVersion: 'test',
   });
-  return new FolderService(supabase as any);
+}
+
+function service(setup: (prisma: MockPrisma) => void = () => {}) {
+  const prisma = createMockPrisma();
+  prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's1' });
+  setup(prisma);
+  return { svc: new FolderService(prisma as any), prisma };
 }
 
 describe('FolderService.create', () => {
   test('creates a root folder and sanitizes the name', async () => {
-    const svc = service((state) =>
-      state.op === 'insert'
-        ? {
-            data: folderRow({ name: state.payload.name, parent_id: null }),
-            error: null,
-          }
-        : { data: null, error: null },
+    const { svc, prisma } = service((p) =>
+      p.folder.create.mockImplementation(async ({ data }) =>
+        folderRow({ name: data.name, parent_id: null }),
+      ),
     );
     const out = await svc.create(USER, '  Term / Reports  ');
     // Slashes are replaced (they would break folder pathing) and trimmed.
     expect(out.name).toBe('Term - Reports');
     expect(out.parentId).toBeNull();
     expect(out.isSystem).toBe(false);
+    expect(prisma.folder.create.mock.calls[0][0].data).toMatchObject({
+      school_id: 's1',
+      owner_id: USER,
+      parent_id: null,
+    });
   });
 
   test('rejects a duplicate name via the unique index', async () => {
-    const svc = service((state) =>
-      state.op === 'insert'
-        ? { data: null, error: { code: '23505', message: 'duplicate key' } }
-        : { data: null, error: null },
+    const { svc } = service((p) =>
+      p.folder.create.mockRejectedValue(uniqueViolation()),
     );
-    const err = await expectRejection(svc.create(USER, 'Reports'));
+    const err = (await expectRejection(svc.create(USER, 'Reports'))) as Error;
     expect(err).toBeInstanceOf(BadRequestException);
+    expect(err.message).toBe('A folder with that name already exists here');
   });
 
   test('rejects an empty name', async () => {
-    const svc = service(() => ({ data: null, error: null }));
+    const { svc } = service();
     const err = await expectRejection(svc.create(USER, '   '));
     expect(err).toBeInstanceOf(BadRequestException);
   });
@@ -63,79 +77,82 @@ describe('FolderService.create', () => {
 
 describe('FolderService.rename', () => {
   test('refuses to rename a system folder', async () => {
-    // getOwned resolves via select; return a system folder.
-    const svc = service((state) =>
-      state.op === 'select'
-        ? { data: folderRow({ is_system: true, name: 'Reports' }), error: null }
-        : { data: folderRow(), error: null },
+    // getOwned resolves via findFirst; return a system folder.
+    const { svc } = service((p) =>
+      p.folder.findFirst.mockResolvedValue(
+        folderRow({ is_system: true, name: 'Reports' }),
+      ),
     );
-    const err = await expectRejection(svc.rename(USER, 'f1', 'Nope'));
+    const err = await expectRejection(svc.rename(USER, F1, 'Nope'));
     expect(err).toBeInstanceOf(BadRequestException);
   });
 });
 
 describe('FolderService.move', () => {
   test('rejects moving a folder into itself', async () => {
-    const svc = service((state) =>
-      state.op === 'select'
-        ? { data: folderRow({ id: 'A' }), error: null }
-        : { data: folderRow(), error: null },
+    const { svc } = service((p) =>
+      p.folder.findFirst.mockResolvedValue(folderRow({ id: A })),
     );
-    const err = await expectRejection(svc.move(USER, 'A', 'A'));
+    const err = await expectRejection(svc.move(USER, A, A));
     expect(err).toBeInstanceOf(BadRequestException);
   });
 
   test('is a no-op when the folder is already in the destination', async () => {
-    const svc = service((state) => {
-      if (state.op === 'update') {
+    const { svc } = service((p) => {
+      p.folder.findFirst.mockResolvedValue(
+        folderRow({ id: A, parent_id: P }),
+      );
+      p.folder.update.mockImplementation(() => {
         throw new Error('should not update on a no-op move');
-      }
-      return { data: folderRow({ id: 'A', parent_id: 'P' }), error: null };
+      });
     });
-    const out = await svc.move(USER, 'A', 'P');
-    expect(out.parentId).toBe('P');
+    const out = await svc.move(USER, A, P);
+    expect(out.parentId).toBe(P);
   });
 
   test('moves a folder to the root', async () => {
-    const svc = service((state) =>
-      state.op === 'update'
-        ? { data: folderRow({ id: 'A', parent_id: null }), error: null }
-        : { data: folderRow({ id: 'A', parent_id: 'P' }), error: null },
-    );
-    const out = await svc.move(USER, 'A', null);
+    const { svc } = service((p) => {
+      p.folder.findFirst.mockResolvedValue(
+        folderRow({ id: A, parent_id: P }),
+      );
+      p.folder.update.mockResolvedValue(
+        folderRow({ id: A, parent_id: null }),
+      );
+    });
+    const out = await svc.move(USER, A, null);
     expect(out.parentId).toBeNull();
   });
 
   test('rejects moving a folder into one of its own descendants', async () => {
     let subtreeCalls = 0;
-    const svc = service((state) => {
-      if (state.op === 'update') return { data: folderRow(), error: null };
-      // getOwned queries filter by id; collectSubtree does not.
-      if (state.filters.id === 'A') {
-        return { data: folderRow({ id: 'A', parent_id: null }), error: null };
-      }
-      if (state.filters.id === 'B') {
-        return { data: folderRow({ id: 'B', parent_id: 'A' }), error: null };
-      }
+    const { svc } = service((p) => {
+      p.folder.update.mockResolvedValue(folderRow());
+      // getOwned queries filter by id.
+      p.folder.findFirst.mockImplementation(async ({ where }) => {
+        if (where.id === A) return folderRow({ id: A, parent_id: null });
+        if (where.id === B) return folderRow({ id: B, parent_id: A });
+        return null;
+      });
       // collectSubtree BFS: first level returns B, then nothing.
-      subtreeCalls += 1;
-      return { data: subtreeCalls === 1 ? [{ id: 'B' }] : [], error: null };
+      p.folder.findMany.mockImplementation(async () => {
+        subtreeCalls += 1;
+        return subtreeCalls === 1 ? [{ id: B }] : [];
+      });
     });
     // B is a child of A; moving A under B would create a cycle.
-    const err = await expectRejection(svc.move(USER, 'A', 'B'));
+    const err = await expectRejection(svc.move(USER, A, B));
     expect(err).toBeInstanceOf(BadRequestException);
   });
 });
 
 describe('FolderService.findOrCreateSystemPath', () => {
   test('creates each missing segment and returns the leaf id', async () => {
-    const svc = service((state) => {
-      if (state.op === 'insert') {
-        const id = state.payload.name === 'Reports' ? 'reports-id' : 'date-id';
-        return { data: { id }, error: null };
-      }
+    const { svc } = service((p) => {
       // No existing folder — force the create path for both segments.
-      return { data: null, error: null };
+      p.folder.findFirst.mockResolvedValue(null);
+      p.folder.create.mockImplementation(async ({ data }) => ({
+        id: data.name === 'Reports' ? 'reports-id' : 'date-id',
+      }));
     });
     const leaf = await svc.findOrCreateSystemPath(USER, 's1', [
       'Reports',
@@ -145,10 +162,11 @@ describe('FolderService.findOrCreateSystemPath', () => {
   });
 
   test('reuses an existing folder without inserting', async () => {
-    const svc = service((state) => {
-      if (state.op === 'select')
-        return { data: { id: 'existing' }, error: null };
-      throw new Error('should not insert when the folder already exists');
+    const { svc } = service((p) => {
+      p.folder.findFirst.mockResolvedValue({ id: 'existing' });
+      p.folder.create.mockImplementation(() => {
+        throw new Error('should not insert when the folder already exists');
+      });
     });
     const leaf = await svc.findOrCreateSystemPath(USER, 's1', ['Reports']);
     expect(leaf).toBe('existing');

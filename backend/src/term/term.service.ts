@@ -5,7 +5,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { userSchoolId } from '@/common/user-school';
+import { isForeignKeyViolation, isUniqueViolation } from '@/common/db-values';
+import { parseDateOnly } from '@/academic-year/academic-year.rows';
+import { serializeTerm, type TermRow } from './term.rows';
 import { CacheService } from '@/cache/cache.service';
 import { CreateTermDto } from './dto/create-term.dto';
 import { UpdateTermDto } from './dto/update-term.dto';
@@ -27,7 +32,7 @@ export class TermService {
   private readonly logger = new Logger(TermService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}
 
@@ -45,7 +50,6 @@ export class TermService {
     const name = dto.name.trim();
     if (!name) throw new BadRequestException('Give the term a name');
 
-    const supabase = this.supabaseService.getServiceClient();
     await this.assertYearInUserSchool(userId, dto.academicYearId);
 
     const sortOrder =
@@ -53,28 +57,29 @@ export class TermService {
       LEGACY_SORT_ORDER[name.toLowerCase()] ??
       (await this.nextSortOrder(dto.academicYearId));
 
-    const { data: term, error } = await supabase
-      .from('term')
-      .insert({
-        academic_year_id: dto.academicYearId,
-        name,
-        start_date: dto.startDate,
-        end_date: dto.endDate,
-        exam_weight: dto.examWeight,
-        coursework_weight: dto.courseworkWeight,
-        is_ministry_reporting: dto.isMinistryReporting ?? false,
-        sort_order: sortOrder,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
+    let term: TermRow;
+    try {
+      term = serializeTerm(
+        await this.prisma.term.create({
+          data: {
+            academic_year_id: dto.academicYearId,
+            name,
+            start_date: parseDateOnly(dto.startDate),
+            end_date: parseDateOnly(dto.endDate),
+            exam_weight: dto.examWeight,
+            coursework_weight: dto.courseworkWeight,
+            is_ministry_reporting: dto.isMinistryReporting ?? false,
+            sort_order: sortOrder,
+          },
+        }),
+      );
+    } catch (err) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           'This term already exists for the selected academic year',
         );
       }
-      this.logger.error(`Failed to create term: ${error.message}`);
+      this.logger.error(`Failed to create term: ${(err as Error).message}`);
       throw new BadRequestException('Failed to create term');
     }
 
@@ -93,49 +98,40 @@ export class TermService {
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data, error } = await supabase
-      .from('term')
-      .select('*')
-      .eq('academic_year_id', academicYearId)
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to fetch terms: ${error.message}`);
+    let result: TermRow[];
+    try {
+      const rows = await this.prisma.term.findMany({
+        where: { academic_year_id: academicYearId },
+        orderBy: { sort_order: 'asc' },
+      });
+      result = rows.map(serializeTerm);
+    } catch (err) {
+      this.logger.error(`Failed to fetch terms: ${(err as Error).message}`);
       throw new BadRequestException('Failed to fetch terms');
     }
 
-    const result = data ?? [];
     await this.cache.set(cacheKey, result, TERM_TTL);
     return result;
   }
 
   async findOne(userId: string, termId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.supabaseService.getUserSchoolId(userId);
+    const schoolId = await this.requireSchoolId(userId);
 
-    const { data, error } = await supabase
-      .from('term')
-      .select('*, academic_year!inner(school_id)')
-      .eq('id', termId)
-      .eq('academic_year.school_id', schoolId)
-      .single();
+    // A malformed id finds nothing.
+    const data = await this.prisma.term
+      .findFirst({
+        where: { id: termId, academic_year: { school_id: schoolId } },
+      })
+      .catch(() => null);
 
-    if (error || !data) {
+    if (!data) {
       throw new NotFoundException('Term not found');
     }
 
-    const { academic_year: _ay, ...term } = data;
-    if (_ay) {
-      this.logger.log(`Academic year: ${_ay.id}`);
-    }
-    return term;
+    return serializeTerm(data);
   }
 
   async update(userId: string, termId: string, dto: UpdateTermDto) {
-    const supabase = this.supabaseService.getServiceClient();
-
     // findOne enforces school scope; if the term isn't in the caller's school,
     // this throws NotFoundException before any write happens.
     const current = await this.findOne(userId, termId);
@@ -143,21 +139,23 @@ export class TermService {
     if (dto.examWeight !== undefined || dto.courseworkWeight !== undefined) {
       const examW = dto.examWeight ?? current.exam_weight;
       const courseworkW = dto.courseworkWeight ?? current.coursework_weight;
-      if (examW + courseworkW !== 100) {
+      if ((examW as number) + (courseworkW as number) !== 100) {
         throw new BadRequestException(
           'Exam weight and coursework weight must add up to 100',
         );
       }
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Prisma.termUpdateManyMutationInput = {};
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('Give the term a name');
       updateData.name = name;
     }
-    if (dto.startDate !== undefined) updateData.start_date = dto.startDate;
-    if (dto.endDate !== undefined) updateData.end_date = dto.endDate;
+    if (dto.startDate !== undefined)
+      updateData.start_date = parseDateOnly(dto.startDate);
+    if (dto.endDate !== undefined)
+      updateData.end_date = parseDateOnly(dto.endDate);
     if (dto.examWeight !== undefined) updateData.exam_weight = dto.examWeight;
     if (dto.courseworkWeight !== undefined)
       updateData.coursework_weight = dto.courseworkWeight;
@@ -165,25 +163,22 @@ export class TermService {
       updateData.is_ministry_reporting = dto.isMinistryReporting;
     if (dto.sortOrder !== undefined) updateData.sort_order = dto.sortOrder;
 
-    const { data, error } = await supabase
-      .from('term')
-      .update(updateData)
-      .eq('id', termId)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
+    let data: TermRow;
+    try {
+      data = serializeTerm(
+        await this.prisma.term.update({
+          where: { id: termId },
+          data: updateData,
+        }),
+      );
+    } catch (err) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           'Another term in this academic year already has that name',
         );
       }
-      this.logger.error(`Failed to update term: ${error.message}`);
+      this.logger.error(`Failed to update term: ${(err as Error).message}`);
       throw new BadRequestException('Failed to update term');
-    }
-
-    if (!data) {
-      throw new NotFoundException('Term not found');
     }
 
     await this.cache.update<any[]>(
@@ -195,20 +190,18 @@ export class TermService {
   }
 
   async delete(userId: string, termId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
     // Enforce school scope via findOne before deleting.
     const current = await this.findOne(userId, termId);
 
-    const { error } = await supabase.from('term').delete().eq('id', termId);
-
-    if (error) {
-      if (error.code === '23503') {
+    try {
+      await this.prisma.term.deleteMany({ where: { id: termId } });
+    } catch (err) {
+      if (isForeignKeyViolation(err)) {
         throw new ConflictException(
           'Cannot delete term - it has existing assessments or grades',
         );
       }
-      this.logger.error(`Failed to delete term: ${error.message}`);
+      this.logger.error(`Failed to delete term: ${(err as Error).message}`);
       throw new BadRequestException('Failed to delete term');
     }
 
@@ -218,32 +211,37 @@ export class TermService {
 
   /** One past the highest sort order in the year, so new terms go last. */
   private async nextSortOrder(academicYearId: string): Promise<number> {
-    const { data } = await this.supabaseService
-      .getServiceClient()
-      .from('term')
-      .select('sort_order')
-      .eq('academic_year_id', academicYearId)
-      .order('sort_order', { ascending: false })
-      .limit(1);
-
-    const top = (data)?.[0]
-      ?.sort_order;
-    return (top ?? 0) + 1;
+    const top = await this.prisma.term
+      .findFirst({
+        where: { academic_year_id: academicYearId },
+        orderBy: { sort_order: 'desc' },
+        select: { sort_order: true },
+      })
+      .catch(() => null);
+    return (top?.sort_order ?? 0) + 1;
   }
 
   private async assertYearInUserSchool(userId: string, academicYearId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-    const schoolId = await this.supabaseService.getUserSchoolId(userId);
+    const schoolId = await this.requireSchoolId(userId);
 
-    const { data, error } = await supabase
-      .from('academic_year')
-      .select('id')
-      .eq('id', academicYearId)
-      .eq('school_id', schoolId)
-      .maybeSingle();
+    const data = await this.prisma.academic_year
+      .findFirst({
+        where: { id: academicYearId, school_id: schoolId },
+        select: { id: true },
+      })
+      .catch(() => null);
 
-    if (error || !data) {
+    if (!data) {
       throw new NotFoundException('Academic year not found');
     }
+  }
+
+  /** The caller's school; a user without one is a server error, as before. */
+  private async requireSchoolId(userId: string): Promise<string> {
+    const schoolId = await userSchoolId(this.prisma, userId);
+    if (!schoolId) {
+      throw new Error(`Could not resolve school for user ${userId}`);
+    }
+    return schoolId;
   }
 }

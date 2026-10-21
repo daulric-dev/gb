@@ -6,7 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHmac, randomInt } from 'node:crypto';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { isoDate, pgCode, raisedMessage } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 
 /**
@@ -22,6 +23,9 @@ const MAX_TTL_DAYS = 90;
 
 /** Dev-only fallback so local setups work without extra configuration. */
 const DEV_PEPPER = 'dev-insecure-student-claim-pepper';
+
+/** Postgres `undefined_function`: a migration that adds the function is missing. */
+const MISSING_FUNCTION = '42883';
 
 /**
  * Everything that binds a login to a school as a student.
@@ -39,7 +43,7 @@ export class StudentMembershipService {
   private readonly pepper: string;
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {
     const configured = process.env.STUDENT_CLAIM_CODE_PEPPER?.trim();
@@ -106,13 +110,9 @@ export class StudentMembershipService {
 
   /** The acting staff member's school, which every code is scoped to. */
   private async requireActorSchool(actorUserId: string): Promise<string> {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: actor } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', actorUserId)
-      .maybeSingle();
+    const actor = await this.prisma.user_profile
+      .findUnique({ where: { id: actorUserId }, select: { school_id: true } })
+      .catch(() => null);
 
     if (!actor?.school_id) {
       throw new BadRequestException('You are not assigned to a school');
@@ -134,64 +134,48 @@ export class StudentMembershipService {
       );
     }
 
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireActorSchool(actorUserId);
 
-    // One live code per school is a database constraint; clear the previous.
-    const { error: clearError } = await supabase
-      .schema('student')
-      .from('school_join_code')
-      .delete()
-      .eq('school_id', schoolId)
-      .is('revoked_at', null);
-
-    if (clearError) {
-      this.logger.error(
-        `Failed to clear join codes for ${schoolId}: ${clearError.message}`,
-      );
-      throw new BadRequestException('Failed to issue join code');
-    }
-
     const code = this.generateCode();
-    const expiresAt = new Date(
-      Date.now() + ttlDays * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 
-    const { error } = await supabase
-      .schema('student')
-      .from('school_join_code')
-      .insert({
-        school_id: schoolId,
-        code_hash: this.hash(code),
-        expires_at: expiresAt,
-        created_by: actorUserId,
+    // One live code per school is a database constraint: replace the
+    // previous one in the same transaction, so a failed insert keeps it.
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.school_join_code.deleteMany({
+          where: { school_id: schoolId, revoked_at: null },
+        });
+        await tx.school_join_code.create({
+          data: {
+            school_id: schoolId,
+            code_hash: this.hash(code),
+            expires_at: expiresAt,
+            created_by: actorUserId,
+          },
+        });
       });
-
-    if (error) {
+    } catch (err) {
       this.logger.error(
-        `Failed to issue join code for ${schoolId}: ${error.message}`,
+        `Failed to issue join code for ${schoolId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to issue join code');
     }
 
-    return { code: this.format(code), expiresAt };
+    return { code: this.format(code), expiresAt: expiresAt.toISOString() };
   }
 
   /** Invalidate the school's live join code, if any. */
   async revokeCode(actorUserId: string): Promise<void> {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireActorSchool(actorUserId);
 
-    const { error } = await supabase
-      .schema('student')
-      .from('school_join_code')
-      .delete()
-      .eq('school_id', schoolId)
-      .is('revoked_at', null);
-
-    if (error) {
+    try {
+      await this.prisma.school_join_code.deleteMany({
+        where: { school_id: schoolId, revoked_at: null },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to revoke join code for ${schoolId}: ${error.message}`,
+        `Failed to revoke join code for ${schoolId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to revoke join code');
     }
@@ -199,23 +183,24 @@ export class StudentMembershipService {
 
   /** Whether a live code exists, and when it lapses. Never the code itself. */
   async getCodeStatus(actorUserId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireActorSchool(actorUserId);
 
-    const { data } = await supabase
-      .schema('student')
-      .from('school_join_code')
-      .select('expires_at, created_at')
-      .eq('school_id', schoolId)
-      .is('revoked_at', null)
-      .maybeSingle();
+    const data = await this.prisma.school_join_code
+      .findFirst({
+        where: { school_id: schoolId, revoked_at: null },
+        select: { expires_at: true, created_at: true },
+      })
+      .catch(() => null);
 
-    const expired = data ? new Date(data.expires_at as string) <= new Date() : false;
+    const expired = data ? data.expires_at <= new Date() : false;
 
     return {
       activeCode:
         data && !expired
-          ? { expiresAt: data.expires_at, issuedAt: data.created_at }
+          ? {
+              expiresAt: isoDate(data.expires_at),
+              issuedAt: isoDate(data.created_at),
+            }
           : null,
       expired,
     };
@@ -237,15 +222,16 @@ export class StudentMembershipService {
       throw new BadRequestException('Invalid or expired join code');
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data, error } = await supabase.rpc('redeem_school_join_code', {
-      p_user_id: userId,
-      p_code_hash: this.hash(normalized),
-    });
-
-    if (error) {
-      const detail = `${error.code ?? ''} ${error.message ?? ''}`;
+    let rows: { student_id: string | null; school_id: string | null }[];
+    try {
+      rows = await this.prisma.$queryRaw`
+        SELECT student_id, school_id
+        FROM public.redeem_school_join_code(
+          ${userId}::uuid,
+          ${this.hash(normalized)}::text
+        )`;
+    } catch (error) {
+      const detail = raisedMessage(error);
 
       if (detail.includes('already_in_a_school')) {
         throw new ConflictException('This account already belongs to a school');
@@ -256,26 +242,28 @@ export class StudentMembershipService {
       if (detail.includes('invalid_join_code')) {
         throw new BadRequestException('Invalid or expired join code');
       }
-      if (error.code === 'PGRST202') {
+      if (pgCode(error) === MISSING_FUNCTION) {
         this.logger.error(
-          `redeem_school_join_code is missing from the database. Apply the pending migrations. Detail: ${error.message}`,
+          `redeem_school_join_code is missing from the database. Apply the pending migrations. Detail: ${(error as Error).message}`,
         );
         throw new BadRequestException(
           'Joining by code is unavailable: the database is missing redeem_school_join_code. Apply the pending migrations.',
         );
       }
 
-      this.logger.error(`Join failed for user ${userId}: ${error.message}`);
+      this.logger.error(
+        `Join failed for user ${userId}: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to redeem join code');
     }
 
-    const row = Array.isArray(data) ? data[0] : data;
+    const row = rows[0];
 
     if (!row?.student_id || !row?.school_id) {
       throw new BadRequestException('Invalid or expired join code');
     }
 
-    await this.finalise(userId, row.school_id as string);
+    await this.finalise(userId, row.school_id);
 
     this.logger.log(
       `User ${userId} joined school ${row.school_id} as student ${row.student_id}`,
@@ -292,26 +280,31 @@ export class StudentMembershipService {
    * letting them in without staff creating the record first.
    */
   async listDuplicates(actorUserId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireActorSchool(actorUserId);
 
-    const { data, error } = await supabase.rpc(
-      'student_duplicate_candidates',
-      { p_school_id: schoolId },
-    );
-
-    if (error) {
-      if (error.code === 'PGRST202') {
+    let data: {
+      joined_id: string;
+      existing_id: string;
+      full_name: string | null;
+    }[];
+    try {
+      data = await this.prisma.$queryRaw`
+        SELECT joined_id, existing_id, full_name
+        FROM public.student_duplicate_candidates(${schoolId}::uuid)`;
+    } catch (error) {
+      if (pgCode(error) === MISSING_FUNCTION) {
         this.logger.error(
           `student_duplicate_candidates is missing from the database. Apply the pending migrations.`,
         );
         return [];
       }
-      this.logger.error(`Failed to list duplicates: ${error.message}`);
+      this.logger.error(
+        `Failed to list duplicates: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to load possible duplicates');
     }
 
-    return ((data ?? []) as any[]).map((row) => ({
+    return data.map((row) => ({
       joinedId: row.joined_id,
       existingId: row.existing_id,
       name: row.full_name,
@@ -327,26 +320,28 @@ export class StudentMembershipService {
     joinedId: string,
     existingId: string,
   ): Promise<{ studentId: string }> {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireActorSchool(actorUserId);
 
     // Captured before the merge: the row disappears, and the account whose
     // caches need dropping is the one attached to it.
-    const { data: joined } = await supabase
-      .schema('student')
-      .from('student')
-      .select('user_profile_id')
-      .eq('id', joinedId)
-      .maybeSingle();
+    const joined = await this.prisma.student
+      .findUnique({
+        where: { id: joinedId },
+        select: { user_profile_id: true },
+      })
+      .catch(() => null);
 
-    const { data, error } = await supabase.rpc('merge_student_records', {
-      p_admin_id: actorUserId,
-      p_joined_id: joinedId,
-      p_existing_id: existingId,
-    });
-
-    if (error) {
-      const detail = `${error.code ?? ''} ${error.message ?? ''}`;
+    let rows: { student_id: string | null }[];
+    try {
+      rows = await this.prisma.$queryRaw`
+        SELECT student_id
+        FROM public.merge_student_records(
+          ${actorUserId}::uuid,
+          ${joinedId}::uuid,
+          ${existingId}::uuid
+        )`;
+    } catch (error) {
+      const detail = raisedMessage(error);
 
       if (detail.includes('joined_record_has_data')) {
         throw new BadRequestException(
@@ -365,14 +360,16 @@ export class StudentMembershipService {
         throw new NotFoundException('Student not found');
       }
 
-      this.logger.error(`Merge failed for ${joinedId}: ${error.message}`);
+      this.logger.error(
+        `Merge failed for ${joinedId}: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to merge student records');
     }
 
-    const row = Array.isArray(data) ? data[0] : data;
+    const row = rows[0];
 
     if (joined?.user_profile_id) {
-      await this.finalise(joined.user_profile_id as string, schoolId);
+      await this.finalise(joined.user_profile_id, schoolId);
     } else {
       await this.cache.delete(`students:${schoolId}`);
     }

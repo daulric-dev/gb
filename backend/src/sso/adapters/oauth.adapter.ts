@@ -7,7 +7,7 @@ import type {
 } from '../sso.types';
 import { standardProfile } from './claims';
 
-export interface SupabaseOAuthOptions {
+export interface OAuthAdapterOptions {
   id: string;
   label: string;
   /** The Supabase Auth provider name; defaults to `id`. */
@@ -25,13 +25,13 @@ export interface SupabaseOAuthOptions {
  * school by domain gets a subclass that checks its own claims (see Google
  * and Microsoft).
  */
-export class SupabaseOAuthAdapter implements SsoAdapter {
+export class OAuthAdapter implements SsoAdapter {
   readonly kind = 'oauth' as const;
   readonly id: string;
   readonly label: string;
   protected readonly provider: Provider;
 
-  constructor(protected readonly options: SupabaseOAuthOptions) {
+  constructor(protected readonly options: OAuthAdapterOptions) {
     this.id = options.id;
     this.label = options.label;
     this.provider = options.provider ?? (options.id as Provider);

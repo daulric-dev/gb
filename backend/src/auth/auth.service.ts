@@ -10,10 +10,27 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { EmailDomainService } from '@/email-domain/email-domain.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 const PROFILE_TTL = 60 * 60 * 24 * 30;
+
+/** A profile with its active school, as `*, school:school_id(*)` returned it. */
+const WITH_SCHOOL = {
+  include: { school_user_profile_school_idToschool: true },
+} as const;
+
+type ProfileWithSchool = Prisma.user_profileGetPayload<typeof WITH_SCHOOL>;
+
+/** Rename the school relation to the `school` key clients read. */
+function withSchool({
+  school_user_profile_school_idToschool: school,
+  ...profile
+}: ProfileWithSchool) {
+  return { ...profile, school };
+}
 
 @Injectable()
 export class AuthService {
@@ -21,6 +38,7 @@ export class AuthService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly emailDomains: EmailDomainService,
   ) {}
@@ -94,46 +112,40 @@ export class AuthService {
       const userId = data.session.user.id;
       const userEmail = data.session.user.email;
 
-      // Profile lookup uses the service client to bypass RLS for the
-      // first-time profile insert.
-      const supabase = this.supabaseService.getServiceClient();
-
-      let { data: profile } = await supabase
-        .from('user_profile')
-        .select('*, school:school_id(*)')
-        .eq('id', userId)
-        .single();
+      let profile = await this.prisma.user_profile
+        .findUnique({ where: { id: userId }, ...WITH_SCHOOL })
+        .then((row) => (row ? withSchool(row) : null))
+        .catch(() => null);
 
       if (!profile) {
         this.logger.log(`Creating new user_profile for ${userId}`);
-        const { data: newProfile, error: insertError } = await supabase
-          .from('user_profile')
-          .insert({ id: userId, email: userEmail })
-          .select('*, school:school_id(*)')
-          .single();
-
-        if (insertError) {
+        try {
+          profile = withSchool(
+            await this.prisma.user_profile.create({
+              data: { id: userId, email: userEmail },
+              ...WITH_SCHOOL,
+            }),
+          );
+        } catch (insertError) {
           this.logger.error(
-            `Failed to create user_profile for ${userId}: ${insertError.message}`,
+            `Failed to create user_profile for ${userId}: ${(insertError as Error).message}`,
           );
         }
-        profile = newProfile;
       } else if (!profile.email && userEmail) {
         // Backfill email for existing profiles created before the column
         // existed; populated lazily on the user's next login.
-        const { data: updatedProfile, error: updateError } = await supabase
-          .from('user_profile')
-          .update({ email: userEmail })
-          .eq('id', userId)
-          .select('*, school:school_id(*)')
-          .single();
-
-        if (updateError) {
-          this.logger.error(
-            `Failed to backfill email for user_profile ${userId}: ${updateError.message}`,
+        try {
+          profile = withSchool(
+            await this.prisma.user_profile.update({
+              where: { id: userId },
+              data: { email: userEmail },
+              ...WITH_SCHOOL,
+            }),
           );
-        } else {
-          profile = updatedProfile;
+        } catch (updateError) {
+          this.logger.error(
+            `Failed to backfill email for user_profile ${userId}: ${(updateError as Error).message}`,
+          );
         }
       }
 
@@ -157,23 +169,36 @@ export class AuthService {
     const cached = await this.cache.get(`profile:${userId}`);
     if (cached?.email) return cached;
 
-    const supabase = this.supabaseService.getServiceClient();
+    let row;
+    let message: string | undefined;
+    try {
+      row = await this.prisma.user_profile.findUnique({
+        where: { id: userId },
+        include: {
+          school_user_profile_school_idToschool: true,
+          school_management: { select: { role: true } },
+        },
+      });
+    } catch (err) {
+      message = (err as Error).message;
+    }
 
-    const { data: profile, error } = await supabase
-      .from('user_profile')
-      .select('*, school:school_id(*), school_management(role)')
-      .eq('id', userId)
-      .single();
-
-    if (error || !profile) {
-      this.logger.error(`Profile not found for ${userId}: ${error?.message}`);
+    if (!row) {
+      this.logger.error(`Profile not found for ${userId}: ${message}`);
       throw new NotFoundException('User profile not found');
     }
+
+    const { school_management: memberships, ...rest } = row;
+    const profile: Record<string, any> = {
+      ...withSchool(rest),
+      school_management: memberships,
+    };
 
     // Backfill email for existing profiles (e.g. users with an active session
     // who won't re-run verifyOtp). getProfile has no session, so the email is
     // sourced from the auth user via the admin API.
     if (!profile.email) {
+      const supabase = this.supabaseService.getServiceClient();
       const { data: authData, error: adminError } =
         await supabase.auth.admin.getUserById(userId);
       const authEmail = authData?.user?.email;
@@ -183,25 +208,22 @@ export class AuthService {
           `Failed to backfill email for user_profile ${userId}: ${adminError?.message ?? 'no auth email'}`,
         );
       } else {
-        const { error: updateError } = await supabase
-          .from('user_profile')
-          .update({ email: authEmail })
-          .eq('id', userId);
-
-        if (updateError) {
-          this.logger.error(
-            `Failed to persist backfilled email for user_profile ${userId}: ${updateError.message}`,
-          );
-        } else {
+        try {
+          await this.prisma.user_profile.update({
+            where: { id: userId },
+            data: { email: authEmail },
+          });
           profile.email = authEmail;
+        } catch (updateError) {
+          this.logger.error(
+            `Failed to persist backfilled email for user_profile ${userId}: ${(updateError as Error).message}`,
+          );
         }
       }
     }
 
-    if (profile.school_management.length === 1) {
-      profile.school_management = {
-        role: profile.school_management[0].role,
-      };
+    if (memberships.length === 1) {
+      profile.school_management = { role: memberships[0].role };
     }
 
     await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
@@ -209,52 +231,37 @@ export class AuthService {
   }
 
   async onboard(userId: string, dto: OnboardDto) {
-    const supabase = this.supabaseService.getServiceClient();
-
     // Account type is chosen once. Re-onboarding a student account as staff
     // would hand it a teacher membership (and every default teacher
     // permission) on dedicated deployments.
-    const { data: current } = await supabase
-      .from('user_profile')
-      .select('account_type')
-      .eq('id', userId)
-      .maybeSingle();
+    const current = await this.prisma.user_profile
+      .findUnique({ where: { id: userId }, select: { account_type: true } })
+      .catch(() => null);
 
     if (current?.account_type === 'student' && dto.accountType !== 'student') {
       throw new ForbiddenException('Student accounts cannot onboard as staff');
     }
 
     if (dto.accountType === 'student') {
-      const { data, error } = await supabase
-        .from('user_profile')
-        .upsert({
-          id: userId,
+      const data = await this.upsertProfile(
+        userId,
+        {
           first_name: dto.firstName,
           last_name: dto.lastName,
           account_type: 'student',
           role: null,
-        })
-        .select('*, school:school_id(*)')
-        .single();
-
-      if (error || !data) {
-        this.logger.error(
-          `Failed to onboard student ${userId}: ${error?.message}`,
-        );
-        throw new BadRequestException('Failed to complete onboarding');
-      }
+        },
+        'Failed to onboard student',
+      );
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
       return data;
     }
 
     if (process.env.DEDICATED_DEPLOYMENT === 'true') {
-      const { data: school } = await supabase
-        .from('school')
-        .select('id')
-        .eq('is_active', true)
-        .limit(1)
-        .single();
+      const school = await this.prisma.school
+        .findFirst({ where: { is_active: true }, select: { id: true } })
+        .catch(() => null);
 
       if (!school) {
         throw new BadRequestException(
@@ -265,45 +272,33 @@ export class AuthService {
       // Preserve an existing membership role (e.g. the school creator's
       // 'admin', set by SchoolService.create) - the dedicated branch runs for
       // every onboard, including theirs. Brand-new members default to teacher.
-      const { data: membership } = await supabase
-        .from('school_management')
-        .select('role')
-        .eq('user_id', userId)
-        .eq('school_id', school.id)
-        .maybeSingle();
+      const membership = await this.prisma.school_management
+        .findFirst({
+          where: { user_id: userId, school_id: school.id },
+          select: { role: true },
+        })
+        .catch(() => null);
 
       const role = membership?.role ?? 'teacher';
 
-      const { data, error } = await supabase
-        .from('user_profile')
-        .upsert({
-          id: userId,
-          first_name: dto.firstName,
-          last_name: dto.lastName,
-          school_id: school.id,
-          role,
-        })
-        .select('*, school:school_id(*)')
-        .single();
-
-      if (error || !data) {
-        this.logger.error(
-          `Failed to onboard user ${userId}: ${error?.message}`,
-        );
-        throw new BadRequestException('Failed to complete onboarding');
-      }
+      const data = await this.upsertProfile(userId, {
+        first_name: dto.firstName,
+        last_name: dto.lastName,
+        school_id: school.id,
+        role,
+      });
 
       // Canonical membership so the permission layer recognizes the user.
       // Without this, a dedicated-instance user has a school_id but no
       // school_management row, and PermissionGuard treats them as a non-member.
       if (!membership) {
-        const { error: managementError } = await supabase
-          .from('school_management')
-          .insert({ user_id: userId, school_id: school.id, role });
-
-        if (managementError) {
+        try {
+          await this.prisma.school_management.create({
+            data: { user_id: userId, school_id: school.id, role },
+          });
+        } catch (managementError) {
           this.logger.error(
-            `Failed to create school_management for ${userId} at ${school.id}: ${managementError.message}`,
+            `Failed to create school_management for ${userId} at ${school.id}: ${(managementError as Error).message}`,
           );
         }
       }
@@ -312,32 +307,16 @@ export class AuthService {
       return data;
     }
 
+    const names = { first_name: dto.firstName, last_name: dto.lastName };
+
     // Check if user already has a school_id (set when they created a school)
-    const { data: existing } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .single();
+    const existing = await this.prisma.user_profile
+      .findUnique({ where: { id: userId }, select: { school_id: true } })
+      .catch(() => null);
 
     if (existing?.school_id) {
       // User created a school - just update name
-      const { data, error } = await supabase
-        .from('user_profile')
-        .upsert({
-          id: userId,
-          first_name: dto.firstName,
-          last_name: dto.lastName,
-        })
-        .select('*, school:school_id(*)')
-        .single();
-
-      if (error || !data) {
-        this.logger.error(
-          `Failed to onboard user ${userId}: ${error?.message}`,
-        );
-        throw new BadRequestException('Failed to complete onboarding');
-      }
-
+      const data = await this.upsertProfile(userId, names);
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
       return data;
     }
@@ -350,32 +329,17 @@ export class AuthService {
       // let any user claim ownership of any school lacking an admin.
       //
       // Go through the join request flow.
-      const { data, error } = await supabase
-        .from('user_profile')
-        .upsert({
-          id: userId,
-          first_name: dto.firstName,
-          last_name: dto.lastName,
-        })
-        .select('*, school:school_id(*)')
-        .single();
+      const data = await this.upsertProfile(userId, names);
 
-      if (error || !data) {
+      let joinRequest;
+      try {
+        joinRequest = await this.prisma.school_join_request.create({
+          data: { user_id: userId, school_id: dto.schoolId },
+          select: { id: true, school_id: true, status: true },
+        });
+      } catch (reqError) {
         this.logger.error(
-          `Failed to onboard user ${userId}: ${error?.message}`,
-        );
-        throw new BadRequestException('Failed to complete onboarding');
-      }
-
-      const { data: joinRequest, error: reqError } = await supabase
-        .from('school_join_request')
-        .insert({ user_id: userId, school_id: dto.schoolId })
-        .select('id, school_id, status')
-        .single();
-
-      if (reqError) {
-        this.logger.error(
-          `Failed to create join request for user ${userId}: ${reqError.message}`,
+          `Failed to create join request for user ${userId}: ${(reqError as Error).message}`,
         );
         throw new BadRequestException('Failed to submit join request');
       }
@@ -385,43 +349,51 @@ export class AuthService {
     }
 
     // No school selected - just save name
-    const { data, error } = await supabase
-      .from('user_profile')
-      .upsert({
-        id: userId,
-        first_name: dto.firstName,
-        last_name: dto.lastName,
-      })
-      .select('*, school:school_id(*)')
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to onboard user ${userId}: ${error?.message}`);
-      throw new BadRequestException('Failed to complete onboarding');
-    }
-
+    const data = await this.upsertProfile(userId, names);
     await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
     return data;
   }
 
+  /**
+   * Insert-or-update the profile with just these columns (what a PostgREST
+   * upsert did), returning it with its school.
+   */
+  private async upsertProfile(
+    userId: string,
+    fields: Pick<
+      Prisma.user_profileUncheckedCreateInput,
+      'first_name' | 'last_name' | 'account_type' | 'role' | 'school_id'
+    >,
+    failure = 'Failed to onboard user',
+  ) {
+    try {
+      return withSchool(
+        await this.prisma.user_profile.upsert({
+          where: { id: userId },
+          create: { id: userId, ...fields },
+          update: fields,
+          ...WITH_SCHOOL,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(`${failure} ${userId}: ${(err as Error).message}`);
+      throw new BadRequestException('Failed to complete onboarding');
+    }
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const patch: Record<string, any> = {
-      first_name: dto.firstName,
-      last_name: dto.lastName,
-    };
-
-    const { data, error } = await supabase
-      .from('user_profile')
-      .update(patch)
-      .eq('id', userId)
-      .select('*, school:school_id(*)')
-      .single();
-
-    if (error || !data) {
+    let data;
+    try {
+      data = withSchool(
+        await this.prisma.user_profile.update({
+          where: { id: userId },
+          data: { first_name: dto.firstName, last_name: dto.lastName },
+          ...WITH_SCHOOL,
+        }),
+      );
+    } catch (err) {
       this.logger.error(
-        `Failed to update profile for ${userId}: ${error?.message}`,
+        `Failed to update profile for ${userId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to update profile');
     }
@@ -431,20 +403,16 @@ export class AuthService {
   }
 
   async deleteAccount(userId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { error: profileError } = await supabase
-      .from('user_profile')
-      .delete()
-      .eq('id', userId);
-
-    if (profileError) {
+    try {
+      await this.prisma.user_profile.deleteMany({ where: { id: userId } });
+    } catch (profileError) {
       this.logger.error(
-        `Failed to delete user_profile for ${userId}: ${profileError.message}`,
+        `Failed to delete user_profile for ${userId}: ${(profileError as Error).message}`,
       );
       throw new BadRequestException('Failed to delete account');
     }
 
+    const supabase = this.supabaseService.getServiceClient();
     const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
     if (authError) {

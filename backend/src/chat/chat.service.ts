@@ -5,7 +5,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { Prisma } from '@/generated/prisma/client';
+import { PrismaService } from '@/prisma/prisma.service';
+import { userSchoolId } from '@/common/user-school';
+import { isoDate } from '@/common/db-values';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { MessageCipher } from './message-cipher.service';
 import { ChatEventType, channelsEnabled } from './chat.constants';
@@ -15,10 +18,39 @@ import type {
   ChatParticipant,
 } from './chat.types';
 
-const MESSAGE_COLUMNS =
-  'id, conversation_id, sender_id, type, body, metadata, action_state, created_at, edited_at, deleted_at';
-const CONVERSATION_COLUMNS =
-  'id, school_id, type, title, direct_key, created_by, created_at, last_message_at';
+const MESSAGE_SELECT = {
+  id: true,
+  conversation_id: true,
+  sender_id: true,
+  type: true,
+  body: true,
+  metadata: true,
+  action_state: true,
+  created_at: true,
+  edited_at: true,
+  deleted_at: true,
+} as const;
+const CONVERSATION_SELECT = {
+  id: true,
+  school_id: true,
+  type: true,
+  title: true,
+  direct_key: true,
+  created_by: true,
+  created_at: true,
+  last_message_at: true,
+} as const;
+const PROFILE_SELECT = {
+  id: true,
+  first_name: true,
+  last_name: true,
+  avatar_url: true,
+} as const;
+
+/** Ids arrive unvalidated; a malformed one simply matches nothing. */
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: string) => UUID.test(v);
 
 interface ConversationRow {
   id: string;
@@ -30,6 +62,40 @@ interface ConversationRow {
   created_at: string;
   last_message_at: string;
 }
+
+const toConversationRow = (r: {
+  id: string;
+  school_id: string;
+  type: ConversationRow['type'];
+  title: string | null;
+  direct_key: string | null;
+  created_by: string | null;
+  created_at: Date | null;
+  last_message_at: Date | null;
+}): ConversationRow => ({
+  ...r,
+  created_at: isoDate(r.created_at)!,
+  last_message_at: isoDate(r.last_message_at)!,
+});
+
+const toMessageRow = (r: {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  type: MessageRow['type'];
+  body: string | null;
+  metadata: Prisma.JsonValue;
+  action_state: MessageRow['action_state'];
+  created_at: Date | null;
+  edited_at: Date | null;
+  deleted_at: Date | null;
+}): MessageRow => ({
+  ...r,
+  metadata: (r.metadata as Record<string, unknown> | null) ?? null,
+  created_at: isoDate(r.created_at)!,
+  edited_at: isoDate(r.edited_at),
+  deleted_at: isoDate(r.deleted_at),
+});
 
 interface MessageRow {
   id: string;
@@ -54,26 +120,32 @@ export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
   constructor(
-    private readonly supabase: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly realtime: ChatRealtimeService,
     private readonly cipher: MessageCipher,
   ) {}
+
+  /** The caller's school; a user without one is a server error, as before. */
+  private async schoolOf(userId: string): Promise<string> {
+    const schoolId = await userSchoolId(this.prisma, userId);
+    if (!schoolId) {
+      throw new Error(`Could not resolve school for user ${userId}`);
+    }
+    return schoolId;
+  }
 
   // ── Users you can message ──────────────────────────────────────────────────
 
   /** Active users in the caller's school, excluding the caller. */
   async listMessageableUsers(userId: string): Promise<ChatParticipant[]> {
-    const schoolId = await this.supabase.getUserSchoolId(userId);
-    const { data } = await this.supabase
-      .getServiceClient()
-      .from('user_profile')
-      .select('id, first_name, last_name, avatar_url')
-      .eq('school_id', schoolId)
-      .eq('is_active', true)
-      .neq('id', userId)
-      .order('first_name', { ascending: true });
+    const schoolId = await this.schoolOf(userId);
+    const data = await this.prisma.user_profile.findMany({
+      where: { school_id: schoolId, is_active: true, id: { not: userId } },
+      orderBy: { first_name: 'asc' },
+      select: PROFILE_SELECT,
+    });
 
-    return (data ?? []).map((p: any) => ({
+    return data.map((p) => ({
       userId: p.id,
       firstName: p.first_name,
       lastName: p.last_name,
@@ -85,32 +157,18 @@ export class ChatService {
 
   /** The caller's conversations, most-recent first, with previews + unread. */
   async listConversations(userId: string): Promise<ChatConversation[]> {
-    const client = this.supabase.getServiceClient();
-
-    const { data: memberships } = await client
-      .schema('chat')
-      .from('conversation_member')
-      .select('conversation_id, last_read_at')
-      .eq('user_id', userId);
-
-    const ids: string[] = (memberships ?? []).map(
-      (m: { conversation_id: string }) => m.conversation_id,
-    );
+    const membershipRows = await this.membershipsOf(userId);
+    const ids = membershipRows.map((m) => m.conversation_id);
 
     if (ids.length === 0) return [];
 
-    const { data: conversations } = await client
-      .schema('chat')
-      .from('conversation')
-      .select(CONVERSATION_COLUMNS)
-      .in('id', ids)
-      .order('last_message_at', { ascending: false });
-
-    const rows = (conversations ?? []) as ConversationRow[];
-    const membershipRows = (memberships ?? []) as {
-      conversation_id: string;
-      last_read_at: string | null;
-    }[];
+    const rows = (
+      await this.prisma.conversation.findMany({
+        where: { id: { in: ids } },
+        orderBy: { last_message_at: { sort: 'desc', nulls: 'first' } },
+        select: CONVERSATION_SELECT,
+      })
+    ).map(toConversationRow);
 
     // Unread counts for the whole set resolve in one round-trip (RPC) rather
     // than one COUNT query per conversation. Participants likewise batch.
@@ -144,47 +202,44 @@ export class ChatService {
       throw new BadRequestException('You cannot message yourself');
     }
 
-    const schoolId = await this.supabase.getUserSchoolId(userId);
+    const schoolId = await this.schoolOf(userId);
     const otherSchoolId = await this.resolveSchool(otherUserId);
     if (otherSchoolId !== schoolId) {
       throw new ForbiddenException('That user is not in your school');
     }
 
     const directKey = ChatService.directKey(userId, otherUserId);
-    const client = this.supabase.getServiceClient();
 
     const existing = await this.findDirect(schoolId, directKey);
     if (existing) return this.summarize(existing, userId);
 
-    const { data: created, error } = await client
-      .schema('chat')
-      .from('conversation')
-      .insert({
+    let created: ConversationRow;
+    try {
+      created = await this.insertConversation({
         school_id: schoolId,
         type: 'direct',
         direct_key: directKey,
         created_by: userId,
-      })
-      .select(CONVERSATION_COLUMNS)
-      .single();
-
-    // Lost a race to the unique (school_id, direct_key) index — reuse theirs.
-    if (error || !created) {
+      });
+    } catch (err) {
+      // Lost a race to the unique (school_id, direct_key) index — reuse theirs.
       const raced = await this.findDirect(schoolId, directKey);
       if (raced) return this.summarize(raced, userId);
-      this.logger.error(`Failed to create DM: ${error?.message}`);
+      this.logger.error(`Failed to create DM: ${(err as Error).message}`);
       throw new BadRequestException('Failed to start conversation');
     }
 
-    const { error: memberError } = await client
-      .schema('chat')
-      .from('conversation_member')
-      .insert([
-        { conversation_id: created.id, user_id: userId, role: 'owner' },
-        { conversation_id: created.id, user_id: otherUserId, role: 'member' },
-      ]);
-    if (memberError) {
-      this.logger.error(`Failed to add DM members: ${memberError.message}`);
+    try {
+      await this.prisma.conversation_member.createMany({
+        data: [
+          { conversation_id: created.id, user_id: userId, role: 'owner' },
+          { conversation_id: created.id, user_id: otherUserId, role: 'member' },
+        ],
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to add DM members: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to start conversation');
     }
 
@@ -208,19 +263,17 @@ export class ChatService {
     await this.assertMember(userId, conversationId);
     const limit = Math.min(opts.limit ?? 30, 100);
 
-    let query = this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .select(MESSAGE_COLUMNS)
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (opts.before) query = query.lt('created_at', opts.before);
-
-    const { data } = await query;
-    return (data ?? []).map((m: MessageRow) => this.presentMessage(m));
+    const before = opts.before ? new Date(opts.before) : null;
+    const data = await this.prisma.message.findMany({
+      where: {
+        conversation_id: conversationId,
+        ...(before ? { created_at: { lt: before } } : {}),
+      },
+      orderBy: { created_at: { sort: 'desc', nulls: 'first' } },
+      take: limit,
+      select: MESSAGE_SELECT,
+    });
+    return data.map((m) => this.presentMessage(toMessageRow(m)));
   }
 
   /** Send a text message to a conversation the caller belongs to. */
@@ -245,18 +298,11 @@ export class ChatService {
     body: string,
   ): Promise<ChatMessage> {
     const message = await this.loadOwnMessage(userId, messageId);
-    const { data, error } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .update({
-        body: this.cipher.encrypt(body),
-        edited_at: new Date().toISOString(),
-      })
-      .eq('id', messageId)
-      .select(MESSAGE_COLUMNS)
-      .single();
-    if (error || !data) throw new BadRequestException('Failed to edit message');
+    const data = await this.updateMessage(messageId, {
+      body: this.cipher.encrypt(body),
+      edited_at: new Date(),
+    });
+    if (!data) throw new BadRequestException('Failed to edit message');
 
     const present = this.presentMessage(data);
     await this.fanOutMessage(message.conversation_id, present);
@@ -266,15 +312,11 @@ export class ChatService {
   /** Soft-delete the caller's own message. */
   async deleteMessage(userId: string, messageId: string): Promise<ChatMessage> {
     const message = await this.loadOwnMessage(userId, messageId);
-    const { data, error } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .update({ deleted_at: new Date().toISOString(), body: null })
-      .eq('id', messageId)
-      .select(MESSAGE_COLUMNS)
-      .single();
-    if (error || !data) {
+    const data = await this.updateMessage(messageId, {
+      deleted_at: new Date(),
+      body: null,
+    });
+    if (!data) {
       throw new BadRequestException('Failed to delete message');
     }
 
@@ -289,14 +331,16 @@ export class ChatService {
     conversationId: string,
   ): Promise<{ ok: true; lastReadAt: string }> {
     await this.assertMember(userId, conversationId);
-    const lastReadAt = new Date().toISOString();
-    await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('conversation_member')
-      .update({ last_read_at: lastReadAt })
-      .eq('conversation_id', conversationId)
-      .eq('user_id', userId);
+    const now = new Date();
+    const lastReadAt = now.toISOString();
+    await this.prisma.conversation_member
+      .updateMany({
+        where: { conversation_id: conversationId, user_id: userId },
+        data: { last_read_at: now },
+      })
+      .catch((err: Error) =>
+        this.logger.error(`Failed to mark read: ${err.message}`),
+      );
 
     // Let the user's own other tabs/devices clear their unread badge too.
     await this.realtime.publishToUsers([userId], {
@@ -308,17 +352,7 @@ export class ChatService {
 
   /** Total unread messages across all of the caller's conversations. */
   async totalUnread(userId: string): Promise<{ count: number }> {
-    const client = this.supabase.getServiceClient();
-    const { data: memberships } = await client
-      .schema('chat')
-      .from('conversation_member')
-      .select('conversation_id, last_read_at')
-      .eq('user_id', userId);
-
-    const rows = (memberships ?? []) as {
-      conversation_id: string;
-      last_read_at: string | null;
-    }[];
+    const rows = await this.membershipsOf(userId);
     if (rows.length === 0) return { count: 0 };
 
     const counts = await this.unreadCountsFor(userId, rows);
@@ -336,43 +370,49 @@ export class ChatService {
     actionState?: ChatMessage['actionState'];
   }): Promise<ChatMessage> {
     const { conversation, senderId } = input;
-    const client = this.supabase.getServiceClient();
-    const now = new Date().toISOString();
+    const now = new Date();
 
-    const { data, error } = await client
-      .schema('chat')
-      .from('message')
-      .insert({
-        conversation_id: conversation.id,
-        school_id: conversation.school_id,
-        sender_id: senderId,
-        type: input.type,
-        // Encrypted at rest; presentMessage decrypts on the way out.
-        body: this.cipher.encrypt(input.body),
-        metadata: input.metadata ?? {},
-        action_state: input.actionState ?? null,
-      })
-      .select(MESSAGE_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to insert message: ${error?.message}`);
+    let data: MessageRow;
+    try {
+      data = toMessageRow(
+        await this.prisma.message.create({
+          data: {
+            conversation_id: conversation.id,
+            school_id: conversation.school_id,
+            sender_id: senderId,
+            type: input.type,
+            // Encrypted at rest; presentMessage decrypts on the way out.
+            body: this.cipher.encrypt(input.body),
+            metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+            action_state: input.actionState ?? null,
+          },
+          select: MESSAGE_SELECT,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(`Failed to insert message: ${(err as Error).message}`);
       throw new BadRequestException('Failed to send message');
     }
 
-    await client
-      .schema('chat')
-      .from('conversation')
-      .update({ last_message_at: now })
-      .eq('id', conversation.id);
+    // Bookkeeping only: as before, a failure here does not fail the send.
+    await this.prisma.conversation
+      .updateMany({
+        where: { id: conversation.id },
+        data: { last_message_at: now },
+      })
+      .catch((err: Error) =>
+        this.logger.error(`Failed to bump conversation: ${err.message}`),
+      );
 
     // The sender has, by definition, seen their own message.
-    await client
-      .schema('chat')
-      .from('conversation_member')
-      .update({ last_read_at: now })
-      .eq('conversation_id', conversation.id)
-      .eq('user_id', senderId);
+    await this.prisma.conversation_member
+      .updateMany({
+        where: { conversation_id: conversation.id, user_id: senderId },
+        data: { last_read_at: now },
+      })
+      .catch((err: Error) =>
+        this.logger.error(`Failed to mark sender read: ${err.message}`),
+      );
 
     const present = this.presentMessage(data);
     await this.fanOutMessage(conversation.id, present);
@@ -381,15 +421,14 @@ export class ChatService {
 
   /** Load a conversation row (for system-message posting), or throw. */
   async loadConversation(conversationId: string): Promise<ConversationRow> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('conversation')
-      .select(CONVERSATION_COLUMNS)
-      .eq('id', conversationId)
-      .maybeSingle();
+    const data = isUuid(conversationId)
+      ? await this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: CONVERSATION_SELECT,
+        })
+      : null;
     if (!data) throw new NotFoundException('Conversation not found');
-    return data;
+    return toConversationRow(data);
   }
 
   /**
@@ -407,32 +446,30 @@ export class ChatService {
     const existing = await this.findDirect(schoolId, directKey);
     if (existing) return existing;
 
-    const client = this.supabase.getServiceClient();
-    const { data: created, error } = await client
-      .schema('chat')
-      .from('conversation')
-      .insert({
+    let created: ConversationRow;
+    try {
+      created = await this.insertConversation({
         school_id: schoolId,
         type: 'direct',
         direct_key: directKey,
         created_by: userA,
-      })
-      .select(CONVERSATION_COLUMNS)
-      .single();
-
-    if (error || !created) {
+      });
+    } catch {
       const raced = await this.findDirect(schoolId, directKey);
       if (raced) return raced;
       throw new BadRequestException('Failed to open conversation');
     }
 
-    await client
-      .schema('chat')
-      .from('conversation_member')
-      .insert([
-        { conversation_id: created.id, user_id: userA, role: 'owner' },
-        { conversation_id: created.id, user_id: userB, role: 'member' },
-      ]);
+    await this.prisma.conversation_member
+      .createMany({
+        data: [
+          { conversation_id: created.id, user_id: userA, role: 'owner' },
+          { conversation_id: created.id, user_id: userB, role: 'member' },
+        ],
+      })
+      .catch((err: Error) =>
+        this.logger.error(`Failed to add DM members: ${err.message}`),
+      );
 
     return created;
   }
@@ -443,19 +480,23 @@ export class ChatService {
     messageId: string,
     state: 'accepted' | 'dismissed',
   ): Promise<ChatMessage> {
-    const { data: message } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .select('id, conversation_id, sender_id, action_state')
-      .eq('id', messageId)
-      .maybeSingle();
+    const message = isUuid(messageId)
+      ? await this.prisma.message.findUnique({
+          where: { id: messageId },
+          select: {
+            id: true,
+            conversation_id: true,
+            sender_id: true,
+            action_state: true,
+          },
+        })
+      : null;
 
     if (!message) throw new NotFoundException('Message not found');
 
     const conversation = await this.assertMember(
       userId,
-      message.conversation_id as string,
+      message.conversation_id,
     );
     // The recipient acts on it, never the sender who created the action.
     if (message.sender_id === userId) {
@@ -465,15 +506,8 @@ export class ChatService {
       throw new BadRequestException('This message has no action');
     }
 
-    const { data, error } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .update({ action_state: state })
-      .eq('id', messageId)
-      .select(MESSAGE_COLUMNS)
-      .single();
-    if (error || !data) {
+    const data = await this.updateMessage(messageId, { action_state: state });
+    if (!data) {
       throw new BadRequestException('Failed to update action');
     }
 
@@ -495,47 +529,45 @@ export class ChatService {
     if (!channelsEnabled()) {
       throw new ForbiddenException('Channels are not enabled');
     }
-    const schoolId = await this.supabase.getUserSchoolId(userId);
-    const client = this.supabase.getServiceClient();
+    const schoolId = await this.schoolOf(userId);
 
     // Same rule as direct messages: members come from the creator's school.
     const invited = [...new Set(memberIds)].filter((id) => id !== userId);
     if (invited.length > 0) {
-      const { data: sameSchool } = await client
-        .from('user_profile')
-        .select('id')
-        .in('id', invited)
-        .eq('school_id', schoolId);
-      if ((sameSchool ?? []).length !== invited.length) {
+      const sameSchool = invited.every(isUuid)
+        ? await this.prisma.user_profile.findMany({
+            where: { id: { in: invited }, school_id: schoolId },
+            select: { id: true },
+          })
+        : [];
+      if (sameSchool.length !== invited.length) {
         throw new ForbiddenException('Channel members must be in your school');
       }
     }
 
-    const { data: created, error } = await client
-      .schema('chat')
-      .from('conversation')
-      .insert({
+    let created: ConversationRow;
+    try {
+      created = await this.insertConversation({
         school_id: schoolId,
         type: 'channel',
         title,
         created_by: userId,
-      })
-      .select(CONVERSATION_COLUMNS)
-      .single();
-    if (error || !created) {
+      });
+    } catch {
       throw new BadRequestException('Failed to create channel');
     }
 
     const uniqueMembers = [...new Set([userId, ...memberIds])];
-    await client
-      .schema('chat')
-      .from('conversation_member')
-      .insert(
-        uniqueMembers.map((id) => ({
+    await this.prisma.conversation_member
+      .createMany({
+        data: uniqueMembers.map((id) => ({
           conversation_id: created.id,
           user_id: id,
           role: id === userId ? 'owner' : 'member',
         })),
+      })
+      .catch((err: Error) =>
+        this.logger.error(`Failed to add channel members: ${err.message}`),
       );
 
     const summary = await this.summarize(created, userId);
@@ -563,14 +595,17 @@ export class ChatService {
     userId: string,
     conversationId: string,
   ): Promise<ConversationRow> {
-    const { data: membership } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('conversation_member')
-      .select('id')
-      .eq('conversation_id', conversationId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const membership = isUuid(conversationId)
+      ? await this.prisma.conversation_member.findUnique({
+          where: {
+            conversation_id_user_id: {
+              conversation_id: conversationId,
+              user_id: userId,
+            },
+          },
+          select: { id: true },
+        })
+      : null;
 
     if (!membership) {
       throw new ForbiddenException('You are not in this conversation');
@@ -582,76 +617,102 @@ export class ChatService {
     userId: string,
     messageId: string,
   ): Promise<MessageRow> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .select(MESSAGE_COLUMNS)
-      .eq('id', messageId)
-      .maybeSingle();
+    const data = isUuid(messageId)
+      ? await this.prisma.message.findUnique({
+          where: { id: messageId },
+          select: MESSAGE_SELECT,
+        })
+      : null;
     if (!data) throw new NotFoundException('Message not found');
     if (data.sender_id !== userId) {
       throw new ForbiddenException('You can only modify your own messages');
     }
-    return data;
+    return toMessageRow(data);
+  }
+
+  /** Update one message and return it, or null when that failed. */
+  private async updateMessage(
+    messageId: string,
+    data: Prisma.messageUpdateInput,
+  ): Promise<MessageRow | null> {
+    try {
+      return toMessageRow(
+        await this.prisma.message.update({
+          where: { id: messageId },
+          data,
+          select: MESSAGE_SELECT,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(`Failed to update message: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  private async insertConversation(
+    data: Prisma.conversationUncheckedCreateInput,
+  ): Promise<ConversationRow> {
+    return toConversationRow(
+      await this.prisma.conversation.create({
+        data,
+        select: CONVERSATION_SELECT,
+      }),
+    );
+  }
+
+  private async membershipsOf(
+    userId: string,
+  ): Promise<{ conversation_id: string; last_read_at: string | null }[]> {
+    const rows = await this.prisma.conversation_member.findMany({
+      where: { user_id: userId },
+      select: { conversation_id: true, last_read_at: true },
+    });
+    return rows.map((m) => ({
+      conversation_id: m.conversation_id,
+      last_read_at: isoDate(m.last_read_at),
+    }));
   }
 
   private async memberIds(conversationId: string): Promise<string[]> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('conversation_member')
-      .select('user_id')
-      .eq('conversation_id', conversationId);
-    return (data ?? []).map((m: any) => m.user_id);
+    const data = await this.prisma.conversation_member.findMany({
+      where: { conversation_id: conversationId },
+      select: { user_id: true },
+    });
+    return data.map((m) => m.user_id);
   }
 
   private async findDirect(
     schoolId: string,
     directKey: string,
   ): Promise<ConversationRow | null> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('conversation')
-      .select(CONVERSATION_COLUMNS)
-      .eq('school_id', schoolId)
-      .eq('type', 'direct')
-      .eq('direct_key', directKey)
-      .maybeSingle();
-    return data ?? null;
+    const data = await this.prisma.conversation.findFirst({
+      where: { school_id: schoolId, type: 'direct', direct_key: directKey },
+      select: CONVERSATION_SELECT,
+    });
+    return data ? toConversationRow(data) : null;
   }
 
   private async lastMessageFor(
     conversationId: string,
   ): Promise<ChatMessage | null> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .select(MESSAGE_COLUMNS)
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data ? this.presentMessage(data) : null;
+    const data = await this.prisma.message.findFirst({
+      where: { conversation_id: conversationId },
+      orderBy: { created_at: { sort: 'desc', nulls: 'first' } },
+      select: MESSAGE_SELECT,
+    });
+    return data ? this.presentMessage(toMessageRow(data)) : null;
   }
 
   private async unreadCountsFor(
     userId: string,
     memberships: { conversation_id: string; last_read_at: string | null }[],
   ): Promise<Map<string, number>> {
-    const client = this.supabase.getServiceClient();
     try {
-      const { data, error } = await client
-        .schema('chat')
-        .rpc('unread_counts', { p_user_id: userId });
-      if (error) throw error;
+      const data = await this.prisma.$queryRaw<
+        { conversation_id: string; unread: bigint | number }[]
+      >`SELECT conversation_id, unread FROM chat.unread_counts(${userId}::uuid)`;
       const map = new Map<string, number>();
-      for (const row of (data ?? []) as {
-        conversation_id: string;
-        unread: number | string;
-      }[]) {
+      for (const row of data) {
         map.set(row.conversation_id, Number(row.unread) || 0);
       }
       return map;
@@ -677,45 +738,35 @@ export class ChatService {
     userId: string,
     lastReadAt: string | null,
   ): Promise<number> {
-    let query = this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('message')
-      .select('id', { count: 'exact', head: true })
-      .eq('conversation_id', conversationId)
-      .neq('sender_id', userId)
-      .is('deleted_at', null);
-
-    if (lastReadAt) query = query.gt('created_at', lastReadAt);
-
-    const { count } = await query;
-    return count ?? 0;
+    return this.prisma.message
+      .count({
+        where: {
+          conversation_id: conversationId,
+          sender_id: { not: userId },
+          deleted_at: null,
+          ...(lastReadAt ? { created_at: { gt: new Date(lastReadAt) } } : {}),
+        },
+      })
+      .catch(() => 0);
   }
 
   /** Members (with profiles) for a set of conversations, grouped by id. */
   private async participantsFor(
     conversationIds: string[],
   ): Promise<Map<string, ChatParticipant[]>> {
-    const client = this.supabase.getServiceClient();
-    const { data: members } = await client
-      .schema('chat')
-      .from('conversation_member')
-      .select('conversation_id, user_id')
-      .in('conversation_id', conversationIds);
-
-    const rows = (members ?? []) as {
-      conversation_id: string;
-      user_id: string;
-    }[];
+    const rows = await this.prisma.conversation_member.findMany({
+      where: { conversation_id: { in: conversationIds } },
+      select: { conversation_id: true, user_id: true },
+    });
     const userIds = [...new Set(rows.map((m) => m.user_id))];
 
-    const { data: profiles } = await client
-      .from('user_profile')
-      .select('id, first_name, last_name, avatar_url')
-      .in('id', userIds);
+    const profiles = await this.prisma.user_profile.findMany({
+      where: { id: { in: userIds } },
+      select: PROFILE_SELECT,
+    });
 
     const profileMap = new Map(
-      (profiles ?? []).map((p: any) => [
+      profiles.map((p) => [
         p.id,
         {
           userId: p.id,
@@ -746,16 +797,14 @@ export class ChatService {
       this.participantsFor([conv.id]),
       this.lastMessageFor(conv.id),
     ]);
-    const { data: membership } = await this.supabase
-      .getServiceClient()
-      .schema('chat')
-      .from('conversation_member')
-      .select('last_read_at')
-      .eq('conversation_id', conv.id)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const membership = await this.prisma.conversation_member.findUnique({
+      where: {
+        conversation_id_user_id: { conversation_id: conv.id, user_id: userId },
+      },
+      select: { last_read_at: true },
+    });
 
-    const last_read_at: string | null = membership?.last_read_at ?? null;
+    const last_read_at: string | null = isoDate(membership?.last_read_at);
 
     const unreadCount = await this.unreadFor(conv.id, userId, last_read_at);
 
@@ -768,13 +817,8 @@ export class ChatService {
   }
 
   private async resolveSchool(userId: string): Promise<string | null> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .maybeSingle();
-    return data?.school_id ?? null;
+    if (!isUuid(userId)) return null;
+    return userSchoolId(this.prisma, userId);
   }
 
   private presentConversation(

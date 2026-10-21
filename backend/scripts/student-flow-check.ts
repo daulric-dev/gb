@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client';
 
 // API_URL is the API origin, as in .env.example; routes live under /api.
 const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
@@ -6,7 +8,11 @@ const SUPA = 'http://127.0.0.1:54321';
 const SERVICE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
 
+// The auth admin API mints users and OTPs; fixtures go straight to the database.
 const admin = createClient(SUPA, SERVICE_KEY, { auth: { persistSession: false } });
+const db = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 const results: string[] = [];
 function check(name: string, ok: boolean, detail = '') {
@@ -79,117 +85,111 @@ async function main() {
   });
   const staffId = staffUser.user!.id;
 
-  const { data: school } = await admin
-    .from('school')
-    .insert({ name: `HTTP E2E ${stamp}` })
-    .select('id')
-    .single();
-  const schoolId = school!.id;
-
-  await admin.from('user_profile').upsert({
-    id: staffId,
-    first_name: 'Staff',
-    school_id: schoolId,
-    role: 'admin',
-    account_type: 'staff',
+  const school = await db.school.create({
+    data: { name: `HTTP E2E ${stamp}` },
+    select: { id: true },
   });
-  await admin
-    .from('school_management')
-    .insert({ user_id: staffId, school_id: schoolId, role: 'admin' });
+  const schoolId = school.id;
 
-  const { data: year } = await admin
-    .from('academic_year')
-    .insert({ school_id: schoolId, name: '2026/27', is_active: true })
-    .select('id')
-    .single();
-  const { data: term } = await admin
-    .from('term')
-    .insert({ academic_year_id: year!.id, name: 'Semester 1', sort_order: 1 })
-    .select('id')
-    .single();
+  await db.user_profile.upsert({
+    where: { id: staffId },
+    create: {
+      id: staffId,
+      first_name: 'Staff',
+      school_id: schoolId,
+      role: 'admin',
+      account_type: 'staff',
+    },
+    update: {
+      first_name: 'Staff',
+      school_id: schoolId,
+      role: 'admin',
+      account_type: 'staff',
+    },
+  });
+  await db.school_management.create({
+    data: { user_id: staffId, school_id: schoolId, role: 'admin' },
+  });
 
-  const { data: me } = await admin
-    .schema('student')
-    .from('student')
-    .insert({ school_id: schoolId, first_name: 'Sam', last_name: 'Self' })
-    .select('id')
-    .single();
-  const { data: other } = await admin
-    .schema('student')
-    .from('student')
-    .insert({ school_id: schoolId, first_name: 'Class', last_name: 'Mate' })
-    .select('id')
-    .single();
+  const year = await db.academic_year.create({
+    data: { school_id: schoolId, name: '2026/27', is_active: true },
+    select: { id: true },
+  });
+  const term = await db.term.create({
+    data: { academic_year_id: year.id, name: 'Semester 1', sort_order: 1 },
+    select: { id: true },
+  });
+
+  const me = await db.student.create({
+    data: { school_id: schoolId, first_name: 'Sam', last_name: 'Self' },
+    select: { id: true },
+  });
+  const other = await db.student.create({
+    data: { school_id: schoolId, first_name: 'Class', last_name: 'Mate' },
+    select: { id: true },
+  });
 
   // A published course with a join code. `other` is enrolled; `me` joins over
   // HTTP below.
   const joinCode = `J${String(stamp).slice(-5)}`;
-  const { data: course } = await admin
-    .schema('course')
-    .from('course')
-    .insert({
+  const course = await db.course.create({
+    data: {
       school_id: schoolId,
-      academic_year_id: year!.id,
-      term_id: term!.id,
+      academic_year_id: year.id,
+      term_id: term.id,
       name: 'Maths',
       code: 'MAT',
       status: 'published',
       join_code: joinCode,
       created_by: staffId,
-    })
-    .select('id')
-    .single();
-  await admin
-    .schema('course')
-    .from('course_staff')
-    .insert({ course_id: course!.id, user_profile_id: staffId, role: 'teacher' });
-  await admin
-    .schema('course')
-    .from('course_student')
-    .insert({ course_id: course!.id, student_id: other!.id });
+    },
+    select: { id: true },
+  });
+  await db.course_staff.create({
+    data: { course_id: course.id, user_profile_id: staffId, role: 'teacher' },
+  });
+  await db.course_student.create({
+    data: { course_id: course.id, student_id: other.id },
+  });
 
-  const { data: activity } = await admin
-    .schema('grading')
-    .from('activity')
-    .insert({
-      course_id: course!.id,
+  const activity = await db.activity.create({
+    data: {
+      course_id: course.id,
       kind: 'offline',
       title: 'Test 1',
       points: 100,
       status: 'published',
       created_by: staffId,
-    })
-    .select('id')
-    .single();
-  await admin.schema('grading').from('submission').insert([
-    { activity_id: activity!.id, student_id: me!.id, status: 'graded', score: 77 },
-    { activity_id: activity!.id, student_id: other!.id, status: 'graded', score: 12 },
-  ]);
+    },
+    select: { id: true },
+  });
+  await db.submission.createMany({
+    data: [
+      { activity_id: activity.id, student_id: me.id, status: 'graded', score: 77 },
+      { activity_id: activity.id, student_id: other.id, status: 'graded', score: 12 },
+    ],
+  });
 
   // Content: one published module with a published page, and a draft page
   // that must stay hidden.
-  const { data: page } = await admin
-    .schema('course')
-    .from('page')
-    .insert({ course_id: course!.id, title: 'Welcome', body: '# Hi', is_published: true })
-    .select('id')
-    .single();
-  const { data: draftPage } = await admin
-    .schema('course')
-    .from('page')
-    .insert({ course_id: course!.id, title: 'Draft', body: 'wip' })
-    .select('id')
-    .single();
-  const { data: mod } = await admin
-    .schema('course')
-    .from('module')
-    .insert({ course_id: course!.id, title: 'Week 1', is_published: true })
-    .select('id')
-    .single();
-  await admin.schema('course').from('module_item').insert([
-    { module_id: mod!.id, course_id: course!.id, position: 0, item_type: 'page', page_id: page!.id },
-    { module_id: mod!.id, course_id: course!.id, position: 1, item_type: 'page', page_id: draftPage!.id },
-  ]);
+  const page = await db.page.create({
+    data: { course_id: course.id, title: 'Welcome', body: '# Hi', is_published: true },
+    select: { id: true },
+  });
+  const draftPage = await db.page.create({
+    data: { course_id: course.id, title: 'Draft', body: 'wip' },
+    select: { id: true },
+  });
+  const mod = await db.module.create({
+    data: { course_id: course.id, title: 'Week 1', is_published: true },
+    select: { id: true },
+  });
+  await db.module_item.createMany({
+    data: [
+      { module_id: mod.id, course_id: course.id, position: 0, item_type: 'page', page_id: page.id },
+      { module_id: mod.id, course_id: course.id, position: 1, item_type: 'page', page_id: draftPage.id },
+    ],
+  });
 
   // ---- staff issues a claim code over HTTP --------------------------------
   const staffSession = new Session();
@@ -314,7 +314,9 @@ async function main() {
   console.log('\n' + results.join('\n') + '\n');
 }
 
-main().catch((e) => {
-  console.error('SCRIPT ERROR', e);
-  process.exit(1);
-});
+main()
+  .then(() => db.$disconnect())
+  .catch((e) => {
+    console.error('SCRIPT ERROR', e);
+    process.exit(1);
+  });

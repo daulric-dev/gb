@@ -1,0 +1,271 @@
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model activity {
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_group_id      String?           @db.Uuid
+  subject_id            String?           @db.Uuid
+  term_id               String?           @db.Uuid
+  grading_group_id      String?           @db.Uuid
+  assessment_id         String?           @db.Uuid
+  kind                  activity_kind
+  title                 String
+  instructions          String?
+  points                Decimal           @default(100) @db.Decimal
+  due_at                DateTime?         @db.Timestamptz(6)
+  status                activity_status   @default(draft)
+  published_at          DateTime?         @db.Timestamptz(6)
+  allow_file            Boolean           @default(false)
+  allow_text            Boolean           @default(false)
+  created_by            String?           @db.Uuid
+  created_at            DateTime          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at            DateTime          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  max_attempts          Int?              @default(1)
+  course_id             String?           @db.Uuid
+  assignment_group_id   String?           @db.Uuid
+  omit_from_final_grade Boolean           @default(false)
+  module_item           module_item[]
+  assessment            assessment?       @relation(fields: [assessment_id], references: [id], onUpdate: NoAction)
+  assignment_group      assignment_group? @relation(fields: [assignment_group_id], references: [id], onUpdate: NoAction)
+  course                course?           @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile          user_profile?     @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  grading_group         grading_group?    @relation(fields: [grading_group_id], references: [id], onUpdate: NoAction)
+  student_group         student_group?    @relation(fields: [student_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  subject               subject?          @relation(fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term                  term?             @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_question         quiz_question[]
+  submission            submission[]
+
+  @@index([assignment_group_id])
+  @@index([course_id])
+  @@index([student_group_id], map: "idx_activity_class")
+  @@index([status], map: "idx_activity_status")
+  @@index([term_id, subject_id], map: "idx_activity_term_subject")
+  @@schema("grading")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model assessment {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  term_id          String?          @db.Uuid
+  subject_id       String?          @db.Uuid
+  title            String?
+  assessment_type  assessment_type?
+  assessment_date  DateTime?        @db.Date
+  max_score        Int?             @db.SmallInt
+  weight           Decimal?         @db.Decimal
+  is_excluded      Boolean?         @default(false)
+  exclusion_reason String?
+  sort_order       Int?             @db.SmallInt
+  grading_group_id String?          @db.Uuid
+  activity         activity[]
+  grading_group    grading_group?   @relation(fields: [grading_group_id], references: [id], onUpdate: NoAction)
+  subject          subject?         @relation(fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term             term?            @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  grade            grade[]
+
+  @@index([grading_group_id], map: "idx_assessment_grading_group")
+  @@index([subject_id], map: "idx_assessment_subject")
+  @@index([term_id, subject_id], map: "idx_assessment_term_subject")
+  @@schema("grading")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model grade {
+  id                                          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assessment_id                               String?       @db.Uuid
+  student_id                                  String?       @db.Uuid
+  score                                       Decimal?      @db.Decimal
+  letter_grade                                String?
+  remarks                                     String?
+  is_excluded                                 Boolean?      @default(false)
+  exclusion_reason                            String?
+  created_by                                  String?       @db.Uuid
+  updated_by                                  String?       @db.Uuid
+  created_at                                  DateTime?     @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at                                  DateTime?     @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  assessment                                  assessment?   @relation(fields: [assessment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile_grade_created_byTouser_profile user_profile? @relation("grade_created_byTouser_profile", fields: [created_by], references: [id], onUpdate: NoAction)
+  student                                     student?      @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile_grade_updated_byTouser_profile user_profile? @relation("grade_updated_byTouser_profile", fields: [updated_by], references: [id], onUpdate: NoAction)
+
+  @@unique([assessment_id, student_id], map: "grade_assessment_student_unique")
+  @@index([assessment_id], map: "idx_grade_assessment")
+  @@index([student_id], map: "idx_grade_student")
+  @@schema("grading")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model grade_scale {
+  id                                                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id                                         String             @unique(map: "grade_scale_one_default_per_school", where: raw("(is_default = true)")) @db.Uuid
+  name                                              String
+  scale_type                                        grade_scale_type
+  is_default                                        Boolean            @default(false)
+  created_by                                        String?            @db.Uuid
+  updated_by                                        String?            @db.Uuid
+  created_at                                        DateTime?          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at                                        DateTime?          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  course                                            course[]
+  user_profile_grade_scale_created_byTouser_profile user_profile?      @relation("grade_scale_created_byTouser_profile", fields: [created_by], references: [id], onUpdate: NoAction)
+  school                                            school             @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile_grade_scale_updated_byTouser_profile user_profile?      @relation("grade_scale_updated_byTouser_profile", fields: [updated_by], references: [id], onUpdate: NoAction)
+  grade_scale_band                                  grade_scale_band[]
+
+  @@index([school_id], map: "idx_grade_scale_school")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model grade_scale_band {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grade_scale_id String      @db.Uuid
+  label          String
+  min_percentage Decimal     @db.Decimal(5, 2)
+  max_percentage Decimal     @db.Decimal(5, 2)
+  gpa_points     Decimal?    @db.Decimal(4, 2)
+  is_pass        Boolean     @default(true)
+  sort_order     Int         @default(0)
+  created_at     DateTime?   @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at     DateTime?   @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  grade_scale    grade_scale @relation(fields: [grade_scale_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "grade_scale_band_scale_fkey")
+
+  @@unique([grade_scale_id, label], map: "grade_scale_band_scale_label_unique")
+  @@index([grade_scale_id, sort_order], map: "idx_grade_scale_band_scale")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model grading_group {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  term_id          String         @unique(map: "idx_grading_group_one_exam_default", where: raw("((student_group_id IS NULL) AND is_exam)")) @db.Uuid
+  name             String
+  weight           Decimal        @default(0) @db.Decimal
+  sort_order       Int            @default(0)
+  created_at       DateTime       @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  is_exam          Boolean        @default(false)
+  student_group_id String?        @db.Uuid
+  activity         activity[]
+  assessment       assessment[]
+  student_group    student_group? @relation(fields: [student_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term             term           @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([term_id, student_group_id], map: "idx_grading_group_one_exam_class", where: raw("((student_group_id IS NOT NULL) AND is_exam)"))
+  @@index([student_group_id], map: "idx_grading_group_class", where: raw("(student_group_id IS NOT NULL)"))
+  @@index([term_id], map: "idx_grading_group_term")
+  @@schema("grading")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model quiz_answer {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submission_id String        @db.Uuid
+  question_id   String        @db.Uuid
+  option_id     String?       @db.Uuid
+  text_answer   String?
+  quiz_option   quiz_option?  @relation(fields: [option_id], references: [id], onUpdate: NoAction)
+  quiz_question quiz_question @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission    submission    @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([submission_id, question_id], map: "idx_quiz_answer_one_per_question")
+  @@schema("grading")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model quiz_option {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  question_id   String        @db.Uuid
+  label         String
+  is_correct    Boolean       @default(false)
+  sort_order    Int           @default(0)
+  quiz_answer   quiz_answer[]
+  quiz_question quiz_question @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([question_id], map: "idx_quiz_option_question")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model quiz_question {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id String        @db.Uuid
+  prompt      String
+  kind        question_kind
+  points      Decimal       @default(1) @db.Decimal
+  sort_order  Int           @default(0)
+  created_at  DateTime      @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  quiz_answer quiz_answer[]
+  quiz_option quiz_option[]
+  activity    activity      @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([activity_id], map: "idx_quiz_question_activity")
+  @@schema("grading")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model submission {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id    String            @db.Uuid
+  student_id     String            @db.Uuid
+  status         submission_status @default(draft)
+  text_body      String?
+  file_id        String?           @db.Uuid
+  submitted_at   DateTime?         @db.Timestamptz(6)
+  score          Decimal?          @db.Decimal
+  feedback       String?
+  graded_at      DateTime?         @db.Timestamptz(6)
+  graded_by      String?           @db.Uuid
+  created_at     DateTime          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at     DateTime          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  attempt_count  Int               @default(0)
+  excused        Boolean           @default(false)
+  excused_reason String?
+  quiz_answer    quiz_answer[]
+  activity       activity          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  file           file?             @relation(fields: [file_id], references: [id], onUpdate: NoAction)
+  user_profile   user_profile?     @relation(fields: [graded_by], references: [id], onUpdate: NoAction)
+  student        student           @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([activity_id, student_id], map: "idx_submission_one_per_student")
+  @@index([student_id], map: "idx_submission_student")
+  @@schema("grading")
+}
+
+enum activity_kind {
+  quiz
+  assignment
+  offline
+
+  @@schema("grading")
+}
+
+enum activity_status {
+  draft
+  published
+  closed
+
+  @@schema("grading")
+}
+
+enum question_kind {
+  multiple_choice
+  true_false
+  short_answer
+
+  @@schema("grading")
+}
+
+enum submission_status {
+  draft
+  submitted
+  graded
+
+  @@schema("grading")
+}

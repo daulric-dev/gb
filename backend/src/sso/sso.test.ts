@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { User } from '@supabase/supabase-js';
-import { createMockCacheService, createRoutingSupabase } from '@/test/mocks';
+import { createMockCacheService } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 import { GoogleAdapter } from './adapters/google.adapter';
 import { AzureAdapter } from './adapters/azure.adapter';
 import { SamlAdapter } from './adapters/saml.adapter';
@@ -119,13 +120,11 @@ describe('SsoService.provision', () => {
     joined?: string[];
   }) {
     const inserted: any[] = [];
-    const supabase = createRoutingSupabase({
-      tables: {
-        'public.user_profile': (call: any) => {
-          if (call.op === 'insert') inserted.push(call.payload);
-          return { data: opts.profile ?? null, error: null };
-        },
-      },
+    const prisma = createMockPrisma();
+    prisma.user_profile.findUnique.mockResolvedValue(opts.profile ?? null);
+    prisma.user_profile.create.mockImplementation(async ({ data }: any) => {
+      inserted.push(data);
+      return data;
     });
     const joined: string[] = opts.joined ?? [];
     const domains = {
@@ -136,10 +135,11 @@ describe('SsoService.provision', () => {
       },
     };
     const service = new SsoService(
-      supabase as any,
+      {} as any, // auth only; provision never touches it
       createMockCacheService() as any,
       new SsoRegistry(),
       domains as any,
+      prisma as any,
     );
     return { service, inserted, joined };
   }
@@ -178,6 +178,17 @@ describe('SsoService.provision', () => {
     expect(inserted[0].first_name).toBeUndefined();
     expect(joined).toEqual([]);
     expect(to).toBe('/onboard');
+  });
+
+  test('an existing onboarded profile is not re-created', async () => {
+    const { service, inserted, joined } = build({
+      domain: studentDomain,
+      profile: { id: 'user-1', first_name: 'Kai', school_id: null, account_type: 'student' },
+    });
+    const to = await service.provision(workspaceStudent, new GoogleAdapter(), null);
+    expect(inserted).toEqual([]);
+    expect(joined).toEqual(['user-1']);
+    expect(to).toBe('/');
   });
 
   test('an unvouched sign-in gets an account but no school', async () => {

@@ -117,11 +117,11 @@ interface SsoAdapter {
 ```
 
 For any OAuth/OpenID provider Supabase Auth supports (Apple, Keycloak,
-GitLab, ...), extend `SupabaseOAuthAdapter`:
+GitLab, ...), extend `OAuthAdapter`:
 
 ```ts
 // backend/src/sso/adapters/keycloak.adapter.ts
-export class KeycloakAdapter extends SupabaseOAuthAdapter {
+export class KeycloakAdapter extends OAuthAdapter {
   constructor() {
     super({ id: 'keycloak', label: 'Keycloak', scopes: 'openid email profile' });
   }

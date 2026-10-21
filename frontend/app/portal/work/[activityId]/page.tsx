@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { uploadResumable } from "@/lib/files/resumable";
+import { uploadFile } from "@/lib/files/upload";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -116,7 +116,7 @@ export default function PortalWorkDetailPage() {
     uploading.value = true;
     uploadProgress.value = 0;
     try {
-      await uploadResumable(
+      await uploadFile(
         file,
         {
           ticket: `/portal/me/activities/${activityId}/upload-ticket`,

@@ -1,0 +1,38 @@
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model teacher_group_assignment {
+  id               BigInt         @id @default(autoincrement())
+  user_profile_id  String?        @db.Uuid
+  student_group_id String?        @db.Uuid
+  is_class_teacher Boolean?
+  academic_year_id String?        @db.Uuid
+  academic_year    academic_year? @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student_group    student_group? @relation(fields: [student_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile     user_profile?  @relation(fields: [user_profile_id], references: [id], onUpdate: NoAction)
+
+  @@index([student_group_id], map: "idx_tga_student_group")
+  @@index([user_profile_id, student_group_id], map: "idx_tga_user_group")
+  @@index([user_profile_id, student_group_id, is_class_teacher], map: "idx_tga_user_group_class")
+  @@index([academic_year_id], map: "idx_tga_year")
+  @@schema("staff")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model teacher_subject_assignment {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_profile_id  String?        @db.Uuid
+  subject_id       String?        @db.Uuid
+  student_group_id String?        @db.Uuid
+  academic_year_id String?        @db.Uuid
+  academic_year    academic_year? @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student_group    student_group? @relation(fields: [student_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  subject          subject?       @relation(fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile     user_profile?  @relation(fields: [user_profile_id], references: [id], onUpdate: NoAction)
+
+  @@index([student_group_id], map: "idx_tsa_student_group")
+  @@index([subject_id], map: "idx_tsa_subject")
+  @@index([user_profile_id, subject_id, student_group_id], map: "idx_tsa_user_subject_group")
+  @@index([academic_year_id], map: "idx_tsa_year")
+  @@schema("staff")
+}

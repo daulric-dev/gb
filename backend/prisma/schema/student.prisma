@@ -1,0 +1,113 @@
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model student_attendance_record {
+  id                                                      String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_id                                              String                   @db.Uuid
+  student_group_id                                        String                   @db.Uuid
+  attendance_date                                         DateTime                 @db.Date
+  status                                                  public_attendance_status
+  notes                                                   String?
+  created_by                                              String?                  @db.Uuid
+  updated_by                                              String?                  @db.Uuid
+  created_at                                              DateTime?                @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at                                              DateTime?                @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  user_profile_attendance_record_created_byTouser_profile user_profile?            @relation("attendance_record_created_byTouser_profile", fields: [created_by], references: [id], onUpdate: NoAction)
+  student_group                                           student_group            @relation(fields: [student_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student                                                 student                  @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile_attendance_record_updated_byTouser_profile user_profile?            @relation("attendance_record_updated_byTouser_profile", fields: [updated_by], references: [id], onUpdate: NoAction)
+
+  @@unique([student_id, student_group_id, attendance_date], map: "attendance_record_student_group_date_unique")
+  @@index([student_group_id, attendance_date], map: "idx_attendance_group_date")
+  @@index([student_id, attendance_date], map: "idx_attendance_student_date")
+  @@map("attendance_record")
+  @@schema("student")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model parent_student_link {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_profile_id String?            @db.Uuid
+  student_id      String?            @db.Uuid
+  relationship    relationship_type?
+  student         student?           @relation(fields: [student_id], references: [id], onUpdate: NoAction)
+  user_profile    user_profile?      @relation(fields: [user_profile_id], references: [id], onUpdate: NoAction)
+
+  @@index([student_id], map: "idx_parent_link_student")
+  @@index([user_profile_id], map: "idx_parent_link_user_profile")
+  @@schema("student")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_join_code {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id    String        @unique(map: "idx_school_join_code_one_active", where: raw("(revoked_at IS NULL)")) @db.Uuid
+  code_hash    String
+  expires_at   DateTime      @db.Timestamptz(6)
+  revoked_at   DateTime?     @db.Timestamptz(6)
+  created_by   String?       @db.Uuid
+  created_at   DateTime      @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  user_profile user_profile? @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  school       school        @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([code_hash], map: "idx_school_join_code_hash")
+  @@schema("student")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model student {
+  id                       String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id                String?                     @db.Uuid
+  first_name               String?
+  last_name                String?
+  date_of_birth            DateTime?                   @db.Date
+  gender                   String?
+  enrollment_date          DateTime?                   @db.Date
+  is_active                Boolean?                    @default(true)
+  user_profile_id          String?                     @unique(map: "idx_student_user_profile_unique", where: raw("(user_profile_id IS NOT NULL)")) @db.Uuid
+  attendance_record        course_attendance_record[]
+  course_student           course_student[]
+  grade                    grade[]
+  submission               submission[]
+  report_book              report_book[]
+  legacy_attendance_record student_attendance_record[]
+  parent_student_link      parent_student_link[]
+  school                   school?                     @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile             user_profile?               @relation(fields: [user_profile_id], references: [id], onUpdate: NoAction)
+  student_group_enrollment student_group_enrollment[]
+  student_subject_profile  student_subject_profile[]
+
+  @@index([first_name(ops: raw("gin_trgm_ops"))], map: "idx_student_first_name_trgm", type: Gin)
+  @@index([last_name(ops: raw("gin_trgm_ops"))], map: "idx_student_last_name_trgm", type: Gin)
+  @@index([school_id], map: "idx_student_school")
+  @@schema("student")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model student_group_enrollment {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_id       String?        @db.Uuid
+  enrolled_at      DateTime?      @db.Date
+  student_group_id String?        @db.Uuid
+  student_group    student_group? @relation(fields: [student_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student          student?       @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([student_id, student_group_id], map: "student_group_enrollment_student_group_unique")
+  @@index([student_group_id], map: "idx_enrollment_group")
+  @@index([student_id], map: "idx_enrollment_student")
+  @@schema("student")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model student_subject_profile {
+  id               BigInt        @id @default(autoincrement())
+  student_id       String        @db.Uuid
+  academic_year_id String        @db.Uuid
+  subject_id       String        @db.Uuid
+  academic_year    academic_year @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student          student       @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  subject          subject       @relation(fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id], map: "idx_ssp_student")
+  @@index([subject_id], map: "idx_ssp_subject")
+  @@index([academic_year_id], map: "idx_ssp_year")
+  @@schema("student")
+}

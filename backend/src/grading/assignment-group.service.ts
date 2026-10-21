@@ -5,14 +5,22 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { isUniqueViolation } from '@/common/db-values';
 import {
   CourseAccessService,
   MANAGE_ROLES,
   STAFF_ROLES,
 } from '@/course/access/course-access.service';
 
-const GROUP_COLUMNS = 'id, course_id, name, weight, position';
+const GROUP_SELECT = {
+  id: true,
+  course_id: true,
+  name: true,
+  weight: true,
+  position: true,
+} satisfies Prisma.assignment_groupSelect;
 
 /** The `AssignmentGroup` contract. */
 export function toAssignmentGroup(g: any) {
@@ -39,28 +47,26 @@ export class AssignmentGroupService {
   private readonly logger = new Logger(AssignmentGroupService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
   ) {}
 
-  private get db() {
-    return this.supabaseService.getServiceClient().schema('course');
-  }
-
   /** Every group in a course, in display order. Used by the gradebook too. */
   async loadForCourse(courseId: string) {
-    const { data, error } = await this.db
-      .from('assignment_group')
-      .select(GROUP_COLUMNS)
-      .eq('course_id', courseId)
-      .order('position', { ascending: true })
-      .order('name', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to load assignment groups: ${error.message}`);
+    let data;
+    try {
+      data = await this.prisma.assignment_group.findMany({
+        where: { course_id: courseId },
+        select: GROUP_SELECT,
+        orderBy: [{ position: 'asc' }, { name: 'asc' }],
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to load assignment groups: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to load assignment groups');
     }
-    return (data ?? []).map((g: any) => toAssignmentGroup(g));
+    return data.map((g) => toAssignmentGroup(g));
   }
 
   async list(userId: string, courseId: string) {
@@ -68,13 +74,15 @@ export class AssignmentGroupService {
     return this.loadForCourse(courseId);
   }
 
-  private nameConflict(error: any): never {
-    if (error?.code === '23505') {
+  private nameConflict(error: unknown): never {
+    if (isUniqueViolation(error)) {
       throw new ConflictException(
         'This course already has a group with that name',
       );
     }
-    this.logger.error(`Failed to save assignment group: ${error?.message}`);
+    this.logger.error(
+      `Failed to save assignment group: ${(error as Error | undefined)?.message}`,
+    );
     throw new BadRequestException('Failed to save the assignment group');
   }
 
@@ -88,26 +96,26 @@ export class AssignmentGroupService {
     const name = input.name.trim();
     if (!name) throw new BadRequestException('Give the group a name');
 
-    const { data: last } = await this.db
-      .from('assignment_group')
-      .select('position')
-      .eq('course_id', courseId)
-      .order('position', { ascending: false })
-      .limit(1);
+    const last = await this.prisma.assignment_group.findFirst({
+      where: { course_id: courseId },
+      select: { position: true },
+      orderBy: { position: 'desc' },
+    });
 
-    const { data, error } = await this.db
-      .from('assignment_group')
-      .insert({
-        course_id: courseId,
-        name,
-        weight: input.weight ?? null,
-        position: ((last?.[0]?.position as number | undefined) ?? -1) + 1,
-      })
-      .select(GROUP_COLUMNS)
-      .single();
-
-    if (error || !data) this.nameConflict(error);
-    return toAssignmentGroup(data);
+    try {
+      const data = await this.prisma.assignment_group.create({
+        data: {
+          course_id: courseId,
+          name,
+          weight: input.weight ?? null,
+          position: (last?.position ?? -1) + 1,
+        },
+        select: GROUP_SELECT,
+      });
+      return toAssignmentGroup(data);
+    } catch (error) {
+      this.nameConflict(error);
+    }
   }
 
   async update(
@@ -118,7 +126,7 @@ export class AssignmentGroupService {
   ) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
-    const changes: Record<string, unknown> = {};
+    const changes: Prisma.assignment_groupUpdateManyMutationInput = {};
     if (patch.name !== undefined) {
       const name = patch.name.trim();
       if (!name) throw new BadRequestException('Give the group a name');
@@ -130,15 +138,16 @@ export class AssignmentGroupService {
       throw new BadRequestException('Nothing to update');
     }
 
-    const { data, error } = await this.db
-      .from('assignment_group')
-      .update(changes)
-      .eq('id', groupId)
-      .eq('course_id', courseId)
-      .select(GROUP_COLUMNS)
-      .maybeSingle();
-
-    if (error) this.nameConflict(error);
+    let data;
+    try {
+      [data] = await this.prisma.assignment_group.updateManyAndReturn({
+        where: { id: groupId, course_id: courseId },
+        data: changes,
+        select: GROUP_SELECT,
+      });
+    } catch (error) {
+      this.nameConflict(error);
+    }
     if (!data) throw new NotFoundException('Assignment group not found');
     return toAssignmentGroup(data);
   }
@@ -147,18 +156,18 @@ export class AssignmentGroupService {
   async remove(userId: string, courseId: string, groupId: string) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
-    const { data, error } = await this.db
-      .from('assignment_group')
-      .delete()
-      .eq('id', groupId)
-      .eq('course_id', courseId)
-      .select('id');
-
-    if (error) {
-      this.logger.error(`Failed to delete assignment group: ${error.message}`);
+    let count: number;
+    try {
+      ({ count } = await this.prisma.assignment_group.deleteMany({
+        where: { id: groupId, course_id: courseId },
+      }));
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete assignment group: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to delete the assignment group');
     }
-    if (!data || (Array.isArray(data) && data.length === 0)) {
+    if (count === 0) {
       throw new NotFoundException('Assignment group not found');
     }
   }
@@ -181,17 +190,20 @@ export class AssignmentGroupService {
     const rest = current.map((g) => g.id).filter((id) => !sent.includes(id));
     const order = [...sent, ...rest];
 
-    for (let i = 0; i < order.length; i++) {
-      const { error } = await this.db
-        .from('assignment_group')
-        .update({ position: i })
-        .eq('id', order[i])
-        .eq('course_id', courseId);
-
-      if (error) {
-        this.logger.error(`Failed to reorder groups: ${error.message}`);
-        throw new BadRequestException('Failed to reorder the groups');
-      }
+    try {
+      await this.prisma.$transaction(
+        order.map((id, i) =>
+          this.prisma.assignment_group.updateMany({
+            where: { id, course_id: courseId },
+            data: { position: i },
+          }),
+        ),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to reorder groups: ${(error as Error).message}`,
+      );
+      throw new BadRequestException('Failed to reorder the groups');
     }
 
     return this.loadForCourse(courseId);

@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { FastifyReply, FastifyRequest } from 'fastify';
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -19,7 +20,10 @@ interface AuthenticatedRequest extends FastifyRequest {
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
@@ -33,12 +37,10 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid or expired session');
       }
 
-      const { data: profile } = await this.supabaseService
-        .getServiceClient()
-        .from('user_profile')
-        .select('is_active')
-        .eq('id', user.id)
-        .maybeSingle();
+      // A lookup failure is not a deactivation, as before.
+      const profile = await this.prisma.user_profile
+        .findUnique({ where: { id: user.id }, select: { is_active: true } })
+        .catch(() => null);
 
       if (profile && profile.is_active === false) {
         throw new UnauthorizedException('Account is deactivated');

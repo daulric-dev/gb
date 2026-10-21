@@ -6,12 +6,22 @@ import {
   fingerprint,
   verifiedSubject,
 } from './tracker';
-import { mintUploadToken } from '@/supabase/upload-token';
+import { createHmac } from 'node:crypto';
 
 const SECRET = 'test-jwt-secret-with-enough-length';
 
+/** An HS256 access token, as the auth server signs them. */
 function token(userId: string, ttlSeconds = 60, secret = SECRET) {
-  return mintUploadToken({ userId, ttlSeconds, secret }).token;
+  const b64 = (v: string | Buffer) => Buffer.from(v).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = b64(
+    JSON.stringify({ sub: userId, aud: 'authenticated', iat: now, exp: now + ttlSeconds }),
+  );
+  const signature = b64(
+    createHmac('sha256', secret).update(`${header}.${payload}`).digest(),
+  );
+  return `${header}.${payload}.${signature}`;
 }
 
 function ssrCookie(accessToken: string) {

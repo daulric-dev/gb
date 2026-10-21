@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { authCookieDomain } from '@/config/origins';
+import { PrismaService } from '@/prisma/prisma.service';
 
 type Schema =
   | 'public'
@@ -20,7 +21,7 @@ export class SupabaseService {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  constructor() {}
+  constructor(private readonly prisma: PrismaService) {}
 
   createUserClient(req: FastifyRequest, reply: FastifyReply, schema: Schema) {
     return createServerClient(
@@ -73,38 +74,15 @@ export class SupabaseService {
   }
 
   async getUserSchoolId(userId: string): Promise<string> {
-    const { data, error } = await this.serviceClient
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .single();
+    const profile = await this.prisma.user_profile.findUnique({
+      where: { id: userId },
+      select: { school_id: true },
+    });
 
-    if (error || !data?.school_id) {
+    if (!profile?.school_id) {
       throw new Error(`Could not resolve school for user ${userId}`);
     }
-    return data.school_id;
-  }
-
-  async uploadFile(
-    bucketName: string,
-    path: string,
-    file: Buffer,
-    contentType: string,
-  ): Promise<{ path: string; publicUrl: string } | null> {
-    const { data, error } = await this.getServiceClient()
-      .storage.from(bucketName)
-      .upload(path, file, {
-        contentType,
-        upsert: true,
-      });
-
-    if (error || !data) return null;
-
-    const { data: publicUrl } = this.getServiceClient()
-      .storage.from(bucketName)
-      .getPublicUrl(data.path);
-
-    return { path: data.path, publicUrl: publicUrl.publicUrl };
+    return profile.school_id;
   }
 
   private clearLegacyRefreshCookie(reply: FastifyReply) {

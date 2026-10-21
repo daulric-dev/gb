@@ -10,8 +10,12 @@ import type { User } from '@supabase/supabase-js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { primaryOrigin } from '@/config/origins';
-import { EmailDomainService, type VerifiedDomain } from '@/email-domain/email-domain.service';
+import {
+  EmailDomainService,
+  type VerifiedDomain,
+} from '@/email-domain/email-domain.service';
 import { SsoRegistry, info } from './sso.registry';
 import type { SsoAdapter, SsoProfile, SsoProviderInfo } from './sso.types';
 
@@ -27,9 +31,11 @@ const HANDOFF_TTL_S = 120;
  */
 export function safeNext(next: unknown): string | null {
   if (typeof next !== 'string' || next.length > 2048) return null;
-  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return null;
+  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\'))
+    return null;
   // Whitespace and control characters (code points below 0x20).
-  if (/\s/.test(next) || [...next].some((c) => c.charCodeAt(0) < 0x20)) return null;
+  if (/\s/.test(next) || [...next].some((c) => c.charCodeAt(0) < 0x20))
+    return null;
   try {
     const resolved = new URL(next, 'http://x.invalid');
     if (resolved.origin !== 'http://x.invalid') return null;
@@ -59,6 +65,7 @@ export class SsoService {
     private readonly cache: CacheService,
     private readonly registry: SsoRegistry,
     private readonly domains: EmailDomainService,
+    private readonly prisma: PrismaService,
   ) {}
 
   providers(): SsoProviderInfo[] {
@@ -78,7 +85,10 @@ export class SsoService {
     };
   }
 
-  private callbackUrl(req: FastifyRequest, params: Record<string, string>): string {
+  private callbackUrl(
+    req: FastifyRequest,
+    params: Record<string, string>,
+  ): string {
     const base =
       process.env.API_URL?.replace(/\/+$/, '') ||
       `${req.protocol}://${req.headers.host as string}`;
@@ -93,7 +103,8 @@ export class SsoService {
     input: { next?: string; platform?: SsoPlatform; email?: string },
   ): Promise<string> {
     const adapter = this.registry.get(providerId);
-    if (!adapter) throw new NotFoundException('That sign-in option is not available');
+    if (!adapter)
+      throw new NotFoundException('That sign-in option is not available');
 
     const email = input.email?.trim().toLowerCase() || undefined;
     const domain = email ? await this.domains.verifiedDomainFor(email) : null;
@@ -113,11 +124,18 @@ export class SsoService {
         client,
         redirectTo: this.callbackUrl(req, params),
         email,
-        domain: domain?.ssoProvider === adapter.id ? domain.domain : email?.split('@')[1],
+        domain:
+          domain?.ssoProvider === adapter.id
+            ? domain.domain
+            : email?.split('@')[1],
       });
     } catch (err) {
-      this.logger.warn(`SSO start via ${adapter.id} failed: ${(err as Error).message}`);
-      throw new BadRequestException(`Could not start sign-in with ${adapter.label}`);
+      this.logger.warn(
+        `SSO start via ${adapter.id} failed: ${(err as Error).message}`,
+      );
+      throw new BadRequestException(
+        `Could not start sign-in with ${adapter.label}`,
+      );
     }
   }
 
@@ -131,7 +149,8 @@ export class SsoService {
     reply: FastifyReply,
     query: Record<string, string | undefined>,
   ): Promise<string> {
-    const platform: SsoPlatform = query.platform === 'mobile' ? 'mobile' : 'web';
+    const platform: SsoPlatform =
+      query.platform === 'mobile' ? 'mobile' : 'web';
     const fail = (reason: string) =>
       platform === 'mobile'
         ? `${MOBILE_RETURN}?error=${encodeURIComponent(reason)}`
@@ -142,7 +161,9 @@ export class SsoService {
     }
 
     const client = this.supabaseService.createUserClient(req, reply, 'public');
-    const { data, error } = await client.auth.exchangeCodeForSession(query.code);
+    const { data, error } = await client.auth.exchangeCodeForSession(
+      query.code,
+    );
     if (error || !data.session || !data.user) {
       this.logger.warn(`SSO code exchange failed: ${error?.message}`);
       return fail('expired');
@@ -158,10 +179,15 @@ export class SsoService {
 
     let destination: string;
     try {
-      destination = await this.provision(data.user, adapter, safeNext(query.next));
+      destination = await this.provision(
+        data.user,
+        adapter,
+        safeNext(query.next),
+      );
     } catch (err) {
       await client.auth.signOut();
-      const message = err instanceof ForbiddenException ? err.message : 'failed';
+      const message =
+        err instanceof ForbiddenException ? err.message : 'failed';
       if (!(err instanceof ForbiddenException)) {
         this.logger.error(`SSO provisioning failed: ${(err as Error).message}`);
       }
@@ -191,32 +217,46 @@ export class SsoService {
   /** The app redeems a handoff code; the session lands in its cookie jar. */
   async handoff(req: FastifyRequest, reply: FastifyReply, code: string) {
     const key = `sso-handoff:${code}`;
-    const tokens = (await this.cache.get(key)) as
-      | { accessToken: string; refreshToken: string }
-      | null;
+    const tokens = (await this.cache.get(key)) as {
+      accessToken: string;
+      refreshToken: string;
+    } | null;
     // Single use, whether or not the rest works.
     await this.cache.delete(key);
-    if (!tokens) throw new BadRequestException('This sign-in link has expired. Try again.');
+    if (!tokens)
+      throw new BadRequestException(
+        'This sign-in link has expired. Try again.',
+      );
 
     const client = this.supabaseService.createUserClient(req, reply, 'public');
     const { error } = await client.auth.setSession({
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
     });
-    if (error) throw new BadRequestException('This sign-in link has expired. Try again.');
+    if (error)
+      throw new BadRequestException(
+        'This sign-in link has expired. Try again.',
+      );
   }
 
   /**
    * Make sure the user has a profile, and a school when their provider vouches
    * for a school domain. Returns the path to send them to.
    */
-  async provision(user: User, adapter: SsoAdapter, next: string | null): Promise<string> {
-    const supabase = this.supabaseService.getServiceClient();
+  async provision(
+    user: User,
+    adapter: SsoAdapter,
+    next: string | null,
+  ): Promise<string> {
     const domain = await this.domains.verifiedDomainFor(user.email);
 
     // A school that requires its own provider gets it; signing in with a
     // different one is refused rather than quietly allowed.
-    if (domain?.ssoRequired && domain.ssoProvider && domain.ssoProvider !== adapter.id) {
+    if (
+      domain?.ssoRequired &&
+      domain.ssoProvider &&
+      domain.ssoProvider !== adapter.id
+    ) {
       const required = this.registry.get(domain.ssoProvider);
       throw new ForbiddenException(
         `Your school signs in with ${required?.label ?? 'its own provider'}`,
@@ -230,11 +270,15 @@ export class SsoService {
         azureTenantId: domain.azureTenantId,
       });
 
-    const { data: existing } = await supabase
-      .from('user_profile')
-      .select('id, first_name, school_id, account_type')
-      .eq('id', user.id)
-      .maybeSingle();
+    const existing = await this.prisma.user_profile.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        first_name: true,
+        school_id: true,
+        account_type: true,
+      },
+    });
 
     const accountType = this.accountTypeFor(vouched ? domain : null);
     const profile = adapter.profileFrom(user);
@@ -244,18 +288,25 @@ export class SsoService {
       // profile with a name skips onboarding, which is where a shared or
       // unknown domain asks "student or staff".
       const complete = accountType !== null && !!profile.firstName;
-      const { error } = await supabase.from('user_profile').insert({
-        id: user.id,
-        email: user.email,
-        ...(complete
-          ? {
-              first_name: profile.firstName,
-              last_name: profile.lastName ?? '',
-              account_type: accountType,
-            }
-          : {}),
-      });
-      if (error) throw new Error(`profile insert: ${error.message}`);
+      try {
+        await this.prisma.user_profile.create({
+          data: {
+            id: user.id,
+            email: user.email,
+            ...(complete
+              ? {
+                  first_name: profile.firstName,
+                  last_name: profile.lastName ?? '',
+                  account_type: accountType,
+                }
+              : {}),
+          },
+        });
+      } catch (error) {
+        throw new Error(`profile insert: ${(error as Error).message}`, {
+          cause: error,
+        });
+      }
       await this.cache.delete(`profile:${user.id}`);
       if (!complete) return '/onboard';
     } else if (!existing.first_name) {
@@ -273,7 +324,9 @@ export class SsoService {
   }
 
   /** What a vouched domain makes the account; null when it cannot say. */
-  private accountTypeFor(domain: VerifiedDomain | null): 'student' | 'staff' | null {
+  private accountTypeFor(
+    domain: VerifiedDomain | null,
+  ): 'student' | 'staff' | null {
     if (domain?.audience === 'student') return 'student';
     if (domain?.audience === 'staff') return 'staff';
     return null;
@@ -284,7 +337,9 @@ export class SsoService {
    * through. Empty for email-code accounts.
    */
   suggestedProfile(user: User): SsoProfile | null {
-    const adapter = this.registry.forIdentityProvider(user.app_metadata?.provider ?? '');
+    const adapter = this.registry.forIdentityProvider(
+      user.app_metadata?.provider ?? '',
+    );
     return adapter ? adapter.profileFrom(user) : null;
   }
 }

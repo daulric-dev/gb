@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { dateOnly } from '@/common/db-values';
 import {
-  COURSE_COLUMNS,
   CourseAccessService,
   type CourseRow,
 } from '@/course/access/course-access.service';
@@ -14,6 +14,12 @@ import type { StudentContext } from './student.guard';
 
 /** Course states a student can open: published, or archived for the record. */
 const VISIBLE_COURSE_STATUSES = ['published', 'archived'] as const;
+
+/** What a portal course card is drawn from. */
+type CardCourse = Pick<
+  CourseRow,
+  'id' | 'name' | 'code' | 'description' | 'status' | 'term_id'
+>;
 
 /**
  * Read-only, self-scoped views of a student's own record and courses.
@@ -32,7 +38,7 @@ export class StudentPortalService {
   private readonly logger = new Logger(StudentPortalService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
     private readonly courses: CourseService,
     private readonly modules: ModuleService,
@@ -43,37 +49,43 @@ export class StudentPortalService {
 
   /** The student's own record and school. */
   async getMe(ctx: StudentContext) {
-    const supabase = this.supabaseService.getServiceClient();
+    let student;
+    let failure: string | undefined;
+    try {
+      student = await this.prisma.student.findUnique({
+        where: { id: ctx.studentId },
+        select: {
+          id: true,
+          first_name: true,
+          last_name: true,
+          date_of_birth: true,
+          gender: true,
+          enrollment_date: true,
+        },
+      });
+    } catch (error) {
+      failure = (error as Error).message;
+    }
 
-    const { data: student, error } = await supabase
-      .schema('student')
-      .from('student')
-      .select(
-        'id, first_name, last_name, date_of_birth, gender, enrollment_date',
-      )
-      .eq('id', ctx.studentId)
-      .maybeSingle();
-
-    if (error || !student) {
+    if (!student) {
       this.logger.error(
-        `Failed to load student ${ctx.studentId}: ${error?.message}`,
+        `Failed to load student ${ctx.studentId}: ${failure}`,
       );
       throw new NotFoundException('Student record not found');
     }
 
-    const { data: school } = await supabase
-      .from('school')
-      .select('id, name, school_type')
-      .eq('id', ctx.schoolId)
-      .maybeSingle();
+    const school = await this.prisma.school.findUnique({
+      where: { id: ctx.schoolId },
+      select: { id: true, name: true, school_type: true },
+    });
 
     return {
       id: student.id,
       firstName: student.first_name,
       lastName: student.last_name,
-      dateOfBirth: student.date_of_birth,
+      dateOfBirth: dateOnly(student.date_of_birth),
       gender: student.gender,
-      enrollmentDate: student.enrollment_date,
+      enrollmentDate: dateOnly(student.enrollment_date),
       school: school
         ? { id: school.id, name: school.name, type: school.school_type }
         : null,
@@ -84,34 +96,39 @@ export class StudentPortalService {
 
   /** Every course the student is (or was, if completed) enrolled in. */
   async listCourses(ctx: StudentContext) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: enrollments, error } = await supabase
-      .schema('course')
-      .from('course_student')
-      .select('course_id, status')
-      .eq('student_id', ctx.studentId)
-      .neq('status', 'dropped');
-
-    if (error) {
+    let enrollments;
+    try {
+      enrollments = await this.prisma.course_student.findMany({
+        where: { student_id: ctx.studentId, status: { not: 'dropped' } },
+        select: { course_id: true, status: true },
+      });
+    } catch (error) {
       this.logger.error(
-        `Failed to load courses for student ${ctx.studentId}: ${error.message}`,
+        `Failed to load courses for student ${ctx.studentId}: ${(error as Error).message}`,
       );
       throw new NotFoundException('Could not load your courses');
     }
 
-    const courseIds = (enrollments ?? []).map((e: any) => e.course_id as string);
+    const courseIds = enrollments.map((e) => e.course_id);
     if (courseIds.length === 0) return [];
 
-    const { data: courses } = await supabase
-      .schema('course')
-      .from('course')
-      .select(COURSE_COLUMNS)
-      .in('id', courseIds)
-      .in('status', [...VISIBLE_COURSE_STATUSES])
-      .order('name', { ascending: true });
+    const courses = await this.prisma.course.findMany({
+      where: {
+        id: { in: courseIds },
+        status: { in: [...VISIBLE_COURSE_STATUSES] },
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        status: true,
+        term_id: true,
+      },
+      orderBy: { name: 'asc' },
+    });
 
-    return this.toCards(ctx, (courses ?? []));
+    return this.toCards(ctx, courses);
   }
 
   async getCourse(ctx: StudentContext, courseId: string) {
@@ -150,39 +167,34 @@ export class StudentPortalService {
    * running grade. A grade that fails to compute leaves the card without one
    * rather than failing the whole list.
    */
-  private async toCards(ctx: StudentContext, courses: CourseRow[]) {
+  private async toCards(ctx: StudentContext, courses: CardCourse[]) {
     if (courses.length === 0) return [];
-    const supabase = this.supabaseService.getServiceClient();
     const ids = courses.map((c) => c.id);
 
-    const { data: staff } = await supabase
-      .schema('course')
-      .from('course_staff')
-      .select('course_id, user_profile_id')
-      .in('course_id', ids)
-      .eq('role', 'teacher');
+    const staff = await this.prisma.course_staff.findMany({
+      where: { course_id: { in: ids }, role: 'teacher' },
+      select: { course_id: true, user_profile_id: true },
+    });
 
-    const profileIds = [
-      ...new Set((staff ?? []).map((s: any) => s.user_profile_id as string)),
-    ];
-    const { data: profiles } = profileIds.length
-      ? await supabase
-          .from('user_profile')
-          .select('id, first_name, last_name')
-          .in('id', profileIds)
-      : { data: [] as any[] };
-    const profileById = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+    const profileIds = [...new Set(staff.map((s) => s.user_profile_id))];
+    const profiles = profileIds.length
+      ? await this.prisma.user_profile.findMany({
+          where: { id: { in: profileIds } },
+          select: { id: true, first_name: true, last_name: true },
+        })
+      : [];
+    const profileById = new Map(profiles.map((p) => [p.id, p]));
 
     const teachersOf = new Map<
       string,
       { firstName: string | null; lastName: string | null }[]
     >();
-    for (const s of (staff ?? []) as any[]) {
+    for (const s of staff) {
       const p = profileById.get(s.user_profile_id);
       if (!p) continue;
-      const list = teachersOf.get(s.course_id as string) ?? [];
+      const list = teachersOf.get(s.course_id) ?? [];
       list.push({ firstName: p.first_name ?? null, lastName: p.last_name ?? null });
-      teachersOf.set(s.course_id as string, list);
+      teachersOf.set(s.course_id, list);
     }
 
     const grades = await Promise.all(

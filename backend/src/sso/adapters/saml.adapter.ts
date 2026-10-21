@@ -6,7 +6,7 @@ import type {
   SsoStartInput,
 } from '../sso.types';
 import { emailDomainOf, standardProfile } from './claims';
-import { enabledProviders } from './supabase-oauth.adapter';
+import { enabledProviders } from './oauth.adapter';
 
 /**
  * SAML 2.0 through Supabase SSO (ADFS, Okta, ClassLink, Shibboleth, ...).

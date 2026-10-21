@@ -18,10 +18,14 @@ No `.env` files are committed to the repository. You must create them manually i
 | ----------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SUPABASE_URL`                | **Yes**                  | -                       | Your Supabase project URL (e.g., `https://abcdef.supabase.co`)                                                                                                                                                                                                        |
 | `SUPABASE_SERVICE_ROLE_KEY`   | **Yes**                  | -                       | Supabase service role **JWT** (starts `eyJ`). Full database access, bypasses RLS. **Keep secret.** A `sb_secret_…` key is accepted by PostgREST but **rejected by the edge function gateway**, which silently disables the dashboard, class summary, grade analytics, attendance summary and file ingest while ordinary queries keep working. |
-| `SUPABASE_JWT_SECRET`         | **Prod**                 | -                       | The project's JWT secret (Supabase dashboard → Settings → API → JWT Secret). Signs the short-lived tokens clients use to upload directly to Storage over TUS, and **must belong to the same project as `SUPABASE_URL`** or Storage rejects every upload. **Required in production** — the app refuses to boot without it. Unset in dev = resumable uploads fail (with a warning at boot). |
+| `SUPABASE_JWT_SECRET`         | No                       | -                       | The project's JWT secret. Only lets the rate limiter key requests by verified user id; uploads no longer use it (they go to S3 with presigned URLs). |
 | `SUPABASE_PUSHABLE_KEY`       | **Yes**                  | -                       | Supabase anon/public key. Used for user-context clients that respect RLS policies.                                                                                                                                                                                    |
 | `NODE_ENV`                    | No                       | -                       | `production` turns on the fail-closed secret checks, marks the auth cookie `Secure`, and applies `AUTH_COOKIE_DOMAIN`. Anything else is treated as development. |
-| `SUPABASE_PUBLIC_URL`         | No                       | derived                 | The Storage origin handed to clients for direct (TUS) uploads. Unset, it is derived from the request's `Host` when `SUPABASE_URL` is loopback, so a phone gets a routable address in development; a hosted `SUPABASE_URL` is used as-is. Set it only when Storage is reachable at an address the backend cannot infer. |
+| `S3_ENDPOINT`                 | Dev / non-AWS            | -                       | S3-compatible endpoint (SeaweedFS `http://127.0.0.1:8333` in dev, R2/B2/MinIO URL in production). Omit for AWS S3. |
+| `S3_REGION`, `S3_BUCKET`      | Yes                      | `auto`, `gradebook`     | Region and the single bucket every object lives in, under `<area>/<path>` (`file-manager/...`, `images/...`, `report-books/...`). |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes         | -                       | Store credentials. |
+| `S3_PUBLIC_ENDPOINT`          | No                       | `S3_ENDPOINT`           | The store's address as browsers and phones reach it; presigned upload/download URLs are signed for this host. |
+| `S3_PUBLIC_URL`               | No                       | -                       | A public CDN/bucket host for avatars. Unset, avatar URLs point at the API's public route `/api/images/avatars/<file>`. |
 | `AUTH_COOKIE_DOMAIN`          | No                       | derived                 | `Domain` for the auth cookie in production. The web middleware reads this cookie on the **frontend's** domain, so it must be visible to both app and API. Derived from the last two labels of `FRONTEND_URL` when unset — set it explicitly if the API is on a different registrable domain, or the domain has a multi-part suffix (`app.example.co.uk` derives `.co.uk`, which browsers reject). `none` = host-only cookie. |
 | `FRONTEND_URL`                | No                       | `http://localhost:3000` | Allowed CORS origins, **comma-separated**. The first is canonical: it is what the auth cookie domain is derived from, and the fallback for endpoints that write the CORS header by hand. In development, private/LAN origins are also accepted by shape (for the mobile app over Expo web) without being listed. |
 | `PORT`                        | No                       | `3001`                  | Port the backend server listens on.                                                                                                                                                                                                                                   |
@@ -83,6 +87,7 @@ USE_REDIS=false
 | ---------------------------------- | -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | No       | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically)                                                                                                               |
 | `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No       | `false`                 | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
+| `NEXT_PUBLIC_STORAGE_URL`          | **Prod** | -                       | Origin browsers upload to with presigned URLs: the origin of the backend's `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT`), e.g. `http://127.0.0.1:8333` in dev, `https://<account-id>.r2.cloudflarestorage.com` in production. Added to the production CSP (`connect-src`, `img-src`); without it uploads are blocked. |
 
 ### Example `frontend/.env.local`
 
@@ -99,6 +104,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 | ---------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | `lib/api.ts`                                                | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
 | `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | `app/onboard/page.tsx`, `components/layout/app-sidebar.tsx` | Hides school selection UI on dedicated instances            |
+| `NEXT_PUBLIC_STORAGE_URL`          | `next.config.ts`                                            | Allows direct uploads to object storage in the CSP          |
 
 > **Note**: The `NEXT_PUBLIC_` prefix makes this variable available in the browser bundle. Do **not** put secrets in `NEXT_PUBLIC_` variables.
 
@@ -147,7 +153,7 @@ The app has no secrets of its own; what breaks it lives on the backend.
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AUTH_COOKIE_DOMAIN`  | Auth is httpOnly cookies, stored by the platform's native cookie store. If the cookie's `Domain` does not cover the API's own host, the client **rejects it and every request after login is unauthenticated**, with no error pointing at it. |
 | `NODE_ENV`            | `production` marks the cookie `Secure`, so the API must be served over HTTPS or the cookie is never stored.                                                                                                                                    |
-| `SUPABASE_JWT_SECRET` | Signs the short-lived token used for direct file uploads. Must belong to the same project as `SUPABASE_URL` or Storage rejects every upload.                                                                                                   |
+| `SUPABASE_JWT_SECRET` | Lets the rate limiter verify session tokens. No longer used for uploads. |
 | `FRONTEND_URL`        | Only matters for the app served over **Expo web**, which is a browser origin and so subject to CORS. Native React Native sends no `Origin` header.                                                                                             |
 
 See [Mobile in production](./mobile-production.md) for the full shipping checklist.
@@ -251,12 +257,10 @@ Repository → Settings → Secrets and variables → Actions → New repository
 
 Add `CODECOV_TOKEN` and `DISCORD_WEBHOOK_URL` if using those workflows.
 
-## Supabase Edge Functions
+## Edge Functions
 
-The current data-processing Edge Functions do not require application secrets.
-They use the public Supabase URL and anon key with the caller's JWT; row-level
-security remains active. See [Supabase Edge Functions](./edge-functions.md) for
-the deployment and authentication model.
+There are none any more; their work moved into the backend. See
+[Edge functions](./edge-functions.md).
 
 ---
 

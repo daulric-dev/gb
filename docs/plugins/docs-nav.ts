@@ -12,6 +12,7 @@ const SECTIONS: { label: string; dir?: string; items?: string[] }[] = [
       "developer-guide",
       "implementation-guide",
       "upgrading-to-courses",
+      "platform-migration",
       "environment-variables",
       "dedicated-deployment",
       "sso",

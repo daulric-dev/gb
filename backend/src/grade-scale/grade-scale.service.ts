@@ -5,7 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { isoDate, isUniqueViolation, num } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import {
   CreateGradeScaleDto,
@@ -28,47 +30,47 @@ interface ScaleRow {
   name: string;
   scale_type: GradeScaleType;
   is_default: boolean;
-  created_at: string | null;
-  updated_at: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
 }
 
 interface BandRow {
   id: string;
   grade_scale_id: string;
   label: string;
-  min_percentage: number | string;
-  max_percentage: number | string;
-  gpa_points: number | string | null;
+  min_percentage: Prisma.Decimal | number;
+  max_percentage: Prisma.Decimal | number;
+  gpa_points: Prisma.Decimal | number | null;
   is_pass: boolean;
   sort_order: number;
 }
+
+type Db = Prisma.TransactionClient;
 
 @Injectable()
 export class GradeScaleService {
   private readonly logger = new Logger(GradeScaleService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}
 
   async list(userId: string): Promise<GradeScaleSummary[]> {
     const schoolId = await this.resolveSchoolId(userId);
-    const supabase = this.supabaseService.getServiceClient();
 
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .select('*')
-      .eq('school_id', schoolId)
-      .order('is_default', { ascending: false })
-      .order('name', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to list grade scales: ${error.message}`);
+    try {
+      const rows = await this.prisma.grade_scale.findMany({
+        where: { school_id: schoolId },
+        orderBy: [{ is_default: 'desc' }, { name: 'asc' }],
+      });
+      return (rows as ScaleRow[]).map((r) => this.toSummary(r));
+    } catch (err) {
+      this.logger.error(
+        `Failed to list grade scales: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to list grade scales');
     }
-    return ((data ?? []) as ScaleRow[]).map((r) => this.toSummary(r));
   }
 
   async getDefault(userId: string): Promise<GradeScaleDetail | null> {
@@ -77,17 +79,12 @@ export class GradeScaleService {
     const cached = (await this.cache.get(cacheKey)) as GradeScaleDetail | null;
     if (cached) return cached;
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { data: scale } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .select('*')
-      .eq('school_id', schoolId)
-      .eq('is_default', true)
-      .maybeSingle();
+    const scale = await this.prisma.grade_scale
+      .findFirst({ where: { school_id: schoolId, is_default: true } })
+      .catch(() => null);
 
     if (!scale) return null;
-    const detail = await this.attachBands(scale as ScaleRow);
+    const detail = await this.attachBands(scale);
     await this.cache.set(cacheKey, detail, SCALE_CACHE_TTL);
     return detail;
   }
@@ -103,39 +100,43 @@ export class GradeScaleService {
   ): Promise<GradeScaleDetail> {
     this.validateBands(dto.bands);
     const schoolId = await this.resolveSchoolId(userId);
-    const supabase = this.supabaseService.getServiceClient();
 
-    if (dto.isDefault) {
-      await this.clearCurrentDefault(schoolId);
-    }
-
-    const { data: scale, error: scaleErr } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .insert({
-        school_id: schoolId,
-        name: dto.name,
-        scale_type: dto.scaleType,
-        is_default: dto.isDefault ?? false,
-        created_by: userId,
-        updated_by: userId,
-      })
-      .select()
-      .single();
-
-    if (scaleErr || !scale) {
-      if (scaleErr?.code === '23505') {
-        throw new ConflictException(
-          'A default scale already exists for this school',
-        );
+    // The scale and its bands land together or not at all.
+    const scale = await this.prisma.$transaction(async (tx) => {
+      if (dto.isDefault) {
+        await this.clearCurrentDefault(tx, schoolId);
       }
-      this.logger.error(`Failed to create grade scale: ${scaleErr?.message}`);
-      throw new BadRequestException('Failed to create grade scale');
-    }
 
-    await this.insertBands((scale as ScaleRow).id, dto.bands);
+      let created: ScaleRow;
+      try {
+        created = (await tx.grade_scale.create({
+          data: {
+            school_id: schoolId,
+            name: dto.name,
+            scale_type: dto.scaleType,
+            is_default: dto.isDefault ?? false,
+            created_by: userId,
+            updated_by: userId,
+          },
+        }));
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            'A default scale already exists for this school',
+          );
+        }
+        this.logger.error(
+          `Failed to create grade scale: ${(err as Error).message}`,
+        );
+        throw new BadRequestException('Failed to create grade scale');
+      }
+
+      await this.insertBands(tx, created.id, dto.bands);
+      return created;
+    });
+
     await this.invalidateSchool(schoolId);
-    return this.attachBands(scale as ScaleRow);
+    return this.attachBands(scale);
   }
 
   async update(
@@ -145,39 +146,40 @@ export class GradeScaleService {
   ): Promise<GradeScaleDetail> {
     const existing = await this.assertScaleInUserSchool(id, userId);
 
-    const patch: Record<string, unknown> = {
+    const patch: Prisma.grade_scaleUncheckedUpdateInput = {
       updated_by: userId,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(),
     };
     if (dto.name !== undefined) patch.name = dto.name;
-    if (dto.isDefault === true && !existing.is_default) {
-      await this.clearCurrentDefault(existing.school_id);
+    const makeDefault = dto.isDefault === true && !existing.is_default;
+    if (makeDefault) {
       patch.is_default = true;
     } else if (dto.isDefault === false && existing.is_default) {
       patch.is_default = false;
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .update(patch)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error || !data) {
-      if (error?.code === '23505') {
-        throw new ConflictException(
-          'A default scale already exists for this school',
+    const data = await this.prisma.$transaction(async (tx) => {
+      if (makeDefault) await this.clearCurrentDefault(tx, existing.school_id);
+      try {
+        return (await tx.grade_scale.update({
+          where: { id },
+          data: patch,
+        }));
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            'A default scale already exists for this school',
+          );
+        }
+        this.logger.error(
+          `Failed to update grade scale: ${(err as Error).message}`,
         );
+        throw new BadRequestException('Failed to update grade scale');
       }
-      this.logger.error(`Failed to update grade scale: ${error?.message}`);
-      throw new BadRequestException('Failed to update grade scale');
-    }
+    });
 
     await this.invalidateSchool(existing.school_id);
-    return this.attachBands(data as ScaleRow);
+    return this.attachBands(data);
   }
 
   async replaceBands(
@@ -188,24 +190,21 @@ export class GradeScaleService {
     this.validateBands(dto.bands);
     const scale = await this.assertScaleInUserSchool(id, userId);
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { error: delErr } = await supabase
-      .schema('grading')
-      .from('grade_scale_band')
-      .delete()
-      .eq('grade_scale_id', id);
+    // Clear and refill atomically so a failed insert keeps the old bands.
+    await this.prisma.$transaction(async (tx) => {
+      try {
+        await tx.grade_scale_band.deleteMany({ where: { grade_scale_id: id } });
+      } catch (err) {
+        this.logger.error(`Failed to clear bands: ${(err as Error).message}`);
+        throw new BadRequestException('Failed to replace bands');
+      }
 
-    if (delErr) {
-      this.logger.error(`Failed to clear bands: ${delErr.message}`);
-      throw new BadRequestException('Failed to replace bands');
-    }
-
-    await this.insertBands(id, dto.bands);
-    await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .update({ updated_by: userId, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      await this.insertBands(tx, id, dto.bands);
+      await tx.grade_scale.updateMany({
+        where: { id },
+        data: { updated_by: userId, updated_at: new Date() },
+      });
+    });
 
     await this.invalidateSchool(scale.school_id);
     return this.attachBands(scale);
@@ -216,28 +215,28 @@ export class GradeScaleService {
     if (scale.is_default) {
       return this.attachBands(scale);
     }
-    await this.clearCurrentDefault(scale.school_id);
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .update({
-        is_default: true,
-        updated_by: userId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to set default scale: ${error?.message}`);
-      throw new BadRequestException('Failed to set default scale');
-    }
+    const data = await this.prisma.$transaction(async (tx) => {
+      await this.clearCurrentDefault(tx, scale.school_id);
+      try {
+        return (await tx.grade_scale.update({
+          where: { id },
+          data: {
+            is_default: true,
+            updated_by: userId,
+            updated_at: new Date(),
+          },
+        }));
+      } catch (err) {
+        this.logger.error(
+          `Failed to set default scale: ${(err as Error).message}`,
+        );
+        throw new BadRequestException('Failed to set default scale');
+      }
+    });
 
     await this.invalidateSchool(scale.school_id);
-    return this.attachBands(data as ScaleRow);
+    return this.attachBands(data);
   }
 
   convertScore(
@@ -261,15 +260,12 @@ export class GradeScaleService {
   async delete(id: string, userId: string) {
     const scale = await this.assertScaleInUserSchool(id, userId);
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { error } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      this.logger.error(`Failed to delete grade scale: ${error.message}`);
+    try {
+      await this.prisma.grade_scale.deleteMany({ where: { id } });
+    } catch (err) {
+      this.logger.error(
+        `Failed to delete grade scale: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to delete grade scale');
     }
 
@@ -277,8 +273,7 @@ export class GradeScaleService {
     return { message: 'Grade scale deleted' };
   }
 
-  private async insertBands(scaleId: string, bands: BandInputDto[]) {
-    const supabase = this.supabaseService.getServiceClient();
+  private async insertBands(db: Db, scaleId: string, bands: BandInputDto[]) {
     const rows = bands.map((b, i) => ({
       grade_scale_id: scaleId,
       label: b.label,
@@ -289,54 +284,48 @@ export class GradeScaleService {
       sort_order: b.sortOrder ?? i,
     }));
 
-    const { error } = await supabase
-      .schema('grading')
-      .from('grade_scale_band')
-      .insert(rows);
-
-    if (error) {
-      if (error.code === '23505') {
+    try {
+      await db.grade_scale_band.createMany({ data: rows });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           'Band labels must be unique within a scale',
         );
       }
-      this.logger.error(`Failed to insert bands: ${error.message}`);
+      this.logger.error(`Failed to insert bands: ${(err as Error).message}`);
       throw new BadRequestException('Failed to insert bands');
     }
   }
 
-  private async clearCurrentDefault(schoolId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-    const { error } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .update({ is_default: false })
-      .eq('school_id', schoolId)
-      .eq('is_default', true);
-
-    if (error) {
-      this.logger.error(`Failed to clear default scale: ${error.message}`);
+  private async clearCurrentDefault(db: Db, schoolId: string) {
+    try {
+      await db.grade_scale.updateMany({
+        where: { school_id: schoolId, is_default: true },
+        data: { is_default: false },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to clear default scale: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to update default scale');
     }
   }
 
   private async attachBands(scale: ScaleRow): Promise<GradeScaleDetail> {
-    const supabase = this.supabaseService.getServiceClient();
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('grade_scale_band')
-      .select('*')
-      .eq('grade_scale_id', scale.id)
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to load bands: ${error.message}`);
+    let bands: BandRow[];
+    try {
+      bands = await this.prisma.grade_scale_band.findMany({
+        where: { grade_scale_id: scale.id },
+        orderBy: { sort_order: 'asc' },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to load bands: ${(err as Error).message}`);
       throw new BadRequestException('Failed to load grade scale bands');
     }
 
     return {
       ...this.toSummary(scale),
-      bands: ((data ?? []) as BandRow[]).map((b) => this.toBand(b)),
+      bands: bands.map((b) => this.toBand(b)),
     };
   }
 
@@ -345,40 +334,33 @@ export class GradeScaleService {
     userId: string,
   ): Promise<ScaleRow> {
     const schoolId = await this.resolveSchoolId(userId);
-    const supabase = this.supabaseService.getServiceClient();
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('grade_scale')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error) {
-      this.logger.error(`Failed to load grade scale: ${error.message}`);
+    let data: ScaleRow | null;
+    try {
+      data = (await this.prisma.grade_scale.findUnique({
+        where: { id },
+      }));
+    } catch (err) {
+      this.logger.error(`Failed to load grade scale: ${(err as Error).message}`);
       throw new BadRequestException('Failed to load grade scale');
     }
     if (!data) {
       throw new NotFoundException('Grade scale not found');
     }
-    const row = data as ScaleRow;
-    if (row.school_id !== schoolId) {
+    if (data.school_id !== schoolId) {
       throw new NotFoundException('Grade scale not found');
     }
-    return row;
+    return data;
   }
 
   private async resolveSchoolId(userId: string): Promise<string> {
-    const supabase = this.supabaseService.getServiceClient();
-    const { data, error } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .single();
+    const profile = await this.prisma.user_profile
+      .findUnique({ where: { id: userId }, select: { school_id: true } })
+      .catch(() => null);
 
-    if (error || !data?.school_id) {
+    if (!profile?.school_id) {
       throw new BadRequestException('User is not associated with a school');
     }
-    return data.school_id;
+    return profile.school_id;
   }
 
   // Bands may not overlap (a single score must map to at most one band).
@@ -420,8 +402,8 @@ export class GradeScaleService {
       name: row.name,
       scaleType: row.scale_type,
       isDefault: row.is_default,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      createdAt: isoDate(row.created_at),
+      updatedAt: isoDate(row.updated_at),
     };
   }
 
@@ -429,9 +411,9 @@ export class GradeScaleService {
     return {
       id: row.id,
       label: row.label,
-      minPercentage: Number(row.min_percentage),
-      maxPercentage: Number(row.max_percentage),
-      gpaPoints: row.gpa_points == null ? null : Number(row.gpa_points),
+      minPercentage: num(row.min_percentage) as number,
+      maxPercentage: num(row.max_percentage) as number,
+      gpaPoints: num(row.gpa_points),
       isPass: row.is_pass,
       sortOrder: row.sort_order,
     };

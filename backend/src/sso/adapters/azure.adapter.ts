@@ -1,7 +1,7 @@
 import type { User } from '@supabase/supabase-js';
 import type { SsoDomainContext } from '../sso.types';
 import { claimString, emailDomainOf, identityFor } from './claims';
-import { SupabaseOAuthAdapter } from './supabase-oauth.adapter';
+import { OAuthAdapter } from './oauth.adapter';
 
 const TENANT_IN_ISSUER = /^https:\/\/login\.microsoftonline\.com\/([0-9a-f-]{36})\//i;
 
@@ -14,7 +14,7 @@ const TENANT_IN_ISSUER = /^https:\/\/login\.microsoftonline\.com\/([0-9a-f-]{36}
  * when it comes from the school's own tenant, which the school admin records
  * on the domain.
  */
-export class AzureAdapter extends SupabaseOAuthAdapter {
+export class AzureAdapter extends OAuthAdapter {
   constructor() {
     super({
       id: 'azure',

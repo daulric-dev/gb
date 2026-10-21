@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@/generated/prisma/client';
 import { promises as dns } from 'node:dns';
-import { createMockCacheService, createRoutingSupabase } from '@/test/mocks';
+import { createMockCacheService } from '@/test/mocks';
+import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { EmailDomainService } from './email-domain.service';
 
 const SCHOOL = 'school-1';
@@ -16,16 +18,24 @@ const unverified = {
   staff_role: 'teacher',
   verification_token: 'tok',
   verified_at: null,
-  created_at: '2026-10-21T00:00:00Z',
+  created_at: new Date('2026-10-21T00:00:00Z'),
+  sso_provider: null,
+  sso_required: false,
+  azure_tenant_id: null,
 };
 
-function build(tables: Record<string, any>, rpc: Record<string, any> = {}) {
-  const supabase = createRoutingSupabase({ tables, rpc, userSchoolId: SCHOOL });
+function build(setup: (prisma: MockPrisma) => void = () => {}) {
+  const prisma = createMockPrisma();
+  prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
+  setup(prisma);
   const cache = createMockCacheService();
   const registry = { get: (id: string) => (id === 'google' ? { id } : undefined) };
-  const service = new EmailDomainService(supabase as any, cache as any, registry as any);
-  return { service, supabase, cache };
+  const service = new EmailDomainService(prisma as any, cache as any, registry as any);
+  return { service, prisma, cache };
 }
+
+const known = (code: string) =>
+  new Prisma.PrismaClientKnownRequestError('db error', { code, clientVersion: 'test' });
 
 const originalResolve = dns.resolveTxt;
 afterEach(() => {
@@ -35,7 +45,7 @@ afterEach(() => {
 
 describe('EmailDomainService.add', () => {
   test('refuses public mail providers and junk', async () => {
-    const { service } = build({});
+    const { service } = build();
     await expect(
       service.add(ADMIN, { domain: 'gmail.com', audience: 'student' }),
     ).rejects.toThrow(BadRequestException);
@@ -45,25 +55,68 @@ describe('EmailDomainService.add', () => {
   });
 
   test('a domain another school verified is a conflict', async () => {
-    const { service } = build({
-      'public.school_email_domain': { data: { school_id: 'other-school' }, error: null },
-    });
+    const { service, prisma } = build((p) =>
+      p.school_email_domain.findFirst.mockResolvedValue({ school_id: 'other-school' }),
+    );
     await expect(
       service.add(ADMIN, { domain: 'riverside.edu', audience: 'staff' }),
     ).rejects.toThrow(ConflictException);
+    expect(prisma.school_email_domain.findFirst.mock.calls[0][0].where).toEqual({
+      domain: 'riverside.edu',
+      verified_at: { not: null },
+    });
+  });
+
+  test('a domain already on the list is a conflict', async () => {
+    const { service } = build((p) =>
+      p.school_email_domain.create.mockRejectedValue(known('P2002')),
+    );
+    await expect(
+      service.add(ADMIN, { domain: 'riverside.edu', audience: 'staff' }),
+    ).rejects.toThrow('This domain is already on your list');
+  });
+
+  test('an admin without a school is refused', async () => {
+    const { service } = build((p) =>
+      p.user_profile.findUnique.mockResolvedValue({ school_id: null }),
+    );
+    await expect(service.list(ADMIN)).rejects.toThrow('You are not assigned to a school');
+  });
+
+  test('list maps rows to the API shape', async () => {
+    const { service } = build((p) =>
+      p.school_email_domain.findMany.mockResolvedValue([unverified]),
+    );
+    expect(await service.list(ADMIN)).toEqual([
+      {
+        id: 'dom-1',
+        domain: 'riverside.edu',
+        audience: 'staff',
+        autoJoin: false,
+        staffRole: 'teacher',
+        verified: false,
+        verifiedAt: null,
+        createdAt: '2026-10-21T00:00:00.000Z',
+        ssoProvider: null,
+        ssoRequired: false,
+        azureTenantId: null,
+        dnsRecord: {
+          type: 'TXT',
+          name: 'riverside.edu',
+          value: 'gradebook-verification=tok',
+        },
+      },
+    ]);
   });
 
   test('student domains join automatically by default; staff ones ask', async () => {
     const inserted: any[] = [];
-    const { service } = build({
-      'public.school_email_domain': (call: any) => {
-        if (call.op === 'insert') {
-          inserted.push(call.payload);
-          return { data: { ...unverified, ...call.payload, id: 'new' }, error: null };
-        }
-        return { data: null, error: null };
-      },
-    });
+    const { service } = build((p) =>
+      p.school_email_domain.create.mockImplementation(async ({ data }: any) => {
+        inserted.push(data);
+        return { ...unverified, ...data, id: 'new' };
+      }),
+    );
     await service.add(ADMIN, { domain: 'students.riverside.edu', audience: 'student' });
     await service.add(ADMIN, { domain: 'riverside.edu', audience: 'staff' });
     expect(inserted[0]).toMatchObject({ domain: 'students.riverside.edu', auto_join: true });
@@ -75,23 +128,45 @@ describe('EmailDomainService.add', () => {
 describe('EmailDomainService.verify', () => {
   test('without the TXT record it stays unverified', async () => {
     (dns as any).resolveTxt = mock(async () => [['v=spf1 -all']]);
-    const { service, supabase } = build({
-      'public.school_email_domain': { data: unverified, error: null },
-    });
+    const { service, prisma } = build((p) =>
+      p.school_email_domain.findFirst.mockResolvedValue(unverified),
+    );
     await expect(service.verify(ADMIN, 'dom-1')).rejects.toThrow('TXT record');
-    expect(supabase._calls.some((c: any) => c.op === 'update')).toBe(false);
+    expect(prisma.school_email_domain.update).not.toHaveBeenCalled();
   });
 
   test('with the record it verifies', async () => {
     (dns as any).resolveTxt = mock(async () => [['gradebook-verification=tok']]);
-    const { service } = build({
-      'public.school_email_domain': (call: any) =>
-        call.op === 'update'
-          ? { data: { ...unverified, verified_at: '2026-10-21T01:00:00Z' }, error: null }
-          : { data: unverified, error: null },
+    const { service, prisma } = build((p) => {
+      p.school_email_domain.findFirst.mockResolvedValue(unverified);
+      p.school_email_domain.update.mockResolvedValue({
+        ...unverified,
+        verified_at: new Date('2026-10-21T01:00:00Z'),
+      });
     });
     const res = await service.verify(ADMIN, 'dom-1');
     expect(res.verified).toBe(true);
+    expect(res.verifiedAt).toBe('2026-10-21T01:00:00.000Z');
+    expect(prisma.school_email_domain.findFirst.mock.calls[0][0].where).toEqual({
+      id: 'dom-1',
+      school_id: SCHOOL,
+    });
+  });
+
+  test('a domain another school verified first is a conflict', async () => {
+    (dns as any).resolveTxt = mock(async () => [['gradebook-verification=tok']]);
+    const { service } = build((p) => {
+      p.school_email_domain.findFirst.mockResolvedValue(unverified);
+      p.school_email_domain.update.mockRejectedValue(known('P2002'));
+    });
+    await expect(service.verify(ADMIN, 'dom-1')).rejects.toThrow(
+      'Another school has already verified this domain',
+    );
+  });
+
+  test('another school\'s domain is not found', async () => {
+    const { service } = build();
+    await expect(service.verify(ADMIN, 'dom-9')).rejects.toThrow('Domain not found');
   });
 
   test('the dev bypass is ignored in production', async () => {
@@ -99,9 +174,9 @@ describe('EmailDomainService.verify', () => {
     const env = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     (dns as any).resolveTxt = mock(async () => []);
-    const { service } = build({
-      'public.school_email_domain': { data: unverified, error: null },
-    });
+    const { service } = build((p) =>
+      p.school_email_domain.findFirst.mockResolvedValue(unverified),
+    );
     try {
       await expect(service.verify(ADMIN, 'dom-1')).rejects.toThrow('TXT record');
     } finally {
@@ -121,28 +196,32 @@ describe('EmailDomainService.matchFor', () => {
   };
 
   test('a student address matches a student account', async () => {
-    const { service } = build({
-      'public.user_profile': {
-        data: { school_id: null, account_type: 'student', first_name: 'Jo' },
-        error: null,
-      },
-      'public.school_email_domain': { data: verifiedStudentDomain, error: null },
+    const { service } = build((p) => {
+      p.user_profile.findUnique.mockResolvedValue({
+        school_id: null,
+        account_type: 'student',
+        first_name: 'Jo',
+      });
+      p.school_email_domain.findFirst.mockResolvedValue(verifiedStudentDomain);
     });
     const match = await service.matchFor('u1', 'jo@students.riverside.edu');
     expect(match).toMatchObject({ schoolName: 'Riverside', audience: 'student' });
   });
 
   test('looks only for the account type it is, and only verified domains', async () => {
-    const { service, supabase } = build({
-      'public.user_profile': {
-        data: { school_id: null, account_type: 'staff', first_name: 'Jo' },
-        error: null,
-      },
-      'public.school_email_domain': { data: null, error: null },
-    });
+    const { service, prisma } = build((p) =>
+      p.user_profile.findUnique.mockResolvedValue({
+        school_id: null,
+        account_type: 'staff',
+        first_name: 'Jo',
+      }),
+    );
     expect(await service.matchFor('u1', 'jo@students.riverside.edu')).toBeNull();
-    const lookup = supabase._calls.find((c: any) => c.table === 'school_email_domain');
-    expect(lookup?.filters).toMatchObject({ domain: 'students.riverside.edu' });
+    expect(prisma.school_email_domain.findFirst.mock.calls[0][0].where).toEqual({
+      domain: 'students.riverside.edu',
+      audience: { in: ['staff', 'any'] },
+      verified_at: { not: null },
+    });
   });
 
   test('a shared domain lets students in outright and staff by its setting', async () => {
@@ -156,12 +235,13 @@ describe('EmailDomainService.matchFor', () => {
       ['student', 'student', true],
       ['staff', 'staff', false],
     ] as const) {
-      const { service } = build({
-        'public.user_profile': {
-          data: { school_id: null, account_type: accountType, first_name: 'Jo' },
-          error: null,
-        },
-        'public.school_email_domain': { data: shared, error: null },
+      const { service } = build((p) => {
+        p.user_profile.findUnique.mockResolvedValue({
+          school_id: null,
+          account_type: accountType,
+          first_name: 'Jo',
+        });
+        p.school_email_domain.findFirst.mockResolvedValue(shared);
       });
       const match = await service.matchFor('u1', 'jo@srmss.edu.gd');
       expect(match).toMatchObject({ audience, autoJoin, domain: 'srmss.edu.gd' });
@@ -173,11 +253,79 @@ describe('EmailDomainService.matchFor', () => {
       { school_id: 'x', account_type: 'student', first_name: 'Jo' },
       { school_id: null, account_type: 'student', first_name: null },
     ]) {
-      const { service } = build({
-        'public.user_profile': { data: profile, error: null },
-        'public.school_email_domain': { data: verifiedStudentDomain, error: null },
+      const { service } = build((p) => {
+        p.user_profile.findUnique.mockResolvedValue(profile);
+        p.school_email_domain.findFirst.mockResolvedValue(verifiedStudentDomain);
       });
       expect(await service.matchFor('u1', 'jo@students.riverside.edu')).toBeNull();
     }
+  });
+});
+
+describe('EmailDomainService.join', () => {
+  const match = {
+    domainId: 'dom-2',
+    domain: 'riverside.edu',
+    schoolId: SCHOOL,
+    schoolName: 'Riverside',
+    audience: 'staff' as const,
+    autoJoin: true,
+  };
+  const joining = (p: MockPrisma) => {
+    p.user_profile.findUnique.mockResolvedValue({
+      school_id: null,
+      account_type: 'staff',
+      first_name: 'Jo',
+    });
+    p.school_email_domain.findFirst.mockResolvedValue({
+      id: match.domainId,
+      domain: match.domain,
+      audience: 'staff',
+      auto_join: true,
+      school_id: SCHOOL,
+      school: { name: 'Riverside', is_active: true },
+    });
+    p.school_email_domain.findUnique.mockResolvedValue({ staff_role: 'member' });
+  };
+
+  test('seats the user through the SQL function and clears caches', async () => {
+    const { service, prisma, cache } = build(joining);
+    await cache.set('profile:u1', { stale: true }, 60);
+    const res = await service.join('u1', 'jo@riverside.edu');
+    expect(res).toEqual({ status: 'joined', schoolId: SCHOOL, audience: 'staff' });
+    const [strings, ...values] = prisma.$queryRaw.mock.calls[0];
+    expect(strings.join('?')).toContain('public.join_school_by_email_domain(');
+    expect(values).toEqual(['u1', SCHOOL, 'staff', 'member']);
+    expect(cache._store.has('profile:u1')).toBe(false);
+  });
+
+  test('already in a school is a conflict', async () => {
+    const { service, prisma } = build(joining);
+    prisma.$queryRaw.mockRejectedValue(
+      new Error('ERROR: already_in_a_school'),
+    );
+    await expect(service.join('u1', 'jo@riverside.edu')).rejects.toThrow(
+      'This account already belongs to a school',
+    );
+  });
+
+  test('staff on an approval domain file a request; a pending one is fine', async () => {
+    const { service, prisma } = build((p) => {
+      joining(p);
+      p.school_email_domain.findFirst.mockResolvedValue({
+        id: match.domainId,
+        domain: match.domain,
+        audience: 'staff',
+        auto_join: false,
+        school_id: SCHOOL,
+        school: { name: 'Riverside', is_active: true },
+      });
+      p.school_join_request.create.mockRejectedValue(known('P2002'));
+    });
+    expect(await service.join('u1', 'jo@riverside.edu')).toEqual({
+      status: 'requested',
+      schoolId: SCHOOL,
+    });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 });

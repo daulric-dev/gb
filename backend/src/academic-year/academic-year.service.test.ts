@@ -1,48 +1,58 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
 import { AcademicYearService } from './academic-year.service';
-import {
-  createMockSupabaseService,
-  createMockCacheService,
-} from '@/test/mocks';
+import { createMockCacheService } from '@/test/mocks';
+import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const YEAR_TTL = 60 * 60 * 24 * 30;
 const SCHOOL_ID = 'school-abc';
 const USER_ID = 'user-123';
 
-function setupWithSchoolId(overrides: Record<string, any> = {}) {
-  const profileResult = { data: { school_id: SCHOOL_ID }, error: null };
-  const mockSupabase = createMockSupabaseService({
-    queryResult: overrides.queryResult ?? profileResult,
-  });
+/** A row as Prisma returns it. */
+function dbYear(overrides: Record<string, any> = {}) {
+  return {
+    id: 'y1',
+    school_id: SCHOOL_ID,
+    name: '2025-2026',
+    start_date: new Date('2025-09-01T00:00:00Z'),
+    end_date: new Date('2026-06-30T00:00:00Z'),
+    grading_model: 'weighted_cumulative',
+    is_active: false,
+    year_exam_weight: null,
+    year_coursework_weight: null,
+    ...overrides,
+  };
+}
 
-  if (overrides.queryResult) {
-    let callCount = 0;
-    const originalSingle = mockSupabase._builder.single;
-    mockSupabase._builder.single = () => {
-      callCount++;
-      if (callCount === 1) return Promise.resolve(profileResult);
-      return originalSingle();
-    };
-  }
+/** The same row as the API sends it. */
+function apiYear(overrides: Record<string, any> = {}) {
+  return {
+    ...dbYear(),
+    start_date: '2025-09-01',
+    end_date: '2026-06-30',
+    ...overrides,
+  };
+}
 
-  return mockSupabase;
+function setup(): MockPrisma {
+  const prisma = createMockPrisma();
+  prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL_ID });
+  return prisma;
 }
 
 describe('AcademicYearService', () => {
   let service: AcademicYearService;
-  let mockSupabase: ReturnType<typeof createMockSupabaseService>;
+  let prisma: MockPrisma;
   let mockCache: ReturnType<typeof createMockCacheService>;
 
   beforeEach(() => {
     mockCache = createMockCacheService();
+    prisma = setup();
+    service = new AcademicYearService(prisma as any, mockCache as any);
   });
 
   describe('create', () => {
     test('validates weights must sum to 100', () => {
-      mockSupabase = createMockSupabaseService();
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
-
       expect(
         service.create(USER_ID, {
           name: '2025-2026',
@@ -56,9 +66,6 @@ describe('AcademicYearService', () => {
     });
 
     test('validates start_date before end_date', () => {
-      mockSupabase = createMockSupabaseService();
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
-
       expect(
         service.create(USER_ID, {
           name: '2025-2026',
@@ -68,31 +75,50 @@ describe('AcademicYearService', () => {
         } as any),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    test('stores calendar dates and returns them as YYYY-MM-DD', async () => {
+      prisma.academic_year.create.mockImplementation(async ({ data }) => ({
+        id: 'y9',
+        ...data,
+      }));
+
+      const result: any = await service.create(USER_ID, {
+        name: '2025-2026',
+        startDate: '2025-09-01',
+        endDate: '2026-06-30',
+        gradingModel: 'weighted_cumulative',
+        yearExamWeight: 40,
+        yearCourseworkWeight: 60,
+      } as any);
+
+      const data = prisma.academic_year.create.mock.calls[0][0].data;
+      expect(data.start_date.toISOString()).toBe('2025-09-01T00:00:00.000Z');
+      expect(data.is_active).toBe(false);
+      expect(result.start_date).toBe('2025-09-01');
+      expect(result.year_exam_weight).toBe(40);
+    });
   });
 
   describe('findAll', () => {
+    const rows = [
+      dbYear({ id: 'y1' }),
+      dbYear({ id: 'y2', name: '2024-2025' }),
+    ];
     const years = [
-      { id: 'y1', name: '2025-2026', school_id: SCHOOL_ID },
-      { id: 'y2', name: '2024-2025', school_id: SCHOOL_ID },
+      apiYear({ id: 'y1' }),
+      apiYear({ id: 'y2', name: '2024-2025' }),
     ];
 
     test('returns cached data when available', async () => {
-      mockSupabase = createMockSupabaseService({
-        queryResult: { data: { school_id: SCHOOL_ID }, error: null },
-      });
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
-
       await mockCache.set(`academic-years:${SCHOOL_ID}`, years, YEAR_TTL);
 
       const result = await service.findAll(USER_ID);
       expect(result).toEqual(years);
+      expect(prisma.academic_year.findMany).not.toHaveBeenCalled();
     });
 
     test('fetches and caches on miss', async () => {
-      mockSupabase = setupWithSchoolId({
-        queryResult: { data: years, error: null },
-      });
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
+      prisma.academic_year.findMany.mockResolvedValue(rows);
 
       const result = await service.findAll(USER_ID);
       expect(result).toEqual(years);
@@ -104,13 +130,6 @@ describe('AcademicYearService', () => {
 
   describe('findActive', () => {
     test('returns null when no active year', async () => {
-      mockSupabase = createMockSupabaseService({
-        queryResult: { data: { school_id: SCHOOL_ID }, error: null },
-      });
-      mockSupabase._builder.maybeSingle = () =>
-        Promise.resolve({ data: null, error: null });
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
-
       const result = await service.findActive(USER_ID);
       expect(result).toBeNull();
     });
@@ -119,23 +138,20 @@ describe('AcademicYearService', () => {
   describe('update', () => {
     test('calls cache.update on both list and active caches', async () => {
       const yearId = 'y1';
-      const updatedYear = { id: yearId, name: 'Renamed', school_id: SCHOOL_ID };
-
-      mockSupabase = createMockSupabaseService({
-        queryResult: { data: updatedYear, error: null },
-      });
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
+      prisma.academic_year.update.mockResolvedValue(
+        dbYear({ id: yearId, name: 'Renamed' }),
+      );
+      const updatedYear = apiYear({ id: yearId, name: 'Renamed' });
 
       const existingList = [
-        { id: yearId, name: 'Old Name', school_id: SCHOOL_ID },
-        { id: 'y2', name: '2024-2025', school_id: SCHOOL_ID },
+        apiYear({ id: yearId, name: 'Old Name' }),
+        apiYear({ id: 'y2', name: '2024-2025' }),
       ];
-      const activeYear = {
+      const activeYear = apiYear({
         id: yearId,
         name: 'Old Name',
-        school_id: SCHOOL_ID,
         is_active: true,
-      };
+      });
 
       await mockCache.set(
         `academic-years:${SCHOOL_ID}`,
@@ -150,6 +166,11 @@ describe('AcademicYearService', () => {
 
       await service.update(USER_ID, yearId, { name: 'Renamed' });
 
+      expect(prisma.academic_year.update.mock.calls[0][0].where).toEqual({
+        id: yearId,
+        school_id: SCHOOL_ID,
+      });
+
       const cachedList = await mockCache.get(`academic-years:${SCHOOL_ID}`);
       expect(cachedList[0]).toEqual(updatedYear);
 
@@ -163,17 +184,10 @@ describe('AcademicYearService', () => {
   describe('setActive', () => {
     test('calls deleteByPrefix to invalidate all academic-year caches', async () => {
       const yearId = 'y1';
-      const activated = {
-        id: yearId,
-        name: '2025-2026',
-        school_id: SCHOOL_ID,
-        is_active: true,
-      };
-
-      mockSupabase = setupWithSchoolId({
-        queryResult: { data: activated, error: null },
-      });
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
+      prisma.academic_year.update.mockResolvedValue(
+        dbYear({ id: yearId, is_active: true }),
+      );
+      const activated = apiYear({ id: yearId, is_active: true });
 
       await mockCache.set(`academic-years:${SCHOOL_ID}`, [activated], YEAR_TTL);
       await mockCache.set(
@@ -182,7 +196,15 @@ describe('AcademicYearService', () => {
         YEAR_TTL,
       );
 
-      await service.setActive(USER_ID, yearId);
+      const result = await service.setActive(USER_ID, yearId);
+      expect(result).toEqual(activated);
+
+      // Every other year in the school is switched off in the same transaction.
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.academic_year.updateMany.mock.calls[0][0]).toEqual({
+        where: { school_id: SCHOOL_ID },
+        data: { is_active: false },
+      });
 
       const listCache = await mockCache.get(`academic-years:${SCHOOL_ID}`);
       const activeCache = await mockCache.get(
@@ -196,21 +218,13 @@ describe('AcademicYearService', () => {
   describe('deactivate', () => {
     test('calls deleteByPrefix to invalidate all academic-year caches', async () => {
       const yearId = 'y1';
-      const deactivated = {
-        id: yearId,
-        name: '2025-2026',
-        school_id: SCHOOL_ID,
-        is_active: false,
-      };
-
-      mockSupabase = createMockSupabaseService({
-        queryResult: { data: deactivated, error: null },
-      });
-      service = new AcademicYearService(mockSupabase as any, mockCache as any);
+      prisma.academic_year.update.mockResolvedValue(
+        dbYear({ id: yearId, is_active: false }),
+      );
 
       await mockCache.set(
         `academic-years:${SCHOOL_ID}`,
-        [deactivated],
+        [apiYear({ id: yearId })],
         YEAR_TTL,
       );
       await mockCache.set(

@@ -1,0 +1,11 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+  moduleFormat    = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["account", "auth", "chat", "course", "file_manager", "grading", "public", "reporting", "staff", "student"]
+}

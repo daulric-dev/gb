@@ -68,8 +68,8 @@ export class PortalActivityController {
   }
 
   /**
-   * Start a resumable upload for this assignment. The browser sends the bytes
-   * to Storage over TUS, then calls the complete endpoint below.
+   * Start a direct upload for this assignment. The client PUTs the bytes to
+   * the returned presigned `uploadUrl`, then calls the complete endpoint below.
    *
    * Students hold no catalog permissions, so the portal is the only place they
    * can obtain a ticket.
@@ -84,11 +84,10 @@ export class PortalActivityController {
       req.student!.studentId,
       activityId,
       dto,
-      (req as { headers?: { host?: string } }).headers?.host,
     );
   }
 
-  /** Scan the uploaded bytes and attach the file to the draft. */
+  /** Check the uploaded bytes and attach the file to the draft. */
   @Post('activities/:activityId/upload-ticket/:fileId/complete')
   async finaliseUpload(
     @Req() req: StudentRequest,
@@ -104,7 +103,7 @@ export class PortalActivityController {
 
   /**
    * Attach a file in one request. Kept for small files and as a fallback when
-   * a resumable upload cannot be used; the path above is preferred.
+   * a direct upload cannot be used; the path above is preferred.
    */
   @Post('activities/:activityId/file')
   @ApiConsumes('multipart/form-data')

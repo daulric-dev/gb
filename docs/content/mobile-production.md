@@ -36,10 +36,10 @@ A native client has no frontend domain of its own; it only ever talks to the API
 
 ## Direct uploads
 
-Files upload straight to Supabase Storage over TUS, so the app needs to reach Storage as well as the API:
+Files upload straight to object storage (S3-compatible) with presigned URLs, so the app needs to reach storage as well as the API:
 
-- `SUPABASE_JWT_SECRET` must be set on the backend, and must belong to the same project as `SUPABASE_URL`, or Storage rejects every upload.
-- In production the upload endpoint is the hosted Supabase URL. The request-host derivation only applies when `SUPABASE_URL` is loopback, i.e. local development.
+- The backend signs upload URLs for `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT` when unset). That host must be reachable from the phone - in production an HTTPS endpoint such as `https://<account-id>.r2.cloudflarestorage.com`; in development a LAN address, not `127.0.0.1`.
+- The app sends exactly the headers in the upload ticket and no cookies, then calls the ticket's `complete` route so the backend can check and release the file.
 
 ## Build profiles
 

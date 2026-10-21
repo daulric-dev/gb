@@ -59,13 +59,6 @@ export function createMockSupabaseService(overrides: Record<string, any> = {}) {
           Promise.resolve(overrides.getUserByIdResult ?? defaultResult),
       },
     },
-    storage: {
-      from: () => ({
-        upload: () => Promise.resolve(overrides.uploadResult ?? defaultResult),
-        download: () =>
-          Promise.resolve(overrides.downloadResult ?? defaultResult),
-      }),
-    },
   };
 
   return {
@@ -101,7 +94,6 @@ type RouteValue =
 export function createRoutingSupabase(
   config: {
     tables?: Record<string, RouteValue>;
-    storage?: Record<string, any>;
     getUser?: () => any;
     userSchoolId?: string;
     verifyOtpResult?: QueryResult;
@@ -205,9 +197,6 @@ export function createRoutingSupabase(
         deleteUser: () => Promise.resolve(noResult),
         signOut: () => Promise.resolve(noResult),
       },
-    },
-    storage: {
-      from: () => config.storage ?? {},
     },
   };
 

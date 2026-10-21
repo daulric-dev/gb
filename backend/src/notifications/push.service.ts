@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
 
 export const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -42,39 +42,38 @@ export class PushService {
     init,
   ) => fetch(url, init);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async register(userId: string, token: string, platform: PushPlatform) {
-    const { error } = await this.supabaseService
-      .getServiceClient()
-      .from('push_device')
-      .upsert(
-        {
-          user_id: userId,
-          token: token.trim(),
-          platform,
-          last_seen_at: new Date().toISOString(),
-        },
-        { onConflict: 'token' },
+    const device = {
+      user_id: userId,
+      platform,
+      last_seen_at: new Date(),
+    };
+    try {
+      await this.prisma.push_device.upsert({
+        where: { token: token.trim() },
+        create: { token: token.trim(), ...device },
+        update: device,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to register push device: ${(err as Error).message}`,
       );
-
-    if (error) {
-      this.logger.error(`Failed to register push device: ${error.message}`);
       throw new BadRequestException('Failed to register the device');
     }
   }
 
   /** Only ever the caller's own token; anyone else's is left alone. */
   async unregister(userId: string, token: string) {
-    const { error } = await this.supabaseService
-      .getServiceClient()
-      .from('push_device')
-      .delete()
-      .eq('user_id', userId)
-      .eq('token', token);
-
-    if (error) {
-      this.logger.error(`Failed to remove push device: ${error.message}`);
+    try {
+      await this.prisma.push_device.deleteMany({
+        where: { user_id: userId, token },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to remove push device: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to remove the device');
     }
   }
@@ -85,21 +84,23 @@ export class PushService {
       const unique = [...new Set(userIds.filter(Boolean))];
       if (unique.length === 0) return;
 
-      const { data, error } = await this.supabaseService
-        .getServiceClient()
-        .from('push_device')
-        .select('token')
-        .in('user_id', unique);
-
-      if (error) {
-        this.logger.error(`Failed to load push devices: ${error.message}`);
+      let data: { token: string }[];
+      try {
+        data = await this.prisma.push_device.findMany({
+          where: { user_id: { in: unique } },
+          select: { token: true },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to load push devices: ${(err as Error).message}`,
+        );
         return;
       }
 
       const tokens = [
         ...new Set(
-          (data ?? [])
-            .map((d: any) => d.token as string)
+          data
+            .map((d) => d.token)
             .filter((t) => EXPO_TOKEN.test(t)),
         ),
       ];
@@ -173,13 +174,14 @@ export class PushService {
   }
 
   private async forget(tokens: string[]) {
-    const { error } = await this.supabaseService
-      .getServiceClient()
-      .from('push_device')
-      .delete()
-      .in('token', tokens);
-    if (error) {
-      this.logger.error(`Failed to forget push devices: ${error.message}`);
+    try {
+      await this.prisma.push_device.deleteMany({
+        where: { token: { in: tokens } },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to forget push devices: ${(err as Error).message}`,
+      );
     }
   }
 }

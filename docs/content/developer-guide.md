@@ -159,7 +159,7 @@ bunx supabase db push
 
 `db push` applies pending migrations to the linked project. Review with `supabase db diff` first. There is no automated migration step in CI - this is deliberate and manual.
 
-Edge functions deploy separately and are not covered by `db push`: see **[Edge functions](./edge-functions.md)**.
+There are no edge functions to deploy any more: see **[Edge functions](./edge-functions.md)**.
 
 ### Backend
 

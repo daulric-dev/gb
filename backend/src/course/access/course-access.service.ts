@@ -3,9 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { loadEffectivePermissions } from '@/permission/permission.effective';
+import { PrismaService } from '@/prisma/prisma.service';
+import { isoDate } from '@/common/db-values';
 
 /**
  * What the caller is inside one course.
@@ -26,6 +27,23 @@ export const STAFF_ROLES: readonly CourseRole[] = ['admin', 'teacher', 'ta'];
 export const COURSE_COLUMNS =
   'id, school_id, academic_year_id, term_id, name, code, description, status, join_code, grade_scale_id, created_by, created_at, updated_at';
 
+/** The same columns as `COURSE_COLUMNS`, as a Prisma `select`. */
+export const COURSE_SELECT = {
+  id: true,
+  school_id: true,
+  academic_year_id: true,
+  term_id: true,
+  name: true,
+  code: true,
+  description: true,
+  status: true,
+  join_code: true,
+  grade_scale_id: true,
+  created_by: true,
+  created_at: true,
+  updated_at: true,
+} as const;
+
 export interface CourseRow {
   id: string;
   school_id: string;
@@ -42,6 +60,29 @@ export interface CourseRow {
   updated_at: string;
 }
 
+/** A course read with `COURSE_SELECT`, timestamps as ISO strings. */
+export function toCourseRow(c: {
+  id: string;
+  school_id: string;
+  academic_year_id: string | null;
+  term_id: string | null;
+  name: string;
+  code: string | null;
+  description: string | null;
+  status: CourseRow['status'];
+  join_code: string | null;
+  grade_scale_id: string | null;
+  created_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}): CourseRow {
+  return {
+    ...c,
+    created_at: isoDate(c.created_at)!,
+    updated_at: isoDate(c.updated_at)!,
+  };
+}
+
 /**
  * The one place course access is decided.
  *
@@ -53,37 +94,34 @@ export interface CourseRow {
 @Injectable()
 export class CourseAccessService {
   constructor(
-    private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private async loadCourse(courseId: string): Promise<CourseRow> {
-    const { data } = await this.supabaseService
-      .getServiceClient()
-      .schema('course')
-      .from('course')
-      .select(COURSE_COLUMNS)
-      .eq('id', courseId)
-      .maybeSingle();
+    const data = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: COURSE_SELECT,
+    });
 
     if (!data) throw new NotFoundException('Course not found');
-    return data;
+    return toCourseRow(data);
   }
 
   /** The caller's role in a course, or null when they have none. */
   async roleIn(userId: string, course: CourseRow): Promise<CourseRole | null> {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: staff } = await supabase
-      .schema('course')
-      .from('course_staff')
-      .select('role')
-      .eq('course_id', course.id)
-      .eq('user_profile_id', userId)
-      .maybeSingle();
+    const staff = await this.prisma.course_staff.findUnique({
+      where: {
+        course_id_user_profile_id: {
+          course_id: course.id,
+          user_profile_id: userId,
+        },
+      },
+      select: { role: true },
+    });
 
     const effective = await loadEffectivePermissions(
-      this.supabaseService,
+      this.prisma,
       this.cache,
       userId,
       course.school_id,
@@ -140,14 +178,12 @@ export class CourseAccessService {
       (opts.allowArchived && course.status === 'archived');
     if (!visible) throw new NotFoundException('Course not found');
 
-    const { data: enrollment } = await this.supabaseService
-      .getServiceClient()
-      .schema('course')
-      .from('course_student')
-      .select('status')
-      .eq('course_id', courseId)
-      .eq('student_id', studentId)
-      .maybeSingle();
+    const enrollment = await this.prisma.course_student.findUnique({
+      where: {
+        course_id_student_id: { course_id: courseId, student_id: studentId },
+      },
+      select: { status: true },
+    });
 
     if (!enrollment || enrollment.status === 'dropped') {
       throw new NotFoundException('Course not found');
@@ -158,15 +194,12 @@ export class CourseAccessService {
 
   /** The course an activity belongs to, for routes keyed by activity id. */
   async courseIdOfActivity(activityId: string): Promise<string> {
-    const { data } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('activity')
-      .select('course_id')
-      .eq('id', activityId)
-      .maybeSingle();
+    const data = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { course_id: true },
+    });
 
     if (!data?.course_id) throw new NotFoundException('Activity not found');
-    return data.course_id as string;
+    return data.course_id;
   }
 }

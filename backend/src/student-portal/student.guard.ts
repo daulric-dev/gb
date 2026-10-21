@@ -5,7 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 
 /** What the portal resolves once per request and scopes every query to. */
@@ -34,7 +34,7 @@ export class StudentGuard implements CanActivate {
   private readonly logger = new Logger(StudentGuard.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}
 
@@ -55,13 +55,10 @@ export class StudentGuard implements CanActivate {
       return true;
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('account_type, is_active')
-      .eq('id', userId)
-      .maybeSingle();
+    const profile = await this.prisma.user_profile.findUnique({
+      where: { id: userId },
+      select: { account_type: true, is_active: true },
+    });
 
     if (profile?.account_type !== 'student') {
       throw new ForbiddenException('This area is for student accounts');
@@ -71,12 +68,10 @@ export class StudentGuard implements CanActivate {
       throw new ForbiddenException('Account is deactivated');
     }
 
-    const { data: student } = await supabase
-      .schema('student')
-      .from('student')
-      .select('id, school_id, is_active')
-      .eq('user_profile_id', userId)
-      .maybeSingle();
+    const student = await this.prisma.student.findFirst({
+      where: { user_profile_id: userId },
+      select: { id: true, school_id: true, is_active: true },
+    });
 
     if (!student?.id || !student.school_id) {
       // Onboarded as a student but never redeemed a claim code.

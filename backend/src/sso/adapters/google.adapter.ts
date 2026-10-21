@@ -1,7 +1,7 @@
 import type { User } from '@supabase/supabase-js';
 import type { SsoDomainContext } from '../sso.types';
 import { claim, claimString, emailDomainOf, identityFor } from './claims';
-import { SupabaseOAuthAdapter } from './supabase-oauth.adapter';
+import { OAuthAdapter } from './oauth.adapter';
 
 /**
  * Google Workspace / Google for Education.
@@ -11,7 +11,7 @@ import { SupabaseOAuthAdapter } from './supabase-oauth.adapter';
  * check accepts the domain itself or a parent of it, since a Workspace for
  * srmss.edu.gd also hosts students.srmss.edu.gd.
  */
-export class GoogleAdapter extends SupabaseOAuthAdapter {
+export class GoogleAdapter extends OAuthAdapter {
   constructor() {
     super({
       id: 'google',

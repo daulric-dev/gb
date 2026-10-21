@@ -156,16 +156,15 @@ export class AuthController {
   @ApiProduces('image/*')
   async getAvatar(@Req() req: any, @Res() res: FastifyReply) {
     const userId: string = req.user.id;
-    const { blob, contentType } =
+    const { body, contentType, size } =
       await this.imagesService.getImageFromUserProfile(userId);
 
-    const buffer = Buffer.from(await blob.arrayBuffer());
-
-    return res
+    res
       .header('Content-Type', contentType)
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, max-age=3600')
-      .send(buffer);
+      .header('X-Content-Type-Options', 'nosniff');
+    if (size !== null) res.header('Content-Length', size);
+    return res.send(body);
   }
 
   @ApiBearerAuth()
@@ -181,7 +180,11 @@ export class AuthController {
 
     const userId: string = req.user.id;
 
-    const result = await this.imagesService.setImageToUserProfile(userId, file);
+    const result = await this.imagesService.setImageToUserProfile(
+      userId,
+      file,
+      requestOrigin(req),
+    );
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
 
@@ -213,7 +216,14 @@ export class AuthController {
     const result = await this.imagesService.completeResumableUpload(
       userId,
       dto.path,
+      requestOrigin(req),
     );
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
+}
+
+/** This API's origin as the caller reached it, for links back to it. */
+function requestOrigin(req: FastifyRequest): string | undefined {
+  const host = req.headers?.host;
+  return host ? `${req.protocol}://${host}` : undefined;
 }

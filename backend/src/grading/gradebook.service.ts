@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { scoreOrNull } from './round';
 import {
   CourseAccessService,
@@ -12,9 +12,11 @@ import {
   STAFF_ROLES,
 } from '@/course/access/course-access.service';
 import {
-  ACTIVITY_COLUMNS,
+  ACTIVITY_ORDER,
+  ACTIVITY_SELECT,
   toActivity,
   toPortalActivity,
+  ts,
 } from './activity.mapper';
 import { AssignmentGroupService } from './assignment-group.service';
 import {
@@ -23,6 +25,20 @@ import {
   calculateCourseGrade,
   letterFor,
 } from './gradebook.calc';
+
+/** What the gradebook needs of a course. */
+type GradebookCourse = Pick<CourseRow, 'id' | 'school_id' | 'grade_scale_id'>;
+
+const SUBMISSION_SELECT = {
+  activity_id: true,
+  student_id: true,
+  status: true,
+  score: true,
+  excused: true,
+  feedback: true,
+  submitted_at: true,
+  attempt_count: true,
+} as const;
 
 type Group = Awaited<
   ReturnType<AssignmentGroupService['loadForCourse']>
@@ -54,36 +70,28 @@ export class GradebookService {
   private readonly logger = new Logger(GradebookService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
     private readonly groups: AssignmentGroupService,
   ) {}
-
-  private get client() {
-    return this.supabaseService.getServiceClient();
-  }
 
   /**
    * The course's published and closed activities, soonest due first; undated
    * work last, in the order it was made.
    */
   private async loadActivities(courseId: string): Promise<any[]> {
-    const { data, error } = await this.client
-      .schema('grading')
-      .from('activity')
-      .select(ACTIVITY_COLUMNS)
-      .eq('course_id', courseId)
-      .in('status', ['published', 'closed'])
-      .order('due_at', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: true });
-
-    if (error) {
+    try {
+      return await this.prisma.activity.findMany({
+        where: { course_id: courseId, status: { in: ['published', 'closed'] } },
+        select: ACTIVITY_SELECT,
+        orderBy: ACTIVITY_ORDER,
+      });
+    } catch (error) {
       this.logger.error(
-        `Failed to load gradebook activities: ${error.message}`,
+        `Failed to load gradebook activities: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to load the gradebook');
     }
-    return data ?? [];
   }
 
   private async loadSubmissions(
@@ -93,47 +101,42 @@ export class GradebookService {
     if (activityIds.length === 0) return [];
     if (studentIds && studentIds.length === 0) return [];
 
-    let query = this.client
-      .schema('grading')
-      .from('submission')
-      .select(
-        'activity_id, student_id, status, score, excused, feedback, submitted_at, attempt_count',
-      )
-      .in('activity_id', activityIds);
-    if (studentIds) query = query.in('student_id', studentIds);
-
-    const { data, error } = await query;
-    if (error) {
-      this.logger.error(`Failed to load submissions: ${error.message}`);
+    try {
+      return await this.prisma.submission.findMany({
+        where: {
+          activity_id: { in: activityIds },
+          ...(studentIds ? { student_id: { in: studentIds } } : {}),
+        },
+        select: SUBMISSION_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to load submissions: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to load the gradebook');
     }
-    return data ?? [];
   }
 
   /** The course's scale, else the school's default; null when neither. */
-  private async loadBands(course: CourseRow): Promise<CalcBand[]> {
+  private async loadBands(course: GradebookCourse): Promise<CalcBand[]> {
     let scaleId = course.grade_scale_id;
 
     if (!scaleId) {
-      const { data } = await this.client
-        .schema('grading')
-        .from('grade_scale')
-        .select('id')
-        .eq('school_id', course.school_id)
-        .eq('is_default', true)
-        .maybeSingle();
-      scaleId = (data?.id as string | undefined) ?? null;
+      const data = await this.prisma.grade_scale.findFirst({
+        where: { school_id: course.school_id, is_default: true },
+        select: { id: true },
+      });
+      scaleId = data?.id ?? null;
     }
     if (!scaleId) return [];
 
-    const { data: bands } = await this.client
-      .schema('grading')
-      .from('grade_scale_band')
-      .select('label, min_percentage, max_percentage')
-      .eq('grade_scale_id', scaleId);
+    const bands = await this.prisma.grade_scale_band.findMany({
+      where: { grade_scale_id: scaleId },
+      select: { label: true, min_percentage: true, max_percentage: true },
+    });
 
-    return (bands ?? []).map((b: any) => ({
-      label: b.label as string,
+    return bands.map((b) => ({
+      label: b.label,
       minPercentage: Number(b.min_percentage),
       maxPercentage: Number(b.max_percentage),
     }));
@@ -173,41 +176,42 @@ export class GradebookService {
     return this.build(course);
   }
 
-  private async build(course: CourseRow) {
+  private async build(course: GradebookCourse) {
     const courseId = course.id;
 
     const [groups, activities, bands, roster] = await Promise.all([
       this.groups.loadForCourse(courseId),
       this.loadActivities(courseId),
       this.loadBands(course),
-      this.client
-        .schema('course')
-        .from('course_student')
-        .select('student_id, status')
-        .eq('course_id', courseId)
-        .in('status', ['active', 'completed']),
+      this.prisma.course_student.findMany({
+        where: { course_id: courseId, status: { in: ['active', 'completed'] } },
+        select: { student_id: true, status: true },
+      }),
     ]);
 
-    const enrolments = (roster.data ?? []) as any[];
-    const studentIds = enrolments.map((r) => r.student_id as string);
+    const enrolments = roster;
+    const studentIds = enrolments.map((r) => r.student_id);
 
-    const [{ data: students }, submissions] = await Promise.all([
+    const [students, submissions] = await Promise.all([
       studentIds.length
-        ? this.client
-            .schema('student')
-            .from('student')
-            .select('id, first_name, last_name')
-            .in('id', studentIds)
-        : Promise.resolve({ data: [] as any[] }),
+        ? this.prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { id: true, first_name: true, last_name: true },
+          })
+        : Promise.resolve(
+            [] as {
+              id: string;
+              first_name: string | null;
+              last_name: string | null;
+            }[],
+          ),
       this.loadSubmissions(
         activities.map((a) => a.id as string),
         studentIds,
       ),
     ]);
 
-    const nameOf = new Map(
-      (students ?? []).map((s: any) => [s.id as string, s]),
-    );
+    const nameOf = new Map(students.map((s) => [s.id, s]));
     const byStudent = new Map<string, any[]>();
     for (const s of submissions) {
       const list = byStudent.get(s.student_id as string) ?? [];
@@ -216,8 +220,8 @@ export class GradebookService {
     }
 
     const rows = enrolments.map((r) => {
-      const student = nameOf.get(r.student_id as string);
-      const own = byStudent.get(r.student_id as string) ?? [];
+      const student = nameOf.get(r.student_id);
+      const own = byStudent.get(r.student_id) ?? [];
 
       const cells: Record<
         string,
@@ -235,16 +239,16 @@ export class GradebookService {
           score: scoreOrNull(s.score),
           status: s.status ?? null,
           excused: !!s.excused,
-          submittedAt: s.submitted_at ?? null,
+          submittedAt: ts(s.submitted_at),
         };
         calc.set(s.activity_id as string, this.toCalcSubmission(s));
       }
 
       return {
-        studentId: r.student_id as string,
-        firstName: (student?.first_name as string | null) ?? null,
-        lastName: (student?.last_name as string | null) ?? null,
-        status: r.status as 'active' | 'dropped' | 'completed',
+        studentId: r.student_id,
+        firstName: student?.first_name ?? null,
+        lastName: student?.last_name ?? null,
+        status: r.status,
         cells,
         grade: this.gradeFor(groups, activities, calc, bands),
       };
@@ -352,16 +356,14 @@ export class GradebookService {
     return this.gradeFor(groups, activities, calc, bands);
   }
 
-  private async loadCourse(courseId: string): Promise<CourseRow> {
-    const { data } = await this.client
-      .schema('course')
-      .from('course')
-      .select('id, school_id, grade_scale_id')
-      .eq('id', courseId)
-      .maybeSingle();
+  private async loadCourse(courseId: string): Promise<GradebookCourse> {
+    const data = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true, school_id: true, grade_scale_id: true },
+    });
 
     if (!data) throw new NotFoundException('Course not found');
-    return data as CourseRow;
+    return data;
   }
 
   /**

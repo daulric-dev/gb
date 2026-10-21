@@ -6,11 +6,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { PERMISSION_KEY } from './require-permission.decorator';
 import { PermissionKey } from './permission.catalog';
 import { loadEffectivePermissions } from './permission.effective';
+import { PrismaService } from '@/prisma/prisma.service';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -18,8 +18,8 @@ export class PermissionGuard implements CanActivate {
 
   constructor(
     private readonly reflector: Reflector,
-    private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -45,7 +45,7 @@ export class PermissionGuard implements CanActivate {
     }
 
     const effective = await loadEffectivePermissions(
-      this.supabaseService,
+      this.prisma,
       this.cache,
       userId,
       schoolId,
@@ -73,27 +73,24 @@ export class PermissionGuard implements CanActivate {
   ): Promise<string | undefined> {
     if (request.params?.schoolId) return request.params.schoolId;
 
-    const supabase = this.supabaseService.getServiceClient();
-
     const courseId = request.params?.courseId ?? undefined;
 
     if (courseId) {
-      const { data: course } = await supabase
-        .schema('course')
-        .from('course')
-        .select('school_id')
-        .eq('id', courseId)
-        .maybeSingle();
+      // A malformed id fails the lookup; fall through to the active school.
+      const course = await this.prisma.course
+        .findUnique({ where: { id: courseId }, select: { school_id: true } })
+        .catch(() => null);
 
-      if (course?.school_id) return course.school_id as string;
+      if (course?.school_id) return course.school_id;
     }
 
     // Fallback: the user's active school (denormalized single current school).
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', request.user.id)
-      .maybeSingle();
+    const profile = await this.prisma.user_profile
+      .findUnique({
+        where: { id: request.user.id },
+        select: { school_id: true },
+      })
+      .catch(() => null);
 
     return profile?.school_id ?? undefined;
   }
