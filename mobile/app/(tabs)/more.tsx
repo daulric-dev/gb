@@ -5,7 +5,6 @@ import {
   MessageSquare,
   FolderClosed,
   UsersRound,
-  BookText,
   CalendarDays,
   GraduationCap,
   ShieldCheck,
@@ -53,12 +52,6 @@ const ITEMS: MenuItem[] = [
     label: "Staff",
     description: "Members and join requests",
     icon: UsersRound,
-  },
-  {
-    href: "/subjects",
-    label: "Subjects",
-    description: "Manage subjects",
-    icon: BookText,
   },
   {
     href: "/academic-calendar",

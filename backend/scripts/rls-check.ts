@@ -221,64 +221,80 @@ async function main() {
     rename.error?.message ?? 'ok',
   );
 
-  // ── grades, school structure and assignments (20260928120000) ────────────
-  const { data: year } = await admin
-    .from('academic_year')
-    .insert({ school_id: schoolId, name: `RLS ${stamp}` })
+  // ── courses, work and marks (20261020120100) ─────────────────────────────
+  // Every course.* table and grading.submission is service-role only: the API
+  // enforces course roles, so no signed-in client may touch them directly.
+  const { data: course } = await admin
+    .schema('course')
+    .from('course')
+    .insert({ school_id: schoolId, name: `RLS ${stamp}`, status: 'published' })
     .select('id')
     .single();
-  const { data: term } = await admin
-    .from('term')
-    .insert({ academic_year_id: year!.id, name: 'Term 1' })
-    .select('id')
-    .single();
-  const { data: subject } = await admin
-    .from('subject')
-    .insert({ school_id: schoolId, name: 'Maths', code: `M${stamp}` })
-    .select('id')
-    .single();
-  const { data: assessment } = await admin
+  const { data: activity } = await admin
     .schema('grading')
-    .from('assessment')
-    .insert({ term_id: term!.id, subject_id: subject!.id, title: 'Test', max_score: 100 })
+    .from('activity')
+    .insert({
+      course_id: course!.id,
+      kind: 'offline',
+      title: 'Test',
+      points: 100,
+      status: 'published',
+      created_by: adminId,
+    })
     .select('id')
     .single();
-  const { data: grade } = await admin
+  const { data: submission } = await admin
     .schema('grading')
-    .from('grade')
-    .insert({ assessment_id: assessment!.id, student_id: ownRecord!.id, score: 40 })
+    .from('submission')
+    .insert({
+      activity_id: activity!.id,
+      student_id: ownRecord!.id,
+      status: 'graded',
+      score: 40,
+    })
     .select('id')
     .single();
 
   const bump = await asStudent
     .schema('grading')
-    .from('grade')
+    .from('submission')
     .update({ score: 100 })
-    .eq('id', grade!.id)
+    .eq('id', submission!.id)
     .select('id');
   check(
-    'student cannot change their own grade',
+    'student cannot change their own mark',
     !!bump.error || bump.data.length === 0,
     bump.error?.code ?? `${bump.data?.length} row(s)`,
   );
 
-  const peek = await asStudent.schema('grading').from('grade').select('id');
+  const peek = await asStudent.schema('grading').from('submission').select('id');
   check(
-    'student cannot read the gradebook directly',
+    'student cannot read submissions directly',
     !!peek.error || peek.data.length === 0,
     peek.error?.code ?? `${peek.data?.length} row(s)`,
   );
 
-  const teacherGrade = await asTeacher
-    .schema('grading')
-    .from('grade')
-    .update({ score: 55 })
-    .eq('id', grade!.id)
+  for (const [who, client] of [
+    ['student', asStudent],
+    ['teacher', asTeacher],
+  ] as const) {
+    const courses = await client.schema('course').from('course').select('id');
+    check(
+      `${who} cannot read the course schema directly`,
+      !!courses.error || courses.data.length === 0,
+      courses.error?.code ?? `${courses.data?.length} row(s)`,
+    );
+  }
+
+  const selfAssign = await asTeacher
+    .schema('course')
+    .from('course_staff')
+    .insert({ course_id: course!.id, user_profile_id: teacherId, role: 'teacher' })
     .select('id');
   check(
-    'staff can still write grades',
-    !teacherGrade.error && teacherGrade.data.length === 1,
-    teacherGrade.error?.message ?? `${teacherGrade.data?.length} row(s)`,
+    'a teacher cannot add themselves to a course',
+    !!selfAssign.error || selfAssign.data.length === 0,
+    selfAssign.error?.code ?? `${selfAssign.data?.length} row(s)`,
   );
 
   for (const [who, client] of [
@@ -298,17 +314,6 @@ async function main() {
     'members still read their school',
     !readSchool.error && readSchool.data.length === 1,
     readSchool.error?.message ?? `${readSchool.data?.length} row(s)`,
-  );
-
-  const selfAssign = await asTeacher
-    .schema('staff')
-    .from('teacher_subject_assignment')
-    .insert({ user_profile_id: teacherId, subject_id: subject!.id, academic_year_id: year!.id })
-    .select('id');
-  check(
-    'a teacher cannot assign themselves to a subject',
-    !!selfAssign.error || selfAssign.data.length === 0,
-    selfAssign.error?.code ?? `${selfAssign.data?.length} row(s)`,
   );
 
   const dropAdmin = await asTeacher

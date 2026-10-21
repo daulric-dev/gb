@@ -24,20 +24,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  CalendarCheck,
-  ClipboardList,
-  FileText,
+  BookOpen,
+  CheckSquare,
   LayoutDashboard,
   LogOut,
-  ScrollText,
 } from "lucide-react";
 
 const NAV = [
-  { href: "/portal", label: "Overview", icon: LayoutDashboard, exact: true },
-  { href: "/portal/work", label: "Work", icon: FileText },
-  { href: "/portal/grades", label: "Grades", icon: ClipboardList },
-  { href: "/portal/attendance", label: "Attendance", icon: CalendarCheck },
-  { href: "/portal/reports", label: "Reports", icon: ScrollText },
+  { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/portal/courses", label: "Courses", icon: BookOpen },
+  { href: "/portal/work", label: "To-do", icon: CheckSquare },
 ];
 
 export default function PortalLayout({

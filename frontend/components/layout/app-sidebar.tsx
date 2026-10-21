@@ -27,7 +27,6 @@ import {
   Settings,
   Shield,
   UserRoundSearch,
-  Users,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
@@ -68,18 +67,9 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  {
-    title: "Academic Calendar",
-    href: "/dashboard/academic-calendar",
-    icon: CalendarRange,
-    permission: ["academic-year", "read"],
-  },
-  {
-    title: "Classes",
-    href: "/dashboard/classes",
-    icon: Users,
-    permission: ["class", "read"],
-  },
+  // Everyone on staff may teach or assist, so no catalog permission gates the
+  // list; the API returns only the courses the caller has a role in.
+  { title: "Courses", href: "/dashboard/courses", icon: BookOpen },
   {
     title: "Students",
     href: "/dashboard/students",
@@ -93,10 +83,10 @@ const navItems: NavItem[] = [
     permission: ["school", "read"],
   },
   {
-    title: "Subjects",
-    href: "/dashboard/subjects",
-    icon: BookOpen,
-    permission: ["subject", "read"],
+    title: "Academic Calendar",
+    href: "/dashboard/academic-calendar",
+    icon: CalendarRange,
+    permission: ["academic-year", "read"],
   },
   {
     title: "Files",
@@ -125,7 +115,6 @@ const adminNavItems: NavItem[] = [
     icon: Scale,
     permission: ["grade-scale", "read"],
   },
-
   { title: "Roles", href: "/dashboard/roles", icon: KeyRound, adminOnly: true },
 ];
 

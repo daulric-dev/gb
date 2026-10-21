@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { FileQueueService } from '@/queue/file-queue.service';
-import type { ShareTargetDto } from './dto/share-file.dto';
+import { SharePrincipalType, type ShareTargetDto } from './dto/share-file.dto';
 
 /**
  * Manages a file's share list. All methods assume ownership has already been
@@ -34,6 +34,7 @@ export class FileShareService {
     targets: ShareTargetDto[],
   ) {
     const client = this.supabase.getServiceClient();
+    await this.assertCoursesInSchool(schoolId, targets);
 
     const rows = targets.map((t) => ({
       file_id: fileId,
@@ -62,6 +63,36 @@ export class FileShareService {
     }
 
     return data ?? [];
+  }
+
+  /**
+   * A course share must name a course of the file's own school; anything else
+   * would be a share nobody can ever match, or a probe for course ids.
+   */
+  private async assertCoursesInSchool(
+    schoolId: string,
+    targets: ShareTargetDto[],
+  ) {
+    const courseIds = [
+      ...new Set(
+        targets
+          .filter((t) => t.principalType === SharePrincipalType.Course)
+          .map((t) => t.principalId),
+      ),
+    ];
+    if (courseIds.length === 0) return;
+
+    const { data } = await this.supabase
+      .getServiceClient()
+      .schema('course')
+      .from('course')
+      .select('id')
+      .eq('school_id', schoolId)
+      .in('id', courseIds);
+
+    if ((data ?? []).length !== courseIds.length) {
+      throw new NotFoundException('Course not found');
+    }
   }
 
   async updateDownload(fileId: string, shareId: string, canDownload: boolean) {

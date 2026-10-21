@@ -7,7 +7,7 @@
  * because its options are the accepted wordings.
  */
 
-export type WorkKind = "quiz" | "assignment";
+export type WorkKind = "quiz" | "assignment" | "offline";
 export type QuestionKind = "multiple_choice" | "true_false" | "short_answer";
 
 export interface PortalWorkItem {
@@ -20,7 +20,8 @@ export interface PortalWorkItem {
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
-  subject: { id: string; name: string | null; code: string | null } | null;
+  courseId: string | null;
+  courseName: string | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";
@@ -40,6 +41,8 @@ export interface PortalWorkDetail {
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
+  courseId?: string | null;
+  courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
   attemptsUsed: number;
@@ -81,8 +84,12 @@ export function dueLabel(value: string | null) {
   return `Due ${formatted}`;
 }
 
-/** Work needing action sorts above work already handed in. */
+/**
+ * Work needing action sorts above work already handed in. Offline work is
+ * handed in on paper, so it is never outstanding here.
+ */
 export function isOutstanding(item: PortalWorkItem) {
+  if (item.kind === "offline") return false;
   return (
     item.status === "published" &&
     (!item.submission || item.submission.status === "draft")

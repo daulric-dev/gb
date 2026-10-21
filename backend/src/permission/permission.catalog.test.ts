@@ -11,7 +11,7 @@ import {
 
 describe('permission catalog', () => {
   test('resources without an override expose every action', () => {
-    expect(actionsFor('class')).toEqual(ACTIONS);
+    expect(actionsFor('course')).toEqual(ACTIONS);
   });
 
   test('school is read-only', () => {

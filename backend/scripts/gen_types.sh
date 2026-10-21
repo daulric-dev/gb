@@ -47,17 +47,18 @@ supabase gen types typescript \
   --schema staff \
   --schema file_manager \
   --schema chat \
+  --schema course \
   > src/types/database.types.ts
 
 if [ $? -eq 0 ]; then
   echo "Types generated: src/types/database.types.ts"
   echo ""
   echo "   Schemas included:"
-  echo "     - public (school, user_profile, academic_year, student_group, term, subject)"
-  echo "     - student (student, enrollment, subject_profile, parent_link)"
-  echo "     - grading (assessment, grade)"
-  echo "     - reporting (report_book, report_book_entry)"
-  echo "     - staff (teacher_group_assignment, teacher_subject_assignment)"
+  echo "     - public (school, user_profile, academic_year, term, announcement)"
+  echo "     - student (student, parent_link)"
+  echo "     - grading (activity, submission, quiz_*, grade_scale)"
+  echo "     - course (course, course_staff, course_student, module, module_item, page, assignment_group)"
+  echo "     - reporting, staff (legacy, read-only until the cleanup migration)"
   echo "     - file_manager (file, file_share)"
   echo "     - chat (conversation, conversation_member, message)"
   echo ""
@@ -73,6 +74,6 @@ else
   echo "     supabase gen types typescript \\"
   echo "       --project-id $PROJECT_ID \\"
   echo "       --schema public --schema student --schema grading \\"
-  echo "       --schema reporting --schema staff --schema file_manager --schema chat \\"
+  echo "       --schema reporting --schema staff --schema file_manager --schema chat --schema course \\"
   echo "       > src/types/database.types.ts"
 fi

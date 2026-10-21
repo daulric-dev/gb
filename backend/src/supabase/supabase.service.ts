@@ -4,7 +4,13 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { authCookieDomain } from '@/config/origins';
 
-type Schema = 'public' | 'student' | 'grading' | 'reporting' | 'staff';
+type Schema =
+  | 'public'
+  | 'student'
+  | 'grading'
+  | 'reporting'
+  | 'staff'
+  | 'course';
 
 @Injectable()
 export class SupabaseService {

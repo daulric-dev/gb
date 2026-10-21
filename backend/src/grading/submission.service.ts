@@ -6,57 +6,87 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
-import { CacheService } from '@/cache/cache.service';
 import { FileManagerService } from '@/file-manager/file-manager.service';
+import {
+  CourseAccessService,
+  STAFF_ROLES,
+} from '@/course/access/course-access.service';
 import type { MultipartFile } from '@fastify/multipart';
+import { ACTIVITY_COLUMNS, toPortalActivity } from './activity.mapper';
 
+const STUDENT_ACTIVITY_COLUMNS =
+  'id, course_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts';
+
+/**
+ * Submissions: a student's work on an activity, and the mark on it.
+ *
+ * Since the move to courses the submission is the only place a mark lives
+ * (the Canvas model). Nothing here writes grading.grade any more; the course
+ * gradebook reads submissions directly.
+ */
 @Injectable()
 export class SubmissionService {
   private readonly logger = new Logger(SubmissionService.name);
 
   constructor(
     private readonly supabaseService: SupabaseService,
-    private readonly cache: CacheService,
     private readonly files: FileManagerService,
+    private readonly access: CourseAccessService,
   ) {}
-
-  private async invalidate(): Promise<void> {
-    await this.cache.deleteByPrefix('calc:');
-  }
 
   // ── student side ──────────────────────────────────────────────────────────
 
-  /** Activities published to the classes this student is enrolled in. */
-  async listForStudent(studentId: string) {
+  /**
+   * The courses whose work a student can see: enrolled and not dropped, in a
+   * course that is published (or archived, so past work stays readable).
+   */
+  private async visibleCourses(
+    studentId: string,
+  ): Promise<Map<string, string>> {
     const supabase = this.supabaseService.getServiceClient();
 
     const { data: enrolments } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('student_group_id')
-      .eq('student_id', studentId);
+      .schema('course')
+      .from('course_student')
+      .select('course_id')
+      .eq('student_id', studentId)
+      .in('status', ['active', 'completed']);
 
-    const classIds = [
-      ...new Set(
-        (enrolments ?? [])
-          .map((e: any) => e.student_group_id as string | null)
-          .filter(Boolean) as string[],
-      ),
+    const courseIds = [
+      ...new Set((enrolments ?? []).map((e: any) => e.course_id as string)),
     ];
+    if (courseIds.length === 0) return new Map();
 
-    if (classIds.length === 0) return [];
+    const { data: courses } = await supabase
+      .schema('course')
+      .from('course')
+      .select('id, name')
+      .in('id', courseIds)
+      .in('status', ['published', 'archived']);
 
-    // Drafts are the teacher's working copy; closed work stays visible so a
-    // student can still see what they did and what it scored.
+    return new Map(
+      (courses ?? []).map((c: any) => [c.id as string, c.name as string]),
+    );
+  }
+
+  /**
+   * The student's to-do: published and closed work across every course they
+   * can see. Drafts are the teacher's working copy; closed work stays so a
+   * student can still see what they did and what it scored.
+   */
+  async listForStudent(studentId: string) {
+    const courses = await this.visibleCourses(studentId);
+    if (courses.size === 0) return [];
+
+    const supabase = this.supabaseService.getServiceClient();
+
     const { data: activities } = await supabase
       .schema('grading')
       .from('activity')
-      .select(
-        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts',
-      )
-      .in('student_group_id', classIds)
+      .select(STUDENT_ACTIVITY_COLUMNS)
+      .in('course_id', [...courses.keys()])
       .in('status', ['published', 'closed'])
-      .order('due_at', { ascending: true });
+      .order('due_at', { ascending: true, nullsFirst: false });
 
     const rows = (activities ?? []) as any[];
     if (rows.length === 0) return [];
@@ -64,7 +94,9 @@ export class SubmissionService {
     const { data: submissions } = await supabase
       .schema('grading')
       .from('submission')
-      .select('id, activity_id, status, score, submitted_at, graded_at')
+      .select(
+        'id, activity_id, status, score, excused, submitted_at, graded_at',
+      )
       .eq('student_id', studentId)
       .in(
         'activity_id',
@@ -75,23 +107,14 @@ export class SubmissionService {
       (submissions ?? []).map((s: any) => [s.activity_id as string, s]),
     );
 
-    const subjectIds = [...new Set(rows.map((a) => a.subject_id as string))];
-    const { data: subjects } = subjectIds.length
-      ? await supabase
-          .from('subject')
-          .select('id, name, code')
-          .in('id', subjectIds)
-      : { data: [] as any[] };
-    const subjectById = new Map(
-      (subjects ?? []).map((s: any) => [s.id as string, s]),
-    );
-
     return rows.map((a) => {
       const submission = byActivity.get(a.id as string);
-      const subject = subjectById.get(a.subject_id as string);
+      const graded = submission?.status === 'graded';
 
       return {
         id: a.id,
+        courseId: a.course_id,
+        courseName: courses.get(a.course_id as string) ?? null,
         kind: a.kind,
         title: a.title,
         instructions: a.instructions,
@@ -100,21 +123,57 @@ export class SubmissionService {
         status: a.status,
         allowFile: a.allow_file,
         allowText: a.allow_text,
-        subject: subject
-          ? { id: subject.id, name: subject.name, code: subject.code }
-          : null,
         submission: submission
           ? {
               id: submission.id,
               status: submission.status,
               score:
-                submission.score === null ? null : Number(submission.score),
+                graded && submission.score !== null
+                  ? Number(submission.score)
+                  : null,
+              excused: !!submission.excused,
               submittedAt: submission.submitted_at,
               gradedAt: submission.graded_at,
             }
           : null,
       };
     });
+  }
+
+  /** One course's published and closed work, with the student's state on each. */
+  async listCourseForStudent(studentId: string, courseId: string) {
+    await this.access.requireStudent(studentId, courseId);
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: activities } = await supabase
+      .schema('grading')
+      .from('activity')
+      .select(ACTIVITY_COLUMNS)
+      .eq('course_id', courseId)
+      .in('status', ['published', 'closed'])
+      .order('due_at', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+
+    const rows = (activities ?? []) as any[];
+    if (rows.length === 0) return [];
+
+    const { data: submissions } = await supabase
+      .schema('grading')
+      .from('submission')
+      .select(
+        'activity_id, status, score, excused, feedback, submitted_at, attempt_count',
+      )
+      .eq('student_id', studentId)
+      .in(
+        'activity_id',
+        rows.map((a) => a.id as string),
+      );
+
+    const byActivity = new Map(
+      (submissions ?? []).map((s: any) => [s.activity_id as string, s]),
+    );
+
+    return rows.map((a) => toPortalActivity(a, byActivity.get(a.id)));
   }
 
   /** The activity itself, with questions but never the correct answers. */
@@ -126,7 +185,7 @@ export class SubmissionService {
       .schema('grading')
       .from('submission')
       .select(
-        'id, status, text_body, file_id, score, feedback, submitted_at, graded_at, attempt_count',
+        'id, status, text_body, file_id, score, feedback, excused, submitted_at, graded_at, attempt_count',
       )
       .eq('activity_id', activityId)
       .eq('student_id', studentId)
@@ -172,9 +231,11 @@ export class SubmissionService {
     }
 
     const names = await this.fileNames([submission?.file_id as string]);
+    const graded = submission?.status === 'graded';
 
     return {
       id: activity.id,
+      courseId: activity.course_id,
       kind: activity.kind,
       title: activity.title,
       instructions: activity.instructions,
@@ -194,8 +255,14 @@ export class SubmissionService {
             textBody: submission.text_body,
             fileId: submission.file_id,
             fileName: names.get(submission.file_id as string) ?? null,
-            score: submission.score === null ? null : Number(submission.score),
-            feedback: submission.feedback,
+            // A teacher may be partway through marking; show the mark once
+            // it is final.
+            score:
+              graded && submission.score !== null
+                ? Number(submission.score)
+                : null,
+            feedback: graded ? submission.feedback : null,
+            excused: !!submission.excused,
             submittedAt: submission.submitted_at,
             gradedAt: submission.graded_at,
             attemptCount: submission.attempt_count ?? 0,
@@ -221,38 +288,57 @@ export class SubmissionService {
     );
   }
 
-  /** An activity is only this student's if it is set for a class they are in. */
+  /**
+   * An activity is only this student's if it is published (or closed) in a
+   * course they are enrolled in and can see. Anything else is reported as
+   * missing, so ids from other courses reveal nothing.
+   */
   private async requireAssignedActivity(studentId: string, activityId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: activity } = await supabase
+    const { data: activity } = await this.supabaseService
+      .getServiceClient()
       .schema('grading')
       .from('activity')
-      .select(
-        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts',
-      )
+      .select(STUDENT_ACTIVITY_COLUMNS)
       .eq('id', activityId)
       .maybeSingle();
 
     if (
-      !activity ||
+      !activity?.course_id ||
       !['published', 'closed'].includes(activity.status as string)
     ) {
       throw new NotFoundException('Activity not found');
     }
 
-    const { data: enrolment } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('id')
-      .eq('student_id', studentId)
-      .eq('student_group_id', activity.student_group_id)
-      .maybeSingle();
-
-    if (!enrolment) {
+    try {
+      await this.access.requireStudent(studentId, activity.course_id as string);
+    } catch {
       throw new NotFoundException('Activity not found');
     }
 
+    return activity as any;
+  }
+
+  /**
+   * The same, for the routes that hand work in. Offline work is marked by the
+   * teacher from paper or in person; there is nothing to submit online.
+   */
+  private async requireSubmittable(studentId: string, activityId: string) {
+    const activity = await this.requireAssignedActivity(studentId, activityId);
+    if (activity.kind === 'offline') {
+      throw new ConflictException(
+        'This is marked offline; there is nothing to hand in here',
+      );
+    }
+
+    // An archived course stays readable for the record, but archiving does
+    // not close its activities, so hand-ins are refused at the course level.
+    try {
+      await this.access.requireStudent(studentId, activity.course_id as string, {
+        allowArchived: false,
+      });
+    } catch {
+      throw new ConflictException('This course is closed to new work');
+    }
     return activity;
   }
 
@@ -296,7 +382,7 @@ export class SubmissionService {
    * to their own draft for an activity set to their class.
    */
   async attachFile(studentId: string, activityId: string, file: MultipartFile) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment') {
       throw new BadRequestException('This is not an assignment');
@@ -339,7 +425,7 @@ export class SubmissionService {
     input: { name: string; sizeBytes: number; contentType: string },
     requestHost?: string,
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment') {
       throw new BadRequestException('This is not an assignment');
@@ -365,7 +451,7 @@ export class SubmissionService {
     activityId: string,
     fileId: string,
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment' || !activity.allow_file) {
       throw new BadRequestException('This assignment does not accept files');
@@ -410,10 +496,10 @@ export class SubmissionService {
     return data.user_profile_id;
   }
 
+  /** The file a student handed in, for staff marking it. */
   async readSubmissionFile(userId: string, submissionId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: submission } = await supabase
+    const { data: submission } = await this.supabaseService
+      .getServiceClient()
       .schema('grading')
       .from('submission')
       .select('id, activity_id, file_id')
@@ -424,18 +510,10 @@ export class SubmissionService {
       throw new NotFoundException('No file was handed in');
     }
 
-    const { data: activity } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select('student_group_id')
-      .eq('id', submission.activity_id)
-      .maybeSingle();
-
-    if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(
-      userId,
-      activity.student_group_id as string,
+    const courseId = await this.access.courseIdOfActivity(
+      submission.activity_id as string,
     );
+    await this.access.require(userId, courseId, STAFF_ROLES);
 
     return this.files.readContentForAuthorisedCaller(
       submission.file_id as string,
@@ -448,7 +526,7 @@ export class SubmissionService {
     activityId: string,
     input: { textBody?: string; fileId?: string },
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment') {
       throw new BadRequestException('This is not an assignment');
@@ -517,15 +595,15 @@ export class SubmissionService {
   }
 
   /**
-   * Answer and submit a quiz. Scoring, marking and the gradebook write all
-   * happen inside submit_quiz so a scored attempt always has a grade.
+   * Answer and submit a quiz. Scoring and marking happen inside submit_quiz,
+   * which writes the score onto the submission - the one place a mark lives.
    */
   async submitQuiz(
     studentId: string,
     activityId: string,
     answers: { questionId: string; optionId?: string; text?: string }[],
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'quiz') {
       throw new BadRequestException('This is not a quiz');
@@ -565,7 +643,29 @@ export class SubmissionService {
     const kindById = new Map(
       (questions ?? []).map((q: any) => [q.id as string, q.kind as string]),
     );
-    const accepted = answers.filter((a) => kindById.has(a.questionId));
+
+    // An option id is only an answer to the question it belongs to. Without
+    // this, one option id known to be correct - learned on a retake of any
+    // quiz - could be sent as the answer to every question everywhere.
+    const questionIds = [...kindById.keys()];
+    const { data: options } = questionIds.length
+      ? await supabase
+          .schema('grading')
+          .from('quiz_option')
+          .select('id, question_id')
+          .in('question_id', questionIds)
+      : { data: [] as any[] };
+    const questionOfOption = new Map(
+      (options ?? []).map((o: any) => [o.id as string, o.question_id as string]),
+    );
+
+    const accepted = answers.filter(
+      (a) =>
+        kindById.has(a.questionId) &&
+        (kindById.get(a.questionId) === 'short_answer' ||
+          !a.optionId ||
+          questionOfOption.get(a.optionId) === a.questionId),
+    );
 
     // Clear the previous attempt first: upserting alone would leave answers to
     // questions this attempt skipped, silently scoring them again.
@@ -620,7 +720,6 @@ export class SubmissionService {
     }
 
     const row = Array.isArray(data) ? data[0] : data;
-    await this.invalidate();
 
     return {
       score: row?.score === undefined ? null : Number(row.score),
@@ -630,32 +729,86 @@ export class SubmissionService {
 
   // ── teacher side ──────────────────────────────────────────────────────────
 
-  /** Every submission for an activity, with who has not handed in. */
-  async listForTeacher(userId: string, activityId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: activity } = await supabase
+  /**
+   * Load an activity for marking: the caller must be staff in its course and
+   * the work must have gone out. Marking a draft would put a score on
+   * something students have never seen.
+   */
+  private async requireMarkable(userId: string, activityId: string) {
+    const { data: activity } = await this.supabaseService
+      .getServiceClient()
       .schema('grading')
       .from('activity')
-      .select('id, student_group_id, points, kind, assessment_id')
+      .select('id, course_id, points, status, kind')
       .eq('id', activityId)
       .maybeSingle();
 
-    if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(
+    if (!activity?.course_id) throw new NotFoundException('Activity not found');
+    await this.access.require(
       userId,
-      activity.student_group_id as string,
+      activity.course_id as string,
+      STAFF_ROLES,
+    );
+    return activity as any;
+  }
+
+  /**
+   * The student must be on the course's roster. Any status will do - a
+   * dropped student's existing work can still be marked or excused, so the
+   * record is right if they come back.
+   */
+  private async requireCourseStudent(courseId: string, studentId: string) {
+    const { data } = await this.supabaseService
+      .getServiceClient()
+      .schema('course')
+      .from('course_student')
+      .select('student_id')
+      .eq('course_id', courseId)
+      .eq('student_id', studentId)
+      .maybeSingle();
+
+    if (!data)
+      throw new NotFoundException('That student is not in this course');
+  }
+
+  /**
+   * Everyone who should have done the work, with their submission or lack of
+   * one: the active and completed roster, plus anyone else who has a
+   * submission (a student dropped after handing in keeps showing up).
+   */
+  async listForTeacher(userId: string, activityId: string) {
+    const activity = await this.requireMarkable(userId, activityId);
+    const supabase = this.supabaseService.getServiceClient();
+
+    const { data: roster } = await supabase
+      .schema('course')
+      .from('course_student')
+      .select('student_id, status')
+      .eq('course_id', activity.course_id);
+
+    const { data: submissions } = await supabase
+      .schema('grading')
+      .from('submission')
+      .select(
+        'id, student_id, status, text_body, file_id, score, feedback, excused, excused_reason, submitted_at, graded_at, attempt_count',
+      )
+      .eq('activity_id', activityId);
+
+    const byStudent = new Map(
+      (submissions ?? []).map((s: any) => [s.student_id as string, s]),
+    );
+    const statusOf = new Map(
+      (roster ?? []).map((r: any) => [r.student_id as string, r.status]),
     );
 
-    const { data: enrolments } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('student_id')
-      .eq('student_group_id', activity.student_group_id);
-
-    const studentIds = (enrolments ?? [])
-      .map((e: any) => e.student_id as string | null)
-      .filter(Boolean) as string[];
+    const studentIds = [
+      ...new Set([
+        ...(roster ?? [])
+          .filter((r: any) => r.status !== 'dropped')
+          .map((r: any) => r.student_id as string),
+        ...byStudent.keys(),
+      ]),
+    ];
 
     const { data: students } = studentIds.length
       ? await supabase
@@ -665,37 +818,6 @@ export class SubmissionService {
           .in('id', studentIds)
       : { data: [] as any[] };
 
-    const { data: submissions } = studentIds.length
-      ? await supabase
-          .schema('grading')
-          .from('submission')
-          .select(
-            'id, student_id, status, text_body, file_id, score, feedback, submitted_at, graded_at, attempt_count',
-          )
-          .eq('activity_id', activityId)
-      : { data: [] as any[] };
-
-    const byStudent = new Map(
-      (submissions ?? []).map((s: any) => [s.student_id as string, s]),
-    );
-
-    // The gradebook row behind each mark. It is a separate table because a
-    // mark can be dropped from the term without touching the submission, so
-    // the exclusion lives here and not on the submission.
-    const { data: grades } =
-      activity.assessment_id && studentIds.length
-        ? await supabase
-            .schema('grading')
-            .from('grade')
-            .select('id, student_id, is_excluded, exclusion_reason')
-            .eq('assessment_id', activity.assessment_id)
-            .in('student_id', studentIds)
-        : { data: [] as any[] };
-
-    const gradeByStudent = new Map(
-      (grades ?? []).map((g: any) => [g.student_id as string, g]),
-    );
-
     const names = await this.fileNames(
       (submissions ?? []).map((s: any) => s.file_id as string),
     );
@@ -703,18 +825,11 @@ export class SubmissionService {
     return (students ?? [])
       .map((s: any) => {
         const submission = byStudent.get(s.id as string);
-        const grade = gradeByStudent.get(s.id as string);
         return {
-          studentId: s.id,
+          studentId: s.id as string,
           name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
-          grade: grade
-            ? {
-                id: grade.id as string,
-                isExcluded: !!grade.is_excluded,
-                exclusionReason:
-                  (grade.exclusion_reason as string | null) ?? null,
-              }
-            : null,
+          enrollmentStatus: (statusOf.get(s.id as string) ?? null) as
+            'active' | 'dropped' | 'completed' | null,
           submission: submission
             ? {
                 id: submission.id,
@@ -725,6 +840,8 @@ export class SubmissionService {
                 score:
                   submission.score === null ? null : Number(submission.score),
                 feedback: submission.feedback,
+                excused: !!submission.excused,
+                excusedReason: submission.excused_reason ?? null,
                 submittedAt: submission.submitted_at,
                 gradedAt: submission.graded_at,
                 attemptCount: submission.attempt_count ?? 0,
@@ -735,62 +852,70 @@ export class SubmissionService {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private async requireClassOwnership(userId: string, classId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!profile?.school_id) {
-      throw new BadRequestException('You are not assigned to a school');
-    }
-
-    const { data } = await supabase
-      .from('student_group')
-      .select('id, academic_year:academic_year_id(school_id)')
-      .eq('id', classId)
-      .maybeSingle();
-
-    const owner = (data?.academic_year as { school_id?: string } | null)
-      ?.school_id;
-
-    if (!data || owner !== profile.school_id) {
-      throw new NotFoundException('Activity not found');
-    }
+  private toMarked(row: any) {
+    return {
+      id: row.id as string,
+      studentId: row.student_id as string,
+      status: row.status as 'draft' | 'submitted' | 'graded',
+      score: row.score === null ? null : Number(row.score),
+      feedback: (row.feedback as string | null) ?? null,
+      excused: !!row.excused,
+      excusedReason: (row.excused_reason as string | null) ?? null,
+      gradedAt: (row.graded_at as string | null) ?? null,
+    };
   }
 
-  /** Mark a submission and write the result through to the gradebook. */
-  async grade(
-    userId: string,
-    submissionId: string,
-    input: { score: number; feedback?: string },
+  /**
+   * Write to a student's submission, creating it when there is none.
+   *
+   * Offline work never has one until it is marked, and a student who never
+   * handed in can still be given a mark (or excused), so marking cannot
+   * assume the row exists. One upsert on the (activity, student) key keeps
+   * that race-free and leaves the student's own text and file untouched.
+   */
+  private async writeSubmission(
+    activityId: string,
+    studentId: string,
+    fields: Record<string, unknown>,
   ) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: submission } = await supabase
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
       .schema('grading')
       .from('submission')
-      .select('id, activity_id, student_id, status')
-      .eq('id', submissionId)
-      .maybeSingle();
+      .upsert(
+        {
+          activity_id: activityId,
+          student_id: studentId,
+          ...fields,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'activity_id,student_id' },
+      )
+      .select(
+        'id, student_id, status, score, feedback, excused, excused_reason, graded_at',
+      )
+      .single();
 
-    if (!submission) throw new NotFoundException('Submission not found');
+    if (error || !data) {
+      this.logger.error(`Failed to write submission: ${error?.message}`);
+      throw new BadRequestException('Failed to save the mark');
+    }
+    return this.toMarked(data);
+  }
 
-    const { data: activity } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select('id, student_group_id, assessment_id, points')
-      .eq('id', submission.activity_id)
-      .maybeSingle();
+  /** Mark one student's work on an activity. The submission is the mark. */
+  async grade(
+    userId: string,
+    activityId: string,
+    studentId: string,
+    input: { score: number; feedback?: string },
+  ) {
+    const activity = await this.requireMarkable(userId, activityId);
 
-    if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(
-      userId,
-      activity.student_group_id as string,
-    );
+    if (activity.status === 'draft') {
+      throw new ConflictException('Publish this before marking it');
+    }
+    await this.requireCourseStudent(activity.course_id as string, studentId);
 
     if (input.score < 0 || input.score > Number(activity.points)) {
       throw new BadRequestException(
@@ -798,50 +923,89 @@ export class SubmissionService {
       );
     }
 
-    const { error } = await supabase
+    return this.writeSubmission(activityId, studentId, {
+      status: 'graded',
+      score: input.score,
+      feedback: input.feedback ?? null,
+      graded_at: new Date().toISOString(),
+      graded_by: userId,
+    });
+  }
+
+  /**
+   * Marking by submission id, for the marking screen that already holds one.
+   * Resolves to the (activity, student) pair and marks it the same way.
+   */
+  async gradeSubmission(
+    userId: string,
+    submissionId: string,
+    input: { score: number; feedback?: string },
+  ) {
+    const { data: submission } = await this.supabaseService
+      .getServiceClient()
       .schema('grading')
       .from('submission')
-      .update({
-        status: 'graded',
-        score: input.score,
-        feedback: input.feedback ?? null,
-        graded_at: new Date().toISOString(),
-        graded_by: userId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', submissionId);
+      .select('id, activity_id, student_id')
+      .eq('id', submissionId)
+      .maybeSingle();
 
-    if (error) {
-      this.logger.error(`Failed to grade submission: ${error.message}`);
-      throw new BadRequestException('Failed to save the mark');
+    if (!submission) throw new NotFoundException('Submission not found');
+
+    return this.grade(
+      userId,
+      submission.activity_id as string,
+      submission.student_id as string,
+      input,
+    );
+  }
+
+  /**
+   * Excuse a student from one piece of work, or take the excuse back.
+   *
+   * An excused mark is left out of the course total entirely - score and
+   * points - for the student who was absent or sat a makeup. Any mark they
+   * already have is kept, so un-excusing restores it. A student with no
+   * submission gets one, marked graded with no score, so the to-do list stops
+   * asking them for it.
+   */
+  async excuse(
+    userId: string,
+    activityId: string,
+    studentId: string,
+    input: { excused: boolean; reason?: string },
+  ) {
+    const activity = await this.requireMarkable(userId, activityId);
+
+    if (activity.status === 'draft') {
+      throw new ConflictException('Publish this before excusing anyone');
     }
+    await this.requireCourseStudent(activity.course_id as string, studentId);
 
-    // Without this the mark lives only on the submission and never reaches a
-    // report, which is the whole point of linking an activity to an assessment.
-    if (activity.assessment_id) {
-      const { error: gradeError } = await supabase
-        .schema('grading')
-        .from('grade')
-        .upsert(
-          {
-            assessment_id: activity.assessment_id,
-            student_id: submission.student_id,
-            score: input.score,
-          },
-          { onConflict: 'assessment_id,student_id' },
-        );
+    const supabase = this.supabaseService.getServiceClient();
+    const { data: existing } = await supabase
+      .schema('grading')
+      .from('submission')
+      .select('id')
+      .eq('activity_id', activityId)
+      .eq('student_id', studentId)
+      .maybeSingle();
 
-      if (gradeError) {
-        this.logger.error(
-          `Marked submission ${submissionId} but failed to write the grade: ${gradeError.message}`,
-        );
-        throw new BadRequestException(
-          'The mark was saved but did not reach the gradebook',
-        );
+    const fields: Record<string, unknown> = {
+      excused: input.excused,
+      // Dropping the reason when the excuse is lifted stops a stale note
+      // reappearing the next time.
+      excused_reason: input.excused ? input.reason?.trim() || null : null,
+    };
+
+    if (!existing) {
+      if (!input.excused) {
+        throw new NotFoundException('This student is not excused');
       }
+      fields.status = 'graded';
+      fields.graded_at = new Date().toISOString();
+      fields.graded_by = userId;
     }
 
-    await this.invalidate();
-    return { id: submissionId, score: input.score };
+    return this.writeSubmission(activityId, studentId, fields);
   }
 }

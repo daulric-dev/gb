@@ -12,6 +12,16 @@ import { UpdateTermDto } from './dto/update-term.dto';
 
 const TERM_TTL = 60 * 60 * 24 * 30;
 
+/**
+ * Where the old fixed term names sort when no order is given. Any other name
+ * goes after the year's existing terms.
+ */
+const LEGACY_SORT_ORDER: Record<string, number> = {
+  michaelmas: 1,
+  hilary: 2,
+  trinity: 3,
+};
+
 @Injectable()
 export class TermService {
   private readonly logger = new Logger(TermService.name);
@@ -32,17 +42,22 @@ export class TermService {
       throw new BadRequestException('Start date must be before end date');
     }
 
-    const defaultSortOrder = { michaelmas: 1, hilary: 2, trinity: 3 };
-    const sortOrder = dto.sortOrder ?? defaultSortOrder[dto.name];
+    const name = dto.name.trim();
+    if (!name) throw new BadRequestException('Give the term a name');
 
     const supabase = this.supabaseService.getServiceClient();
     await this.assertYearInUserSchool(userId, dto.academicYearId);
+
+    const sortOrder =
+      dto.sortOrder ??
+      LEGACY_SORT_ORDER[name.toLowerCase()] ??
+      (await this.nextSortOrder(dto.academicYearId));
 
     const { data: term, error } = await supabase
       .from('term')
       .insert({
         academic_year_id: dto.academicYearId,
-        name: dto.name,
+        name,
         start_date: dto.startDate,
         end_date: dto.endDate,
         exam_weight: dto.examWeight,
@@ -136,6 +151,11 @@ export class TermService {
     }
 
     const updateData: Record<string, unknown> = {};
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (!name) throw new BadRequestException('Give the term a name');
+      updateData.name = name;
+    }
     if (dto.startDate !== undefined) updateData.start_date = dto.startDate;
     if (dto.endDate !== undefined) updateData.end_date = dto.endDate;
     if (dto.examWeight !== undefined) updateData.exam_weight = dto.examWeight;
@@ -153,6 +173,11 @@ export class TermService {
       .single();
 
     if (error) {
+      if (error.code === '23505') {
+        throw new ConflictException(
+          'Another term in this academic year already has that name',
+        );
+      }
       this.logger.error(`Failed to update term: ${error.message}`);
       throw new BadRequestException('Failed to update term');
     }
@@ -189,6 +214,21 @@ export class TermService {
 
     await this.cache.delete(`terms:${current.academic_year_id}`);
     return { message: 'Term deleted' };
+  }
+
+  /** One past the highest sort order in the year, so new terms go last. */
+  private async nextSortOrder(academicYearId: string): Promise<number> {
+    const { data } = await this.supabaseService
+      .getServiceClient()
+      .from('term')
+      .select('sort_order')
+      .eq('academic_year_id', academicYearId)
+      .order('sort_order', { ascending: false })
+      .limit(1);
+
+    const top = (data)?.[0]
+      ?.sort_order;
+    return (top ?? 0) + 1;
   }
 
   private async assertYearInUserSchool(userId: string, academicYearId: string) {

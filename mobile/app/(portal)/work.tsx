@@ -39,7 +39,7 @@ function WorkRow({ item }: { item: PortalWorkItem }) {
           {item.title}
         </Text>
         <Text variant="muted" size="xs">
-          {[item.subject?.name, `${item.points} points`, dueLabel(item.dueAt)]
+          {[item.courseName, `${item.points} points`, dueLabel(item.dueAt)]
             .filter(Boolean)
             .join(" · ")}
         </Text>
@@ -57,7 +57,7 @@ function WorkRow({ item }: { item: PortalWorkItem }) {
 }
 
 /**
- * Work set for the student's classes.
+ * Work set across the student's courses.
  *
  * Outstanding work sorts first: the question this screen answers is "what do I
  * still have to do", and everything else is history.
@@ -90,7 +90,7 @@ export default function PortalWorkScreen() {
   return (
     <Screen
       title="Work"
-      description="Quizzes and assignments for your classes"
+      description="Quizzes and assignments across your courses"
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

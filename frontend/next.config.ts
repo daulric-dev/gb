@@ -61,6 +61,17 @@ const nextConfig: NextConfig = {
         destination: "/dashboard/academic-calendar",
         permanent: true,
       },
+      // Classes and subjects were replaced by courses.
+      {
+        source: "/dashboard/classes/:path*",
+        destination: "/dashboard/courses",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/subjects/:path*",
+        destination: "/dashboard/courses",
+        permanent: false,
+      },
     ];
   },
 };

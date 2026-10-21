@@ -7,15 +7,26 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
+import {
+  CourseAccessService,
+  STAFF_ROLES,
+} from '@/course/access/course-access.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
 const CONTENT_SELECT =
-  'id, school_id, author_user_profile_id, title, body, created_at, updated_at, author:author_user_profile_id(first_name, last_name, avatar_url)';
+  'id, school_id, course_id, author_user_profile_id, title, body, created_at, updated_at, author:author_user_profile_id(first_name, last_name, avatar_url)';
 const CONTENT_TTL = 60 * 60 * 24 * 30;
 const contentKey = (schoolId: string) => `announcements:content:${schoolId}`;
 
-interface ReaderRow {
+/**
+ * What a student sees of a course announcement: no read receipts (other
+ * students' names) and no internal author id.
+ */
+const STUDENT_SELECT =
+  'id, course_id, title, body, created_at, updated_at, author:author_user_profile_id(first_name, last_name, avatar_url)';
+
+export interface ReaderRow {
   id: string;
   first_name: string | null;
   last_name: string | null;
@@ -29,6 +40,7 @@ export class AnnouncementService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly courseAccess: CourseAccessService,
   ) {}
 
   /** Resolve the caller's school + role in one lookup. */
@@ -98,6 +110,8 @@ export class AnnouncementService {
         .from('announcement')
         .select(CONTENT_SELECT)
         .eq('school_id', school_id)
+        // Course announcements belong to their course's stream only.
+        .is('course_id', null)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -120,6 +134,7 @@ export class AnnouncementService {
       .select(CONTENT_SELECT)
       .eq('id', id)
       .eq('school_id', school_id)
+      .is('course_id', null)
       .single();
 
     if (error || !data) throw new NotFoundException('Announcement not found');
@@ -194,34 +209,29 @@ export class AnnouncementService {
     return { message: 'Announcement deleted' };
   }
 
-  /** Number of in-school announcements posted by others the user hasn't read. */
+  /**
+   * Number of school-wide announcements posted by others the user hasn't
+   * read.
+   *
+   * This used to call the `announcement_unread_count` RPC, but that function
+   * predates course announcements and counts every announcement in the
+   * school, so a teacher would see a badge for posts in courses they are not
+   * on. Until the RPC gains a `course_id IS NULL` filter in a migration, the
+   * count is done here.
+   */
   async getUnreadCount(userId: string): Promise<{ count: number }> {
     const supabase = this.supabaseService.getServiceClient();
     const { school_id } = await this.getProfile(userId);
 
-    // Server-side anti-join in one round-trip. Falls back to the id-diff-in-JS
-    // approach if the RPC isn't available yet (migration not applied).
-    try {
-      const { data, error } = await supabase.rpc('announcement_unread_count', {
-        p_user_id: userId,
-        p_school_id: school_id,
-      });
-      if (error) throw error;
-      return { count: Number(data) || 0 };
-    } catch (err) {
-      this.logger.warn(
-        `announcement_unread_count RPC unavailable, falling back: ${String(err)}`,
-      );
-    }
-
     const { data: anns } = await supabase
       .from('announcement')
       .select('id, author_user_profile_id')
-      .eq('school_id', school_id);
+      .eq('school_id', school_id)
+      .is('course_id', null);
 
     const candidates = (anns ?? [])
-      .filter((a) => a.author_user_profile_id !== userId)
-      .map((a) => a.id);
+      .filter((a: any) => a.author_user_profile_id !== userId)
+      .map((a: any) => a.id as string);
     if (candidates.length === 0) return { count: 0 };
 
     const { data: reads } = await supabase
@@ -230,7 +240,7 @@ export class AnnouncementService {
       .eq('user_profile_id', userId)
       .in('announcement_id', candidates);
 
-    const read = new Set((reads ?? []).map((r) => r.announcement_id));
+    const read = new Set((reads ?? []).map((r: any) => r.announcement_id));
     return { count: candidates.filter((id) => !read.has(id)).length };
   }
 
@@ -242,7 +252,8 @@ export class AnnouncementService {
     const { data: anns } = await supabase
       .from('announcement')
       .select('id')
-      .eq('school_id', school_id);
+      .eq('school_id', school_id)
+      .is('course_id', null);
 
     const rows = (anns ?? []).map((a) => ({
       announcement_id: a.id,
@@ -260,6 +271,79 @@ export class AnnouncementService {
       }
     }
     return { count: 0 };
+  }
+
+  // ── course announcements ──────────────────────────────────────────────────
+
+  /** A course's announcements, newest first, for any of its staff. */
+  async findForCourse(userId: string, courseId: string) {
+    await this.courseAccess.require(userId, courseId, STAFF_ROLES);
+
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
+      .from('announcement')
+      .select(CONTENT_SELECT)
+      .eq('course_id', courseId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to fetch course announcements: ${error.message}`);
+      throw new BadRequestException('Failed to fetch announcements');
+    }
+    return this.attachReaders(data ?? []);
+  }
+
+  /** TAs post too: announcing is part of running the course day to day. */
+  async createForCourse(
+    userId: string,
+    courseId: string,
+    dto: CreateAnnouncementDto,
+  ) {
+    const { course } = await this.courseAccess.require(
+      userId,
+      courseId,
+      STAFF_ROLES,
+    );
+
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
+      .from('announcement')
+      .insert({
+        school_id: course.school_id,
+        course_id: course.id,
+        author_user_profile_id: userId,
+        title: dto.title,
+        body: dto.body ?? null,
+      })
+      .select(CONTENT_SELECT)
+      .single();
+
+    if (error || !data) {
+      this.logger.error(
+        `Failed to create course announcement: ${error?.message}`,
+      );
+      throw new BadRequestException('Failed to create announcement');
+    }
+    return { ...data, readers: [] as ReaderRow[] };
+  }
+
+  /**
+   * A course's announcements for a student. The caller (portal) has already
+   * proved the student is enrolled in a visible course.
+   */
+  async findForStudent(courseId: string) {
+    const { data, error } = await this.supabaseService
+      .getServiceClient()
+      .from('announcement')
+      .select(STUDENT_SELECT)
+      .eq('course_id', courseId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to fetch course announcements: ${error.message}`);
+      throw new BadRequestException('Failed to fetch announcements');
+    }
+    return data ?? [];
   }
 
   /**

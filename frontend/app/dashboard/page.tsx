@@ -10,20 +10,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminDashboard } from "./_components/AdminDashboard";
 import { TeacherDashboard } from "./_components/TeacherDashboard";
-
-interface ClassItem {
-  id: string;
-  name: string | null;
-  academicYearId: string | null;
-  isClassTeacher: boolean | null;
-}
+import type { DashboardSummary } from "./_components/types";
 
 type DashboardMode = "admin-only" | "teacher-only" | "both";
 
-function pickMode(isAdmin: boolean, classes: ClassItem[]): DashboardMode {
-  const hasClasses = classes.length > 0;
-
-  if (isAdmin && hasClasses) return "both";
+function pickMode(isAdmin: boolean, summary: DashboardSummary | null): DashboardMode {
+  const teaches = (summary?.myCourses.length ?? 0) > 0;
+  if (isAdmin && teaches) return "both";
   if (isAdmin) return "admin-only";
   return "teacher-only";
 }
@@ -31,25 +24,39 @@ function pickMode(isAdmin: boolean, classes: ClassItem[]): DashboardMode {
 export default function DashboardPage() {
   useSignals();
   const { profile, loading: profileLoading } = useProfile();
-  const { isAdmin } = usePermissions();
-  const classes = useSignal<ClassItem[]>([]);
-  const classesLoading = useSignal(true);
+  const { isAdmin: isSchoolAdmin } = usePermissions();
+  const summary = useSignal<DashboardSummary | null>(null);
+  const summaryLoading = useSignal(true);
 
   useEffect(() => {
-    api<ClassItem[]>("/classes")
-      .then((data) => (classes.value = data))
-      .catch(() => (classes.value = []))
-      .finally(() => (classesLoading.value = false));
-  }, [classes, classesLoading]);
+    api<DashboardSummary>("/dashboard/summary")
+      .then((data) => (summary.value = data))
+      .catch(() => (summary.value = null))
+      .finally(() => (summaryLoading.value = false));
+  }, [summary, summaryLoading]);
 
   const displayName = profile.value?.first_name
     ? profile.value.first_name
     : "there";
 
-  const ready = !profileLoading.value && !classesLoading.value;
+  const ready = !profileLoading.value && !summaryLoading.value;
+  const isAdmin = summary.value?.isAdmin ?? isSchoolAdmin;
   const mode: DashboardMode | null = ready
-    ? pickMode(isAdmin, classes.value)
+    ? pickMode(isAdmin, summary.value)
     : null;
+
+  const admin = (
+    <AdminDashboard
+      school={summary.value?.school ?? null}
+      activeYear={summary.value?.activeYear ?? null}
+    />
+  );
+  const teacher = (
+    <TeacherDashboard
+      courses={summary.value?.myCourses ?? []}
+      awaitingMarking={summary.value?.awaitingMarking ?? 0}
+    />
+  );
 
   return (
     <div className="space-y-8">
@@ -68,20 +75,20 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : mode === "admin-only" ? (
-        <AdminDashboard />
+        admin
       ) : mode === "teacher-only" ? (
-        <TeacherDashboard classes={classes.value} />
+        teacher
       ) : (
-        <Tabs defaultValue="admin">
+        <Tabs defaultValue="teacher">
           <TabsList className="w-full">
+            <TabsTrigger value="teacher">My Courses</TabsTrigger>
             <TabsTrigger value="admin">School Overview</TabsTrigger>
-            <TabsTrigger value="teacher">My Classes</TabsTrigger>
           </TabsList>
-          <TabsContent value="admin" className="mt-4">
-            <AdminDashboard />
-          </TabsContent>
           <TabsContent value="teacher" className="mt-4">
-            <TeacherDashboard classes={classes.value} />
+            {teacher}
+          </TabsContent>
+          <TabsContent value="admin" className="mt-4">
+            {admin}
           </TabsContent>
         </Tabs>
       )}

@@ -75,23 +75,17 @@ export class PermissionGuard implements CanActivate {
 
     const supabase = this.supabaseService.getServiceClient();
 
-    const classId =
-      request.params?.classId ??
-      request.body?.studentGroupId ??
-      request.query?.studentGroupId ??
-      undefined;
+    const courseId = request.params?.courseId ?? undefined;
 
-    if (classId) {
-      const { data: studentGroup } = await supabase
-        .from('student_group')
-        .select('academic_year:academic_year_id(school_id)')
-        .eq('id', classId)
+    if (courseId) {
+      const { data: course } = await supabase
+        .schema('course')
+        .from('course')
+        .select('school_id')
+        .eq('id', courseId)
         .maybeSingle();
 
-      const classSchoolId = (
-        studentGroup?.academic_year as { school_id?: string } | null
-      )?.school_id;
-      if (classSchoolId) return classSchoolId;
+      if (course?.school_id) return course.school_id as string;
     }
 
     // Fallback: the user's active school (denormalized single current school).

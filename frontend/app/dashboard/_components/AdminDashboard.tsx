@@ -2,11 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import {
-  Cell,
-  Pie,
-  PieChart,
-} from "recharts";
+import { Cell, Pie, PieChart } from "recharts";
 import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -17,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ChartContainer,
@@ -30,25 +25,23 @@ import {
 import { useProfile } from "@/providers/AuthProvider";
 import {
   ArrowRight,
+  BookOpen,
+  ClipboardList,
   GraduationCap,
+  Megaphone,
+  PlusCircle,
   UserPlus,
   Users,
   UsersRound,
+  type LucideIcon,
 } from "lucide-react";
+import { formatDate } from "@/lib/courses/format";
 import { StatCard } from "./StatCard";
-
-interface AcademicYear {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  grading_model: string;
-}
-
-interface SchoolMember {
-  id: string;
-  role: "admin" | "teacher" | "member" | null;
-}
+import type {
+  DashboardSummary,
+  RecentActivityEntry,
+  SchoolOverview,
+} from "./types";
 
 interface SchoolStudent {
   id: string;
@@ -64,7 +57,6 @@ const STAFF_CONFIG: ChartConfig = {
   admin: { label: "Admins", color: "var(--color-chart-1)" },
   teacher: { label: "Teachers", color: "var(--color-chart-2)" },
   member: { label: "Members", color: "var(--color-chart-3)" },
-  custom: { label: "Custom", color: "var(--color-chart-4)" },
 };
 
 const STUDENT_CONFIG: ChartConfig = {
@@ -72,23 +64,82 @@ const STUDENT_CONFIG: ChartConfig = {
   female: { label: "Female", color: "var(--color-chart-4)" },
 };
 
-function CurrentAcademicYearCard({ year }: { year: AcademicYear }) {
+const COURSE_CONFIG: ChartConfig = {
+  published: { label: "Published", color: "var(--color-chart-2)" },
+  draft: { label: "Draft", color: "var(--color-chart-4)" },
+  archived: { label: "Archived", color: "var(--color-chart-3)" },
+};
+
+const ACTIVITY_META: Record<
+  RecentActivityEntry["type"],
+  { icon: LucideIcon; verb: string }
+> = {
+  course_created: { icon: PlusCircle, verb: "Course created" },
+  activity_published: { icon: ClipboardList, verb: "Work published" },
+  announcement: { icon: Megaphone, verb: "Announcement" },
+};
+
+function toChart<K extends string>(
+  counts: Record<K, number>,
+  config: ChartConfig,
+) {
+  return (Object.keys(counts) as K[])
+    .filter((k) => counts[k] > 0)
+    .map((k) => ({
+      key: k,
+      name: config[k]?.label as string,
+      value: counts[k],
+    }));
+}
+
+function RecentActivityCard({ items }: { items: RecentActivityEntry[] }) {
   return (
-    <Card className="animate-fade-in-up-delay-2">
+    <Card>
       <CardHeader>
-        <CardTitle>Current Academic Year</CardTitle>
-        <CardDescription>{year.name}</CardDescription>
+        <CardTitle>Recent activity</CardTitle>
+        <CardDescription>Across every course in the school</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span>
-            {new Date(year.start_date).toLocaleDateString()} -{" "}
-            {new Date(year.end_date).toLocaleDateString()}
-          </span>
-          <Badge variant="secondary" className="capitalize">
-            {year.grading_model.replace("_", " ")}
-          </Badge>
-        </div>
+      <CardContent className="space-y-1">
+        {items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Nothing yet.
+          </p>
+        ) : (
+          items.map((item) => {
+            const meta = ACTIVITY_META[item.type];
+            const Icon = meta?.icon ?? BookOpen;
+            const href = item.courseId
+              ? item.type === "activity_published"
+                ? `/dashboard/courses/${item.courseId}/assignments/${item.id}`
+                : item.type === "announcement"
+                  ? `/dashboard/courses/${item.courseId}/announcements`
+                  : `/dashboard/courses/${item.courseId}`
+              : "/dashboard/announcements";
+            return (
+              <Link
+                key={`${item.type}-${item.id}`}
+                href={href}
+                className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 hover:bg-muted"
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                  <Icon className="size-4 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{item.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {meta?.verb ?? "Update"}
+                    {item.courseName && item.type !== "course_created"
+                      ? ` · ${item.courseName}`
+                      : ""}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatDate(item.at)}
+                </span>
+              </Link>
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );
@@ -151,75 +202,65 @@ function CompositionCard({
   );
 }
 
-export function AdminDashboard() {
+export function AdminDashboard({
+  school,
+  activeYear,
+}: {
+  school: SchoolOverview | null;
+  activeYear: DashboardSummary["activeYear"];
+}) {
   useSignals();
   const { profile } = useProfile();
 
-  const activeYear = useSignal<AcademicYear | null>(null);
-  const members = useSignal<SchoolMember[]>([]);
   const students = useSignal<SchoolStudent[]>([]);
   const pendingRequests = useSignal<JoinRequest[]>([]);
   const loading = useSignal(true);
 
+  // Gender split and join requests are not in the summary; the counts are.
   useEffect(() => {
     Promise.all([
-      api<AcademicYear | null>("/academic-years/active").catch(() => null),
-      api<SchoolMember[]>("/schools/members").catch(() => []),
       api<SchoolStudent[]>("/students").catch(() => []),
       api<JoinRequest[]>("/schools/join-requests").catch(() => []),
     ])
-      .then(([year, mems, studs, reqs]) => {
-        activeYear.value = year;
-        members.value = mems;
+      .then(([studs, reqs]) => {
         students.value = studs;
         pendingRequests.value = reqs;
       })
       .finally(() => (loading.value = false));
-  }, [loading, activeYear, members, pendingRequests, students]);
+  }, [loading, pendingRequests, students]);
 
   const schoolName = profile.value?.school?.name ?? "your school";
 
-  const staffData = (() => {
-    const counts: Record<"admin" | "teacher" | "member" | "custom", number> = {
-      admin: 0,
-      teacher: 0,
-      member: 0,
-      custom: 0,
-    };
-    for (const m of members.value) {
-      if (m.role === "admin" || m.role === "teacher" || m.role === "member") {
-        counts[m.role] += 1;
-      } else {
-        counts.custom += 1;
-      }
-    }
-    return (Object.keys(counts) as Array<keyof typeof counts>)
-      .filter((k) => counts[k] > 0)
-      .map((k) => ({
-        key: k,
-        name: STAFF_CONFIG[k].label as string,
-        value: counts[k],
-      }));
-  })();
+  const studentCounts = { male: 0, female: 0 };
+  for (const s of students.value) {
+    if (!s.is_active) continue;
+    if (s.gender === "male" || s.gender === "female") studentCounts[s.gender] += 1;
+  }
 
-  const studentData = (() => {
-    const counts = { male: 0, female: 0 };
-    for (const s of students.value) {
-      if (!s.is_active) continue;
-      // Only tally known genders; null/unset (or any unexpected value) would
-      // otherwise add a stray key that has no STUDENT_CONFIG entry.
-      if (s.gender === "male" || s.gender === "female") counts[s.gender] += 1;
-    }
-    return (Object.keys(counts) as Array<keyof typeof counts>)
-      .filter((k) => counts[k] > 0)
-      .map((k) => ({
-        key: k,
-        name: STUDENT_CONFIG[k].label as string,
-        value: counts[k],
-      }));
-  })();
+  const staffData = school
+    ? toChart(
+        {
+          admin: school.staff.admins,
+          teacher: school.staff.teachers,
+          member: school.staff.members,
+        },
+        STAFF_CONFIG,
+      )
+    : [];
+  const courseData = school
+    ? toChart(
+        {
+          published: school.courses.published,
+          draft: school.courses.draft,
+          archived: school.courses.archived,
+        },
+        COURSE_CONFIG,
+      )
+    : [];
+  const studentData = toChart(studentCounts, STUDENT_CONFIG);
 
-  const activeStudentCount = students.value.filter((s) => s.is_active).length;
+  const activeStudentCount =
+    school?.students.active ?? students.value.filter((s) => s.is_active).length;
   const pendingCount = pendingRequests.value.length;
 
   return (
@@ -231,27 +272,24 @@ export function AdminDashboard() {
       <div className="grid animate-fade-in-up-delay-1 grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           icon={GraduationCap}
-          value={activeYear.value ? activeYear.value.name : "-"}
+          value={activeYear ? activeYear.name : "-"}
           label="Active Year"
-          loading={loading.value}
+        />
+        <StatCard
+          icon={BookOpen}
+          value={school?.courses.published ?? "-"}
+          label="Published Courses"
         />
         <StatCard
           icon={Users}
           value={activeStudentCount}
-          label="Students"
-          loading={loading.value}
+          label="Active Students"
+          loading={!school && loading.value}
         />
         <StatCard
           icon={UsersRound}
-          value={members.value.length}
+          value={school?.staff.total ?? "-"}
           label="Staff"
-          loading={loading.value}
-        />
-        <StatCard
-          icon={UserPlus}
-          value={pendingCount}
-          label="Pending Requests"
-          loading={loading.value}
         />
       </div>
 
@@ -272,6 +310,7 @@ export function AdminDashboard() {
             </div>
             <Button
               size="sm"
+              nativeButton={false}
               render={
                 <Link href="/dashboard/staff">
                   Review
@@ -283,7 +322,14 @@ export function AdminDashboard() {
         </Card>
       )}
 
-      <div className="grid animate-fade-in-up-delay-2 gap-4 md:grid-cols-2">
+      <div className="grid animate-fade-in-up-delay-2 gap-4 lg:grid-cols-3">
+        <CompositionCard
+          title="Courses"
+          description="Every course by status"
+          config={COURSE_CONFIG}
+          data={courseData}
+          emptyMessage="No courses yet."
+        />
         <CompositionCard
           title="Staff Composition"
           description="Members of your school by role"
@@ -300,7 +346,19 @@ export function AdminDashboard() {
         />
       </div>
 
-      {activeYear.value && <CurrentAcademicYearCard year={activeYear.value} />}
+      {school && <RecentActivityCard items={school.recentActivity} />}
+
+      {activeYear && (
+        <Card className="animate-fade-in-up-delay-3">
+          <CardHeader>
+            <CardTitle>Current Academic Year</CardTitle>
+            <CardDescription>{activeYear.name}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {formatDate(activeYear.startDate)} - {formatDate(activeYear.endDate)}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

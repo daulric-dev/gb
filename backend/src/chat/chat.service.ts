@@ -394,7 +394,7 @@ export class ChatService {
 
   /**
    * Ensure a direct conversation exists between two users and return its row.
-   * Used by system messages (file share, class invite) that must land in the
+   * Used by system messages (file share) that must land in the
    * sender↔recipient DM. Does not emit a Conversation event on its own — the
    * subsequent message emission already surfaces the conversation.
    */

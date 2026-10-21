@@ -28,12 +28,11 @@ export interface AcademicYear {
   year_coursework_weight: number | null;
 }
 
-export type TermName = "michaelmas" | "hilary" | "trinity";
-
 export interface Term {
   id: string;
   academic_year_id: string;
-  name: TermName;
+  /** Free text, e.g. "Term 1" or "Fall". */
+  name: string;
   start_date: string;
   end_date: string;
   exam_weight: number;
@@ -42,17 +41,16 @@ export interface Term {
   sort_order: number;
 }
 
-export const TERM_LABELS: Record<TermName, string> = {
+const LEGACY_TERM_LABELS: Record<string, string> = {
   michaelmas: "Michaelmas",
   hilary: "Hilary",
   trinity: "Trinity",
 };
 
-/** The three term slots, in calendar order. A year holds at most one of each. */
-export const TERM_ORDER: TermName[] = ["michaelmas", "hilary", "trinity"];
-
-/** Maximum terms per academic year (michaelmas / hilary / trinity). */
-export const MAX_TERMS = TERM_ORDER.length;
+/** Display name for a term. Old rows hold lowercase enum slugs. */
+export function termLabel(name: string): string {
+  return LEGACY_TERM_LABELS[name] ?? name;
+}
 
 /** Grading-model option list for the `Select`, in catalog order. */
 export const GRADING_MODEL_OPTIONS: { value: GradingModel; label: string }[] =

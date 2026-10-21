@@ -216,114 +216,62 @@ export class StudentService {
   }
 
   /**
-   * Everything about one student on a single screen: who they are, the classes
-   * they sit in, the subjects they take, the login attached to them and the
-   * people linked as guardians.
+   * Everything about one student on a single screen: who they are, the
+   * courses they are enrolled in, the login attached to them and the people
+   * linked as guardians.
    *
-   * Assembled in JS rather than by embedding. The pieces live in three
-   * different schemas, and PostgREST will not follow a foreign key across a
-   * schema boundary however well declared it is, so each piece is fetched and
-   * joined here.
+   * Assembled in JS rather than by embedding. The pieces live in several
+   * schemas, and PostgREST will not follow a foreign key across a schema
+   * boundary however well declared it is, so each piece is fetched and joined
+   * here.
    *
-   * Classes are ordered current-year-first: a student who has moved up is
-   * mostly asked about where they are now, with last year kept as history.
+   * Courses are listed active-first, then by name, so where the student is
+   * now comes before what they finished or dropped.
    */
   async profile(userId: string, studentId: string) {
     const supabase = this.supabaseService.getServiceClient();
     const student = await this.findOne(userId, studentId);
 
     const { data: enrolments } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('student_group_id, enrolled_at')
+      .schema('course')
+      .from('course_student')
+      .select('course_id, status, enrolled_at')
       .eq('student_id', studentId);
 
-    const classIds = (enrolments ?? [])
-      .map((e: any) => e.student_group_id as string | null)
-      .filter(Boolean) as string[];
-
-    const { data: classes } = classIds.length
+    const courseIds = (enrolments ?? []).map((e: any) => e.course_id as string);
+    const { data: courseRows } = courseIds.length
       ? await supabase
-          .from('student_group')
-          .select('id, name, academic_year_id')
-          .in('id', classIds)
+          .schema('course')
+          .from('course')
+          .select('id, name, code, status, term_id, academic_year_id')
+          .in('id', courseIds)
       : { data: [] as any[] };
-
-    const yearIds = [
-      ...new Set(
-        (classes ?? [])
-          .map((c: any) => c.academic_year_id as string | null)
-          .filter(Boolean) as string[],
-      ),
-    ];
-
-    const { data: years } = yearIds.length
-      ? await supabase
-          .from('academic_year')
-          .select('id, name, is_active, start_date')
-          .in('id', yearIds)
-      : { data: [] as any[] };
-
-    const yearById = new Map(
-      (years ?? []).map((y: any) => [y.id as string, y]),
-    );
-    const enrolledAt = new Map(
-      (enrolments ?? []).map((e: any) => [
-        e.student_group_id as string,
-        e.enrolled_at as string | null,
-      ]),
+    const courseById = new Map(
+      (courseRows ?? []).map((c: any) => [c.id as string, c]),
     );
 
-    const classRows = (classes ?? [])
-      .map((c: any) => {
-        const year = yearById.get(c.academic_year_id as string);
+    const statusRank = { active: 0, completed: 1, dropped: 2 } as const;
+    const courses = (enrolments ?? [])
+      .map((e: any) => {
+        const c = courseById.get(e.course_id as string);
+        if (!c) return null;
         return {
           id: c.id as string,
           name: c.name as string,
-          enrolledAt: enrolledAt.get(c.id as string) ?? null,
-          academicYear: year
-            ? { id: year.id, name: year.name, isActive: !!year.is_active }
-            : null,
+          code: (c.code as string | null) ?? null,
+          status: c.status as 'draft' | 'published' | 'archived',
+          termId: (c.term_id as string | null) ?? null,
+          academicYearId: (c.academic_year_id as string | null) ?? null,
+          enrollmentStatus: e.status as keyof typeof statusRank,
+          enrolledAt: (e.enrolled_at as string | null) ?? null,
         };
       })
-      .sort((a, b) => {
-        const activeDiff =
-          Number(b.academicYear?.isActive ?? false) -
-          Number(a.academicYear?.isActive ?? false);
-        if (activeDiff !== 0) return activeDiff;
-        return (b.academicYear?.name ?? '').localeCompare(
-          a.academicYear?.name ?? '',
-        );
-      });
-
-    // Subjects are recorded per year, so show the ones for the year the
-    // student is currently in rather than everything they have ever taken.
-    const currentYearId =
-      classRows.find((c) => c.academicYear?.isActive)?.academicYear?.id ??
-      classRows[0]?.academicYear?.id ??
-      null;
-
-    const { data: subjectProfiles } = currentYearId
-      ? await supabase
-          .schema('student')
-          .from('student_subject_profile')
-          .select('subject_id')
-          .eq('student_id', studentId)
-          .eq('academic_year_id', currentYearId)
-      : { data: [] as any[] };
-
-    const subjectIds = (subjectProfiles ?? [])
-      .map((sp: any) => sp.subject_id as string | null)
-      .filter(Boolean) as string[];
-
-    const { data: subjects } = subjectIds.length
-      ? await supabase
-          .from('subject')
-          .select('id, name, code, is_graded')
-          .in('id', subjectIds)
-          .order('sort_order', { ascending: true })
-          .order('name', { ascending: true })
-      : { data: [] as any[] };
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .sort(
+        (a, b) =>
+          statusRank[a.enrollmentStatus] - statusRank[b.enrollmentStatus] ||
+          a.name.localeCompare(b.name),
+      );
 
     const { data: account } = student.user_profile_id
       ? await supabase
@@ -359,13 +307,7 @@ export class StudentService {
 
     return {
       student,
-      classes: classRows,
-      subjects: (subjects ?? []).map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        code: s.code,
-        isGraded: s.is_graded,
-      })),
+      courses,
       account: account
         ? {
             id: account.id,
