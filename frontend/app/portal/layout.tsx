@@ -7,11 +7,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
-import { isStudentProfile } from "@/lib/routing";
+import { isStudentProfile, loginPath, SCAN_PATH } from "@/lib/routing";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { AttendanceBanner } from "./_components/attendance-banner";
 import {
   Avatar,
   AvatarFallback,
@@ -46,23 +47,37 @@ export default function PortalLayout({
   const router = useRouter();
   const pathname = usePathname() ?? "";
   const { profile, loading } = useProfile();
+  const isScan = pathname === SCAN_PATH;
 
   useEffect(() => {
     if (loading.value) return;
     if (!profile.value) {
-      router.replace("/login");
+      // Come back to this exact page (a scanned QR link) after signing in.
+      router.replace(
+        loginPath(`${window.location.pathname}${window.location.search}`),
+      );
       return;
     }
-    // Staff belong in /dashboard; a student with no school has not redeemed a
+    // Staff belong in /dashboard, except on the scan page, which tells them
+    // only students check in. A student with no school has not redeemed a
     // claim code yet, so there is nothing to show them here.
     if (!isStudentProfile(profile.value)) {
+      if (isScan) return;
       router.replace("/dashboard");
       return;
     }
     if (!profile.value.school) {
       router.replace("/schools");
     }
-  }, [loading.value, profile.value, router]);
+  }, [loading.value, profile.value, router, isScan]);
+
+  if (!loading.value && isScan && profile.value && !isStudentProfile(profile.value)) {
+    return (
+      <div className="min-h-dvh bg-background">
+        <main className="mx-auto max-w-5xl p-4 md:p-6">{children}</main>
+      </div>
+    );
+  }
 
   // Bound once so the rest of the render has a non-null profile to work with.
   const student = profile.value;
@@ -158,7 +173,11 @@ export default function PortalLayout({
         </nav>
       </header>
 
-      <main className="mx-auto max-w-5xl p-4 md:p-6">{children}</main>
+      <main className="mx-auto max-w-5xl p-4 md:p-6">
+        {/* The scan page is itself the check-in for that session. */}
+        {!isScan && <AttendanceBanner />}
+        {children}
+      </main>
     </div>
   );
 }

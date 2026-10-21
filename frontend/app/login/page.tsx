@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
@@ -13,12 +13,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/providers/AuthProvider";
-import { homePathFor } from "@/lib/routing";
+import { homePathFor, NEXT_PARAM, safeNextPath } from "@/lib/routing";
 
 function LoginEmailForm() {
   useSignals();
   const router = useRouter();
   const { profile, loading: profileLoading } = useProfile();
+  // Where a sign-in prompt was sent from (a scanned attendance QR, say);
+  // only ever a same-origin path.
+  const next = safeNextPath(useSearchParams()?.get(NEXT_PARAM));
   const email = useSignal("");
   const loading = useSignal(false);
 
@@ -26,8 +29,12 @@ function LoginEmailForm() {
   // wherever their account type belongs.
   useEffect(() => {
     if (profileLoading.value) return;
-    if (profile.value) router.replace(homePathFor(profile.value));
-  }, [profileLoading.value, profile.value, router]);
+    if (!profile.value) return;
+    const home = homePathFor(profile.value);
+    // Unfinished setup comes first; otherwise go back where they came from.
+    const setupDone = home === "/portal" || home === "/dashboard";
+    router.replace(setupDone && next ? next : home);
+  }, [profileLoading.value, profile.value, router, next]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,7 +46,9 @@ function LoginEmailForm() {
         body: { email: email.value },
       });
       toast.success("OTP sent to your email");
-      router.push(`/login/verify?email=${encodeURIComponent(email.value)}`);
+      const params = new URLSearchParams({ email: email.value });
+      if (next) params.set(NEXT_PARAM, next);
+      router.push(`/login/verify?${params.toString()}`);
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Failed to send OTP";
@@ -94,7 +103,9 @@ function LoginEmailForm() {
 export default function LoginPage() {
   return (
     <AuthPageShell>
-      <LoginEmailForm />
+      <Suspense>
+        <LoginEmailForm />
+      </Suspense>
     </AuthPageShell>
   );
 }

@@ -16,7 +16,8 @@
  */
 import { createClient } from '@supabase/supabase-js';
 
-const API = process.env.API_URL ?? 'http://127.0.0.1:3001/api';
+// API_URL is the API origin, as in .env.example; routes live under /api.
+const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
 const SUPA = 'http://127.0.0.1:54321';
 // The fixed service-role key every local Supabase stack uses.
 const SERVICE_KEY =
@@ -82,8 +83,13 @@ class Session {
   }
 }
 
-function must<T>(result: { data: T | null; error: { message: string } | null }, what: string): T {
-  if (result.error || result.data === null) {
+// Untyped like the rest of the service-client code: the client carries no
+// Database generic, so rows come back as `any` either way.
+function must(
+  result: { data: any; error: { message: string } | null },
+  what: string,
+): any {
+  if (result.error || result.data === null || result.data === undefined) {
     throw new Error(`${what}: ${result.error?.message ?? 'no data'}`);
   }
   return result.data;
@@ -532,6 +538,58 @@ async function seed() {
   });
   for (const [i, score] of [[0, 9], [2, 7], [3, 10], [4, 6], [5, 8]] as const) {
     await leo.call('PATCH', `/activities/${hw1.id}/submissions/${studentIds[i]}/grade`, { score });
+  }
+
+  // Three past Biology classes of attendance. Written directly rather than
+  // through the API, which can only open a session now.
+  const pattern: ('present' | 'late' | 'absent' | 'excused')[][] = [
+    ['present', 'present', 'late', 'present', 'absent', 'present', 'present', 'present', 'late', 'present', 'present', 'excused'],
+    ['present', 'present', 'present', 'absent', 'absent', 'present', 'late', 'present', 'present', 'present', 'absent', 'present'],
+    ['present', 'late', 'present', 'present', 'present', 'present', 'present', 'absent', 'present', 'present', 'present', 'present'],
+  ];
+  for (let day = 0; day < pattern.length; day++) {
+    const opened = new Date();
+    opened.setDate(opened.getDate() - 7 * (pattern.length - day));
+    opened.setHours(9, 0, 0, 0);
+    const closes = new Date(opened.getTime() + 5 * 60_000);
+    const session = must(
+      await db
+        .schema('course')
+        .from('attendance_session')
+        .insert({
+          course_id: bio.id,
+          opened_by: staffIds.teacher,
+          opened_at: opened.toISOString(),
+          closes_at: closes.toISOString(),
+          closed_at: closes.toISOString(),
+          check_in_code: String(1000 + day * 1111),
+          late_after_minutes: 2,
+        })
+        .select('id')
+        .single(),
+      'attendance session',
+    );
+    must(
+      await db
+        .schema('course')
+        .from('attendance_record')
+        .insert(
+          pattern[day].map((status, i) => ({
+            session_id: session.id,
+            course_id: bio.id,
+            student_id: studentIds[i],
+            status,
+            method: status === 'absent' ? 'auto' : status === 'excused' ? 'teacher' : 'self',
+            checked_in_at:
+              status === 'present' || status === 'late'
+                ? new Date(opened.getTime() + (status === 'late' ? 180_000 : 45_000)).toISOString()
+                : null,
+            note: status === 'excused' ? 'Doctor appointment' : null,
+          })),
+        )
+        .select('id'),
+      'attendance records',
+    );
   }
 
   await admin.call('POST', '/announcements', {

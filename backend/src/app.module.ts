@@ -29,6 +29,8 @@ import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
 import { CourseAccessModule } from '@/course/access/course-access.module';
 import { CourseModule } from '@/course/course.module';
+import { NotificationsModule } from '@/notifications/notifications.module';
+import { AttendanceModule } from '@/attendance/attendance.module';
 
 @Module({
   imports: [
@@ -101,6 +103,8 @@ import { CourseModule } from '@/course/course.module';
     RealtimeModule,
     ChatModule,
     DashboardModule,
+    NotificationsModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
   providers: [

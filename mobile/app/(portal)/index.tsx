@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import { BookOpen, NotebookPen } from "lucide-react-native";
+import { BookOpen, NotebookPen, ScanLine } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -19,6 +20,7 @@ import {
   type PortalMe,
 } from "@/lib/portal";
 import { isOutstanding, type PortalWorkItem } from "@/lib/work";
+import { OpenAttendanceCards } from "@/features/attendance/OpenAttendanceCards";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. The
@@ -33,6 +35,7 @@ export default function PortalHomeScreen() {
   const [work, setWork] = useState<PortalWorkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     const [meData, courseData, workData] = await Promise.all([
@@ -51,6 +54,7 @@ export default function PortalHomeScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setRefreshKey((k) => k + 1);
     load().finally(() => setRefreshing(false));
   }, [load]);
 
@@ -64,6 +68,16 @@ export default function PortalHomeScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      <Button
+        size="lg"
+        icon={<ScanLine color={colors.primaryForeground} size={20} />}
+        onPress={() => router.push("/attendance/scan")}
+      >
+        Scan attendance QR
+      </Button>
+
+      <OpenAttendanceCards refreshKey={refreshKey} />
+
       <View style={styles.stats}>
         <StatCard
           icon={BookOpen}

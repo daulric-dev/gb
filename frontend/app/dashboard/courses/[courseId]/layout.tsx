@@ -8,6 +8,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import {
   ArrowLeft,
   BarChart3,
+  CalendarCheck,
   ClipboardList,
   FileText,
   House,
@@ -134,6 +135,7 @@ export default function CourseLayout({
     { href: `${base}/pages`, label: "Pages", icon: FileText },
     { href: `${base}/announcements`, label: "Announcements", icon: Megaphone },
     { href: `${base}/people`, label: "People", icon: Users },
+    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck },
     { href: `${base}/grades`, label: "Grades", icon: BarChart3 },
     ...(canManage
       ? [{ href: `${base}/settings`, label: "Settings", icon: Settings }]

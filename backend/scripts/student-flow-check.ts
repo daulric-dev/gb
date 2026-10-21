@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const API = process.env.API_URL ?? 'http://127.0.0.1:3001/api';
+// API_URL is the API origin, as in .env.example; routes live under /api.
+const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
 const SUPA = 'http://127.0.0.1:54321';
 const SERVICE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';

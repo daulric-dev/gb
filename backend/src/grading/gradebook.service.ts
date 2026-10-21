@@ -408,7 +408,7 @@ export class GradebookService {
  * Quote a CSV cell, and defuse anything a spreadsheet would run as a
  * formula: activity titles and student names are user input.
  */
-function csvCell(value: string): string {
+export function csvCell(value: string): string {
   let v = value;
   if (/^[=+\-@\t\r]/.test(v) && !/^-?\d+(\.\d+)?$/.test(v)) v = `'${v}`;
   if (/[",\r\n]/.test(v)) v = `"${v.replace(/"/g, '""')}"`;

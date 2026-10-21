@@ -209,3 +209,107 @@ export interface PortalCourseGrades {
   groups: AssignmentGroup[];
   activities: (PortalCourseActivity & { groupName: string | null })[];
 }
+
+// ── attendance ─────────────────────────────────────────────────────────────
+
+export type AttendanceStatus = "present" | "late" | "absent" | "excused";
+export type AttendanceMethod = "self" | "qr" | "teacher" | "auto";
+
+export interface AttendanceSession {
+  id: string;
+  courseId: string;
+  title: string | null;
+  openedBy: string | null;
+  openedAt: string;
+  closesAt: string;
+  /** null while the session is open. */
+  closedAt: string | null;
+  isOpen: boolean;
+  /** Staff only; never sent to students. null when no code is required. */
+  checkInCode: string | null;
+  requiresCode: boolean;
+  lateAfterMinutes: number | null;
+  /** Present when the teacher asked for a location check. */
+  location: { latitude: number; longitude: number; radiusM: number } | null;
+  counts: { present: number; late: number; absent: number; excused: number; pending: number };
+}
+
+export interface AttendanceRosterEntry {
+  studentId: string;
+  firstName: string | null;
+  lastName: string | null;
+  hasAccount: boolean;
+  /** null while the session is open and the student has not checked in. */
+  status: AttendanceStatus | null;
+  method: AttendanceMethod | null;
+  checkedInAt: string | null;
+  distanceM: number | null;
+  note: string | null;
+}
+
+export interface AttendanceSessionDetail extends AttendanceSession {
+  roster: AttendanceRosterEntry[];
+}
+
+export interface AttendanceStudentSummary {
+  studentId: string;
+  firstName: string | null;
+  lastName: string | null;
+  present: number;
+  late: number;
+  absent: number;
+  excused: number;
+  /** (present + late) / (sessions - excused), 0-100; null with no sessions. */
+  rate: number | null;
+}
+
+export interface AttendanceCourseSummary {
+  sessionCount: number;
+  students: AttendanceStudentSummary[];
+}
+
+/** Live events on the staff session stream. */
+export type AttendanceStaffEvent =
+  | { type: "attendance.record"; data: AttendanceRosterEntry }
+  | { type: "attendance.closed"; data: AttendanceSession };
+
+/** What a student sees of an open session: no code, no teacher location. */
+export interface PortalOpenAttendance {
+  sessionId: string;
+  courseId: string;
+  courseName: string;
+  title: string | null;
+  openedAt: string;
+  closesAt: string;
+  requiresCode: boolean;
+  requiresLocation: boolean;
+  /** The student's own record if they have already checked in. */
+  myStatus: AttendanceStatus | null;
+}
+
+export interface PortalAttendanceRecord {
+  sessionId: string;
+  title: string | null;
+  openedAt: string;
+  status: AttendanceStatus | null;
+  checkedInAt: string | null;
+}
+
+export interface PortalCourseAttendance {
+  summary: Omit<AttendanceStudentSummary, "studentId" | "firstName" | "lastName">;
+  records: PortalAttendanceRecord[];
+}
+
+/** Live events on the student portal stream. */
+export type PortalEvent =
+  | { type: "attendance.opened"; data: PortalOpenAttendance }
+  | { type: "attendance.closed"; data: { sessionId: string; courseId: string } };
+
+/** GET /courses/:courseId/attendance/sessions/:sessionId/qr - fetch again at rotatesAt. */
+export interface AttendanceQrFrame {
+  token: string;
+  /** Encode this in the QR: opens /portal/attendance/scan?s=<session>&t=<token>. */
+  url: string;
+  rotatesAt: string;
+  windowMs: number;
+}

@@ -24,6 +24,7 @@ const TABS = [
   { slug: "modules", label: "Modules" },
   { slug: "assignments", label: "Assignments" },
   { slug: "grades", label: "Grades" },
+  { slug: "attendance", label: "Attendance" },
   { slug: "announcements", label: "Announcements" },
 ];
 

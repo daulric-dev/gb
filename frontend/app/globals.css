@@ -139,6 +139,16 @@
   }
 }
 
+/* Attendance QR: the bar under the code empties until the next rotation. */
+@keyframes qr-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

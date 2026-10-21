@@ -1,22 +1,27 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { BookOpen, Users } from "lucide-react-native";
+import { useRouter, type Href } from "expo-router";
+import { BookOpen, Hand, Users } from "lucide-react-native";
 import { api } from "@/lib/api";
 import type { CourseSummary } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { StatCard } from "@/components/ui/StatCard";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useTheme } from "@/theme/ThemeProvider";
 import { CoursesOnWebCard } from "./CoursesOnWebCard";
 
 /**
  * The staff member's courses at a glance. Building and marking a course is
- * web-only for now, so this only lists them.
+ * web-only for now; the one quick action here is taking attendance.
  */
 export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { colors } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -71,8 +76,21 @@ export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                       .join(" · ")}
                   </Text>
                 </View>
-                {c.status === "draft" && (
+                {c.status === "draft" ? (
                   <Badge variant="secondary">Draft</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<Hand size={14} color={colors.secondaryForeground} />}
+                    onPress={() =>
+                      router.push(
+                        `/attendance/take/${c.id}?name=${encodeURIComponent(c.name)}` as Href,
+                      )
+                    }
+                  >
+                    Take attendance
+                  </Button>
                 )}
               </View>
             ))}

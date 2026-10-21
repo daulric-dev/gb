@@ -8,6 +8,7 @@ import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { PermissionsProvider } from "@/providers/PermissionsProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
+import { NotificationRouter } from "@/providers/NotificationRouter";
 import { setUnauthorizedHandler } from "@/lib/api";
 
 function RootNavigator() {
@@ -23,6 +24,7 @@ function RootNavigator() {
   return (
     <>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+      <NotificationRouter />
       {/*
         Default animation is a slide, so every pushed secondary section
         (announcements, chat, files, staff, academic-calendar,

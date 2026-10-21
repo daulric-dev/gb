@@ -291,3 +291,97 @@ Known gaps carried into phase 4:
   tables. The dashboard stops calling its function; the others become unused
   and are deleted in phase 5.
 - **Mobile** loses class screens until phase 4.
+
+## Phase 4a: attendance with self check-in (PointSolutions-style)
+
+Migration: `20261021120000_course_attendance.sql` (`course.attendance_session`,
+`course.attendance_record`, `public.push_device`). Wire types: the attendance
+section of `frontend/lib/courses/types.ts`.
+
+### Flow
+
+1. Teacher or TA presses **Take attendance** in a course: picks a window
+   (1-60 min, default 5), whether a 4-digit room code is required (default on),
+   an optional "late after N minutes", and an optional location check (uses the
+   teacher's browser/device location, radius 10-5000 m, default 100).
+2. The API creates the session with a random code, then notifies every active
+   student with an account: an Expo push ("Attendance is open in Biology 101 -
+   tap to check in") and a realtime `attendance.opened` event on the portal
+   stream. Sending is fire-and-forget; opening never waits on it.
+3. The teacher's live screen shows the code large (for projecting), a countdown
+   and the roster filling in live over SSE.
+4. Students check in from the app (notification tap opens the check-in screen)
+   or the web portal banner: enter the code, share location if required.
+   Status is `present`, or `late` past the late threshold.
+5. At `closes_at` (or when the teacher closes early) the session is finalised:
+   every active student without a record gets `absent` (method `auto`). A
+   background sweep every 30 s finalises expired sessions; any read of an
+   expired session also finalises it. Finalising is idempotent.
+6. The teacher can set any student's status (present/late/absent/excused, with
+   a note) at any time, including after closing.
+
+### Rules
+
+- Wrong code: 409 "That code is not right". At most 5 wrong codes per student
+  per session (counted in cache), then 429.
+- Location: haversine distance from the session point must be
+  ≤ radius + min(accuracy, 50 m). Missing location when required → 400.
+- Already checked in → 409. Closed or expired → 409 "Attendance has closed".
+- Only active course students (`course_student.status = 'active'`) of a
+  published course.
+- The code is never sent to students.
+
+### API
+
+Staff (STAFF_ROLES unless noted):
+```
+GET    /courses/:courseId/attendance/sessions                → AttendanceSession[] (newest first)
+POST   /courses/:courseId/attendance/sessions                {durationMinutes?, requireCode?, lateAfterMinutes?, title?, location?: {latitude, longitude, radiusM}} → AttendanceSessionDetail
+GET    /courses/:courseId/attendance/sessions/:sessionId     → AttendanceSessionDetail
+POST   /courses/:courseId/attendance/sessions/:sessionId/close → AttendanceSessionDetail
+DELETE /courses/:courseId/attendance/sessions/:sessionId     → 204 (MANAGE_ROLES)
+PATCH  /courses/:courseId/attendance/sessions/:sessionId/records/:studentId {status, note?} → AttendanceRosterEntry
+GET    /courses/:courseId/attendance/sessions/:sessionId/stream → SSE: attendance.record, attendance.closed
+GET    /courses/:courseId/attendance/summary                 → AttendanceCourseSummary
+GET    /courses/:courseId/attendance/export                  → text/csv
+```
+
+Student portal (AuthGuard + StudentGuard):
+```
+GET  /portal/me/attendance/open                     → PortalOpenAttendance[]
+POST /portal/me/attendance/:sessionId/check-in      {code?, location?: {latitude, longitude, accuracy?}} → PortalOpenAttendance
+GET  /portal/me/courses/:courseId/attendance        → PortalCourseAttendance
+GET  /portal/me/stream                              → SSE: attendance.opened, attendance.closed
+```
+
+Push devices (AuthGuard only, any signed-in user):
+```
+POST   /notifications/devices          {token, platform: ios|android|web} → 204 (upsert; token moves to caller)
+DELETE /notifications/devices/:token   → 204 (only the caller's own token)
+```
+
+Push payload `data`: `{ type: "attendance.opened", sessionId, courseId }`.
+Push sending: Expo push API (`https://exp.host/--/api/v2/push/send`), chunks
+of 100, tokens answered with `DeviceNotRegistered` are deleted.
+
+### QR check-in (migration `20261021130000_attendance_qr.sql`)
+
+- Every new session gets a server-only `qr_secret`. The QR shown on the
+  teacher's screen encodes `<FRONTEND_URL>/scan?s=<sessionId>&t=<token>`,
+  where token = HMAC(secret, floor(now / 15 s)), truncated to 22 base64url chars.
+  It rotates every 15 s; the current and previous windows are accepted.
+- `GET /courses/:courseId/attendance/sessions/:sessionId/qr` (staff) →
+  `AttendanceQrFrame { token, url, rotatesAt, windowMs }`. 409 when closed.
+- Check-in body gains `qrToken`. A valid token replaces the room code (location
+  still applies when required); method is recorded as `qr`. An invalid or old
+  token → 409 "That QR code has expired. Scan the one on screen again" (does
+  not count towards the wrong-code limit).
+- Scanning with the phone's own camera opens the public `/scan` page, which
+  swaps the token for a 10-minute **scan claim** (`POST /attendance/scan-claim
+  {sessionId, qrToken}`, unauthenticated, throttled), keeps it in
+  sessionStorage, then sends the student to `/portal/attendance/scan` - through
+  sign-in when needed, which keeps a safe `?next=` return path. Check-in then
+  sends `{qrClaim}`. A claim still needs a live token to obtain, so it buys
+  time to sign in without widening the window for sharing the code.
+- The app has its own scanner and sends `{qrToken}` directly; it accepts both
+  `/scan` and `/portal/attendance/scan` URLs.
