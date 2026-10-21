@@ -9,6 +9,7 @@ import {
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
+import { EmailDomainService } from '@/email-domain/email-domain.service';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -21,9 +22,25 @@ export class AuthService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly emailDomains: EmailDomainService,
   ) {}
 
+  /**
+   * Schools that require single sign-on get it for every address on their
+   * domain: no email code is sent, so access follows the school's own
+   * account system (a suspended account there cannot sign in here).
+   */
+  private async refuseIfSsoRequired(email: string) {
+    const required = await this.emailDomains.ssoRequirement(email);
+    if (required) {
+      throw new ForbiddenException(
+        `Your school signs in with ${required.label}. Use "Continue with ${required.label}".`,
+      );
+    }
+  }
+
   async sendOtp(email: string) {
+    await this.refuseIfSsoRequired(email);
     try {
       const supabase = this.supabaseService.getServiceClient();
 
@@ -51,6 +68,7 @@ export class AuthService {
     req: FastifyRequest,
     reply: FastifyReply,
   ) {
+    await this.refuseIfSsoRequired(email);
     try {
       // Verify on the user client so the SSR adapter writes the auth-token
       // cookie via setAll synchronously inside this call.

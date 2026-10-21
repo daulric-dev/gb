@@ -8,6 +8,9 @@ import {
   expectRejection,
 } from '@/test/mocks';
 
+/** No school in these tests requires single sign-on. */
+const noSso = { ssoRequirement: async () => null } as any;
+
 /** True if any recorded query attempted to grant admin rights. */
 function grantedAdmin(calls: any[]): boolean {
   return calls.some(
@@ -28,7 +31,7 @@ describe('AuthService', () => {
   beforeEach(() => {
     mockSupabase = createMockSupabaseService();
     mockCache = createMockCacheService();
-    service = new AuthService(mockSupabase as any, mockCache as any);
+    service = new AuthService(mockSupabase as any, mockCache as any, noSso);
   });
 
   describe('sendOtp', () => {
@@ -41,7 +44,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         authResult: { data: null, error: { message: 'rate limited' } },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       expect(service.sendOtp('test@example.com')).rejects.toBeInstanceOf(
         BadRequestException,
@@ -67,6 +70,7 @@ describe('AuthService', () => {
         service: new AuthService(
           supabase as any,
           createMockCacheService() as any,
+          noSso,
         ),
         supabase,
       };
@@ -160,7 +164,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: dbProfile, error: null },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
       expect(result.id).toBe(userId);
@@ -176,7 +180,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: dbProfile, error: null },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
       expect(result.school_management).toEqual({ role: 'admin' });
@@ -188,7 +192,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: dbProfile, error: null },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
       expect(result.school_management).toEqual(memberships);
@@ -199,7 +203,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: dbProfile, error: null },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
       expect(result.school_management).toEqual([]);
@@ -228,7 +232,7 @@ describe('AuthService', () => {
               : { data: null, error: null },
         },
       });
-      service = new AuthService(supabase as any, mockCache as any);
+      service = new AuthService(supabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
 
@@ -255,7 +259,7 @@ describe('AuthService', () => {
               : { data: null, error: null },
         },
       });
-      service = new AuthService(supabase as any, mockCache as any);
+      service = new AuthService(supabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
 
@@ -287,7 +291,7 @@ describe('AuthService', () => {
               : { data: null, error: null },
         },
       });
-      service = new AuthService(supabase as any, mockCache as any);
+      service = new AuthService(supabase as any, mockCache as any, noSso);
 
       const result = await service.getProfile(userId);
 
@@ -310,7 +314,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: profile, error: null },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       await service.onboard(userId, {
         firstName: 'Jane',
@@ -340,6 +344,7 @@ describe('AuthService', () => {
           service: new AuthService(
             supabase as any,
             createMockCacheService() as any,
+            noSso,
           ),
           supabase,
         };
@@ -430,6 +435,7 @@ describe('AuthService', () => {
           service: new AuthService(
             supabase as any,
             createMockCacheService() as any,
+            noSso,
           ),
           supabase,
         };
@@ -489,7 +495,7 @@ describe('AuthService', () => {
       mockSupabase = createMockSupabaseService({
         queryResult: { data: updated, error: null },
       });
-      service = new AuthService(mockSupabase as any, mockCache as any);
+      service = new AuthService(mockSupabase as any, mockCache as any, noSso);
 
       await service.updateProfile(userId, {
         firstName: 'Updated',

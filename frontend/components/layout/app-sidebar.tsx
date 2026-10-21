@@ -12,6 +12,7 @@ import {
 import { unreadFiles, refreshFileUnread } from "@/lib/file-notifications";
 import { unreadChat, refreshChatUnread } from "@/lib/chat";
 import {
+  AtSign,
   BookOpen,
   CalendarRange,
   ChevronsUpDown,
@@ -116,6 +117,12 @@ const adminNavItems: NavItem[] = [
     permission: ["grade-scale", "read"],
   },
   { title: "Roles", href: "/dashboard/roles", icon: KeyRound, adminOnly: true },
+  {
+    title: "Email Domains",
+    href: "/dashboard/email-domains",
+    icon: AtSign,
+    adminOnly: true,
+  },
 ];
 
 function getInitials(profile: UserProfile | null) {

@@ -67,7 +67,6 @@ gb/
 ├── supabase/                # Migrations, config, edge functions
 ├── docs/                    # Documentation site
 ├── infrastructure/          # Production Docker Compose, nginx
-├── LMS_REVAMP_PLAN.md       # Course LMS design: data model, API, phases
 └── .github/                 # CI workflows and scripts
 ```
 
@@ -171,7 +170,7 @@ When the backend is running, Swagger docs are at:
 http://localhost:3001/docs
 ```
 
-The course, grading, attendance and portal endpoints are summarised in [`LMS_REVAMP_PLAN.md`](LMS_REVAMP_PLAN.md).
+Upgrading an existing deployment to courses - migrations, Supabase settings, environment variables, mobile rebuild - is covered in [`docs/content/upgrading-to-courses.md`](docs/content/upgrading-to-courses.md); single sign-on setup in [`docs/content/sso.md`](docs/content/sso.md); what changed in the [2026-10-21 changelog](docs/content/changelog/overview.md).
 
 ## Scripts
 

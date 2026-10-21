@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { homePathFor, isStudentProfile } from "@/lib/routing";
+import type { DomainJoinResult, DomainMatch } from "@/lib/email-domains";
 import { JoinCodeForm } from "@/components/auth/join-code-form";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -36,7 +37,14 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
-import { GraduationCap, Loader2, LogOut, Plus, Search } from "lucide-react";
+import {
+  AtSign,
+  GraduationCap,
+  Loader2,
+  LogOut,
+  Plus,
+  Search,
+} from "lucide-react";
 
 const isDedicated = process.env.NEXT_PUBLIC_DEDICATED_DEPLOYMENT === "true";
 
@@ -112,6 +120,58 @@ function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }
   );
 }
 
+/**
+ * "Your @domain address belongs to <school>" - offered when a school has
+ * verified the domain of the signed-in address.
+ */
+function DomainMatchCard({
+  match,
+  joining,
+  pending,
+  onJoin,
+}: {
+  match: DomainMatch;
+  joining: boolean;
+  pending: boolean;
+  onJoin: () => void;
+}) {
+  // Students always join outright; staff do only when the school allows it.
+  const joinsOutright = match.audience === "student" || match.autoJoin;
+  return (
+    <Card className="border-primary/40 bg-primary/5">
+      <CardHeader className="pb-3">
+        <div className="flex items-start gap-3">
+          <AtSign className="mt-0.5 size-5 shrink-0 text-primary" />
+          <div className="space-y-1">
+            <CardTitle className="text-lg">
+              Your @{match.domain} address belongs to {match.schoolName}
+            </CardTitle>
+            <CardDescription>
+              {pending
+                ? `Your request to join ${match.schoolName} is waiting for an admin to approve it.`
+                : joinsOutright
+                  ? `You can join ${match.schoolName} right away.`
+                  : `An admin at ${match.schoolName} will approve your request.`}
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {pending ? (
+          <Button className="w-full" variant="outline" disabled>
+            Request pending
+          </Button>
+        ) : (
+          <Button className="w-full" onClick={onJoin} disabled={joining}>
+            {joining && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {joinsOutright ? `Join ${match.schoolName}` : "Ask to join"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /** How often a waiting applicant re-checks whether they have been approved. */
 const POLL_MS = 8000;
 
@@ -126,6 +186,8 @@ export default function SchoolsPage() {
   const pendingSchoolId = useSignal<string | null>(null);
   const search = useSignal("");
   const createOpen = useSignal(false);
+  const domainMatch = useSignal<DomainMatch | null>(null);
+  const domainJoining = useSignal(false);
 
   const filtered = useComputed(() => {
     const q = search.value.toLowerCase();
@@ -171,6 +233,56 @@ export default function SchoolsPage() {
       .catch(() => toast.error("Failed to load schools"))
       .finally(() => (loading.value = false));
   }, [loading, pendingSchoolId, schools]);
+
+  // A school that verified this address's domain; purely a shortcut, so a
+  // failure just leaves the usual options.
+  useEffect(() => {
+    api<{ match: DomainMatch | null }>("/auth/email-domain/match")
+      .then((res) => (domainMatch.value = res?.match ?? null))
+      .catch(() => (domainMatch.value = null));
+  }, [domainMatch]);
+
+  async function handleDomainJoin() {
+    const match = domainMatch.value;
+    if (!match) return;
+    domainJoining.value = true;
+    try {
+      const result = await api<DomainJoinResult>("/auth/email-domain/join", {
+        method: "POST",
+      });
+      if (result.status === "joined") {
+        toast.success(`You've joined ${match.schoolName}!`);
+        await refresh();
+        router.push(homePathFor(profile.value));
+        return;
+      }
+      pendingSchoolId.value = result.schoolId;
+      toast.success(
+        `Join request sent for ${match.schoolName} - waiting for admin approval.`,
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to join the school",
+      );
+    } finally {
+      domainJoining.value = false;
+    }
+  }
+
+  const matchCard = domainMatch.value ? (
+    <DomainMatchCard
+      match={domainMatch.value}
+      joining={domainJoining.value}
+      pending={pendingSchoolId.value === domainMatch.value.schoolId}
+      onJoin={handleDomainJoin}
+    />
+  ) : null;
+
+  const otherWaysHeading = matchCard ? (
+    <p className="text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      Or join another way
+    </p>
+  ) : null;
 
   async function handleJoin(school: School) {
     joiningId.value = school.id;
@@ -226,6 +338,9 @@ export default function SchoolsPage() {
             </h1>
           </div>
 
+          {matchCard}
+          {otherWaysHeading}
+
           <JoinCodeForm />
 
           <button
@@ -253,6 +368,9 @@ export default function SchoolsPage() {
             Browse the available schools and request to join one.
           </p>
         </div>
+
+        {matchCard}
+        {otherWaysHeading}
 
         <Card>
           <CardHeader className="pb-3">

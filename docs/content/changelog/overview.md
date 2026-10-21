@@ -9,6 +9,15 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-10-21
+
+Deploying this release: **[Upgrading to courses](../upgrading-to-courses.md)** - migrations, Supabase settings, environment variables and the mobile rebuild, in order.
+
+- [Courses replace classes and subjects](./2026-10-21/course-lms.md) - GradeBook is now a course-based LMS: teachers create courses with modules, pages, assignments, quizzes, announcements, people and a weighted gradebook; students take courses. **Report cards are removed.** Existing classes × subjects are migrated into courses with their staff, students and every mark; the old tables stay, unread, until a cleanup migration. Also fixes a pre-existing quiz bug where one known-correct option id scored every question.
+- [Attendance with self check-in](./2026-10-21/attendance-check-in.md) - teachers open a check-in window; students are notified by push and check in by scanning a QR code that rotates every 15 seconds, typing a room code, or from the portal, optionally within a distance of the room. Absentees are marked when it closes.
+- [School email domains and single sign-on](./2026-10-21/email-domains-and-sso.md) - schools verify their email domains by DNS so students and staff join automatically, and can sign in with Google Workspace, Microsoft 365 or SAML through pluggable adapters, optionally required per domain.
+- [Local setup, demo data, mobile SDK](./2026-10-21/dev-setup.md) - `bun run preload` no longer needs `REDIS_PASSWORD`; `bun run seed:demo` builds a demo school; mobile Expo packages realigned to SDK 57, fixing iOS bundling.
+
 ## 2026-09-21
 
 - [Structural content checks](./2026-09-21/structural-content-checks.md) - uploads are now inspected inside the file, not just at its first four bytes. Every OOXML file is a ZIP, so **any archive was accepted as a `.docx`** and a macro-carrying document renamed to `.docx` passed; a PDF with `/Launch` or `/JavaScript` starts with `%PDF` like any other and passed too. All now rejected, by walking the ZIP's central directory (nothing decompressed) and scanning PDFs for active content. `/OpenAction` is deliberately still allowed. No dependency, no daemon, no third party.

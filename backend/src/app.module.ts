@@ -29,6 +29,8 @@ import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
 import { CourseAccessModule } from '@/course/access/course-access.module';
 import { CourseModule } from '@/course/course.module';
+import { SsoCoreModule } from '@/sso/sso-core.module';
+import { SsoModule } from '@/sso/sso.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AttendanceModule } from '@/attendance/attendance.module';
 
@@ -89,6 +91,8 @@ import { AttendanceModule } from '@/attendance/attendance.module';
     VersioningModule,
     CourseAccessModule,
     CourseModule,
+    SsoCoreModule,
+    SsoModule,
 
     AcademicYearModule,
     SchoolModule,

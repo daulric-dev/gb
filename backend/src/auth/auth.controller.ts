@@ -24,6 +24,7 @@ import { ImagesService } from '@/images/images.service';
 import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
 import { OnboardDto } from '@/auth/dto/onboard.dto';
+import { EmailDomainService } from '@/email-domain/email-domain.service';
 import { ClaimStudentDto } from '@/auth/dto/claim-student.dto';
 import { StudentMembershipService } from '@/student-account/student-membership.service';
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
@@ -42,6 +43,7 @@ export class AuthController {
     private readonly supabaseService: SupabaseService,
     private readonly versioning: VersioningService,
     private readonly membership: StudentMembershipService,
+    private readonly emailDomains: EmailDomainService,
   ) {}
 
   @Post('otp/send')
@@ -92,7 +94,18 @@ export class AuthController {
   @Patch('onboard')
   async onboard(@Req() req: any, @Body() dto: OnboardDto) {
     const userId: string = req.user.id;
-    const raw = await this.authService.onboard(userId, dto);
+    let raw = await this.authService.onboard(userId, dto);
+
+    // A school address puts the user straight into the school that verified
+    // the domain. Skipped when they picked a school themselves, and harmless
+    // when nothing matches.
+    if (!raw?.school_id && !dto.schoolId) {
+      const joined = await this.emailDomains.tryAutoJoin(userId, req.user.email as string);
+      if (joined?.status === 'joined') {
+        raw = await this.authService.getProfile(userId);
+      }
+    }
+
     return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 

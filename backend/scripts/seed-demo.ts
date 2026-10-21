@@ -540,6 +540,39 @@ async function seed() {
     await leo.call('PATCH', `/activities/${hw1.id}/submissions/${studentIds[i]}/grade`, { score });
   }
 
+  // Email domains, written verified: demo.test has no DNS to check. Anyone
+  // signing in as <name>@students.demo.test joins as a student; staff at
+  // staff.demo.test ask the admin to approve them.
+  must(
+    await db
+      .from('school_email_domain')
+      .insert([
+        {
+          school_id: school.id,
+          domain: `students.${DOMAIN}`,
+          audience: 'student',
+          auto_join: true,
+          // Rows in one insert need the same columns; unused for students.
+          staff_role: 'teacher',
+          verification_token: 'demo-students',
+          verified_at: new Date().toISOString(),
+          created_by: staffIds.admin,
+        },
+        {
+          school_id: school.id,
+          domain: `staff.${DOMAIN}`,
+          audience: 'staff',
+          auto_join: false,
+          staff_role: 'teacher',
+          verification_token: 'demo-staff',
+          verified_at: new Date().toISOString(),
+          created_by: staffIds.admin,
+        },
+      ])
+      .select('id'),
+    'email domains',
+  );
+
   // Three past Biology classes of attendance. Written directly rather than
   // through the API, which can only open a session now.
   const pattern: ('present' | 'late' | 'absent' | 'excused')[][] = [
@@ -613,6 +646,10 @@ Students
   + 9 roster-only students
 
 Biology 101 join code: ${bioCode}
+
+Email domains (Admin > Email Domains)
+  anyone@students.${DOMAIN}   joins Riverside as a student on sign-up
+  anyone@staff.${DOMAIN}      asks the admin to join as staff
 
 Log in without email (local mail is capped at 2/hour):
   bun run seed:demo otp teacher@${DOMAIN}

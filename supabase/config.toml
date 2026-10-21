@@ -3,6 +3,9 @@ schemas = ["public", "student", "staff", "grading", "reporting", "file_manager",
 
 [auth]
 enabled = true
+site_url = "http://localhost:3000"
+# The API finishes every SSO sign-in at /api/auth/sso/callback.
+additional_redirect_urls = ["http://localhost:3001/api/auth/sso/callback", "http://127.0.0.1:3001/api/auth/sso/callback"]
 
 [auth.email]
 otp_length = 8
@@ -26,3 +29,20 @@ public = false
 [storage.buckets.file-manager]
 public = false
 file_size_limit = "50MiB"
+# Single sign-on. Turn a provider on here and in the API's SSO_PROVIDERS, and
+# put its credentials in the environment the Supabase CLI runs with (see
+# docs/content/sso.md). On the hosted project, set the same under
+# Authentication > Providers.
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+skip_nonce_check = false
+
+[auth.external.azure]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_AZURE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_AZURE_SECRET)"
+# "common" lets any school's Microsoft 365 tenant sign in; each school pins
+# its own tenant on its email domain before Microsoft sign-ins can join it.
+url = "https://login.microsoftonline.com/common/v2.0"
