@@ -1,15 +1,16 @@
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model app_user {
-  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email             String     @unique
-  email_verified_at DateTime?  @db.Timestamptz(6)
-  disabled_at       DateTime?  @db.Timestamptz(6)
-  last_sign_in_at   DateTime?  @db.Timestamptz(6)
-  created_at        DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime   @default(now()) @db.Timestamptz(6)
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String        @unique
+  email_verified_at DateTime?     @db.Timestamptz(6)
+  disabled_at       DateTime?     @db.Timestamptz(6)
+  last_sign_in_at   DateTime?     @db.Timestamptz(6)
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
   identity          identity[]
   session           session[]
+  user_profile      user_profile?
 
   @@schema("account")
 }

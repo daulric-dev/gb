@@ -1,32 +1,32 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { BadRequestException } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import {
-  createMockSupabaseService,
-  createMockCacheService,
-  expectRejection,
-} from '@/test/mocks';
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 /** No school in these tests requires single sign-on. */
 const noSso = { ssoRequirement: async () => null } as any;
 
-/** Supabase now only provides auth: OTP, sessions and the admin user API. */
-function authStub(
-  opts: {
-    verifyOtpResult?: { data: any; error: any };
-    getUserByIdResult?: { data: any; error: any };
-    authResult?: { data: any; error: any };
-  } = {},
-) {
-  const base = createMockSupabaseService({
-    authResult: opts.authResult,
-    getUserByIdResult: opts.getUserByIdResult,
-  });
-  if (opts.verifyOtpResult) {
-    base._client.auth.verifyOtp = () => Promise.resolve(opts.verifyOtpResult);
-  }
-  return base;
+function emailCodeStub() {
+  return {
+    send: mock(async (_email: string) => {}),
+    issue: mock(async (_email: string) => '12345678'),
+    verify: mock(async (email: string, _code: string) => email.trim().toLowerCase()),
+  };
+}
+
+function sessionStub() {
+  return {
+    create: mock(async () => 'token'),
+    revoke: mock(async () => {}),
+    revokeAll: mock(async (_userId: string) => {}),
+  };
 }
 
 /** A profile row as Prisma returns it with its school relation. */
@@ -58,41 +58,100 @@ function grantedAdmin(prisma: MockPrisma): boolean {
 
 describe('AuthService', () => {
   let service: AuthService;
-  let supabase: ReturnType<typeof authStub>;
   let prisma: MockPrisma;
   let mockCache: ReturnType<typeof createMockCacheService>;
+  let emailCodes: ReturnType<typeof emailCodeStub>;
+  let sessions: ReturnType<typeof sessionStub>;
+  let accounts: { userForVerifiedEmail: ReturnType<typeof mock> };
 
   function build() {
     service = new AuthService(
-      supabase as any,
       prisma as any,
       mockCache as any,
       noSso,
+      emailCodes as any,
+      accounts as any,
+      sessions as any,
     );
   }
 
   beforeEach(() => {
-    supabase = authStub();
     prisma = createMockPrisma();
     mockCache = createMockCacheService();
+    emailCodes = emailCodeStub();
+    sessions = sessionStub();
+    accounts = {
+      userForVerifiedEmail: mock(async (email: string) => ({ id: 'user-otp', email })),
+    };
     build();
   });
 
   describe('sendOtp', () => {
-    test('returns success message when Supabase succeeds', async () => {
+    test('sends a code and returns the success message', async () => {
       const result = await service.sendOtp('test@example.com');
       expect(result).toBe('OTP sent to email');
+      expect(emailCodes.send).toHaveBeenCalledWith('test@example.com');
     });
 
-    test('throws BadRequestException on error', () => {
-      supabase = authStub({
-        authResult: { data: null, error: { message: 'rate limited' } },
-      });
-      build();
+    test('a mail failure is a BadRequestException with the usual message', async () => {
+      emailCodes.send.mockRejectedValue(new BadRequestException('smtp down'));
+      const err = await expectRejection(service.sendOtp('test@example.com'));
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as Error).message).toBe('Failed to send OTP');
+    });
 
-      expect(service.sendOtp('test@example.com')).rejects.toBeInstanceOf(
-        BadRequestException,
+    test('a rate limit keeps its 429', async () => {
+      emailCodes.send.mockRejectedValue(
+        new HttpException('Too many codes requested.', HttpStatus.TOO_MANY_REQUESTS),
       );
+      const err: any = await expectRejection(service.sendOtp('test@example.com'));
+      expect(err.getStatus()).toBe(429);
+    });
+
+    test('refuses when the school requires single sign-on', async () => {
+      service = new AuthService(
+        prisma as any,
+        mockCache as any,
+        { ssoRequirement: async () => ({ label: 'Google' }) } as any,
+        emailCodes as any,
+        accounts as any,
+        sessions as any,
+      );
+      const err = await expectRejection(service.sendOtp('a@school.edu'));
+      expect((err as Error).message).toContain('Continue with Google');
+      expect(emailCodes.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('devCode', () => {
+    const prev = { node: process.env.NODE_ENV, allow: process.env.ALLOW_DEV_LOGIN };
+    afterEach(() => {
+      process.env.NODE_ENV = prev.node;
+      if (prev.allow === undefined) delete process.env.ALLOW_DEV_LOGIN;
+      else process.env.ALLOW_DEV_LOGIN = prev.allow;
+    });
+
+    test('returns a code without mailing it when allowed', async () => {
+      process.env.NODE_ENV = 'development';
+      process.env.ALLOW_DEV_LOGIN = 'true';
+      expect(await service.devCode('a@b.com')).toEqual({ code: '12345678' });
+      expect(emailCodes.send).not.toHaveBeenCalled();
+    });
+
+    test('is a 404 unless explicitly allowed, and always in production', async () => {
+      for (const [node, allow] of [
+        ['development', undefined],
+        ['development', 'false'],
+        ['production', 'true'],
+      ] as const) {
+        process.env.NODE_ENV = node;
+        if (allow === undefined) delete process.env.ALLOW_DEV_LOGIN;
+        else process.env.ALLOW_DEV_LOGIN = allow;
+        expect(await expectRejection(service.devCode('a@b.com'))).toBeInstanceOf(
+          NotFoundException,
+        );
+      }
+      expect(emailCodes.issue).not.toHaveBeenCalled();
     });
   });
 
@@ -100,14 +159,31 @@ describe('AuthService', () => {
     const userId = 'user-otp';
     const email = 'new@example.com';
 
-    beforeEach(() => {
-      supabase = authStub({
-        verifyOtpResult: {
-          data: { session: { user: { id: userId, email } } },
-          error: null,
-        },
-      });
-      build();
+    test('starts a session for the account and returns the usual shape', async () => {
+      prisma.user_profile.findUnique.mockResolvedValue(
+        dbProfile({ id: userId, email }),
+      );
+      const req = {} as any;
+      const reply = {} as any;
+
+      const result: any = await service.verifyOtp(email, '12345678', req, reply);
+
+      expect(accounts.userForVerifiedEmail).toHaveBeenCalledWith(email);
+      expect(sessions.create).toHaveBeenCalledWith(reply, req, userId, 'email-code');
+      expect(result.user).toEqual({ id: userId, email });
+      expect(result.session.expires_in).toBeGreaterThan(0);
+      expect(result.session.access_token).toBe('');
+    });
+
+    test('a wrong code is the usual 401 and starts no session', async () => {
+      emailCodes.verify.mockRejectedValue(new UnauthorizedException('Invalid or expired code'));
+      const err = await expectRejection(
+        service.verifyOtp(email, '00000000', {} as any, {} as any),
+      );
+      expect(err).toBeInstanceOf(UnauthorizedException);
+      expect((err as Error).message).toBe('Invalid or expired OTP');
+      expect(sessions.create).not.toHaveBeenCalled();
+      expect(accounts.userForVerifiedEmail).not.toHaveBeenCalled();
     });
 
     test('persists the email when creating a new profile', async () => {
@@ -239,13 +315,7 @@ describe('AuthService', () => {
         { id: userId, email: null, school_management: { role: 'admin' } },
         1,
       );
-      supabase = authStub({
-        getUserByIdResult: {
-          data: { user: { id: userId, email: 'backfilled@example.com' } },
-          error: null,
-        },
-      });
-      build();
+      prisma.app_user.findUnique.mockResolvedValue({ email: 'backfilled@example.com' });
       prisma.user_profile.findUnique.mockResolvedValue(
         makeDbProfile({ email: null, school_management: [] }),
       );
@@ -258,13 +328,7 @@ describe('AuthService', () => {
     });
 
     test('backfills a null email from the auth user and persists it', async () => {
-      supabase = authStub({
-        getUserByIdResult: {
-          data: { user: { id: userId, email: 'backfilled@example.com' } },
-          error: null,
-        },
-      });
-      build();
+      prisma.app_user.findUnique.mockResolvedValue({ email: 'backfilled@example.com' });
       prisma.user_profile.findUnique.mockResolvedValue(
         makeDbProfile({ email: null, school_management: [] }),
       );
@@ -285,10 +349,7 @@ describe('AuthService', () => {
     });
 
     test('returns the profile even when the auth lookup yields no email', async () => {
-      supabase = authStub({
-        getUserByIdResult: { data: null, error: { message: 'not found' } },
-      });
-      build();
+      prisma.app_user.findUnique.mockResolvedValue(null);
       prisma.user_profile.findUnique.mockResolvedValue(
         makeDbProfile({ email: null, school_management: [] }),
       );
@@ -463,6 +524,21 @@ describe('AuthService', () => {
   });
 
   describe('deleteAccount', () => {
+    test('deletes the profile, signs out everywhere and deletes the account', async () => {
+      const userId = 'user-del';
+      await service.deleteAccount(userId);
+      expect(sessions.revokeAll).toHaveBeenCalledWith(userId);
+      expect(prisma.app_user.deleteMany.mock.calls[0][0]).toEqual({ where: { id: userId } });
+    });
+
+    test('a failed profile cleanup leaves the account alone', async () => {
+      prisma.user_profile.deleteMany.mockRejectedValue(new Error('fk'));
+      expect(await expectRejection(service.deleteAccount('u'))).toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.app_user.deleteMany).not.toHaveBeenCalled();
+    });
+
     test('deletes cache key', async () => {
       const userId = 'user-del';
       await mockCache.set(`profile:${userId}`, { id: userId }, 1);

@@ -4,6 +4,8 @@ sidebar_label: Implementation Guide
 
 # gb - Complete Implementation Guide
 
+> This guide records the original class-and-report-book design. Courses replaced much of it (see [Upgrading to courses](./upgrading-to-courses.md)), and on 2026-10-21 the platform left Supabase: data access is Prisma on plain Postgres, authorisation is in the API only (no row-level security), files are in S3 and auth is the API's own ([Platform migration](./platform-migration.md)). Sections below have been updated where they described the old platform.
+
 ## Project Overview
 
 Grade Book application for schools. Teachers create classes, enroll students, enter grades, and generate report cards. Supports multiple schools (multi-tenancy) with two grading models: TERM_BASED (primary) and YEAR_BASED (secondary).
@@ -12,9 +14,9 @@ Grade Book application for schools. Teachers create classes, enroll students, en
 |---|---|
 | Backend | NestJS |
 | Frontend | Next.js |
-| Database | PostgreSQL (Supabase-managed) |
-| Auth | Supabase OTP (email-based, no passwords) |
-| Storage | Supabase Storage (PDF report cards) |
+| Database | PostgreSQL via Prisma 7 (Prisma Migrate) |
+| Auth | Own email one-time codes and `gb_session` server sessions (no passwords); optional OIDC/SAML SSO |
+| Storage | Any S3-compatible store (PDF report cards, files, avatars) |
 | Package manager | Bun |
 
 ---
@@ -23,7 +25,7 @@ Grade Book application for schools. Teachers create classes, enroll students, en
 
 ## 1. Schemas
 
-5 custom schemas + auth (Supabase-managed):
+5 custom schemas + `account` (the API's own auth tables):
 
 | Schema | Purpose |
 |---|---|
@@ -32,7 +34,7 @@ Grade Book application for schools. Teachers create classes, enroll students, en
 | `grading` | Grade entry: assessment, grade |
 | `reporting` | Report cards: report_book, report_book_entry, report_book_pdf, class_report_file |
 | `staff` | Teacher access: teacher_group_assignment, teacher_subject_assignment |
-| `auth` | Supabase-managed: auth.users |
+| `account` | Users, sessions, sign-in codes, SSO identities |
 
 ## 2. Enums
 
@@ -285,7 +287,7 @@ UNIQUE: `(student_id, term_id, report_type)`
 | term_id | uuid FK → term | |
 | report_type | text | term or year_end |
 | file_type | text | pdf, csv, or xlsx |
-| file_path | text | Path in Supabase Storage |
+| file_path | text | Object path in S3 storage (`report-books/...`) |
 | file_size | integer | Size in bytes |
 | generated_by | uuid FK → user_profile nullable | |
 | generated_at | timestamptz | |
@@ -311,7 +313,7 @@ UNIQUE: `(student_id, term_id, report_type)`
 |---|---|---|
 | id | uuid PK | |
 | report_book_id | uuid FK → report_book | |
-| file_path | text | Path in Supabase Storage |
+| file_path | text | Object path in S3 storage (`report-books/...`) |
 | file_size | int4 | Size in bytes |
 | generated_by | uuid FK → user_profile | |
 | generated_at | timestamptz | |
@@ -342,155 +344,28 @@ UNIQUE: `(student_id, term_id, report_type)`
 
 ## 4. Security Architecture
 
-Three layers:
+The API is the only thing that touches the database. It connects as the schema owner, and every rule is enforced in code; there is no row-level security behind it.
 
-| Layer | What it does | Count |
-|---|---|---|
-| RLS school isolation | Every table scoped by school_id. Prevents cross-school data leakage. | 16 policies |
-| RLS assignment scoping | Teachers see only assigned groups/subjects. Class teacher reads all, writes own. | 12 policies |
-| NestJS guards | Workflow permissions: class teacher write ops, ministry lock, role checks. | 3 guards |
-
-## 5. RLS Helper Functions
-
-```sql
--- Returns current user's school_id
-get_user_school_id() RETURNS uuid
-
--- Returns true if role = 'admin' and is_active = true
-is_admin() RETURNS boolean
-
--- Returns true if teacher has any assignment to the group
-is_assigned_to_group(p_group_id uuid) RETURNS boolean
-
--- Returns true if teacher teaches the subject in the group
-is_assigned_to_subject_in_group(p_subject_id uuid, p_group_id uuid) RETURNS boolean
-```
-
-All use `SECURITY DEFINER STABLE`.
-
-## 6. RLS Policies -School Isolation (16 policies)
-
-Every table gets one `school_isolation` policy (`FOR ALL`):
-
-| Table | How it resolves school_id |
+| Layer | What it does |
 |---|---|
-| public.school | `id = get_user_school_id()` |
-| public.user_profile | `school_id = get_user_school_id()` |
-| public.academic_year | `school_id = get_user_school_id()` |
-| public.subject | `school_id = get_user_school_id()` |
-| student.student | `school_id = get_user_school_id()` |
-| public.student_group | → `academic_year.school_id` |
-| public.term | → `academic_year.school_id` |
-| staff.teacher_group_assignment | → `academic_year.school_id` |
-| staff.teacher_subject_assignment | → `academic_year.school_id` |
-| student.student_subject_profile | → `academic_year.school_id` |
-| student.student_group_enrollment | → `student_group → academic_year.school_id` |
-| student.parent_student_link | → `student.school_id` |
-| grading.assessment | → `term → academic_year.school_id` |
-| grading.grade | → `assessment → term → academic_year.school_id` |
-| reporting.report_book | → `academic_year.school_id` |
-| reporting.report_book_entry | → `report_book → academic_year.school_id` |
+| School scoping in services | Every query is scoped to the caller's current school (`src/common/user-school.ts`). Prevents cross-school data leakage. |
+| Assignment scoping in services | Teachers see only assigned groups/subjects. Class teacher reads all, writes own. |
+| NestJS guards | Authentication, workflow permissions: class teacher write ops, ministry lock, role and permission checks. |
 
-## 7. RLS Policies -Assignment Scoping (12 policies)
-
-### Student tables (4 policies, `FOR SELECT`)
-Teachers see only students in their assigned groups. Admin sees all.
-
-| Table | Check |
-|---|---|
-| student.student | `is_admin() OR is_assigned_to_group(enrollment.student_group_id)` |
-| student.student_group_enrollment | `is_admin() OR is_assigned_to_group(student_group_id)` |
-| student.student_subject_profile | `is_admin() OR is_assigned_to_group(enrollment.student_group_id)` |
-| student.parent_student_link | `is_admin() OR self OR is_assigned_to_group(enrollment.student_group_id)` |
-
-### Grading tables -split READ / WRITE (6 policies)
-
-This is the most critical part. Subject teacher sees/edits own subject. Class teacher reads ALL subjects (for reports) but cannot edit other teachers' grades.
-
-**grading.assessment:**
-
-| Policy | Operation | Who |
-|---|---|---|
-| `assignment_read` | SELECT | Admin OR subject teacher (via teacher_subject_assignment) OR class teacher (via is_class_teacher = true) |
-| `assignment_write` | INSERT | Admin OR subject teacher only |
-| `assignment_update` | UPDATE | Admin OR subject teacher only |
-
-**grading.grade:**
-
-| Policy | Operation | Who |
-|---|---|---|
-| `assignment_read` | SELECT | Admin OR subject teacher OR class teacher (sees ALL grades for students in their group) |
-| `assignment_write` | INSERT | Admin OR subject teacher only |
-| `assignment_update` | UPDATE | Admin OR subject teacher only |
-
-The class teacher READ path on grade:
-```sql
-OR EXISTS (
-  SELECT 1 FROM student.student_group_enrollment sge
-  JOIN staff.teacher_group_assignment tga
-    ON tga.student_group_id = sge.student_group_id
-    AND tga.is_class_teacher = true
-  WHERE tga.user_profile_id = auth.uid()
-  AND sge.student_id = grade.student_id
-)
-```
-
-### Reporting tables (2 policies, `FOR SELECT`)
-
-| Table | Check |
-|---|---|
-| reporting.report_book | `is_admin() OR is_assigned_to_group(enrollment.student_group_id)` |
-| reporting.report_book_entry | `is_admin() OR is_assigned_to_group(enrollment.student_group_id)` |
+The row-level security policies and `SECURITY DEFINER` helper functions (`is_admin()`, `is_assigned_to_group()`, ...) that originally backed this up were dropped with the move to plain Postgres; the history is in git.
 
 ## 8. NestJS Guards
 
 | Guard | What it checks | Used on |
 |---|---|---|
-| AuthGuard | Validates Supabase JWT. Attaches `request.user = { id, email }` | All protected endpoints |
+| AuthGuard | Looks up the `gb_session` cookie's session. Attaches `request.user = { id, email }` | All protected endpoints |
 | AdminGuard | `user_profile.role = 'admin'` and `is_active = true` | School member management, join request approval/rejection |
 | ClassTeacherGuard | `teacher_group_assignment.is_class_teacher = true`. Admin bypasses. | Enrollment, reports, teacher management, class updates |
 | ReportGuard | `report_book.status !== 'sent_to_ministry'`. Blocks edits on locked reports. | Report updates, entry edits, regenerate, publish |
 
-## 9. Supabase Clients
+## 9. Data Access
 
-| Client | When to use | RLS |
-|---|---|---|
-| `serviceClient` (service role key) | Auth operations, class creation, enrollment, report generation, guard queries | BYPASSES |
-| `createUserClient` (user JWT) | Grade entry/read, assessment CRUD, report reading -any query where RLS should enforce subject+group | RESPECTS |
-
-Rule: If the endpoint involves grading data, use the user client. For everything else, use serviceClient with NestJS guards.
-
-## 10. Supabase Config
-
-Custom schemas must be exposed through PostgREST in `supabase/config.toml`:
-
-```toml
-[api]
-schemas = ["public", "student", "staff", "grading", "reporting"]
-```
-
-Without this, `.schema('student')` calls from the Supabase JS client fail with "Invalid schema".
-
-## 11. Schema Grants
-
-Custom schemas need explicit grants (Supabase only auto-grants `public`):
-
-```sql
-GRANT USAGE ON SCHEMA student TO service_role, authenticated, anon;
-GRANT USAGE ON SCHEMA grading TO service_role, authenticated, anon;
-GRANT USAGE ON SCHEMA reporting TO service_role, authenticated, anon;
-GRANT USAGE ON SCHEMA staff TO service_role, authenticated, anon;
-
-GRANT ALL ON ALL TABLES IN SCHEMA student TO service_role, authenticated, anon;
-GRANT ALL ON ALL TABLES IN SCHEMA grading TO service_role, authenticated, anon;
-GRANT ALL ON ALL TABLES IN SCHEMA reporting TO service_role, authenticated, anon;
-GRANT ALL ON ALL TABLES IN SCHEMA staff TO service_role, authenticated, anon;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA student GRANT ALL ON TABLES TO service_role, authenticated, anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA grading GRANT ALL ON TABLES TO service_role, authenticated, anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA reporting GRANT ALL ON TABLES TO service_role, authenticated, anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA staff GRANT ALL ON TABLES TO service_role, authenticated, anon;
-```
+One global `PrismaService` (`src/prisma/prisma.service.ts`, Prisma 7 with the `pg` driver adapter). Services query through it and apply the scoping above themselves; SQL functions are called with `prisma.$queryRaw`. The schema is in `backend/prisma/schema/*.prisma` (one file per database schema) and changes go through Prisma Migrate (`backend/prisma/migrations`).
 
 ---
 
@@ -519,11 +394,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA staff GRANT ALL ON TABLES TO service_role, au
 backend/src/
 ├── main.ts
 ├── app.module.ts
-├── supabase/
-│   └── supabase.service.ts
-├── types/
-│   ├── database.types.ts          ← auto-generated
-│   └── helpers.ts                 ← Row/Insert/Update/Enum types
+├── prisma/
+│   └── prisma.service.ts
+├── generated/prisma/             ← Prisma client, generated (gitignored)
 ├── auth/
 │   ├── auth.module.ts
 │   ├── auth.controller.ts
@@ -733,7 +606,7 @@ All endpoints: Auth + ClassTeacherGuard.
 
 ## 20. Grading
 
-All endpoints: Auth only. RLS handles subject+group enforcement via user client.
+All endpoints: Auth only. The service checks subject+group assignment.
 
 ### Assessments
 
@@ -741,7 +614,7 @@ All endpoints: Auth only. RLS handles subject+group enforcement via user client.
 |---|---|---|
 | GET | `/assessments?termId=&subjectId=&studentGroupId=` | List assessments |
 | GET | `/assessments/:id` | Get assessment |
-| POST | `/assessments` | Create (RLS checks subject assignment) |
+| POST | `/assessments` | Create (checks subject assignment) |
 | PATCH | `/assessments/:id` | Update |
 | PATCH | `/assessments/:id/exclude` | Exclude entire assessment |
 | DELETE | `/assessments/:id` | Delete + cascade grades |
@@ -781,7 +654,7 @@ All endpoints: Auth only. RLS handles subject+group enforcement via user client.
 | PATCH | `/reports/:id/send-to-ministry` | Auth + CT | published → sent_to_ministry |
 | PATCH | `/report-entries/:entryId` | Auth + RG | Subject teacher adds remark/letter grade |
 | POST | `/reports/:id/pdf` | Auth + CT + RG | Save PDF record |
-| POST | `/reports/:id/pdf/upload` | Auth + CT + RG | Upload PDF to Supabase Storage |
+| POST | `/reports/:id/pdf/upload` | Auth + CT + RG | Upload PDF to S3 storage |
 | GET | `/reports/:id/pdfs` | Auth + CT | PDF version history |
 | GET | `/reports/:id/pdf/latest` | Auth + CT | Most recent PDF |
 | GET | `/reports/:id/pdf/:pdfId/download` | Auth + CT | Download PDF file |
@@ -1007,11 +880,11 @@ Use teacher's manual `letter_grade` if entered. Otherwise compute from score.
 ## 34. PDF Generation Flow
 
 ```
-Frontend generates PDF → uploads to Supabase Storage → saves record via API
+Frontend generates PDF → uploads it through the API to S3 → saves record via API
 
 1. GET /reports/:id                          → fetch all report data
 2. Render PDF (jsPDF or @react-pdf)          → client-side
-3. supabase.storage.upload(path, blob)       → upload to Storage
+3. POST /reports/:id/pdf/upload (multipart)  → API stores it in S3
 4. POST /reports/:id/pdf { filePath, size }  → save record in report_book_pdf
 ```
 
@@ -1068,14 +941,14 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
    → is_class_teacher = false
 
 2. Can see students enrolled in that class
-   → RLS assignment_isolation filters
+   → the service filters by assignment
 
 3. Creates assessments for their subject
    → POST /assessments
 
 4. Enters grades for their subject only
    → POST /grades/bulk
-   → RLS blocks if wrong subject
+   → the API rejects a subject they aren't assigned
 
 5. Adds teacher remark on report entries for their subject
    → PATCH /report-entries/:id
@@ -1092,12 +965,12 @@ report-cards/2025-2026/year-end/class-3a-summary.pdf
 | Enroll students | Yes | No | Yes |
 | Assign subjects | Yes | No | Yes |
 | Add teachers | Yes | No | Yes |
-| Read all grades in group | Yes (RLS) | Own subject only (RLS) | Yes |
-| Write grades | Own subjects only (RLS) | Own subject only (RLS) | Yes |
-| Create assessments | Own subjects only (RLS) | Own subject only (RLS) | Yes |
+| Read all grades in group | Yes (service check) | Own subject only (service check) | Yes |
+| Write grades | Own subjects only (service check) | Own subject only (service check) | Yes |
+| Create assessments | Own subjects only (service check) | Own subject only (service check) | Yes |
 | Generate reports | Yes (guard) | No (guard blocks) | Yes |
 | Add class teacher remark | Yes (guard) | No (guard blocks) | Yes |
-| Add subject remark | Yes (any subject) | Own subject only (RLS) | Yes |
+| Add subject remark | Yes (any subject) | Own subject only (service check) | Yes |
 | Publish reports | Yes (guard) | No (guard blocks) | Yes |
 | Send to ministry | Yes (guard) | No (guard blocks) | Yes |
 

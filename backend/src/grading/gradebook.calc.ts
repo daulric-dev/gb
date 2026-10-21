@@ -1,7 +1,7 @@
 /**
  * The course total, as pure functions.
  *
- * Kept free of Nest and Supabase so the rules in LMS_REVAMP_PLAN.md ("Grade
+ * Kept free of Nest and the database so the rules in LMS_REVAMP_PLAN.md ("Grade
  * calculation") can be tested exhaustively, and so the teacher's gradebook,
  * the student's grades page and the portal course cards all compute the same
  * number from the same code.

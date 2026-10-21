@@ -6,7 +6,7 @@ sidebar_label: Academic Year
 
 **Location**: `backend/src/academic-year/`
 
-The academic year module manages the lifecycle of academic years for a school. Each academic year defines the time boundaries and grading model that governs how final grades are calculated.
+The academic year module manages a school's academic years. A year is a name and a date range, with at most one **active** year per school - that is how the app knows what "now" means. Years hold no grading settings: courses grade through their own assignment groups and grade scale (see [Grading](./grading.md)).
 
 ## Files
 
@@ -14,7 +14,9 @@ The academic year module manages the lifecycle of academic years for a school. E
 |------|---------|
 | `academic-year.module.ts` | Module definition |
 | `academic-year.controller.ts` | API endpoints |
-| `academic-year.service.ts` | Business logic |
+| `academic-year.service.ts` | Business logic, school scoping and caching |
+| `academic-year.rows.ts` | Serialises a row for the API; `parseDateOnly` for request dates |
+| `transformer.ts` | Versioned response transformers |
 | `dto/create-academic-year.dto.ts` | Validation for creation |
 | `dto/update-academic-year.dto.ts` | Validation for updates |
 
@@ -23,88 +25,60 @@ The academic year module manages the lifecycle of academic years for a school. E
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | UUID | Primary key |
-| `name` | string | Display name (e.g., "2025-2026") |
+| `name` | string | Display name (e.g. "2025/2026") |
 | `school_id` | UUID | The school this year belongs to |
-| `start_date` | date | Year start |
+| `start_date` | date | Year start (sent as `YYYY-MM-DD`) |
 | `end_date` | date | Year end (must be after start) |
-| `is_active` | boolean | Whether this is the current active year |
-| `grading_model` | enum | `weighted_continuous`, `weighted_cumulative`, or `continuous_cumulative` |
-| `year_exam_weight` | number? | Exam weight for year-end calculation (e.g., 60) |
-| `year_coursework_weight` | number? | Coursework weight for year-end (e.g., 40) |
-
-## Grading Models (updated 2026-05-17)
-
-The `grading_model` enum was replaced from `term_based`/`year_based` to three specific systems:
-
-### Weighted Continuous Assessment (`weighted_continuous`)
-
-Each term has independent coursework and exams. At year-end, term composites are averaged and combined with year-level weights. Replaces the old `year_based` model.
-
-### Weighted Cumulative (`weighted_cumulative`)
-
-All coursework across all terms is pooled into a single CA total. Term boundaries are ignored for the final CA calculation. The final exam is also pooled.
-
-### Continuous-Cumulative (`continuous_cumulative`)
-
-Each term has coursework only (no per-term exam). At year-end, all term coursework averages are combined for the CA portion, and a single final exam from the last term provides the exam portion.
-
-For all three models, `year_exam_weight + year_coursework_weight` must sum to **100**.
+| `is_active` | boolean | Whether this is the school's current year |
 
 ## API Endpoints
 
-All endpoints require `AuthGuard`. Data is automatically scoped to the user's school.
+All endpoints require `AuthGuard` and the matching `academic-year:*` permission. Data is scoped to the caller's school.
 
 ### `POST /api/academic-years`
 
-Creates a new academic year.
+Creates an academic year. New years start inactive.
 
 **Body:**
 ```json
 {
-  "name": "2025-2026",
+  "name": "2025/2026",
   "startDate": "2025-09-01",
-  "endDate": "2026-07-15",
-  "gradingModel": "weighted_continuous",
-  "yearExamWeight": 60,
-  "yearCourseworkWeight": 40
+  "endDate": "2026-07-15"
 }
 ```
 
-**Validation:**
-- `startDate` must be before `endDate`
-- `yearExamWeight + yearCourseworkWeight` must equal 100
+**Validation:** `startDate` must be before `endDate`.
 
 ---
 
 ### `GET /api/academic-years`
 
-Returns all academic years for the user's school, ordered by creation date.
+Returns all academic years for the caller's school, newest start date first.
 
 ---
 
 ### `GET /api/academic-years/active`
 
-Returns the currently active academic year for the user's school.
+Returns the school's active academic year, or `null`.
 
 ---
 
 ### `GET /api/academic-years/:id`
 
-Returns a single academic year by ID.
+Returns a single academic year.
 
 ---
 
 ### `PATCH /api/academic-years/:id`
 
-Updates an academic year. All fields are optional.
-
-**Body:** Same fields as create, all optional. Weight validation still applies (`yearExamWeight + yearCourseworkWeight = 100`).
+Updates `name`, `startDate` and/or `endDate`. All fields are optional.
 
 ---
 
 ### `PATCH /api/academic-years/:id/activate`
 
-Sets this academic year as active. **Deactivates all other years** for the same school first.
+Sets this academic year as active, deactivating every other year in the school in the same transaction.
 
 ---
 

@@ -17,12 +17,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TermForm } from "./TermForm";
-import {
-  termLabel,
-  gradingModelLabel,
-  type AcademicYear,
-  type Term,
-} from "./types";
+import { termLabel, type AcademicYear, type Term } from "./types";
 
 /**
  * Terms tab: pick an academic year, then view / create / edit / delete its
@@ -129,9 +124,6 @@ export function TermsTab({
           ) : (
             <Badge variant="secondary">Inactive</Badge>
           )}
-          <Badge variant="outline">
-            {gradingModelLabel(selectedYear.grading_model)}
-          </Badge>
         </View>
       ) : null}
 
@@ -169,15 +161,9 @@ export function TermsTab({
                 <View style={{ flex: 1, gap: 4 }}>
                   <View style={styles.termTitle}>
                     <Text weight="600">{termLabel(term.name)}</Text>
-                    {term.is_ministry_reporting ? (
-                      <Badge variant="default">Ministry</Badge>
-                    ) : null}
                   </View>
                   <Text variant="muted" style={{ fontSize: 13 }}>
                     {formatDate(term.start_date)} – {formatDate(term.end_date)}
-                  </Text>
-                  <Text variant="muted" style={{ fontSize: 13 }}>
-                    Exam {term.exam_weight}% · CW {term.coursework_weight}%
                   </Text>
                 </View>
                 <View style={styles.actions}>

@@ -10,7 +10,7 @@ The grading module manages two core entities:
 1. **Assessments** - exam or coursework items within a term and subject (e.g., "Mid-term Exam", "Take Home Project")
 2. **Grades** - individual student scores for each assessment
 
-This module uses **Supabase Row-Level Security (RLS)** to enforce that teachers can only create/modify assessments and grades for subjects they're assigned to.
+Access is **enforced in the API**: teachers can only create/modify assessments and grades for subjects they're assigned to. There is no database row-level security.
 
 ## Files
 
@@ -59,15 +59,13 @@ This module uses **Supabase Row-Level Security (RLS)** to enforce that teachers 
 | `created_by` | UUID | Teacher who created the grade |
 | `updated_by` | UUID | Teacher who last updated the grade |
 
-## Row-Level Security (RLS)
+## Access control
 
-Unlike other modules that use the service role client, the grading module uses `createUserClient(token, 'grading')` for write operations. This means:
+The database does no access checking of its own; every query goes through `PrismaService` and the service decides who may act before it reads or writes:
 
 - Teachers can only create/modify assessments for subjects they're assigned to teach
-- RLS policies on the `grading` schema enforce this at the database level
+- An admin in the school may act on any subject in it
 - If a teacher tries to grade a subject they don't teach, a `403 Forbidden` error is returned
-
-Read operations that need to join student data use the service role client to bypass RLS.
 
 ## Exclusion System
 
@@ -85,11 +83,11 @@ An individual grade can be excluded through either of two endpoints, which diffe
 | | `PATCH /api/grades/:id/exclude` | `POST /api/activities/:activityId/students/:studentId/exclude` |
 | --- | --- | --- |
 | Identifies the grade by | its own id | the activity's assessment **and** the student |
-| Client | user client, under RLS | service client |
+| Authorised by | subject assignment | class ownership |
 | Allowed for | an admin in the school, or a teacher with a `teacher_subject_assignment` for that subject and year | anyone whose school owns the class the activity belongs to |
 | Used by | nothing yet | the class activity's Submissions tab |
 
-The second exists because the activity screens authorise by **class** throughout - marking a submission already does, through the service client. A class teacher who is not that subject's assigned teacher can set the mark and can exclude every mark on the activity at once, but would be refused by the RLS route for the same grade. That route remains the correct one for the gradebook at large, where subject assignment is the rule.
+The second exists because the activity screens authorise by **class** throughout - marking a submission already does. A class teacher who is not that subject's assigned teacher can set the mark and can exclude every mark on the activity at once, but would be refused by the subject-assignment route for the same grade. That route remains the correct one for the gradebook at large, where subject assignment is the rule.
 
 The activity route resolves the grade by assessment and student together, so a student id from another class cannot reach a grade the activity does not own, and it returns `409` if the activity is not published (there is no assessment yet) or `404` if the student has not been marked.
 
@@ -111,7 +109,7 @@ Returns a single assessment.
 
 ### `POST /api/assessments`
 
-Creates a new assessment. **RLS enforced** - only the assigned teacher can create.
+Creates a new assessment. **Subject assignment enforced** - only the assigned teacher can create.
 
 **Body:**
 ```json
@@ -130,7 +128,7 @@ Creates a new assessment. **RLS enforced** - only the assigned teacher can creat
 
 ### `PATCH /api/assessments/:id`
 
-Updates an assessment. **RLS enforced.**
+Updates an assessment. **Subject assignment enforced.**
 
 ---
 
@@ -150,7 +148,7 @@ Toggles the exclusion status of an assessment.
 
 ### `DELETE /api/assessments/:id`
 
-Deletes an assessment and all its grades. **RLS enforced.**
+Deletes an assessment and all its grades. **Subject assignment enforced.**
 
 ## Grade Endpoints
 
@@ -196,7 +194,7 @@ Returns all assessments for a term + subject, with nested grades and student dat
 
 ### `POST /api/grades`
 
-Creates a single grade. **RLS enforced.**
+Creates a single grade. **Subject assignment enforced.**
 
 **Body:**
 ```json
@@ -231,13 +229,13 @@ Creates or updates multiple grades at once. Uses `upsert` on `(assessment_id, st
 
 ### `PATCH /api/grades/:id`
 
-Updates a grade's score or remarks. **RLS enforced.**
+Updates a grade's score or remarks. **Subject assignment enforced.**
 
 ---
 
 ### `PATCH /api/grades/:id/exclude`
 
-Toggles the exclusion status of a grade. Authorised by RLS - see [Two routes to a grade exclusion](#two-routes-to-a-grade-exclusion).
+Toggles the exclusion status of a grade. Authorised by subject assignment - see [Two routes to a grade exclusion](#two-routes-to-a-grade-exclusion).
 
 **Body:**
 ```json

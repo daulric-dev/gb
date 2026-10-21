@@ -7,7 +7,7 @@ sidebar_position: 1
 
 Clone to running locally, then running locally to deployed. This is the path; the reference docs it links to are the detail.
 
-The platform is four workspaces in one Bun/Turborepo monorepo, all talking to one Supabase project:
+The platform is four workspaces in one Bun/Turborepo monorepo, all talking to one Postgres database through the API:
 
 | Workspace | What it is | Dev port | Deploys to |
 | --- | --- | --- | --- |
@@ -25,10 +25,9 @@ The backend is the only thing that holds secrets. The web and mobile clients tal
 ### Prerequisites
 
 - **Bun 1.3.13** - the version in `packageManager`. Other 1.x versions generally work; that one is what CI and the Docker image use.
-- **Docker**, running. Supabase's local stack is containers.
-- **Supabase CLI** - no install needed, `bunx supabase` fetches it.
+- **Docker**, running. Postgres, Redis, S3 storage and the mail catcher run as containers from `docker-compose.dev.yml`.
 
-You do **not** need a hosted Supabase project to develop. The local stack is a complete one.
+You do **not** need any hosted service to develop. The local stack is a complete one.
 
 > **TypeScript is pinned to 6 across the repo, deliberately.** TypeScript 7.0 is the native port: it ships the `tsc` executable only, without the programmatic compiler API. Two things in this stack need that API and fail without it - the Nest CLI and its `@nestjs/swagger` plugin (half the DTOs carry no `@ApiProperty` and depend on the plugin for their schemas), and `typescript-eslint`, which refuses to load at all, taking `bun run lint` and CI with it. Both upstreams expect to support **7.1**. The root pin matters as much as the workspace ones, because `@nestjs/swagger` resolves `typescript` from the hoisted copy rather than the workspace's - pinning only `backend/` is not enough.
 >
@@ -42,45 +41,37 @@ bun install
 
 Installs every workspace at once. Do not run `bun install` inside a workspace - it is one lockfile for the repo.
 
-### 2. Start the infrastructure
-
-```bash
-bun run preload
-```
-
-Two things: Redis (via `infrastructure/docker-compose.yml`) and the local Supabase stack. First run pulls images and takes a few minutes.
-
-When Supabase finishes it prints a block of URLs and keys. **Keep it** - the next step needs four values from it. To see it again later, `bunx supabase status`.
-
-| Printed as | Goes into |
-| --- | --- |
-| `API URL` | `SUPABASE_URL` |
-| `service_role key` | `SUPABASE_SERVICE_ROLE_KEY` |
-| `anon key` | `SUPABASE_PUSHABLE_KEY` |
-| `JWT secret` | `SUPABASE_JWT_SECRET` |
-
-Two of those URLs matter every day: **Studio** at `http://127.0.0.1:54323` is the database browser, and the **mail catcher** at `http://127.0.0.1:54324` holds every outgoing email (Inbucket on older CLI versions, Mailpit on newer - same port either way; `supabase status` prints whichever you have). Login is a one-time emailed code, so in development you read that code out of the mail catcher. Nothing is sent to a real address.
-
-### 3. Configure
+### 2. Configure
 
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 ```
 
-Fill the four Supabase values into `backend/.env`. The frontend's default (`NEXT_PUBLIC_API_URL=http://localhost:3001`) is already right.
+The defaults match `docker-compose.dev.yml` - nothing to fill in for local development. The frontend's default (`NEXT_PUBLIC_API_URL=http://localhost:3001`) is already right.
 
 Mobile needs nothing: with `EXPO_PUBLIC_API_URL` unset it derives the API host from the Expo dev server it loaded from, so it follows your machine's address and survives a new DHCP lease.
 
-### 4. Apply the schema
+### 3. Start the infrastructure and apply the schema
 
 ```bash
-bunx supabase db reset
+bun run preload
 ```
 
-Runs every migration in `supabase/migrations/` against the local database from scratch. Do this on first setup and whenever you pull migrations.
+Starts four containers from `docker-compose.dev.yml` and waits for them to be healthy, then runs `bun run db:setup` (`prisma migrate deploy`), which applies every migration in `backend/prisma/migrations/` that the database has not seen. First run pulls images and takes a minute or two.
 
-### 5. Run
+| Service | Address | What for |
+| --- | --- | --- |
+| `db` - Postgres 17 | `127.0.0.1:5432` (`gradebook` / `gradebook`) | The database (`DATABASE_URL`) |
+| `redis` | `127.0.0.1:6379` | Cache, queue, chat pub/sub |
+| `s3` - SeaweedFS | `http://127.0.0.1:8333` | File storage (`S3_*`) |
+| `mailpit` | SMTP `127.0.0.1:1025`, inbox `http://127.0.0.1:8025` | Catches every outgoing email |
+
+Login is a one-time emailed code, so in development you read that code out of Mailpit at `http://127.0.0.1:8025`. Nothing is sent to a real address. `bun run db:studio` opens Prisma Studio, a database browser.
+
+Run `bun run db:setup` again whenever you pull new migrations.
+
+### 4. Run
 
 ```bash
 bun run dev
@@ -97,9 +88,11 @@ bun run dev:docs       # :3002
 
 Check the API is up with `curl localhost:3001/health`. Swagger is at `http://localhost:3001/docs` - note there is no `/api` prefix on it, because it is mounted before `setGlobalPrefix('api')`, and that it is **not served in production** (`NODE_ENV !== 'production'` gates it). Every other route does carry the `/api` prefix.
 
-### 6. Sign in
+### 5. Sign in
 
-Open `http://localhost:3000`, enter any email address - it does not have to exist - then read the 8-digit code out of the mail catcher at `http://127.0.0.1:54324`.
+Open `http://localhost:3000`, enter any email address - it does not have to exist - then read the 8-digit code out of Mailpit at `http://127.0.0.1:8025`.
+
+For demo data, run `bun run seed:demo` with the API up (it signs in through the dev-only `POST /auth/dev/code`, enabled by `ALLOW_DEV_LOGIN=true` in `backend/.env`). `bun run smoke` checks the API end to end.
 
 ### Stopping
 
@@ -107,7 +100,7 @@ Open `http://localhost:3000`, enter any email address - it does not have to exis
 bun run postload
 ```
 
-Stops Redis and Supabase. Your database survives; `supabase db reset` is what wipes it.
+Stops the containers. Your data survives in Docker volumes; `docker compose -f docker-compose.dev.yml down -v` wipes it (then `bun run preload` recreates the schema).
 
 ---
 
@@ -117,7 +110,7 @@ Full reference with every variable and its failure mode: **[Environment variable
 
 ### Who holds what
 
-**Backend** (`backend/.env`) - all the secrets. Four Supabase values are required to boot. `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` are optional in development and **required in production**: the app refuses to start without them rather than silently storing plaintext messages or unhashed claim codes. Generate each with `openssl rand -base64 32`.
+**Backend** (`backend/.env`) - all the secrets. `DATABASE_URL`, the `S3_*` values and `SMTP_URL` connect it to its services. `AUTH_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` are optional in development and **required in production**: the app refuses to start without them rather than silently storing plaintext messages or unhashed claim codes. Generate each with `openssl rand -base64 32`.
 
 **Frontend** (`frontend/.env.local`) - `NEXT_PUBLIC_API_URL`, and nothing else that matters. Anything `NEXT_PUBLIC_*` is **baked into the browser bundle at build time** and is public. Never put a secret behind that prefix.
 
@@ -125,15 +118,13 @@ Full reference with every variable and its failure mode: **[Environment variable
 
 **Docs** - `DOCS_BASE` only, and only if you serve the site somewhere other than `/gb/`.
 
-### The four that cause silent failures
+### The three that cause silent failures
 
 These are worth reading twice, because each one fails in a way that does not point at itself.
 
-**`SUPABASE_SERVICE_ROLE_KEY` must be the JWT**, starting `eyJ`. A `sb_secret_...` key is accepted by PostgREST and rejected by the edge function gateway. Everything works except the dashboard, class reports, attendance summaries and file ingest - which look like four unrelated bugs.
+**`AUTH_COOKIE_DOMAIN` must cover the API's own host and the web app's** in production. The session is one opaque HttpOnly cookie, `gb_session`, set by the API; the web proxy only checks that it is present, so it must be sent to the frontend's host too. If the domain does not cover the API, the client rejects the cookie and every request after login is unauthenticated, with no error naming the cookie. The check that proves it: sign in, restart the app, and see whether you are still signed in.
 
-**`AUTH_COOKIE_DOMAIN` must cover the API's own host** in production. If it does not, the client rejects the cookie and every request after login is unauthenticated, with no error naming the cookie. The check that proves it: sign in, restart the app, and see whether you are still signed in.
-
-**`SUPABASE_JWT_SECRET` must belong to the same project as `SUPABASE_URL`.** If not, every file upload fails at Storage. Note that this secret signs a real `authenticated` user token, so it is not scoped to uploads - treat it as a full credential.
+**`S3_PUBLIC_ENDPOINT` must be reachable from browsers and phones**, and the bucket needs a CORS rule for every `FRONTEND_URL` origin. Uploads go straight from the client to the store with presigned URLs; if either is wrong, every upload fails in the browser while server-side reads keep working. See [Bucket CORS](./platform-migration.md#bucket-cors-production).
 
 **`NODE_ENV=production` marks the auth cookie `Secure`**, so the API must be served over HTTPS or the cookie is never stored at all.
 
@@ -152,18 +143,19 @@ Four independent targets. Nothing deploys the whole platform in one step, and th
 
 ### Database
 
+Schema changes are Prisma Migrate migrations in `backend/prisma/migrations/` (see `backend/prisma/schema/README.md`). The backend image applies pending ones when it starts (`prisma migrate deploy`, under an advisory lock, so replicas starting together are safe). To run them as a separate release step instead, set `MIGRATE_ON_START=false` and run:
+
 ```bash
-bunx supabase link --project-ref <ref>
-bunx supabase db push
+DATABASE_URL=postgresql://... bun run db:deploy
+# or, with the production Compose file:
+docker compose --profile release run --rm migrate
 ```
 
-`db push` applies pending migrations to the linked project. Review with `supabase db diff` first. There is no automated migration step in CI - this is deliberate and manual.
-
-There are no edge functions to deploy any more: see **[Edge functions](./edge-functions.md)**.
+There is no migration step in CI.
 
 ### Backend
 
-`infrastructure/Dockerfile` builds it: a multi-stage Bun image that installs the workspace, runs `turbo run build --filter=backend`, and ships only the backend.
+`infrastructure/Dockerfile` builds it: a multi-stage Bun image that installs the workspace, runs `turbo run build --filter=backend` (which runs `prisma generate` first; no database needed), and ships only the backend. Its start command applies pending migrations, then starts the API.
 
 ```bash
 docker build -f infrastructure/Dockerfile -t gb-backend .
@@ -216,15 +208,17 @@ bun run test             # every workspace
 bun run preview          # production-mode builds locally
 bun run lint             # typecheck everything
 
-bun run db:start         # Supabase only, without Redis
-bun run db:stop
-bun run db:types         # regenerate backend/src/types/database.types.ts
-bun run db:diff -- <name>  # capture local schema changes as a migration
+bun run db:setup         # apply pending migrations (prisma migrate deploy)
+bun run db:migrate --name <change>  # create + apply a migration from .prisma edits
+bun run db:pull          # introspect the database into the .prisma files
+bun run db:studio        # Prisma Studio
+bun run seed:demo        # demo school (API running); --fresh to replace it
+bun run smoke            # end-to-end API check (API running)
 
 bun run gb <command>     # repo CLI - status, commit, branch, PR
 ```
 
-**Run `db:types` after every migration.** The generated types are committed, and a schema change without them gives you a backend that compiles against a database it no longer matches.
+**The Prisma client is generated, not committed** (`backend/src/generated/prisma`). `bun install`, `bun test` and `build` regenerate it, and `db:migrate` does too; after pulling someone else's schema change, `bun run db:setup` applies it and `bun install` (or `bunx prisma generate` in `backend/`) refreshes the client.
 
 ### Testing
 
@@ -236,19 +230,19 @@ bun run gb <command>     # repo CLI - status, commit, branch, PR
 
 | | |
 | --- | --- |
-| `supabase/migrations/` | Schema, in order. Never edit an applied migration; add another. |
-| `supabase/functions/` | Edge functions - report summaries, analytics, file ingest. |
+| `backend/prisma/schema/` | Prisma schema, one file per database schema. |
+| `backend/prisma/migrations/` | Migrations, in order (`0_baseline` is the whole schema). Never edit an applied migration; add another. |
 | `backend/src/<module>/` | One folder per domain, NestJS convention. |
 | `frontend/app/` | Next.js App Router. `dashboard/` is staff, `portal/` is students. |
 | `mobile/app/` | Expo Router. `(auth)`, `(tabs)` staff, `(portal)` students. |
 | `docs/content/` | This site. A new `.md` file appears in the sidebar automatically. |
 | `infrastructure/` | Dockerfile, nginx config, Compose. See the caveat above. |
 
-Deeper reference: **[Implementation guide](./implementation-guide.md)** for the database, RLS policies and every API route.
+Deeper reference: **[Implementation guide](./implementation-guide.md)** for the database and every API route.
 
 ## Things that will confuse you once
 
-- **PostgREST will not follow a foreign key across a schema boundary.** The database has seven schemas; joins between them are done in JavaScript, not in the query. This is why some services look like they are doing the database's job by hand.
-- **Two Supabase clients, and the difference is authorisation.** The service client bypasses RLS and is authorised by application code; the user client runs as the caller under RLS. Which one a service uses tells you where its access rules live.
+- **Some joins across schemas are still done in JavaScript.** The database has several schemas, and code written before Prisma joined them by hand; it still works, so not all of it has been folded into one query.
+- **All authorisation is in the API.** The API connects as the schema owner and there is no row-level security; guards and service code are the only access rules, so every new query must scope itself to the caller's school and role.
 - **The docs sidebar is built at compile time** from each file's frontmatter, by a Vite plugin. Add a `.md` under `docs/content/` and it appears; there is no sidebar file to edit.
 - **`bun run preview` is not `bun run dev`.** It builds and serves production bundles, which is where build-time-inlined variables show their real values.

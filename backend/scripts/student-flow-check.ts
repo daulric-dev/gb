@@ -1,15 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 
 // API_URL is the API origin, as in .env.example; routes live under /api.
 const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
-const SUPA = 'http://127.0.0.1:54321';
-const SERVICE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
-
-// The auth admin API mints users and OTPs; fixtures go straight to the database.
-const admin = createClient(SUPA, SERVICE_KEY, { auth: { persistSession: false } });
+// Fixtures go straight to the database; sign-in goes through the API.
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
@@ -58,32 +52,30 @@ class Session {
 }
 
 /**
- * Mint the OTP through the admin API instead of sending mail. Local Supabase
- * caps outbound email at 2/hour, which makes a mail-based flow unrepeatable.
- * The token is the same one the email would carry, so /auth/otp/verify - and
- * everything downstream of it - is still exercised for real.
+ * A sign-in code from the API's dev-only endpoint (ALLOW_DEV_LOGIN=true)
+ * instead of mail. It is a real code, so /auth/otp/verify - and everything
+ * downstream of it - is still exercised for real.
  */
 async function mintOtp(email: string): Promise<string> {
-  const { data, error } = await admin.auth.admin.generateLink({
-    type: 'magiclink',
-    email,
+  const res = await fetch(`${API}/auth/dev/code`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email }),
   });
-  if (error) throw error;
-  const otp = data.properties?.email_otp;
-  if (!otp) throw new Error(`No email_otp returned for ${email}`);
-  return otp;
+  if (!res.ok) throw new Error(`dev code for ${email} -> ${res.status} (is ALLOW_DEV_LOGIN=true?)`);
+  return ((await res.json()) as { code: string }).code;
 }
 
 async function main() {
   const stamp = Date.now();
   const studentEmail = `http-stu-${stamp}@t.test`;
 
-  // ---- fixtures via the service client ------------------------------------
-  const { data: staffUser } = await admin.auth.admin.createUser({
-    email: `http-staff-${stamp}@t.test`,
-    email_confirm: true,
+  // ---- fixtures straight into the database --------------------------------
+  const staffUser = await db.app_user.create({
+    data: { email: `http-staff-${stamp}@t.test`, email_verified_at: new Date() },
+    select: { id: true },
   });
-  const staffId = staffUser.user!.id;
+  const staffId = staffUser.id;
 
   const school = await db.school.create({
     data: { name: `HTTP E2E ${stamp}` },
@@ -208,10 +200,8 @@ async function main() {
   const claimCode: string = issued.body.code;
 
   // ---- the student's own journey ------------------------------------------
-  // Normally signInWithOtp creates this user; created here so the admin API
-  // can mint a token for it. The backend still creates the user_profile.
-  await admin.auth.admin.createUser({ email: studentEmail, email_confirm: true });
-
+  // The first sign-in creates the account and the backend creates the
+  // user_profile.
   const student = new Session();
   const otp = await mintOtp(studentEmail);
   const verify = await student.fetch('/auth/otp/verify', {

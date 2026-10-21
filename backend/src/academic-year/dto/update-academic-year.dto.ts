@@ -1,11 +1,7 @@
 import {
   IsString,
   IsDateString,
-  IsEnum,
-  IsInt,
   IsBoolean,
-  Min,
-  Max,
   MaxLength,
   IsOptional,
 } from 'class-validator';
@@ -27,37 +23,6 @@ export class UpdateAcademicYearDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
-
-  @ApiPropertyOptional({
-    example: 'weighted_continuous',
-    enum: [
-      'weighted_continuous',
-      'weighted_cumulative',
-      'continuous_cumulative',
-    ],
-  })
-  @IsOptional()
-  @IsEnum([
-    'weighted_continuous',
-    'weighted_cumulative',
-    'continuous_cumulative',
-  ])
-  gradingModel?:
-    'weighted_continuous' | 'weighted_cumulative' | 'continuous_cumulative';
-
-  @ApiPropertyOptional({ example: 40 })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  yearExamWeight?: number;
-
-  @ApiPropertyOptional({ example: 60 })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  yearCourseworkWeight?: number;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

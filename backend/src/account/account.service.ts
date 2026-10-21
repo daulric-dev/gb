@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { Prisma } from '@/generated/prisma/client';
 import { isUniqueViolation } from '@/common/db-values';
 import { normalizeEmail } from './email-code.service';
 
@@ -81,7 +82,7 @@ export class AccountService {
         where: { id: linked.id },
         data: {
           email: identity.email,
-          claims: identity.claims,
+          claims: identity.claims as Prisma.InputJsonObject,
           last_used_at: new Date(),
         },
       });
@@ -122,7 +123,7 @@ export class AccountService {
         provider: identity.provider,
         subject: identity.subject,
         email,
-        claims: identity.claims,
+        claims: identity.claims as Prisma.InputJsonObject,
       },
     });
     return user;

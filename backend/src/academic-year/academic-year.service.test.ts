@@ -16,10 +16,7 @@ function dbYear(overrides: Record<string, any> = {}) {
     name: '2025-2026',
     start_date: new Date('2025-09-01T00:00:00Z'),
     end_date: new Date('2026-06-30T00:00:00Z'),
-    grading_model: 'weighted_cumulative',
     is_active: false,
-    year_exam_weight: null,
-    year_coursework_weight: null,
     ...overrides,
   };
 }
@@ -52,27 +49,13 @@ describe('AcademicYearService', () => {
   });
 
   describe('create', () => {
-    test('validates weights must sum to 100', () => {
-      expect(
-        service.create(USER_ID, {
-          name: '2025-2026',
-          startDate: '2025-09-01',
-          endDate: '2026-06-30',
-          gradingModel: 'weighted_cumulative',
-          yearExamWeight: 40,
-          yearCourseworkWeight: 40,
-        } as any),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
     test('validates start_date before end_date', () => {
       expect(
         service.create(USER_ID, {
           name: '2025-2026',
           startDate: '2026-09-01',
           endDate: '2025-06-30',
-          gradingModel: 'weighted_continuous',
-        } as any),
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -86,16 +69,13 @@ describe('AcademicYearService', () => {
         name: '2025-2026',
         startDate: '2025-09-01',
         endDate: '2026-06-30',
-        gradingModel: 'weighted_cumulative',
-        yearExamWeight: 40,
-        yearCourseworkWeight: 60,
-      } as any);
+      });
 
       const data = prisma.academic_year.create.mock.calls[0][0].data;
       expect(data.start_date.toISOString()).toBe('2025-09-01T00:00:00.000Z');
       expect(data.is_active).toBe(false);
       expect(result.start_date).toBe('2025-09-01');
-      expect(result.year_exam_weight).toBe(40);
+      expect(data).not.toHaveProperty('grading_model');
     });
   });
 

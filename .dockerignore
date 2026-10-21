@@ -14,7 +14,3 @@
 # Local env / secrets - never bake into an image.
 **/.env
 **/.env.*
-
-# Supabase local state and migrations are not needed by the backend image.
-supabase/.branches
-supabase/.temp

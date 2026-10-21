@@ -1,13 +1,16 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { EmailCodeService } from '@/account/email-code.service';
+import { SessionService, SESSION_TTL_MS } from '@/account/session.service';
+import { AccountService } from '@/account/account.service';
 import { CacheService } from '@/cache/cache.service';
 import { EmailDomainService } from '@/email-domain/email-domain.service';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -16,6 +19,11 @@ import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 const PROFILE_TTL = 60 * 60 * 24 * 30;
+
+/** The dev-only sign-in endpoint: never in production, and only when asked for. */
+export function devLoginAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_LOGIN === 'true';
+}
 
 /** A profile with its active school, as `*, school:school_id(*)` returned it. */
 const WITH_SCHOOL = {
@@ -37,10 +45,12 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly emailDomains: EmailDomainService,
+    private readonly emailCodes: EmailCodeService,
+    private readonly accounts: AccountService,
+    private readonly sessions: SessionService,
   ) {}
 
   /**
@@ -60,24 +70,25 @@ export class AuthService {
   async sendOtp(email: string) {
     await this.refuseIfSsoRequired(email);
     try {
-      const supabase = this.supabaseService.getServiceClient();
-
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: true },
-      });
-
-      if (error) {
-        this.logger.error(`Failed to send OTP to ${email}: ${error.message}`);
-        throw new BadRequestException('Failed to send OTP');
-      }
-
+      await this.emailCodes.send(email);
       return 'OTP sent to email';
     } catch (err) {
-      if (err instanceof BadRequestException) throw err;
-      this.logger.error(`Unexpected error sending OTP: ${String(err)}`);
+      // A rate limit (429) keeps its own message; any other failure reads as
+      // it always has.
+      if (err instanceof HttpException && !(err instanceof BadRequestException)) throw err;
+      this.logger.error(`Failed to send OTP to ${email}: ${String(err)}`);
       throw new BadRequestException('Failed to send OTP');
     }
+  }
+
+  /**
+   * Dev-only: a sign-in code handed back instead of mailed, so local scripts
+   * (seed, smoke) can sign in. Off unless ALLOW_DEV_LOGIN=true outside
+   * production; when off the route does not exist.
+   */
+  async devCode(email: string): Promise<{ code: string }> {
+    if (!devLoginAllowed()) throw new NotFoundException();
+    return { code: await this.emailCodes.issue(email) };
   }
 
   async verifyOtp(
@@ -88,29 +99,26 @@ export class AuthService {
   ) {
     await this.refuseIfSsoRequired(email);
     try {
-      // Verify on the user client so the SSR adapter writes the auth-token
-      // cookie via setAll synchronously inside this call.
-      const userClient = this.supabaseService.createUserClient(
-        req,
-        reply,
-        'public',
-      );
-
-      const { data, error } = await userClient.auth.verifyOtp({
-        email,
-        token,
-        type: 'email',
-      });
-
-      if (error || !data.session) {
-        this.logger.error(
-          `OTP verification failed for ${email}: ${error?.message}`,
-        );
+      let verifiedEmail: string;
+      try {
+        verifiedEmail = await this.emailCodes.verify(email, token);
+      } catch (err) {
+        this.logger.warn(`OTP verification failed for ${email}: ${(err as Error).message}`);
         throw new UnauthorizedException('Invalid or expired OTP');
       }
 
-      const userId = data.session.user.id;
-      const userEmail = data.session.user.email;
+      const user = await this.accounts.userForVerifiedEmail(verifiedEmail);
+      const { id: userId, email: userEmail } = user;
+      await this.sessions.create(reply, req, userId, 'email-code');
+      const expiresIn = Math.floor(SESSION_TTL_MS / 1000);
+
+      // The session lives in the HttpOnly cookie; the token is never handed
+      // to page scripts. The fields stay for clients that read the shape.
+      const session = {
+        access_token: '',
+        expires_in: expiresIn,
+        expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+      };
 
       let profile = await this.prisma.user_profile
         .findUnique({ where: { id: userId }, ...WITH_SCHOOL })
@@ -153,13 +161,10 @@ export class AuthService {
         await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
       }
 
-      return {
-        session: data.session,
-        user: data.session.user,
-        profile,
-      };
+      return { session, user, profile };
     } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
+      // A disabled account (403) keeps its own message.
+      if (err instanceof UnauthorizedException || err instanceof ForbiddenException) throw err;
       this.logger.error(`Unexpected error verifying OTP: ${String(err)}`);
       throw new UnauthorizedException('Invalid or expired OTP');
     }
@@ -196,16 +201,20 @@ export class AuthService {
 
     // Backfill email for existing profiles (e.g. users with an active session
     // who won't re-run verifyOtp). getProfile has no session, so the email is
-    // sourced from the auth user via the admin API.
+    // read from the account.
     if (!profile.email) {
-      const supabase = this.supabaseService.getServiceClient();
-      const { data: authData, error: adminError } =
-        await supabase.auth.admin.getUserById(userId);
-      const authEmail = authData?.user?.email;
+      let lookupError: string | undefined;
+      const account = await this.prisma.app_user
+        .findUnique({ where: { id: userId }, select: { email: true } })
+        .catch((err: Error) => {
+          lookupError = err.message;
+          return null;
+        });
+      const authEmail = account?.email;
 
-      if (adminError || !authEmail) {
+      if (!authEmail) {
         this.logger.error(
-          `Failed to backfill email for user_profile ${userId}: ${adminError?.message ?? 'no auth email'}`,
+          `Failed to backfill email for user_profile ${userId}: ${lookupError ?? 'no account email'}`,
         );
       } else {
         try {
@@ -412,12 +421,13 @@ export class AuthService {
       throw new BadRequestException('Failed to delete account');
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-
-    if (authError) {
+    try {
+      await this.sessions.revokeAll(userId);
+      // Cascades to sessions and linked sign-in identities.
+      await this.prisma.app_user.deleteMany({ where: { id: userId } });
+    } catch (authError) {
       this.logger.error(
-        `Failed to delete auth user ${userId}: ${authError.message}`,
+        `Failed to delete account ${userId}: ${(authError as Error).message}`,
       );
       throw new BadRequestException('Failed to delete account');
     }

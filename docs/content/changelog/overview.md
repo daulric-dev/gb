@@ -11,12 +11,13 @@ Each entry below links to a dedicated page with the full writeup - what changed,
 
 ## 2026-10-21
 
-Deploying this release: **[Upgrading to courses](../upgrading-to-courses.md)** - migrations, Supabase settings, environment variables and the mobile rebuild, in order.
+Deploying this release: **[Upgrading to courses](../upgrading-to-courses.md)** - migrations, settings, environment variables and the mobile rebuild, in order - then **[Platform migration](../platform-migration.md)** for the move off Supabase.
 
 - [Courses replace classes and subjects](./2026-10-21/course-lms.md) - GradeBook is now a course-based LMS: teachers create courses with modules, pages, assignments, quizzes, announcements, people and a weighted gradebook; students take courses. **Report cards are removed.** Existing classes × subjects are migrated into courses with their staff, students and every mark; the old tables stay, unread, until a cleanup migration. Also fixes a pre-existing quiz bug where one known-correct option id scored every question.
 - [Attendance with self check-in](./2026-10-21/attendance-check-in.md) - teachers open a check-in window; students are notified by push and check in by scanning a QR code that rotates every 15 seconds, typing a room code, or from the portal, optionally within a distance of the room. Absentees are marked when it closes.
 - [School email domains and single sign-on](./2026-10-21/email-domains-and-sso.md) - schools verify their email domains by DNS so students and staff join automatically, and can sign in with Google Workspace, Microsoft 365 or SAML through pluggable adapters, optionally required per domain.
 - [Local setup, demo data, mobile SDK](./2026-10-21/dev-setup.md) - `bun run preload` no longer needs `REDIS_PASSWORD`; `bun run seed:demo` builds a demo school; mobile Expo packages realigned to SDK 57, fixing iOS bundling.
+- [Platform independence: off Supabase](./2026-10-21/platform-independence.md) - the backend runs on Prisma against any Postgres, any S3-compatible store and any SMTP server, with its own sign-in and SSO; schema history is now Prisma Migrate, `supabase/` and the Supabase CLI are gone, and `bun run preload` brings up Postgres, Redis, S3 and Mailpit and applies migrations. Everyone signs in again once after the production cutover. **The privacy policy still names Supabase and needs the owner's update.**
 
 ## 2026-09-21
 

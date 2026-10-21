@@ -6,17 +6,19 @@ label: Upgrading to Courses
 
 How to take an existing GradeBook deployment (classes, subjects, report cards) to the course-based LMS, and everything that has to be configured along the way. What changed and why is in the [changelog for 2026-10-21](./changelog/overview.md).
 
+> These steps were written for, and applied before, the 2026-10-21 move off Supabase. The migrations listed in step 2 are now part of the Prisma baseline (`backend/prisma/migrations/0_baseline`), and step 4 no longer applies - a deployment upgrading today runs `prisma migrate deploy` and follows [Platform migration](./platform-migration.md) and [Single sign-on](./sso.md) instead.
+
 Work through the sections in order. Steps marked **required** break the app if skipped; the rest switch on optional features.
 
 ## 1. Before you start
 
-- **Export report cards.** Report books, their PDFs, class report files and class attendance are **not** carried into courses. Their tables stay in the database untouched until a later cleanup migration, but nothing in the app shows them any more. Download every report PDF you need to keep (Storage bucket `report-books`) before deploying.
+- **Export report cards.** Report books, their PDFs, class report files and class attendance are **not** carried into courses. Their tables stay in the database untouched until a later cleanup migration, but nothing in the app shows them any more. Download every report PDF you need to keep (objects under `report-books/`) before deploying.
 - **Rehearse on a copy of production.** Restore a recent backup into a staging project, run the migrations there, and do the checks in step 3 before touching production.
 - **Tell users.** Classes and Subjects disappear from the menu and become Courses; report cards disappear. Mobile users need the new app build for attendance, QR scanning, push and SSO.
 
 ## 2. Database migrations (required)
 
-Apply in this order (`supabase db push`, or let `supabase start` apply them locally). Each file is its own transaction; the first one must commit before the others because they use the enum values it adds.
+Apply in this order (at the time, with the Supabase CLI's `db push`; they are now part of the Prisma baseline). Each file is its own transaction; the first one must commit before the others because they use the enum values it adds.
 
 | Migration | What it does |
 | --- | --- |
@@ -61,17 +63,17 @@ How the backfill decides things:
 - **Assignment groups:** the class's own grading groups, else the term defaults, merged by name across terms (earliest term's weight).
 - **Marks:** each old grade becomes the submission score (the grade wins if both exist). Manual assessments with no activity become **offline** activities. Excluded marks become **excused**; excluded assessments become **omit from final grade**.
 
-## 4. Supabase project settings
+## 4. Hosted project settings (before the platform migration only)
 
 **Required**
 
-- **Expose the `course` schema** to the API: Settings > API > Exposed schemas, add `course`. Without it every course call fails with `PGRST106`. (Locally this is already in `supabase/config.toml`.)
+- **Expose the `course` schema** to the API: Settings > API > Exposed schemas, add `course`. Without it every course call failed with `PGRST106`. Not needed since the API moved to Prisma.
 
 **For single sign-on** (skip if you are not using it)
 
 - Authentication > URL Configuration > Redirect URLs: add `https://<api host>/api/auth/sso/callback`.
 - Authentication > Providers: enable **Google** and/or **Azure** with your OAuth app's client ID and secret. Azure URL: `https://login.microsoftonline.com/common/v2.0`.
-- SAML needs the Supabase Pro plan; each school's identity provider is added with `supabase sso add`.
+- SAML is now configured per email domain by the school admin; see [Single sign-on](./sso.md). The provider settings above were replaced by `GOOGLE_*` / `MICROSOFT_*` on the API.
 - Full walkthrough: [Single sign-on](./sso.md).
 
 ## 5. Backend environment
@@ -110,7 +112,7 @@ The app gained native modules, so a **new build** is needed - over-the-air updat
 ## 8. Removed things
 
 - **Backend modules:** class, subject, enrollment, class attendance, calculation, reporting, report-files, and the assessment / grade / grading-group endpoints. Old `/api/classes`, `/api/subjects`, `/api/reports`... routes now 404.
-- **Edge functions:** `dashboard-summary`, `report-class-summary`, `attendance-summary`, `grade-analytics`, `large-report-export`. Remove them from the hosted project (`supabase functions delete <name>`); nothing calls them. The dashboard is computed by the API now.
+- **Edge functions:** `dashboard-summary`, `report-class-summary`, `attendance-summary`, `grade-analytics`, `large-report-export`. Nothing calls them, and no edge functions remain at all. The dashboard is computed by the API now.
 - **Permissions:** catalog resources `class`, `subject`, `enrollment`, `assessment`, `grade`, `reporting`, `calculation`, `attendance` are gone, replaced by `course`. Their rows stay in `permission_catalog` (the boot sync only logs them) and grant nothing. Teachers get `course:create`; work inside a course is governed by the course role (teacher / TA / student), not the catalog. Review custom roles that relied on the removed resources.
 - **Web pages:** `/dashboard/classes*` and `/dashboard/subjects*` redirect to `/dashboard/courses`; portal reports and attendance pages are gone.
 
@@ -128,11 +130,11 @@ Once production has run on courses for a while and nobody needs the old data, a 
 
 ```bash
 bun install
-bun run preload          # Redis (docker-compose.dev.yml) + local Supabase, applies all migrations
-cp backend/.env.example backend/.env   # fill keys from `bunx supabase status`
+cp backend/.env.example backend/.env   # defaults match docker-compose.dev.yml
+bun run preload          # Postgres, Redis, S3, Mailpit (docker-compose.dev.yml), then prisma migrate deploy
 bun run dev
-cd backend && bun run seed:demo        # demo school with courses, work, grades, attendance, email domains
+bun run seed:demo                      # demo school with courses, work, grades, attendance, email domains
 bun run seed:demo otp student@demo.test   # sign-in code without email
 ```
 
-`bun run preload` now uses `docker-compose.dev.yml` (Redis on `127.0.0.1:6379`, no password). The production compose file in `infrastructure/` needs `infrastructure/.env` with `REDIS_PASSWORD`.
+`bun run preload` uses `docker-compose.dev.yml` (Postgres on `127.0.0.1:5432`, Redis on `127.0.0.1:6379` with no password, S3 on `:8333`, Mailpit on `:8025`). The production compose file in `infrastructure/` needs `infrastructure/.env` with `REDIS_PASSWORD`.

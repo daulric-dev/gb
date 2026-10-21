@@ -251,7 +251,7 @@ export default function EmailDomainsPage() {
                   )}
 
                   <SsoPanel
-                    key={`${d.id}:${d.verified}:${d.ssoProvider}:${d.ssoRequired}:${d.azureTenantId}`}
+                    key={`${d.id}:${d.verified}:${d.ssoProvider}:${d.ssoRequired}:${d.azureTenantId}:${d.samlEntryPoint}:${d.samlIssuer}:${d.samlCertificate}`}
                     domain={d}
                     providers={ssoProviders.value}
                     onSavedAction={upsert}

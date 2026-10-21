@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiConsumes,
+  ApiExcludeEndpoint,
   ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
@@ -30,7 +31,7 @@ import { StudentMembershipService } from '@/student-account/student-membership.s
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { SessionService } from '@/account/session.service';
 import { VersioningService } from '@/versioning/versioning.service';
 import { MultipartFile } from '@fastify/multipart';
 
@@ -40,7 +41,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly imagesService: ImagesService,
-    private readonly supabaseService: SupabaseService,
+    private readonly sessions: SessionService,
     private readonly versioning: VersioningService,
     private readonly membership: StudentMembershipService,
     private readonly emailDomains: EmailDomainService,
@@ -54,6 +55,17 @@ export class AuthController {
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
     const message = await this.authService.sendOtp(dto.email);
     return this.versioning.resolve(req, 'auth.message')(message);
+  }
+
+  /**
+   * Dev-only: issue a sign-in code and return it instead of mailing it, for
+   * local scripts. 404 unless NODE_ENV !== 'production' and
+   * ALLOW_DEV_LOGIN=true.
+   */
+  @ApiExcludeEndpoint()
+  @Post('dev/code')
+  async devCode(@Body() dto: SendOtpDto) {
+    return this.authService.devCode(dto.email);
   }
 
   @Post('otp/verify')
@@ -144,7 +156,7 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<string> {
-    await this.supabaseService.signOut(req, res);
+    await this.sessions.revoke(req, res);
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 

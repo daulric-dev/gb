@@ -72,38 +72,35 @@ model attendance_session {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model course {
-  id                      String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  school_id               String                     @db.Uuid
-  academic_year_id        String?                    @db.Uuid
-  term_id                 String?                    @db.Uuid
-  name                    String
-  code                    String?
-  description             String?
-  status                  course_status              @default(draft)
-  join_code               String?
-  grade_scale_id          String?                    @db.Uuid
-  created_by              String?                    @db.Uuid
-  created_at              DateTime                   @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime                   @default(now()) @db.Timestamptz(6)
-  legacy_student_group_id String?                    @db.Uuid
-  legacy_subject_id       String?                    @db.Uuid
-  assignment_group        assignment_group[]
-  attendance_record       course_attendance_record[]
-  attendance_session      attendance_session?
-  academic_year           academic_year?             @relation(fields: [academic_year_id], references: [id], onUpdate: NoAction)
-  user_profile            user_profile?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
-  grade_scale             grade_scale?               @relation(fields: [grade_scale_id], references: [id], onUpdate: NoAction)
-  school                  school                     @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  term                    term?                      @relation(fields: [term_id], references: [id], onUpdate: NoAction)
-  course_staff            course_staff[]
-  course_student          course_student[]
-  module                  module[]
-  module_item             module_item[]
-  page                    page[]
-  activity                activity[]
-  announcement            announcement[]
+  id                 String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id          String                     @db.Uuid
+  academic_year_id   String?                    @db.Uuid
+  term_id            String?                    @db.Uuid
+  name               String
+  code               String?
+  description        String?
+  status             course_status              @default(draft)
+  join_code          String?
+  grade_scale_id     String?                    @db.Uuid
+  created_by         String?                    @db.Uuid
+  created_at         DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime                   @default(now()) @db.Timestamptz(6)
+  assignment_group   assignment_group[]
+  attendance_record  course_attendance_record[]
+  attendance_session attendance_session?
+  academic_year      academic_year?             @relation(fields: [academic_year_id], references: [id], onUpdate: NoAction)
+  user_profile       user_profile?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  grade_scale        grade_scale?               @relation(fields: [grade_scale_id], references: [id], onUpdate: NoAction)
+  school             school                     @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term               term?                      @relation(fields: [term_id], references: [id], onUpdate: NoAction)
+  course_staff       course_staff[]
+  course_student     course_student[]
+  module             module[]
+  module_item        module_item[]
+  page               page[]
+  activity           activity[]
+  announcement       announcement[]
 
-  @@unique([legacy_student_group_id, legacy_subject_id], map: "course_legacy_pair_key", where: raw("(legacy_student_group_id IS NOT NULL)"))
   @@index([academic_year_id])
   @@index([created_by])
   @@index([grade_scale_id])

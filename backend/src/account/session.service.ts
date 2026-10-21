@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { authCookieDomain } from '@/config/origins';
+import { authSecret } from './secret';
 
 export const SESSION_COOKIE = 'gb_session';
-const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 /** Extend the session when it is used after this much of it has passed. */
 const RENEW_AFTER_MS = 24 * 60 * 60_000;
 const CACHE_TTL_S = 60;
@@ -18,6 +19,30 @@ export interface SessionUser {
 }
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+const tokenTag = (random: string) =>
+  createHmac('sha256', authSecret()).update(`session:${random}`).digest('base64url');
+
+/** A new cookie token: 256 random bits, tagged with the server secret. */
+function newToken(): string {
+  const random = randomBytes(32).toString('base64url');
+  return `${random}.${tokenTag(random)}`;
+}
+
+/**
+ * Whether a cookie value is a token this server issued - not whether its
+ * session is still live, which needs the database. Lets the rate limiter,
+ * which runs before any guard, give real sessions their own bucket without a
+ * lookup, while made-up cookie values fall back to the client address.
+ */
+export function isIssuedSessionToken(token: string | undefined): token is string {
+  if (!token) return false;
+  const dot = token.indexOf('.');
+  if (dot <= 0) return false;
+  const expected = Buffer.from(tokenTag(token.slice(0, dot)));
+  const given = Buffer.from(token.slice(dot + 1));
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
 
 /**
  * Server-side sessions in an HttpOnly cookie.
@@ -41,7 +66,7 @@ export class SessionService {
     userId: string,
     method: string,
   ): Promise<string> {
-    const token = randomBytes(32).toString('base64url');
+    const token = newToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
 
     await this.prisma.session.create({

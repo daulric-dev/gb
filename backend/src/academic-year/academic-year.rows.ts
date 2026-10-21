@@ -1,5 +1,5 @@
 import type { academic_year } from '@/generated/prisma/client';
-import { dateOnly, num } from '@/common/db-values';
+import { dateOnly } from '@/common/db-values';
 
 /**
  * A request's date string ("2025-09-01", or an ISO timestamp) as the value
@@ -17,8 +17,6 @@ export function serializeAcademicYear(row: academic_year) {
     ...row,
     start_date: dateOnly(row.start_date),
     end_date: dateOnly(row.end_date),
-    year_exam_weight: num(row.year_exam_weight),
-    year_coursework_weight: num(row.year_coursework_weight),
   };
 }
 

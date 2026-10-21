@@ -4,6 +4,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { promises as dns } from 'node:dns';
 import { createMockCacheService } from '@/test/mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { TEST_IDP } from '@/test/saml-idp';
 import { EmailDomainService } from './email-domain.service';
 
 const SCHOOL = 'school-1';
@@ -22,6 +23,9 @@ const unverified = {
   sso_provider: null,
   sso_required: false,
   azure_tenant_id: null,
+  saml_entry_point: null,
+  saml_issuer: null,
+  saml_certificate: null,
 };
 
 function build(setup: (prisma: MockPrisma) => void = () => {}) {
@@ -29,7 +33,10 @@ function build(setup: (prisma: MockPrisma) => void = () => {}) {
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
   setup(prisma);
   const cache = createMockCacheService();
-  const registry = { get: (id: string) => (id === 'google' ? { id } : undefined) };
+  const registry = {
+    get: (id: string) =>
+      ['google', 'saml'].includes(id) ? { id, label: id, readyFor: () => true } : undefined,
+  };
   const service = new EmailDomainService(prisma as any, cache as any, registry as any);
   return { service, prisma, cache };
 }
@@ -100,6 +107,9 @@ describe('EmailDomainService.add', () => {
         ssoProvider: null,
         ssoRequired: false,
         azureTenantId: null,
+        samlEntryPoint: null,
+        samlIssuer: null,
+        samlCertificate: null,
         dnsRecord: {
           type: 'TXT',
           name: 'riverside.edu',
@@ -327,5 +337,104 @@ describe('EmailDomainService.join', () => {
       schoolId: SCHOOL,
     });
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('EmailDomainService.update (SAML)', () => {
+  const verified = { ...unverified, verified_at: new Date('2026-10-21T00:00:00Z') };
+  const saml = {
+    samlEntryPoint: 'https://idp.riverside.edu/sso',
+    samlIssuer: 'https://idp.riverside.edu/entity',
+    samlCertificate: TEST_IDP.cert,
+  };
+
+  function withRow(row: any) {
+    return build((prisma) => {
+      prisma.school_email_domain.findFirst.mockResolvedValue(row);
+      prisma.school_email_domain.update.mockImplementation(async ({ data }: any) => ({
+        ...row,
+        ...data,
+      }));
+    });
+  }
+
+  test('choosing SAML with the full connection in one patch works', async () => {
+    const { service, prisma } = withRow(verified);
+    const out = await service.update(ADMIN, 'dom-1', { ssoProvider: 'saml', ...saml });
+    const data = prisma.school_email_domain.update.mock.calls[0][0].data;
+    expect(data.sso_provider).toBe('saml');
+    expect(data.saml_entry_point).toBe('https://idp.riverside.edu/sso');
+    expect(data.saml_certificate).toContain('-----BEGIN CERTIFICATE-----');
+    expect(out).toMatchObject({
+      ssoProvider: 'saml',
+      samlEntryPoint: 'https://idp.riverside.edu/sso',
+      samlIssuer: 'https://idp.riverside.edu/entity',
+    });
+  });
+
+  test('a bare base64 certificate is stored as PEM', async () => {
+    const { service, prisma } = withRow(verified);
+    const bare = TEST_IDP.cert.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '');
+    await service.update(ADMIN, 'dom-1', { ssoProvider: 'saml', ...saml, samlCertificate: bare });
+    const data = prisma.school_email_domain.update.mock.calls[0][0].data;
+    expect(data.saml_certificate.startsWith('-----BEGIN CERTIFICATE-----')).toBe(true);
+  });
+
+  test('SAML without the whole connection is refused', async () => {
+    const { service } = withRow(verified);
+    await expect(service.update(ADMIN, 'dom-1', { ssoProvider: 'saml' })).rejects.toThrow(
+      'sign-on URL, entity ID and signing certificate',
+    );
+    await expect(
+      service.update(ADMIN, 'dom-1', { ssoProvider: 'saml', ...saml, samlIssuer: '  ' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  test('the sign-on URL must be https and the certificate X.509', async () => {
+    const { service } = withRow(verified);
+    await expect(
+      service.update(ADMIN, 'dom-1', { ...saml, samlEntryPoint: 'http://idp.riverside.edu/sso' }),
+    ).rejects.toThrow('https://');
+    await expect(
+      service.update(ADMIN, 'dom-1', { ...saml, samlEntryPoint: 'not a url' }),
+    ).rejects.toThrow('https://');
+    await expect(
+      service.update(ADMIN, 'dom-1', { ...saml, samlCertificate: 'MIIBnotreally' }),
+    ).rejects.toThrow('X.509');
+    await expect(
+      service.update(ADMIN, 'dom-1', { ...saml, samlCertificate: TEST_IDP.key }),
+    ).rejects.toThrow('X.509');
+  });
+
+  test('clearing part of a live SAML connection is refused', async () => {
+    const live = {
+      ...verified,
+      sso_provider: 'saml',
+      saml_entry_point: saml.samlEntryPoint,
+      saml_issuer: saml.samlIssuer,
+      saml_certificate: TEST_IDP.cert,
+    };
+    const { service } = withRow(live);
+    await expect(service.update(ADMIN, 'dom-1', { samlCertificate: null })).rejects.toThrow(
+      BadRequestException,
+    );
+    // Switching SSO off and clearing it together is fine.
+    await service.update(ADMIN, 'dom-1', {
+      ssoProvider: null,
+      samlEntryPoint: null,
+      samlIssuer: null,
+      samlCertificate: null,
+    });
+  });
+
+  test('requiring SAML needs a verified domain and the connection', async () => {
+    const unverifiedRow = withRow(unverified);
+    await expect(
+      unverifiedRow.service.update(ADMIN, 'dom-1', { ssoProvider: 'saml', ...saml, ssoRequired: true }),
+    ).rejects.toThrow('Verify the domain');
+
+    const { service, prisma } = withRow(verified);
+    await service.update(ADMIN, 'dom-1', { ssoProvider: 'saml', ...saml, ssoRequired: true });
+    expect(prisma.school_email_domain.update.mock.calls[0][0].data.sso_required).toBe(true);
   });
 });

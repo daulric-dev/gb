@@ -54,7 +54,7 @@ The URL does not contain a version number. Versioning is handled entirely by the
 
 ### Why a Centralized Registry?
 
-Controllers in this project depend on `SupabaseService`, which is `Scope.REQUEST`. NestJS does **not** call `onModuleInit` on request-scoped providers. To avoid this limitation, all transformer registrations are centralized in `TransformerRegistry` -- a singleton provider whose `onModuleInit` is guaranteed to run during bootstrap, before any request is handled.
+NestJS does **not** call `onModuleInit` on request-scoped providers, and a controller becomes request-scoped as soon as anything it depends on is. Rather than have each controller's registrations depend on its injection scope, all transformer registrations are centralized in `TransformerRegistry` -- a singleton provider whose `onModuleInit` is guaranteed to run during bootstrap, before any request is handled.
 
 Controllers only call `this.versioning.resolve(req, namespace)` in their handlers. They never register transformers themselves.
 
@@ -241,7 +241,7 @@ import { VersioningService } from '@/versioning/versioning.service';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly supabaseService: SupabaseService,
+    private readonly imagesService: ImagesService,
     private readonly versioning: VersioningService,
   ) {}
 
@@ -692,10 +692,10 @@ When no pagination params are sent, the endpoint returns its original flat array
 URL-based versioning (`/` vs `/v2/`) duplicates routes and controllers. Header-based versioning keeps one set of routes and transforms the response at the edge.
 
 **Why a centralized registry instead of controller `onModuleInit`?**
-Controllers depend on `SupabaseService`, which uses `Scope.REQUEST`. NestJS does not call lifecycle hooks on request-scoped providers, so `onModuleInit` in controllers never fires. The `TransformerRegistry` is a singleton whose `onModuleInit` is guaranteed to run during bootstrap.
+NestJS does not call lifecycle hooks on request-scoped providers, so `onModuleInit` in a controller stops firing the moment any of its dependencies becomes request-scoped. The `TransformerRegistry` is a singleton whose `onModuleInit` is guaranteed to run during bootstrap, and it keeps every registration in one place.
 
 **Why a global guard for validation?**
-Without the guard, an invalid version header would only be caught inside `resolve()` -- which runs after the service call. If the service throws first (e.g., a Supabase error), the client sees a 500 instead of a clear 400 version error. The guard rejects bad versions before any handler logic executes.
+Without the guard, an invalid version header would only be caught inside `resolve()` -- which runs after the service call. If the service throws first (e.g., a database error), the client sees a 500 instead of a clear 400 version error. The guard rejects bad versions before any handler logic executes.
 
 **Why namespaced keys (`auth.profile`, `student.list`)?**
 Prevents collisions between modules that might both have a `detail` or `list` response type. The namespace makes ownership clear and keys self-documenting.
@@ -704,4 +704,4 @@ Prevents collisions between modules that might both have a `detail` or `list` re
 Eliminates a manual `LATEST_VERSION` constant that can get out of sync. The highest registered version number is always the default.
 
 **Why pure functions for transformers?**
-Easy to test, compose, and reason about. No dependencies on NestJS, Supabase, or runtime state.
+Easy to test, compose, and reason about. No dependencies on NestJS, the database, or runtime state.

@@ -11,7 +11,7 @@ Two backend fixes around how subjects are selected and ordered. No migrations, n
 
 The "Manage Grades" Subject dropdown showed subjects from every school, with duplicates (multiple "Mathematics", "Grammar", and so on), instead of only the current school's subjects.
 
-The cause was in `getMySubjectsForClass` ([class.service.ts](../../../../backend/src/class/class.service.ts)). For admins and class teachers the query selected from `subject` with no `school_id` filter, so it returned the global subject table. The non-admin teacher path was already correctly scoped through `teacher_subject_assignment`.
+The cause was in `getMySubjectsForClass` (`class.service.ts`). For admins and class teachers the query selected from `subject` with no `school_id` filter, so it returned the global subject table. The non-admin teacher path was already correctly scoped through `teacher_subject_assignment`.
 
 The fix resolves the class's school first (`student_group` to `academic_year.school_id`, the same lookup used by the `ClassTeacherGuard`) and filters subjects by that `school_id`. If the class has no resolvable school the endpoint now returns an empty list rather than the whole table.
 
@@ -21,7 +21,7 @@ Note on caching: results are cached under `my-subjects:<userId>:<classId>`, so a
 
 Subjects were ordered by `sort_order` everywhere, but the tie-breaker differed. The subject list and the grading dropdown ordered by `sort_order` then `name`, while the calculation engine (which drives both the report card and the class report) ordered by `sort_order` only. When two subjects shared a `sort_order` value the report card and the class report could list them in a different order from the school's subject list.
 
-[calculation.service.ts](../../../../backend/src/calculation/calculation.service.ts) now uses `sort_order` then `name` in all five places it orders subjects: the three Supabase `subject` queries (term result, class-term results, year results) gained a secondary `.order('name')`, and the two in-memory `subjectResults.sort` comparators gained a `localeCompare(name)` tie-breaker. Report card, class report, the subject list, and the grading dropdown now share one ordering.
+`calculation.service.ts` now uses `sort_order` then `name` in all five places it orders subjects: the three Supabase `subject` queries (term result, class-term results, year results) gained a secondary `.order('name')`, and the two in-memory `subjectResults.sort` comparators gained a `localeCompare(name)` tie-breaker. Report card, class report, the subject list, and the grading dropdown now share one ordering.
 
 ## Behavior note
 

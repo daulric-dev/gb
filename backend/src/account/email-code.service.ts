@@ -65,10 +65,28 @@ export class EmailCodeService {
       );
     }
 
+    const code = await this.issue(email);
+
+    try {
+      await this.mail.send({ to: email, ...signInCodeEmail(code) });
+    } catch (err) {
+      this.logger.error(`Sign-in code email failed: ${(err as Error).message}`);
+      throw new BadRequestException('Failed to send the code. Try again shortly.');
+    }
+  }
+
+  /**
+   * Make a new code for an address, retiring any unused one, and return it
+   * without sending it. `send` mails it; the dev-only sign-in endpoint hands
+   * it straight back to local scripts.
+   */
+  async issue(rawEmail: string): Promise<string> {
+    const email = normalizeEmail(rawEmail);
+    const now = Date.now();
     const code = String(randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, '0');
 
     await this.prisma.$transaction([
-      // The previous code stops working the moment a new one is sent.
+      // The previous code stops working the moment a new one is made.
       this.prisma.email_code.updateMany({
         where: { email, consumed_at: null },
         data: { consumed_at: new Date(now) },
@@ -81,13 +99,7 @@ export class EmailCodeService {
         },
       }),
     ]);
-
-    try {
-      await this.mail.send({ to: email, ...signInCodeEmail(code) });
-    } catch (err) {
-      this.logger.error(`Sign-in code email failed: ${(err as Error).message}`);
-      throw new BadRequestException('Failed to send the code. Try again shortly.');
-    }
+    return code;
   }
 
   /**

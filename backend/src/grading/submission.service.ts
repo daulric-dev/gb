@@ -141,7 +141,7 @@ export class SubmissionService {
       return {
         id: a.id,
         courseId: a.course_id,
-        courseName: courses.get(a.course_id as string) ?? null,
+        courseName: courses.get(a.course_id) ?? null,
         kind: a.kind,
         title: a.title,
         instructions: a.instructions,

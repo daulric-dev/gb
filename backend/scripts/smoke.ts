@@ -8,17 +8,11 @@
  * portal, attendance (code and QR), email domains and sign-in discovery - and
  * prints PASS/FAIL per check. Exits non-zero on any failure. Cleans up what
  * it creates. Run it after each step of the platform migration.
+ *
+ * Signs in through the API's dev-only code endpoint, so the API must run with
+ * ALLOW_DEV_LOGIN=true.
  */
-import { createClient } from '@supabase/supabase-js';
-
 const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
-const AUTH_URL = process.env.AUTH_ADMIN_URL ?? 'http://127.0.0.1:54321';
-// The fixed service-role key every local auth stack uses; only for minting
-// sign-in codes until our own auth replaces it.
-const AUTH_ADMIN_KEY =
-  process.env.AUTH_ADMIN_KEY ??
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
-const authAdmin = createClient(AUTH_URL, AUTH_ADMIN_KEY, { auth: { persistSession: false } });
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: unknown) {
@@ -32,13 +26,20 @@ function check(label: string, ok: boolean, detail?: unknown) {
 type Call = (method: string, path: string, body?: unknown) => Promise<{ status: number; data: any; headers: Headers }>;
 
 async function login(email: string): Promise<Call> {
-  const { data, error } = await authAdmin.auth.admin.generateLink({ type: 'magiclink', email });
-  if (error) throw error;
+  const headers = { 'content-type': 'application/json', 'X-API-Version': '1' };
+  const issued = await fetch(`${API}/auth/dev/code`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email }),
+  });
+  if (!issued.ok) throw new Error(`dev code for ${email} -> ${issued.status} (is ALLOW_DEV_LOGIN=true?)`);
+  const { code } = (await issued.json()) as { code: string };
   const res = await fetch(`${API}/auth/otp/verify`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'X-API-Version': '1' },
-    body: JSON.stringify({ email, token: data.properties!.email_otp }),
+    headers,
+    body: JSON.stringify({ email, token: code }),
   });
+  if (!res.ok) throw new Error(`sign-in for ${email} -> ${res.status}: ${await res.text()}`);
   const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
   return async (method, path, body) => {
     const r = await fetch(`${API}${path}`, {
@@ -79,7 +80,7 @@ async function main() {
   check('academic years: dates stay YYYY-MM-DD', years.status === 200 && isDateOnly(years.data[0]?.start_date), years.data[0]);
   const yearId = years.data[0]?.id;
   const terms = await admin('GET', `/terms?yearId=${yearId}`);
-  check('terms: weights are numbers', terms.status === 200 && isNum(terms.data[0]?.exam_weight), terms.data[0]);
+  check('terms: dates stay YYYY-MM-DD', terms.status === 200 && isDateOnly(terms.data[0]?.start_date), terms.data[0]);
   const perms = await teacher('GET', '/permissions/me');
   check('teacher can create courses', perms.status === 200 && perms.data.permissions.includes('course:create'), perms.data);
 

@@ -6,10 +6,10 @@ import { getClientIp, getSessionTracker, type ThrottlerReq } from '@/throttle/tr
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
-import { SupabaseModule } from '@/supabase/supabase.module';
 import { PrismaModule } from '@/prisma/prisma.module';
 import { StorageModule } from '@/storage/storage.module';
 import { MailModule } from '@/mail/mail.module';
+import { AccountModule } from '@/account/account.module';
 import { StudentAccountModule } from '@/student-account/student-account.module';
 import { StudentPortalModule } from '@/student-portal/student-portal.module';
 import { AuthModule } from '@/auth/auth.module';
@@ -84,10 +84,10 @@ import { AttendanceModule } from '@/attendance/attendance.module';
       },
     }),
 
-    SupabaseModule,
     PrismaModule,
     StorageModule,
     MailModule,
+    AccountModule,
     AuthModule,
     StudentAccountModule,
     StudentPortalModule,

@@ -6,7 +6,9 @@ x-app: &app
   build:
     context: ..
     dockerfile: infrastructure/Dockerfile
-  # Supabase keys, FRONTEND_URL, NODE_ENV, etc. come from .env (see env.example).
+  # DATABASE_URL, S3_*, SMTP_*, AUTH_SECRET, FRONTEND_URL, etc. come from .env
+  # (see env.example). The image applies `prisma migrate deploy` at start unless
+  # MIGRATE_ON_START=false.
   env_file:
     - .env
   restart: unless-stopped
@@ -36,6 +38,37 @@ x-app-env: &app-env
   CHAT_CHANNELS_ENABLED: "false"
 
 services:
+  # One-off release step when the app runs with MIGRATE_ON_START=false:
+  #   docker compose --profile release run --rm migrate
+  migrate:
+    <<: *app
+    profiles: ["release"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    command: ["bunx", "prisma", "migrate", "deploy"]
+
+  # Single-box deployments can run Postgres here instead of a managed database.
+  # Uncomment, add `db: { condition: service_healthy }` to the app's
+  # depends_on, the `db-data` volume below, and set
+  # DATABASE_URL=postgresql://gradebook:${POSTGRES_PASSWORD}@db:5432/gradebook
+  # db:
+  #   image: postgres:17.6-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: gradebook
+  #     POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infrastructure/.env}"
+  #     POSTGRES_DB: gradebook
+  #   volumes:
+  #     - db-data:/var/lib/postgresql/data
+  #   networks:
+  #     - appnet
+  #   healthcheck:
+  #     test: ["CMD", "pg_isready", "-U", "gradebook"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+
   redis:
     image: redis:7.4-alpine
     # No published port: only the app replicas on appnet need Redis. It
@@ -69,3 +102,4 @@ networks:
 
 volumes:
   redis-data:
+  # db-data:

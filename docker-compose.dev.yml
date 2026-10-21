@@ -1,6 +1,25 @@
 name: gb
 
 services:
+  # The application database. Connection string in backend/.env:
+  # postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook
+  db:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gradebook
+      POSTGRES_PASSWORD: gradebook
+      POSTGRES_DB: gradebook
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gradebook"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped
@@ -39,5 +58,6 @@ services:
       - "127.0.0.1:8025:8025"
 
 volumes:
+  db-data:
   redis-data:
   s3-data:

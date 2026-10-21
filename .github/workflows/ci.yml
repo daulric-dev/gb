@@ -46,9 +46,6 @@ jobs:
           name: "Vercel - gbv2-frontend: lint"
 
       - name: Build
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: "supabase-anon-key"
         run: bunx turbo run build
 
   gate:

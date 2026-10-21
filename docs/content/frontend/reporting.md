@@ -217,7 +217,7 @@ All exports include:
 - Weight information (CW% / EX%)
 - Aggregate statistics (class average, pass/fail)
 
-The **Generate & save all to storage** button creates all three formats, downloads them, and uploads to Supabase Storage.
+The **Generate & save all to storage** button creates all three formats, downloads them, and uploads them to object storage.
 
 ### Dynamic Page Width (PDF)
 

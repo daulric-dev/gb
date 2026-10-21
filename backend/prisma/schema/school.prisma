@@ -1,22 +1,14 @@
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model academic_year {
-  school_id                  String?                      @db.Uuid
-  name                       String?
-  start_date                 DateTime?                    @db.Date
-  end_date                   DateTime?                    @db.Date
-  grading_model              gradingmodel?
-  is_active                  Boolean?                     @default(true)
-  year_exam_weight           Decimal?                     @db.Decimal
-  year_coursework_weight     Decimal?                     @db.Decimal
-  id                         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  course                     course[]
-  school                     school?                      @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  student_group              student_group[]
-  term                       term[]
-  report_book                report_book[]
-  teacher_group_assignment   teacher_group_assignment[]
-  teacher_subject_assignment teacher_subject_assignment[]
-  student_subject_profile    student_subject_profile[]
+  school_id  String?   @db.Uuid
+  name       String?
+  start_date DateTime? @db.Date
+  end_date   DateTime? @db.Date
+  is_active  Boolean?  @default(true)
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  course     course[]
+  school     school?   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term       term[]
 
   @@index([school_id], map: "idx_academic_year_school")
   @@schema("public")
@@ -115,7 +107,6 @@ model school {
   school_join_request                         school_join_request[]
   school_management                           school_management?
   school_role                                 school_role[]
-  subject                                     subject[]
   user_profile_user_profile_school_idToschool user_profile[]        @relation("user_profile_school_idToschool")
   school_join_code                            school_join_code?
   student                                     student[]
@@ -235,67 +226,17 @@ model school_role_permission {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model student_group {
-  name                       String
-  academic_year_id           String?                      @db.Uuid
-  id                         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at                 DateTime?                    @default(now()) @db.Timestamptz(6)
-  created_by                 String?                      @db.Uuid
-  activity                   activity[]
-  grading_group              grading_group[]
-  academic_year              academic_year?               @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user_profile               user_profile?                @relation(fields: [created_by], references: [id], onUpdate: NoAction)
-  class_report_file          class_report_file[]
-  report_book                report_book[]
-  teacher_group_assignment   teacher_group_assignment[]
-  teacher_subject_assignment teacher_subject_assignment[]
-  attendance_record          student_attendance_record[]
-  student_group_enrollment   student_group_enrollment[]
-
-  @@index([academic_year_id], map: "idx_student_group_year")
-  @@schema("public")
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model subject {
-  school_id                  String?                      @db.Uuid
-  name                       String?
-  code                       String?
-  is_graded                  Boolean?                     @default(true)
-  sort_order                 Int?                         @db.SmallInt
-  id                         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  activity                   activity[]
-  assessment                 assessment[]
-  school                     school?                      @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  report_book_entry          report_book_entry[]
-  teacher_subject_assignment teacher_subject_assignment[]
-  student_subject_profile    student_subject_profile[]
-
-  @@unique([school_id, name], map: "subject_school_id_name_unique")
-  @@index([school_id], map: "idx_subject_school")
-  @@schema("public")
-}
-
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model term {
-  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                  String?
-  academic_year_id      String?             @db.Uuid
-  start_date            DateTime?           @db.Date
-  end_date              DateTime?           @db.Date
-  is_ministry_reporting Boolean?            @default(false)
-  exam_weight           Decimal?            @db.Decimal
-  coursework_weight     Decimal?            @db.Decimal
-  sort_order            Int?                @db.SmallInt
-  course                course[]
-  activity              activity[]
-  assessment            assessment[]
-  grading_group         grading_group?
-  academic_year         academic_year?      @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  class_report_file     class_report_file[]
-  report_book           report_book[]
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String?
+  academic_year_id String?        @db.Uuid
+  start_date       DateTime?      @db.Date
+  end_date         DateTime?      @db.Date
+  sort_order       Int?           @db.SmallInt
+  course           course[]
+  academic_year    academic_year? @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([academic_year_id, name], map: "term_academic_year_id_name_unique")
   @@index([academic_year_id], map: "idx_term_year")
@@ -305,17 +246,17 @@ model term {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model user_profile {
-  id                                                                String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  school_id                                                         String?                      @db.Uuid
+  id                                                                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id                                                         String?                    @db.Uuid
   first_name                                                        String?
   last_name                                                         String?
   role                                                              role?
   avatar_url                                                        String?
-  is_active                                                         Boolean?                     @default(true)
-  created_at                                                        DateTime?                    @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
-  updated_at                                                        DateTime?                    @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  is_active                                                         Boolean?                   @default(true)
+  created_at                                                        DateTime?                  @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at                                                        DateTime?                  @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
   email                                                             String?
-  account_type                                                      account_type                 @default(staff)
+  account_type                                                      account_type               @default(staff)
   conversation                                                      conversation[]
   conversation_member                                               conversation_member[]
   message                                                           message[]
@@ -329,29 +270,19 @@ model user_profile {
   folder                                                            folder[]
   notification                                                      notification[]
   activity                                                          activity[]
-  grade_grade_created_byTouser_profile                              grade[]                      @relation("grade_created_byTouser_profile")
-  grade_grade_updated_byTouser_profile                              grade[]                      @relation("grade_updated_byTouser_profile")
-  grade_scale_grade_scale_created_byTouser_profile                  grade_scale[]                @relation("grade_scale_created_byTouser_profile")
-  grade_scale_grade_scale_updated_byTouser_profile                  grade_scale[]                @relation("grade_scale_updated_byTouser_profile")
+  grade_scale_grade_scale_created_byTouser_profile                  grade_scale[]              @relation("grade_scale_created_byTouser_profile")
+  grade_scale_grade_scale_updated_byTouser_profile                  grade_scale[]              @relation("grade_scale_updated_byTouser_profile")
   submission                                                        submission[]
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]
   push_device                                                       push_device[]
-  school_school_owner_idTouser_profile                              school[]                     @relation("school_owner_idTouser_profile")
+  school_school_owner_idTouser_profile                              school[]                   @relation("school_owner_idTouser_profile")
   school_email_domain                                               school_email_domain[]
-  school_join_request_school_join_request_reviewed_byTouser_profile school_join_request[]        @relation("school_join_request_reviewed_byTouser_profile")
-  school_join_request_school_join_request_user_idTouser_profile     school_join_request[]        @relation("school_join_request_user_idTouser_profile")
+  school_join_request_school_join_request_reviewed_byTouser_profile school_join_request[]      @relation("school_join_request_reviewed_byTouser_profile")
+  school_join_request_school_join_request_user_idTouser_profile     school_join_request[]      @relation("school_join_request_user_idTouser_profile")
   school_management                                                 school_management[]
-  student_group                                                     student_group[]
-  users                                                             users                        @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  school_user_profile_school_idToschool                             school?                      @relation("user_profile_school_idToschool", fields: [school_id], references: [id], onUpdate: NoAction)
-  class_report_file                                                 class_report_file[]
-  report_book                                                       report_book[]
-  report_book_pdf                                                   report_book_pdf[]
-  teacher_group_assignment                                          teacher_group_assignment[]
-  teacher_subject_assignment                                        teacher_subject_assignment[]
-  attendance_record_attendance_record_created_byTouser_profile      student_attendance_record[]  @relation("attendance_record_created_byTouser_profile")
-  attendance_record_attendance_record_updated_byTouser_profile      student_attendance_record[]  @relation("attendance_record_updated_byTouser_profile")
+  app_user                                                          app_user                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school_user_profile_school_idToschool                             school?                    @relation("user_profile_school_idToschool", fields: [school_id], references: [id], onUpdate: NoAction)
   parent_student_link                                               parent_student_link[]
   school_join_code                                                  school_join_code[]
   student                                                           student?
@@ -363,13 +294,6 @@ model user_profile {
 enum account_type {
   staff
   student
-
-  @@schema("public")
-}
-
-enum assessment_type {
-  exam
-  coursework
 
   @@schema("public")
 }
@@ -406,14 +330,6 @@ enum grade_scale_type {
   @@schema("public")
 }
 
-enum gradingmodel {
-  weighted_continuous
-  weighted_cumulative
-  continuous_cumulative
-
-  @@schema("public")
-}
-
 enum join_request_status {
   pending
   approved
@@ -430,21 +346,6 @@ enum relationship_type {
   @@schema("public")
 }
 
-enum report_book_status {
-  draft
-  published
-  sent_to_ministry
-
-  @@schema("public")
-}
-
-enum report_book_type {
-  term
-  year_end
-
-  @@schema("public")
-}
-
 enum role {
   admin
   teacher
@@ -456,14 +357,6 @@ enum role {
 enum schooltype {
   primary
   secondary
-
-  @@schema("public")
-}
-
-enum term_name {
-  michaelmas
-  hilary
-  trinity
 
   @@schema("public")
 }

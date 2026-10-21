@@ -27,12 +27,12 @@ iOS App Transport Security is configured with `NSAllowsArbitraryLoads: false` an
 
 ## Auth cookies
 
-Auth is httpOnly cookies, which React Native persists in the platform's native cookie store - no token handling in app code. Two backend settings decide whether that works:
+Auth is one httpOnly cookie, `gb_session` (opaque, 30-day sliding expiry), which React Native persists in the platform's native cookie store - no token handling in app code. Two backend settings decide whether that works:
 
 - **`NODE_ENV=production`** makes the cookie `Secure`, so the API must be HTTPS (it already must be, for ATS).
 - **`AUTH_COOKIE_DOMAIN`** sets the cookie's `Domain`. If the derived default does not cover the API's own host, the client **rejects the cookie and every request after login is unauthenticated** - with no error to point at it. See [Environment variables](./environment-variables.md).
 
-A native client has no frontend domain of its own; it only ever talks to the API host. The `Domain` attribute exists for the **web** app, whose middleware reads the cookie on its own domain.
+A native client has no frontend domain of its own; it only ever talks to the API host. The `Domain` attribute exists for the **web** app, whose proxy checks for the cookie on its own domain. SSO on mobile ends in `POST /auth/sso/handoff`, which trades a one-time code for the same cookie.
 
 ## Direct uploads
 
@@ -62,7 +62,7 @@ eas build --profile production --platform all
 
 ## Checklist
 
-1. Backend deployed over HTTPS with `NODE_ENV=production`, `SUPABASE_SERVICE_ROLE_KEY` (the **JWT**), `SUPABASE_JWT_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` set.
+1. Backend deployed over HTTPS with `NODE_ENV=production`, `AUTH_SECRET`, `DATABASE_URL`, the `S3_*` storage settings, `SMTP_URL`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` set.
 2. `AUTH_COOKIE_DOMAIN` set if the API is not a subdomain of the web app's two-label domain.
 3. `EXPO_PUBLIC_API_URL` set in the build profile, HTTPS, no `/api`.
 4. Build, install, and confirm **sign-in persists across an app restart** - that is the check that proves the cookie was accepted.

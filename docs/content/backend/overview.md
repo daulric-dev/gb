@@ -12,7 +12,9 @@ The backend is a **NestJS** application running on the **Fastify** HTTP adapter.
 |------------|---------|
 | NestJS 12 | Application framework |
 | Fastify | HTTP server (replaces Express for performance) |
-| Supabase | Database (PostgreSQL), authentication, and row-level security |
+| PostgreSQL + Prisma 7 | Database and ORM (`PrismaService`); access is enforced in the API |
+| S3-compatible storage | File storage (`StorageService`, presigned uploads) |
+| SMTP | Email, e.g. sign-in codes (`MailService`; Mailpit in development) |
 | TypeScript 5 | Type safety |
 | Bun Test | Testing framework (built-in `bun:test`) |
 | Swagger | API documentation (auto-generated at `/docs`) |
@@ -34,10 +36,13 @@ backend/
 │   ├── app.service.ts         # Health check service
 │   ├── stubs/
 │   │   └── empty.js           # Stub for optional NestJS deps during CF Workers bundling
-│   ├── types/
-│   │   └── database.types.ts  # Generated Supabase schema types
-│   ├── supabase/              # Supabase client provider
-│   ├── auth/                  # Authentication (OTP, JWT, onboarding)
+│   ├── generated/prisma/      # Generated Prisma client (from prisma/schema/*.prisma)
+│   ├── prisma/                # PrismaService (global database client)
+│   ├── storage/               # StorageService (S3 object storage, presigned URLs)
+│   ├── mail/                  # MailService (SMTP)
+│   ├── account/               # Users, sessions (gb_session cookie), email sign-in codes
+│   ├── sso/                   # Single sign-on (OIDC for Google/Microsoft, SAML)
+│   ├── auth/                  # Authentication endpoints (OTP, onboarding, avatar)
 │   ├── school/                # School management
 │   ├── academic-year/         # Academic year lifecycle
 │   ├── term/                  # Term management within years
@@ -54,7 +59,7 @@ backend/
 │   ├── announcement/          # School-wide announcement board + read receipts
 │   ├── file-manager/          # Personal files, sharing, virus scan, notifications
 │   ├── chat/                  # Real-time DMs (SSE + Redis pub/sub) + system messages
-│   ├── images/                # Image upload service (avatar, resumable TUS uploads)
+│   ├── images/                # Avatar upload service (direct + presigned PUT) and public avatar route
 │   ├── queue/                 # BullMQ file pipeline: ingest, share-notify
 │   ├── scan/                  # ClamAV virus scanner (global; used at every upload)
 │   └── cache/                 # Pluggable caching (memory or Redis)
@@ -110,7 +115,10 @@ Imports all feature modules and configures global providers:
 AppModule
 ├── ConfigModule (global)
 ├── ThrottlerModule (global guard)
-├── SupabaseModule (global - provides DB clients)
+├── PrismaModule (global - provides PrismaService)
+├── StorageModule (global - provides StorageService)
+├── MailModule (global - provides MailService)
+├── AccountModule (global - users, sessions, email codes)
 ├── AuthModule (exports AuthGuard; imports ImagesModule for avatar endpoints)
 ├── SchoolModule
 ├── AcademicYearModule
@@ -137,14 +145,9 @@ AppModule
 
 > See [versioning.md](./versioning.md) for how API versioning and pagination work.
 
-## Supabase Integration
+## Database Access
 
-The `SupabaseModule` is marked `@Global()` and provides `SupabaseService` to all modules. It offers two types of clients:
-
-| Method | Use Case | Auth |
-|--------|----------|------|
-| `getServiceClient()` | Server-side operations that bypass RLS | Uses `SUPABASE_SERVICE_ROLE_KEY` |
-| `createUserClient(token, schema)` | User-context operations that respect RLS | Uses the user's JWT; schema can be `public`, `student`, `grading`, `reporting`, or `staff` |
+The `PrismaModule` is marked `@Global()` and provides `PrismaService` (a Prisma 7 client over plain Postgres via `DATABASE_URL`) to all modules. The schema lives in `backend/prisma/schema/*.prisma`, with migrations under `backend/prisma/migrations/` (starting from `0_baseline`). There is no row-level security: every query runs with the same database role, and the API enforces who may read or write what.
 
 ## Database Schemas
 
@@ -152,6 +155,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 
 | Schema | Contains |
 |--------|----------|
+| `account` | `app_user`, `session`, `email_code` (own auth) |
 | `public` | `user_profile`, `school`, `academic_year`, `term`, `subject`, `student_group`, `announcement`, `announcement_read` |
 | `student` | `student`, `student_group_enrollment`, `student_subject_profile` |
 | `staff` | `teacher_group_assignment`, `teacher_subject_assignment` |
@@ -166,16 +170,17 @@ The PostgreSQL database uses multiple schemas to organize tables:
 |-------|----------|----------|
 | `ThrottlerGuard` | Global (APP_GUARD) | Rate limits all endpoints |
 | `VersioningGuard` | Global (APP_GUARD) | Validates `X-API-Version` header; rejects invalid/non-existent versions with 400 |
-| `AuthGuard` | `auth/auth.guard.ts` | Validates the SSR cookie session via `supabase.auth.getUser()` (which auto-refreshes expired access tokens and rotates cookies on the response); populates `request.user` with `{ id, email }` |
+| `AuthGuard` | `auth/auth.guard.ts` | Resolves the `gb_session` cookie via `SessionService` (renewing the sliding 30-day expiry when due) and rejects deactivated accounts; populates `request.user` with `{ id, email }` |
 | `ClassTeacherGuard` | `class/class-teacher.guard.ts` | Checks if the user is an admin or the class teacher for the `:classId` route parameter |
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `SUPABASE_URL` | Yes | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key for admin operations |
-| `SUPABASE_PUSHABLE_KEY` | Yes | Anon/public key for user-context clients |
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `AUTH_SECRET` | Yes (production) | Keys the hashes of sign-in codes and session tokens |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes | Object storage (omit `S3_ENDPOINT` for AWS S3) |
+| `SMTP_URL`, `MAIL_FROM` | Yes | Outgoing email |
 | `FRONTEND_URL` | No | CORS origin (defaults to `http://localhost:3000`) |
 | `PORT` | No | Server port (defaults to `3001`) |
 | `USE_REDIS` | No | Set to `true` to use Redis for caching (defaults to in-memory) |

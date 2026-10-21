@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, mock } from 'bun:test';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from './auth.guard';
 import { expectRejection } from '@/test/mocks';
@@ -16,21 +16,26 @@ function makeContext() {
   return { context, request };
 }
 
-/** The session lookup (still Supabase auth) and the profile row (Prisma). */
+let lastSessions: { revoke: ReturnType<typeof mock> };
+
+/** The session lookup and the profile row (Prisma). */
 function makeGuard(opts: {
   user?: any;
   getUserThrows?: Error;
   profile?: any;
 }) {
-  const auth = {
-    getUser: () => {
+  const sessions = {
+    resolve: () => {
       if (opts.getUserThrows) return Promise.reject(opts.getUserThrows);
-      return Promise.resolve(opts.user ?? null);
+      const u = opts.user;
+      return Promise.resolve(u ? { sessionId: 's1', userId: u.id, email: u.email } : null);
     },
+    revoke: mock(async () => {}),
   };
   const prisma = createMockPrisma();
   prisma.user_profile.findUnique.mockResolvedValue(opts.profile ?? null);
-  return new AuthGuard(auth as any, prisma as any);
+  lastSessions = sessions;
+  return new AuthGuard(sessions as any, prisma as any);
 }
 
 const activeUser = { id: 'user-1', email: 'a@b.com' };
@@ -58,6 +63,8 @@ describe('AuthGuard', () => {
       UnauthorizedException,
     );
     expect(request.user).toBeUndefined();
+    // The session ends with it, clearing the cookie.
+    expect(lastSessions.revoke).toHaveBeenCalled();
   });
 
   test('allows a brand-new user with no profile row yet (mid-onboarding)', async () => {
@@ -90,7 +97,7 @@ describe('AuthGuard', () => {
     );
   });
 
-  test('maps an unexpected getUser failure to UnauthorizedException', async () => {
+  test('maps an unexpected session lookup failure to UnauthorizedException', async () => {
     const guard = makeGuard({ getUserThrows: new Error('network down') });
     const { context } = makeContext();
 
@@ -99,7 +106,7 @@ describe('AuthGuard', () => {
     );
   });
 
-  test('re-throws an UnauthorizedException from getUser as-is', async () => {
+  test('re-throws an UnauthorizedException from the session lookup as-is', async () => {
     const guard = makeGuard({
       getUserThrows: new UnauthorizedException('expired'),
     });

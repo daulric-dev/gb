@@ -73,7 +73,7 @@ Once a report is marked `sent_to_ministry`, the `ReportGuard` prevents any furth
 
 ### File Storage
 
-Exported files (PDFs, CSVs, XLSX) are stored in the `report-books` Supabase Storage bucket. The module handles:
+Exported files (PDFs, CSVs, XLSX) are stored in S3 object storage under the `report-books/` key prefix (via `StorageService`). The module handles:
 
 - **Individual report PDFs**: uploaded per-student via multipart upload
 - **Class summary files**: PDF, CSV, and XLSX uploaded per-class-per-term
@@ -191,7 +191,7 @@ Records a PDF file reference (path + size) without uploading.
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`, `ReportGuard`
 
-Uploads a PDF blob to Supabase Storage and records the reference. Accepts multipart form data with the file and an optional `objectPath` field.
+Uploads a PDF blob to object storage and records the reference. Accepts multipart form data with the file and an optional `objectPath` field.
 
 #### `GET /api/reports/:id/pdfs`
 
@@ -203,7 +203,7 @@ Returns the most recent PDF record.
 
 #### `GET /api/reports/:id/pdf/:pdfId/download`
 
-Downloads a PDF file from Supabase Storage. Returns the file as a binary response with appropriate headers.
+Downloads a PDF file from object storage. Returns the file as a binary response with appropriate headers.
 
 ### Class Summary Files
 
@@ -211,7 +211,7 @@ Downloads a PDF file from Supabase Storage. Returns the file as a binary respons
 
 **Guards**: `AuthGuard`, `ClassTeacherGuard`
 
-Uploads a class summary file (PDF, CSV, or XLSX) to Supabase Storage.
+Uploads a class summary file (PDF, CSV, or XLSX) to object storage.
 
 Accepts multipart form data with fields: `studentGroupId`, `termId`, `reportType`, `fileType`.
 
@@ -271,7 +271,7 @@ Lists all stored class summary files for a class + term + report type.
 |--------|------|-------------|
 | `id` | uuid | Primary key |
 | `report_book_id` | uuid | FK to report_book |
-| `file_path` | text | Supabase Storage object path |
+| `file_path` | text | Object path within the `report-books/` storage area |
 | `file_size` | integer | File size in bytes |
 | `generated_by` | uuid | FK to user_profile |
 | `generated_at` | timestamptz | When the PDF was generated |
@@ -285,7 +285,7 @@ Lists all stored class summary files for a class + term + report type.
 | `term_id` | uuid | FK to term |
 | `report_type` | text | `term` or `year_end` |
 | `file_type` | text | `pdf`, `csv`, or `xlsx` |
-| `file_path` | text | Supabase Storage object path |
+| `file_path` | text | Object path within the `report-books/` storage area |
 | `file_size` | integer | File size in bytes |
 | `generated_by` | uuid | FK to user_profile |
 | `generated_at` | timestamptz | Upload timestamp |

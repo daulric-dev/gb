@@ -20,9 +20,6 @@ function dbTerm(overrides: Record<string, any> = {}) {
     name: 'michaelmas',
     start_date: new Date('2025-09-01T00:00:00Z'),
     end_date: new Date('2025-12-15T00:00:00Z'),
-    is_ministry_reporting: false,
-    exam_weight: 60,
-    coursework_weight: 40,
     sort_order: 1,
     ...overrides,
   };
@@ -44,8 +41,6 @@ function makeDto(overrides: Record<string, any> = {}) {
     name: 'michaelmas' as const,
     startDate: '2025-09-01',
     endDate: '2025-12-15',
-    examWeight: 60,
-    courseworkWeight: 40,
     ...overrides,
   };
 }
@@ -64,8 +59,8 @@ describe('TermService', () => {
   });
 
   describe('create', () => {
-    test('validates weights sum to 100', () => {
-      const dto = makeDto({ examWeight: 50, courseworkWeight: 30 });
+    test('rejects a blank name', () => {
+      const dto = makeDto({ name: '   ' });
       expect(service.create(USER_ID, dto as any)).rejects.toBeInstanceOf(
         BadRequestException,
       );
@@ -163,24 +158,21 @@ describe('TermService', () => {
       const original = makeTerm();
       prisma.term.findFirst.mockResolvedValue(dbTerm());
       prisma.term.update.mockResolvedValue(
-        dbTerm({ exam_weight: 70, coursework_weight: 30 }),
+        dbTerm({ name: 'Autumn' }),
       );
 
       await mockCache.set(`terms:${YEAR_ID}`, [original], TERM_TTL);
 
-      await service.update(USER_ID, 'term-1', {
-        examWeight: 70,
-        courseworkWeight: 30,
-      });
+      await service.update(USER_ID, 'term-1', { name: 'Autumn' });
 
       const cached = await mockCache.get(`terms:${YEAR_ID}`);
-      expect(cached[0].exam_weight).toBe(70);
+      expect(cached[0].name).toBe('Autumn');
     });
 
-    test('checks weights against the stored values', async () => {
+    test('rejects a blank name', async () => {
       prisma.term.findFirst.mockResolvedValue(dbTerm());
       expect(
-        service.update(USER_ID, 'term-1', { examWeight: 70 }),
+        service.update(USER_ID, 'term-1', { name: '  ' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });

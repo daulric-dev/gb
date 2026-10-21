@@ -57,7 +57,7 @@ The `onboard` and `createJoinRequest` flows had an "orphaned school takeover" ru
 
 `/calculations/student-term`, `/calculations/student-year`, and report generation accepted a `studentId` and returned that student's data after authorizing only against `studentGroupId`, without confirming the student belonged to the class.
 
-**Fix.** [calculation.service.ts](../../../../backend/src/calculation/calculation.service.ts) `calculateStudentTermResult` and `calculateStudentYearResult` now call `assertStudentInGroup`, which verifies enrollment in `studentGroupId` before returning anything. Report generation inherits this because it calls through the same methods.
+**Fix.** `calculation.service.ts` `calculateStudentTermResult` and `calculateStudentYearResult` now call `assertStudentInGroup`, which verifies enrollment in `studentGroupId` before returning anything. Report generation inherits this because it calls through the same methods.
 
 ## Spoofable rate-limit identity
 

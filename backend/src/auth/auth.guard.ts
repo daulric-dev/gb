@@ -5,7 +5,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { SessionService } from '@/account/session.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -21,7 +21,7 @@ export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly sessions: SessionService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -31,11 +31,13 @@ export class AuthGuard implements CanActivate {
     const reply: FastifyReply = http.getResponse();
 
     try {
-      const user = await this.supabaseService.getUser(request, reply);
+      // With the reply, a dead session clears its cookie on the way out.
+      const session = await this.sessions.resolve(request, reply);
 
-      if (!user) {
+      if (!session) {
         throw new UnauthorizedException('Invalid or expired session');
       }
+      const user = { id: session.userId, email: session.email };
 
       // A lookup failure is not a deactivation, as before.
       const profile = await this.prisma.user_profile
@@ -43,6 +45,9 @@ export class AuthGuard implements CanActivate {
         .catch(() => null);
 
       if (profile && profile.is_active === false) {
+        // End the session too, so the cookie goes with the 401 and clients
+        // that only check for its presence stop treating this as signed in.
+        await this.sessions.revoke(request, reply);
         throw new UnauthorizedException('Account is deactivated');
       }
 

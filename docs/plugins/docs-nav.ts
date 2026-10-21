@@ -16,7 +16,6 @@ const SECTIONS: { label: string; dir?: string; items?: string[] }[] = [
       "environment-variables",
       "dedicated-deployment",
       "sso",
-      "edge-functions",
       "mobile-production",
     ],
   },

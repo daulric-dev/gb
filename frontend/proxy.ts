@@ -5,11 +5,20 @@ import { loginPath, NEXT_PARAM, safeNextPath } from "@/lib/routing";
 const GUEST_ONLY = ["/login", "/login/verify"];
 // /scan is where the attendance QR lands; it works signed out (see app/scan).
 const PUBLIC_PATHS = ["/", "/privacy", "/terms", "/scan", ...GUEST_ONLY];
-const BACKEND = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-// Refresh ~1 minute before the access token actually expires so we never
-// serve a request with an already-expired token.
-const REFRESH_BUFFER_MS = 60_000;
+/**
+ * Our session cookie, set by the API on /auth/otp/verify and the SSO
+ * callback/handoff. It is HttpOnly and opaque (a random token only the API can
+ * validate), so the proxy treats its presence as "signed in" and nothing more.
+ * A stale or revoked cookie gets through here, the first API call answers 401,
+ * and `lib/api.ts`'s unauthorized handler sends the visitor to /login.
+ *
+ * The proxy only sees the cookie if it is sent to the frontend's host: in
+ * production the API sets it with `Domain=AUTH_COOKIE_DOMAIN`, a parent domain
+ * shared by the app and the API (e.g. `.example.com` for app.example.com and
+ * api.example.com). In development both run on localhost, where cookies ignore
+ * the port.
+ */
+export const SESSION_COOKIE = "gb_session";
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -23,79 +32,12 @@ function isGuestOnly(pathname: string): boolean {
   );
 }
 
-type SessionState =
-  | { kind: "missing" }
-  | { kind: "fresh" }
-  | { kind: "stale" }
-  | { kind: "invalid" };
-
-function readSessionState(request: NextRequest): SessionState {
-  const chunks: { idx: number; value: string }[] = [];
-  let baseValue: string | null = null;
-
-  for (const cookie of request.cookies.getAll()) {
-    if (!cookie.name.startsWith("sb-") || !cookie.name.includes("auth-token")) {
-      continue;
-    }
-    const dot = cookie.name.lastIndexOf(".");
-    if (dot > -1 && /^\d+$/.test(cookie.name.slice(dot + 1))) {
-      chunks.push({ idx: Number(cookie.name.slice(dot + 1)), value: cookie.value });
-    } else {
-      baseValue = cookie.value;
-    }
-  }
-
-  let raw = baseValue;
-  if (!raw && chunks.length > 0) {
-    raw = chunks
-      .sort((a, b) => a.idx - b.idx)
-      .map((c) => c.value)
-      .join("");
-  }
-  if (!raw) return { kind: "missing" };
-
-  try {
-    let payload = raw;
-    if (payload.startsWith("base64-")) {
-      const b64 = payload.slice("base64-".length);
-      const padded = b64
-        .replace(/-/g, "+")
-        .replace(/_/g, "/")
-        .padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=");
-      payload = atob(padded);
-    }
-    const session = JSON.parse(payload);
-    const expiresAt = Number(session?.expires_at);
-    if (!expiresAt || !session?.refresh_token) return { kind: "invalid" };
-
-    const expiresAtMs = expiresAt * 1000;
-    if (expiresAtMs - Date.now() > REFRESH_BUFFER_MS) {
-      return { kind: "fresh" };
-    }
-    return { kind: "stale" };
-  } catch {
-    return { kind: "invalid" };
-  }
+function hasSession(request: NextRequest): boolean {
+  return !!request.cookies.get(SESSION_COOKIE)?.value;
 }
 
-function applySetCookies(response: NextResponse, from: Response) {
-  for (const cookie of from.headers.getSetCookie()) {
-    response.headers.append("set-cookie", cookie);
-  }
-}
-
-async function validateOnBackend(request: NextRequest): Promise<Response> {
-  return fetch(`${BACKEND}/api/auth/me`, {
-    headers: {
-      cookie: request.headers.get("cookie") || "",
-      "X-API-Version": "1",
-    },
-  });
-}
-
-export async function proxy(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const state = readSessionState(request);
 
   // A signed-in visitor on /login goes back where a sign-in prompt sent them
   // (same-origin paths only), otherwise to the app.
@@ -112,24 +54,10 @@ export async function proxy(request: NextRequest) {
       new URL(loginPath(`${pathname}${request.nextUrl.search}`), request.url),
     );
 
-  if (state.kind === "missing") {
+  if (!hasSession(request)) {
     return isPublic(pathname) ? NextResponse.next() : toLogin();
   }
-
-  if (state.kind === "fresh") {
-    return isGuestOnly(pathname) ? toDashboard() : NextResponse.next();
-  }
-
-  const res = await validateOnBackend(request);
-
-  let target: NextResponse;
-  if (res.ok) {
-    target = isGuestOnly(pathname) ? toDashboard() : NextResponse.next();
-  } else {
-    target = isPublic(pathname) ? NextResponse.next() : toLogin();
-  }
-  applySetCookies(target, res);
-  return target;
+  return isGuestOnly(pathname) ? toDashboard() : NextResponse.next();
 }
 
 export const config = {

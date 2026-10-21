@@ -86,12 +86,6 @@ describe('FileShareNotifyHandler', () => {
     expect(recipients(prisma)).toEqual(['ta', 's1']);
   });
 
-  test('a legacy group share notifies no one', async () => {
-    const { prisma, handler } = setup('group');
-    await handler.run({ shareId: 'share-1' });
-    expect(prisma.notification.createMany).not.toHaveBeenCalled();
-  });
-
   test('a missing share is skipped', async () => {
     const { prisma, handler } = setup('user');
     prisma.file_share.findUnique.mockResolvedValue(null);

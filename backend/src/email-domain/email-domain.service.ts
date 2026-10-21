@@ -14,6 +14,7 @@ import { isoDate, isUniqueViolation, raisedMessage } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import { permCacheKey } from '@/permission/permission.effective';
 import { SsoRegistry } from '@/sso/sso.registry';
+import { normalizeCertificate } from '@/sso/adapters/saml.adapter';
 import {
   domainOfEmail,
   isFreeMailDomain,
@@ -41,6 +42,9 @@ const DOMAIN_SELECT = {
   sso_provider: true,
   sso_required: true,
   azure_tenant_id: true,
+  saml_entry_point: true,
+  saml_issuer: true,
+  saml_certificate: true,
 } as const;
 
 type DomainRecord = Prisma.school_email_domainGetPayload<{
@@ -72,6 +76,9 @@ interface DomainRow {
   sso_provider: string | null;
   sso_required: boolean;
   azure_tenant_id: string | null;
+  saml_entry_point: string | null;
+  saml_issuer: string | null;
+  saml_certificate: string | null;
 }
 
 /** What sign-in needs to know about an address's domain. */
@@ -84,7 +91,26 @@ export interface VerifiedDomain {
   ssoProvider: string | null;
   ssoRequired: boolean;
   azureTenantId: string | null;
+  samlEntryPoint: string | null;
+  samlIssuer: string | null;
+  samlCertificate: string | null;
 }
+
+/** An https:// URL with a host, trimmed, or null. */
+function httpsUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' && url.hostname ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const hasSamlConfig = (d: {
+  saml_entry_point: string | null;
+  saml_issuer: string | null;
+  saml_certificate: string | null;
+}) => !!(d.saml_entry_point && d.saml_issuer && d.saml_certificate);
 
 export interface DomainMatch {
   domainId: string;
@@ -154,6 +180,9 @@ export class EmailDomainService {
       ssoProvider: d.sso_provider,
       ssoRequired: d.sso_required,
       azureTenantId: d.azure_tenant_id,
+      samlEntryPoint: d.saml_entry_point,
+      samlIssuer: d.saml_issuer,
+      samlCertificate: d.saml_certificate,
       // What the admin publishes; shown until the domain is verified.
       dnsRecord: {
         type: 'TXT' as const,
@@ -251,6 +280,9 @@ export class EmailDomainService {
       ssoProvider?: string | null;
       ssoRequired?: boolean;
       azureTenantId?: string | null;
+      samlEntryPoint?: string | null;
+      samlIssuer?: string | null;
+      samlCertificate?: string | null;
     },
   ) {
     const schoolId = await this.adminSchool(adminUserId);
@@ -277,9 +309,59 @@ export class EmailDomainService {
       }
       changes.azure_tenant_id = tenant;
     }
+    if (patch.samlEntryPoint !== undefined) {
+      const raw = patch.samlEntryPoint?.trim() || null;
+      const url = raw ? httpsUrl(raw) : null;
+      if (raw && !url) {
+        throw new BadRequestException(
+          'The SAML sign-on URL must be an https:// address',
+        );
+      }
+      changes.saml_entry_point = url;
+    }
+    if (patch.samlIssuer !== undefined) {
+      changes.saml_issuer = patch.samlIssuer?.trim() || null;
+    }
+    if (patch.samlCertificate !== undefined) {
+      const raw = patch.samlCertificate?.trim() || null;
+      const pem = raw ? normalizeCertificate(raw) : null;
+      if (raw && !pem) {
+        throw new BadRequestException(
+          'The SAML certificate is not a valid X.509 certificate. Paste the PEM (-----BEGIN CERTIFICATE-----) or its base64 body.',
+        );
+      }
+      changes.saml_certificate = pem;
+    }
+
+    // The SAML connection after this update.
+    const saml = {
+      saml_entry_point:
+        patch.samlEntryPoint !== undefined
+          ? (changes.saml_entry_point as string | null)
+          : row.saml_entry_point,
+      saml_issuer:
+        patch.samlIssuer !== undefined
+          ? (changes.saml_issuer as string | null)
+          : row.saml_issuer,
+      saml_certificate:
+        patch.samlCertificate !== undefined
+          ? (changes.saml_certificate as string | null)
+          : row.saml_certificate,
+    };
+    const provider =
+      patch.ssoProvider !== undefined ? patch.ssoProvider : row.sso_provider;
+    const touchesSaml =
+      patch.ssoProvider !== undefined ||
+      patch.samlEntryPoint !== undefined ||
+      patch.samlIssuer !== undefined ||
+      patch.samlCertificate !== undefined;
+    if (touchesSaml && provider === 'saml' && !hasSamlConfig(saml)) {
+      throw new BadRequestException(
+        'Add your identity provider\'s sign-on URL, entity ID and signing certificate to use SAML',
+      );
+    }
+
     if (patch.ssoRequired !== undefined) {
-      const provider =
-        patch.ssoProvider !== undefined ? patch.ssoProvider : row.sso_provider;
       const tenant =
         patch.azureTenantId !== undefined
           ? changes.azure_tenant_id
@@ -297,6 +379,11 @@ export class EmailDomainService {
         if (provider === 'azure' && !tenant) {
           throw new BadRequestException(
             'Add your Microsoft tenant ID before requiring Microsoft sign-in',
+          );
+        }
+        if (provider === 'saml' && !hasSamlConfig(saml)) {
+          throw new BadRequestException(
+            'Finish the SAML connection before requiring single sign-on',
           );
         }
       }
@@ -532,8 +619,10 @@ export class EmailDomainService {
       where: { domain, verified_at: { not: null } },
       select: DOMAIN_SELECT,
     });
-    if (!data) return null;
-    const d = data;
+    return data ? this.toVerified(data) : null;
+  }
+
+  private toVerified(d: DomainRecord): VerifiedDomain {
     return {
       id: d.id,
       schoolId: d.school_id,
@@ -543,7 +632,19 @@ export class EmailDomainService {
       ssoProvider: d.sso_provider,
       ssoRequired: d.sso_required,
       azureTenantId: d.azure_tenant_id,
+      samlEntryPoint: d.saml_entry_point,
+      samlIssuer: d.saml_issuer,
+      samlCertificate: d.saml_certificate,
     };
+  }
+
+  /** A verified domain by id, for finishing a sign-in started for it. */
+  async verifiedDomainById(id: string): Promise<VerifiedDomain | null> {
+    const d = await this.prisma.school_email_domain.findFirst({
+      where: { id, verified_at: { not: null } },
+      select: DOMAIN_SELECT,
+    });
+    return d ? this.toVerified(d) : null;
   }
 
   /**
@@ -557,6 +658,7 @@ export class EmailDomainService {
     const domain = await this.verifiedDomainFor(email);
     if (!domain?.ssoRequired) return null;
     const adapter = this.sso.get(domain.ssoProvider);
-    return adapter ? { providerId: adapter.id, label: adapter.label } : null;
+    // Nor does one the school has not finished setting up.
+    return adapter && adapter.readyFor(domain) ? { providerId: adapter.id, label: adapter.label } : null;
   }
 }

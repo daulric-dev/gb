@@ -32,12 +32,6 @@ export class SsoRegistry {
   enabled(): SsoProviderInfo[] {
     return ADAPTERS.filter((a) => a.isEnabled()).map(info);
   }
-
-  /** The adapter a Supabase identity provider name belongs to. */
-  forIdentityProvider(provider: string): SsoAdapter | undefined {
-    if (provider.startsWith('sso:')) return this.get('saml');
-    return this.get(provider);
-  }
 }
 
 export function info(a: SsoAdapter): SsoProviderInfo {

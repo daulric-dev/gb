@@ -22,11 +22,11 @@ The file manager gives each user a personal file space: generated report files l
 | `file-content.ts` | Allowed content types + magic-byte verification (used on upload) |
 | `dto/` | Request validation (list filter + pagination, rename, share, update-share) |
 
-Virus scanning is centralized at the storage boundary, not in this module:
+Storage access goes through the shared storage module, not this one:
 
 | File | Purpose |
 |------|---------|
-| `supabase/supabase.service.ts` | `uploadFile` / `scanOrThrow` scan **every** backend upload before it is stored |
+| `storage/storage.service.ts` | `StorageService` - S3 put/get/delete and presigned upload/download URLs for every stored object |
 
 A small async pipeline remains in the queue module for non-upload work:
 
@@ -43,6 +43,8 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 |--------|------|------------|---------|
 | `GET` | `/files` | `file:read` | Flat list (`filter=all\|own\|shared`; optional `page`/`pageSize`) — backs the All / Shared tabs |
 | `POST` | `/files` | `file:create` | Upload a file (`multipart/form-data`, optional `?name=`, optional `?folderId=`) |
+| `POST` | `/files/upload-ticket` | `file:create` | Start a direct upload: reserves a `pending` row and returns a presigned `PUT` URL |
+| `POST` | `/files/upload-ticket/:fileId/complete` | `file:create` | Finish a direct upload: re-checks the stored bytes and marks the file `ready` |
 | `GET` | `/files/folders/contents` | `file:read` | Browse a folder: `{ folder, breadcrumb, folders, files }` (`?folderId=`, omit for root) |
 | `GET` | `/files/folders` | `file:read` | Flat list of the caller's folders (move-target picker) |
 | `POST` | `/files/folders` | `file:create` | Create a folder (`{ name, parentId? }`) |
@@ -66,7 +68,7 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 
 Migration `20260712140000_file_manager_folders.sql` adds `file_manager.folder` (nested via `parent_id`) and a nullable `file.folder_id`.
 
-Folders are an **owner-private organization layer** — a folder is never shared, and `folder_id` is the owner's placement of a file, irrelevant to recipients. Every `FolderService` method is scoped to `owner_id = userId` (plus RLS as defense-in-depth). Folder names are unique within a parent per owner, enforced by two partial unique indexes (one for nested folders, one for roots, since a `NULL` parent would otherwise never collide).
+Folders are an **owner-private organization layer** — a folder is never shared, and `folder_id` is the owner's placement of a file, irrelevant to recipients. Every `FolderService` method is scoped to `owner_id = userId` in the API. Folder names are unique within a parent per owner, enforced by two partial unique indexes (one for nested folders, one for roots, since a `NULL` parent would otherwise never collide).
 
 - **Browsing** — the **My files** tab calls `GET /files/folders/contents`, which returns the current folder's subfolders, the files directly inside it (`folder_id = current`, or `IS NULL` at the root), and a breadcrumb trail. The **All** and **Shared with me** tabs stay flat (`GET /files`) and ignore folders.
 - **Delete is recursive** — deleting a folder soft-deletes the folder, all descendant folders, and every file within them. The subtree is walked in JS (trees are shallow) so contained files are soft-deleted the same way a direct file delete is, rather than being hard-deleted by the FK cascade.
@@ -110,15 +112,15 @@ upload paths share them:
 1. **Type allow-list.** Only the entries in `ALLOWED_CONTENT_TYPES` are
    accepted - PDF, PNG, JPEG, WebP, plain text, CSV, XLSX and DOCX.
    Executables, scripts and the macro-enabled Office types are refused outright,
-   before a byte is uploaded on the resumable path.
+   before a byte is uploaded on the direct-upload path.
 2. **Magic bytes.** The declared type must match the file's leading bytes, so a
    `.html` renamed to `.pdf` is rejected. The client MIME type is never trusted
    alone.
 3. **Structure.** `inspectStructure` looks *inside* the file (below).
 
-A single-request upload is stored and recorded directly as `ready`. A resumable
-(TUS) upload reserves the row as `pending`, and `finaliseUpload` re-checks the
-stored bytes before releasing it; anything that fails is deleted from Storage
+A single-request upload is stored and recorded directly as `ready`. A direct
+(presigned `PUT`) upload reserves the row as `pending`, and `finaliseUpload` re-checks the
+stored bytes before releasing it; anything that fails is deleted from storage
 and the row is marked `failed` with the reason, so the failure is visible
 rather than silent.
 
@@ -166,9 +168,9 @@ The residual risk is a **well-formed** PDF/DOCX/XLSX carrying an exploit for the
 recipient's own viewer - nothing here detects that. The PDF scan also reads raw
 bytes, so a token hidden in a compressed object stream is not seen.
 
-`SupabaseService.uploadFile` remains the single storage-write choke point, so
-reinstating signature scanning means one call there plus the two resumable
-completion paths.
+`StorageService.put` is the single storage write for backend uploads, so
+reinstating signature scanning means one call there plus the two direct-upload
+completion paths (file manager and avatars).
 
 ## Notifications
 
@@ -182,14 +184,14 @@ The frontend polls `unread-count` on navigation to render a badge on the
 
 ## Storage & schema
 
-- Uploaded files live in the private **`file-manager`** bucket at
-  `<schoolId>/<userId>/<fileId>-<slug>`; ingested report files reference the
-  **`report-books`** bucket. Both buckets are declared in
-  `supabase/config.toml` and must exist per environment.
-- Tables (`file_manager` schema): `file`, `file_share`, `notification`. RLS
-  keeps every row inside its school and restricts writes to the owner/admin;
-  the API itself enforces fine-grained access via the service role, so RLS is
-  defence-in-depth.
+- Everything lives in one private S3 bucket (`S3_BUCKET`), keyed
+  `<area>/<path>`. Uploaded files use the **`file-manager`** area at
+  `file-manager/<schoolId>/<userId>/<fileId>-<slug>`; ingested report files
+  reference the **`report-books`** area. Rows keep `bucket` (the area) and
+  `storage_path` separately; `storage/keys.ts` joins them.
+- Tables (`file_manager` schema, `backend/prisma/schema/files.prisma`): `file`,
+  `file_share`, `notification`, `folder`. There is no row-level security; the
+  API enforces school scoping and owner/share access.
 
 ## Known limitations
 

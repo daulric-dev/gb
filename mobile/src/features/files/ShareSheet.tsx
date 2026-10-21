@@ -5,7 +5,6 @@ import {
   KeyRound,
   Trash2,
   UserRound,
-  Users,
 } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -32,7 +31,6 @@ const TYPE_META: Record<
   user: { label: "Person", icon: UserRound },
   role: { label: "Role", icon: KeyRound },
   course: { label: "Course", icon: BookOpen },
-  group: { label: "Class (legacy)", icon: Users },
 };
 
 const TYPE_OPTIONS: SelectOption<SharePrincipalType>[] = [
@@ -125,7 +123,6 @@ export function ShareSheet({
     if (share.principal_type === "role") {
       return roles.find((x) => x.id === share.principal_id)?.name ?? "Role";
     }
-    if (share.principal_type === "group") return "Class (legacy)";
     return (
       courses.find((x) => x.id === share.principal_id)?.name ?? "Course"
     );

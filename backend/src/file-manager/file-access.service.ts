@@ -10,17 +10,9 @@ export interface UserPrincipals {
   courseIds: string[];
 }
 
-type PrincipalType = 'user' | 'role' | 'course' | 'group';
-
-/**
- * Whether a share row names one of the user's principals.
- *
- * `group` shares (the old class shares) no longer match anyone: classes are
- * gone, and an owner who still wants those students to see a file shares it
- * with the course that replaced the class.
- */
+/** Whether a share row names one of the user's principals. */
 function matches(
-  share: { principal_type: PrincipalType; principal_id: string },
+  share: { principal_type: string; principal_id: string },
   principals: UserPrincipals,
 ): boolean {
   switch (share.principal_type) {

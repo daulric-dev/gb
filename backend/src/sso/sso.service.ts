@@ -1,29 +1,64 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
-import type { User } from '@supabase/supabase-js';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { primaryOrigin } from '@/config/origins';
+import { AccountService } from '@/account/account.service';
+import { SessionService } from '@/account/session.service';
 import {
   EmailDomainService,
   type VerifiedDomain,
 } from '@/email-domain/email-domain.service';
 import { SsoRegistry, info } from './sso.registry';
-import type { SsoAdapter, SsoProfile, SsoProviderInfo } from './sso.types';
+import { apiBase, oidcRedirectUri } from './sso.config';
+import { SamlAdapter } from './adapters/saml.adapter';
+import type {
+  SsoAdapter,
+  SsoDomainConfig,
+  SsoIdentity,
+  SsoProfile,
+  SsoProviderInfo,
+} from './sso.types';
 
 export type SsoPlatform = 'web' | 'mobile';
 
 /** Where the mobile app picks up a finished sign-in. */
 const MOBILE_RETURN = process.env.MOBILE_SSO_RETURN_URL || 'gradebook://sso';
+const STATE_TTL_S = 10 * 60;
 const HANDOFF_TTL_S = 120;
+/**
+ * Ties a sign-in to the browser that started it, so nobody can finish their
+ * own sign-in in someone else's browser (login CSRF).
+ */
+export const FLOW_COOKIE = 'gb_sso_flow';
+const FLOW_COOKIE_PATH = '/api/auth/sso';
+
+const stateKey = (state: string) => `sso-state:${state}`;
+const handoffKey = (code: string) => `sso-handoff:${code}`;
+const sha256 = (value: string) => createHash('sha256').update(value).digest();
+
+/** A sign-in between /start and the callback, kept server side. */
+export interface PendingSignIn {
+  provider: string;
+  platform: SsoPlatform;
+  next: string | null;
+  /** The verified domain the sign-in started for, reloaded at the end. */
+  domainId: string | null;
+  /** Adapter secrets: PKCE verifier, nonce, SAML request id, issuer. */
+  secrets: Record<string, string>;
+  /** SHA-256 (hex) of the flow cookie set on the starting browser. */
+  binding: string;
+  /** SAML: the checked identity, between the ACS and the callback. */
+  identity?: SsoIdentity;
+}
 
 /**
  * A relative path on our own site, or null. Sign-in redirects after the
@@ -46,26 +81,41 @@ export function safeNext(next: unknown): string | null {
   }
 }
 
+function domainConfig(d: VerifiedDomain | null): SsoDomainConfig | null {
+  return d
+    ? {
+        id: d.id,
+        domain: d.domain,
+        azureTenantId: d.azureTenantId,
+        samlEntryPoint: d.samlEntryPoint,
+        samlIssuer: d.samlIssuer,
+        samlCertificate: d.samlCertificate,
+      }
+    : null;
+}
+
 /**
- * Sign-in through a school's identity provider, end to end.
+ * Sign-in through a school's identity provider, end to end, with our own
+ * OpenID Connect and SAML.
  *
- * The browser goes provider -> our callback -> the app. Nothing about the
- * provider leaks past this service: the adapter starts the sign-in, reads the
- * profile, and says whether it vouches for the school domain; this service
- * turns that into a GradeBook profile and, when the domain is the school's,
- * a seat in the school - so a student with a school account never fills in a
- * form.
+ * The browser goes /start -> provider -> our callback (or SAML ACS) -> the
+ * app. The adapter builds the provider URL, checks the response, and says
+ * whether it vouches for the school domain; this service keeps the pending
+ * state, finds or creates the user, starts a session, and - when the domain
+ * is the school's - gives them a profile and a seat in the school, so a
+ * student with a school account never fills in a form.
  */
 @Injectable()
 export class SsoService {
   private readonly logger = new Logger(SsoService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
     private readonly registry: SsoRegistry,
     private readonly domains: EmailDomainService,
     private readonly prisma: PrismaService,
+    private readonly accounts: AccountService,
+    private readonly sessions: SessionService,
   ) {}
 
   providers(): SsoProviderInfo[] {
@@ -79,21 +129,20 @@ export class SsoService {
   async discover(email: string) {
     const domain = await this.domains.verifiedDomainFor(email);
     const adapter = this.registry.get(domain?.ssoProvider);
+    const ready = !!adapter && !!domain && adapter.readyFor(domain);
     return {
-      provider: adapter ? info(adapter) : null,
-      required: !!(adapter && domain?.ssoRequired),
+      provider: ready && adapter ? info(adapter) : null,
+      required: !!(ready && domain?.ssoRequired),
     };
   }
 
-  private callbackUrl(
-    req: FastifyRequest,
-    params: Record<string, string>,
-  ): string {
-    const base =
-      process.env.API_URL?.replace(/\/+$/, '') ||
-      `${req.protocol}://${req.headers.host as string}`;
-    return `${base}/api/auth/sso/callback?${new URLSearchParams(params).toString()}`;
+  /** Our SP metadata XML, or null when SAML is off. */
+  samlMetadata(): string | null {
+    const adapter = this.registry.get('saml');
+    return adapter instanceof SamlAdapter ? adapter.metadata() : null;
   }
+
+  // ── start ─────────────────────────────────────────────────────────────────
 
   /** The provider's sign-in URL; the controller redirects there. */
   async start(
@@ -108,28 +157,19 @@ export class SsoService {
 
     const email = input.email?.trim().toLowerCase() || undefined;
     const domain = email ? await this.domains.verifiedDomainFor(email) : null;
+    const state = randomBytes(24).toString('base64url');
+    const flow = randomBytes(24).toString('base64url');
 
-    const params: Record<string, string> = {
-      provider: adapter.id,
-      platform: input.platform === 'mobile' ? 'mobile' : 'web',
-    };
-    const next = safeNext(input.next);
-    if (next) params.next = next;
-
-    // The client keeps the PKCE verifier in a cookie on our domain, which the
-    // callback reads back.
-    const client = this.supabaseService.createUserClient(req, reply, 'public');
+    let started: Awaited<ReturnType<SsoAdapter['start']>>;
     try {
-      return await adapter.start({
-        client,
-        redirectTo: this.callbackUrl(req, params),
+      started = await adapter.start({
+        state,
+        redirectUri: oidcRedirectUri(req),
         email,
-        domain:
-          domain?.ssoProvider === adapter.id
-            ? domain.domain
-            : email?.split('@')[1],
+        domain: domainConfig(domain),
       });
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       this.logger.warn(
         `SSO start via ${adapter.id} failed: ${(err as Error).message}`,
       );
@@ -137,6 +177,82 @@ export class SsoService {
         `Could not start sign-in with ${adapter.label}`,
       );
     }
+
+    const pending: PendingSignIn = {
+      provider: adapter.id,
+      platform: input.platform === 'mobile' ? 'mobile' : 'web',
+      next: safeNext(input.next),
+      domainId: domain?.id ?? null,
+      secrets: started.secrets,
+      binding: sha256(flow).toString('hex'),
+    };
+    await this.cache.set(stateKey(state), pending, STATE_TTL_S);
+
+    reply.setCookie(FLOW_COOKIE, flow, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: FLOW_COOKIE_PATH,
+      maxAge: STATE_TTL_S,
+    });
+    return started.url;
+  }
+
+  // ── finish ────────────────────────────────────────────────────────────────
+
+  private failUrl(platform: SsoPlatform, reason: string): string {
+    return platform === 'mobile'
+      ? `${MOBILE_RETURN}?error=${encodeURIComponent(reason)}`
+      : `${primaryOrigin()}/login?error=${encodeURIComponent(reason)}`;
+  }
+
+  /** The pending sign-in for a state, removed: each state works once. */
+  async takeState(state: unknown): Promise<PendingSignIn | null> {
+    if (typeof state !== 'string' || !state || state.length > 128) return null;
+    const pending = (await this.cache.get(stateKey(state))) as PendingSignIn | null;
+    await this.cache.delete(stateKey(state));
+    return pending;
+  }
+
+  private async reloadDomain(pending: PendingSignIn): Promise<SsoDomainConfig | null> {
+    if (!pending.domainId) return null;
+    return domainConfig(await this.domains.verifiedDomainById(pending.domainId));
+  }
+
+  /**
+   * SAML: the IdP posts the assertion here (cross-site, so the browser sends
+   * no Lax cookies). Check it, park the identity under the state, and send
+   * the browser on to the callback, which runs as a top-level GET with the
+   * flow cookie. Never throws.
+   */
+  async samlAcs(body: Record<string, unknown>): Promise<string> {
+    const state = typeof body.RelayState === 'string' ? body.RelayState : '';
+    const samlResponse =
+      typeof body.SAMLResponse === 'string' ? body.SAMLResponse : '';
+    // An assertion already accepted for this state waits for the callback;
+    // a second post (a replay) neither replaces nor consumes it.
+    const parked = (await this.cache.get(stateKey(state))) as PendingSignIn | null;
+    if (parked?.identity) return this.failUrl(parked.platform, 'expired');
+    const pending = await this.takeState(state);
+    if (!pending || pending.provider !== 'saml') {
+      return this.failUrl(pending?.platform ?? 'web', 'expired');
+    }
+    const adapter = this.registry.get('saml');
+    if (!adapter) return this.failUrl(pending.platform, 'provider');
+
+    try {
+      const identity = await adapter.complete({
+        state,
+        secrets: pending.secrets,
+        domain: await this.reloadDomain(pending),
+        samlResponse,
+      });
+      await this.cache.set(stateKey(state), { ...pending, identity }, HANDOFF_TTL_S);
+    } catch (err) {
+      this.logger.warn(`SAML response rejected: ${(err as Error).message}`);
+      return this.failUrl(pending.platform, 'failed');
+    }
+    return `${apiBase()}/api/auth/sso/callback?state=${encodeURIComponent(state)}`;
   }
 
   /**
@@ -149,106 +265,104 @@ export class SsoService {
     reply: FastifyReply,
     query: Record<string, string | undefined>,
   ): Promise<string> {
-    const platform: SsoPlatform =
-      query.platform === 'mobile' ? 'mobile' : 'web';
-    const fail = (reason: string) =>
-      platform === 'mobile'
-        ? `${MOBILE_RETURN}?error=${encodeURIComponent(reason)}`
-        : `${primaryOrigin()}/login?error=${encodeURIComponent(reason)}`;
+    const pending = await this.takeState(query.state);
+    const flow = req.cookies?.[FLOW_COOKIE];
+    reply.clearCookie(FLOW_COOKIE, { path: FLOW_COOKIE_PATH });
+    if (!pending) return this.failUrl('web', query.error ? 'cancelled' : 'expired');
 
-    if (query.error || !query.code) {
+    const fail = (reason: string) => this.failUrl(pending.platform, reason);
+    if (!flow || !timingSafeEqual(sha256(flow), Buffer.from(pending.binding, 'hex'))) {
+      return fail('expired');
+    }
+    if (query.error) {
       return fail(query.error_description || query.error || 'cancelled');
     }
 
-    const client = this.supabaseService.createUserClient(req, reply, 'public');
-    const { data, error } = await client.auth.exchangeCodeForSession(
-      query.code,
-    );
-    if (error || !data.session || !data.user) {
-      this.logger.warn(`SSO code exchange failed: ${error?.message}`);
+    const adapter = this.registry.get(pending.provider);
+    if (!adapter) return fail('provider');
+
+    let identity: SsoIdentity;
+    try {
+      identity =
+        pending.identity ??
+        (await adapter.complete({
+          state: query.state!,
+          secrets: pending.secrets,
+          domain: await this.reloadDomain(pending),
+          callbackUrl: this.currentUrl(req),
+        }));
+    } catch (err) {
+      this.logger.warn(
+        `SSO response from ${adapter.id} rejected: ${(err as Error).message}`,
+      );
       return fail('expired');
     }
 
-    const adapter =
-      this.registry.get(query.provider) ??
-      this.registry.forIdentityProvider(data.user.app_metadata?.provider ?? '');
-    if (!adapter) {
-      await client.auth.signOut();
-      return fail('provider');
-    }
-
+    let user: { id: string; email: string };
     let destination: string;
     try {
-      destination = await this.provision(
-        data.user,
-        adapter,
-        safeNext(query.next),
-      );
+      ({ user, destination } = await this.signIn(identity, adapter, pending.next));
     } catch (err) {
-      await client.auth.signOut();
       const message =
         err instanceof ForbiddenException ? err.message : 'failed';
       if (!(err instanceof ForbiddenException)) {
-        this.logger.error(`SSO provisioning failed: ${(err as Error).message}`);
+        this.logger.error(`SSO sign-in failed: ${(err as Error).message}`);
       }
       return fail(message);
     }
 
-    if (platform === 'mobile') {
-      // The app has its own cookie jar; the browser's session cannot reach
-      // it. Hand the tokens over once, briefly, by an unguessable code.
+    if (pending.platform === 'mobile') {
+      // The app has its own cookie jar; the browser's cookies cannot reach
+      // it. Hand the sign-in over once, briefly, by an unguessable code.
       const code = randomBytes(24).toString('base64url');
       await this.cache.set(
-        `sso-handoff:${code}`,
-        {
-          accessToken: data.session.access_token,
-          refreshToken: data.session.refresh_token,
-        },
+        handoffKey(code),
+        { userId: user.id, provider: adapter.id },
         HANDOFF_TTL_S,
       );
-      // The browser keeps no session; the app is the one signing in.
-      await client.auth.signOut({ scope: 'local' });
       return `${MOBILE_RETURN}?code=${code}`;
     }
 
+    await this.sessions.create(reply, req, user.id, adapter.id);
     return `${primaryOrigin()}${destination}`;
+  }
+
+  /** The callback URL as the provider called it, for openid-client. */
+  private currentUrl(req: FastifyRequest): URL {
+    const url = new URL(oidcRedirectUri(req));
+    const query = req.url.indexOf('?');
+    if (query >= 0) url.search = req.url.slice(query);
+    return url;
   }
 
   /** The app redeems a handoff code; the session lands in its cookie jar. */
   async handoff(req: FastifyRequest, reply: FastifyReply, code: string) {
-    const key = `sso-handoff:${code}`;
-    const tokens = (await this.cache.get(key)) as {
-      accessToken: string;
-      refreshToken: string;
+    const key = handoffKey(code);
+    const handoff = (await this.cache.get(key)) as {
+      userId: string;
+      provider: string;
     } | null;
     // Single use, whether or not the rest works.
     await this.cache.delete(key);
-    if (!tokens)
+    if (!handoff)
       throw new BadRequestException(
         'This sign-in link has expired. Try again.',
       );
-
-    const client = this.supabaseService.createUserClient(req, reply, 'public');
-    const { error } = await client.auth.setSession({
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
-    });
-    if (error)
-      throw new BadRequestException(
-        'This sign-in link has expired. Try again.',
-      );
+    await this.sessions.create(reply, req, handoff.userId, handoff.provider);
   }
 
+  // ── accounts ──────────────────────────────────────────────────────────────
+
   /**
-   * Make sure the user has a profile, and a school when their provider vouches
-   * for a school domain. Returns the path to send them to.
+   * The user for a checked identity, plus their profile and school. Returns
+   * where to send them.
    */
-  async provision(
-    user: User,
+  async signIn(
+    identity: SsoIdentity,
     adapter: SsoAdapter,
     next: string | null,
-  ): Promise<string> {
-    const domain = await this.domains.verifiedDomainFor(user.email);
+  ): Promise<{ user: { id: string; email: string }; destination: string }> {
+    const domain = await this.domains.verifiedDomainFor(identity.email);
 
     // A school that requires its own provider gets it; signing in with a
     // different one is refused rather than quietly allowed.
@@ -265,11 +379,44 @@ export class SsoService {
 
     const vouched =
       !!domain &&
-      adapter.vouchesForDomain(user, {
+      adapter.vouchesForDomain(identity, {
         domain: domain.domain,
         azureTenantId: domain.azureTenantId,
       });
+    const emailTrusted = vouched || !!adapter.verifiesEmail?.(identity);
 
+    const user = await this.accounts.userForIdentity(
+      {
+        provider: identity.provider,
+        subject: identity.subject,
+        email: identity.email,
+        claims: identity.claims,
+      },
+      emailTrusted,
+    );
+
+    // An identity linked earlier may carry a different address than the
+    // account now; the domain only counts when it is the account's own.
+    const sameAddress = identity.email?.toLowerCase() === user.email;
+    const destination = await this.provision(
+      user,
+      identity.profile,
+      vouched && sameAddress ? domain : null,
+      next,
+    );
+    return { user, destination };
+  }
+
+  /**
+   * Make sure the user has a profile, and a school when their provider vouches
+   * for a school domain. Returns the path to send them to.
+   */
+  async provision(
+    user: { id: string; email: string },
+    profile: SsoProfile,
+    vouchedDomain: VerifiedDomain | null,
+    next: string | null,
+  ): Promise<string> {
     const existing = await this.prisma.user_profile.findUnique({
       where: { id: user.id },
       select: {
@@ -280,8 +427,7 @@ export class SsoService {
       },
     });
 
-    const accountType = this.accountTypeFor(vouched ? domain : null);
-    const profile = adapter.profileFrom(user);
+    const accountType = this.accountTypeFor(vouchedDomain);
 
     if (!existing) {
       // Names only when we can also say what kind of account this is: a
@@ -314,7 +460,7 @@ export class SsoService {
     }
 
     const alreadySeated = !!existing?.school_id;
-    if (!alreadySeated && vouched) {
+    if (!alreadySeated && vouchedDomain) {
       // Same rules as signing up with an email code: the account type picks
       // student or staff, staff may need approval.
       await this.domains.tryAutoJoin(user.id, user.email);
@@ -333,13 +479,18 @@ export class SsoService {
   }
 
   /**
-   * Names to prefill onboarding with, from the provider the user signed in
-   * through. Empty for email-code accounts.
+   * Names to prefill onboarding with, from the provider the user last signed
+   * in through. Null for email-code accounts.
    */
-  suggestedProfile(user: User): SsoProfile | null {
-    const adapter = this.registry.forIdentityProvider(
-      user.app_metadata?.provider ?? '',
-    );
-    return adapter ? adapter.profileFrom(user) : null;
+  async suggestedProfile(userId: string): Promise<SsoProfile | null> {
+    const identity = await this.prisma.identity.findFirst({
+      where: { user_id: userId },
+      orderBy: { last_used_at: 'desc' },
+      select: { provider: true, claims: true },
+    });
+    if (!identity) return null;
+    const adapter = this.registry.get(identity.provider);
+    const claims = (identity.claims ?? {}) as Record<string, unknown>;
+    return adapter ? adapter.profileFrom(claims) : null;
   }
 }

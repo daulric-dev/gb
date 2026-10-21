@@ -122,8 +122,6 @@ export class FileShareNotifyHandler {
         ];
       }
 
-      // Legacy class (`group`) shares no longer grant access to anyone, so
-      // they notify no one either.
       default:
         return [];
     }

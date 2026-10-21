@@ -12,9 +12,8 @@ import { PrismaClient } from '@/generated/prisma/client';
  * is what lets the same client run in a container, on serverless Node, or on
  * Workers with a pooled connection string - nothing here is host-specific.
  *
- * The API connects as an owner role and enforces access in code, as it did
- * with the Supabase service-role client; row-level security never applied
- * to these queries.
+ * The API connects as an owner role and enforces every access rule in code;
+ * the schema has no row-level security.
  */
 @Injectable()
 export class PrismaService

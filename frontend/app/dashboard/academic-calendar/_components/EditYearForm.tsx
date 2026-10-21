@@ -7,14 +7,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { type AcademicYear, type GradingModel, GRADING_MODEL_LABELS } from "./types";
+import type { AcademicYear } from "./types";
 
 interface EditYearFormProps {
   year: AcademicYear;
@@ -26,9 +19,6 @@ export function EditYearForm({ year, onSuccess }: EditYearFormProps) {
   const name = useSignal(year.name);
   const startDate = useSignal(year.start_date);
   const endDate = useSignal(year.end_date);
-  const gradingModel = useSignal<GradingModel>(year.grading_model);
-  const examWeight = useSignal(year.year_exam_weight ?? 60);
-  const courseworkWeight = useSignal(year.year_coursework_weight ?? 40);
   const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -39,9 +29,6 @@ export function EditYearForm({ year, onSuccess }: EditYearFormProps) {
       name: name.value,
       startDate: startDate.value,
       endDate: endDate.value,
-      gradingModel: gradingModel.value,
-      yearExamWeight: examWeight.value,
-      yearCourseworkWeight: courseworkWeight.value,
     };
 
     try {
@@ -88,57 +75,6 @@ export function EditYearForm({ year, onSuccess }: EditYearFormProps) {
             required
           />
         </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="editGradingModel">Grading Model</Label>
-        <Select
-          value={gradingModel.value}
-          onValueChange={(v) => (gradingModel.value = v as GradingModel)}
-          items={Object.entries(GRADING_MODEL_LABELS).map(([value, label]) => ({
-            value,
-            label,
-          }))}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(GRADING_MODEL_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="editExamWeight">Exam Weight (%)</Label>
-          <Input
-            id="editExamWeight"
-            type="number"
-            min={0}
-            max={100}
-            value={examWeight.value}
-            onChange={(e) => (examWeight.value = Number(e.target.value))}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="editCwWeight">Coursework Weight (%)</Label>
-          <Input
-            id="editCwWeight"
-            type="number"
-            min={0}
-            max={100}
-            value={courseworkWeight.value}
-            onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
-            required
-          />
-        </div>
-        <p className="col-span-2 text-xs text-muted-foreground">
-          Weights must add up to 100%
-        </p>
       </div>
       <Button type="submit" className="w-full" disabled={loading.value}>
         {loading.value ? "Saving..." : "Save Changes"}

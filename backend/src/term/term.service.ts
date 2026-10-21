@@ -37,12 +37,6 @@ export class TermService {
   ) {}
 
   async create(userId: string, dto: CreateTermDto) {
-    if (dto.examWeight + dto.courseworkWeight !== 100) {
-      throw new BadRequestException(
-        'Exam weight and coursework weight must add up to 100',
-      );
-    }
-
     if (new Date(dto.startDate) >= new Date(dto.endDate)) {
       throw new BadRequestException('Start date must be before end date');
     }
@@ -66,9 +60,6 @@ export class TermService {
             name,
             start_date: parseDateOnly(dto.startDate),
             end_date: parseDateOnly(dto.endDate),
-            exam_weight: dto.examWeight,
-            coursework_weight: dto.courseworkWeight,
-            is_ministry_reporting: dto.isMinistryReporting ?? false,
             sort_order: sortOrder,
           },
         }),
@@ -134,17 +125,7 @@ export class TermService {
   async update(userId: string, termId: string, dto: UpdateTermDto) {
     // findOne enforces school scope; if the term isn't in the caller's school,
     // this throws NotFoundException before any write happens.
-    const current = await this.findOne(userId, termId);
-
-    if (dto.examWeight !== undefined || dto.courseworkWeight !== undefined) {
-      const examW = dto.examWeight ?? current.exam_weight;
-      const courseworkW = dto.courseworkWeight ?? current.coursework_weight;
-      if ((examW as number) + (courseworkW as number) !== 100) {
-        throw new BadRequestException(
-          'Exam weight and coursework weight must add up to 100',
-        );
-      }
-    }
+    await this.findOne(userId, termId);
 
     const updateData: Prisma.termUpdateManyMutationInput = {};
     if (dto.name !== undefined) {
@@ -156,11 +137,6 @@ export class TermService {
       updateData.start_date = parseDateOnly(dto.startDate);
     if (dto.endDate !== undefined)
       updateData.end_date = parseDateOnly(dto.endDate);
-    if (dto.examWeight !== undefined) updateData.exam_weight = dto.examWeight;
-    if (dto.courseworkWeight !== undefined)
-      updateData.coursework_weight = dto.courseworkWeight;
-    if (dto.isMinistryReporting !== undefined)
-      updateData.is_ministry_reporting = dto.isMinistryReporting;
     if (dto.sortOrder !== undefined) updateData.sort_order = dto.sortOrder;
 
     let data: TermRow;
@@ -198,7 +174,7 @@ export class TermService {
     } catch (err) {
       if (isForeignKeyViolation(err)) {
         throw new ConflictException(
-          'Cannot delete term - it has existing assessments or grades',
+          'Cannot delete term - courses still use it',
         );
       }
       this.logger.error(`Failed to delete term: ${(err as Error).message}`);
