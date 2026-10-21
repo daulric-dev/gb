@@ -3,160 +3,154 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
-import { RequirePermission } from '@/permission/require-permission.decorator';
-import { ClassTeacherGuard } from '@/class/class-teacher.guard';
-import { VersioningService } from '@/versioning/versioning.service';
 import { AttendanceService } from './attendance.service';
-import { MarkAttendanceDto } from './dto/mark-attendance.dto';
-import { BulkMarkAttendanceDto } from './dto/bulk-mark-attendance.dto';
-import { UpdateAttendanceDto } from './dto/update-attendance.dto';
-import { AttendanceRangeQueryDto } from './dto/attendance-range.dto';
+import { AttendanceRealtime } from './attendance.realtime';
+import { OpenAttendanceDto, SetAttendanceRecordDto } from './dto/attendance.dto';
+import { openEventStream } from './sse';
 
+/**
+ * Taking attendance in a course. Access is the caller's role in the course
+ * (CourseAccessService): any staff role runs sessions and marks; deleting a
+ * session takes a teacher.
+ */
 @ApiTags('Attendance')
 @ApiBearerAuth()
-@Controller('classes/:classId/attendance')
-@UseGuards(AuthGuard, PermissionGuard)
+@Controller('courses/:courseId/attendance')
+@UseGuards(AuthGuard)
 export class AttendanceController {
   constructor(
-    private readonly attendanceService: AttendanceService,
-    private readonly versioning: VersioningService,
+    private readonly attendance: AttendanceService,
+    private readonly realtime: AttendanceRealtime,
   ) {}
 
-  @RequirePermission('attendance', 'read')
-  @Get()
-  async roster(
+  @Get('sessions')
+  async list(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Query('date') date: string,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
-    const raw = await this.attendanceService.getClassRosterForDate(
-      classId,
-      date,
-    );
-    return this.versioning.resolve(req, 'attendance.roster')(raw);
+    return this.attendance.list(req.user.id as string, courseId);
   }
 
-  @RequirePermission('attendance', 'create')
-  @UseGuards(ClassTeacherGuard)
-  @Post()
-  async mark(
+  @Post('sessions')
+  async open(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Body() dto: MarkAttendanceDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() dto: OpenAttendanceDto,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.attendanceService.mark(classId, userId, dto);
-    return this.versioning.resolve(req, 'attendance.marked')(raw);
+    return this.attendance.open(req.user.id as string, courseId, dto);
   }
 
-  @RequirePermission('attendance', 'create')
-  @UseGuards(ClassTeacherGuard)
-  @Post('bulk')
-  async bulkMark(
+  @Get('sessions/:sessionId')
+  async detail(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Body() dto: BulkMarkAttendanceDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.attendanceService.bulkMark(classId, userId, dto);
-    return this.versioning.resolve(req, 'attendance.bulkMarked')(raw);
+    return this.attendance.detail(req.user.id as string, courseId, sessionId);
   }
 
-  @RequirePermission('attendance', 'update')
-  @UseGuards(ClassTeacherGuard)
-  @Patch(':recordId')
-  async update(
+  /** The QR frame the live screen shows now; it rotates every 15 s. */
+  @Get('sessions/:sessionId/qr')
+  async qr(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Param('recordId') recordId: string,
-    @Body() dto: UpdateAttendanceDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
-    const userId: string = req.user.id;
-    const raw = await this.attendanceService.update(
-      classId,
-      recordId,
-      userId,
-      dto,
-    );
-    return this.versioning.resolve(req, 'attendance.updated')(raw);
+    return this.attendance.qr(req.user.id as string, courseId, sessionId);
   }
 
-  @RequirePermission('attendance', 'delete')
-  @UseGuards(ClassTeacherGuard)
-  @Delete(':recordId')
+  @Post('sessions/:sessionId/close')
+  @HttpCode(200)
+  async close(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ) {
+    return this.attendance.close(req.user.id as string, courseId, sessionId);
+  }
+
+  @Delete('sessions/:sessionId')
+  @HttpCode(204)
   async remove(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Param('recordId') recordId: string,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
-    const raw = await this.attendanceService.delete(classId, recordId);
-    return this.versioning.resolve(req, 'attendance.deleted')(raw);
+    await this.attendance.remove(req.user.id as string, courseId, sessionId);
   }
 
-  @RequirePermission('attendance', 'read')
+  @Patch('sessions/:sessionId/records/:studentId')
+  async setRecord(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Body() dto: SetAttendanceRecordDto,
+  ) {
+    return this.attendance.setRecord(
+      req.user.id as string,
+      courseId,
+      sessionId,
+      studentId,
+      dto,
+    );
+  }
+
+  /** Live roster: `attendance.record` per check-in or change, then `attendance.closed`. */
+  @Get('sessions/:sessionId/stream')
+  @ApiProduces('text/event-stream')
+  async stream(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    await this.attendance.assertSession(
+      req.user.id as string,
+      courseId,
+      sessionId,
+    );
+    await openEventStream(req, reply, (send) =>
+      this.realtime.subscribeSession(sessionId, send),
+    );
+  }
+
   @Get('summary')
   async summary(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Query() range: AttendanceRangeQueryDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
-    const raw = await this.attendanceService.getClassSummary(
-      classId,
-      range.from,
-      range.to,
-    );
-    return this.versioning.resolve(req, 'attendance.classSummary')(raw);
+    return this.attendance.summary(req.user.id as string, courseId);
   }
 
-  @RequirePermission('attendance', 'read')
-  @Get('students/:studentId')
-  async studentRange(
+  @Get('export')
+  @ApiProduces('text/csv')
+  async export(
     @Req() req: any,
-    @Param('classId') classId: string,
-    @Param('studentId') studentId: string,
-    @Query() range: AttendanceRangeQueryDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Res() res: FastifyReply,
   ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
-    const raw = await this.attendanceService.getStudentRange(
-      classId,
-      studentId,
-      range.from,
-      range.to,
+    const { csv, filename } = await this.attendance.exportCsv(
+      req.user.id as string,
+      courseId,
     );
-    return this.versioning.resolve(req, 'attendance.studentRange')(raw);
-  }
 
-  @RequirePermission('attendance', 'read')
-  @Get('students/:studentId/summary')
-  async studentSummary(
-    @Req() req: any,
-    @Param('classId') classId: string,
-    @Param('studentId') studentId: string,
-    @Query() range: AttendanceRangeQueryDto,
-  ) {
-    const userId: string = req.user.id;
-    await this.attendanceService.assertCanViewClass(userId, classId);
-    const raw = await this.attendanceService.getStudentSummary(
-      classId,
-      studentId,
-      range.from,
-      range.to,
-    );
-    return this.versioning.resolve(req, 'attendance.studentSummary')(raw);
+    return res
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .header('Cache-Control', 'private, no-store')
+      .send(csv);
   }
 }

@@ -1,6 +1,7 @@
 import {
   IsNotEmpty,
-  IsEnum,
+  IsString,
+  MaxLength,
   IsDateString,
   IsInt,
   IsOptional,
@@ -15,9 +16,11 @@ export class CreateTermDto {
   @IsNotEmpty()
   academicYearId!: string;
 
-  @IsEnum(['michaelmas', 'hilary', 'trinity'])
+  /** Free text: "Michaelmas", "Semester 1", "Fall 2026". */
+  @IsString()
   @IsNotEmpty()
-  name!: 'michaelmas' | 'hilary' | 'trinity';
+  @MaxLength(60)
+  name!: string;
 
   @IsDateString()
   @IsNotEmpty()
@@ -43,7 +46,7 @@ export class CreateTermDto {
 
   @IsOptional()
   @IsInt()
-  @Min(1)
-  @Max(3)
+  @Min(0)
+  @Max(50)
   sortOrder?: number;
 }

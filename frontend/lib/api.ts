@@ -1,3 +1,5 @@
+import { loginPath } from "@/lib/routing";
+
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
 
 export function buildUrl(path: string): string {
@@ -26,7 +28,8 @@ function redirectToLogin() {
     return;
   }
 
-  window.location.assign(new URL("/login", window.location.origin));
+  const { pathname, search, origin } = window.location;
+  window.location.assign(new URL(loginPath(`${pathname}${search}`), origin));
 }
 
 function handleUnauthorized(skipAuthRedirect: boolean): never {

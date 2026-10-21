@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Download, Loader2 } from "lucide-react";
 import { fetchFileBlob } from "@/lib/files/content";
-import { downloadBlob } from "@/lib/reports/download";
+import { downloadBlob } from "@/lib/download";
 import type { FileItem } from "./types";
 
 export function FileViewerDialog({

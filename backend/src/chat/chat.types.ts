@@ -5,6 +5,7 @@ export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
+  /** `class_invite` is legacy: no longer sent, kept so old messages load. */
   type: 'text' | 'file_share' | 'class_invite' | 'system';
   body: string | null;
   metadata: Record<string, unknown>;

@@ -95,9 +95,9 @@ describe('PermissionService', () => {
     const svc = new PermissionService(sb as any, cache);
 
     const permissions = await svc.getRolePermissions(ADMIN, 'r1');
-    expect(permissions).toContain('class:create');
+    expect(permissions).toContain('course:create');
     expect(permissions).toContain('student:read');
-    expect(permissions).not.toContain('class:update');
+    expect(permissions).not.toContain('course:update');
   });
 
   test('setRolePermissions rejects unknown keys', async () => {

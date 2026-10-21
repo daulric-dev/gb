@@ -55,7 +55,7 @@ describe('PermissionGuard', () => {
         school_management_role: { data: [], error: null },
       },
     });
-    const guard = guardWith(sb, 'attendance:create');
+    const guard = guardWith(sb, 'course:create');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
@@ -67,7 +67,7 @@ describe('PermissionGuard', () => {
         school_management_role: { data: [], error: null },
       },
     });
-    const guard = guardWith(sb, 'class:delete');
+    const guard = guardWith(sb, 'course:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
       ForbiddenException,
@@ -83,12 +83,12 @@ describe('PermissionGuard', () => {
           error: null,
         },
         school_role_permission: {
-          data: [{ permission_catalog: { key: 'class:delete' } }],
+          data: [{ permission_catalog: { key: 'course:delete' } }],
           error: null,
         },
       },
     });
-    const guard = guardWith(sb, 'class:delete');
+    const guard = guardWith(sb, 'course:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
@@ -118,19 +118,21 @@ describe('PermissionGuard', () => {
     );
   });
 
-  test('resolves school context from a classId when no :schoolId is present', async () => {
+  test('resolves school context from a courseId when no :schoolId is present', async () => {
     const sb = createRoutingSupabase({
       tables: {
-        student_group: {
-          data: { academic_year: { school_id: 's1' } },
-          error: null,
-        },
+        'course.course': { data: { school_id: 's1' }, error: null },
         school_management: { data: { id: 'm1', role: 'admin' }, error: null },
       },
     });
-    const guard = guardWith(sb, 'attendance:read');
-    const ctx = makeContext({ user: { id: 'u1' }, params: { classId: 'c1' } });
+    const guard = guardWith(sb, 'course:read');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { courseId: 'c1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
+
+    const lookup = sb._calls.find(
+      (c: any) => c.schema === 'course' && c.table === 'course',
+    );
+    expect(lookup?.filters.id).toBe('c1');
   });
 
   test('uses the cached effective set without hitting the DB', async () => {

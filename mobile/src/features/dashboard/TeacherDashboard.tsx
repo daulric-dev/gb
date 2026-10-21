@@ -1,124 +1,102 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { BookOpen, Users } from "lucide-react-native";
+import { useRouter, type Href } from "expo-router";
+import { BookOpen, Hand, Users } from "lucide-react-native";
 import { api } from "@/lib/api";
-import { useTheme } from "@/theme/ThemeProvider";
-import type { ClassItem } from "@/lib/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/Card";
+import type { CourseSummary } from "@/lib/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { StatCard } from "@/components/ui/StatCard";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useTheme } from "@/theme/ThemeProvider";
+import { CoursesOnWebCard } from "./CoursesOnWebCard";
 
-interface ClassReport {
-  classId: string;
-  className: string;
-  isClassTeacher: boolean;
-  studentCount: number;
-}
-
-export function TeacherDashboard({ classes }: { classes: ClassItem[] }) {
-  const { colors } = useTheme();
-  const [reports, setReports] = useState<ClassReport[]>([]);
+/**
+ * The staff member's courses at a glance. Building and marking a course is
+ * web-only for now; the one quick action here is taking attendance.
+ */
+export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
+  const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { colors } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
-    if (classes.length === 0) {
-      setReports([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    Promise.all(
-      classes.map(async (c) => {
-        const students = await api<{ id: string }[]>(
-          `/classes/${c.id}/students`,
-        ).catch(() => [] as { id: string }[]);
-        return {
-          classId: c.id,
-          className: c.name ?? "Untitled class",
-          isClassTeacher: c.isClassTeacher === true,
-          studentCount: students.length,
-        };
-      }),
-    ).then((built) => {
-      if (cancelled) return;
-      setReports(built);
-      setLoading(false);
-    });
+    api<CourseSummary[]>("/courses")
+      .then((data) => !cancelled && setCourses(data))
+      .catch(() => !cancelled && setCourses([]))
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [classes]);
+  }, [refreshKey]);
 
-  if (classes.length === 0) {
-    return (
-      <Card>
-        <CardContent style={styles.empty}>
-          <BookOpen size={40} color={colors.mutedForeground} />
-          <Text weight="600" style={{ marginTop: 12 }}>
-            You haven&apos;t been assigned any classes yet
-          </Text>
-          <Text variant="muted" style={{ textAlign: "center", marginTop: 4 }}>
-            Once an admin assigns you to a class, your students will appear
-            here.
-          </Text>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const totalStudents = reports.reduce((sum, r) => sum + r.studentCount, 0);
+  const active = courses.filter((c) => c.status !== "archived");
+  const totalStudents = active.reduce((sum, c) => sum + (c.studentCount ?? 0), 0);
 
   return (
     <View style={styles.wrap}>
-      <Text variant="muted">Overview of your classes and students.</Text>
-
       <View style={styles.statGrid}>
-        <StatCard icon={BookOpen} value={classes.length} label="My Classes" />
+        <StatCard
+          icon={BookOpen}
+          value={active.length}
+          label="My Courses"
+          loading={loading}
+        />
         <StatCard
           icon={Users}
-          value={loading ? "…" : totalStudents}
-          label="Total Students"
+          value={totalStudents}
+          label="Students"
           loading={loading}
         />
       </View>
 
-      <View style={{ gap: 12 }}>
-        <Text variant="subtitle">My Classes</Text>
-        {loading
-          ? classes.map((c) => (
-              <Skeleton key={c.id} style={{ height: 92, borderRadius: 14 }} />
-            ))
-          : reports.map((report) => (
-              <Card key={report.classId}>
-                <CardHeader style={styles.classHeader}>
-                  <View style={{ flex: 1 }}>
-                    <CardTitle>{report.className}</CardTitle>
-                  </View>
-                  {report.isClassTeacher && (
-                    <Badge variant="secondary">Class Teacher</Badge>
-                  )}
-                </CardHeader>
-                <CardContent style={styles.classStats}>
-                  <View style={styles.stat}>
-                    <Text style={{ fontSize: 18, fontWeight: "700" }}>
-                      {report.studentCount}
-                    </Text>
-                    <Text variant="muted" style={{ fontSize: 12 }}>
-                      Students
-                    </Text>
-                  </View>
-                </CardContent>
-              </Card>
+      <CoursesOnWebCard />
+
+      {loading ? (
+        <Skeleton style={{ height: 120, borderRadius: 14 }} />
+      ) : active.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>My Courses</CardTitle>
+          </CardHeader>
+          <CardContent style={{ gap: 10 }}>
+            {active.map((c) => (
+              <View key={c.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text weight="500" numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                  <Text variant="muted" size="xs">
+                    {[c.code, `${c.studentCount ?? 0} students`]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </Text>
+                </View>
+                {c.status === "draft" ? (
+                  <Badge variant="secondary">Draft</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<Hand size={14} color={colors.secondaryForeground} />}
+                    onPress={() =>
+                      router.push(
+                        `/attendance/take/${c.id}?name=${encodeURIComponent(c.name)}` as Href,
+                      )
+                    }
+                  >
+                    Take attendance
+                  </Button>
+                )}
+              </View>
             ))}
-      </View>
+          </CardContent>
+        </Card>
+      ) : null}
     </View>
   );
 }
@@ -130,22 +108,5 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 12,
   },
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-  },
-  classHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingBottom: 12,
-  },
-  classStats: {
-    flexDirection: "row",
-    paddingTop: 0,
-  },
-  stat: {
-    alignItems: "center",
-  },
+  row: { flexDirection: "row", alignItems: "center", gap: 8 },
 });

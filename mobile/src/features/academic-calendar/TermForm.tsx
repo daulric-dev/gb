@@ -5,20 +5,14 @@ import { useToast } from "@/providers/ToastProvider";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { DateField, toIsoDate } from "@/components/ui/DateField";
 import { Text } from "@/components/ui/Text";
-import {
-  TERM_LABELS,
-  TERM_ORDER,
-  type Term,
-  type TermName,
-} from "./types";
+import { termLabel, type Term } from "./types";
 
 /**
- * Create or edit a term. Pass `term` to edit (name is fixed); otherwise supply
- * `academicYearId` and `existingNames` to create a new one.
+ * Create or edit a term. Pass `term` to edit; otherwise supply
+ * `academicYearId` (and `existingNames` to warn about duplicates).
  * Mirrors the web CreateTermForm / EditTermForm.
  */
 export function TermForm({
@@ -29,17 +23,15 @@ export function TermForm({
 }: {
   term?: Term;
   academicYearId?: string;
-  existingNames?: TermName[];
+  existingNames?: string[];
   onSuccess: () => void;
 }) {
   const toast = useToast();
   const editing = !!term;
   const today = toIsoDate(new Date());
 
-  const availableNames = TERM_ORDER.filter((n) => !existingNames.includes(n));
-
-  const [name, setName] = useState<TermName>(
-    term?.name ?? availableNames[0] ?? "michaelmas",
+  const [name, setName] = useState(
+    term ? termLabel(term.name) : `Term ${existingNames.length + 1}`,
   );
   const [startDate, setStartDate] = useState(term?.start_date ?? today);
   const [endDate, setEndDate] = useState(term?.end_date ?? today);
@@ -52,15 +44,25 @@ export function TermForm({
   );
   const [loading, setLoading] = useState(false);
 
-  const noSlots = !editing && availableNames.length === 0;
+  const trimmed = name.trim();
+  const duplicate =
+    !editing &&
+    existingNames.some(
+      (n) => termLabel(n).toLowerCase() === trimmed.toLowerCase(),
+    );
 
   const submit = async () => {
+    if (!trimmed) {
+      toast.error("Give the term a name");
+      return;
+    }
     setLoading(true);
     try {
       if (editing) {
         await api(`/terms/${term.id}`, {
           method: "PATCH",
           body: {
+            ...(trimmed !== termLabel(term.name) ? { name: trimmed } : {}),
             startDate,
             endDate,
             examWeight: Number(examWeight),
@@ -74,7 +76,7 @@ export function TermForm({
           method: "POST",
           body: {
             academicYearId,
-            name,
+            name: trimmed,
             startDate,
             endDate,
             examWeight: Number(examWeight),
@@ -96,17 +98,16 @@ export function TermForm({
     <View style={{ gap: 16 }}>
       <View style={{ gap: 6 }}>
         <Label>Term</Label>
-        {editing ? (
-          <Text weight="500">{TERM_LABELS[term.name]}</Text>
-        ) : (
-          <Select<TermName>
-            value={name}
-            onChange={setName}
-            options={availableNames.map((n) => ({
-              value: n,
-              label: TERM_LABELS[n],
-            }))}
-          />
+        <Input
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Term 1, Fall, Semester 2"
+          maxLength={60}
+        />
+        {duplicate && (
+          <Text variant="muted" style={{ fontSize: 12 }}>
+            This year already has a term with that name.
+          </Text>
         )}
       </View>
 
@@ -158,7 +159,7 @@ export function TermForm({
         />
       </View>
 
-      <Button onPress={submit} loading={loading} disabled={noSlots}>
+      <Button onPress={submit} loading={loading} disabled={!trimmed}>
         {editing ? "Save Changes" : "Create Term"}
       </Button>
     </View>

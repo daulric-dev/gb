@@ -11,6 +11,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "rls:check": "bun run scripts/rls-check.ts",
     "student:check": "bun run scripts/student-flow-check.ts",
+    "seed:demo": "bun run scripts/seed-demo.ts",
     "start": "nest start",
     "start:dev": "bunx cross-env NODE_ENV=development bun --watch src/main.ts",
     "start:debug": "bunx cross-env NODE_ENV=development nest start --debug --watch",

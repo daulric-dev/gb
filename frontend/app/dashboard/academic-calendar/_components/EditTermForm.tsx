@@ -16,6 +16,7 @@ interface EditTermFormProps {
 
 export function EditTermForm({ term, onSuccess }: EditTermFormProps) {
   useSignals();
+  const name = useSignal(termLabel(term.name));
   const startDate = useSignal(term.start_date);
   const endDate = useSignal(term.end_date);
   const examWeight = useSignal(term.exam_weight);
@@ -31,6 +32,7 @@ export function EditTermForm({ term, onSuccess }: EditTermFormProps) {
       await api(`/terms/${term.id}`, {
         method: "PATCH",
         body: {
+          name: name.value.trim(),
           startDate: startDate.value,
           endDate: endDate.value,
           examWeight: examWeight.value,
@@ -51,8 +53,14 @@ export function EditTermForm({ term, onSuccess }: EditTermFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label>Term</Label>
-        <p className="text-sm font-medium">{termLabel[term.name]}</p>
+        <Label htmlFor="editTermName">Name</Label>
+        <Input
+          id="editTermName"
+          value={name.value}
+          onChange={(e) => (name.value = e.target.value)}
+          maxLength={60}
+          required
+        />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

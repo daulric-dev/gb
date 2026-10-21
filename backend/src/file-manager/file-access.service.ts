@@ -5,7 +5,33 @@ import { SupabaseService } from '@/supabase/supabase.service';
 export interface UserPrincipals {
   userId: string;
   roleIds: string[];
-  groupIds: string[];
+  /** Courses the user is on as staff, or (through their student record) as an active student. */
+  courseIds: string[];
+}
+
+type PrincipalType = 'user' | 'role' | 'course' | 'group';
+
+/**
+ * Whether a share row names one of the user's principals.
+ *
+ * `group` shares (the old class shares) no longer match anyone: classes are
+ * gone, and an owner who still wants those students to see a file shares it
+ * with the course that replaced the class.
+ */
+function matches(
+  share: { principal_type: PrincipalType; principal_id: string },
+  principals: UserPrincipals,
+): boolean {
+  switch (share.principal_type) {
+    case 'user':
+      return share.principal_id === principals.userId;
+    case 'role':
+      return principals.roleIds.includes(share.principal_id);
+    case 'course':
+      return principals.courseIds.includes(share.principal_id);
+    default:
+      return false;
+  }
 }
 
 export interface FileAccess {
@@ -24,7 +50,64 @@ interface FileRow {
 export class FileAccessService {
   constructor(private readonly supabase: SupabaseService) {}
 
-  /** Role ids and group ids the user matches in the given school. */
+  /**
+   * Courses in the school a file shared "with the course" reaches this user
+   * through: ones they teach or assist in, and ones their linked student
+   * record is actively enrolled in (a dropped student loses access).
+   */
+  private async courseIdsFor(
+    userId: string,
+    schoolId: string,
+    isMember: boolean,
+  ): Promise<string[]> {
+    const client = this.supabase.getServiceClient();
+
+    const [{ data: staffRows }, { data: student }] = await Promise.all([
+      client
+        .schema('course')
+        .from('course_staff')
+        .select('course_id')
+        .eq('user_profile_id', userId),
+      client
+        .schema('student')
+        .from('student')
+        .select('id')
+        .eq('user_profile_id', userId)
+        .eq('school_id', schoolId)
+        .maybeSingle(),
+    ]);
+
+    // course_staff rows outlive removal from the school, so they only count
+    // while the user is still a member of it.
+    const ids = new Set(
+      isMember
+        ? (staffRows ?? []).map((r: { course_id: string }) => r.course_id)
+        : [],
+    );
+
+    if (student?.id) {
+      const { data: enrolled } = await client
+        .schema('course')
+        .from('course_student')
+        .select('course_id')
+        .eq('student_id', student.id)
+        .eq('status', 'active');
+      for (const r of enrolled ?? []) ids.add((r).course_id as string);
+    }
+
+    if (ids.size === 0) return [];
+
+    // Staff rows are not school-scoped; keep only this school's courses.
+    const { data: courses } = await client
+      .schema('course')
+      .from('course')
+      .select('id')
+      .eq('school_id', schoolId)
+      .in('id', [...ids]);
+    return (courses ?? []).map((c: { id: string }) => c.id);
+  }
+
+  /** Role ids and course ids the user matches in the given school. */
   async principalsFor(
     userId: string,
     schoolId: string,
@@ -49,16 +132,9 @@ export class FileAccessService {
       );
     }
 
-    const { data: groups } = await client
-      .schema('staff')
-      .from('teacher_group_assignment')
-      .select('student_group_id')
-      .eq('user_profile_id', userId);
-    const groupIds = (groups ?? []).map(
-      (g: { student_group_id: string }) => g.student_group_id,
-    );
+    const courseIds = await this.courseIdsFor(userId, schoolId, !!membership?.id);
 
-    return { userId, roleIds, groupIds };
+    return { userId, roleIds, courseIds };
   }
 
   private async bestShare(
@@ -78,16 +154,11 @@ export class FileAccessService {
     let matched = false;
     let canDownload = false;
     for (const s of shares as Array<{
-      principal_type: 'user' | 'role' | 'group';
+      principal_type: PrincipalType;
       principal_id: string;
       can_download: boolean;
     }>) {
-      const isMatch =
-        (s.principal_type === 'user' && s.principal_id === principals.userId) ||
-        (s.principal_type === 'role' &&
-          principals.roleIds.includes(s.principal_id)) ||
-        (s.principal_type === 'group' &&
-          principals.groupIds.includes(s.principal_id));
+      const isMatch = matches(s, principals);
       if (isMatch) {
         matched = true;
         canDownload = canDownload || s.can_download;
@@ -136,9 +207,9 @@ export class FileAccessService {
         `and(principal_type.eq.role,principal_id.in.(${principals.roleIds.join(',')}))`,
       );
     }
-    if (principals.groupIds.length > 0) {
+    if (principals.courseIds.length > 0) {
       orClauses.push(
-        `and(principal_type.eq.group,principal_id.in.(${principals.groupIds.join(',')}))`,
+        `and(principal_type.eq.course,principal_id.in.(${principals.courseIds.join(',')}))`,
       );
     }
 
@@ -176,16 +247,11 @@ export class FileAccessService {
 
     for (const s of (shares ?? []) as Array<{
       file_id: string;
-      principal_type: 'user' | 'role' | 'group';
+      principal_type: PrincipalType;
       principal_id: string;
       can_download: boolean;
     }>) {
-      const isMatch =
-        (s.principal_type === 'user' && s.principal_id === principals.userId) ||
-        (s.principal_type === 'role' &&
-          principals.roleIds.includes(s.principal_id)) ||
-        (s.principal_type === 'group' &&
-          principals.groupIds.includes(s.principal_id));
+      const isMatch = matches(s, principals);
       if (!isMatch) continue;
       // Most permissive wins: OR can_download across all matching shares.
       flags.set(s.file_id, (flags.get(s.file_id) ?? false) || s.can_download);

@@ -10,19 +10,12 @@ import { SupabaseModule } from '@/supabase/supabase.module';
 import { StudentAccountModule } from '@/student-account/student-account.module';
 import { StudentPortalModule } from '@/student-portal/student-portal.module';
 import { AuthModule } from '@/auth/auth.module';
-import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
 import { SchoolModule } from '@/school/school.module';
 import { StudentModule } from '@/student/student.module';
-import { SubjectModule } from '@/subject/subject.module';
 import { TermModule } from '@/term/term.module';
-import { EnrollmentModule } from '@/enrollment/enrollment.module';
-import { AttendanceModule } from '@/attendance/attendance.module';
 import { GradingModule } from '@/grading/grading.module';
 import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
-import { CalculationModule } from '@/calculation/calculation.module';
-import { ReportingModule } from '@/reporting/reporting.module';
-import { ReportFilesModule } from '@/report-files/report-files.module';
 import { PermissionModule } from '@/permission/permission.module';
 import { AnnouncementModule } from '@/announcement/announcement.module';
 import { ImagesModule } from '@/images/images.module';
@@ -34,6 +27,10 @@ import { CacheModule } from '@/cache/cache.module';
 import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
+import { CourseAccessModule } from '@/course/access/course-access.module';
+import { CourseModule } from '@/course/course.module';
+import { NotificationsModule } from '@/notifications/notifications.module';
+import { AttendanceModule } from '@/attendance/attendance.module';
 
 @Module({
   imports: [
@@ -90,20 +87,15 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
     QueueModule.forRoot(),
     PaginationModule,
     VersioningModule,
-    ClassModule,
+    CourseAccessModule,
+    CourseModule,
 
     AcademicYearModule,
     SchoolModule,
     StudentModule,
-    SubjectModule,
     TermModule,
-    EnrollmentModule,
-    AttendanceModule,
     GradingModule,
     GradeScaleModule,
-    CalculationModule,
-    ReportingModule,
-    ReportFilesModule,
     PermissionModule,
     AnnouncementModule,
     ImagesModule,
@@ -111,6 +103,8 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
     RealtimeModule,
     ChatModule,
     DashboardModule,
+    NotificationsModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
   providers: [

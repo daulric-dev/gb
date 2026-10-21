@@ -78,7 +78,9 @@ Deno.serve(async (request: Request) => {
         },
       )
       .filter((id: string | null): id is string => Boolean(id));
-  } else {
+  } else if (share.principal_type === "group") {
+    // Legacy class shares. Course shares are not notified here: the course
+    // schema is service-role only and this function runs as the caller.
     const { data: assignments } = await client
       .schema("staff")
       .from("teacher_group_assignment")

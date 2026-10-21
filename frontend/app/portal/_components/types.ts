@@ -1,11 +1,7 @@
 /** Shapes returned by the /portal/me endpoints. */
 
-export interface PortalClass {
-  id: string;
-  name: string | null;
-  academicYear: { id: string; name: string | null; isActive: boolean } | null;
-  enrolledAt: string | null;
-}
+import type { Course, CourseGrade } from "@/lib/courses/types";
+import { formatScore } from "@/lib/format-number";
 
 export interface PortalMe {
   id: string;
@@ -15,77 +11,57 @@ export interface PortalMe {
   gender: string | null;
   enrollmentDate: string | null;
   school: { id: string; name: string | null; type: string | null } | null;
-  classes: PortalClass[];
 }
 
-export interface PortalAssessment {
-  id: string;
-  title: string | null;
-  type: string | null;
-  date: string | null;
-  maxScore: number | null;
-  weight: number | null;
-  term: { id: string; name: string | null } | null;
-  score: number | null;
-  letterGrade: string | null;
-  remarks: string | null;
+export interface PortalTeacher {
+  userProfileId?: string;
+  role?: "teacher" | "ta";
+  firstName: string | null;
+  lastName: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
 }
 
-export interface PortalSubjectGrades {
-  subject: { id: string; name: string | null; code: string | null } | null;
-  assessments: PortalAssessment[];
-  /** Mean of scored assessments as a percentage, or null if nothing is scored. */
-  average: number | null;
-}
-
-export interface PortalAttendance {
-  summary: { present: number; absent: number; late: number; total: number };
-  records: { id: string; date: string; status: string }[];
-}
-
-export interface PortalReportSummary {
-  id: string;
-  type: string | null;
-  status: string | null;
-  publishedAt: string | null;
-  overallAverage: number | null;
-  position: number | null;
-  totalStudents: number | null;
-  attendanceDays: number | null;
-  totalSchoolDays: number | null;
-  conductGrade: string | null;
-  generalRemarks: string | null;
-  term: { id: string; name: string | null } | null;
-  academicYear: { id: string; name: string | null } | null;
-}
-
-export interface PortalReportEntry {
-  id: string;
-  subject: { id: string; name: string | null; code: string | null } | null;
-  isGraded: boolean;
-  termAverage: number | null;
-  termGrade: number | null;
-  termComposite: number | null;
-  yearGrade: number | null;
-  examAverage: number | null;
-  courseworkAverage: number | null;
-  letterGrade: string | null;
-  teacherRemark: string | null;
-}
-
-export interface PortalReport extends PortalReportSummary {
-  entries: PortalReportEntry[];
-}
-
-const TERM_LABELS: Record<string, string> = {
-  michaelmas: "Michaelmas",
-  hilary: "Hilary",
-  trinity: "Trinity",
+/** `GET /portal/me/courses/:courseId` - the course plus who teaches it. */
+export type PortalCourseDetail = Omit<
+  Course,
+  "role" | "studentCount" | "joinCode"
+> & {
+  teachers: PortalTeacher[];
+  grade?: CourseGrade | null;
 };
 
-export function termLabel(name: string | null | undefined) {
-  if (!name) return "Term";
-  return TERM_LABELS[name] ?? name;
+/** Course announcements, same shape as the staff announcement list. */
+export interface PortalAnnouncement {
+  id: string;
+  title: string;
+  body: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  author?: {
+    first_name: string | null;
+    last_name: string | null;
+    avatar_url: string | null;
+  } | null;
+}
+
+export function personName(p: {
+  firstName?: string | null;
+  lastName?: string | null;
+}) {
+  return [p.firstName, p.lastName].filter(Boolean).join(" ") || "Teacher";
+}
+
+export function teacherNames(teachers: PortalTeacher[] | undefined | null) {
+  const list = (teachers ?? []).map(personName);
+  if (list.length === 0) return null;
+  if (list.length <= 2) return list.join(" & ");
+  return `${list[0]} + ${list.length - 1} more`;
+}
+
+export function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return `${formatScore(value)}%`;
 }
 
 export function formatDate(value: string | null | undefined) {
@@ -97,4 +73,34 @@ export function formatDate(value: string | null | undefined) {
     month: "short",
     day: "numeric",
   });
+}
+
+export function formatDateTime(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** A stable accent per course so cards are easy to tell apart. */
+const ACCENTS = [
+  "from-sky-500 to-blue-600",
+  "from-emerald-500 to-teal-600",
+  "from-violet-500 to-purple-600",
+  "from-amber-500 to-orange-600",
+  "from-rose-500 to-pink-600",
+  "from-cyan-500 to-sky-600",
+  "from-lime-500 to-green-600",
+  "from-fuchsia-500 to-violet-600",
+];
+
+export function courseAccent(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return ACCENTS[Math.abs(hash) % ACCENTS.length];
 }

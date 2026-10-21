@@ -18,8 +18,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TermForm } from "./TermForm";
 import {
-  MAX_TERMS,
-  TERM_LABELS,
+  termLabel,
   gradingModelLabel,
   type AcademicYear,
   type Term,
@@ -110,7 +109,6 @@ export function TermsTab({
     );
   }
 
-  const canAdd = terms.length < MAX_TERMS;
   const existingNames = terms.map((t) => t.name);
 
   return (
@@ -140,14 +138,14 @@ export function TermsTab({
       {canCreate ? (
         <Button
           size="sm"
-          disabled={!canAdd || !yearId}
+          disabled={!yearId}
           onPress={() => {
             setEditing(null);
             setFormOpen(true);
           }}
           icon={<Plus size={16} color={colors.primaryForeground} />}
         >
-          {canAdd ? "Add Term" : "Max 3 terms"}
+          Add Term
         </Button>
       ) : null}
 
@@ -170,7 +168,7 @@ export function TermsTab({
               <CardContent style={styles.termRow}>
                 <View style={{ flex: 1, gap: 4 }}>
                   <View style={styles.termTitle}>
-                    <Text weight="600">{TERM_LABELS[term.name]}</Text>
+                    <Text weight="600">{termLabel(term.name)}</Text>
                     {term.is_ministry_reporting ? (
                       <Badge variant="default">Ministry</Badge>
                     ) : null}
@@ -233,7 +231,7 @@ export function TermsTab({
         title="Delete term?"
         message={
           confirmDelete
-            ? `The ${TERM_LABELS[confirmDelete.name]} term will be removed. This cannot be undone.`
+            ? `The ${termLabel(confirmDelete.name)} term will be removed. This cannot be undone.`
             : undefined
         }
         confirmLabel="Delete"

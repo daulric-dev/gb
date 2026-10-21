@@ -3,11 +3,20 @@ import {
   IsDateString,
   IsInt,
   IsBoolean,
+  IsNotEmpty,
+  IsString,
+  MaxLength,
   Min,
   Max,
 } from 'class-validator';
 
 export class UpdateTermDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  name?: string;
+
   @IsOptional()
   @IsDateString()
   startDate?: string;
@@ -34,7 +43,7 @@ export class UpdateTermDto {
 
   @IsOptional()
   @IsInt()
-  @Min(1)
-  @Max(3)
+  @Min(0)
+  @Max(50)
   sortOrder?: number;
 }

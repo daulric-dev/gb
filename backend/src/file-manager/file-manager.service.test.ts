@@ -30,7 +30,7 @@ function fileRow(over: Partial<Record<string, any>> = {}) {
 function accessStub(over: Partial<Record<string, any>> = {}) {
   return {
     principalsFor: () =>
-      Promise.resolve({ userId: USER, roleIds: [], groupIds: [] }),
+      Promise.resolve({ userId: USER, roleIds: [], courseIds: [] }),
     sharedFileIdsFor: () => Promise.resolve(over.sharedIds ?? []),
     downloadFlagsFor: () =>
       Promise.resolve(over.downloadFlags ?? new Map<string, boolean>()),

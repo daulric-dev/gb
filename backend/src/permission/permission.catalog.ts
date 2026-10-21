@@ -1,21 +1,17 @@
 export const ACTIONS = ['create', 'read', 'update', 'delete'] as const;
 export type Action = (typeof ACTIONS)[number];
 
-// One entry per feature controller surface. `grading` is split into the two
-// underlying resources (assessment, grade) it manages.
+// One entry per school-level surface. Work inside a course (content, marking,
+// people) is governed by the caller's course role instead - see
+// CourseAccessService - so it has no catalog keys of its own. `course` here is
+// the school-wide power: creating courses, and with update/delete, managing
+// every course in the school as an admin would.
 export const RESOURCES = [
-  'class',
-  'attendance',
-  'enrollment',
-  'assessment',
-  'grade',
-  'reporting',
+  'course',
   'student',
-  'subject',
   'term',
   'academic-year',
   'grade-scale',
-  'calculation',
   'school',
   'announcement',
   'file',
@@ -47,18 +43,11 @@ export interface CatalogEntry {
 }
 
 const RESOURCE_LABELS: Record<Resource, string> = {
-  class: 'classes',
-  attendance: 'attendance records',
-  enrollment: 'class enrollments',
-  assessment: 'assessments',
-  grade: 'grades',
-  reporting: 'reports',
+  course: 'courses',
   student: 'students',
-  subject: 'subjects',
   term: 'academic terms',
   'academic-year': 'academic years',
   'grade-scale': 'grade scales',
-  calculation: 'grade calculations',
   school: 'school settings',
   announcement: 'announcements',
   file: 'files',
@@ -100,26 +89,17 @@ const readKeys = (...resources: Resource[]): PermissionKey[] =>
 export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   admin: '*',
 
+  // Teachers create their own courses and run them through their course
+  // role; `course:read` lists the school's catalogue, not its contents.
   teacher: [
-    ...allKeys(
-      'attendance',
-      'assessment',
-      'grade',
-      'enrollment',
-      'reporting',
-      'announcement',
-      'file',
-      'chat',
-    ),
-    permKey('class', 'create'),
+    ...allKeys('announcement', 'file', 'chat'),
+    permKey('course', 'create'),
     ...readKeys(
-      'class',
+      'course',
       'student',
-      'subject',
       'term',
       'academic-year',
       'grade-scale',
-      'calculation',
       'school',
     ),
   ],
@@ -128,14 +108,11 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   // plus the ability to manage their own files (upload, view, share own).
   member: [
     ...readKeys(
-      'class',
+      'course',
       'student',
-      'subject',
       'term',
       'academic-year',
       'grade-scale',
-      'reporting',
-      'calculation',
       'announcement',
       'file',
       'school',

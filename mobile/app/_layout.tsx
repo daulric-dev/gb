@@ -8,6 +8,7 @@ import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { PermissionsProvider } from "@/providers/PermissionsProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
+import { NotificationRouter } from "@/providers/NotificationRouter";
 import { setUnauthorizedHandler } from "@/lib/api";
 
 function RootNavigator() {
@@ -23,10 +24,11 @@ function RootNavigator() {
   return (
     <>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+      <NotificationRouter />
       {/*
         Default animation is a slide, so every pushed secondary section
-        (announcements, chat, files, staff, subjects, academic-calendar,
-        grade-scales, roles, class/[classId]) drills in with a slide. The app
+        (announcements, chat, files, staff, academic-calendar,
+        grade-scales, roles) drills in with a slide. The app
         shell routes below opt back into "fade". Sections auto-register from the
         filesystem, so they need no explicit <Stack.Screen> here.
       */}

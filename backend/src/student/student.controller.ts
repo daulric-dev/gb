@@ -62,7 +62,7 @@ export class StudentController {
     return this.versioning.resolve(req, 'student.detail')(raw);
   }
 
-  /** The student's own page: classes, subjects, account and guardians. */
+  /** The student's own page: courses, account and guardians. */
   @RequirePermission('student', 'read')
   @Get(':id/profile')
   async profile(@Req() req: any, @Param('id') id: string) {

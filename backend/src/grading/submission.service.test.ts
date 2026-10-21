@@ -2,25 +2,25 @@ import { describe, test, expect } from 'bun:test';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { SubmissionService } from './submission.service';
-import { createRoutingSupabase, createMockCacheService } from '@/test/mocks';
+import { createRoutingSupabase } from '@/test/mocks';
 
 /**
- * File handling on submissions.
+ * File handling, marking and excusing on submissions.
  *
  * The student is the file's owner but holds no catalog permissions, so the
  * portal endpoint is their only way to upload; the teacher is not the owner
- * and has no share, so their read is authorised by owning the class. Both
- * sides sit outside the file manager's own rules, which is why they are
- * tested here.
+ * and has no share, so their read is authorised by their role in the course.
+ * Both sides sit outside the file manager's own rules, which is why they are
+ * tested here. Course access itself is CourseAccessService, stubbed below.
  */
 
 const ACTIVITY = {
   id: 'act-1',
-  student_group_id: 'class-1',
-  subject_id: 'sub-1',
+  course_id: 'course-1',
   kind: 'assignment',
   title: 'Essay',
   instructions: null,
@@ -31,14 +31,37 @@ const ACTIVITY = {
   allow_text: true,
 };
 
+/**
+ * Course access: `staff` is the caller's course role (null for none) and
+ * `enrolled` whether the student may see the course.
+ */
+function stubAccess(
+  opts: { staff?: 'teacher' | 'ta' | null; enrolled?: boolean } = {},
+) {
+  const staff = opts.staff === undefined ? 'teacher' : opts.staff;
+  const enrolled = opts.enrolled ?? true;
+  return {
+    require: async (_u: string, courseId: string, roles: readonly string[]) => {
+      if (!staff) throw new NotFoundException('Course not found');
+      if (!roles.includes(staff)) throw new ForbiddenException('nope');
+      return { course: { id: courseId }, role: staff };
+    },
+    requireStudent: async (_s: string, courseId: string) => {
+      if (!enrolled) throw new NotFoundException('Course not found');
+      return { id: courseId, school_id: 'school-1', grade_scale_id: null };
+    },
+    courseIdOfActivity: async () => 'course-1',
+  };
+}
+
 function build(
   tables: Record<string, any>,
   files: Partial<Record<string, any>> = {},
+  access: ReturnType<typeof stubAccess> = stubAccess(),
 ) {
   const supabase = createRoutingSupabase({ tables });
   const service = new SubmissionService(
     supabase as any,
-    createMockCacheService() as any,
     {
       uploadManual: () =>
         Promise.resolve({ id: 'file-1', name: 'essay.pdf' } as any),
@@ -50,6 +73,7 @@ function build(
         }),
       ...files,
     } as any,
+    access as any,
   );
   return { service, supabase };
 }
@@ -58,10 +82,6 @@ function build(
 function studentTables(over: Record<string, any> = {}) {
   return {
     'grading.activity': { data: { ...ACTIVITY }, error: null },
-    'student.student_group_enrollment': {
-      data: { student_id: 'stu-1' },
-      error: null,
-    },
     'student.student': { data: { user_profile_id: 'user-1' }, error: null },
     'grading.submission': {
       data: { id: 'sub-1', status: 'draft', file_id: null },
@@ -185,22 +205,12 @@ describe('SubmissionService file handling', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  test('a teacher outside the school cannot read the file', async () => {
+  test('someone with no role in the course cannot read the file', async () => {
     let read = false;
     const { service } = build(
       {
         'grading.submission': {
           data: { id: 'sub-1', activity_id: 'act-1', file_id: 'file-1' },
-          error: null,
-        },
-        'grading.activity': {
-          data: { student_group_id: 'class-1' },
-          error: null,
-        },
-        // The class belongs to another school than the caller's profile.
-        'public.user_profile': { data: { school_id: 'school-2' }, error: null },
-        'public.student_group': {
-          data: { id: 'class-1', academic_year: { school_id: 'school-1' } },
           error: null,
         },
       },
@@ -210,6 +220,7 @@ describe('SubmissionService file handling', () => {
           return Promise.resolve({} as any);
         },
       },
+      stubAccess({ staff: null }),
     );
 
     await expect(
@@ -218,22 +229,17 @@ describe('SubmissionService file handling', () => {
     expect(read).toBe(false);
   });
 
-  test('the class teacher reads the bytes', async () => {
-    const { service } = build({
-      'grading.submission': {
-        data: { id: 'sub-1', activity_id: 'act-1', file_id: 'file-1' },
-        error: null,
+  test('a TA in the course reads the bytes', async () => {
+    const { service } = build(
+      {
+        'grading.submission': {
+          data: { id: 'sub-1', activity_id: 'act-1', file_id: 'file-1' },
+          error: null,
+        },
       },
-      'grading.activity': {
-        data: { student_group_id: 'class-1' },
-        error: null,
-      },
-      'public.user_profile': { data: { school_id: 'school-1' }, error: null },
-      'public.student_group': {
-        data: { id: 'class-1', academic_year: { school_id: 'school-1' } },
-        error: null,
-      },
-    });
+      {},
+      stubAccess({ staff: 'ta' }),
+    );
 
     const result = await service.readSubmissionFile('user-1', 'sub-1');
     expect(result.filename).toBe('essay.pdf');
@@ -250,5 +256,339 @@ describe('SubmissionService file handling', () => {
     await expect(
       service.readSubmissionFile('user-1', 'sub-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('SubmissionService student access', () => {
+  test('a student not in the course cannot see the activity', async () => {
+    const { service } = build(
+      studentTables(),
+      {},
+      stubAccess({ enrolled: false }),
+    );
+    await expect(
+      service.getForStudent('stu-1', 'act-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  test('a draft activity is not visible', async () => {
+    const { service } = build(
+      studentTables({
+        'grading.activity': {
+          data: { ...ACTIVITY, status: 'draft' },
+          error: null,
+        },
+      }),
+    );
+    await expect(
+      service.getForStudent('stu-1', 'act-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  test('offline work can be viewed but not handed in', async () => {
+    const tables = studentTables({
+      'grading.activity': {
+        data: {
+          ...ACTIVITY,
+          kind: 'offline',
+          allow_file: false,
+          allow_text: false,
+        },
+        error: null,
+      },
+    });
+    const { service } = build(tables);
+
+    const view = await service.getForStudent('stu-1', 'act-1');
+    expect(view.kind).toBe('offline');
+
+    await expect(
+      service.submitAssignment('stu-1', 'act-1', { textBody: 'x' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.attachFile('stu-1', 'act-1', {} as any),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.submitQuiz('stu-1', 'act-1', []),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  test('score and feedback are hidden until graded', async () => {
+    const { service } = build(
+      studentTables({
+        'grading.submission': {
+          data: {
+            id: 'sub-1',
+            status: 'submitted',
+            score: 12,
+            feedback: 'half done',
+            excused: false,
+          },
+          error: null,
+        },
+      }),
+    );
+    const view = await service.getForStudent('stu-1', 'act-1');
+    expect(view.submission!.score).toBeNull();
+    expect(view.submission!.feedback).toBeNull();
+  });
+
+  test('a quiz submission never writes grading.grade', async () => {
+    const { service, supabase } = build(
+      studentTables({
+        'grading.activity': {
+          data: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
+          error: null,
+        },
+        'grading.submission': {
+          data: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+          error: null,
+        },
+        'grading.quiz_question': { data: [], error: null },
+      }),
+    );
+    (supabase as any)._client.rpc = () =>
+      Promise.resolve({ data: [{ score: 5, points: 20 }], error: null });
+
+    const result = await service.submitQuiz('stu-1', 'act-1', []);
+    expect(result).toEqual({ score: 5, points: 20 });
+    expect(supabase._calls.some((c) => c.table === 'grade')).toBe(false);
+  });
+
+  test('the course list maps to the PortalCourseActivity contract', async () => {
+    const { service } = build({
+      'grading.activity': {
+        data: [
+          {
+            ...ACTIVITY,
+            status: 'published',
+            assignment_group_id: null,
+            published_at: '2026-09-01T00:00:00Z',
+            omit_from_final_grade: true,
+            created_at: '2026-09-01T00:00:00Z',
+          },
+        ],
+        error: null,
+      },
+      'grading.submission': {
+        data: [
+          {
+            activity_id: 'act-1',
+            status: 'graded',
+            score: 18,
+            excused: false,
+            feedback: 'Good',
+            submitted_at: '2026-09-02T00:00:00Z',
+            attempt_count: 0,
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const [item] = await service.listCourseForStudent('stu-1', 'course-1');
+    expect(item).not.toHaveProperty('omitFromFinalGrade');
+    expect(item).not.toHaveProperty('createdAt');
+    expect(item.courseId).toBe('course-1');
+    expect(item.submission).toEqual({
+      status: 'graded',
+      score: 18,
+      excused: false,
+      attemptCount: 0,
+      submittedAt: '2026-09-02T00:00:00Z',
+      feedback: 'Good',
+    });
+  });
+});
+
+describe('SubmissionService marking', () => {
+  const PUBLISHED = {
+    id: 'act-1',
+    course_id: 'course-1',
+    points: 20,
+    status: 'published',
+    kind: 'offline',
+  };
+
+  function markTables(over: Record<string, any> = {}) {
+    return {
+      'grading.activity': { data: PUBLISHED, error: null },
+      'course.course_student': { data: { student_id: 'stu-1' }, error: null },
+      'grading.submission': (call: any) =>
+        call.op === 'upsert'
+          ? {
+              data: {
+                id: 'sub-1',
+                student_id: 'stu-1',
+                excused: false,
+                ...call.payload,
+              },
+              error: null,
+            }
+          : { data: null, error: null },
+      ...over,
+    };
+  }
+
+  test('marking offline work creates the submission as graded', async () => {
+    const { service, supabase } = build(markTables());
+
+    const result = await service.grade('user-1', 'act-1', 'stu-1', {
+      score: 15,
+      feedback: 'Well done',
+    });
+
+    const upsert = supabase._calls.find((c) => c.op === 'upsert')!;
+    expect(upsert.table).toBe('submission');
+    expect(upsert.payload).toMatchObject({
+      activity_id: 'act-1',
+      student_id: 'stu-1',
+      status: 'graded',
+      score: 15,
+      feedback: 'Well done',
+      graded_by: 'user-1',
+    });
+    expect(result.score).toBe(15);
+    expect(supabase._calls.some((c) => c.table === 'grade')).toBe(false);
+  });
+
+  test('a TA can mark', async () => {
+    const { service } = build(markTables(), {}, stubAccess({ staff: 'ta' }));
+    const result = await service.grade('user-1', 'act-1', 'stu-1', {
+      score: 1,
+    });
+    expect(result.status).toBe('graded');
+  });
+
+  test('refuses a student who is not on the roster', async () => {
+    const { service } = build(
+      markTables({ 'course.course_student': { data: null, error: null } }),
+    );
+    await expect(
+      service.grade('user-1', 'act-1', 'stu-9', { score: 1 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  test('refuses a score above the points', async () => {
+    const { service } = build(markTables());
+    await expect(
+      service.grade('user-1', 'act-1', 'stu-1', { score: 21 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  test('refuses to mark a draft', async () => {
+    const { service } = build(
+      markTables({
+        'grading.activity': {
+          data: { ...PUBLISHED, status: 'draft' },
+          error: null,
+        },
+      }),
+    );
+    await expect(
+      service.grade('user-1', 'act-1', 'stu-1', { score: 1 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  test('excusing a student with no submission creates a graded, excused row', async () => {
+    const { service, supabase } = build(markTables());
+
+    const result = await service.excuse('user-1', 'act-1', 'stu-1', {
+      excused: true,
+      reason: ' Absent ',
+    });
+
+    const upsert = supabase._calls.find((c) => c.op === 'upsert')!;
+    expect(upsert.payload).toMatchObject({
+      excused: true,
+      excused_reason: 'Absent',
+      status: 'graded',
+    });
+    expect(result.excused).toBe(true);
+  });
+
+  test('excusing existing work keeps its status and score', async () => {
+    const { service, supabase } = build(
+      markTables({
+        'grading.submission': (call: any) =>
+          call.op === 'upsert'
+            ? {
+                data: { id: 'sub-1', student_id: 'stu-1', ...call.payload },
+                error: null,
+              }
+            : { data: { id: 'sub-1' }, error: null },
+      }),
+    );
+
+    await service.excuse('user-1', 'act-1', 'stu-1', { excused: true });
+
+    const upsert = supabase._calls.find((c) => c.op === 'upsert')!;
+    expect(upsert.payload).not.toHaveProperty('status');
+    expect(upsert.payload).not.toHaveProperty('score');
+  });
+
+  test('lifting an excuse clears the reason', async () => {
+    const { service, supabase } = build(
+      markTables({
+        'grading.submission': (call: any) =>
+          call.op === 'upsert'
+            ? {
+                data: { id: 'sub-1', student_id: 'stu-1', ...call.payload },
+                error: null,
+              }
+            : { data: { id: 'sub-1' }, error: null },
+      }),
+    );
+
+    await service.excuse('user-1', 'act-1', 'stu-1', {
+      excused: false,
+      reason: 'ignored',
+    });
+
+    const upsert = supabase._calls.find((c) => c.op === 'upsert')!;
+    expect(upsert.payload.excused).toBe(false);
+    expect(upsert.payload.excused_reason).toBeNull();
+  });
+
+  test('the teacher list is the roster plus anyone with a submission', async () => {
+    const { service } = build({
+      'grading.activity': { data: PUBLISHED, error: null },
+      'course.course_student': {
+        data: [
+          { student_id: 'stu-1', status: 'active' },
+          { student_id: 'stu-2', status: 'dropped' },
+          { student_id: 'stu-3', status: 'dropped' },
+        ],
+        error: null,
+      },
+      'grading.submission': {
+        data: [
+          {
+            id: 'sub-2',
+            student_id: 'stu-2',
+            status: 'graded',
+            score: 10,
+            excused: true,
+            excused_reason: 'Ill',
+          },
+        ],
+        error: null,
+      },
+      // The mock ignores .in(); return what the real filter would.
+      'student.student': {
+        data: [
+          { id: 'stu-1', first_name: 'Ann', last_name: 'A' },
+          { id: 'stu-2', first_name: 'Bob', last_name: 'B' },
+        ],
+        error: null,
+      },
+      'file_manager.file': { data: [], error: null },
+    });
+
+    const list = await service.listForTeacher('user-1', 'act-1');
+    expect(list.map((r) => r.studentId)).toEqual(['stu-1', 'stu-2']);
+    expect(list[1].enrollmentStatus).toBe('dropped');
+    expect(list[1].submission!.excused).toBe(true);
+    expect(list[1].submission!.excusedReason).toBe('Ill');
   });
 });

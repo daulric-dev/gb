@@ -166,12 +166,16 @@ export default function WorkDetailScreen() {
   const submitted = !!work.submission && work.submission.status !== "draft";
   const left = attemptsLeft(work);
   const canRetake = left !== null && left > 0;
-  const open = work.status === "published" && (!submitted || canRetake);
+  const offline = work.kind === "offline";
+  const open =
+    !offline && work.status === "published" && (!submitted || canRetake);
 
   return (
     <Screen
       title={work.title}
-      description={`${work.points} points · ${dueLabel(work.dueAt)}`}
+      description={[work.courseName, `${work.points} points`, dueLabel(work.dueAt)]
+        .filter(Boolean)
+        .join(" · ")}
       onBack={() => router.back()}
       refreshing={refreshing}
       onRefresh={onRefresh}
@@ -214,7 +218,18 @@ export default function WorkDetailScreen() {
           </Card>
         ) : null}
 
-        {work.kind === "quiz" ? (
+        {offline ? (
+          !submitted ? (
+            <Card>
+              <CardContent style={{ gap: 4 }}>
+                <Text weight="500">Handed in on paper</Text>
+                <Text variant="muted" size="sm">
+                  Your teacher records the mark here.
+                </Text>
+              </CardContent>
+            </Card>
+          ) : null
+        ) : work.kind === "quiz" ? (
           <View style={{ gap: 12 }}>
             {work.questions.map((q, i) => (
               <Card key={q.id}>
@@ -359,7 +374,7 @@ export default function WorkDetailScreen() {
           </Card>
         )}
 
-        {work.status === "closed" && !submitted && (
+        {!offline && work.status === "closed" && !submitted && (
           <Text variant="muted" size="sm" style={{ textAlign: "center" }}>
             This closed before you handed anything in.
           </Text>

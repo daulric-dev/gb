@@ -1,5 +1,5 @@
 [api]
-schemas = ["public", "student", "staff", "grading", "reporting", "file_manager", "chat"]
+schemas = ["public", "student", "staff", "grading", "reporting", "file_manager", "chat", "course"]
 
 [auth]
 enabled = true

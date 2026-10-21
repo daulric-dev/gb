@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { loginPath, NEXT_PARAM, safeNextPath } from "@/lib/routing";
 
 const GUEST_ONLY = ["/login", "/login/verify"];
-const PUBLIC_PATHS = ["/", "/privacy", "/terms", ...GUEST_ONLY];
+// /scan is where the attendance QR lands; it works signed out (see app/scan).
+const PUBLIC_PATHS = ["/", "/privacy", "/terms", "/scan", ...GUEST_ONLY];
 const BACKEND = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 // Refresh ~1 minute before the access token actually expires so we never
@@ -95,8 +97,20 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const state = readSessionState(request);
 
-  const toDashboard = () =>  NextResponse.redirect(new URL("/dashboard", request.url));
-  const toLogin = () => NextResponse.redirect(new URL("/login", request.url));
+  // A signed-in visitor on /login goes back where a sign-in prompt sent them
+  // (same-origin paths only), otherwise to the app.
+  const toDashboard = () => {
+    const next = isGuestOnly(pathname)
+      ? safeNextPath(request.nextUrl.searchParams.get(NEXT_PARAM))
+      : null;
+    return NextResponse.redirect(new URL(next ?? "/dashboard", request.url));
+  };
+  // Remember the page being asked for, so signing in lands back on it (a
+  // scanned attendance QR, a shared link).
+  const toLogin = () =>
+    NextResponse.redirect(
+      new URL(loginPath(`${pathname}${request.nextUrl.search}`), request.url),
+    );
 
   if (state.kind === "missing") {
     return isPublic(pathname) ? NextResponse.next() : toLogin();

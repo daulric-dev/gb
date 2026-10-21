@@ -45,7 +45,8 @@ export interface FolderContents {
   files: FileItem[];
 }
 
-export type SharePrincipalType = "user" | "role" | "group";
+/** "group" is a legacy class share; new shares target a course. */
+export type SharePrincipalType = "user" | "role" | "course" | "group";
 
 export interface FileShare {
   id: string;
@@ -70,7 +71,7 @@ export interface ShareRole {
   name: string;
 }
 
-export interface ShareClass {
+export interface ShareCourse {
   id: string;
   name: string | null;
 }

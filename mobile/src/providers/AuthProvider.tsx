@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "@/lib/api";
+import { registerForPush, unregisterPush } from "@/lib/push";
 
 export interface UserProfile {
   id: string;
@@ -64,12 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void fetchProfile();
   }, [fetchProfile]);
 
+  // Register this device for pushes once per signed-in account. Staff get a
+  // token too; the API only sends them what is meant for them.
+  const userId = profile?.id ?? null;
+  useEffect(() => {
+    if (userId) void registerForPush();
+  }, [userId]);
+
   const refresh = useCallback(async () => {
     inFlight.current = null;
     await fetchProfile();
   }, [fetchProfile]);
 
   const logout = useCallback(async () => {
+    // Before /auth/logout: the device is removed as the signed-in user.
+    await unregisterPush();
     try {
       await api("/auth/logout", { method: "POST", skipAuthRedirect: true });
     } catch {

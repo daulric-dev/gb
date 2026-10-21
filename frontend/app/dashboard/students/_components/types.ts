@@ -13,19 +13,16 @@ export interface Student {
 
 export interface StudentProfile {
   student: Student;
-  /** Current year first, then previous years newest to oldest. */
-  classes: {
-    id: string;
-    name: string;
-    enrolledAt: string | null;
-    academicYear: { id: string; name: string; isActive: boolean } | null;
-  }[];
-  /** The subjects taken in the year the student is currently in. */
-  subjects: {
+  /** Active enrolments first, then completed, then dropped; by name. */
+  courses: {
     id: string;
     name: string;
     code: string | null;
-    isGraded: boolean;
+    status: "draft" | "published" | "archived";
+    termId: string | null;
+    academicYearId: string | null;
+    enrollmentStatus: "active" | "completed" | "dropped";
+    enrolledAt: string | null;
   }[];
   account: {
     id: string;
