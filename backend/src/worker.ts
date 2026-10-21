@@ -64,7 +64,7 @@ export default {
       : Buffer.from(await request.arrayBuffer());
 
     const res = await fastify.inject({
-      method: request.method as any,
+      method: request.method,
       url: url.pathname + url.search,
       headers,
       payload: body,
