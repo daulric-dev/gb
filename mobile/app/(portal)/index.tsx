@@ -1,30 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import { BookOpen, NotebookPen, ScanLine } from "lucide-react-native";
+import {
+  BookOpen,
+  ChevronRight,
+  NotebookPen,
+  ScanLine,
+} from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useTheme } from "@/theme/ThemeProvider";
 import {
-  formatPercent,
   teacherNames,
   type PortalCourseCard,
   type PortalMe,
 } from "@/lib/portal";
+import { gradeColor, percentLabel } from "@/lib/grades";
+import { LetterBadge } from "@/features/grades/GradeBits";
 import { isOutstanding, type PortalWorkItem } from "@/lib/work";
 import { OpenAttendanceCards } from "@/features/attendance/OpenAttendanceCards";
 
 /**
- * Student home: the courses they sit and how much work is outstanding. The
- * full course view (modules, pages, grades) lives on the web app for now.
+ * Student home: the courses they sit and how much work is outstanding. A
+ * course row opens its grades; modules and pages live on the web app for now.
  */
 export default function PortalHomeScreen() {
   const { profile } = useAuth();
@@ -110,12 +115,17 @@ export default function PortalHomeScreen() {
           </CardHeader>
           <CardContent style={{ gap: 8 }}>
             {active.map((c) => {
-              const percent = formatPercent(c.grade?.percent);
+              const percent = c.grade?.percent ?? null;
+              const label = percentLabel(percent);
               const teachers = teacherNames(c.teachers);
               return (
-                <View
+                <Pressable
                   key={c.id}
-                  style={[styles.courseRow, { borderColor: colors.border }]}
+                  onPress={() => router.push(`/grades/${c.id}`)}
+                  style={({ pressed }) => [
+                    styles.courseRow,
+                    { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                  ]}
                 >
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text weight="500" numberOfLines={1}>
@@ -126,17 +136,19 @@ export default function PortalHomeScreen() {
                         "Course"}
                     </Text>
                   </View>
-                  {percent && (
-                    <Badge>
-                      {percent}
-                      {c.grade?.letter ? ` ${c.grade.letter}` : ""}
-                    </Badge>
+                  {label && (
+                    <Text weight="600" style={{ color: gradeColor(percent)! }}>
+                      {label}
+                    </Text>
                   )}
-                </View>
+                  <LetterBadge letter={c.grade?.letter} percent={percent} />
+                  <ChevronRight color={colors.mutedForeground} size={16} />
+                </Pressable>
               );
             })}
             <Text variant="muted" size="xs" style={{ marginTop: 4 }}>
-              Open the web app to see course modules, pages and grades.
+              Tap a course to see your grades. Modules and pages are on the
+              web app.
             </Text>
           </CardContent>
         </Card>

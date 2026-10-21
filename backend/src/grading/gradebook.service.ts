@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { scoreOrNull } from './round';
 import {
   CourseAccessService,
   CourseRow,
@@ -161,7 +162,7 @@ export class GradebookService {
   private toCalcSubmission(s: any): CalcSubmission {
     return {
       status: s.status,
-      score: s.score === null || s.score === undefined ? null : Number(s.score),
+      score: scoreOrNull(s.score),
       excused: !!s.excused,
     };
   }
@@ -231,7 +232,7 @@ export class GradebookService {
 
       for (const s of own) {
         cells[s.activity_id] = {
-          score: s.score === null ? null : Number(s.score),
+          score: scoreOrNull(s.score),
           status: s.status ?? null,
           excused: !!s.excused,
           submittedAt: s.submitted_at ?? null,

@@ -1,5 +1,8 @@
 /** Shapes returned by the /portal/me endpoints. Mirrors the web portal types. */
 
+import { formatScore } from "./format-number";
+import type { CourseGrade } from "@/lib/grades";
+
 export interface PortalMe {
   id: string;
   firstName: string | null;
@@ -16,7 +19,7 @@ export interface PortalCourseCard {
   status: "draft" | "published" | "archived";
   termId: string | null;
   teachers: { firstName: string | null; lastName: string | null }[];
-  grade: { percent: number | null; letter: string | null } | null;
+  grade: CourseGrade | null;
 }
 
 export function formatDate(value: string | null | undefined) {
@@ -39,5 +42,5 @@ export function teacherNames(teachers: PortalCourseCard["teachers"]) {
 
 export function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined) return null;
-  return `${Math.round(value * 10) / 10}%`;
+  return `${formatScore(value)}%`;
 }

@@ -11,6 +11,8 @@
  * if every missing piece scored zero.
  */
 
+import { roundScore } from './round';
+
 export interface CalcActivity {
   id: string;
   assignmentGroupId: string | null;
@@ -55,9 +57,7 @@ export interface CalcBand {
 export const UNGROUPED_NAME = 'Ungrouped';
 
 /** Two decimals: enough for a gradebook, and stable across float noise. */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+const round2 = roundScore;
 
 /**
  * Whether one activity's mark counts toward the total for one student.

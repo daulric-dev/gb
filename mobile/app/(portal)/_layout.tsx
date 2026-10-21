@@ -1,5 +1,10 @@
 import { Redirect, Tabs } from "expo-router";
-import { LayoutDashboard, NotebookPen, Settings } from "lucide-react-native";
+import {
+  GraduationCap,
+  LayoutDashboard,
+  NotebookPen,
+  Settings,
+} from "lucide-react-native";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
@@ -51,6 +56,15 @@ export default function PortalLayout() {
           title: "Work",
           tabBarIcon: ({ color, size }) => (
             <NotebookPen color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="grades"
+        options={{
+          title: "Grades",
+          tabBarIcon: ({ color, size }) => (
+            <GraduationCap color={color} size={size} />
           ),
         }}
       />

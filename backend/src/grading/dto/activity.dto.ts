@@ -192,9 +192,15 @@ export class SubmitQuizDto {
 }
 
 export class GradeSubmissionDto {
+  // Marks are shown to two decimals everywhere, so that is all a teacher
+  // may type; a quiz's auto score is the only longer fraction, and it is
+  // rounded on the way out.
   @ApiProperty({ example: 85 })
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'Marks can have at most two decimal places' },
+  )
   @Min(0)
   score!: number;
 

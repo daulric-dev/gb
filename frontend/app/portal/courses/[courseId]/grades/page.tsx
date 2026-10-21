@@ -6,6 +6,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { GraduationCap, MessageSquareText } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatScore } from "@/lib/format-number";
 import type { PortalCourseGrades } from "@/lib/courses/types";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState, kindLabel } from "../../../_components/portal-ui";
 import { formatDate, formatPercent } from "../../../_components/types";
+import { GroupBreakdown, isWeighted } from "../../../_components/grade-ui";
 import { usePortalCourse } from "../_components/course-context";
 
 type GradeRow = PortalCourseGrades["activities"][number];
@@ -67,7 +69,7 @@ export default function PortalCourseGradesPage() {
   }
 
   const { grade, activities } = data.value;
-  const weighted = grade.groups.some((g) => g.weight !== null && g.weight > 0);
+  const weighted = isWeighted(grade);
 
   return (
     <div className="space-y-6">
@@ -104,45 +106,8 @@ export default function PortalCourseGradesPage() {
                 : "Every point counts equally."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {grade.groups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No groups yet.</p>
-            ) : (
-              grade.groups.map((g) => (
-                <div key={g.groupId ?? "ungrouped"} className="space-y-1">
-                  <div className="flex items-baseline justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate font-medium">
-                      {g.name}
-                      {weighted && g.weight !== null && (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                          {g.weight}% of grade
-                        </span>
-                      )}
-                    </span>
-                    <span className="shrink-0 tabular-nums">
-                      {g.percent === null ? (
-                        <span className="text-muted-foreground">-</span>
-                      ) : (
-                        <>
-                          {formatPercent(g.percent)}
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            {g.earned}/{g.possible}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{
-                        width: `${Math.max(0, Math.min(100, g.percent ?? 0))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))
-            )}
+          <CardContent>
+            <GroupBreakdown groups={grade.groups} weighted={weighted} />
           </CardContent>
         </Card>
       </div>
@@ -218,11 +183,11 @@ function GradeTableRow({ row }: { row: GradeRow }) {
             <span className="text-muted-foreground">EX</span>
           ) : s?.status === "graded" && s.score !== null ? (
             <span className="font-medium">
-              {s.score}
-              <span className="text-muted-foreground">/{row.points}</span>
+              {formatScore(s.score)}
+              <span className="text-muted-foreground">/{formatScore(row.points)}</span>
             </span>
           ) : (
-            <span className="text-muted-foreground">-/{row.points}</span>
+            <span className="text-muted-foreground">-/{formatScore(row.points)}</span>
           )}
         </TableCell>
       </TableRow>

@@ -27,6 +27,7 @@ import {
 import {
   BookOpen,
   CheckSquare,
+  GraduationCap,
   LayoutDashboard,
   LogOut,
 } from "lucide-react";
@@ -34,6 +35,7 @@ import {
 const NAV = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/portal/courses", label: "Courses", icon: BookOpen },
+  { href: "/portal/grades", label: "Grades", icon: GraduationCap },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
 ];
 

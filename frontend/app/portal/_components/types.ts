@@ -1,6 +1,7 @@
 /** Shapes returned by the /portal/me endpoints. */
 
 import type { Course, CourseGrade } from "@/lib/courses/types";
+import { formatScore } from "@/lib/format-number";
 
 export interface PortalMe {
   id: string;
@@ -60,7 +61,7 @@ export function teacherNames(teachers: PortalTeacher[] | undefined | null) {
 
 export function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  return `${Math.round(value * 10) / 10}%`;
+  return `${formatScore(value)}%`;
 }
 
 export function formatDate(value: string | null | undefined) {

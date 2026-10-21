@@ -4,6 +4,8 @@
  * in frontend/lib/courses/types.ts and nothing more.
  */
 
+import { roundScore } from './round';
+
 export type ActivityKind = 'quiz' | 'assignment' | 'offline';
 export type ActivityStatus = 'draft' | 'published' | 'closed';
 export type SubmissionStatus = 'draft' | 'submitted' | 'graded';
@@ -50,7 +52,7 @@ export function toPortalSubmission(s: any) {
     status: s.status as SubmissionStatus,
     score:
       graded && s.score !== null && s.score !== undefined
-        ? Number(s.score)
+        ? roundScore(Number(s.score))
         : null,
     excused: !!s.excused,
     attemptCount: (s.attempt_count as number | null) ?? 0,

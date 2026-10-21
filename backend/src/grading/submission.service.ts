@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '@/supabase/supabase.service';
+import { roundScore, scoreOrNull } from './round';
 import { FileManagerService } from '@/file-manager/file-manager.service';
 import {
   CourseAccessService,
@@ -129,7 +130,7 @@ export class SubmissionService {
               status: submission.status,
               score:
                 graded && submission.score !== null
-                  ? Number(submission.score)
+                  ? roundScore(Number(submission.score))
                   : null,
               excused: !!submission.excused,
               submittedAt: submission.submitted_at,
@@ -259,7 +260,7 @@ export class SubmissionService {
             // it is final.
             score:
               graded && submission.score !== null
-                ? Number(submission.score)
+                ? roundScore(Number(submission.score))
                 : null,
             feedback: graded ? submission.feedback : null,
             excused: !!submission.excused,
@@ -333,9 +334,13 @@ export class SubmissionService {
     // An archived course stays readable for the record, but archiving does
     // not close its activities, so hand-ins are refused at the course level.
     try {
-      await this.access.requireStudent(studentId, activity.course_id as string, {
-        allowArchived: false,
-      });
+      await this.access.requireStudent(
+        studentId,
+        activity.course_id as string,
+        {
+          allowArchived: false,
+        },
+      );
     } catch {
       throw new ConflictException('This course is closed to new work');
     }
@@ -656,7 +661,10 @@ export class SubmissionService {
           .in('question_id', questionIds)
       : { data: [] as any[] };
     const questionOfOption = new Map(
-      (options ?? []).map((o: any) => [o.id as string, o.question_id as string]),
+      (options ?? []).map((o: any) => [
+        o.id as string,
+        o.question_id as string,
+      ]),
     );
 
     const accepted = answers.filter(
@@ -722,7 +730,7 @@ export class SubmissionService {
     const row = Array.isArray(data) ? data[0] : data;
 
     return {
-      score: row?.score === undefined ? null : Number(row.score),
+      score: row?.score === undefined ? null : scoreOrNull(row.score),
       points: row?.points === undefined ? null : Number(row.points),
     };
   }
@@ -838,7 +846,9 @@ export class SubmissionService {
                 fileId: submission.file_id,
                 fileName: names.get(submission.file_id as string) ?? null,
                 score:
-                  submission.score === null ? null : Number(submission.score),
+                  submission.score === null
+                    ? null
+                    : roundScore(Number(submission.score)),
                 feedback: submission.feedback,
                 excused: !!submission.excused,
                 excusedReason: submission.excused_reason ?? null,
@@ -857,7 +867,7 @@ export class SubmissionService {
       id: row.id as string,
       studentId: row.student_id as string,
       status: row.status as 'draft' | 'submitted' | 'graded',
-      score: row.score === null ? null : Number(row.score),
+      score: scoreOrNull(row.score),
       feedback: (row.feedback as string | null) ?? null,
       excused: !!row.excused,
       excusedReason: (row.excused_reason as string | null) ?? null,

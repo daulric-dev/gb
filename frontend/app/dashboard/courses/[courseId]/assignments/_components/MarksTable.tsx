@@ -339,7 +339,7 @@ export function MarksTable({
                         key={`${row.studentId}-${sub?.score ?? ""}`}
                         type="number"
                         min={0}
-                        step="any"
+                        step={0.01}
                         aria-label={`Score for ${row.name}`}
                         defaultValue={sub?.score ?? ""}
                         disabled={!editable || savingId.value === row.studentId}

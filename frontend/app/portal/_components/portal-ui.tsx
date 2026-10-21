@@ -19,6 +19,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
+import { formatScore } from "@/lib/format-number";
 import type { ActivityKind } from "@/lib/courses/types";
 import { dueLabel, isOverdue } from "./work-types";
 
@@ -88,7 +89,7 @@ export function WorkStatusBadge({ item }: { item: WorkLike }) {
   if (s?.status === "graded") {
     return (
       <Badge>
-        {s.score ?? "-"}/{item.points}
+        {formatScore(s.score)}/{formatScore(item.points)}
       </Badge>
     );
   }
@@ -101,11 +102,11 @@ export function WorkStatusBadge({ item }: { item: WorkLike }) {
     );
   }
   if (item.kind === "offline") {
-    return <Badge variant="outline">{item.points} pts · on paper</Badge>;
+    return <Badge variant="outline">{formatScore(item.points)} pts · on paper</Badge>;
   }
   if (item.status === "closed") return <Badge variant="outline">Closed</Badge>;
   if (isOverdue(item.dueAt)) return <Badge variant="destructive">Missing</Badge>;
-  return <Badge variant="secondary">{item.points} pts</Badge>;
+  return <Badge variant="secondary">{formatScore(item.points)} pts</Badge>;
 }
 
 export function WorkRow({
