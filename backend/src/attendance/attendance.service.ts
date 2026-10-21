@@ -1014,7 +1014,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     // like a session that does not exist.
     const course = await this.access.requireStudent(
       studentId,
-      session.course_id,
+      session.course_id as string,
       { allowArchived: false },
     );
     const { data: enrollment } = await supabase
@@ -1047,12 +1047,12 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     // room, which is all the code proves, so it stands in for the code.
     let viaQr = false;
     if (input.qrToken || input.qrClaim) {
-      const secret = await this.qrSecretOf(session.id);
+      const secret = await this.qrSecretOf(session.id as string);
       const valid =
         !!secret &&
         (input.qrToken
           ? verifyQrToken(secret, input.qrToken, now)
-          : verifyQrClaim(secret, session.id, input.qrClaim!, now));
+          : verifyQrClaim(secret, session.id as string, input.qrClaim!, now));
       if (!valid) {
         throw new ConflictException(
           'That QR code has expired. Scan the one on screen again',
@@ -1074,7 +1074,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       }
       const fence = withinGeofence(
         { latitude: session.latitude, longitude: session.longitude },
-        session.radius_m,
+        session.radius_m as number,
         input.location,
       );
       distanceM = Math.round(fence.distanceM);
@@ -1088,7 +1088,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     const lateAt =
       session.late_after_minutes === null
         ? null
-        : Date.parse(session.opened_at) + session.late_after_minutes * 60_000;
+        : Date.parse(session.opened_at as string) + session.late_after_minutes * 60_000;
     const status: AttendanceStatus =
       lateAt !== null && now > lateAt ? 'late' : 'present';
     const stamp = new Date(now).toISOString();
@@ -1130,7 +1130,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     }
 
     const [student] = await this.students([studentId]);
-    void this.realtime.publishStaff(session.id, {
+    void this.realtime.publishStaff(session.id as string, {
       type: 'attendance.record',
       data: this.toEntry(student, studentId, record),
     });

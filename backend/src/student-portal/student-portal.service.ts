@@ -180,9 +180,9 @@ export class StudentPortalService {
     for (const s of (staff ?? []) as any[]) {
       const p = profileById.get(s.user_profile_id);
       if (!p) continue;
-      const list = teachersOf.get(s.course_id) ?? [];
+      const list = teachersOf.get(s.course_id as string) ?? [];
       list.push({ firstName: p.first_name ?? null, lastName: p.last_name ?? null });
-      teachersOf.set(s.course_id, list);
+      teachersOf.set(s.course_id as string, list);
     }
 
     const grades = await Promise.all(

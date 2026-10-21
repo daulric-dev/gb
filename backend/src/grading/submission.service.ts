@@ -174,7 +174,7 @@ export class SubmissionService {
       (submissions ?? []).map((s: any) => [s.activity_id as string, s]),
     );
 
-    return rows.map((a) => toPortalActivity(a, byActivity.get(a.id)));
+    return rows.map((a) => toPortalActivity(a, byActivity.get(a.id as string)));
   }
 
   /** The activity itself, with questions but never the correct answers. */

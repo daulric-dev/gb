@@ -92,7 +92,7 @@ export class FileAccessService {
         .select('course_id')
         .eq('student_id', student.id)
         .eq('status', 'active');
-      for (const r of enrolled ?? []) ids.add((r).course_id);
+      for (const r of enrolled ?? []) ids.add((r).course_id as string);
     }
 
     if (ids.size === 0) return [];

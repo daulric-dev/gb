@@ -232,7 +232,7 @@ export class DashboardService {
       .eq('status', 'submitted');
 
     for (const s of submissions ?? []) {
-      const courseId = courseOf.get((s as any).activity_id);
+      const courseId = courseOf.get((s as any).activity_id as string);
       if (courseId) counts.set(courseId, (counts.get(courseId) ?? 0) + 1);
     }
     return counts;
@@ -332,7 +332,7 @@ export class DashboardService {
         id: a.id as string,
         title: a.title as string,
         courseId: a.course_id as string,
-        courseName: nameOf.get(a.course_id) ?? null,
+        courseName: nameOf.get(a.course_id as string) ?? null,
         at: a.published_at as string,
       })),
       ...((announcements ?? []) as any[]).map((a) => ({
@@ -340,7 +340,7 @@ export class DashboardService {
         id: a.id as string,
         title: a.title as string,
         courseId: a.course_id as string | null,
-        courseName: a.course_id ? (nameOf.get(a.course_id) ?? null) : null,
+        courseName: a.course_id ? (nameOf.get(a.course_id as string) ?? null) : null,
         at: a.created_at as string,
       })),
     ];

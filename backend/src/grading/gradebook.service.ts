@@ -210,14 +210,14 @@ export class GradebookService {
     );
     const byStudent = new Map<string, any[]>();
     for (const s of submissions) {
-      const list = byStudent.get(s.student_id) ?? [];
+      const list = byStudent.get(s.student_id as string) ?? [];
       list.push(s);
-      byStudent.set(s.student_id, list);
+      byStudent.set(s.student_id as string, list);
     }
 
     const rows = enrolments.map((r) => {
-      const student = nameOf.get(r.student_id);
-      const own = byStudent.get(r.student_id) ?? [];
+      const student = nameOf.get(r.student_id as string);
+      const own = byStudent.get(r.student_id as string) ?? [];
 
       const cells: Record<
         string,
@@ -237,7 +237,7 @@ export class GradebookService {
           excused: !!s.excused,
           submittedAt: s.submitted_at ?? null,
         };
-        calc.set(s.activity_id, this.toCalcSubmission(s));
+        calc.set(s.activity_id as string, this.toCalcSubmission(s));
       }
 
       return {
