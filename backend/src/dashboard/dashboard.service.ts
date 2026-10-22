@@ -336,7 +336,7 @@ export class DashboardService {
         title: a.title,
         courseId: a.course_id as string,
         courseName: nameOf.get(a.course_id as string) ?? null,
-        at: isoDate(a.published_at) as string,
+        at: isoDate(a.published_at as Date) as string,
       })),
       ...announcements.map((a) => ({
         type: 'announcement' as const,

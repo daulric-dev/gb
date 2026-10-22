@@ -195,7 +195,7 @@ export class AuthService {
 
     const { school_management: memberships, ...rest } = row;
     const profile: Record<string, any> = {
-      ...withSchool(rest),
+      ...withSchool(rest as typeof withSchool extends (row: infer R) => any ? R : never),
       school_management: memberships,
     };
 

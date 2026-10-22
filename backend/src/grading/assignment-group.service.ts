@@ -181,13 +181,13 @@ export class AssignmentGroupService {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
     const current = await this.loadForCourse(courseId);
-    const known = new Set(current.map((g) => g.id));
+    const known = new Set(current.map((g) => g.id) as Array<string>);
     if (groupIds.some((id) => !known.has(id))) {
       throw new NotFoundException('Assignment group not found');
     }
 
     const sent = [...new Set(groupIds)];
-    const rest = current.map((g) => g.id).filter((id) => !sent.includes(id));
+    const rest = current.map((g) => g.id).filter((id: string) => !sent.includes(id));
     const order = [...sent, ...rest];
 
     try {

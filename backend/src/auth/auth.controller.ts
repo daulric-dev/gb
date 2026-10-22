@@ -33,7 +33,6 @@ import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.d
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
 import { SessionService } from '@/account/session.service';
 import { VersioningService } from '@/versioning/versioning.service';
-import { MultipartFile } from '@fastify/multipart';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -183,14 +182,14 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar')
   @ApiConsumes('multipart/form-data')
-  async uploadAvatar(@Req() req: any) {
-    const file: MultipartFile = await req.file();
+  async uploadAvatar(@Req() req: FastifyRequest) {
+    const file = await req.file();
 
     if (!file) {
       throw new BadRequestException('No file provided');
     }
 
-    const userId: string = req.user.id;
+    const userId: string = (req.body as any).user?.id;
 
     const result = await this.imagesService.setImageToUserProfile(
       userId,
@@ -204,10 +203,10 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar/resumable')
   async createResumableUpload(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Body() dto: CreateResumableUploadDto,
   ) {
-    const userId: string = req.user.id;
+    const userId: string = (req.body as any).user?.id;
     const result = await this.imagesService.createResumableUpload(
       userId,
       dto.filename,
@@ -221,10 +220,10 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar/complete')
   async completeResumableUpload(
-    @Req() req: any,
+    @Req() req: FastifyRequest ,
     @Body() dto: CompleteUploadDto,
   ) {
-    const userId: string = req.user.id;
+    const userId: string = (req.body as any).user?.id;
     const result = await this.imagesService.completeResumableUpload(
       userId,
       dto.path,

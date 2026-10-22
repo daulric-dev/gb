@@ -149,7 +149,12 @@ export class GradebookService {
     bands: CalcBand[],
   ): CourseGrade {
     const result = calculateCourseGrade(
-      groups,
+      groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        weight: group.weight == null ? null : Number(group.weight),
+        position: group.position,
+      })),
       activities.map((a) => ({
         id: a.id as string,
         assignmentGroupId: (a.assignment_group_id as string | null) ?? null,
@@ -250,7 +255,7 @@ export class GradebookService {
         lastName: student?.last_name ?? null,
         status: r.status,
         cells,
-        grade: this.gradeFor(groups, activities, calc, bands),
+        grade: this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands),
       };
     });
 
@@ -353,7 +358,7 @@ export class GradebookService {
       ]),
     );
 
-    return this.gradeFor(groups, activities, calc, bands);
+    return this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands);
   }
 
   private async loadCourse(courseId: string): Promise<GradebookCourse> {
@@ -394,10 +399,10 @@ export class GradebookService {
       ]),
     );
 
-    const groupName = new Map(groups.map((g) => [g.id, g.name]));
+    const groupName = new Map(groups.map((g) => [g.id, g.name]) as Array<[string, string]>);
 
     return {
-      grade: this.gradeFor(groups, activities, calc, bands),
+      grade: this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands),
       groups,
       activities: activities.map((a) => ({
         ...toPortalActivity(a, byActivity.get(a.id as string)),

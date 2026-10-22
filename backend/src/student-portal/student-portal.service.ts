@@ -83,9 +83,9 @@ export class StudentPortalService {
       id: student.id,
       firstName: student.first_name,
       lastName: student.last_name,
-      dateOfBirth: dateOnly(student.date_of_birth),
+      dateOfBirth: dateOnly(student.date_of_birth as Date),
       gender: student.gender,
-      enrollmentDate: dateOnly(student.enrollment_date),
+      enrollmentDate: dateOnly(student.enrollment_date as Date),
       school: school
         ? { id: school.id, name: school.name, type: school.school_type }
         : null,

@@ -150,7 +150,7 @@ export class AcademicYearService {
       throw new NotFoundException('Academic year not found');
     }
 
-    return serializeAcademicYear(data);
+    return serializeAcademicYear(data as typeof serializeAcademicYear extends (row: infer R) => any ? R : never);
   }
 
   async update(userId: string, yearId: string, dto: UpdateAcademicYearDto) {
