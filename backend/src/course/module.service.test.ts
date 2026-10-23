@@ -43,12 +43,14 @@ function item(over: Record<string, any> = {}) {
     page_id: null,
     activity_id: null,
     file_id: null,
+    discussion_topic_id: null,
     url: null,
     indent: 0,
     is_published: true,
     page: null,
     activity: null,
     file: null,
+    discussion_topic: null,
     ...over,
   };
 }
@@ -141,6 +143,7 @@ describe('ModuleService.list', () => {
       pageId: null,
       activityId: null,
       fileId: null,
+      discussionTopicId: null,
       url: null,
       indent: 0,
       isPublished: true,
@@ -159,6 +162,38 @@ describe('ModuleService.list', () => {
 
     expect(prisma.module.findMany.mock.calls[0][0].where.is_published).toBe(true);
     expect(prisma.module_item.findMany.mock.calls[0][0].where.is_published).toBe(true);
+  });
+
+  test('a discussion item shows its topic, and only a published one to students', async () => {
+    const prisma = createMockPrisma();
+    prisma.module.findMany.mockResolvedValue([MODULES[0]]);
+    prisma.module_item.findMany.mockResolvedValue([
+      item({
+        id: 'd1',
+        item_type: 'discussion',
+        title: null,
+        discussion_topic_id: 't1',
+        discussion_topic: { id: 't1', title: 'Ask anything', is_published: true },
+      }),
+      item({
+        id: 'd2',
+        item_type: 'discussion',
+        title: null,
+        discussion_topic_id: 't2',
+        discussion_topic: { id: 't2', title: 'Draft prompt', is_published: false },
+        position: 1,
+      }),
+    ]);
+    const svc = service(prisma);
+
+    const staff = await svc.list(USER, COURSE);
+    expect(staff[0].items.map((i) => [i.title, i.discussionTopicId])).toEqual([
+      ['Ask anything', 't1'],
+      ['Draft prompt', 't2'],
+    ]);
+
+    const student = await svc.listForStudent(COURSE);
+    expect(student[0].items.map((i) => i.id)).toEqual(['d1']);
   });
 
   test('someone with no course role gets a 404', async () => {
@@ -286,6 +321,55 @@ describe('ModuleService items', () => {
       school_id: 'school-1',
       owner_id: USER,
       deleted_at: null,
+    });
+  });
+
+  test('a discussion item needs a topic of the same course', async () => {
+    const prisma = withModule();
+    const svc = service(prisma);
+    expect(
+      await expectRejection(
+        svc.createItem(USER, COURSE, 'm1', { itemType: 'discussion' }),
+      ),
+    ).toBeInstanceOf(BadRequestException);
+    expect(
+      await expectRejection(
+        svc.createItem(USER, COURSE, 'm1', {
+          itemType: 'discussion',
+          discussionTopicId: 't9',
+        }),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+    expect(prisma.discussion_topic.findFirst.mock.calls[0][0].where).toEqual({
+      id: 't9',
+      course_id: COURSE,
+    });
+  });
+
+  test('a discussion item keeps only the topic pointer', async () => {
+    const prisma = withModule();
+    prisma.discussion_topic.findFirst.mockResolvedValue({ id: 't1' });
+    prisma.module_item.create.mockImplementation(async ({ data }: any) =>
+      item({
+        ...data,
+        id: 'new',
+        discussion_topic: { id: 't1', title: 'Ask anything', is_published: true },
+      }),
+    );
+    const created = await service(prisma).createItem(USER, COURSE, 'm1', {
+      itemType: 'discussion',
+      discussionTopicId: 't1',
+      pageId: 'stray',
+    });
+    expect(prisma.module_item.create.mock.calls[0][0].data).toMatchObject({
+      item_type: 'discussion',
+      discussion_topic_id: 't1',
+      page_id: null,
+    });
+    expect(created).toMatchObject({
+      itemType: 'discussion',
+      title: 'Ask anything',
+      discussionTopicId: 't1',
     });
   });
 

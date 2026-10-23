@@ -3,7 +3,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate } from '@/common/db-values';
 import { PushService } from '@/notifications/push.service';
 
-export type CourseNotificationKind = 'activity_published' | 'announcement';
+export type CourseNotificationKind =
+  | 'activity_published'
+  | 'announcement'
+  | 'discussion_topic'
+  | 'discussion_reply';
 
 /** What the portal bell and the mobile inbox show for one notice. */
 export interface CourseNotification {
@@ -13,6 +17,7 @@ export interface CourseNotification {
   courseName: string | null;
   activityId: string | null;
   announcementId: string | null;
+  topicId: string | null;
   title: string;
   body: string | null;
   readAt: string | null;
@@ -25,6 +30,7 @@ const NOTIFICATION_SELECT = {
   course_id: true,
   activity_id: true,
   announcement_id: true,
+  discussion_topic_id: true,
   title: true,
   body: true,
   read_at: true,
@@ -35,11 +41,20 @@ const NOTIFICATION_SELECT = {
 const MAX_PAGE = 100;
 const BODY_PREVIEW = 140;
 
+/** Whitespace-collapsed text cut to a notification-sized preview. */
+function preview(text: string | null | undefined): string | null {
+  const flat = (text ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  return flat.length > BODY_PREVIEW
+    ? `${flat.slice(0, BODY_PREVIEW - 1)}…`
+    : flat;
+}
+
 /** Android channel the mobile app creates for course news. */
 export const COURSE_CHANNEL = 'coursework';
 
 /**
- * Tells a course's students about new work and announcements.
+ * Tells a course's students about new work, announcements and discussions.
  *
  * Each event writes one in-app notice per active student (what the portal
  * bell lists) and sends an Expo push to their devices. Both are best effort:
@@ -78,15 +93,11 @@ export class CourseNotificationService {
     courseId: string,
     announcement: { id: string; title: string; body: string | null },
   ): Promise<void> {
-    const preview = (announcement.body ?? '').replace(/\s+/g, ' ').trim();
     await this.notify(courseId, {
       kind: 'announcement',
       announcement_id: announcement.id,
       title: announcement.title,
-      body:
-        preview.length > BODY_PREVIEW
-          ? `${preview.slice(0, BODY_PREVIEW - 1)}…`
-          : preview || null,
+      body: preview(announcement.body),
       data: {
         type: 'course.announcement',
         courseId,
@@ -95,14 +106,147 @@ export class CourseNotificationService {
     });
   }
 
+  /**
+   * A discussion topic went up (created published, or published later).
+   * Each student hears about a topic once; its author is not told about
+   * their own topic. Never throws.
+   */
+  async discussionTopicPublished(
+    courseId: string,
+    topic: {
+      id: string;
+      title: string;
+      body: string | null;
+      authorUserProfileId: string | null;
+    },
+  ): Promise<void> {
+    await this.notify(courseId, {
+      kind: 'discussion_topic',
+      discussion_topic_id: topic.id,
+      title: `New discussion: ${topic.title}`,
+      body: preview(topic.body),
+      exclude: topic.authorUserProfileId,
+      data: { type: 'course.discussion', courseId, topicId: topic.id },
+    });
+  }
+
+  /**
+   * Someone replied in a topic. Its author and everyone who has posted in it
+   * (bar the replier) are told. Students actively enrolled get an in-app
+   * notice - at most one unread per topic, refreshed by each new reply - and
+   * a push; the course's staff, who have no in-app list, get the push only.
+   * Never throws.
+   */
+  async discussionReplied(
+    courseId: string,
+    topic: { id: string; title: string; authorUserProfileId: string | null },
+    reply: { authorUserProfileId: string; body: string },
+  ): Promise<void> {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: { id: true, name: true, status: true },
+      });
+      if (course?.status !== 'published') return;
+
+      const posters = await this.prisma.discussion_reply.findMany({
+        where: { topic_id: topic.id, author_user_profile_id: { not: null } },
+        select: { author_user_profile_id: true },
+        distinct: ['author_user_profile_id'],
+      });
+      const involved = new Set<string>(
+        posters
+          .map((p) => p.author_user_profile_id)
+          .filter((id): id is string => !!id),
+      );
+      if (topic.authorUserProfileId) involved.add(topic.authorUserProfileId);
+      involved.delete(reply.authorUserProfileId);
+      if (involved.size === 0) return;
+
+      const [students, staff, replier] = await Promise.all([
+        this.recipients(course.id),
+        this.prisma.course_staff.findMany({
+          where: { course_id: course.id },
+          select: { user_profile_id: true },
+        }),
+        this.prisma.user_profile.findUnique({
+          where: { id: reply.authorUserProfileId },
+          select: { first_name: true, last_name: true },
+        }),
+      ]);
+      const studentIds = students.filter((id) => involved.has(id));
+      const staffIds = staff
+        .map((s) => s.user_profile_id)
+        .filter((id) => involved.has(id) && !studentIds.includes(id));
+      if (studentIds.length === 0 && staffIds.length === 0) return;
+
+      const who =
+        [replier?.first_name, replier?.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || 'Someone';
+      const title = `New reply: ${topic.title}`;
+      const body = preview(`${who}: ${reply.body}`);
+
+      if (studentIds.length > 0) {
+        const unread = {
+          user_profile_id: { in: studentIds },
+          discussion_topic_id: topic.id,
+          kind: 'discussion_reply',
+          read_at: null,
+        };
+        const now = new Date();
+        await this.prisma.course_notification.updateMany({
+          where: unread,
+          data: { title, body, created_at: now },
+        });
+        const existing = await this.prisma.course_notification.findMany({
+          where: unread,
+          select: { user_profile_id: true },
+        });
+        const have = new Set(existing.map((e) => e.user_profile_id));
+        const fresh = studentIds.filter((id) => !have.has(id));
+        if (fresh.length > 0) {
+          // The partial unique index keeps a racing reply from doubling up.
+          await this.prisma.course_notification.createMany({
+            data: fresh.map((user_profile_id) => ({
+              user_profile_id,
+              course_id: course.id,
+              kind: 'discussion_reply',
+              discussion_topic_id: topic.id,
+              title,
+              body,
+              created_at: now,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      await this.push.sendToUsers([...studentIds, ...staffIds], {
+        title: `${course.name}: ${title}`,
+        body: body ?? 'Tap to open',
+        data: { type: 'course.discussion', courseId, topicId: topic.id },
+        channelId: COURSE_CHANNEL,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify about a reply in ${topic.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   private async notify(
     courseId: string,
     notice: {
       kind: CourseNotificationKind;
       activity_id?: string;
       announcement_id?: string;
+      discussion_topic_id?: string;
       title: string;
       body: string | null;
+      /** An account not to tell (whoever caused the event). */
+      exclude?: string | null;
       data: Record<string, unknown>;
     },
   ): Promise<void> {
@@ -114,11 +258,14 @@ export class CourseNotificationService {
       // Students cannot see a draft or archived course; nothing to tell them.
       if (course?.status !== 'published') return;
 
-      const userIds = await this.recipients(course.id);
+      const userIds = (await this.recipients(course.id)).filter(
+        (id) => id !== notice.exclude,
+      );
       if (userIds.length === 0) return;
 
-      // Reopened work is skipped by the unique (user, activity) key, so a
-      // student is told once; only the newly written rows get a push.
+      // Reopened work (or a republished topic) is skipped by the unique
+      // (user, activity) and (user, topic) keys, so a student is told once;
+      // only the newly written rows get a push.
       const existing = notice.activity_id
         ? await this.prisma.course_notification.findMany({
             where: {
@@ -127,7 +274,16 @@ export class CourseNotificationService {
             },
             select: { user_profile_id: true },
           })
-        : [];
+        : notice.discussion_topic_id
+          ? await this.prisma.course_notification.findMany({
+              where: {
+                kind: notice.kind,
+                discussion_topic_id: notice.discussion_topic_id,
+                user_profile_id: { in: userIds },
+              },
+              select: { user_profile_id: true },
+            })
+          : [];
       const already = new Set(existing.map((e) => e.user_profile_id));
       const fresh = userIds.filter((id) => !already.has(id));
       if (fresh.length === 0) return;
@@ -139,6 +295,7 @@ export class CourseNotificationService {
           kind: notice.kind,
           activity_id: notice.activity_id ?? null,
           announcement_id: notice.announcement_id ?? null,
+          discussion_topic_id: notice.discussion_topic_id ?? null,
           title: notice.title,
           body: notice.body,
         })),
@@ -210,6 +367,7 @@ export class CourseNotificationService {
         courseName: r.course?.name ?? null,
         activityId: r.activity_id,
         announcementId: r.announcement_id,
+        topicId: r.discussion_topic_id,
         title: r.title,
         body: r.body,
         readAt: isoDate(r.read_at),

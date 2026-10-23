@@ -493,14 +493,38 @@ export class CourseCopyService {
       is_published: m.is_published,
     }));
 
+    // Discussion prompts the staff wrote come along unpublished and empty;
+    // topics students started are part of the old class, not the design.
+    const newTopics: Prisma.discussion_topicCreateManyInput[] = topics
+      .filter((t) => t.user_profile?.account_type !== 'student')
+      .map((t) => ({
+        id: mint(t.id),
+        course_id: targetId,
+        author_user_profile_id: userId,
+        title: t.title,
+        body: relink(t.body),
+        is_pinned: t.is_pinned,
+        is_locked: t.is_locked,
+        is_published: false,
+        require_initial_post: t.require_initial_post,
+      }));
+
     const newItems: Prisma.module_itemCreateManyInput[] = [];
     for (const i of items) {
       const moduleId = ids.get(i.module_id);
       const pageId = i.page_id ? ids.get(i.page_id) : null;
       const activityId = i.activity_id ? ids.get(i.activity_id) : null;
-      // An item whose target is gone (shouldn't happen inside one course)
-      // would break the item-type check; leave it behind.
-      if (!moduleId || pageId === undefined || activityId === undefined) {
+      const topicId = i.discussion_topic_id
+        ? ids.get(i.discussion_topic_id)
+        : null;
+      // An item whose target is gone or was not copied (a topic a student
+      // started) would break the item-type check; leave it behind.
+      if (
+        !moduleId ||
+        pageId === undefined ||
+        activityId === undefined ||
+        topicId === undefined
+      ) {
         continue;
       }
       newItems.push({
@@ -512,26 +536,12 @@ export class CourseCopyService {
         page_id: pageId,
         activity_id: activityId,
         file_id: i.file_id,
+        discussion_topic_id: topicId,
         url: i.url,
         indent: i.indent,
         is_published: i.is_published,
       });
     }
-
-    // Discussion prompts the staff wrote come along unpublished and empty;
-    // topics students started are part of the old class, not the design.
-    const newTopics: Prisma.discussion_topicCreateManyInput[] = topics
-      .filter((t) => t.user_profile?.account_type !== 'student')
-      .map((t) => ({
-        course_id: targetId,
-        author_user_profile_id: userId,
-        title: t.title,
-        body: relink(t.body),
-        is_pinned: t.is_pinned,
-        is_locked: t.is_locked,
-        is_published: false,
-        require_initial_post: t.require_initial_post,
-      }));
 
     // Parents before children, so every foreign key already exists.
     const writes: [string, unknown[], (rows: any[]) => Promise<unknown>][] = [
@@ -544,8 +554,8 @@ export class CourseCopyService {
       ['options', newOptions, (data) => tx.quiz_option.createMany({ data })],
       ['pages', newPages, (data) => tx.page.createMany({ data })],
       ['modules', newModules, (data) => tx.module.createMany({ data })],
-      ['items', newItems, (data) => tx.module_item.createMany({ data })],
       ['topics', newTopics, (data) => tx.discussion_topic.createMany({ data })],
+      ['items', newItems, (data) => tx.module_item.createMany({ data })],
     ];
     for (const [, rows, write] of writes) {
       if (rows.length > 0) await write(rows);

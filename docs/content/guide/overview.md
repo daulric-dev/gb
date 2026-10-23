@@ -9,7 +9,7 @@ GradeBook is a learning platform for schools: teachers build **courses** out of 
 
 ## Two ways in
 
-Everything works in a browser. The mobile app covers what you do on the move: students see their courses, to-do list and grades, check in to class (including by scanning the QR code on the board), and get a notification when attendance opens; teachers can take attendance. Building a course - modules, pages, marking - is done on the web.
+Everything works in a browser. The mobile app covers what you do on the move: students get the full course - modules, pages, files, work and quizzes, grades, announcements, discussions and attendance - check in to class (including by scanning the QR code on the board), and get notifications for attendance, new work and announcements; teachers can mark work (with rubrics), post announcements, take part in and moderate discussions, read the gradebook and roster, publish or unpublish modules, and take attendance. Building a course - modules, pages, quizzes, rubrics - is done on the web.
 
 ## Who can do what
 

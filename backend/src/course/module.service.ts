@@ -33,6 +33,7 @@ const ITEM_SELECT = {
   page_id: true,
   activity_id: true,
   file_id: true,
+  discussion_topic_id: true,
   url: true,
   indent: true,
   is_published: true,
@@ -48,6 +49,7 @@ const ITEM_SELECT = {
     },
   },
   file: { select: { id: true, name: true, deleted_at: true } },
+  discussion_topic: { select: { id: true, title: true, is_published: true } },
 } as const;
 
 type ItemWithTargets = Prisma.module_itemGetPayload<{
@@ -72,6 +74,7 @@ interface ItemRow {
   page_id: string | null;
   activity_id: string | null;
   file_id: string | null;
+  discussion_topic_id: string | null;
   url: string | null;
   indent: number;
   is_published: boolean;
@@ -179,12 +182,17 @@ export class ModuleService {
       return status === 'published' || status === 'closed';
     }
     if (row.item_type === 'file') return targets.files.has(row.file_id!);
+    // A draft topic does not exist for a student.
+    if (row.item_type === 'discussion') {
+      return targets.topics.get(row.discussion_topic_id!)?.is_published === true;
+    }
     return true;
   }
 
-  /** The pages, activities and files items point at, from their relations. */
+  /** The pages, activities, files and topics items point at. */
   private targetsOf(items: ItemWithTargets[]) {
     const pages = new Map<string, { title: string; is_published: boolean }>();
+    const topics = new Map<string, { title: string; is_published: boolean }>();
     const activities = new Map<string, ActivitySummary>();
     const files = new Map<string, { name: string }>();
 
@@ -205,9 +213,12 @@ export class ModuleService {
       if (i.item_type === 'file' && i.file && i.file.deleted_at === null) {
         files.set(i.file.id, { name: i.file.name });
       }
+      if (i.item_type === 'discussion' && i.discussion_topic) {
+        topics.set(i.discussion_topic.id, i.discussion_topic);
+      }
     }
 
-    return { pages, activities, files };
+    return { pages, activities, files, topics };
   }
 
   private toItem(row: ItemRow, targets: ReturnType<typeof this.targetsOf>) {
@@ -219,6 +230,8 @@ export class ModuleService {
       (row.page_id && targets.pages.get(row.page_id)?.title) ||
       activity?.title ||
       (row.file_id && targets.files.get(row.file_id)?.name) ||
+      (row.discussion_topic_id &&
+        targets.topics.get(row.discussion_topic_id)?.title) ||
       'Untitled';
 
     return {
@@ -230,6 +243,7 @@ export class ModuleService {
       pageId: row.page_id,
       activityId: row.activity_id,
       fileId: row.file_id,
+      discussionTopicId: row.discussion_topic_id,
       url: row.url,
       indent: row.indent,
       isPublished: row.is_published,
@@ -387,6 +401,7 @@ export class ModuleService {
       pageId?: string;
       activityId?: string;
       fileId?: string;
+      discussionTopicId?: string;
       url?: string;
     },
   ) {
@@ -397,6 +412,7 @@ export class ModuleService {
       page_id: null as string | null,
       activity_id: null as string | null,
       file_id: null as string | null,
+      discussion_topic_id: null as string | null,
       url: null as string | null,
     };
 
@@ -440,6 +456,18 @@ export class ModuleService {
         row.file_id = input.fileId;
         break;
       }
+      case 'discussion': {
+        if (!input.discussionTopicId) {
+          throw new BadRequestException('Choose a discussion topic');
+        }
+        const data = await this.prisma.discussion_topic.findFirst({
+          where: { id: input.discussionTopicId, course_id: course.id },
+          select: { id: true },
+        });
+        if (!data) throw new NotFoundException('Discussion topic not found');
+        row.discussion_topic_id = input.discussionTopicId;
+        break;
+      }
       case 'link':
         if (!input.url) throw new BadRequestException('Give the link a URL');
         if (!title) throw new BadRequestException('Give the link a title');
@@ -463,6 +491,7 @@ export class ModuleService {
       pageId?: string;
       activityId?: string;
       fileId?: string;
+      discussionTopicId?: string;
       url?: string;
       indent?: number;
     },
@@ -565,7 +594,7 @@ export class ModuleService {
     return this.shapeOne(data);
   }
 
-  /** Removes the item only; the page, activity or file it linked stays. */
+  /** Removes the item only; the page, activity, file or topic it linked stays. */
   async removeItem(
     userId: string,
     courseId: string,

@@ -2,16 +2,16 @@
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model assignment_group {
-  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  course_id  String     @db.Uuid
-  name       String
-  weight     Decimal?   @db.Decimal(5, 2)
-  position   Int        @default(0)
-  created_at DateTime   @default(now()) @db.Timestamptz(6)
-  drop_lowest  Int      @default(0)
-  drop_highest Int      @default(0)
-  course     course     @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  activity   activity[]
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  course_id    String     @db.Uuid
+  name         String
+  weight       Decimal?   @db.Decimal(5, 2)
+  position     Int        @default(0)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  drop_lowest  Int        @default(0)
+  drop_highest Int        @default(0)
+  course       course     @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  activity     activity[]
 
   @@schema("course")
 }
@@ -74,39 +74,39 @@ model attendance_session {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model course {
-  id                 String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  school_id          String                     @db.Uuid
-  academic_year_id   String?                    @db.Uuid
-  term_id            String?                    @db.Uuid
-  name               String
-  code               String?
-  description        String?
-  status             course_status              @default(draft)
-  join_code          String?
-  grade_scale_id     String?                    @db.Uuid
-  created_by         String?                    @db.Uuid
-  created_at         DateTime                   @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime                   @default(now()) @db.Timestamptz(6)
-  is_template        Boolean                    @default(false)
-  assignment_group   assignment_group[]
-  attendance_record  course_attendance_record[]
-  attendance_session attendance_session?
-  academic_year      academic_year?             @relation(fields: [academic_year_id], references: [id], onUpdate: NoAction)
-  user_profile       user_profile?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
-  grade_scale        grade_scale?               @relation(fields: [grade_scale_id], references: [id], onUpdate: NoAction)
-  school             school                     @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  term               term?                      @relation(fields: [term_id], references: [id], onUpdate: NoAction)
-  course_staff       course_staff[]
-  course_student     course_student[]
-  module             module[]
-  module_item        module_item[]
-  page               page[]
-  activity           activity[]
-  announcement       announcement[]
-  rubric             rubric[]
-  discussion_topic   discussion_topic[]
-  discussion_reply   discussion_reply[]
-  discussion_setting discussion_setting?
+  id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id           String                     @db.Uuid
+  academic_year_id    String?                    @db.Uuid
+  term_id             String?                    @db.Uuid
+  name                String
+  code                String?
+  description         String?
+  status              course_status              @default(draft)
+  join_code           String?
+  grade_scale_id      String?                    @db.Uuid
+  created_by          String?                    @db.Uuid
+  created_at          DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime                   @default(now()) @db.Timestamptz(6)
+  is_template         Boolean                    @default(false)
+  assignment_group    assignment_group[]
+  attendance_record   course_attendance_record[]
+  attendance_session  attendance_session?
+  academic_year       academic_year?             @relation(fields: [academic_year_id], references: [id], onUpdate: NoAction)
+  user_profile        user_profile?              @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  grade_scale         grade_scale?               @relation(fields: [grade_scale_id], references: [id], onUpdate: NoAction)
+  school              school                     @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term                term?                      @relation(fields: [term_id], references: [id], onUpdate: NoAction)
+  course_staff        course_staff[]
+  course_student      course_student[]
+  module              module[]
+  module_item         module_item[]
+  page                page[]
+  activity            activity[]
+  announcement        announcement[]
+  rubric              rubric[]
+  discussion_topic    discussion_topic[]
+  discussion_reply    discussion_reply[]
+  discussion_setting  discussion_setting?
   course_notification course_notification[]
 
   @@index([academic_year_id])
@@ -166,26 +166,29 @@ model module {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model module_item {
-  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  module_id    String           @db.Uuid
-  course_id    String           @db.Uuid
-  position     Int              @default(0)
-  item_type    module_item_type
-  title        String?
-  page_id      String?          @db.Uuid
-  activity_id  String?          @db.Uuid
-  file_id      String?          @db.Uuid
-  url          String?
-  indent       Int              @default(0) @db.SmallInt
-  is_published Boolean          @default(true)
-  created_at   DateTime         @default(now()) @db.Timestamptz(6)
-  activity     activity?        @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  course       course           @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  file         file?            @relation(fields: [file_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  module       module           @relation(fields: [module_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  page         page?            @relation(fields: [page_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  module_id           String            @db.Uuid
+  course_id           String            @db.Uuid
+  position            Int               @default(0)
+  item_type           module_item_type
+  title               String?
+  page_id             String?           @db.Uuid
+  activity_id         String?           @db.Uuid
+  file_id             String?           @db.Uuid
+  discussion_topic_id String?           @db.Uuid
+  url                 String?
+  indent              Int               @default(0) @db.SmallInt
+  is_published        Boolean           @default(true)
+  created_at          DateTime          @default(now()) @db.Timestamptz(6)
+  activity            activity?         @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course              course            @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  file                file?             @relation(fields: [file_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  module              module            @relation(fields: [module_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  page                page?             @relation(fields: [page_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  discussion_topic    discussion_topic? @relation(fields: [discussion_topic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([activity_id])
+  @@index([discussion_topic_id])
   @@index([course_id])
   @@index([file_id])
   @@index([module_id])
@@ -261,31 +264,37 @@ enum module_item_type {
   file
   link
   header
+  discussion
 
   @@schema("course")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model course_notification {
-  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_profile_id String        @db.Uuid
-  course_id       String        @db.Uuid
-  kind            String
-  activity_id     String?       @db.Uuid
-  announcement_id String?       @db.Uuid
-  title           String
-  body            String?
-  read_at         DateTime?     @db.Timestamptz(6)
-  created_at      DateTime      @default(now()) @db.Timestamptz(6)
-  activity        activity?     @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  announcement    announcement? @relation(fields: [announcement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  course          course        @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user_profile    user_profile  @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_profile_id     String            @db.Uuid
+  course_id           String            @db.Uuid
+  kind                String
+  activity_id         String?           @db.Uuid
+  announcement_id     String?           @db.Uuid
+  discussion_topic_id String?           @db.Uuid
+  title               String
+  body                String?
+  read_at             DateTime?         @db.Timestamptz(6)
+  created_at          DateTime          @default(now()) @db.Timestamptz(6)
+  activity            activity?         @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  announcement        announcement?     @relation(fields: [announcement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  discussion_topic    discussion_topic? @relation(fields: [discussion_topic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course              course            @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile        user_profile      @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_profile_id, activity_id], map: "course_notification_user_activity_key")
   @@unique([user_profile_id, announcement_id], map: "course_notification_user_announcement_key")
+  @@unique([user_profile_id, discussion_topic_id], map: "course_notification_user_topic_published_key", where: raw("(kind = 'discussion_topic'::text)"))
+  @@unique([user_profile_id, discussion_topic_id], map: "course_notification_user_topic_unread_reply_key", where: raw("((kind = 'discussion_reply'::text) AND (read_at IS NULL))"))
   @@index([user_profile_id, created_at(sort: Desc)], map: "course_notification_user_created_idx")
   @@index([user_profile_id], map: "course_notification_user_unread_idx", where: raw("(read_at IS NULL)"))
   @@index([course_id], map: "course_notification_course_id_idx")
+  @@index([discussion_topic_id], map: "course_notification_discussion_topic_id_idx")
   @@schema("course")
 }

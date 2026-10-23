@@ -115,6 +115,8 @@ export function parseBlocks(source: string): Block[] {
       const items: ListItem[] = [];
       while (i < lines.length) {
         const m = LIST_RE.exec(lines[i]);
+        // A top-level switch between bullets and numbers starts a new list.
+        if (m && !m[1] && /\d/.test(m[2]) !== ordered) break;
         if (m) {
           items.push({
             text: m[3],

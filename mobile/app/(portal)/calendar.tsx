@@ -8,6 +8,7 @@ import {
   ClipboardList,
   FileText,
   Megaphone,
+  MessagesSquare,
   PenLine,
 } from "lucide-react-native";
 import { api } from "@/lib/api";
@@ -22,7 +23,9 @@ import {
   AGENDA_DAYS,
   dayHeading,
   groupByDay,
+  isDiscussionNotice,
   noticeHref,
+  noticeKindLabel,
   type CourseNotification,
   type PortalCalendarItem,
 } from "@/lib/calendar";
@@ -82,7 +85,11 @@ function NoticeRow({
   onOpen: (n: CourseNotification) => void;
 }) {
   const { colors } = useTheme();
-  const Icon = notice.kind === "announcement" ? Megaphone : FileText;
+  const Icon = isDiscussionNotice(notice)
+    ? MessagesSquare
+    : notice.kind === "announcement"
+      ? Megaphone
+      : FileText;
   return (
     <Pressable
       onPress={() => onOpen(notice)}
@@ -97,7 +104,9 @@ function NoticeRow({
           {notice.title}
         </Text>
         <Text variant="muted" size="xs" numberOfLines={1}>
-          {[notice.courseName, notice.body].filter(Boolean).join(" · ")}
+          {[noticeKindLabel(notice.kind), notice.courseName, notice.body]
+            .filter(Boolean)
+            .join(" · ")}
         </Text>
       </View>
       <ChevronRight color={colors.mutedForeground} size={16} />
@@ -106,8 +115,8 @@ function NoticeRow({
 }
 
 /**
- * What is coming up: unread notices about new work and announcements, then
- * every due date in the next two months, day by day.
+ * What is coming up: unread notices about new work, announcements and
+ * discussions, then every due date in the next two months, day by day.
  */
 export default function PortalCalendarScreen() {
   const router = useRouter();

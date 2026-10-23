@@ -17,6 +17,8 @@ export interface Course {
   status: CourseStatus;
   joinCode: string | null;
   gradeScaleId: string | null;
+  /** A school template: copied into new courses, never takes students. */
+  isTemplate: boolean;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -25,6 +27,40 @@ export interface Course {
   /** Active students. */
   studentCount: number;
 }
+
+/** A school template, as `GET /courses/templates` lists it. */
+export interface CourseTemplate
+  extends Omit<Course, "role" | "studentCount"> {
+  moduleCount: number;
+  activityCount: number;
+  pageCount: number;
+}
+
+/**
+ * How due dates move into a copy: at most one of a day shift, the gap
+ * between two start dates, or clearing them. None keeps every date.
+ */
+export interface CopyDates {
+  shiftDays?: number;
+  sourceStartDate?: string;
+  targetStartDate?: string;
+  clearDueDates?: boolean;
+}
+
+/** What a copy or import wrote. */
+export interface CopyCounts {
+  assignmentGroups: number;
+  rubrics: number;
+  activities: number;
+  quizQuestions: number;
+  pages: number;
+  modules: number;
+  moduleItems: number;
+  discussionTopics: number;
+}
+
+/** `POST /courses/:id/copy` answers with the new course and its counts. */
+export type CopiedCourse = Course & { copied: CopyCounts };
 
 export interface CourseStaffMember {
   userProfileId: string;
@@ -51,18 +87,25 @@ export interface CoursePeople {
 
 // ── content ────────────────────────────────────────────────────────────────
 
-export type ModuleItemType = "page" | "activity" | "file" | "link" | "header";
+export type ModuleItemType =
+  | "page"
+  | "activity"
+  | "file"
+  | "link"
+  | "header"
+  | "discussion";
 
 export interface ModuleItem {
   id: string;
   moduleId: string;
   position: number;
   itemType: ModuleItemType;
-  /** Own title, else the page/activity/file name it points at. */
+  /** Own title, else the page/activity/file/topic name it points at. */
   title: string;
   pageId: string | null;
   activityId: string | null;
   fileId: string | null;
+  discussionTopicId: string | null;
   url: string | null;
   indent: number;
   isPublished: boolean;

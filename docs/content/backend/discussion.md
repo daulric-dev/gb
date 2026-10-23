@@ -82,7 +82,19 @@ Reply: `id, parentId, body, isDeleted, author, isMine, canEdit, isNew, editedAt,
 
 `author` is `{ firstName, lastName, avatarUrl, isStaff }` or null. No email or internal id of another author is ever sent; `isMine` and `canEdit` are computed for the caller so clients (web and mobile) need no ids to decide what to show.
 
+## Module items
+
+A topic can be linked from a module: `POST /courses/:courseId/modules/:moduleId/items` with `{ itemType: 'discussion', discussionTopicId }` (the topic must belong to the course, else 404). `course.module_item.discussion_topic_id` references the topic `ON DELETE CASCADE`, so deleting a topic removes its items. The item's wire shape carries `discussionTopicId` (null for other types) and falls back to the topic title. Students only see the item while the topic is published (`ModuleService.visibleToStudent`). Web links it to `/dashboard/courses/:courseId/discussions/:topicId` (staff) and `/portal/courses/:courseId/discussions/:topicId` (students).
+
+## Notifications
+
+`DiscussionService` calls `CourseNotificationService` (injected `@Optional()`, fire and forget, never blocks the request):
+
+- **Topic published** (created published - including a student's topic - or switched from draft to published): `discussionTopicPublished` writes a `discussion_topic` notice for every active enrolled student except the author, once per student per topic (partial unique index), and pushes.
+- **Reply posted**: `discussionReplied` tells the topic author and everyone who has posted in the topic, minus the replier. Students actively enrolled get a `discussion_reply` notice - **coalesced**: at most one unread notice per (recipient, topic), whose title, body (`<name>: <preview>`) and `created_at` are refreshed by each new reply - plus a push. Course staff among them get the push only (they have no in-app list).
+
+Push `data` is `{ type: 'course.discussion', courseId, topicId }`. See [Calendar and Course Notifications](./calendar-notifications.md).
+
 ## Not yet
 
-- Linking a topic as a module item.
-- Notifications for new topics and replies.
+- An in-app notification list for staff.

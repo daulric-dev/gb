@@ -274,3 +274,69 @@ describe('DiscussionService', () => {
     expect(err).toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('DiscussionService notices', () => {
+  function withNotices(prisma: MockPrisma) {
+    const calls: { topic: any[]; reply: any[] } = { topic: [], reply: [] };
+    const notices = {
+      discussionTopicPublished: async (...args: any[]) => {
+        calls.topic.push(args);
+      },
+      discussionReplied: async (...args: any[]) => {
+        calls.reply.push(args);
+      },
+    };
+    const svc = new DiscussionService(prisma as any, {} as any, notices as any);
+    return { svc, calls };
+  }
+
+  test('a reply tells the notice service who posted where', async () => {
+    const prisma = createMockPrisma();
+    seed(prisma);
+    const { svc, calls } = withNotices(prisma);
+    await svc.reply(ctx('student', 'student-2'), 'topic-1', { body: ' hi ' });
+    expect(calls.reply).toEqual([
+      [
+        'course-1',
+        { id: 'topic-1', title: 'Cell walls', authorUserProfileId: 'teacher-1' },
+        { authorUserProfileId: 'student-2', body: 'hi' },
+      ],
+    ]);
+  });
+
+  test('publishing a draft topic announces it; other edits do not', async () => {
+    const prisma = createMockPrisma();
+    seed(prisma, { ...TOPIC, is_published: false });
+    prisma.discussion_topic.update.mockImplementation(async ({ data }: any) => ({
+      ...TOPIC,
+      is_published: data.is_published ?? false,
+    }));
+    const { svc, calls } = withNotices(prisma);
+
+    await svc.update(ctx('teacher', 'teacher-1'), 'topic-1', { title: 'New' });
+    expect(calls.topic).toHaveLength(0);
+
+    await svc.update(ctx('teacher', 'teacher-1'), 'topic-1', { isPublished: true });
+    expect(calls.topic).toHaveLength(1);
+    expect(calls.topic[0][0]).toBe('course-1');
+    expect(calls.topic[0][1]).toMatchObject({
+      id: 'topic-1',
+      authorUserProfileId: 'teacher-1',
+    });
+  });
+
+  test('a topic created as a draft is not announced', async () => {
+    const prisma = createMockPrisma();
+    prisma.discussion_topic.create.mockImplementation(async ({ data }: any) => ({
+      ...TOPIC,
+      ...data,
+      id: 'topic-2',
+      user_profile: null,
+    }));
+    const { svc, calls } = withNotices(prisma);
+    await svc.create(ctx('teacher', 'teacher-1'), { title: 'Draft', isPublished: false });
+    expect(calls.topic).toHaveLength(0);
+    await svc.create(ctx('teacher', 'teacher-1'), { title: 'Live' });
+    expect(calls.topic).toHaveLength(1);
+  });
+});

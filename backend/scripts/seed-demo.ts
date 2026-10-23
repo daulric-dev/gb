@@ -65,10 +65,18 @@ class Session {
       method,
       headers: {
         'X-API-Version': '1',
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        // A FormData body (a file upload) sets its own multipart type.
+        ...(body !== undefined && !(body instanceof FormData)
+          ? { 'content-type': 'application/json' }
+          : {}),
         ...(this.cookies.size ? { cookie: this.header() } : {}),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body:
+        body instanceof FormData
+          ? body
+          : body !== undefined
+            ? JSON.stringify(body)
+            : undefined,
     });
     for (const raw of res.headers.getSetCookie?.() ?? []) {
       const [pair] = raw.split(';');
@@ -389,6 +397,25 @@ async function seed() {
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: cellDiagram.id, indent: 1 });
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: cellQuiz.id, indent: 1 });
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: microscope.id, indent: 1 });
+  // A handout uploaded to Maya's files (S3, like any upload) and linked in
+  // the module, so students open it through the portal.
+  const handoutForm = new FormData();
+  handoutForm.append(
+    'file',
+    new Blob(
+      [
+        'Microscope practical checklist\n\n',
+        '1. Clean the lenses with lens paper only.\n',
+        '2. Start on the lowest power objective.\n',
+        '3. Focus with the coarse knob, then the fine knob.\n',
+        '4. Draw what you see, with a title and the magnification.\n',
+      ],
+      { type: 'text/plain' },
+    ),
+    'microscope-checklist.txt',
+  );
+  const handout = await maya.call('POST', '/files?name=microscope-checklist.txt', handoutForm);
+  await maya.call('POST', items(week1), { itemType: 'file', fileId: handout.id, title: 'Microscope checklist', indent: 1 });
   await maya.call('POST', items(week2), { itemType: 'page', pageId: genetics.id });
   await maya.call('POST', items(week2), {
     itemType: 'link',
@@ -494,6 +521,8 @@ async function seed() {
     body: 'Both right - that water pressure against the wall is called *turgor pressure*.',
     parentId: jordanReply.id,
   });
+  // The topic sits in Week 1 beside the cell work.
+  await maya.call('POST', items(week1), { itemType: 'discussion', discussionTopicId: topic.id });
 
   // Jordan sits the quiz: two right, one wrong (scored automatically).
   const quiz = await jordanS.call('GET', `/portal/me/activities/${cellQuiz.id}`);
@@ -521,6 +550,66 @@ async function seed() {
     excused: true,
     reason: 'Medical note',
   });
+
+  // A rubric on a practice write-up. It is left out of the final grade, so
+  // it shows rubric marking without moving anyone's course total; Priya and
+  // Marcus are marked through it (the score is the sum of their levels).
+  const writeUpRubric = await maya.call('POST', `/courses/${bio.id}/rubrics`, {
+    title: 'Lab write-up rubric',
+    criteria: [
+      {
+        title: 'Method',
+        description: 'Steps are clear enough to repeat.',
+        points: 4,
+        ratings: [
+          { label: 'Complete', points: 4 },
+          { label: 'Mostly there', points: 2 },
+          { label: 'Missing', points: 0 },
+        ],
+      },
+      {
+        title: 'Observations',
+        description: 'Labelled drawing and notes.',
+        points: 4,
+        ratings: [
+          { label: 'Detailed', points: 4 },
+          { label: 'Basic', points: 2 },
+          { label: 'None', points: 0 },
+        ],
+      },
+      {
+        title: 'Conclusion',
+        points: 2,
+        ratings: [
+          { label: 'Answers the question', points: 2 },
+          { label: 'Unclear', points: 0 },
+        ],
+      },
+    ],
+  });
+  const writeUp = await maya.call('POST', `/courses/${bio.id}/activities`, {
+    kind: 'offline',
+    title: 'Practice lab write-up',
+    instructions: 'A practice run before the graded labs. Marked with the rubric; not part of your grade.',
+    points: 10,
+    dueAt: daysFromNow(-3, 15, 0),
+    assignmentGroupId: labs.id,
+  });
+  await maya.call('PATCH', `/activities/${writeUp.id}`, { omitFromFinalGrade: true });
+  await maya.call('PUT', `/activities/${writeUp.id}/rubric`, { rubricId: writeUpRubric.id });
+  await maya.call('POST', `/activities/${writeUp.id}/publish`);
+  const level = (criterion: number, rating: number) => ({
+    criterionId: writeUpRubric.criteria[criterion].id,
+    ratingId: writeUpRubric.criteria[criterion].ratings[rating].id,
+  });
+  await maya.call('PUT', `/activities/${writeUp.id}/submissions/${priya}/rubric`, {
+    assessments: [level(0, 0), level(1, 1), { ...level(2, 0), comment: 'Link it back to your hypothesis.' }],
+  });
+  await maya.call('PUT', `/activities/${writeUp.id}/submissions/${marcus}/rubric`, {
+    assessments: [level(0, 1), level(1, 0), level(2, 1)],
+  });
+  await maya.call('POST', items(week1), { itemType: 'activity', activityId: writeUp.id, indent: 1 });
+
   for (const [i, score] of [[0, 9], [2, 7], [3, 10], [4, 6], [5, 8]] as const) {
     await leo.call('PATCH', `/activities/${hw1.id}/submissions/${studentIds[i]}/grade`, { score });
   }
@@ -609,7 +698,7 @@ Staff (web: http://localhost:3000/login)
 
 Students
   student@${DOMAIN}   Jordan Lee     Biology, Algebra, Creative Writing; quiz taken, lab marked
-  student2@${DOMAIN}  Priya Shah     lab handed in, waiting to be marked
+  student2@${DOMAIN}  Priya Shah     lab handed in, waiting to be marked; write-up marked by rubric
   student3@${DOMAIN}  Marcus Bell
   + 9 roster-only students
 

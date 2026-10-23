@@ -12,6 +12,7 @@ import {
   Layers,
   Link2,
   Loader2,
+  MessagesSquare,
   Paperclip,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -174,6 +175,21 @@ function ModuleItemRow({
           {item.activity && (
             <Badge variant="secondary">{item.activity.points} pts</Badge>
           )}
+        </Link>
+      </li>
+    );
+  }
+
+  if (item.itemType === "discussion" && item.discussionTopicId) {
+    return (
+      <li>
+        <Link
+          href={`/portal/courses/${courseId}/discussions/${item.discussionTopicId}`}
+          style={indent}
+          className={rowClass}
+        >
+          <MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
         </Link>
       </li>
     );

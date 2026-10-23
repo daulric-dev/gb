@@ -5,10 +5,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isoDate } from '@/common/db-values';
+import { CourseNotificationService } from '@/course-notification/course-notification.service';
 import {
   CourseAccessService,
   MANAGE_ROLES,
@@ -112,6 +114,7 @@ export class DiscussionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
   // ── who is asking ─────────────────────────────────────────────────────────
@@ -283,6 +286,8 @@ export class DiscussionService {
       throw new BadRequestException('Failed to create the topic');
     }
 
+    if (data.is_published) this.announceTopic(data);
+
     return {
       ...this.toTopicSummary(ctx, data),
       body: data.body,
@@ -349,6 +354,8 @@ export class DiscussionService {
       this.logger.error(`Failed to update topic: ${(err as Error).message}`);
       throw new BadRequestException('Failed to update the topic');
     }
+
+    if (!topic.is_published && data.is_published) this.announceTopic(data);
     return { ...this.toTopicSummary(ctx, data), body: data.body };
   }
 
@@ -435,6 +442,17 @@ export class DiscussionService {
       throw new BadRequestException('Failed to post the reply');
     }
 
+    // Fire and forget: posting never waits on notices or pushes.
+    void this.notices?.discussionReplied(
+      ctx.course.id,
+      {
+        id: topic.id,
+        title: topic.title,
+        authorUserProfileId: topic.author_user_profile_id,
+      },
+      { authorUserProfileId: ctx.userId, body },
+    );
+
     return { ...this.toReply(ctx, data, null), replies: [] };
   }
 
@@ -513,6 +531,16 @@ export class DiscussionService {
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  /** Tell the class a topic is up. Fire and forget; never throws. */
+  private announceTopic(t: TopicRecord) {
+    void this.notices?.discussionTopicPublished(t.course_id, {
+      id: t.id,
+      title: t.title,
+      body: t.body,
+      authorUserProfileId: t.author_user_profile_id,
+    });
+  }
 
   private isStaff(ctx: DiscussionCtx): boolean {
     return ctx.role !== 'student';

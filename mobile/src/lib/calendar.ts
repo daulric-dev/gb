@@ -22,13 +22,21 @@ export interface PortalCalendarItem {
   } | null;
 }
 
+export type CourseNotificationKind =
+  | "activity_published"
+  | "announcement"
+  | "discussion_topic"
+  | "discussion_reply";
+
 export interface CourseNotification {
   id: string;
-  kind: "activity_published" | "announcement";
+  kind: CourseNotificationKind;
   courseId: string;
   courseName: string | null;
   activityId: string | null;
   announcementId: string | null;
+  /** Set on discussion notices; absent on older servers. */
+  topicId?: string | null;
   title: string;
   body: string | null;
   readAt: string | null;
@@ -77,16 +85,65 @@ export function dayHeading(date: Date): string {
   });
 }
 
-/**
- * Where a course notice opens. Mobile has no course home yet, so an
- * announcement opens the course's grades screen, the course view it has.
- */
-export function noticeHref(n: {
+/** A short label for a notice's kind, for lists and screen readers. */
+export function noticeKindLabel(kind: string | undefined): string {
+  switch (kind) {
+    case "activity_published":
+      return "New work";
+    case "announcement":
+      return "Announcement";
+    case "discussion_topic":
+      return "New discussion";
+    case "discussion_reply":
+      return "Discussion reply";
+    default:
+      return "Notice";
+  }
+}
+
+export function isDiscussionNotice(n: {
   type?: string;
-  activityId?: string | null;
-  courseId?: string | null;
-}): string | null {
+  kind?: string;
+  topicId?: string | null;
+}): boolean {
+  return (
+    !!n.topicId ||
+    n.type === "course.discussion" ||
+    n.kind === "discussion_topic" ||
+    n.kind === "discussion_reply"
+  );
+}
+
+/**
+ * Where a course notice (or the data of a tapped push) opens. A discussion
+ * opens its topic - on the student or staff screen, by who is signed in -
+ * new work opens the work screen, and an announcement opens its course on
+ * the Announcements section. Staff only get discussion notices; anything
+ * else for them has nowhere to go.
+ */
+export function noticeHref(
+  n: {
+    type?: string;
+    kind?: string;
+    activityId?: string | null;
+    courseId?: string | null;
+    topicId?: string | null;
+  },
+  audience: "student" | "staff" = "student",
+): string | null {
+  const courseBase = n.courseId
+    ? audience === "student"
+      ? `/course/${n.courseId}`
+      : `/teaching/${n.courseId}`
+    : null;
+  if (isDiscussionNotice(n)) {
+    if (!courseBase) return null;
+    return n.topicId
+      ? `${courseBase}/discussion/${n.topicId}`
+      : `${courseBase}?tab=discussions`;
+  }
+  if (audience === "staff") return null;
   if (n.activityId) return `/work/${n.activityId}`;
-  if (n.courseId) return `/grades/${n.courseId}`;
+  if (courseBase) return `${courseBase}?tab=announcements`;
   return null;
 }

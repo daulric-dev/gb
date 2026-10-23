@@ -138,12 +138,15 @@ function db(opts: {
       { module_id: 'm1', position: 0, item_type: 'page', title: null, page_id: PAGE, activity_id: null, file_id: null, url: null, indent: 0, is_published: true },
       { module_id: 'm1', position: 1, item_type: 'activity', title: null, page_id: null, activity_id: ACT, file_id: null, url: null, indent: 0, is_published: true },
       { module_id: 'm1', position: 2, item_type: 'file', title: 'Notes', page_id: null, activity_id: null, file_id: 'f1', url: null, indent: 1, is_published: true },
+      { module_id: 'm1', position: 3, item_type: 'discussion', title: null, page_id: null, activity_id: null, file_id: null, discussion_topic_id: 'tp1', url: null, indent: 0, is_published: true },
+      // Points at a topic a student started, which is not copied.
+      { module_id: 'm1', position: 4, item_type: 'discussion', title: null, page_id: null, activity_id: null, file_id: null, discussion_topic_id: 'tp2', url: null, indent: 0, is_published: true },
     ]),
   );
   prisma.discussion_topic.findMany.mockImplementation(
     where(() => [
-      { title: 'Welcome', body: '', is_pinned: true, is_locked: false, require_initial_post: true, is_published: true, user_profile: { account_type: 'staff' } },
-      { title: 'Help?', body: '', is_pinned: false, is_locked: false, require_initial_post: false, is_published: true, user_profile: { account_type: 'student' } },
+      { id: 'tp1', title: 'Welcome', body: '', is_pinned: true, is_locked: false, require_initial_post: true, is_published: true, user_profile: { account_type: 'staff' } },
+      { id: 'tp2', title: 'Help?', body: '', is_pinned: false, is_locked: false, require_initial_post: false, is_published: true, user_profile: { account_type: 'student' } },
     ]),
   );
   return prisma;
@@ -192,7 +195,7 @@ describe('CourseCopyService.copy', () => {
       quizQuestions: 1,
       pages: 1,
       modules: 1,
-      moduleItems: 3,
+      moduleItems: 4,
       discussionTopics: 1,
     });
     expect(prisma.course_student.createMany).not.toHaveBeenCalled();
@@ -229,7 +232,12 @@ describe('CourseCopyService.copy', () => {
       rows(prisma, 'rubric_criterion')[0].id,
     );
 
-    expect(items.map((i: any) => i.module_id)).toEqual([module.id, module.id, module.id]);
+    expect(items.map((i: any) => i.module_id)).toEqual([
+      module.id,
+      module.id,
+      module.id,
+      module.id,
+    ]);
     expect(items[0].page_id).toBe(page.id);
     expect(items[1].activity_id).toBe(activity.id);
     // A file item keeps the same file the source course offered.
@@ -242,6 +250,13 @@ describe('CourseCopyService.copy', () => {
       is_published: false,
       author_user_profile_id: USER,
     });
+    // The discussion item follows its topic; the student topic's item is left.
+    expect(topics[0].id).not.toBe('tp1');
+    expect(items[3]).toMatchObject({
+      item_type: 'discussion',
+      discussion_topic_id: topics[0].id,
+    });
+    expect(items[0].discussion_topic_id).toBeNull();
   });
 
   test('clearing due dates copies activities without one', async () => {

@@ -16,6 +16,9 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { attemptsLeft, dueLabel, type PortalWorkDetail } from "@/lib/work";
 import { uploadSubmissionFile } from "@/lib/upload";
+import { formatScore } from "@/lib/format-number";
+import { Markdown } from "@/components/ui/Markdown";
+import { RubricView } from "@/features/course/RubricView";
 
 export default function WorkDetailScreen() {
   const router = useRouter();
@@ -78,7 +81,9 @@ export default function WorkDetailScreen() {
           },
         },
       );
-      toast.success(`Submitted — you scored ${result.score}/${result.points}`);
+      toast.success(
+        `Submitted — you scored ${formatScore(result.score)}/${formatScore(result.points)}`,
+      );
       // A retake starts blank rather than pre-filled with the last attempt.
       setAnswers({});
       setWritten({});
@@ -173,7 +178,11 @@ export default function WorkDetailScreen() {
   return (
     <Screen
       title={work.title}
-      description={[work.courseName, `${work.points} points`, dueLabel(work.dueAt)]
+      description={[
+        work.courseName,
+        `${formatScore(work.points)} points`,
+        dueLabel(work.dueAt),
+      ]
         .filter(Boolean)
         .join(" · ")}
       onBack={() => router.back()}
@@ -187,15 +196,12 @@ export default function WorkDetailScreen() {
               <CheckCircle2 color={colors.primary} size={20} />
               <View style={{ flex: 1, gap: 2 }}>
                 <Text weight="500">
-                  {work.submission?.status === "graded"
-                    ? `Marked: ${work.submission.score}/${work.points}`
-                    : "Handed in"}
+                  {work.submission?.excused
+                    ? "Excused"
+                    : work.submission?.status === "graded"
+                      ? `Marked: ${formatScore(work.submission.score)}/${formatScore(work.points)}`
+                      : "Handed in"}
                 </Text>
-                {work.submission?.feedback ? (
-                  <Text variant="muted" size="xs">
-                    {work.submission.feedback}
-                  </Text>
-                ) : null}
                 {canRetake && (
                   <Text variant="muted" size="xs">
                     {left === Infinity
@@ -208,12 +214,37 @@ export default function WorkDetailScreen() {
           </Card>
         )}
 
+        {work.submission?.feedback?.trim() ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Feedback</CardTitle>
+            </CardHeader>
+            <CardContent style={{ paddingTop: 4 }}>
+              <Markdown>{work.submission.feedback}</Markdown>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {work.instructions ? (
           <Card>
             <CardContent>
-              <Text variant="muted" size="sm">
-                {work.instructions}
-              </Text>
+              <Markdown>{work.instructions}</Markdown>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {work.rubric ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {work.rubricAssessment?.length ? "How this was marked" : "Rubric"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent style={{ paddingTop: 4 }}>
+              <RubricView
+                rubric={work.rubric}
+                assessments={work.rubricAssessment}
+              />
             </CardContent>
           </Card>
         ) : null}
@@ -239,7 +270,7 @@ export default function WorkDetailScreen() {
                       {i + 1}. {q.prompt}
                     </CardTitle>
                   </View>
-                  <Badge variant="secondary">{q.points} pt</Badge>
+                  <Badge variant="secondary">{`${formatScore(q.points)} pt`}</Badge>
                 </CardHeader>
                 <CardContent style={{ gap: 8 }}>
                   {q.kind === "short_answer" ? (

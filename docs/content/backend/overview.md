@@ -51,7 +51,7 @@ backend/
 │   ├── student/               # Student records (the school roster)
 │   ├── student-account/       # School join codes, duplicate-record merging
 │   ├── email-domain/          # School email domains (verified by DNS), join by domain
-│   ├── course/                # Courses, people, join codes, modules, pages; CourseAccessService (course roles)
+│   ├── course/                # Courses, people, join codes, modules, pages, copy/templates; CourseAccessService (course roles)
 │   ├── grading/               # Activities (quiz/assignment/offline), submissions, assignment groups, gradebook
 │   ├── attendance/            # Check-in sessions, codes, rotating QR, live SSE, absentee sweep
 │   ├── notifications/         # Push devices + Expo push

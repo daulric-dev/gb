@@ -117,10 +117,18 @@ async function main() {
     const fileId = uploaded.data.id;
     const portalFile = `/portal/me/courses/${bio.id}/files/${fileId}`;
     check('unlinked file is 404 to a student', (await student('GET', portalFile)).status === 404);
+    // Course staff open files the course offers through the course route, even
+    // a colleague's: the TA did not upload this one.
+    const staffFile = `/courses/${bio.id}/files/${fileId}`;
+    check("unlinked colleague's file is 404 on the staff route", (await ta('GET', staffFile)).status === 404);
     const item = await teacher('POST', `/courses/${bio.id}/modules/${publishedModule.id}/items`, { itemType: 'file', fileId });
     check('link the file in a module', item.status === 201, item.data);
     const opened = await student('GET', portalFile);
     check('student opens the module file', opened.status === 200 && opened.data === 'smoke', opened.status);
+    const staffOpened = await ta('GET', staffFile);
+    check("TA opens a colleague's module-linked file (sandboxed)", staffOpened.status === 200 && staffOpened.data === 'smoke' && staffOpened.headers.get('content-security-policy') === 'sandbox' && staffOpened.headers.get('x-content-type-options') === 'nosniff', staffOpened.status);
+    const handout = (await db.module_item.findFirst({ where: { course_id: bio.id, item_type: 'file', NOT: { file_id: fileId } }, select: { file_id: true } }))?.file_id;
+    check('TA opens the seeded module handout', !!handout && (await ta('GET', `/courses/${bio.id}/files/${handout}`)).status === 200, handout);
     if (item.data?.id) await teacher('DELETE', `/courses/${bio.id}/modules/${publishedModule.id}/items/${item.data.id}`);
     await teacher('DELETE', `/files/${fileId}`);
   } else {
@@ -322,11 +330,112 @@ async function main() {
     check('topic list counts replies', row?.replyCount === 2 && row?.unreadCount === 1, row);
     check("student can't edit another student's post", (await student2('PATCH', `${portalTopic}/replies/${posted.data.id}`, { body: 'x' })).status === 403);
     check("student can't start a topic by default", (await student('POST', `/portal/me/courses/${bio.id}/discussions`, { title: 'x' })).status === 403);
+    // A reply tells the topic's author: let students start topics for a moment.
+    const settingsPath = `/courses/${bio.id}/discussions/settings`;
+    let ownTopic: string | undefined;
+    try {
+      await teacher('PUT', settingsPath, { studentsCanCreateTopics: true });
+      const mine = await student('POST', `/portal/me/courses/${bio.id}/discussions`, { title: 'Smoke student topic' });
+      ownTopic = mine.data?.id;
+      check('student starts a topic when allowed', mine.status === 201 && !!ownTopic, mine.data);
+      if (ownTopic) {
+        await student2('POST', `/portal/me/courses/${bio.id}/discussions/${ownTopic}/replies`, { body: 'First!' });
+        await student2('POST', `/portal/me/courses/${bio.id}/discussions/${ownTopic}/replies`, { body: 'Second' });
+        // Wait for the second reply's refresh of the same notice.
+        const notice = await noticeFor((n) => n.kind === 'discussion_reply' && n.topicId === ownTopic && n.body?.includes('Second'));
+        check('topic author is notified of replies (discussion_reply, topicId)', !!notice && notice.courseId === bio.id, notice);
+        const all = (await student('GET', '/portal/me/notifications?unread=true')).data.filter((n: any) => n.topicId === ownTopic);
+        check('replies coalesce into one unread notice', all.length === 1, all);
+      }
+    } finally {
+      await teacher('PUT', settingsPath, { studentsCanCreateTopics: false });
+      if (ownTopic) await teacher('DELETE', `/courses/${bio.id}/discussions/${ownTopic}`);
+    }
     const removed = await teacher('DELETE', `/courses/${bio.id}/discussions/${topic.data.id}/replies/${posted.data.id}`);
     const after = await student('GET', portalTopic);
     check('teacher deletes a reply; its thread stays', removed.status === 204 && after.data.replies?.[0]?.isDeleted === true && after.data.replies[0].replies.length === 1, after.data.replies);
     check('teacher deletes the topic', (await teacher('DELETE', `/courses/${bio.id}/discussions/${topic.data.id}`)).status === 204);
   }
+
+  // A topic in a module: students see the item only once the topic is published.
+  const draftTopic = await teacher('POST', `/courses/${bio.id}/discussions`, { title: 'Smoke module topic', isPublished: false });
+  const topicModule = modules.data.find((m: any) => m.isPublished);
+  if (draftTopic.data?.id && topicModule) {
+    try {
+      const added = await teacher('POST', `/courses/${bio.id}/modules/${topicModule.id}/items`, { itemType: 'discussion', discussionTopicId: draftTopic.data.id });
+      check('add a discussion module item', added.status === 201 && added.data.itemType === 'discussion' && added.data.discussionTopicId === draftTopic.data.id && added.data.title === 'Smoke module topic', added.data);
+      const studentItems = async () => ((await student('GET', `/portal/me/courses/${bio.id}/modules`)).data as any[]).flatMap((m) => m.items);
+      check('student does not see a draft topic item', !(await studentItems()).some((i) => i.discussionTopicId === draftTopic.data.id));
+      await teacher('PATCH', `/courses/${bio.id}/discussions/${draftTopic.data.id}`, { isPublished: true });
+      check('student sees the item once the topic is published', (await studentItems()).some((i) => i.itemType === 'discussion' && i.discussionTopicId === draftTopic.data.id));
+      const told = await noticeFor((n) => n.kind === 'discussion_topic' && n.topicId === draftTopic.data.id);
+      check('student is notified of the published topic', !!told, told);
+    } finally {
+      // The item goes with the topic.
+      await teacher('DELETE', `/courses/${bio.id}/discussions/${draftTopic.data.id}`);
+    }
+    check('topic delete takes its module item', (await db.module_item.count({ where: { discussion_topic_id: draftTopic.data.id } })) === 0);
+  } else {
+    check('draft topic and a published module', false, draftTopic.data);
+  }
+
+  // ── course copy and templates ─────────────────────────────────────────────
+  const teacher2 = await login('teacher2@demo.test');
+  const made: string[] = [];
+  try {
+    const copy = await teacher('POST', `/courses/${bio.id}/copy`, { name: 'Smoke Biology copy', code: 'BIO-S', shiftDays: 7 });
+    check('copy Biology 101', copy.status === 201 && copy.data.status === 'draft' && copy.data.role === 'teacher' && !copy.data.joinCode, copy.data);
+    if (copy.data?.id) {
+      made.push(copy.data.id);
+      const counts = (courseId: string) => Promise.all([
+        db.module.count({ where: { course_id: courseId } }),
+        db.module_item.count({ where: { course_id: courseId } }),
+        db.activity.count({ where: { course_id: courseId } }),
+        db.rubric.count({ where: { course_id: courseId } }),
+        db.discussion_topic.count({ where: { course_id: courseId, user_profile: { account_type: { not: 'student' } } } }),
+      ]);
+      const [from, to] = await Promise.all([counts(bio.id), counts(copy.data.id)]);
+      check('copy has the same modules/items/activities/rubrics/topics', JSON.stringify(from) === JSON.stringify(to) && to[0] > 0 && to[2] > 0, { from, to });
+      check('copy has no students or submissions', (await db.course_student.count({ where: { course_id: copy.data.id } })) === 0 && (await db.submission.count({ where: { activity: { course_id: copy.data.id } } })) === 0);
+      const items = await db.module_item.findMany({ where: { course_id: copy.data.id, item_type: 'activity' }, select: { activity: { select: { course_id: true, status: true } } } });
+      check('copied items point at the copied draft activities', items.length > 0 && items.every((i) => i.activity?.course_id === copy.data.id && i.activity?.status === 'draft'), items.length);
+      const due = await db.activity.findFirst({ where: { course_id: bio.id, due_at: { not: null } }, select: { title: true, due_at: true } });
+      const moved = due && await db.activity.findFirst({ where: { course_id: copy.data.id, title: due.title }, select: { due_at: true } });
+      check('due dates shifted by 7 days', !due || moved?.due_at?.getTime() === due.due_at!.getTime() + 7 * 86_400_000, { due, moved });
+
+      check('TA cannot copy (403)', (await ta('POST', `/courses/${bio.id}/copy`, { name: 'x' })).status === 403);
+      check('teacher2 cannot copy a non-template (404)', (await teacher2('POST', `/courses/${bio.id}/copy`, { name: 'x' })).status === 404);
+      const flagged = await teacher('PATCH', `/courses/${copy.data.id}`, { isTemplate: true });
+      check('flag the copy as a template', flagged.status === 200 && flagged.data.isTemplate === true, flagged.data);
+      check('a course with students cannot be a template (409)', (await teacher('PATCH', `/courses/${bio.id}`, { isTemplate: true })).status === 409);
+      const templates = await teacher2('GET', '/courses/templates');
+      check('teacher2 lists school templates', templates.status === 200 && templates.data.some((t: any) => t.id === copy.data.id && t.moduleCount > 0), templates.data);
+      const fromTemplate = await teacher2('POST', `/courses/${copy.data.id}/copy`, { name: 'Smoke from template', clearDueDates: true });
+      check('teacher2 creates a course from the template', fromTemplate.status === 201 && fromTemplate.data.role === 'teacher' && fromTemplate.data.isTemplate === false && fromTemplate.data.copied?.activities === to[2], fromTemplate.data);
+      if (fromTemplate.data?.id) made.push(fromTemplate.data.id);
+      check('template refuses a join code (400)', (await teacher('POST', `/courses/${copy.data.id}/join-code`)).status === 400);
+      await db.course.update({ where: { id: copy.data.id }, data: { status: 'published', join_code: 'SMKTPL' } });
+      check('template rejects joining (404)', (await student('POST', '/portal/me/courses/join', { joinCode: 'SMKTPL' })).status === 404);
+      check('template refuses enrolment (400)', (await teacher('POST', `/courses/${copy.data.id}/students`, { studentIds: [people.data.students[0].studentId] })).status === 400);
+    }
+
+    // Import Biology's content into a fresh scratch course.
+    const scratch = await teacher('POST', '/courses', { name: 'Smoke import target' });
+    if (scratch.data?.id) {
+      made.push(scratch.data.id);
+      const before = await db.module.count({ where: { course_id: scratch.data.id } });
+      const imported = await teacher('POST', `/courses/${scratch.data.id}/import`, { sourceCourseId: bio.id, clearDueDates: true });
+      const after = await db.module.count({ where: { course_id: scratch.data.id } });
+      check('import content adds the modules', (imported.status === 201 || imported.status === 200) && imported.data.copied?.modules > 0 && after === before + imported.data.copied.modules, { status: imported.status, data: imported.data, before, after });
+      const topicItems = await db.module_item.findMany({ where: { course_id: scratch.data.id, item_type: 'discussion' }, select: { discussion_topic: { select: { course_id: true } } } });
+      check('imported discussion items point at the imported topics', topicItems.length > 0 && topicItems.every((i) => i.discussion_topic?.course_id === scratch.data.id), topicItems.length);
+    } else {
+      check('create a scratch course', false, scratch.data);
+    }
+  } finally {
+    for (const id of made) await admin('DELETE', `/courses/${id}`);
+  }
+  check('copied courses cleaned up', (await db.course.count({ where: { id: { in: made } } })) === 0);
 
   await db.$disconnect();
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`);

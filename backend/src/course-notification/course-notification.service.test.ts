@@ -127,6 +127,114 @@ describe('CourseNotificationService events', () => {
   });
 });
 
+describe('CourseNotificationService discussions', () => {
+  test('a published topic tells the class once, not its author', async () => {
+    const { prisma, service, pushes } = setup({ already: ['u-2'] });
+    await service.discussionTopicPublished('course-1', {
+      id: 't-1',
+      title: 'Ask anything',
+      body: 'Questions about week 1',
+      authorUserProfileId: 'u-1',
+    });
+    // u-1 wrote it and u-2 was told before; nobody is left.
+    expect(prisma.course_notification.createMany).not.toHaveBeenCalled();
+    expect(pushes).toHaveLength(0);
+
+    const again = setup();
+    await again.service.discussionTopicPublished('course-1', {
+      id: 't-1',
+      title: 'Ask anything',
+      body: 'Questions about week 1',
+      authorUserProfileId: 'staff-1',
+    });
+    const rows = rowsOf(again.prisma);
+    expect(rows.map((r: any) => r.user_profile_id)).toEqual(['u-1', 'u-2']);
+    expect(rows[0]).toMatchObject({
+      kind: 'discussion_topic',
+      discussion_topic_id: 't-1',
+      title: 'New discussion: Ask anything',
+      body: 'Questions about week 1',
+    });
+    expect(again.pushes[0].message.data).toEqual({
+      type: 'course.discussion',
+      courseId: 'course-1',
+      topicId: 't-1',
+    });
+  });
+
+  function replySetup(unread: string[] = []) {
+    const ctx = setup();
+    ctx.prisma.discussion_reply.findMany.mockResolvedValue([
+      { author_user_profile_id: 'u-2' },
+      { author_user_profile_id: 'staff-1' },
+      { author_user_profile_id: 'u-9' }, // left the course
+    ]);
+    ctx.prisma.course_staff.findMany.mockResolvedValue([
+      { user_profile_id: 'staff-1' },
+    ]);
+    ctx.prisma.user_profile.findUnique.mockResolvedValue({
+      first_name: 'Sam',
+      last_name: 'Lee',
+    });
+    ctx.prisma.course_notification.findMany.mockResolvedValue(
+      unread.map((id) => ({ user_profile_id: id })),
+    );
+    return ctx;
+  }
+
+  test('a reply tells the author and posters, students in-app and staff by push', async () => {
+    const { prisma, service, pushes } = replySetup();
+    await service.discussionReplied(
+      'course-1',
+      { id: 't-1', title: 'Ask anything', authorUserProfileId: 'u-1' },
+      { authorUserProfileId: 'u-2', body: 'I think   so' },
+    );
+    const rows = rowsOf(prisma);
+    expect(rows.map((r: any) => r.user_profile_id)).toEqual(['u-1']);
+    expect(rows[0]).toMatchObject({
+      kind: 'discussion_reply',
+      discussion_topic_id: 't-1',
+      title: 'New reply: Ask anything',
+      body: 'Sam Lee: I think so',
+    });
+    expect(pushes[0].userIds).toEqual(['u-1', 'staff-1']);
+    expect(pushes[0].message.data).toEqual({
+      type: 'course.discussion',
+      courseId: 'course-1',
+      topicId: 't-1',
+    });
+  });
+
+  test('replies coalesce into the unread notice', async () => {
+    const { prisma, service } = replySetup(['u-1']);
+    await service.discussionReplied(
+      'course-1',
+      { id: 't-1', title: 'Ask anything', authorUserProfileId: 'u-1' },
+      { authorUserProfileId: 'staff-1', body: 'Good question' },
+    );
+    const update = prisma.course_notification.updateMany.mock.calls[0][0];
+    expect(update.where).toEqual({
+      user_profile_id: { in: ['u-1', 'u-2'] },
+      discussion_topic_id: 't-1',
+      kind: 'discussion_reply',
+      read_at: null,
+    });
+    expect(update.data.body).toBe('Sam Lee: Good question');
+    // u-1 already had one (refreshed above); only u-2 gets a new row.
+    expect(rowsOf(prisma).map((r: any) => r.user_profile_id)).toEqual(['u-2']);
+  });
+
+  test('a reply never throws', async () => {
+    const { prisma, service } = replySetup();
+    prisma.discussion_reply.findMany.mockRejectedValue(new Error('down'));
+    await service.discussionReplied(
+      'course-1',
+      { id: 't-1', title: 'x', authorUserProfileId: 'u-1' },
+      { authorUserProfileId: 'u-2', body: 'y' },
+    );
+  });
+});
+
 describe('CourseNotificationService list', () => {
   test('shapes rows and scopes to the caller', async () => {
     const { prisma, service } = setup();
@@ -137,6 +245,7 @@ describe('CourseNotificationService list', () => {
         course_id: 'course-1',
         activity_id: null,
         announcement_id: 'ann-1',
+        discussion_topic_id: null,
         title: 'Field trip',
         body: null,
         read_at: null,
@@ -156,6 +265,7 @@ describe('CourseNotificationService list', () => {
         courseName: 'Biology 101',
         activityId: null,
         announcementId: 'ann-1',
+        topicId: null,
         title: 'Field trip',
         body: null,
         readAt: null,

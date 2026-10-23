@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { BookOpen, Hand, Users } from "lucide-react-native";
 import { api } from "@/lib/api";
@@ -12,10 +12,12 @@ import { StatCard } from "@/components/ui/StatCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useTheme } from "@/theme/ThemeProvider";
 import { CoursesOnWebCard } from "./CoursesOnWebCard";
+import { staffCourseHref } from "@/lib/course";
 
 /**
- * The staff member's courses at a glance. Building and marking a course is
- * web-only for now; the one quick action here is taking attendance.
+ * The staff member's courses at a glance. A course opens its staff screen
+ * (marking, modules, announcements, discussions); building content is
+ * web-only. Taking attendance is the one quick action.
  */
 export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
@@ -66,7 +68,10 @@ export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
           <CardContent style={{ gap: 10 }}>
             {active.map((c) => (
               <View key={c.id} style={styles.row}>
-                <View style={{ flex: 1 }}>
+                <Pressable
+                  style={{ flex: 1 }}
+                  onPress={() => router.push(staffCourseHref(c.id))}
+                >
                   <Text weight="500" numberOfLines={1}>
                     {c.name}
                   </Text>
@@ -75,7 +80,7 @@ export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                       .filter(Boolean)
                       .join(" · ")}
                   </Text>
-                </View>
+                </Pressable>
                 {c.status === "draft" ? (
                   <Badge variant="secondary">Draft</Badge>
                 ) : (

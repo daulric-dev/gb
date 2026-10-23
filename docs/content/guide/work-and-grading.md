@@ -72,6 +72,10 @@ A rubric breaks a mark into **criteria** (Argument 10 points, Evidence 5 points.
 
 Prefer either to deleting work or entering a zero - a zero is a real mark that pulls the average down.
 
+### Marking on your phone
+
+In the app, a course's **Marking** section lists its work; open one for the roster (filter **To mark** / **Marked**) and tap a student. You see what they typed, can open their file (it downloads and opens in your phone's viewer), and enter a score from 0 to the work's points with at most two decimals, plus feedback. If the work has a rubric, tap a level per criterion: the score fills in with their sum and can still be overridden. **Excuse from this work** (and **Remove excuse**) is there too, and **Previous / Next** steps through the roster.
+
 ## The gradebook
 
 **Grades** shows every student against every published piece of work, grouped by assignment group, with each student's percentage and letter (from the course's grade scale, or the school default). Hover a total for the per-group breakdown. **Export** downloads a CSV.

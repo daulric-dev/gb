@@ -9,7 +9,13 @@ import type { CourseGrade } from "@/lib/grades";
 
 // ── modules and pages ─────────────────────────────────────────────────────
 
-export type ModuleItemType = "header" | "page" | "activity" | "file" | "link";
+export type ModuleItemType =
+  | "header"
+  | "page"
+  | "activity"
+  | "file"
+  | "link"
+  | "discussion";
 
 export interface ModuleItem {
   id: string;
@@ -20,6 +26,8 @@ export interface ModuleItem {
   pageId: string | null;
   activityId: string | null;
   fileId: string | null;
+  /** Set on `discussion` items; students only get published topics. */
+  discussionTopicId?: string | null;
   url: string | null;
   indent: number;
   isPublished: boolean;
@@ -268,7 +276,8 @@ export interface GradebookCell {
   status: "draft" | "submitted" | "graded";
   excused: boolean;
   submittedAt: string | null;
-  dropped: boolean;
+  /** Left out of the total by the group's drop rule. */
+  dropped?: boolean;
 }
 
 /** GET /courses/:id/gradebook */
@@ -278,6 +287,9 @@ export interface Gradebook {
     name: string;
     weight: number | null;
     position: number;
+    /** Drop rules; absent on older servers. */
+    dropLowest?: number;
+    dropHighest?: number;
   }[];
   activities: StaffActivity[];
   students: {
@@ -327,4 +339,14 @@ export function timeAgo(value: string | null | undefined): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/** The API's message when there is one, else the fallback. */
+export function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.name === "ApiError" || err.name === "UploadError"
+      ? err.message
+      : fallback;
+  }
+  return fallback;
 }

@@ -17,6 +17,9 @@ export interface AssignmentGroup {
   /** Percent of the course total; null when the course is unweighted. */
   weight: number | null;
   position: number;
+  /** Drop rules; absent on older servers. */
+  dropLowest?: number;
+  dropHighest?: number;
 }
 
 export interface GroupScore {
@@ -28,6 +31,8 @@ export interface GroupScore {
   possible: number;
   /** null when nothing in the group has been marked yet. */
   percent: number | null;
+  /** Activity ids this group's drop rules left out of its total. */
+  dropped?: string[];
 }
 
 export interface CourseGrade {
@@ -36,6 +41,8 @@ export interface CourseGrade {
   /** From the course grade scale, else the school default. */
   letter: string | null;
   groups: GroupScore[];
+  /** Every activity id left out by the groups' drop rules. */
+  dropped?: string[];
 }
 
 export interface PortalSubmissionState {
@@ -64,6 +71,8 @@ export interface PortalGradeActivity {
   /** null when the student has not started it. */
   submission: PortalSubmissionState | null;
   groupName: string | null;
+  /** Left out of the total by its group's drop rule. */
+  dropped?: boolean;
 }
 
 /** GET /portal/me/courses/:courseId/grades */
@@ -119,4 +128,16 @@ export function activityGradeState(a: PortalGradeActivity): ActivityGradeState {
   const pastDue = !!a.dueAt && new Date(a.dueAt).getTime() < Date.now();
   if (!handedIn && pastDue && a.kind !== "offline") return { kind: "missing" };
   return { kind: "ungraded" };
+}
+
+/** "drop lowest 2, drop highest 1", or null when the group drops nothing. */
+export function dropRuleLabel(
+  group: { dropLowest?: number | null; dropHighest?: number | null } | null | undefined,
+): string | null {
+  if (!group) return null;
+  const parts = [
+    group.dropLowest ? `drop lowest ${group.dropLowest}` : null,
+    group.dropHighest ? `drop highest ${group.dropHighest}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
 }

@@ -26,10 +26,11 @@ import { gradeColor, percentLabel } from "@/lib/grades";
 import { LetterBadge } from "@/features/grades/GradeBits";
 import { isOutstanding, type PortalWorkItem } from "@/lib/work";
 import { OpenAttendanceCards } from "@/features/attendance/OpenAttendanceCards";
+import { studentCourseHref } from "@/lib/course";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
- * course row opens its grades; modules and pages live on the web app for now.
+ * course row opens the course screen.
  */
 export default function PortalHomeScreen() {
   const { profile } = useAuth();
@@ -121,7 +122,7 @@ export default function PortalHomeScreen() {
               return (
                 <Pressable
                   key={c.id}
-                  onPress={() => router.push(`/grades/${c.id}`)}
+                  onPress={() => router.push(studentCourseHref(c.id))}
                   style={({ pressed }) => [
                     styles.courseRow,
                     { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
@@ -147,8 +148,7 @@ export default function PortalHomeScreen() {
               );
             })}
             <Text variant="muted" size="xs" style={{ marginTop: 4 }}>
-              Tap a course to see your grades. Modules and pages are on the
-              web app.
+              Tap a course for its modules, work, grades and discussions.
             </Text>
           </CardContent>
         </Card>

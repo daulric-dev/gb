@@ -41,6 +41,10 @@ Files upload straight to object storage (S3-compatible) with presigned URLs, so 
 - The backend signs upload URLs for `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT` when unset). That host must be reachable from the phone - in production an HTTPS endpoint such as `https://<account-id>.r2.cloudflarestorage.com`; in development a LAN address, not `127.0.0.1`.
 - The app sends exactly the headers in the upload ticket and no cookies, then calls the ticket's `complete` route so the backend can check and release the file.
 
+## Opening protected files
+
+Course files and handed-in submissions are served by the API behind the session (`GET /portal/me/courses/:courseId/files/:fileId`, `GET /activities/submissions/:submissionId/file`), so the app cannot just hand their URL to a browser - the browser does not have the `gb_session` cookie. Instead the app fetches the bytes itself (same cookie store as every other request), writes them to the cache directory with `expo-file-system`, and opens the share sheet with `expo-sharing` - Quick Look and "Save to Files" on iOS, "Open with" on Android. Both are native modules, so **a dev client or store build made before they were added must be rebuilt** (`eas build --profile development`, or `bunx expo prebuild` + `pod install` for a local `ios/` build).
+
 ## Build profiles
 
 `mobile/eas.json` defines three:
@@ -71,3 +75,4 @@ eas build --profile production --platform all
 
 - The claymorphic theme and safe-area handling were verified through Expo web and typechecks, **not on a device**.
 - No build has been run through EAS from this repo, so the profiles are unexercised.
+- The course screens (student and staff), file opening and rubric marking were checked with `tsc` and an iOS `expo export` bundle, and their API calls against the demo data, **not on a device**.

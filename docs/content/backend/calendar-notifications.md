@@ -56,17 +56,19 @@ The .ics export has one zero-length event per item at its due time, with a stabl
 |--------|-------|
 | `user_profile_id` | Recipient account (cascade) |
 | `course_id` | Cascade |
-| `kind` | `activity_published` or `announcement` (check constraint) |
-| `activity_id` / `announcement_id` | What it is about (cascade; deleting the work removes its notices) |
+| `kind` | `activity_published`, `announcement`, `discussion_topic` or `discussion_reply` (check constraint) |
+| `activity_id` / `announcement_id` / `discussion_topic_id` | What it is about (cascade; deleting the work, announcement or topic removes its notices). `discussion_topic_id` added by `20261023160000_module_discussions_notifications` |
 | `title`, `body` | Shown as-is in the bell and the app |
 | `read_at`, `created_at` | |
 
-Unique `(user_profile_id, activity_id)` and `(user_profile_id, announcement_id)`, so a student is told about a piece of work once. The older `file_manager.notification` table is specific to file shares (it carries `file_id`, `share_id`, `can_download`) and is not reused.
+Unique `(user_profile_id, activity_id)` and `(user_profile_id, announcement_id)`, so a student is told about a piece of work once. Partial unique indexes on `(user_profile_id, discussion_topic_id)` for `kind = 'discussion_topic'` (a topic is announced once) and for `kind = 'discussion_reply' AND read_at IS NULL` (replies coalesce into one unread notice per topic). The older `file_manager.notification` table is specific to file shares (it carries `file_id`, `share_id`, `can_download`) and is not reused.
 
 ### When notices are sent
 
 - `ActivityService.publish` - after the status update, including reopening closed work.
 - `AnnouncementService.createForCourse` - after the insert.
+- `DiscussionService.create` / `update` - a topic created published, or switched from draft to published (`discussionTopicPublished`; the author is not told).
+- `DiscussionService.reply` - `discussionReplied`: the topic author and everyone who has posted in it, minus the replier. Active enrolled students get an in-app notice (an existing unread one for the topic is updated - title, body, `created_at` - instead of a new row) and a push; course staff get the push only, since push tokens are per account (`push_device.user_id`).
 
 Both call `CourseNotificationService` without awaiting it (`void this.notices?.…`), so the request never waits on the database writes or Expo. The service never throws; failures are logged. It is injected `@Optional()` so unit tests can construct those services without it.
 
@@ -80,6 +82,7 @@ Sent through `PushService.sendToUsers` on the Android channel `coursework` (the 
 |--------|--------------|--------------|
 | `course.activity_published` | `courseId`, `activityId` | `/work/<activityId>` |
 | `course.announcement` | `courseId`, `announcementId` | `/grades/<courseId>` (the app's course screen) |
+| `course.discussion` | `courseId`, `topicId` | the topic |
 
 ### Student routes
 
@@ -87,7 +90,7 @@ All under `AuthGuard` + `StudentGuard`, scoped to the signed-in account:
 
 | Method | Route | Body / query | Returns |
 |--------|-------|--------------|---------|
-| GET | `/portal/me/notifications` | `limit` (1-100, default 30), `before` (ISO), `unread` (bool) | Newest first: `{ id, kind, courseId, courseName, activityId, announcementId, title, body, readAt, createdAt }[]` |
+| GET | `/portal/me/notifications` | `limit` (1-100, default 30), `before` (ISO), `unread` (bool) | Newest first: `{ id, kind, courseId, courseName, activityId, announcementId, topicId, title, body, readAt, createdAt }[]` |
 | GET | `/portal/me/notifications/unread-count` | | `{ count }` |
 | POST | `/portal/me/notifications/read` | `{ ids: uuid[] }` (max 200) | 204; ids that are not the caller's are ignored |
 | POST | `/portal/me/notifications/read-all` | | 204 |
