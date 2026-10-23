@@ -112,6 +112,10 @@ export interface AssignmentGroup {
   /** Percent of the course total; null when the course is unweighted. */
   weight: number | null;
   position: number;
+  /** Each student's N marks that hurt the group most are left out. */
+  dropLowest: number;
+  /** Then each student's N best marks are left out. */
+  dropHighest: number;
 }
 
 export interface Activity {
@@ -130,6 +134,8 @@ export interface Activity {
   /** 0 means unlimited. */
   maxAttempts: number;
   omitFromFinalGrade: boolean;
+  /** The course rubric marking uses; quizzes never have one. */
+  rubricId: string | null;
   createdAt: string;
 }
 
@@ -142,6 +148,8 @@ export interface GroupScore {
   possible: number;
   /** null when nothing in the group has been marked yet. */
   percent: number | null;
+  /** Activity ids this group's drop rules left out. */
+  dropped: string[];
 }
 
 export interface CourseGrade {
@@ -150,6 +158,8 @@ export interface CourseGrade {
   /** From the course grade scale, else the school default. */
   letter: string | null;
   groups: GroupScore[];
+  /** Every activity id left out by a drop rule. */
+  dropped: string[];
 }
 
 export interface GradebookCell {
@@ -157,6 +167,8 @@ export interface GradebookCell {
   status: SubmissionStatus | null;
   excused: boolean;
   submittedAt: string | null;
+  /** Left out of the total by its group's drop rule. */
+  dropped: boolean;
 }
 
 export interface GradebookRow {
@@ -207,7 +219,79 @@ export interface PortalCourseActivity
 export interface PortalCourseGrades {
   grade: CourseGrade;
   groups: AssignmentGroup[];
-  activities: (PortalCourseActivity & { groupName: string | null })[];
+  activities: (PortalCourseActivity & {
+    groupName: string | null;
+    /** Left out of the total by its group's drop rule. */
+    dropped: boolean;
+  })[];
+}
+
+// ── rubrics ────────────────────────────────────────────────────────────────
+
+export interface RubricRating {
+  id: string;
+  label: string;
+  description: string | null;
+  points: number;
+}
+
+export interface RubricCriterion {
+  id: string;
+  title: string;
+  description: string | null;
+  points: number;
+  ratings: RubricRating[];
+}
+
+export interface Rubric {
+  id: string;
+  courseId: string;
+  title: string;
+  /** Sum of the criteria's points. */
+  pointsPossible: number;
+  criteria: RubricCriterion[];
+  /** Used to mark someone: its criteria can no longer change. */
+  assessed: boolean;
+  updatedAt: string | null;
+}
+
+/** One criterion's mark for one student. */
+export interface RubricAssessment {
+  criterionId: string;
+  ratingId: string | null;
+  points: number;
+  comment: string | null;
+}
+
+/** GET /activities/:id/rubric - the marking screen's view. */
+export interface ActivityRubric {
+  rubric: Rubric | null;
+  /** Keyed by student id. */
+  assessments: Record<string, RubricAssessment[]>;
+}
+
+// ── gradebook import ───────────────────────────────────────────────────────
+
+export interface GradebookImportPlan {
+  columns: {
+    index: number;
+    header: string;
+    activityId: string | null;
+    status: "activity" | "student" | "ignored" | "ambiguous";
+  }[];
+  rowCount: number;
+  matchedRows: number;
+  changes: {
+    line: number;
+    studentId: string;
+    studentName: string;
+    activityId: string;
+    activityTitle: string;
+    from: { score: number | null; excused: boolean } | null;
+    to: { score: number | null; excused: boolean };
+  }[];
+  unchanged: number;
+  errors: { line: number; column: string | null; message: string }[];
 }
 
 // ── attendance ─────────────────────────────────────────────────────────────
@@ -312,4 +396,45 @@ export interface AttendanceQrFrame {
   url: string;
   rotatesAt: string;
   windowMs: number;
+}
+
+/** One dated activity on a calendar (`GET /calendar`). */
+export interface CalendarItem {
+  activityId: string;
+  courseId: string;
+  courseName: string;
+  courseCode: string | null;
+  title: string;
+  kind: ActivityKind;
+  /** Staff calendars include drafts; a student's never does. */
+  status: ActivityStatus;
+  points: number;
+  dueAt: string;
+}
+
+/** A student's calendar item (`GET /portal/me/calendar`). */
+export interface PortalCalendarItem extends CalendarItem {
+  submission: {
+    status: SubmissionStatus;
+    /** Only once graded. */
+    score: number | null;
+    excused: boolean;
+    submittedAt: string | null;
+  } | null;
+}
+
+export type CourseNotificationKind = "activity_published" | "announcement";
+
+/** A notice in the portal bell (`GET /portal/me/notifications`). */
+export interface CourseNotification {
+  id: string;
+  kind: CourseNotificationKind;
+  courseId: string;
+  courseName: string | null;
+  activityId: string | null;
+  announcementId: string | null;
+  title: string;
+  body: string | null;
+  readAt: string | null;
+  createdAt: string;
 }

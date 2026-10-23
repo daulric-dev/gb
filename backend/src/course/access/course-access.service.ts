@@ -25,7 +25,7 @@ export const MANAGE_ROLES: readonly CourseRole[] = ['admin', 'teacher'];
 export const STAFF_ROLES: readonly CourseRole[] = ['admin', 'teacher', 'ta'];
 
 export const COURSE_COLUMNS =
-  'id, school_id, academic_year_id, term_id, name, code, description, status, join_code, grade_scale_id, created_by, created_at, updated_at';
+  'id, school_id, academic_year_id, term_id, name, code, description, status, join_code, grade_scale_id, is_template, created_by, created_at, updated_at';
 
 /** The same columns as `COURSE_COLUMNS`, as a Prisma `select`. */
 export const COURSE_SELECT = {
@@ -39,6 +39,7 @@ export const COURSE_SELECT = {
   status: true,
   join_code: true,
   grade_scale_id: true,
+  is_template: true,
   created_by: true,
   created_at: true,
   updated_at: true,
@@ -55,6 +56,7 @@ export interface CourseRow {
   status: 'draft' | 'published' | 'archived';
   join_code: string | null;
   grade_scale_id: string | null;
+  is_template: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -72,12 +74,14 @@ export function toCourseRow(c: {
   status: CourseRow['status'];
   join_code: string | null;
   grade_scale_id: string | null;
+  is_template?: boolean;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
 }): CourseRow {
   return {
     ...c,
+    is_template: c.is_template ?? false,
     created_at: isoDate(c.created_at)!,
     updated_at: isoDate(c.updated_at)!,
   };
@@ -164,7 +168,7 @@ export class CourseAccessService {
    * Load a course for a student. They must be actively enrolled, and the
    * course must be published: a draft is still being built and an archived
    * one is closed, though an archived course stays readable so past work and
-   * grades remain visible.
+   * grades remain visible. A template never has students.
    */
   async requireStudent(
     studentId: string,
@@ -176,7 +180,9 @@ export class CourseAccessService {
     const visible =
       course.status === 'published' ||
       (opts.allowArchived && course.status === 'archived');
-    if (!visible) throw new NotFoundException('Course not found');
+    if (!visible || course.is_template) {
+      throw new NotFoundException('Course not found');
+    }
 
     const enrollment = await this.prisma.course_student.findUnique({
       where: {

@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -64,6 +65,11 @@ export class UpdateCourseDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() academicYearId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsUUID() termId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsUUID() gradeScaleId?: string | null;
+
+  @ApiPropertyOptional({ description: 'Offer this course as a school template' })
+  @IsOptional()
+  @IsBoolean()
+  isTemplate?: boolean;
 }
 
 export class AddCourseStaffDto {

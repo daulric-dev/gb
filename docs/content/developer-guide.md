@@ -238,7 +238,7 @@ bun run gb <command>     # repo CLI - status, commit, branch, PR
 | `docs/content/` | This site. A new `.md` file appears in the sidebar automatically. |
 | `infrastructure/` | Dockerfile, nginx config, Compose. See the caveat above. |
 
-Deeper reference: **[Implementation guide](./implementation-guide.md)** for the database and every API route.
+Deeper reference: the **[backend overview](./backend/overview.md)** for modules and routes, and `backend/prisma/schema` (with its README) for the database.
 
 ## Things that will confuse you once
 

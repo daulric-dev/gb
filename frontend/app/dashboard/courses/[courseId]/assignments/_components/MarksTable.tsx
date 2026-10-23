@@ -9,11 +9,17 @@ import {
   MessageSquareText,
   Search,
   SlashIcon,
+  Table2,
   Users,
 } from "lucide-react";
 import { api, ApiError, buildUrl } from "@/lib/api";
 import { downloadBlob } from "@/lib/download";
-import type { ActivityKind, SubmissionStatus } from "@/lib/courses/types";
+import type {
+  ActivityKind,
+  Rubric,
+  RubricAssessment,
+  SubmissionStatus,
+} from "@/lib/courses/types";
 import { formatDue } from "@/lib/courses/format";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +51,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { SubmissionRow } from "./types";
+import { RubricMarkDialog } from "./RubricMarkDialog";
 
 /** What the grade and excuse endpoints answer with. */
 interface MarkResult {
@@ -115,6 +122,9 @@ export function MarksTable({
   canGrade,
   isDraft,
   onRowsChangeAction,
+  rubric = null,
+  assessments = {},
+  onAssessedAction,
 }: {
   activityId: string;
   kind: ActivityKind;
@@ -123,6 +133,11 @@ export function MarksTable({
   canGrade: boolean;
   isDraft: boolean;
   onRowsChangeAction: (rows: SubmissionRow[]) => void;
+  /** The attached rubric, when marking goes criterion by criterion. */
+  rubric?: Rubric | null;
+  /** Each student's criterion marks, keyed by student id. */
+  assessments?: Record<string, RubricAssessment[]>;
+  onAssessedAction?: (studentId: string, marks: RubricAssessment[]) => void;
 }) {
   useSignals();
   const search = useSignal("");
@@ -131,6 +146,7 @@ export function MarksTable({
   const feedbackText = useSignal("");
   const excusing = useSignal<SubmissionRow | null>(null);
   const excuseReason = useSignal("");
+  const rubricFor = useSignal<SubmissionRow | null>(null);
   const working = useSignal(false);
 
   const editable = canGrade && !isDraft;
@@ -373,6 +389,19 @@ export function MarksTable({
                   <TableCell className="text-right align-top">
                     {editable && (
                       <div className="flex justify-end gap-1">
+                        {rubric && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Mark with the rubric"
+                            onClick={() => (rubricFor.value = row)}
+                          >
+                            <Table2 className="size-4" />
+                            {assessments[row.studentId]?.length ? (
+                              <span className="sr-only">Rubric marked</span>
+                            ) : null}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -407,6 +436,27 @@ export function MarksTable({
           </TableBody>
         </Table>
       </div>
+
+      {rubric && (
+        <RubricMarkDialog
+          open={!!rubricFor.value}
+          activityId={activityId}
+          points={points}
+          rubric={rubric}
+          student={rubricFor.value}
+          existing={
+            rubricFor.value ? (assessments[rubricFor.value.studentId] ?? []) : []
+          }
+          feedback={rubricFor.value?.submission?.feedback ?? null}
+          onOpenChangeAction={(v) => {
+            if (!v) rubricFor.value = null;
+          }}
+          onSavedAction={(result) => {
+            replace(result.submission);
+            onAssessedAction?.(result.submission.studentId, result.assessments);
+          }}
+        />
+      )}
 
       <Dialog
         open={!!feedbackFor.value}

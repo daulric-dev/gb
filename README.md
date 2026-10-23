@@ -174,7 +174,7 @@ When the backend is running, Swagger docs are at:
 http://localhost:3001/docs
 ```
 
-Moving a deployment off its old hosted platform is covered in [`docs/content/platform-migration.md`](docs/content/platform-migration.md); upgrading an existing deployment to courses in [`docs/content/upgrading-to-courses.md`](docs/content/upgrading-to-courses.md); single sign-on setup in [`docs/content/sso.md`](docs/content/sso.md); what changed in the [2026-10-21 changelog](docs/content/changelog/overview.md).
+Deploying is covered in [`docs/content/platform-migration.md`](docs/content/platform-migration.md); single sign-on setup in [`docs/content/sso.md`](docs/content/sso.md); what changed in the [2026-10-21 changelog](docs/content/changelog/overview.md).
 
 ## Scripts
 

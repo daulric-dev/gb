@@ -476,6 +476,25 @@ async function seed() {
   });
   await priyaS.call('POST', `/portal/me/activities/${hw1.id}/submit`, { textBody: 'x=3, x=-2, x=11' });
 
+  // A discussion with a short thread.
+  const topic = await maya.call('POST', `/courses/${bio.id}/discussions`, {
+    title: 'Why do plant cells need a cell wall?',
+    body: 'Animal cells manage without one. In a sentence or two: what does the **cell wall** give a plant cell that the membrane alone does not?',
+    isPinned: true,
+  });
+  const topicReplies = `/portal/me/courses/${bio.id}/discussions/${topic.id}/replies`;
+  const jordanReply = await jordanS.call('POST', topicReplies, {
+    body: 'It keeps the cell rigid so the plant can stand up without a skeleton.',
+  });
+  await priyaS.call('POST', topicReplies, {
+    body: 'Also stops the cell bursting when it takes in lots of water.',
+    parentId: jordanReply.id,
+  });
+  await maya.call('POST', `/courses/${bio.id}/discussions/${topic.id}/replies`, {
+    body: 'Both right - that water pressure against the wall is called *turgor pressure*.',
+    parentId: jordanReply.id,
+  });
+
   // Jordan sits the quiz: two right, one wrong (scored automatically).
   const quiz = await jordanS.call('GET', `/portal/me/activities/${cellQuiz.id}`);
   const opt = (qid: string, label: string) =>

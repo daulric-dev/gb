@@ -4,276 +4,123 @@ sidebar_label: Grading
 
 # Grading Module
 
-**Location**: `backend/src/grading/`
+`backend/src/grading/` - the work set in a course and the marks it produces: activities (quizzes, assignments, offline work), quiz questions, submissions, assignment groups, rubrics, the gradebook and its CSV import.
 
-The grading module manages two core entities:
-1. **Assessments** - exam or coursework items within a term and subject (e.g., "Mid-term Exam", "Take Home Project")
-2. **Grades** - individual student scores for each assessment
-
-Access is **enforced in the API**: teachers can only create/modify assessments and grades for subjects they're assigned to. There is no database row-level security.
+A mark lives in exactly one place: the student's **submission** for the activity (`grading.submission.score`). There is no separate grades table. Rubric assessments record *how* a mark was reached; the total they produce is written to the submission like any other mark.
 
 ## Files
 
 | File | Purpose |
-|------|---------|
-| `grading.module.ts` | Module definition |
-| `assessment.controller.ts` | Assessment API endpoints |
-| `assessment.service.ts` | Assessment business logic |
-| `grade.controller.ts` | Grade API endpoints |
-| `grade.service.ts` | Grade business logic |
-| `dto/create-assessment.dto.ts` | Assessment creation validation |
-| `dto/update-assessment.dto.ts` | Assessment update validation |
-| `dto/create-grade.dto.ts` | Single grade creation |
-| `dto/update-grade.dto.ts` | Grade update |
-| `dto/bulk-grade.dto.ts` | Bulk grade creation/update |
-| `dto/exclude.dto.ts` | Grade/assessment exclusion toggle |
-
-## Assessment Data Model
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | UUID | Primary key |
-| `term_id` | UUID | The term this assessment belongs to |
-| `subject_id` | UUID | The subject being assessed |
-| `title` | string | Assessment name (e.g., "Mid-term Exam") |
-| `assessment_type` | enum | `exam` or `coursework` |
-| `assessment_date` | date? | Optional date of the assessment |
-| `max_score` | number | Maximum possible score (default: 100) |
-| `weight` | number? | Weight within its type category |
-| `is_excluded` | boolean | If true, excluded from calculations |
-| `exclusion_reason` | string? | Why the assessment was excluded |
-| `sort_order` | number? | Display ordering |
-
-## Grade Data Model
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | UUID | Primary key |
-| `assessment_id` | UUID | The assessment this grade belongs to |
-| `student_id` | UUID | The student being graded |
-| `score` | number | The student's score |
-| `letter_grade` | string? | Auto-calculated letter grade |
-| `remarks` | string? | Optional teacher remarks |
-| `is_excluded` | boolean | If true, excluded from calculations |
-| `exclusion_reason` | string? | Why the grade was excluded |
-| `created_by` | UUID | Teacher who created the grade |
-| `updated_by` | UUID | Teacher who last updated the grade |
-
-## Access control
-
-The database does no access checking of its own; every query goes through `PrismaService` and the service decides who may act before it reads or writes:
-
-- Teachers can only create/modify assessments for subjects they're assigned to teach
-- An admin in the school may act on any subject in it
-- If a teacher tries to grade a subject they don't teach, a `403 Forbidden` error is returned
-
-## Exclusion System
-
-Both assessments and individual grades can be **excluded** from calculations:
-
-- **Excluded Assessment**: The entire assessment is skipped when computing term grades. Useful if an assessment is cancelled.
-- **Excluded Grade**: An individual student's grade is skipped. Useful if a student was absent or excused.
-
-The `ExcludeDto` is shared between assessment and grade exclusion.
-
-### Two routes to a grade exclusion
-
-An individual grade can be excluded through either of two endpoints, which differ in **who is allowed to do it**:
-
-| | `PATCH /api/grades/:id/exclude` | `POST /api/activities/:activityId/students/:studentId/exclude` |
-| --- | --- | --- |
-| Identifies the grade by | its own id | the activity's assessment **and** the student |
-| Authorised by | subject assignment | class ownership |
-| Allowed for | an admin in the school, or a teacher with a `teacher_subject_assignment` for that subject and year | anyone whose school owns the class the activity belongs to |
-| Used by | nothing yet | the class activity's Submissions tab |
-
-The second exists because the activity screens authorise by **class** throughout - marking a submission already does. A class teacher who is not that subject's assigned teacher can set the mark and can exclude every mark on the activity at once, but would be refused by the subject-assignment route for the same grade. That route remains the correct one for the gradebook at large, where subject assignment is the rule.
-
-The activity route resolves the grade by assessment and student together, so a student id from another class cannot reach a grade the activity does not own, and it returns `409` if the activity is not published (there is no assessment yet) or `404` if the student has not been marked.
-
-## Assessment Endpoints
-
-All endpoints require `AuthGuard`.
-
-### `GET /api/assessments?termId=<id>&subjectId=<id>`
-
-Returns all assessments for a term and subject, ordered by `sort_order`.
-
----
-
-### `GET /api/assessments/:id`
-
-Returns a single assessment.
-
----
-
-### `POST /api/assessments`
-
-Creates a new assessment. **Subject assignment enforced** - only the assigned teacher can create.
-
-**Body:**
-```json
-{
-  "termId": "uuid",
-  "subjectId": "uuid",
-  "title": "Mid-term Exam",
-  "assessmentType": "exam",
-  "maxScore": 100,
-  "weight": 1,
-  "sortOrder": 1
-}
-```
-
----
-
-### `PATCH /api/assessments/:id`
-
-Updates an assessment. **Subject assignment enforced.**
-
----
-
-### `PATCH /api/assessments/:id/exclude`
-
-Toggles the exclusion status of an assessment.
-
-**Body:**
-```json
-{
-  "isExcluded": true,
-  "exclusionReason": "Assessment cancelled due to weather"
-}
-```
-
----
-
-### `DELETE /api/assessments/:id`
-
-Deletes an assessment and all its grades. **Subject assignment enforced.**
-
-## Grade Endpoints
-
-All endpoints require `AuthGuard`.
-
-### `GET /api/grades?assessmentId=<id>`
-
-Returns all grades for an assessment, enriched with student names, sorted by last name.
-
----
-
-### `GET /api/grades/by-term?termId=<id>&subjectId=<id>`
-
-Returns all assessments for a term + subject, with nested grades and student data. This powers the grading sheet view.
-
-**Response structure:**
-```json
-[
-  {
-    "id": "assessment-uuid",
-    "title": "Mid-term Exam",
-    "max_score": 100,
-    "assessment_type": "exam",
-    "grades": [
-      {
-        "id": "grade-uuid",
-        "student_id": "uuid",
-        "score": 85,
-        "remarks": "Good work",
-        "is_excluded": false,
-        "student": {
-          "id": "uuid",
-          "first_name": "Jane",
-          "last_name": "Doe"
-        }
-      }
-    ]
-  }
-]
-```
-
----
-
-### `POST /api/grades`
-
-Creates a single grade. **Subject assignment enforced.**
-
-**Body:**
-```json
-{
-  "assessmentId": "uuid",
-  "studentId": "uuid",
-  "score": 85,
-  "remarks": "Good work"
-}
-```
-
-**Error:** `409 Conflict` if a grade already exists for this student + assessment.
-
----
-
-### `POST /api/grades/bulk`
-
-Creates or updates multiple grades at once. Uses `upsert` on `(assessment_id, student_id)`, so existing grades are updated in place.
-
-**Body:**
-```json
-{
-  "assessmentId": "uuid",
-  "grades": [
-    { "studentId": "uuid1", "score": 85, "remarks": "Good" },
-    { "studentId": "uuid2", "score": 72 }
-  ]
-}
-```
-
----
-
-### `PATCH /api/grades/:id`
-
-Updates a grade's score or remarks. **Subject assignment enforced.**
-
----
-
-### `PATCH /api/grades/:id/exclude`
-
-Toggles the exclusion status of a grade. Authorised by subject assignment - see [Two routes to a grade exclusion](#two-routes-to-a-grade-exclusion).
-
-**Body:**
-```json
-{
-  "isExcluded": true,
-  "exclusionReason": "Student was absent"
-}
-```
-
----
-
-### `POST /api/activities/:activityId/students/:studentId/exclude`
-
-Leaves one student's mark for an activity out of the term, keeping the mark. Authorised by the class the activity belongs to - see [Two routes to a grade exclusion](#two-routes-to-a-grade-exclusion). Requires `grade:update`.
-
-**Body:**
-```json
-{
-  "excluded": true,
-  "reason": "Absent, sat the makeup instead"
-}
-```
-
-`reason` is optional, trimmed, and stored as null when blank. It is cleared whenever `excluded` is false, so a stale note cannot reappear the next time the mark is excluded.
-
-**Response:**
-```json
-{
-  "studentId": "...",
-  "gradeId": "...",
-  "isExcluded": true,
-  "exclusionReason": "Absent, sat the makeup instead"
-}
-```
-
-| Status | When |
 | --- | --- |
-| `409` | The activity is not published, so there is no assessment and nothing is being counted yet |
-| `404` | The student has no mark for this activity, or the activity is outside the caller's school |
+| `activity.controller.ts` / `activity.service.ts` | Activities and quiz questions; teacher marking |
+| `activity.mapper.ts` | Row → wire shapes (`Activity`, portal activity, portal submission) |
+| `submission.service.ts` | Student hand-ins (text, files via presigned upload, quizzes), marking, excusing |
+| `assignment-group.controller.ts` / `.service.ts` | Weighted groups per course, with drop rules |
+| `rubric.controller.ts` / `rubric.service.ts` | Course rubrics, attaching one to an activity, marking with it |
+| `gradebook.controller.ts` / `gradebook.service.ts` | Course gradebook and CSV export; `studentSummary()` for the portal |
+| `gradebook-import.ts` / `gradebook-import.service.ts` | CSV import: parsing and matching as pure functions; preview and transactional apply |
+| `gradebook.calc.ts` | The grade calculation (including drop rules), as pure functions |
+| `round.ts` | Two-decimal rounding for every score, total and percentage returned |
 
-The exclusion appears on `GET /api/activities/:id/submissions`, whose rows carry `grade: { id, isExcluded, exclusionReason } | null`. A null `grade` means there is nothing to exclude yet - not that the mark counts.
+## Data model
+
+| Table | Notes |
+| --- | --- |
+| `grading.activity` | `course_id`, `assignment_group_id`, `kind` (`quiz` \| `assignment` \| `offline`), `title`, `instructions` (Markdown), `points`, `due_at`, `status` (`draft` \| `published` \| `closed`), `allow_file`/`allow_text`, `max_attempts` (null = unlimited), `omit_from_final_grade`, `rubric_id` (null; set null if the rubric is deleted) |
+| `grading.quiz_question` / `quiz_option` | `multiple_choice`, `true_false`, `short_answer` (options are the accepted wordings) |
+| `grading.submission` | One row per (activity, student): `status` (`draft` \| `submitted` \| `graded`), `text_body`, `file_id`, `score`, `feedback`, `excused`, `excused_reason`, `attempt_count` |
+| `grading.quiz_answer` | One row per (submission, question) |
+| `grading.grade_scale` / `grade_scale_band` | Percentage → letter, per school (see the grade-scale module) |
+| `course.assignment_group` | `name`, `weight` (0-100 or null), `position`, `drop_lowest` / `drop_highest` (0-50, default 0) |
+| `grading.rubric` | A course's reusable rubric: `course_id`, `title`, `created_by` |
+| `grading.rubric_criterion` | `rubric_id`, `title`, `description`, `points`, `position`; the rubric is worth the sum of its criteria |
+| `grading.rubric_rating` | A level of a criterion: `criterion_id`, `label`, `description`, `points` (0..criterion points), `position` |
+| `grading.rubric_assessment` | One row per (submission, criterion): `rating_id` (null for bare points; set null if the level is deleted), `points`, `comment` |
+
+Quizzes are scored by the SQL function `grading.submit_quiz(submission, student)` under a row lock: it checks attempts, scores against the options of *each answer's own question*, and writes the score onto the submission.
+
+## Access
+
+Every route resolves the activity's course through `CourseAccessService`:
+
+- **Read, mark, excuse, mark with a rubric, import marks from CSV**: course staff (admin, teacher, TA).
+- **Create, edit, publish, close, delete, questions, rubrics (build, attach, copy, delete), group weights and drop rules**: admin or teacher.
+- **Students** reach their own work through `/portal/me/activities/...` (`StudentGuard`), only for published or closed activities in a published course they are actively enrolled in. Answer keys are never sent to students.
+
+## Rules
+
+- Questions are editable only while the quiz is a **draft**; publishing freezes them.
+- An activity with submissions cannot be deleted; close it instead.
+- Offline activities accept no hand-ins; staff enter marks directly.
+- Marks are 0..points with at most two decimals. Grading a student with no submission creates one as `graded`.
+- Hand-ins are refused once the course is archived.
+- Rubrics attach to assignments and offline work, never quizzes, and only from the activity's own course. Once a rubric has marked anyone its criteria are **frozen** (409): rename it, or **copy** it and change the copy. Deleting a rubric detaches it everywhere and deletes its criterion marks; the scores they produced stay on the submissions.
+- Marking with a rubric: each criterion gets a level (its points) or bare points (0..criterion points, two decimals), with an optional comment. The score is their sum unless the request gives `score`, which overrides it; either way it must be 0..activity points, so a rubric worth more than the activity needs an override. The submission and its criterion marks are written in one transaction, replacing any earlier rubric marking. A plain `PATCH .../grade` afterwards changes the score and leaves the criterion marks as they were.
+- Students see the attached rubric on their work page (`rubric`), and their levels and comments (`rubricAssessment`) once the work is graded with it.
+
+## Endpoints
+
+```
+GET    /api/courses/:courseId/activities                         Activity[]
+POST   /api/courses/:courseId/activities                         {kind, title, instructions?, points, dueAt?, assignmentGroupId?, allowFile?, allowText?, maxAttempts?}
+GET    /api/activities/:activityId                               Activity & { questions }
+PATCH  /api/activities/:activityId                               (title, instructions, points, dueAt, assignmentGroupId, omitFromFinalGrade, ...)
+POST   /api/activities/:activityId/publish | /close
+DELETE /api/activities/:activityId
+POST   /api/activities/:activityId/questions                     {prompt, kind, points?, options}
+PATCH  /api/activities/:activityId/questions/:questionId
+DELETE /api/activities/:activityId/questions/:questionId
+GET    /api/activities/:activityId/submissions                   every course student, with their submission or null
+PATCH  /api/activities/:activityId/submissions/:studentId/grade  {score, feedback?}
+PATCH  /api/activities/:activityId/submissions/:studentId/excuse {excused, reason?}
+POST   /api/activities/submissions/:submissionId/grade           (same, by submission id)
+GET    /api/activities/submissions/:submissionId/file            the handed-in file
+
+GET    /api/courses/:courseId/assignment-groups
+POST   /api/courses/:courseId/assignment-groups                  {name, weight?, dropLowest?, dropHighest?}
+PATCH  /api/courses/:courseId/assignment-groups/reorder          {groupIds}
+PATCH  /api/courses/:courseId/assignment-groups/:groupId         {name?, weight?, dropLowest?, dropHighest?}
+DELETE /api/courses/:courseId/assignment-groups/:groupId         activities fall back to ungrouped
+
+GET    /api/courses/:courseId/rubrics                            Rubric[]  (staff)
+POST   /api/courses/:courseId/rubrics                            {title, criteria: [{title, description?, points, ratings: [{label, description?, points}]}]}
+GET    /api/courses/:courseId/rubrics/:rubricId                  Rubric
+PATCH  /api/courses/:courseId/rubrics/:rubricId                  {title?, criteria?}  criteria replace the old ones; 409 once assessed
+POST   /api/courses/:courseId/rubrics/:rubricId/copy             a fresh, unassessed copy
+DELETE /api/courses/:courseId/rubrics/:rubricId                  204
+GET    /api/activities/:activityId/rubric                        {rubric, assessments: {[studentId]: RubricAssessment[]}}  (staff)
+PUT    /api/activities/:activityId/rubric                        {rubricId | null}  attach or detach (teacher)
+PUT    /api/activities/:activityId/submissions/:studentId/rubric {assessments: [{criterionId, ratingId?, points?, comment?}], score?, feedback?}
+                                                                 -> {submission, assessments, rubricTotal}
+
+GET    /api/courses/:courseId/gradebook                          {groups, activities, students: [{cells, grade}]}
+GET    /api/courses/:courseId/gradebook/export                   text/csv
+POST   /api/courses/:courseId/gradebook/import/preview           {csv} -> GradebookImportPlan (nothing written)
+POST   /api/courses/:courseId/gradebook/import                   {csv} -> {applied, unchanged}; 400 with {errors} if the file has any
+```
+
+`Rubric` is `{id, courseId, title, pointsPossible, criteria: [{id, title, description, points, ratings: [{id, label, description, points}]}], assessed, updatedAt}`. Gradebook cells carry `dropped`, each `grade` carries `dropped` (activity ids) and so does each of its groups; portal grade activities carry `dropped` too.
+
+## CSV import
+
+The import reads the export's own shape, so the workflow is export, edit in a spreadsheet, import. It is two calls with the same body: **preview** plans and writes nothing; **apply** plans again from the current marks (it does not trust the client's preview) and writes every change in one transaction, or nothing if the file has any error.
+
+- **Students** are matched by the `Student ID` column (the export includes it), else `Email` (the student's sign-in email), else `First name` + `Last name` (case- and space-insensitive), which must name exactly one student on the active/completed roster. An unknown, ambiguous or repeated student is a row error.
+- **Columns** match an activity by the export's `Title (points)` header, or by a bare title that names exactly one published/closed activity. Two activities with the same title are an error on that column. Everything else - `Status`, group `%` columns, `Total %`, `Letter`, anything unknown - is ignored. The export's formula guard (a leading `'`) is undone.
+- **Cells**: blank is skipped. A number sets the mark - it must be 0..points with at most two decimals - and lifts any excuse. `EX` excuses (keeping any score). A value equal to the current mark *at two decimals* is not a change, so re-importing an untouched export changes nothing.
+- **Quizzes** are imported like any other column: because unchanged cells are skipped and quiz scores compare at two decimals (the precision the export writes), a quiz's auto-score is only replaced where the sheet holds a different number - which is the teacher saying so. Feedback and the student's own work are never touched.
+- The file is JSON (`{csv}`), up to 1 MB of text.
+
+Wire types are in `frontend/lib/courses/types.ts`.
+
+## How a course grade is calculated
+
+`gradebook.calc.ts`:
+
+1. An activity counts when it is published or closed, not `omit_from_final_grade`, and the student's submission is graded and not excused. Unmarked work is ignored - the grade is the grade *so far*.
+2. **Drop rules**, per student and per group (Ungrouped has none), among that student's counted marks: drop the `drop_lowest` marks that hurt the group most, then the `drop_highest` that help it most of what is left. With unequal points "lowest" is not the smallest percentage - the dropped set is the one whose removal leaves the best (or, for highest, the worst) earned ÷ possible over what remains, as Canvas does. The search is exhaustive while the number of ways to choose stays under 5,000, and an exact ratio search (Dinkelbach's method) beyond that. **At least one counted mark is always kept**, ties keep the earlier activity, and a set with no possible points (only zero-point work) is never preferred. Dropped activities are reported, not deleted.
+3. Per group: score earned ÷ points available over the kept marks, as a percentage.
+4. If any group has a weight above 0, the total is the weighted average **over the groups that have counted work** (an empty group drops out and the rest rescale); unweighted groups and ungrouped work count 0 in that case. If no group has a weight, the total is all points earned ÷ all points available.
+5. The letter comes from the course's grade scale, else the school default: the band with the highest minimum the percentage reaches.
+
+Totals are computed from full-precision scores and rounded to two decimals once, at the end.

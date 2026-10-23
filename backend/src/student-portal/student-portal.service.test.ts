@@ -25,7 +25,7 @@ function course(over: Record<string, any> = {}) {
   };
 }
 
-const GRADE = { percent: 80, letter: 'A', groups: [] };
+const GRADE = { percent: 80, letter: 'A', groups: [], dropped: [] };
 
 /**
  * Course access, modules and pages are their own services (tested there);
@@ -71,6 +71,13 @@ function service(
   const gradebook = {
     studentSummary: opts.summary ?? (async () => GRADE),
   };
+  const files = {
+    readContentForAuthorisedCaller: async (id: string) => ({
+      buffer: Buffer.from('bytes'),
+      contentType: 'application/pdf',
+      filename: `${id}.pdf`,
+    }),
+  };
   return new StudentPortalService(
     prisma as any,
     access as any,
@@ -79,6 +86,7 @@ function service(
     pages as any,
     announcements as any,
     gradebook as any,
+    files as any,
   );
 }
 
@@ -225,6 +233,63 @@ describe('StudentPortalService courses', () => {
             body: 'secret',
           },
         }).getPage(CTX, 'course-1', 'page-1'),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('StudentPortalService.getCourseFile', () => {
+  test('a file linked from a published module item is served', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue({ id: 'item-1' });
+    prisma.file_share.findFirst.mockResolvedValue(null);
+
+    const out = await service(prisma).getCourseFile(CTX, 'course-1', 'file-1');
+    expect(out.filename).toBe('file-1.pdf');
+
+    const where = prisma.module_item.findFirst.mock.calls[0][0].where;
+    expect(where).toMatchObject({
+      course_id: 'course-1',
+      file_id: 'file-1',
+      is_published: true,
+      module: { is_published: true },
+    });
+  });
+
+  test('a file shared with the course is served', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue(null);
+    prisma.file_share.findFirst.mockResolvedValue({ id: 'share-1' });
+
+    const out = await service(prisma).getCourseFile(CTX, 'course-1', 'file-1');
+    expect(out.contentType).toBe('application/pdf');
+    expect(prisma.file_share.findFirst.mock.calls[0][0].where).toMatchObject({
+      principal_type: 'course',
+      principal_id: 'course-1',
+    });
+  });
+
+  test('a file the course does not offer is a 404', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue(null);
+    prisma.file_share.findFirst.mockResolvedValue(null);
+    expect(
+      await expectRejection(
+        service(prisma).getCourseFile(CTX, 'course-1', 'file-1'),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+  });
+
+  test('a dropped student cannot open course files', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue({ id: 'item-1' });
+    expect(
+      await expectRejection(
+        service(prisma, { enrolment: 'dropped' }).getCourseFile(
+          CTX,
+          'course-1',
+          'file-1',
+        ),
       ),
     ).toBeInstanceOf(NotFoundException);
   });

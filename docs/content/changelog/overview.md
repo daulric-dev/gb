@@ -9,9 +9,15 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-10-23
+
+- [Rubrics, drop rules and gradebook import](./2026-10-23/grading-extras.md) - reusable course **rubrics** (criteria with rating levels) attach to assignments and offline work; staff mark by picking levels, the sum becomes the score (overridable) and students see their levels. Assignment groups can **drop the lowest / highest N** marks per student, chosen to maximise the group percentage with unequal points, never dropping every mark. Staff can **import marks from a CSV** in the export's shape with a preview of every change before a transactional apply; the export gains a Student ID column. Migration `20261023130000_grading_extras`.
+- [Course discussions](./2026-10-23/discussions.md) - a **Discussions** tab in every course, for staff and in the student portal: topics with Markdown prompts and replies threaded one level deep, pinning, locking, drafts and "post before seeing replies"; authors edit their own posts and teachers moderate; per-topic unread counts; optional student-started topics per course. Migration `20261023140000_discussions` adds four `course` tables.
+- [Calendar and new-work notifications](./2026-10-23/calendar-notifications.md) - a month calendar of due dates for staff (across the courses they teach) and students (across their courses, with their submission state), with .ics export and a mobile agenda tab; students are notified in-app (a bell in the portal header) and by push when work is published or a course announcement is posted. New table `course.course_notification`.
+
 ## 2026-10-21
 
-Deploying this release: **[Upgrading to courses](../upgrading-to-courses.md)** - migrations, settings, environment variables and the mobile rebuild, in order - then **[Platform migration](../platform-migration.md)** for the move off Supabase.
+Deploying this release: **[Platform migration](../platform-migration.md)** - the stack, environment variables and a fresh deploy. No data is carried over from before.
 
 - [Courses replace classes and subjects](./2026-10-21/course-lms.md) - GradeBook is now a course-based LMS: teachers create courses with modules, pages, assignments, quizzes, announcements, people and a weighted gradebook; students take courses. **Report cards are removed.** Existing classes × subjects are migrated into courses with their staff, students and every mark; the old tables stay, unread, until a cleanup migration. Also fixes a pre-existing quiz bug where one known-correct option id scored every question.
 - [Attendance with self check-in](./2026-10-21/attendance-check-in.md) - teachers open a check-in window; students are notified by push and check in by scanning a QR code that rotates every 15 seconds, typing a room code, or from the portal, optionally within a distance of the room. Absentees are marked when it closes.

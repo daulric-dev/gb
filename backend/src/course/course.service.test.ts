@@ -226,6 +226,7 @@ describe('join codes', () => {
       join_code: 'ABC234',
       school_id: 'school-1',
       status: 'published',
+      is_template: false,
     });
     const upsert = prisma.course_student.upsert.mock.calls[0][0];
     expect(upsert.create).toEqual({
@@ -393,5 +394,36 @@ describe('remove', () => {
     const err = await expectRejection(service(prisma).remove(USER, COURSE));
     expect((err as Error).message).toContain('archive the course');
     expect(prisma.course.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('templates', () => {
+  test('a course with students cannot become a template', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.course_student.count.mockResolvedValue(2);
+    const err = await expectRejection(
+      service(prisma).update(USER, COURSE, { isTemplate: true }),
+    );
+    expect((err as Error).message).toContain('Remove the students');
+    expect(prisma.course.update).not.toHaveBeenCalled();
+  });
+
+  test('becoming a template turns the join code off', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    await service(prisma).update(USER, COURSE, { isTemplate: true });
+    expect(prisma.course.update.mock.calls[0][0].data).toMatchObject({
+      is_template: true,
+      join_code: null,
+    });
+  });
+
+  test('a template takes no enrolments', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.course.findUnique.mockResolvedValue(courseRow({ is_template: true }));
+    const err = await expectRejection(
+      service(prisma).enrollStudents(USER, COURSE, ['s1']),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(prisma.course_student.createMany).not.toHaveBeenCalled();
   });
 });

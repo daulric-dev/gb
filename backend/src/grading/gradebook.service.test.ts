@@ -147,6 +147,8 @@ describe('GradebookService.gradebook', () => {
         name: 'Homework',
         weight: null,
         position: 0,
+        dropLowest: 0,
+        dropHighest: 0,
       },
     ]);
     expect(book.activities.map((a) => a.id)).toEqual(['a1', 'a2']);
@@ -160,6 +162,7 @@ describe('GradebookService.gradebook', () => {
       status: 'graded',
       excused: true,
       submittedAt: null,
+      dropped: false,
     });
     // a2 excused: 9/10.
     expect(ann.grade.percent).toBe(90);
@@ -204,10 +207,10 @@ describe('GradebookService.exportCsv', () => {
     expect(filename).toBe('BIO-5A-grades.csv');
     const lines = csv.trim().split('\r\n');
     expect(lines[0]).toBe(
-      `Last name,First name,Status,Work a1 (10),"'=HYPERLINK(""x"") (10)",Homework %,Total %,Letter`,
+      `Last name,First name,Student ID,Status,Work a1 (10),"'=HYPERLINK(""x"") (10)",Homework %,Total %,Letter`,
     );
-    expect(lines[1]).toBe('Adams,Ann,completed,9,EX,90,90,A');
-    expect(lines[2]).toBe('Brown,Bo,active,,,,,');
+    expect(lines[1]).toBe('Adams,Ann,stu-1,completed,9,EX,90,90,A');
+    expect(lines[2]).toBe('Brown,Bo,stu-2,active,,,,,');
   });
 });
 
@@ -352,6 +355,51 @@ describe('AssignmentGroupService', () => {
     expect(updates.map((u: any) => [u.where.id, u.data.position])).toEqual([
       ['g2', 0],
       ['g1', 1],
+    ]);
+  });
+});
+
+describe('GradebookService drop rules', () => {
+  test('a dropped mark is flagged on its cell and on the portal activity', async () => {
+    const graded = (activity_id: string, score: number) => ({
+      activity_id,
+      student_id: 'stu-1',
+      status: 'graded',
+      score: dec(score),
+      excused: false,
+      submitted_at: null,
+    });
+    const { service, prisma } = build(
+      TABLES({
+        activities: [activity('a1'), activity('a2'), activity('a3')],
+        submissions: [graded('a1', 9), graded('a2', 2), graded('a3', 7)],
+      }),
+    );
+    prisma.assignment_group.findMany.mockResolvedValue([
+      {
+        id: 'hw',
+        course_id: 'course-1',
+        name: 'Homework',
+        weight: null,
+        position: 0,
+        drop_lowest: 1,
+        drop_highest: 0,
+      },
+    ]);
+
+    const book = await service.gradebook('user-1', 'course-1');
+    const ann = book.students.find((s) => s.studentId === 'stu-1')!;
+    expect(ann.cells.a2.dropped).toBe(true);
+    expect(ann.cells.a1.dropped).toBe(false);
+    expect(ann.grade.percent).toBe(80);
+    expect(ann.grade.dropped).toEqual(['a2']);
+    expect(book.groups[0].dropLowest).toBe(1);
+
+    const portal = await service.studentGrades('stu-1', 'course-1');
+    expect(portal.activities.map((a) => [a.id, a.dropped])).toEqual([
+      ['a1', false],
+      ['a2', true],
+      ['a3', false],
     ]);
   });
 });

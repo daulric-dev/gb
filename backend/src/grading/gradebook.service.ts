@@ -55,7 +55,10 @@ export interface CourseGrade {
     earned: number;
     possible: number;
     percent: number | null;
+    dropped: string[];
   }[];
+  /** Activity ids left out by the groups' drop rules. */
+  dropped: string[];
 }
 
 /**
@@ -154,6 +157,8 @@ export class GradebookService {
         name: group.name,
         weight: group.weight == null ? null : Number(group.weight),
         position: group.position,
+        dropLowest: group.dropLowest ?? 0,
+        dropHighest: group.dropHighest ?? 0,
       })),
       activities.map((a) => ({
         id: a.id as string,
@@ -235,6 +240,8 @@ export class GradebookService {
           status: 'draft' | 'submitted' | 'graded' | null;
           excused: boolean;
           submittedAt: string | null;
+          /** Left out of the total by a drop rule. */
+          dropped: boolean;
         }
       > = {};
       const calc = new Map<string, CalcSubmission>();
@@ -245,8 +252,14 @@ export class GradebookService {
           status: s.status ?? null,
           excused: !!s.excused,
           submittedAt: ts(s.submitted_at),
+          dropped: false,
         };
         calc.set(s.activity_id as string, this.toCalcSubmission(s));
+      }
+
+      const grade = this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands);
+      for (const id of grade.dropped) {
+        if (cells[id]) cells[id].dropped = true;
       }
 
       return {
@@ -255,7 +268,7 @@ export class GradebookService {
         lastName: student?.last_name ?? null,
         status: r.status,
         cells,
-        grade: this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands),
+        grade,
       };
     });
 
@@ -275,7 +288,8 @@ export class GradebookService {
   /**
    * The gradebook as CSV, for a spreadsheet or the school's records. One row
    * per student: each activity's score ("EX" when excused), each group's
-   * percent, then the total and letter.
+   * percent, then the total and letter. The Student ID column lets the same
+   * sheet come back through the import without guessing from names.
    */
   async exportCsv(userId: string, courseId: string) {
     const { course } = await this.access.require(userId, courseId, STAFF_ROLES);
@@ -294,6 +308,7 @@ export class GradebookService {
     const header = [
       'Last name',
       'First name',
+      'Student ID',
       'Status',
       ...book.activities.map((a) => `${a.title} (${a.points})`),
       ...groupCols.map((g) => `${g.name} %`),
@@ -306,6 +321,7 @@ export class GradebookService {
       lines.push([
         s.lastName ?? '',
         s.firstName ?? '',
+        s.studentId,
         s.status,
         ...book.activities.map((a) => {
           const cell = s.cells[a.id];
@@ -401,12 +417,16 @@ export class GradebookService {
 
     const groupName = new Map(groups.map((g) => [g.id, g.name]) as Array<[string, string]>);
 
+    const grade = this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands);
+    const dropped = new Set(grade.dropped);
+
     return {
-      grade: this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands),
+      grade,
       groups,
       activities: activities.map((a) => ({
         ...toPortalActivity(a, byActivity.get(a.id as string)),
         groupName: groupName.get(a.assignment_group_id as string) ?? null,
+        dropped: dropped.has(a.id as string),
       })),
     };
   }

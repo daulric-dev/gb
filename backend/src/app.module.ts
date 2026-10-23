@@ -36,6 +36,9 @@ import { SsoCoreModule } from '@/sso/sso-core.module';
 import { SsoModule } from '@/sso/sso.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AttendanceModule } from '@/attendance/attendance.module';
+import { DiscussionModule } from '@/discussion/discussion.module';
+import { CalendarModule } from '@/calendar/calendar.module';
+import { CourseNotificationModule } from '@/course-notification/course-notification.module';
 
 @Module({
   imports: [
@@ -115,6 +118,9 @@ import { AttendanceModule } from '@/attendance/attendance.module';
     DashboardModule,
     NotificationsModule,
     AttendanceModule,
+    DiscussionModule,
+    CalendarModule,
+    CourseNotificationModule,
   ],
   controllers: [AppController],
   providers: [

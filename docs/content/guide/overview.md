@@ -5,52 +5,55 @@ sidebar_position: 1
 
 # Using GradeBook
 
-GradeBook is a school management system: rosters, attendance, classwork, marks and report cards, in one place. This guide is for the people who use it — administrators, teachers and students — and assumes nothing technical.
+GradeBook is a learning platform for schools: teachers build **courses** out of modules, pages, assignments and quizzes, take attendance, and keep a gradebook; students do their work, check in to class and follow their grades. This guide is for the people who use it - administrators, teachers and students - and assumes nothing technical.
 
 ## Two ways in
 
-Everything below works the same in a browser and in the mobile app. Use whichever suits the moment: most staff set up the year on a laptop and take attendance on a phone.
+Everything works in a browser. The mobile app covers what you do on the move: students see their courses, to-do list and grades, check in to class (including by scanning the QR code on the board), and get a notification when attendance opens; teachers can take attendance. Building a course - modules, pages, marking - is done on the web.
 
 ## Who can do what
 
-Your **role** decides what you see. Menu items you have no permission for do not appear at all, so a shorter menu is normal rather than a fault.
+Your **role in the school** decides what you see in the menu; a shorter menu is normal rather than a fault.
 
 | Role | Typically | Can |
 | --- | --- | --- |
-| **Administrator** | The person who set the school up | Everything, including staff, roles, subjects, the academic calendar and grade scales |
-| **Teacher** | Classroom staff | Their classes: attendance, work, marks, reports, announcements, files and messages. Can create a class |
-| **Member** | Other staff | Read-only visibility into the structures they belong to, plus their own files |
-| **Student** | Learners | Only their own work, grades, attendance and reports — nothing about anyone else |
+| **Administrator** | The person who set the school up | Everything: every course, staff, roles, the academic calendar, grade scales, email domains and sign-in settings |
+| **Teacher** | Classroom staff | Create courses and run their own; announcements, files, messages |
+| **Member** | Other staff | See the school's structure, use files and messages |
+| **Student** | Learners | Their own courses, work, grades and attendance - nothing about anyone else |
 
-Administrators can also build **custom roles** if these three do not fit; see [Setting up your school](./school-setup.md).
+Administrators can build **custom roles** if these do not fit; see [Setting up your school](./school-setup.md).
 
-Two rules underpin the rest of this guide:
+Inside a course, what you can do depends on your **role in that course**, not your school role:
 
-- **A class has one class teacher**, who owns the roster, the report books and anything that commits the class as a whole.
-- **Subject teachers** are assigned to a subject within a class. They can set and mark work for their own subject and read the class's reports, but cannot change the roster or generate report books.
+| In a course | Can |
+| --- | --- |
+| **Teacher** | Everything: content, people, settings, marking, attendance, deleting |
+| **TA** | See everything, mark work, take attendance, post announcements - but not change settings or people, or delete |
+| **Student** | Published content, their own work, grades and attendance |
 
-Students hold no permissions at all. They cannot be given any, by design — the student portal is a separate surface that only ever shows one person their own record.
+Whoever creates a course is its teacher. Administrators can manage every course in the school.
 
-## How a year fits together
-
-The pieces stack, and each one depends on the one above it. Setting them up out of order is the most common reason something "will not let you" later.
+## How it fits together
 
 ```
 School
-└── Academic year          e.g. 2026/2027
-    ├── Terms              Term 1, Term 2, Term 3
-    └── Classes            Form 1A, Form 2B
-        ├── Students       enrolled in the class
-        ├── Subjects       taught in the class, each with a teacher
-        └── Work           quizzes and assignments, per subject per term
-            └── Marks      which become the term grade, then the report card
+├── Academic years and terms        optional - a course can belong to one
+├── Courses                         e.g. Biology 101
+│   ├── People                      teachers, TAs, students
+│   ├── Modules                     ordered sections of the course
+│   │   └── Items                   pages, assignments, files, links, headings
+│   ├── Assignments and quizzes     grouped into weighted assignment groups
+│   ├── Announcements
+│   ├── Attendance                  check-in sessions
+│   └── Grades                      the gradebook
+└── Email domains and sign-in       how people join and sign in
 ```
 
-Subjects and grade scales belong to the school rather than to a year, so they are set up once and reused.
+Grade scales belong to the school and turn a course percentage into a letter.
 
 ## Where to start
 
 - Brand new school → [Accounts and signing in](./accounts.md), then [Setting up your school](./school-setup.md).
-- Joining a school that already exists → [Accounts and signing in](./accounts.md).
-- Teaching a class that is already set up → [Classes and attendance](./classes.md) and [Work and grading](./work-and-grading.md).
+- Teaching → [Running a course](./courses.md) and [Work and grading](./work-and-grading.md).
 - A student → [The student portal](./student-portal.md).

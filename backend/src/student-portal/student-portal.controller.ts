@@ -6,10 +6,12 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { Throttle } from '@nestjs/throttler';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { JoinCourseDto } from '@/course/dto/course.dto';
 import { StudentGuard, type StudentRequest } from './student.guard';
@@ -73,6 +75,34 @@ export class StudentPortalController {
     @Param('pageId', ParseUUIDPipe) pageId: string,
   ) {
     return this.portal.getPage(req.student!, courseId, pageId);
+  }
+
+  /** A file the course offers its students (module link or course share). */
+  @Get('courses/:courseId/files/:fileId')
+  @ApiProduces('application/octet-stream')
+  async courseFile(
+    @Req() req: StudentRequest,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+    @Res() reply: FastifyReply,
+  ) {
+    const { buffer, contentType, filename } = await this.portal.getCourseFile(
+      req.student!,
+      courseId,
+      fileId,
+    );
+    return reply
+      .header('Content-Type', contentType ?? 'application/octet-stream')
+      .header(
+        'Content-Disposition',
+        `inline; filename*=UTF-8''${encodeURIComponent(filename ?? 'file')}`,
+      )
+      .header('Content-Length', buffer.length)
+      .header('Cache-Control', 'private, no-store')
+      // Teacher-uploaded content on the API origin: never sniff it into HTML.
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Security-Policy', 'sandbox')
+      .send(buffer);
   }
 
   @Get('courses/:courseId/announcements')

@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -12,12 +14,13 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AnnouncementService } from './announcement.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
+import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
 /**
  * A course's own announcement stream. Gated by course role rather than the
  * `announcement` catalog permission: a TA posting to their course needs no
- * school-wide grant. Editing and deleting go through `/announcements/:id`
- * (author or school admin), the same as school notices.
+ * school-wide grant. The author edits or deletes their own post; the
+ * course's teachers and admins can change anyone's.
  */
 @ApiTags('Announcements')
 @ApiBearerAuth()
@@ -44,6 +47,34 @@ export class CourseAnnouncementController {
       req.user.id as string,
       courseId,
       dto,
+    );
+  }
+
+  @Patch(':id')
+  async update(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAnnouncementDto,
+  ) {
+    return this.announcements.updateForCourse(
+      req.user.id as string,
+      courseId,
+      id,
+      dto,
+    );
+  }
+
+  @Delete(':id')
+  async delete(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.announcements.deleteForCourse(
+      req.user.id as string,
+      courseId,
+      id,
     );
   }
 }

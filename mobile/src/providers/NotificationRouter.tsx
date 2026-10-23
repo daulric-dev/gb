@@ -4,6 +4,7 @@ import { useRouter, useSegments, type Href } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useAuth } from "@/providers/AuthProvider";
 import { isStudentProfile } from "@/lib/routing";
+import { noticeHref } from "@/lib/calendar";
 
 // Show pushes that arrive while the app is open, rather than swallowing them.
 if (Platform.OS !== "web") {
@@ -29,6 +30,7 @@ export function NotificationRouter() {
   const segments = useSegments();
   const router = useRouter();
   const handled = useRef<string | null>(null);
+  /** The screen a tapped push points at, opened once routing settles. */
   const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,10 +39,22 @@ export function NotificationRouter() {
     if (handled.current === id) return;
     handled.current = id;
     const data = response.notification.request.content.data as
-      | { type?: string; sessionId?: string }
+      | {
+          type?: string;
+          sessionId?: string;
+          courseId?: string;
+          activityId?: string;
+        }
       | undefined;
     if (data?.type === "attendance.opened" && data.sessionId) {
-      setPending(String(data.sessionId));
+      setPending(`/attendance/${data.sessionId}`);
+    } else if (
+      data?.type === "course.activity_published" ||
+      data?.type === "course.announcement"
+    ) {
+      // New work opens the activity; an announcement opens its course.
+      const href = noticeHref(data);
+      if (href) setPending(href);
     }
     void Notifications.clearLastNotificationResponseAsync().catch(() => {});
   }, [response]);
@@ -53,9 +67,10 @@ export function NotificationRouter() {
   useEffect(() => {
     if (!pending || !settled) return;
     setPending(null);
-    // Only students check in; a stale tap after switching accounts is dropped.
+    // These are all student screens; a stale tap after switching accounts is
+    // dropped.
     if (!isStudentProfile(profile)) return;
-    router.push(`/attendance/${pending}` as Href);
+    router.push(pending as Href);
   }, [pending, settled, profile, router]);
 
   return null;

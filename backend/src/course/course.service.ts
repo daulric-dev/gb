@@ -46,9 +46,10 @@ export class CourseService {
 
   /**
    * A year, term or grade scale named on a course must be the school's own;
-   * a term must also sit inside the year when both are given.
+   * a term must also sit inside the year when both are given. Course copy
+   * checks the new course's year and term the same way.
    */
-  private async validateLinks(
+  async validateLinks(
     schoolId: string,
     links: {
       academicYearId?: string | null;
@@ -245,6 +246,7 @@ export class CourseService {
       academicYearId?: string | null;
       termId?: string | null;
       gradeScaleId?: string | null;
+      isTemplate?: boolean;
     },
   ) {
     const { course, role } = await this.access.require(
@@ -266,6 +268,22 @@ export class CourseService {
     if (patch.status !== undefined) changes.status = patch.status;
     if (patch.gradeScaleId !== undefined) {
       changes.grade_scale_id = patch.gradeScaleId;
+    }
+    if (patch.isTemplate !== undefined) {
+      // A template is a starting point, never a class: it takes no students,
+      // so one with a roster can't become a template and its code goes.
+      if (patch.isTemplate && !course.is_template) {
+        const enrolled = await this.prisma.course_student.count({
+          where: { course_id: courseId, status: { not: 'dropped' } },
+        });
+        if (enrolled > 0) {
+          throw new ConflictException(
+            'Remove the students before making this course a template',
+          );
+        }
+        changes.join_code = null;
+      }
+      changes.is_template = patch.isTemplate;
     }
 
     if (patch.academicYearId !== undefined || patch.termId !== undefined) {
@@ -357,7 +375,14 @@ export class CourseService {
 
   /** Issue a fresh join code; the old one stops working at once. */
   async regenerateJoinCode(userId: string, courseId: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
+    if (course.is_template) {
+      throw new BadRequestException('A template does not take students');
+    }
 
     // Codes are unique across every school, so a clash is possible if rare;
     // a few retries makes it practically impossible.
@@ -404,7 +429,12 @@ export class CourseService {
     const code = joinCode.trim().toUpperCase();
 
     const found = await this.prisma.course.findFirst({
-      where: { school_id: schoolId, join_code: code, status: 'published' },
+      where: {
+        school_id: schoolId,
+        join_code: code,
+        status: 'published',
+        is_template: false,
+      },
       select: COURSE_SELECT,
     });
 
@@ -611,6 +641,9 @@ export class CourseService {
       courseId,
       MANAGE_ROLES,
     );
+    if (course.is_template) {
+      throw new BadRequestException('A template does not take students');
+    }
     const unique = [...new Set(studentIds)];
 
     const records = await this.prisma.student.findMany({
@@ -690,6 +723,7 @@ export class CourseService {
       status: c.status,
       joinCode: c.join_code,
       gradeScaleId: c.grade_scale_id,
+      isTemplate: c.is_template,
       createdBy: c.created_by,
       createdAt: c.created_at,
       updatedAt: c.updated_at,

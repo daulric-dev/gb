@@ -26,6 +26,10 @@ export interface CalcGroup {
   name: string;
   weight: number | null;
   position: number;
+  /** Drop this many of a student's counted marks that hurt the group most. */
+  dropLowest?: number;
+  /** Then drop this many that help it most. */
+  dropHighest?: number;
 }
 
 export interface CalcSubmission {
@@ -41,11 +45,22 @@ export interface CalcGroupScore {
   earned: number;
   possible: number;
   percent: number | null;
+  /** Activities left out of this group's total by its drop rules. */
+  dropped: string[];
 }
 
 export interface CalcResult {
   percent: number | null;
   groups: CalcGroupScore[];
+  /** Every dropped activity id, across all groups. */
+  dropped: string[];
+}
+
+/** One counted mark, as the drop rules see it. */
+export interface DropItem {
+  id: string;
+  earned: number;
+  possible: number;
 }
 
 export interface CalcBand {
@@ -119,9 +134,15 @@ export function calculateCourseGrade(
 
   const buckets = new Map<
     string | null,
-    { earned: number; possible: number }
+    { earned: number; possible: number; items: DropItem[]; dropped: string[] }
   >();
-  for (const g of ordered) buckets.set(g.id, { earned: 0, possible: 0 });
+  const empty = () => ({
+    earned: 0,
+    possible: 0,
+    items: [] as DropItem[],
+    dropped: [] as string[],
+  });
+  for (const g of ordered) buckets.set(g.id, empty());
 
   let hasUngrouped = false;
 
@@ -139,15 +160,34 @@ export function calculateCourseGrade(
 
     if (key === null && !hasUngrouped) {
       hasUngrouped = true;
-      buckets.set(null, { earned: 0, possible: 0 });
+      buckets.set(null, empty());
     }
 
     const submission = lookup(activity.id);
     if (!counts(activity, submission)) continue;
 
-    const bucket = buckets.get(key)!;
-    bucket.earned += Number(submission!.score);
-    bucket.possible += Number(activity.points);
+    buckets.get(key)!.items.push({
+      id: activity.id,
+      earned: Number(submission!.score),
+      possible: Number(activity.points),
+    });
+  }
+
+  // Drop rules apply per student, among the marks that count, before the
+  // group's sums are taken. Ungrouped has no rules.
+  const rules = new Map(ordered.map((g) => [g.id, g]));
+  for (const [key, bucket] of buckets) {
+    const group = key === null ? undefined : rules.get(key);
+    const { kept, dropped } = applyDrops(
+      bucket.items,
+      group?.dropLowest ?? 0,
+      group?.dropHighest ?? 0,
+    );
+    bucket.dropped = dropped;
+    for (const item of kept) {
+      bucket.earned += item.earned;
+      bucket.possible += item.possible;
+    }
   }
 
   const scores: CalcGroupScore[] = ordered.map((g) => {
@@ -159,6 +199,7 @@ export function calculateCourseGrade(
       earned: round2(b.earned),
       possible: round2(b.possible),
       percent: b.possible > 0 ? round2((b.earned / b.possible) * 100) : null,
+      dropped: b.dropped,
     };
   });
 
@@ -171,6 +212,7 @@ export function calculateCourseGrade(
       earned: round2(b.earned),
       possible: round2(b.possible),
       percent: b.possible > 0 ? round2((b.earned / b.possible) * 100) : null,
+      dropped: b.dropped,
     });
   }
 
@@ -200,7 +242,173 @@ export function calculateCourseGrade(
     percent = possible > 0 ? round2((earned / possible) * 100) : null;
   }
 
-  return { percent, groups: scores };
+  return { percent, groups: scores, dropped: scores.flatMap((g) => g.dropped) };
+}
+
+/**
+ * Exhaustive search is used while the number of ways to choose what to drop
+ * stays under this; past it, the ratio search below (exact too, just harder
+ * to read) takes over.
+ */
+const EXHAUSTIVE_LIMIT = 5000;
+
+/**
+ * Canvas's drop rules for one group of one student's counted marks.
+ *
+ * "Drop lowest" is not "drop the smallest percentages": with unequal points
+ * the marks to drop are the ones whose removal leaves the highest group
+ * percentage (dropping a 0/1 can matter less than dropping a 40/100). So the
+ * kept set is the one of the right size with the best earned/possible ratio,
+ * and "drop highest" is then the same search for the worst ratio among what
+ * is left. At least one mark is always kept: a rule never empties a group.
+ *
+ * Ties go to keeping the earlier activities, so the result is stable.
+ */
+export function applyDrops(
+  items: DropItem[],
+  dropLowest: number,
+  dropHighest: number,
+): { kept: DropItem[]; dropped: string[] } {
+  let kept = items;
+  const dropped: string[] = [];
+
+  const low = Math.min(Math.max(0, Math.floor(dropLowest)), kept.length - 1);
+  if (low > 0) {
+    const next = bestSubset(kept, kept.length - low, 1);
+    dropped.push(...kept.filter((i) => !next.includes(i)).map((i) => i.id));
+    kept = next;
+  }
+
+  const high = Math.min(Math.max(0, Math.floor(dropHighest)), kept.length - 1);
+  if (high > 0) {
+    const next = bestSubset(kept, kept.length - high, -1);
+    dropped.push(...kept.filter((i) => !next.includes(i)).map((i) => i.id));
+    kept = next;
+  }
+
+  return { kept, dropped };
+}
+
+/**
+ * Compare two kept sets by ratio, times `sign` (1 = higher is better, -1 =
+ * lower is better). A set with no possible points has no percentage at all,
+ * so it loses to any set that has one.
+ */
+function better(
+  a: { earned: number; possible: number },
+  b: { earned: number; possible: number },
+  sign: 1 | -1,
+): boolean {
+  if (a.possible <= 0) return false;
+  if (b.possible <= 0) return true;
+  // Cross-multiplied, so equal ratios compare equal without division noise.
+  return sign * (a.earned * b.possible - b.earned * a.possible) > 1e-9;
+}
+
+function totals(items: DropItem[]) {
+  let earned = 0;
+  let possible = 0;
+  for (const i of items) {
+    earned += i.earned;
+    possible += i.possible;
+  }
+  return { earned, possible };
+}
+
+function choose(n: number, k: number): number {
+  let r = 1;
+  for (let i = 1; i <= k; i++) {
+    r = (r * (n - k + i)) / i;
+    if (r > EXHAUSTIVE_LIMIT) return Infinity;
+  }
+  return r;
+}
+
+/** The `keep`-sized subset with the best ratio (see `better`). */
+export function bestSubset(
+  items: DropItem[],
+  keep: number,
+  sign: 1 | -1,
+): DropItem[] {
+  if (keep >= items.length) return items;
+  const drop = items.length - keep;
+  if (choose(items.length, drop) <= EXHAUSTIVE_LIMIT) {
+    return exhaustiveSubset(items, drop, sign);
+  }
+  return ratioSearchSubset(items, keep, sign);
+}
+
+/** Try every choice of `drop` items to leave out. */
+function exhaustiveSubset(
+  items: DropItem[],
+  drop: number,
+  sign: 1 | -1,
+): DropItem[] {
+  let best: DropItem[] | null = null;
+  let bestTotals = { earned: 0, possible: 0 };
+  const out: number[] = [];
+
+  // Combinations of indices to drop, latest first, so the first best found
+  // (and kept on ties) drops the latest activities.
+  const walk = (start: number) => {
+    if (out.length === drop) {
+      const skip = new Set(out);
+      const kept = items.filter((_, i) => !skip.has(i));
+      const t = totals(kept);
+      if (best === null || better(t, bestTotals, sign)) {
+        best = kept;
+        bestTotals = t;
+      }
+      return;
+    }
+    for (let i = start; i >= drop - out.length - 1; i--) {
+      out.push(i);
+      walk(i - 1);
+      out.pop();
+    }
+  };
+  walk(items.length - 1);
+  return best ?? items;
+}
+
+/**
+ * Dinkelbach's method for the best ratio over fixed-size subsets: for a
+ * guess q the best set maximises sum(earned - q * possible), which is just
+ * the top `keep` items by that value; re-guess q from that set until it
+ * stops improving. Exact, and converges in a handful of rounds.
+ */
+export function ratioSearchSubset(
+  items: DropItem[],
+  keep: number,
+  sign: 1 | -1,
+): DropItem[] {
+  const indexed = items.map((item, index) => ({ item, index }));
+  // Start from the largest-points items so the first guess has a ratio.
+  let current = [...indexed]
+    .sort((a, b) => b.item.possible - a.item.possible || a.index - b.index)
+    .slice(0, keep)
+    .map((x) => x.item);
+  let t = totals(current);
+
+  for (let round = 0; round < 100 && t.possible > 0; round++) {
+    const q = t.earned / t.possible;
+    const next = [...indexed]
+      .sort((a, b) => {
+        const va = sign * (a.item.earned - q * a.item.possible);
+        const vb = sign * (b.item.earned - q * b.item.possible);
+        return vb - va || a.index - b.index;
+      })
+      .slice(0, keep)
+      .sort((a, b) => a.index - b.index)
+      .map((x) => x.item);
+    const nt = totals(next);
+    if (!better(nt, t, sign)) break;
+    current = next;
+    t = nt;
+  }
+
+  const chosen = new Set(current);
+  return items.filter((i) => chosen.has(i));
 }
 
 /**

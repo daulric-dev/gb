@@ -101,6 +101,7 @@ describe('ActivityService.create', () => {
         'allowText',
         'maxAttempts',
         'omitFromFinalGrade',
+        'rubricId',
         'createdAt',
       ].sort(),
     );

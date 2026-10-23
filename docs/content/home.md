@@ -45,4 +45,4 @@ What changed and why, newest first — including the reasoning behind the decisi
 
 Two ideas shape most of the code. **Marks are calculated, never stored** — correct a mark and every average, report and ranking downstream of it changes with it. And **access is decided in the API**: application code authorises every read and write against the caller's school, role and classes before it touches the database.
 
-The [implementation guide](./implementation-guide.md) has the schema and every API route.
+The [backend overview](./backend/overview.md) maps the modules and routes; the schema is in `backend/prisma/schema`.

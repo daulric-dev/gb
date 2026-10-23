@@ -20,6 +20,8 @@ const GROUP_SELECT = {
   name: true,
   weight: true,
   position: true,
+  drop_lowest: true,
+  drop_highest: true,
 } satisfies Prisma.assignment_groupSelect;
 
 /** The `AssignmentGroup` contract. */
@@ -31,6 +33,8 @@ export function toAssignmentGroup(g: any) {
     weight:
       g.weight === null || g.weight === undefined ? null : Number(g.weight),
     position: (g.position as number) ?? 0,
+    dropLowest: (g.drop_lowest as number) ?? 0,
+    dropHighest: (g.drop_highest as number) ?? 0,
   };
 }
 
@@ -40,7 +44,8 @@ export function toAssignmentGroup(g: any) {
  * Weights need not total 100: the course total renormalises over the groups
  * that have marks (see gradebook.calc.ts), so a teacher can set them as they
  * think of them. Deleting a group does not delete its work - the foreign key
- * moves those activities to Ungrouped.
+ * moves those activities to Ungrouped. Drop rules (drop the lowest / highest
+ * N marks per student) are applied by the calculation, never stored per mark.
  */
 @Injectable()
 export class AssignmentGroupService {
@@ -89,7 +94,12 @@ export class AssignmentGroupService {
   async create(
     userId: string,
     courseId: string,
-    input: { name: string; weight?: number | null },
+    input: {
+      name: string;
+      weight?: number | null;
+      dropLowest?: number;
+      dropHighest?: number;
+    },
   ) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
@@ -108,6 +118,8 @@ export class AssignmentGroupService {
           course_id: courseId,
           name,
           weight: input.weight ?? null,
+          drop_lowest: input.dropLowest ?? 0,
+          drop_highest: input.dropHighest ?? 0,
           position: (last?.position ?? -1) + 1,
         },
         select: GROUP_SELECT,
@@ -122,7 +134,12 @@ export class AssignmentGroupService {
     userId: string,
     courseId: string,
     groupId: string,
-    patch: { name?: string; weight?: number | null },
+    patch: {
+      name?: string;
+      weight?: number | null;
+      dropLowest?: number;
+      dropHighest?: number;
+    },
   ) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
@@ -133,6 +150,10 @@ export class AssignmentGroupService {
       changes.name = name;
     }
     if (patch.weight !== undefined) changes.weight = patch.weight;
+    if (patch.dropLowest !== undefined) changes.drop_lowest = patch.dropLowest;
+    if (patch.dropHighest !== undefined) {
+      changes.drop_highest = patch.dropHighest;
+    }
 
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');

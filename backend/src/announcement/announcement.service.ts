@@ -4,16 +4,19 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate, isNotFound } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import {
   CourseAccessService,
+  MANAGE_ROLES,
   STAFF_ROLES,
 } from '@/course/access/course-access.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
+import { CourseNotificationService } from '@/course-notification/course-notification.service';
 
 const AUTHOR_SELECT = {
   select: { first_name: true, last_name: true, avatar_url: true },
@@ -92,6 +95,7 @@ export class AnnouncementService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly courseAccess: CourseAccessService,
+    @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
   /** Resolve the caller's school + role in one lookup. */
@@ -378,7 +382,60 @@ export class AnnouncementService {
       );
       throw new BadRequestException('Failed to create announcement');
     }
+
+    // Fire and forget: posting never waits on notices or pushes.
+    void this.notices?.announcementPosted(course.id, data);
     return { ...data, readers: [] as ReaderRow[] };
+  }
+
+  /**
+   * Edit a course announcement. Its author may, and so may the course's
+   * teachers and admins: a teacher must be able to correct or pull a TA's post.
+   */
+  async updateForCourse(
+    userId: string,
+    courseId: string,
+    id: string,
+    dto: UpdateAnnouncementDto,
+  ) {
+    await this.assertCanManageInCourse(userId, courseId, id);
+
+    let data: Content;
+    try {
+      data = toContent(
+        await this.prisma.announcement.update({
+          where: { id },
+          data: {
+            updated_at: new Date(),
+            ...(dto.title !== undefined ? { title: dto.title } : {}),
+            ...(dto.body !== undefined ? { body: dto.body } : {}),
+          },
+          select: CONTENT_SELECT,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to update course announcement: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('Failed to update announcement');
+    }
+    return (await this.attachReaders([data]))[0];
+  }
+
+  async deleteForCourse(userId: string, courseId: string, id: string) {
+    await this.assertCanManageInCourse(userId, courseId, id);
+
+    try {
+      await this.prisma.announcement.delete({ where: { id } });
+    } catch (err) {
+      if (!isNotFound(err)) {
+        this.logger.error(
+          `Failed to delete course announcement: ${(err as Error).message}`,
+        );
+        throw new BadRequestException('Failed to delete announcement');
+      }
+    }
+    return { message: 'Announcement deleted' };
   }
 
   /**
@@ -410,7 +467,8 @@ export class AnnouncementService {
   }
 
   /**
-   * Editing/removing a notice is limited to its author or a school admin.
+   * Editing/removing a school-wide notice is limited to its author or a
+   * school admin. Course announcements go through the course routes instead.
    * Returns the caller's school_id for cache invalidation.
    */
   private async assertCanManage(userId: string, id: string) {
@@ -419,7 +477,7 @@ export class AnnouncementService {
     // A malformed id is just a missing announcement.
     const existing = await this.prisma.announcement
       .findFirst({
-        where: { id, school_id: profile.school_id },
+        where: { id, school_id: profile.school_id, course_id: null },
         select: { author_user_profile_id: true },
       })
       .catch(() => null);
@@ -433,5 +491,33 @@ export class AnnouncementService {
       );
     }
     return profile;
+  }
+
+  /** Any course staff member reaches the post; only its author or a manager changes it. */
+  private async assertCanManageInCourse(
+    userId: string,
+    courseId: string,
+    id: string,
+  ) {
+    const { role } = await this.courseAccess.require(
+      userId,
+      courseId,
+      STAFF_ROLES,
+    );
+
+    const existing = await this.prisma.announcement
+      .findFirst({
+        where: { id, course_id: courseId },
+        select: { author_user_profile_id: true },
+      })
+      .catch(() => null);
+    if (!existing) throw new NotFoundException('Announcement not found');
+
+    const isAuthor = existing.author_user_profile_id === userId;
+    if (!isAuthor && !MANAGE_ROLES.includes(role)) {
+      throw new ForbiddenException(
+        'Only the author or a course teacher can change this announcement',
+      );
+    }
   }
 }

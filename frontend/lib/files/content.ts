@@ -18,3 +18,22 @@ export async function fetchFileBlob(
   }
   return res.blob();
 }
+
+/**
+ * A file a student reaches through their course (a module link or a course
+ * share). Students hold no file-manager permission, so this goes through the
+ * portal, which checks the course offers the file.
+ */
+export async function fetchCourseFileBlob(
+  courseId: string,
+  fileId: string,
+): Promise<Blob> {
+  const res = await fetch(
+    buildUrl(`/portal/me/courses/${courseId}/files/${fileId}`),
+    { headers: { "X-API-Version": "1" }, credentials: "include" },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load file (${res.status})`);
+  }
+  return res.blob();
+}

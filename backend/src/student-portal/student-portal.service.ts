@@ -10,6 +10,7 @@ import { ModuleService } from '@/course/module.service';
 import { PageService } from '@/course/page.service';
 import { AnnouncementService } from '@/announcement/announcement.service';
 import { GradebookService } from '@/grading/gradebook.service';
+import { FileManagerService } from '@/file-manager/file-manager.service';
 import type { StudentContext } from './student.guard';
 
 /** Course states a student can open: published, or archived for the record. */
@@ -45,6 +46,7 @@ export class StudentPortalService {
     private readonly pages: PageService,
     private readonly announcements: AnnouncementService,
     private readonly gradebook: GradebookService,
+    private readonly files: FileManagerService,
   ) {}
 
   /** The student's own record and school. */
@@ -116,6 +118,7 @@ export class StudentPortalService {
       where: {
         id: { in: courseIds },
         status: { in: [...VISIBLE_COURSE_STATUSES] },
+        is_template: false,
       },
       select: {
         id: true,
@@ -155,6 +158,39 @@ export class StudentPortalService {
   async getPage(ctx: StudentContext, courseId: string, pageId: string) {
     await this.access.requireStudent(ctx.studentId, courseId);
     return this.pages.getPublished(courseId, pageId);
+  }
+
+  /**
+   * A file a student reaches through their course: linked from a published
+   * item in a published module, or shared with the whole course. Students hold
+   * no `file` permission, so the file manager's own routes turn them away.
+   * A file the course does not offer answers 404, never 403.
+   */
+  async getCourseFile(ctx: StudentContext, courseId: string, fileId: string) {
+    await this.access.requireStudent(ctx.studentId, courseId);
+
+    const [linked, shared] = await Promise.all([
+      this.prisma.module_item.findFirst({
+        where: {
+          course_id: courseId,
+          file_id: fileId,
+          is_published: true,
+          module: { is_published: true },
+        },
+        select: { id: true },
+      }),
+      this.prisma.file_share.findFirst({
+        where: {
+          file_id: fileId,
+          principal_type: 'course',
+          principal_id: courseId,
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (!linked && !shared) throw new NotFoundException('File not found');
+
+    return this.files.readContentForAuthorisedCaller(fileId);
   }
 
   async getAnnouncements(ctx: StudentContext, courseId: string) {

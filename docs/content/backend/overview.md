@@ -4,7 +4,7 @@ sidebar_label: Overview
 
 # Backend Overview
 
-The backend is a **NestJS** application running on the **Fastify** HTTP adapter. It serves as the REST API for the GradeBook application, handling authentication, school management, academic structure, student enrollment, grading, and grade calculations.
+The backend is a **NestJS** application running on the **Fastify** HTTP adapter. It serves as the REST API for the GradeBook application, handling sign-in, schools, courses and their content, assignments and quizzes, the gradebook, attendance, files, messaging and the student portal.
 
 ## Tech Stack
 
@@ -48,20 +48,25 @@ backend/
 │   ├── term/                  # Term management within years
 │   ├── pagination/            # Reusable pagination service (offset + cursor)
 │   ├── versioning/            # Header-based response versioning service
-│   ├── student/               # Student records
-│   ├── subject/               # Subject definitions
-│   ├── class/                 # Class (student group) management
-│   ├── enrollment/            # Student enrollment and subject assignment
-│   ├── grading/               # Assessments and grades
-│   ├── calculation/           # Grade calculations and summaries
-│   ├── reporting/             # Report generation, status workflow, file storage
-│   ├── report-files/          # Server-side PDF/CSV/XLSX/zip generation + streaming
+│   ├── student/               # Student records (the school roster)
+│   ├── student-account/       # School join codes, duplicate-record merging
+│   ├── email-domain/          # School email domains (verified by DNS), join by domain
+│   ├── course/                # Courses, people, join codes, modules, pages; CourseAccessService (course roles)
+│   ├── grading/               # Activities (quiz/assignment/offline), submissions, assignment groups, gradebook
+│   ├── attendance/            # Check-in sessions, codes, rotating QR, live SSE, absentee sweep
+│   ├── notifications/         # Push devices + Expo push
+│   ├── course-notification/   # Notices to students on new work/announcements (in-app + push)
+│   ├── calendar/              # Due-date calendar for staff and students, .ics export
+│   ├── student-portal/        # /portal/me - the student's own courses, work and grades
+│   ├── dashboard/             # Staff dashboard summary
+│   ├── grade-scale/           # Grade scales and bands (percentage -> letter)
+│   ├── permission/            # Permission catalog, custom roles, PermissionGuard
 │   ├── announcement/          # School-wide announcement board + read receipts
-│   ├── file-manager/          # Personal files, sharing, virus scan, notifications
+│   ├── discussion/            # Course discussion topics, threaded replies, unread tracking
+│   ├── file-manager/          # Personal files, folders, sharing (user/role/course), notifications
 │   ├── chat/                  # Real-time DMs (SSE + Redis pub/sub) + system messages
 │   ├── images/                # Avatar upload service (direct + presigned PUT) and public avatar route
 │   ├── queue/                 # BullMQ file pipeline: ingest, share-notify
-│   ├── scan/                  # ClamAV virus scanner (global; used at every upload)
 │   └── cache/                 # Pluggable caching (memory or Redis)
 ```
 
@@ -121,22 +126,20 @@ AppModule
 ├── AccountModule (global - users, sessions, email codes)
 ├── AuthModule (exports AuthGuard; imports ImagesModule for avatar endpoints)
 ├── SchoolModule
-├── AcademicYearModule
-├── TermModule
-├── StudentModule
-├── SubjectModule
-├── ClassModule (exports ClassTeacherGuard)
-├── EnrollmentModule (imports ClassModule for guard)
-├── GradingModule
-├── CalculationModule
-├── ReportingModule (exports ReportService - used by ReportFilesModule)
-├── ReportFilesModule (server-side report file generation + streaming)
+├── AcademicYearModule, TermModule, GradeScaleModule, PermissionModule
+├── StudentModule, StudentAccountModule, EmailDomainModule
+├── SsoCoreModule (global - adapter registry), SsoModule
+├── CourseAccessModule (global - CourseAccessService), CourseModule
+├── GradingModule (exports SubmissionService, GradebookService)
+├── AttendanceModule, NotificationsModule
+├── CourseNotificationModule (global - notices on new work/announcements), CalendarModule
+├── StudentPortalModule, DashboardModule
 ├── AnnouncementModule (announcement board + read receipts)
+├── DiscussionModule (course discussions: staff + portal routes)
 ├── FileManagerModule (personal files, sharing, notifications)
 ├── RealtimeModule (global - exports RedisPubSubService + PresenceService; Redis pub/sub bus + online-presence tracking)
 ├── ChatModule (global - real-time DMs over SSE + Redis pub/sub; exports ChatSystemService)
 ├── QueueModule (global - BullMQ file ingest/share-notify with inline fallback)
-├── ScanModule (global - exports ClamavScanner; scans every storage upload)
 ├── ImagesModule (exports ImagesService - used by AuthModule for avatar uploads)
 ├── PaginationModule (global - exports PaginationService for offset/cursor pagination)
 ├── VersioningModule (global - exports VersioningService; includes TransformerRegistry and VersioningGuard)
@@ -155,12 +158,11 @@ The PostgreSQL database uses multiple schemas to organize tables:
 
 | Schema | Contains |
 |--------|----------|
-| `account` | `app_user`, `session`, `email_code` (own auth) |
-| `public` | `user_profile`, `school`, `academic_year`, `term`, `subject`, `student_group`, `announcement`, `announcement_read` |
-| `student` | `student`, `student_group_enrollment`, `student_subject_profile` |
-| `staff` | `teacher_group_assignment`, `teacher_subject_assignment` |
-| `grading` | `assessment`, `grade` |
-| `reporting` | `report_book`, `report_book_entry`, `report_book_pdf`, `class_report_file` |
+| `account` | `app_user`, `session`, `email_code`, `identity` (own auth and linked SSO identities) |
+| `public` | `user_profile`, `school`, membership and roles, `permission_catalog`, `academic_year`, `term`, `announcement`, `announcement_read`, `school_email_domain`, `push_device` |
+| `student` | `student`, `school_join_code`, `parent_student_link` |
+| `course` | `course`, `course_staff`, `course_student`, `assignment_group`, `module`, `module_item`, `page`, `attendance_session`, `attendance_record`, `course_notification`, `discussion_topic`, `discussion_reply`, `discussion_read`, `discussion_setting` |
+| `grading` | `activity`, `quiz_question`, `quiz_option`, `quiz_answer`, `submission`, `grade_scale`, `grade_scale_band` |
 | `file_manager` | `file`, `file_share`, `notification`, `folder` |
 | `chat` | `conversation`, `conversation_member`, `message` |
 
@@ -171,7 +173,10 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | `ThrottlerGuard` | Global (APP_GUARD) | Rate limits all endpoints |
 | `VersioningGuard` | Global (APP_GUARD) | Validates `X-API-Version` header; rejects invalid/non-existent versions with 400 |
 | `AuthGuard` | `auth/auth.guard.ts` | Resolves the `gb_session` cookie via `SessionService` (renewing the sliding 30-day expiry when due) and rejects deactivated accounts; populates `request.user` with `{ id, email }` |
-| `ClassTeacherGuard` | `class/class-teacher.guard.ts` | Checks if the user is an admin or the class teacher for the `:classId` route parameter |
+| `PermissionGuard` | `permission/permission.guard.ts` | School-level catalog permission from `@RequirePermission` (resolves the school from `:courseId` or the user's school) |
+| `StudentGuard` | `student-portal/student.guard.ts` | Student accounts only; pins `req.student` to the caller's own record |
+
+Inside a course, access is decided by `CourseAccessService` (course role: admin, teacher, TA; or an active student for portal routes), not by a guard.
 
 ## Environment Variables
 

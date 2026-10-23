@@ -15,7 +15,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { fetchFileBlob } from "@/lib/files/content";
+import { fetchCourseFileBlob } from "@/lib/files/content";
 import { cn } from "@/lib/utils";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { Badge } from "@/components/ui/badge";
@@ -205,14 +205,14 @@ function ModuleItemRow({
       const win = window.open("", "_blank");
       opening.value = true;
       try {
-        const blob = await fetchFileBlob(fileId, "content");
+        const blob = await fetchCourseFileBlob(courseId, fileId);
         const url = URL.createObjectURL(blob);
         if (win) win.location.href = url;
         else window.location.href = url;
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       } catch {
         win?.close();
-        toast.error("This file isn't available to you yet. Ask your teacher to share it.");
+        toast.error("This file could not be opened. Try again, or ask your teacher.");
       } finally {
         opening.value = false;
       }

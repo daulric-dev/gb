@@ -26,6 +26,7 @@ export const ACTIVITY_SELECT = {
   allow_text: true,
   max_attempts: true,
   omit_from_final_grade: true,
+  rubric_id: true,
   created_by: true,
   created_at: true,
 } satisfies Prisma.activitySelect;
@@ -73,6 +74,7 @@ export function toActivity(a: any) {
     // "unlimited" reads better as 0 than as an empty box.
     maxAttempts: (a.max_attempts as number | null) ?? 0,
     omitFromFinalGrade: !!a.omit_from_final_grade,
+    rubricId: (a.rubric_id as string | null) ?? null,
     createdAt: ts(a.created_at) as string,
   };
 }

@@ -6,7 +6,7 @@ sidebar_label: School
 
 **Location**: `backend/src/school/`
 
-The school module manages schools, school membership, and join requests. Schools are the top-level organizational unit - every user belongs to a school via a `school_management` row, and all data (students, subjects, classes) is scoped to a school.
+The school module manages schools, school membership, and join requests. Schools are the top-level organizational unit - every user belongs to a school via a `school_management` row, and all data (students, courses, files, messages) is scoped to a school.
 
 ## Files
 
@@ -83,7 +83,7 @@ For backwards compatibility and query simplicity, two fields on `user_profile` m
 | `user_profile.school_id` | The user's currently active school |
 | `user_profile.role` | The role from the matching `school_management` row |
 
-These are kept in sync on every write that affects membership (school creation and join request approval). All existing services that read `user_profile.role` (e.g. `AdminGuard`, `ClassTeacherGuard`, `enrollment`, `calculation`, `class`) continue to work unchanged. **`school_management` is the source of truth**; the `user_profile` fields are a cache.
+These are kept in sync on every write that affects membership (school creation and join request approval). All existing services that read `user_profile.role` (e.g. `AdminGuard`) continue to work unchanged. **`school_management` is the source of truth**; the `user_profile` fields are a cache.
 
 ## Roles
 
@@ -92,7 +92,7 @@ These are kept in sync on every write that affects membership (school creation a
 | Role | Meaning |
 |------|---------|
 | `admin` | Full administrative control of the school. Can approve/reject join requests, manage all data. School creators are automatically `admin`. |
-| `teacher` | Staff member assigned to classes. Has access scoped to the classes/subjects they're assigned to (see `ClassTeacherGuard`). |
+| `teacher` | Staff who create and run courses. Inside a course, access comes from their course role (teacher or TA) via `CourseAccessService`. |
 | `member` | Generic school participant - for users who belong to the school but aren't teaching staff or admins. |
 
 ## Flows

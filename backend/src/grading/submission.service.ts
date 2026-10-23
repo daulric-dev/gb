@@ -21,6 +21,7 @@ import {
   toPortalActivity,
   ts,
 } from './activity.mapper';
+import { loadAssessments, loadRubric } from './rubric.service';
 
 const STUDENT_ACTIVITY_SELECT = {
   id: true,
@@ -34,6 +35,7 @@ const STUDENT_ACTIVITY_SELECT = {
   allow_file: true,
   allow_text: true,
   max_attempts: true,
+  rubric_id: true,
 } satisfies Prisma.activitySelect;
 
 const DRAFT_SELECT = {
@@ -260,6 +262,17 @@ export class SubmissionService {
     const names = await this.fileNames([submission?.file_id as string]);
     const graded = submission?.status === 'graded';
 
+    // The rubric is shown up front so the student knows how the work will be
+    // marked; the levels they were given only once the mark is final (and
+    // only if it was marked with the rubric rather than a bare score).
+    const rubric = await loadRubric(this.prisma, activity.rubric_id);
+    const rubricAssessment =
+      rubric && graded && submission
+        ? ((await loadAssessments(this.prisma, [submission.id], rubric)).get(
+            submission.id,
+          ) ?? null)
+        : null;
+
     return {
       id: activity.id,
       courseId: activity.course_id,
@@ -275,6 +288,8 @@ export class SubmissionService {
       maxAttempts: activity.max_attempts ?? 0,
       attemptsUsed: submission?.attempt_count ?? 0,
       questions,
+      rubric,
+      rubricAssessment,
       submission: submission
         ? {
             id: submission.id,

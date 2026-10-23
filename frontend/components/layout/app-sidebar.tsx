@@ -14,6 +14,7 @@ import { unreadChat, refreshChatUnread } from "@/lib/chat";
 import {
   AtSign,
   BookOpen,
+  CalendarDays,
   CalendarRange,
   ChevronsUpDown,
   FileText,
@@ -71,6 +72,8 @@ const navItems: NavItem[] = [
   // Everyone on staff may teach or assist, so no catalog permission gates the
   // list; the API returns only the courses the caller has a role in.
   { title: "Courses", href: "/dashboard/courses", icon: BookOpen },
+  // Due dates across the caller's own courses; no permission, like Courses.
+  { title: "Calendar", href: "/dashboard/calendar", icon: CalendarDays },
   {
     title: "Students",
     href: "/dashboard/students",

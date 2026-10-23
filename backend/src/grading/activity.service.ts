@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
@@ -20,6 +21,7 @@ import {
   toActivity,
   toTimestamp,
 } from './activity.mapper';
+import { CourseNotificationService } from '@/course-notification/course-notification.service';
 
 type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
 
@@ -46,6 +48,7 @@ export class ActivityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
   /**
@@ -331,6 +334,13 @@ export class ActivityService {
       );
       throw new BadRequestException('Failed to publish activity');
     }
+
+    // Fire and forget: publishing never waits on notices or pushes.
+    void this.notices?.activityPublished(activity.course_id, {
+      id: activityId,
+      title: data.title,
+      kind: data.kind,
+    });
 
     return toActivity(data);
   }

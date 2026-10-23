@@ -19,16 +19,20 @@ model activity {
   course_id             String            @db.Uuid
   assignment_group_id   String?           @db.Uuid
   omit_from_final_grade Boolean           @default(false)
+  rubric_id             String?           @db.Uuid
+  rubric                rubric?           @relation(fields: [rubric_id], references: [id], onUpdate: NoAction)
   module_item           module_item[]
   assignment_group      assignment_group? @relation(fields: [assignment_group_id], references: [id], onUpdate: NoAction)
   course                course            @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user_profile          user_profile?     @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   quiz_question         quiz_question[]
   submission            submission[]
+  course_notification   course_notification[]
 
   @@index([assignment_group_id])
   @@index([course_id])
   @@index([status], map: "idx_activity_status")
+  @@index([rubric_id], map: "idx_activity_rubric")
   @@schema("grading")
 }
 
@@ -141,6 +145,7 @@ model submission {
   excused        Boolean           @default(false)
   excused_reason String?
   quiz_answer    quiz_answer[]
+  rubric_assessment rubric_assessment[]
   activity       activity          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   file           file?             @relation(fields: [file_id], references: [id], onUpdate: NoAction)
   user_profile   user_profile?     @relation(fields: [graded_by], references: [id], onUpdate: NoAction)
@@ -148,6 +153,72 @@ model submission {
 
   @@unique([activity_id, student_id], map: "idx_submission_one_per_student")
   @@index([student_id], map: "idx_submission_student")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rubric {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  course_id        String             @db.Uuid
+  title            String
+  created_by       String?            @db.Uuid
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  activity         activity[]
+  course           course             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile     user_profile?      @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  rubric_criterion rubric_criterion[]
+
+  @@index([course_id], map: "idx_rubric_course")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rubric_criterion {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rubric_id         String              @db.Uuid
+  title             String
+  description       String?
+  points            Decimal             @db.Decimal
+  position          Int                 @default(0)
+  rubric            rubric              @relation(fields: [rubric_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rubric_rating     rubric_rating[]
+  rubric_assessment rubric_assessment[]
+
+  @@index([rubric_id, position], map: "idx_rubric_criterion_rubric")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rubric_rating {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  criterion_id      String              @db.Uuid
+  label             String
+  description       String?
+  points            Decimal             @db.Decimal
+  position          Int                 @default(0)
+  rubric_criterion  rubric_criterion    @relation(fields: [criterion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rubric_assessment rubric_assessment[]
+
+  @@index([criterion_id, position], map: "idx_rubric_rating_criterion")
+  @@schema("grading")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rubric_assessment {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submission_id    String           @db.Uuid
+  criterion_id     String           @db.Uuid
+  rating_id        String?          @db.Uuid
+  points           Decimal          @db.Decimal
+  comment          String?
+  created_at       DateTime         @default(now()) @db.Timestamptz(6)
+  submission       submission       @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rubric_criterion rubric_criterion @relation(fields: [criterion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rubric_rating    rubric_rating?   @relation(fields: [rating_id], references: [id], onUpdate: NoAction)
+
+  @@unique([submission_id, criterion_id], map: "rubric_assessment_submission_criterion_key")
+  @@index([criterion_id], map: "idx_rubric_assessment_criterion")
   @@schema("grading")
 }
 

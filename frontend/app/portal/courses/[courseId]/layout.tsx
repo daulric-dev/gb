@@ -26,6 +26,7 @@ const TABS = [
   { slug: "grades", label: "Grades" },
   { slug: "attendance", label: "Attendance" },
   { slug: "announcements", label: "Announcements" },
+  { slug: "discussions", label: "Discussions" },
 ];
 
 export default function PortalCourseLayout({

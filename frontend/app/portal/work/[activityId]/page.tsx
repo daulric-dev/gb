@@ -29,6 +29,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Markdown } from "@/components/markdown";
+import { RubricGrid } from "@/components/rubric/RubricGrid";
 import { cn } from "@/lib/utils";
 import { dueLabel, type PortalWorkDetail } from "../../_components/work-types";
 
@@ -253,6 +254,19 @@ export default function PortalWorkDetailPage() {
         <Card>
           <CardContent className="py-2">
             <Markdown>{w.instructions}</Markdown>
+          </CardContent>
+        </Card>
+      )}
+
+      {w.rubric && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {w.rubricAssessment ? "How this was marked" : "Rubric"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RubricGrid rubric={w.rubric} assessments={w.rubricAssessment} />
           </CardContent>
         </Card>
       )}

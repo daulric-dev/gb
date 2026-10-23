@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { AttendanceBanner } from "./_components/attendance-banner";
+import { NotificationBell } from "./_components/notification-bell";
 import {
   Avatar,
   AvatarFallback,
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BookOpen,
+  CalendarDays,
   CheckSquare,
   GraduationCap,
   LayoutDashboard,
@@ -37,6 +39,7 @@ const NAV = [
   { href: "/portal/courses", label: "Courses", icon: BookOpen },
   { href: "/portal/grades", label: "Grades", icon: GraduationCap },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
+  { href: "/portal/calendar", label: "Calendar", icon: CalendarDays },
 ];
 
 export default function PortalLayout({
@@ -126,6 +129,7 @@ export default function PortalLayout({
           </Link>
 
           <div className="ml-auto flex items-center gap-1">
+            <NotificationBell />
             <ModeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger

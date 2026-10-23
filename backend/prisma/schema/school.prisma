@@ -28,6 +28,7 @@ model announcement {
   course                 course?             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   school                 school              @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   announcement_read      announcement_read[]
+  course_notification    course_notification[]
 
   @@index([course_id])
   @@index([author_user_profile_id], map: "idx_announcement_author")
@@ -276,6 +277,8 @@ model user_profile {
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]
   push_device                                                       push_device[]
+  rubric                                                            rubric[]
+  course_notification                                               course_notification[]
   school_school_owner_idTouser_profile                              school[]                   @relation("school_owner_idTouser_profile")
   school_email_domain                                               school_email_domain[]
   school_join_request_school_join_request_reviewed_byTouser_profile school_join_request[]      @relation("school_join_request_reviewed_byTouser_profile")
@@ -286,6 +289,9 @@ model user_profile {
   parent_student_link                                               parent_student_link[]
   school_join_code                                                  school_join_code[]
   student                                                           student?
+  discussion_topic                                                  discussion_topic[]
+  discussion_reply                                                  discussion_reply[]
+  discussion_read                                                   discussion_read[]
 
   @@index([school_id], map: "idx_user_profile_school")
   @@schema("public")
