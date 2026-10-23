@@ -64,7 +64,7 @@ export const MARK_PAID_METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as
 
 export class MarkPaidDto {
   @ApiProperty({ enum: MARK_PAID_METHODS })
-  @IsIn(MARK_PAID_METHODS as unknown as string[])
+  @IsIn(MARK_PAID_METHODS)
   method!: (typeof MARK_PAID_METHODS)[number];
 
   @ApiPropertyOptional()
