@@ -21,8 +21,15 @@ No `.env` files are committed to the repository. You must create them manually i
 | `ALLOW_DEV_LOGIN`             | No (dev)                 | `false`                 | `true` turns on `POST /auth/dev/code`, which returns a sign-in code instead of mailing it, so `seed:demo` and `smoke` can sign in. Refused (404) when `NODE_ENV=production`. Never set it on a shared deployment. |
 | `ALLOW_UNVERIFIED_EMAIL_DOMAINS` | No (dev)              | `false`                 | Skips the DNS TXT check for school email domains so a local stack can use made-up domains like `demo.test`. Ignored in production. |
 | `API_URL`                     | For SSO / avatars        | request host            | Absolute URL of this API. SSO redirect URIs (`${API_URL}/api/auth/sso/callback`), the SAML entity ID and avatar URLs are built from it. |
-| `SMTP_URL`                    | **Yes** (to send mail)   | -                       | SMTP connection URL for sign-in codes and other email, e.g. `smtp://127.0.0.1:1025` (Mailpit in dev, inbox at http://127.0.0.1:8025) or `smtps://user:pass@smtp.example.com:465`. |
-| `MAIL_FROM`                   | No                       | -                       | From address, e.g. `"GradeBook <no-reply@example.com>"`. |
+| `SMTP_URL`                    | One of `SMTP_URL` or `SMTP_HOST`/`SMTP_SERVICE` (to send mail) | -   | SMTP connection URL, e.g. `smtp://127.0.0.1:1025` (Mailpit in dev, inbox at http://127.0.0.1:8025) or `smtps://user:pass@smtp.example.com:465`. The password must be URL-encoded; prefer the separate fields below for app passwords. Wins over the fields when both are set. |
+| `SMTP_SERVICE`                | No                       | -                       | Preset host/port: `gmail`, `outlook`, `office365`, `yahoo`, `icloud`, `zoho`. |
+| `SMTP_HOST` / `SMTP_PORT`     | No                       | port `587` (or preset)  | Any other SMTP server. Port 465 uses implicit TLS; other ports use STARTTLS. |
+| `SMTP_SECURE`                 | No                       | on for port 465         | Force implicit TLS on or off. |
+| `SMTP_USER`                   | No                       | -                       | SMTP login, usually the sending mailbox. |
+| `SMTP_PASSWORD`               | No                       | -                       | Password or **app password**. Gmail, Outlook and Yahoo need an app password once 2-step verification is on; paste Google's as shown (`abcd efgh ijkl mnop`) - the spaces are removed. No URL-encoding needed. |
+| `SMTP_PASSWORD_FILE`          | No                       | -                       | Read the password from a file (Docker/Kubernetes secret) instead of `SMTP_PASSWORD`. |
+| `SMTP_ALLOW_INSECURE`         | No                       | `false`                 | `true` allows sending credentials without TLS (not recommended). |
+| `MAIL_FROM`                   | No                       | `SMTP_USER`             | From address, e.g. `"GradeBook <no-reply@example.com>"`. Gmail and Outlook only send as the signed-in account or a verified alias. |
 | `SSO_PROVIDERS`               | No                       | -                       | Comma-separated SSO providers to enable: `google`, `azure`, `saml`. See [Single sign-on](./sso.md). |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google SSO | -                    | OAuth client from Google Cloud. Redirect URI: `${API_URL}/api/auth/sso/callback`. |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | For Microsoft SSO | -         | Multi-tenant app registration in Microsoft Entra. Each school's tenant is taken from its email domain. |
@@ -62,6 +69,10 @@ S3_ACCESS_KEY_ID=gradebook
 S3_SECRET_ACCESS_KEY=gradebook-secret
 SMTP_URL=smtp://127.0.0.1:1025
 MAIL_FROM="GradeBook <no-reply@gradebook.local>"
+# Production with Gmail / Google Workspace (app password):
+# SMTP_SERVICE=gmail
+# SMTP_USER=office@yourschool.edu
+# SMTP_PASSWORD="abcd efgh ijkl mnop"
 # AUTH_SECRET=   # required in production: openssl rand -base64 32
 ALLOW_DEV_LOGIN=true
 FRONTEND_URL=http://localhost:3000
@@ -91,7 +102,7 @@ USE_REDIS=false
 | --------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
 | `DATABASE_URL`                                      | `src/prisma/prisma.service.ts`     | Prisma client (`pg` driver adapter); also `prisma.config.ts` |
 | `S3_*`                                              | `src/storage/storage.service.ts`   | Object storage client and presigned URLs                     |
-| `SMTP_URL`, `MAIL_FROM`                             | `src/mail/`                        | Outgoing email                                               |
+| `SMTP_*`, `MAIL_FROM`                               | `src/mail/`                        | Outgoing email                                               |
 | `AUTH_SECRET`                                       | `src/account/secret.ts`            | Hashes of sign-in codes and session tokens                   |
 | `GOOGLE_*`, `MICROSOFT_*`, `SAML_SP_ENTITY_ID`      | `src/sso/`                         | SSO adapters                                                 |
 | `FRONTEND_URL`                                      | `src/createApp.ts`                 | CORS `origin` configuration                                  |
@@ -255,7 +266,7 @@ openssl rand -base64 32   # CHAT_ENCRYPTION_KEY
 openssl rand -base64 32   # STUDENT_CLAIM_CODE_PEPPER
 ```
 
-A deployment also needs `DATABASE_URL`, the `S3_*` variables and `SMTP_URL`.
+A deployment also needs `DATABASE_URL`, the `S3_*` variables and email (`SMTP_URL`, or `SMTP_SERVICE`/`SMTP_HOST` with `SMTP_USER` and `SMTP_PASSWORD`).
 
 `infrastructure/env.example` is the template for a deployed stack and lists all of them.
 

@@ -14,11 +14,12 @@ describe('permission catalog', () => {
     expect(actionsFor('course')).toEqual(ACTIONS);
   });
 
-  test('school is read-only', () => {
-    expect(actionsFor('school')).toEqual(['read']);
+  test('school has read and update (billing) only', () => {
+    expect(actionsFor('school')).toEqual(['read', 'update']);
 
     expect(isPermissionKey('school:read')).toBe(true);
-    for (const action of ['create', 'update', 'delete']) {
+    expect(isPermissionKey('school:update')).toBe(true);
+    for (const action of ['create', 'delete']) {
       expect(isPermissionKey(`school:${action}`)).toBe(false);
     }
   });
@@ -36,6 +37,7 @@ describe('permission catalog', () => {
     const admin = defaultsForRole('admin');
     expect(admin.size).toBe(PERMISSION_CATALOG.length);
     expect(admin.has('school:read')).toBe(true);
+    expect(admin.has('school:update')).toBe(true);
     expect(admin.has('school:delete' as never)).toBe(false);
   });
 

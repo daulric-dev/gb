@@ -111,6 +111,9 @@ model school {
   user_profile_user_profile_school_idToschool user_profile[]        @relation("user_profile_school_idToschool")
   school_join_code                            school_join_code?
   student                                     student[]
+  subscription                                subscription?
+  invoice                                     invoice[]
+  payment_event                               payment_event[]
 
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")

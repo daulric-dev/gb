@@ -11,6 +11,8 @@ model app_user {
   identity          identity[]
   session           session[]
   user_profile      user_profile?
+  invoice           invoice[]
+  platform_admin    platform_admin?
 
   @@schema("account")
 }

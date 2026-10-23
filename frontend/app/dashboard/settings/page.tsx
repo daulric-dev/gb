@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Camera, Loader2, Trash2 } from "lucide-react";
 import type { Profile } from "./_components/types";
+import { BillingSettingsLink } from "./_components/billing-link";
 
 export default function SettingsPage() {
   useSignals();
@@ -192,6 +193,8 @@ export default function SettingsPage() {
         title="Settings"
         description="Manage your account and preferences"
       />
+
+      <BillingSettingsLink />
 
       <Card className="p-6">
         <h2 className="text-lg font-semibold">Profile Picture</h2>

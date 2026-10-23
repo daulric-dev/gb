@@ -437,6 +437,102 @@ async function main() {
   }
   check('copied courses cleaned up', (await db.course.count({ where: { id: { in: made } } })) === 0);
 
+  // ── billing (hosted platform only) ────────────────────────────────────────
+  // Runs the full flow when the API has BILLING_ENABLED=true; otherwise checks
+  // that every billing and platform route is absent.
+  const billingStatus = await teacher('GET', '/billing/status');
+  check('billing status answers', billingStatus.status === 200 && typeof billingStatus.data?.enabled === 'boolean', billingStatus.data);
+  const webhookPost = (provider: string) =>
+    fetch(`${API}/billing/webhooks/${provider}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  if (!billingStatus.data?.enabled) {
+    check('billing off: status reports nothing', billingStatus.data?.readOnly === false && billingStatus.data?.status === null, billingStatus.data);
+    check('billing off: /billing is 404', (await admin('GET', '/billing')).status === 404);
+    check('billing off: /billing/checkout is 404', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'manual' })).status === 404);
+    check('billing off: /platform/me is 404', (await admin('GET', '/platform/me')).status === 404);
+    check('billing off: /platform/overview is 404', (await admin('GET', '/platform/overview')).status === 404);
+    check('billing off: webhooks are 404', (await webhookPost('manual')).status === 404);
+  } else {
+    const schoolId: string = me.data.school.id;
+    const snapshot = await db.subscription.findUnique({ where: { school_id: schoolId } });
+    const invoicesBefore = new Set((await db.invoice.findMany({ where: { school_id: schoolId }, select: { id: true } })).map((i) => i.id));
+    const smokeCourses: string[] = [];
+    try {
+      check('billing on: school is writable (trialing/active)', ['trialing', 'active'].includes(billingStatus.data.status) && billingStatus.data.readOnly === false, billingStatus.data);
+      const studentStatus = await student('GET', '/billing/status');
+      check('student sees billing status', studentStatus.status === 200 && studentStatus.data.enabled === true && studentStatus.data.readOnly === false, studentStatus.data);
+      check('teacher cannot open school billing (403)', (await teacher('GET', '/billing')).status === 403);
+      const summary = await admin('GET', '/billing');
+      check('admin billing summary', summary.status === 200 && summary.data.billableUsers > 0 && summary.data.prices?.perUserCents > 0 && summary.data.providers?.some?.((p: any) => p.id === 'manual' && p.mode === 'invoice'), summary.data);
+      check('unknown provider at checkout (400)', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'nope' })).status === 400);
+
+      const checkout = await admin('POST', '/billing/checkout', { plan: 'per_user', provider: 'manual' });
+      check('manual checkout returns instructions with the invoice number', checkout.status === 200 && checkout.data.redirectUrl === null && /GB-\d{6}-\d{4}/.test(checkout.data.instructions ?? ''), checkout.data);
+      const schoolInvoices = await admin('GET', '/billing/invoices');
+      const open = schoolInvoices.data?.find?.((i: any) => i.status === 'open');
+      check('an open invoice priced per seat', !!open && open.amountCents === summary.data.prices.perUserCents * Math.max(1, summary.data.billableUsers) && open.provider === 'manual', schoolInvoices.data);
+      const payAgain = open && await admin('POST', `/billing/invoices/${open.id}/pay`, { provider: 'manual' });
+      check('pay an open invoice again gives instructions', payAgain?.status === 200 && payAgain.data.instructions?.includes(open.number), payAgain?.data);
+
+      check('manual webhooks are rejected (400)', (await webhookPost('manual')).status === 400);
+      check('unknown provider webhook (404)', (await webhookPost('nope')).status === 404);
+
+      const teacherMe = await teacher('GET', '/platform/me');
+      check('teacher is not a platform admin', teacherMe.status === 200 && teacherMe.data.isPlatformAdmin === false, teacherMe.data);
+      check('non-admin gets 404 on /platform/overview', (await teacher('GET', '/platform/overview')).status === 404);
+      check('non-admin gets 404 on /platform/invoices', (await student('GET', '/platform/invoices')).status === 404);
+      const adminMe = await admin('GET', '/platform/me');
+      check('admin@demo.test is a platform admin', adminMe.data?.isPlatformAdmin === true, adminMe.data);
+      const overview = await admin('GET', '/platform/overview');
+      check('platform overview', overview.status === 200 && overview.data.schools > 0 && overview.data.openInvoices > 0, overview.data);
+      const platformSchools = await admin('GET', `/platform/schools?search=${encodeURIComponent((me.data.school.name ?? '').slice(0, 4))}`);
+      check('platform schools search finds the demo school', platformSchools.status === 200 && platformSchools.data.some?.((s: any) => s.schoolId === schoolId && s.openInvoices >= 1), platformSchools.data);
+      const openList = await admin('GET', '/platform/invoices?status=open');
+      check('platform lists the open invoice', openList.status === 200 && openList.data.some?.((i: any) => i.id === open?.id && i.schoolId === schoolId && !!i.schoolName), openList.data?.length);
+      const generated = await admin('POST', '/platform/invoices/generate');
+      check('invoice sweep does not double-bill (created 0)', generated.status === 200 && generated.data.created === 0, generated.data);
+      const providers = await admin('GET', '/platform/providers');
+      check('platform providers', providers.status === 200 && providers.data.some?.((p: any) => p.id === 'manual' && p.enabled && p.allowedByEnv && p.configured), providers.data);
+      check('cannot enable a provider not allowed/configured (409)', (await admin('PATCH', '/platform/providers/stripe', { enabled: true })).status === 409);
+
+      const paid = open && await admin('POST', `/platform/invoices/${open.id}/mark-paid`, { method: 'bank_transfer', reference: 'SMOKE-REF' });
+      check('platform admin marks the invoice paid', paid?.status === 200 && paid.data.status === 'paid' && paid.data.method === 'bank_transfer', paid?.data);
+      check('a paid invoice cannot be voided (409)', !!open && (await admin('POST', `/platform/invoices/${open.id}/void`, {})).status === 409);
+      check('a paid invoice cannot be paid again (409)', !!open && (await admin('POST', `/platform/invoices/${open.id}/mark-paid`, { method: 'cash' })).status === 409);
+      const afterPay = await admin('GET', '/billing');
+      check('school is active after payment', afterPay.data?.status === 'active' && afterPay.data.plan === 'per_user' && !!afterPay.data.currentPeriodEnd && new Date(afterPay.data.currentPeriodEnd) > new Date(), afterPay.data);
+      const detail = await admin('GET', `/platform/schools/${schoolId}`);
+      check('platform school detail has invoices', detail.status === 200 && detail.data.invoices?.some?.((i: any) => i.id === open?.id && i.status === 'paid'), detail.data?.invoices?.length);
+
+      // Lapse the school: trial over, nothing paid. The comp call with a past
+      // date changes nothing but flushes the cached entitlement.
+      await db.subscription.update({ where: { school_id: schoolId }, data: { status: 'trialing', plan: null, provider: null, trial_ends_at: new Date(Date.now() - 86_400_000), current_period_end: null, comp_until: null } });
+      await admin('POST', `/platform/schools/${schoolId}/comp`, { until: '2000-01-01', note: 'smoke' });
+      const lapsed = await teacher('GET', '/billing/status');
+      check('lapsed school is read-only', lapsed.data?.readOnly === true && lapsed.data.status === 'read_only', lapsed.data);
+      const blocked = await teacher('POST', '/courses', { name: 'Smoke blocked course' });
+      if (blocked.data?.id) smokeCourses.push(blocked.data.id);
+      check('teacher POST is refused with 402 SUBSCRIPTION_REQUIRED', blocked.status === 402 && blocked.data?.code === 'SUBSCRIPTION_REQUIRED' && blocked.data?.statusCode === 402, blocked);
+      check('student POST is refused with 402', (await student('POST', '/portal/me/courses/join', { joinCode: 'NOPE00' })).status === 402);
+      check('reads still work while read-only', (await teacher('GET', '/courses')).status === 200);
+      check('billing still works while read-only', (await admin('GET', '/billing')).data?.readOnly === true);
+      check('marking notices read still works', (await student('POST', '/portal/me/notifications/read-all')).status !== 402);
+
+      const extended = await admin('POST', `/platform/schools/${schoolId}/extend-trial`, { days: 1 });
+      check('platform admin extends the trial', extended.status === 200 && extended.data.readOnly === false && extended.data.status === 'trialing', extended.data);
+      const allowed = await teacher('POST', '/courses', { name: 'Smoke unblocked course' });
+      if (allowed.data?.id) smokeCourses.push(allowed.data.id);
+      check('teacher can write again', allowed.status === 201, allowed.status);
+    } finally {
+      for (const id of smokeCourses) await admin('DELETE', `/courses/${id}`);
+      await db.invoice.deleteMany({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } });
+      if (snapshot) {
+        const { id: _id, school_id: _school, ...fields } = snapshot;
+        await db.subscription.update({ where: { school_id: schoolId }, data: fields });
+      }
+    }
+    check('billing state restored', (await db.invoice.count({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } })) === 0 && (await teacher('GET', '/billing/status')).data?.readOnly === false);
+  }
+
   await db.$disconnect();
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`);
   process.exit(failures === 0 ? 0 : 1);

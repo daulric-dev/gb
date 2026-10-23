@@ -64,6 +64,7 @@
     "react": "^19.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "stripe": "^23.0.1",
     "wrangler": "^4.136.1",
     "write-excel-file": "^4.1.1"
   },

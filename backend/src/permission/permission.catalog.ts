@@ -21,8 +21,10 @@ export type Resource = (typeof RESOURCES)[number];
 
 export type PermissionKey = `${Resource}:${Action}`;
 
+// school:update gates the school's own settings that are not a resource of
+// their own - billing (plan, payment, invoices). Admins hold it by default.
 const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
-  school: ['read'],
+  school: ['read', 'update'],
 };
 
 export function actionsFor(resource: Resource): readonly Action[] {

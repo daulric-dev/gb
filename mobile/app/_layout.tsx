@@ -1,5 +1,5 @@
 import "react-native-gesture-handler";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -7,19 +7,33 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { PermissionsProvider } from "@/providers/PermissionsProvider";
-import { ToastProvider } from "@/providers/ToastProvider";
+import { ToastProvider, useToast } from "@/providers/ToastProvider";
+import { setSubscriptionNoticeHandler } from "@/lib/subscription-required";
 import { NotificationRouter } from "@/providers/NotificationRouter";
 import { setUnauthorizedHandler } from "@/lib/api";
 
 function RootNavigator() {
   const { scheme, colors } = useTheme();
   const router = useRouter();
+  const toast = useToast();
+  // The toast API object is rebuilt every render; read it through a ref so the
+  // handler is registered once.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  });
 
   // Mirror the web app's global 401 → /login behaviour.
   useEffect(() => {
     setUnauthorizedHandler(() => router.replace("/(auth)/login"));
     return () => setUnauthorizedHandler(null);
   }, [router]);
+
+  // A 402 SUBSCRIPTION_REQUIRED (school read-only) shows one toast per burst.
+  useEffect(() => {
+    setSubscriptionNoticeHandler((message) => toastRef.current.error(message));
+    return () => setSubscriptionNoticeHandler(null);
+  }, []);
 
   return (
     <>

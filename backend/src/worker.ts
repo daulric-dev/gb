@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import { allowedOrigins } from './config/origins';
+import { registerWebhookRawBody } from './billing/raw-body';
 
 let app: NestFastifyApplication;
 
@@ -22,6 +23,7 @@ async function ensureApp(env: Record<string, string>) {
   );
 
   await app.register(cookie);
+  registerWebhookRawBody(app.getHttpAdapter().getInstance());
 
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },

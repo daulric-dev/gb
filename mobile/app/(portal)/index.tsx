@@ -10,6 +10,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
+import { ReadOnlyBanner } from "@/features/billing/ReadOnlyBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
@@ -74,6 +75,7 @@ export default function PortalHomeScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      <ReadOnlyBanner />
       <Button
         size="lg"
         icon={<ScanLine color={colors.primaryForeground} size={20} />}

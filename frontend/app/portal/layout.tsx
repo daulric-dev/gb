@@ -9,10 +9,12 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
 import { isStudentProfile, loginPath, SCAN_PATH } from "@/lib/routing";
 import { api } from "@/lib/api";
+import { resetBillingState } from "@/lib/billing";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { AttendanceBanner } from "./_components/attendance-banner";
+import { BillingBanner, BillingStatusLoader } from "@/components/billing/billing-banner";
 import { NotificationBell } from "./_components/notification-bell";
 import {
   Avatar,
@@ -105,6 +107,7 @@ export default function PortalLayout({
     } catch {
       toast.error("Failed to log out");
     }
+    resetBillingState();
     router.push("/login");
   }
 
@@ -179,7 +182,9 @@ export default function PortalLayout({
         </nav>
       </header>
 
+      <BillingStatusLoader schoolId={student.school.id} />
       <main className="mx-auto max-w-5xl p-4 md:p-6">
+        <BillingBanner audience="student" />
         {/* The scan page is itself the check-in for that session. */}
         {!isScan && <AttendanceBanner />}
         {children}
