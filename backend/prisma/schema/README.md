@@ -8,9 +8,10 @@ as a single schema (`prisma.config.ts` points here).
 | `main.prisma` | - | Generator and datasource only |
 | `school.prisma` | `public` | Schools, user profiles, membership, roles and permissions, academic years and terms, announcements, email domains, push devices |
 | `account.prisma` | `account` | Our own auth: users, sessions, email sign-in codes, linked SSO identities |
-| `course.prisma` | `course` | Courses, staff and students, modules, pages, assignment groups, attendance, course notifications |
-| `grading.prisma` | `grading` | Activities, quizzes, submissions, grade scales; legacy assessments, grades and grading groups |
-| `student.prisma` | `student` | Student roster, school join codes; legacy class enrolment, subject profiles and class attendance |
+| `course.prisma` | `course` | Courses, staff and students, modules and items, pages, assignment groups, attendance, course notifications |
+| `discussion.prisma` | `course` | Discussion topics, replies, read markers, per-course discussion settings |
+| `grading.prisma` | `grading` | Activities, quizzes, submissions, rubrics and rubric assessments, grade scales |
+| `student.prisma` | `student` | Student roster, school join codes |
 | `files.prisma` | `file_manager` | Files, folders, shares, notifications |
 | `chat.prisma` | `chat` | Conversations, members, messages |
 | `billing.prisma` | `billing` | Hosted-platform billing: subscriptions, invoices, webhook events, provider switches, platform admins (unused unless `BILLING_ENABLED=true`) |

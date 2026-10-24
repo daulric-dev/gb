@@ -111,7 +111,10 @@ export class AuthController {
     // the domain. Skipped when they picked a school themselves, and harmless
     // when nothing matches.
     if (!raw?.school_id && !dto.schoolId) {
-      const joined = await this.emailDomains.tryAutoJoin(userId, req.user.email as string);
+      const joined = await this.emailDomains.tryAutoJoin(
+        userId,
+        req.user.email as string,
+      );
       if (joined?.status === 'joined') {
         raw = await this.authService.getProfile(userId);
       }
@@ -189,7 +192,7 @@ export class AuthController {
       throw new BadRequestException('No file provided');
     }
 
-    const userId: string = (req.body as any).user?.id;
+    const userId: string = (req as any).user.id;
 
     const result = await this.imagesService.setImageToUserProfile(
       userId,
@@ -206,7 +209,7 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Body() dto: CreateResumableUploadDto,
   ) {
-    const userId: string = (req.body as any).user?.id;
+    const userId: string = (req as any).user.id;
     const result = await this.imagesService.createResumableUpload(
       userId,
       dto.filename,
@@ -220,10 +223,10 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar/complete')
   async completeResumableUpload(
-    @Req() req: FastifyRequest ,
+    @Req() req: FastifyRequest,
     @Body() dto: CompleteUploadDto,
   ) {
-    const userId: string = (req.body as any).user?.id;
+    const userId: string = (req as any).user.id;
     const result = await this.imagesService.completeResumableUpload(
       userId,
       dto.path,

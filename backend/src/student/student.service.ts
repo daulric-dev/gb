@@ -182,9 +182,14 @@ export class StudentService {
     }
 
     const column = pagination.cursorColumn ?? 'id';
-    const readCursor = CURSOR_COLUMNS[column];
+    // Own keys only: `constructor` and friends must not pass as columns.
+    const readCursor = Object.hasOwn(CURSOR_COLUMNS, column)
+      ? CURSOR_COLUMNS[column]
+      : undefined;
     if (!readCursor) {
-      throw new Error(`Cannot paginate students by "${column}"`);
+      throw new BadRequestException(
+        `cursorColumn must be one of: ${Object.keys(CURSOR_COLUMNS).join(', ')}`,
+      );
     }
     const direction = pagination.cursorDirection ?? 'asc';
 

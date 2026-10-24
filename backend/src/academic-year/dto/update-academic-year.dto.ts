@@ -1,7 +1,6 @@
 import {
   IsString,
   IsDateString,
-  IsBoolean,
   MaxLength,
   IsOptional,
 } from 'class-validator';
@@ -24,8 +23,6 @@ export class UpdateAcademicYearDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
+  // Activating a year is PATCH /academic-years/:id/activate (it deactivates
+  // the school's other years in the same transaction), not a field here.
 }

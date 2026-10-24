@@ -173,13 +173,13 @@ export class CourseAccessService {
   async requireStudent(
     studentId: string,
     courseId: string,
-    opts: { allowArchived?: boolean } = { allowArchived: true },
+    opts: { allowArchived?: boolean } = {},
   ): Promise<CourseRow> {
     const course = await this.loadCourse(courseId);
 
     const visible =
       course.status === 'published' ||
-      (opts.allowArchived && course.status === 'archived');
+      ((opts.allowArchived ?? true) && course.status === 'archived');
     if (!visible || course.is_template) {
       throw new NotFoundException('Course not found');
     }

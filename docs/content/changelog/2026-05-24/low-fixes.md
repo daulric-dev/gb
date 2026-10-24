@@ -33,7 +33,7 @@ Final cleanup batch from the audit. Small, mostly-isolated changes; no migration
 
 ## `worker.ts` Cloudflare entrypoint missed `@fastify/cookie`
 
-[worker.ts](../../../../backend/src/worker.ts) registers `@fastify/multipart` but not `@fastify/cookie`. The main entrypoint [createApp.ts](../../../../backend/src/createApp.ts) does register cookie. So the Cloudflare worker entrypoint would boot fine but silently drop every cookie the Supabase SSR adapter tries to set - sessions would never persist on this entrypoint.
+`worker.ts` (since removed, see [2026-10-25 cleanup](../2026-10-25/cleanup.md)) registers `@fastify/multipart` but not `@fastify/cookie`. The main entrypoint [createApp.ts](../../../../backend/src/createApp.ts) does register cookie. So the Cloudflare worker entrypoint would boot fine but silently drop every cookie the Supabase SSR adapter tries to set - sessions would never persist on this entrypoint.
 
 **Fix.** Imported and registered `@fastify/cookie` in `worker.ts`, immediately before multipart, mirroring the order in `createApp.ts`.
 

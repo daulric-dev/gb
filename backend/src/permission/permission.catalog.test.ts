@@ -11,7 +11,16 @@ import {
 
 describe('permission catalog', () => {
   test('resources without an override expose every action', () => {
-    expect(actionsFor('course')).toEqual(ACTIONS);
+    expect(actionsFor('term')).toEqual(ACTIONS);
+  });
+
+  test('keys nothing enforces do not exist', () => {
+    expect(actionsFor('course')).toEqual(['create', 'update']);
+    expect(actionsFor('student')).toEqual(['create', 'read', 'update']);
+    expect(actionsFor('academic-year')).toEqual(['create', 'read', 'update']);
+    for (const key of ['course:read', 'course:delete', 'student:delete', 'academic-year:delete']) {
+      expect(isPermissionKey(key)).toBe(false);
+    }
   });
 
   test('school has read and update (billing) only', () => {

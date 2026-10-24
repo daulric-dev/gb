@@ -246,3 +246,18 @@ describe('StudentService', () => {
     });
   });
 });
+
+describe('StudentService.findAllPaginated cursorColumn', () => {
+  test('an unknown or inherited column is a 400, not a 500', async () => {
+    const prisma = createMockPrisma();
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's1' } as any);
+    const svc = new StudentService(prisma as any, createMockCacheService() as any);
+    for (const column of ['nope', 'constructor', '__proto__']) {
+      const err = await svc
+        .findAllPaginated('u1', { cursorColumn: column, cursor: 'x' } as any)
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as Error).message).toContain('cursorColumn must be one of');
+    }
+  });
+});

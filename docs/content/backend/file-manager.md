@@ -6,7 +6,7 @@ sidebar_label: File Manager
 
 **Location**: `backend/src/file-manager/`
 
-The file manager gives each user a personal file space: generated report files land there automatically, and users can upload their own files. Any file can be shared - view-only or view+download - with a specific user, everyone holding a school role, or every teacher assigned to a class/group. Uploads are validated by size and by magic-byte content check before they are stored (see [Upload validation](#upload-validation)).
+The file manager gives each user a personal file space for the files they upload. Any file can be shared - view-only or view+download - with a specific user, everyone holding a custom school role, or a course (its staff and its active students). Uploads are validated by size and by magic-byte content check before they are stored (see [Upload validation](#upload-validation)).
 
 ## Files
 
@@ -15,9 +15,9 @@ The file manager gives each user a personal file space: generated report files l
 | `file-manager.module.ts` | Module definition; wires the controller and the four services |
 | `file-manager.controller.ts` | `/files` REST surface (list, upload, view/download, rename, delete, shares, notifications) |
 | `file-manager.service.ts` | Orchestration: listing, upload, rename/delete, content delivery, ownership checks |
-| `file-access.service.ts` | Access resolution - owner / role / group / user shares, view vs. download |
+| `file-access.service.ts` | Access resolution - owner / user / role / course shares, view vs. download |
 | `file-share.service.ts` | Share CRUD (create/list/update/revoke) for a known-owned file |
-| `folder.service.ts` | The owner's folder tree — browse, create, rename, delete (recursive), move, and find-or-create system paths |
+| `folder.service.ts` | The owner's folder tree — browse, create, rename, delete (recursive), move |
 | `file-notification.service.ts` | Read side of in-app "shared with you" notifications |
 | `file-content.ts` | Allowed content types + magic-byte verification (used on upload) |
 | `dto/` | Request validation (list filter + pagination, rename, share, update-share) |
@@ -28,11 +28,10 @@ Storage access goes through the shared storage module, not this one:
 |------|---------|
 | `storage/storage.service.ts` | `StorageService` - S3 put/get/delete and presigned upload/download URLs for every stored object |
 
-A small async pipeline remains in the queue module for non-upload work:
+One background job lives in the queue module (BullMQ with Redis, otherwise run inline):
 
 | File | Purpose |
 |------|---------|
-| `queue/handlers/file-ingest.handler.ts` | Records an already-stored object (e.g. a report PDF) as a `ready` file |
 | `queue/handlers/file-share-notify.handler.ts` | Resolves a share's recipients and writes their notifications |
 
 ## Endpoints
@@ -66,17 +65,13 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 
 ## Folders
 
-Migration `20260712140000_file_manager_folders.sql` adds `file_manager.folder` (nested via `parent_id`) and a nullable `file.folder_id`.
+`file_manager.folder` (nested via `parent_id`) and the nullable `file.folder_id` are part of the `0_baseline` migration.
 
 Folders are an **owner-private organization layer** — a folder is never shared, and `folder_id` is the owner's placement of a file, irrelevant to recipients. Every `FolderService` method is scoped to `owner_id = userId` in the API. Folder names are unique within a parent per owner, enforced by two partial unique indexes (one for nested folders, one for roots, since a `NULL` parent would otherwise never collide).
 
 - **Browsing** — the **My files** tab calls `GET /files/folders/contents`, which returns the current folder's subfolders, the files directly inside it (`folder_id = current`, or `IS NULL` at the root), and a breadcrumb trail. The **All** and **Shared with me** tabs stay flat (`GET /files`) and ignore folders.
 - **Delete is recursive** — deleting a folder soft-deletes the folder, all descendant folders, and every file within them. The subtree is walked in JS (trees are shallow) so contained files are soft-deleted the same way a direct file delete is, rather than being hard-deleted by the FK cascade.
-- **System folders** (`is_system = true`) are auto-created for server reports (below). They can't be renamed, but the owner may still delete them.
-
-### Server reports are filed by date
-
-When a report is generated, `ReportService.enqueueFileManagerIngest` passes `folderPath: ['Reports', '<YYYY-MM-DD>']` on the ingest job. `FileIngestHandler` find-or-creates that per-owner system-folder path (idempotent via the unique indexes) and sets the new file's `folder_id` to the leaf — so each user's generated reports land under **Reports / \<generation date\>** in their file manager. The folder resolution is inlined in the handler (rather than reusing `FolderService`) so the queue module stays independent of the file-manager module.
+- **System folders** (`is_system = true`) can't be renamed, but the owner may still delete them. No code creates them today; the column and the rename check remain for existing rows.
 
 ## Listing
 
@@ -102,7 +97,8 @@ paginate at the database rather than merging two result sets in memory.
 - **Otherwise** → no access.
 
 A share targets a **user**, a **role** (everyone whose school membership holds
-that custom role), or a **group** (every teacher assigned to that class/group).
+that custom role), or a **course** (its staff while they are still school
+members, and students whose enrolment is `active`).
 
 ## Upload validation
 
@@ -186,8 +182,7 @@ The frontend polls `unread-count` on navigation to render a badge on the
 
 - Everything lives in one private S3 bucket (`S3_BUCKET`), keyed
   `<area>/<path>`. Uploaded files use the **`file-manager`** area at
-  `file-manager/<schoolId>/<userId>/<fileId>-<slug>`; ingested report files
-  reference the **`report-books`** area. Rows keep `bucket` (the area) and
+  `file-manager/<schoolId>/<userId>/<fileId>-<slug>`. Rows keep `bucket` (the area) and
   `storage_path` separately; `storage/keys.ts` joins them.
 - Tables (`file_manager` schema, `backend/prisma/schema/files.prisma`): `file`,
   `file_share`, `notification`, `folder`. There is no row-level security; the
@@ -197,5 +192,3 @@ The frontend polls `unread-count` on navigation to render a badge on the
 
 - Soft-delete (`deleted_at`) hides a file but does not remove the stored object
   or its share rows; there is no storage GC job yet.
-- Regenerating a report ingests a new file each time, so repeated generation
-  can accumulate entries in a user's Files.

@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 /**
  * The browser origins allowed to call this API.
  *
@@ -96,6 +97,10 @@ export function authCookieDomain(): string | undefined {
 
   try {
     const { hostname } = new URL(primaryOrigin());
+    // An IP address or a single-label host (localhost) has no parent domain
+    // to share; a Domain attribute would make browsers drop the cookie.
+    const bare = hostname.replace(/^\[|\]$/g, '');
+    if (isIP(bare) || !hostname.includes('.')) return undefined;
     return `.${hostname.split('.').slice(-2).join('.')}`;
   } catch {
     return undefined;

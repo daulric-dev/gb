@@ -8,7 +8,6 @@ export default tseslint.config(
   {
     ignores: [
       'eslint.config.mjs', 
-      'src/stubs/**', 
       "**/*.test.ts", 
       "**/*.spec.ts",
       "**/*mocks.ts"

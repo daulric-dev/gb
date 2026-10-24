@@ -9,6 +9,10 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-10-25
+
+- [Backend cleanup](./2026-10-25/cleanup.md) - unused code removed: the Vercel and Cloudflare Workers entry points (the container from `infrastructure/Dockerfile` is the only supported deployment), `PaginationService`/`PaginationModule`, `GradeScaleService.convertScore()`, `SeatService.syncSchool()`, `FolderService.findOrCreateSystemPath()` and the never-used file-ingest queue. Permission keys nothing enforced (`course:read`, `course:delete`, `student:delete`, `academic-year:delete`) are dropped by migration `20261025100000_drop_unenforced_permissions`. `PATCH /academic-years/:id` no longer takes `isActive`, and an unknown student `cursorColumn` is a 400, not a 500.
+
 ## 2026-10-24
 
 - [SaaS billing](./2026-10-24/billing.md) - schools pay the **hosted** platform: 30-day trial, then a per-user ($5/user/month) or flat ($300/month) plan through Stripe, PayPal, Paddle, WiPay or manual bank-transfer invoices; lapsed schools turn **read-only** (`402 SUBSCRIPTION_REQUIRED`). School admins get *Settings → Billing*, operators a `/platform` dashboard. **Off unless `BILLING_ENABLED=true` - self-hosted deployments leave it unset.** Migration `20261024100000_billing`; new permission key `school:update`.

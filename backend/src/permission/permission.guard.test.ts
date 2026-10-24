@@ -60,7 +60,7 @@ describe('PermissionGuard', () => {
   test('admin is granted any catalog permission in their school', async () => {
     const prisma = createMockPrisma();
     prisma.school_management.findFirst.mockResolvedValue(membership('admin'));
-    const guard = guardWith(prisma, 'student:delete');
+    const guard = guardWith(prisma, 'term:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
@@ -76,7 +76,7 @@ describe('PermissionGuard', () => {
   test('teacher default denies an unmapped key', async () => {
     const prisma = createMockPrisma();
     prisma.school_management.findFirst.mockResolvedValue(membership('teacher'));
-    const guard = guardWith(prisma, 'course:delete');
+    const guard = guardWith(prisma, 'course:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
       ForbiddenException,
@@ -86,9 +86,9 @@ describe('PermissionGuard', () => {
   test('a custom role grants an otherwise-denied key', async () => {
     const prisma = createMockPrisma();
     prisma.school_management.findFirst.mockResolvedValue(
-      membership('member', ['course:delete']),
+      membership('member', ['course:update']),
     );
-    const guard = guardWith(prisma, 'course:delete');
+    const guard = guardWith(prisma, 'course:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
@@ -118,7 +118,7 @@ describe('PermissionGuard', () => {
     const prisma = createMockPrisma();
     prisma.course.findUnique.mockResolvedValue({ school_id: 's1' });
     prisma.school_management.findFirst.mockResolvedValue(membership('admin'));
-    const guard = guardWith(prisma, 'course:read');
+    const guard = guardWith(prisma, 'course:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { courseId: 'c1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
 

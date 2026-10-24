@@ -24,18 +24,14 @@ The backend is a **NestJS** application running on the **Fastify** HTTP adapter.
 
 ```
 backend/
-├── api/
-│   └── index.ts               # Vercel serverless entry point
-├── vercel.json                # Vercel routing and build config
+├── prisma/                    # Prisma schema (schema/*.prisma) and SQL migrations
+├── scripts/                   # seed-demo, smoke, student-flow-check
 ├── src/
-│   ├── createApp.ts           # Shared app bootstrap (used by main.ts and api/index.ts)
-│   ├── main.ts                # Local dev entry point (calls createApp + listen)
-│   ├── worker.ts              # Cloudflare Workers entry point
+│   ├── createApp.ts           # App bootstrap (used by main.ts)
+│   ├── main.ts                # Server entry point (calls createApp + listen); dev, start:prod and the container
 │   ├── app.module.ts          # Root module
-│   ├── app.controller.ts      # Health check endpoint
-│   ├── app.service.ts         # Health check service
-│   ├── stubs/
-│   │   └── empty.js           # Stub for optional NestJS deps during CF Workers bundling
+│   ├── app.controller.ts      # GET /api
+│   ├── app.service.ts         # getHello()
 │   ├── generated/prisma/      # Generated Prisma client (from prisma/schema/*.prisma)
 │   ├── prisma/                # PrismaService (global database client)
 │   ├── storage/               # StorageService (S3 object storage, presigned URLs)
@@ -46,7 +42,7 @@ backend/
 │   ├── school/                # School management
 │   ├── academic-year/         # Academic year lifecycle
 │   ├── term/                  # Term management within years
-│   ├── pagination/            # Reusable pagination service (offset + cursor)
+│   ├── pagination/            # Shared pagination DTO + result type (offset + cursor)
 │   ├── versioning/            # Header-based response versioning service
 │   ├── student/               # Student records (the school roster)
 │   ├── student-account/       # School join codes, duplicate-record merging
@@ -66,13 +62,15 @@ backend/
 │   ├── file-manager/          # Personal files, folders, sharing (user/role/course), notifications
 │   ├── chat/                  # Real-time DMs (SSE + Redis pub/sub) + system messages
 │   ├── images/                # Avatar upload service (direct + presigned PUT) and public avatar route
-│   ├── queue/                 # BullMQ file pipeline: ingest, share-notify
+│   ├── billing/               # Hosted-platform billing (off unless BILLING_ENABLED=true)
+│   ├── realtime/              # Redis (or in-process) pub/sub bus and presence for SSE
+│   ├── queue/                 # BullMQ job for file share notifications (inline without Redis)
 │   └── cache/                 # Pluggable caching (memory or Redis)
 ```
 
 ## Application Bootstrap
 
-The app bootstrap logic lives in `src/createApp.ts` and is shared between all entry points. It configures:
+The app bootstrap logic lives in `src/createApp.ts`; `src/main.ts` is its only caller. It configures:
 
 - **Adapter**: Fastify
 - **Global prefix**: `api` - all routes are prefixed with this
@@ -81,29 +79,11 @@ The app bootstrap logic lives in `src/createApp.ts` and is shared between all en
 - **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
 - **Multipart**: `@fastify/multipart` with 10MB file size limit
 
-`createApp()` calls `app.init()` but does **not** call `app.listen()`. Each entry point handles the serving strategy:
-
-| Entry Point | File | Behavior |
-|-------------|------|----------|
-| **Local dev** | `src/main.ts` | Calls `createApp()` then `app.listen()` on `PORT` (default 3001) |
-| **Vercel** | `api/index.ts` | Calls `createApp()`, caches the app instance, pipes Node.js requests through Fastify |
-| **Cloudflare Workers** | `src/worker.ts` | Lazy init, transfers env to `process.env`, uses Fastify `.inject()` |
+`createApp()` calls `app.init()` but does **not** call `app.listen()`. `src/main.ts` calls `createApp()` then `app.listen()` on `PORT` (default 3001), bound to `0.0.0.0`.
 
 ## Deployment
 
-### Vercel (Serverless)
-
-The backend deploys to Vercel as a single serverless function:
-
-- `vercel.json` routes all requests (`/(.*)`) to `api/index.ts` via `@vercel/node`
-- The NestJS app is created once on cold start and cached for subsequent requests
-- Environment variables are configured in the Vercel dashboard
-
-### Cloudflare Workers
-
-- `wrangler.toml` configures the worker with `nodejs_compat` flag
-- `src/worker.ts` handles the `fetch` event and uses Fastify's `.inject()` method
-- Optional NestJS dependencies are stubbed via `[alias]` in `wrangler.toml`
+The supported deployment is the container built from `infrastructure/Dockerfile`. It builds the backend with `nest build`, and on start applies pending migrations (`prisma migrate deploy`, skipped when `MIGRATE_ON_START=false`) and then runs `bun dist/src/main`. There are no serverless entry points (Vercel or Cloudflare Workers). Build, run and configuration steps are in the [developer guide](../developer-guide.md) (Part 3, Backend).
 
 ## Root Module (`app.module.ts`)
 
@@ -139,10 +119,10 @@ AppModule
 ├── FileManagerModule (personal files, sharing, notifications)
 ├── RealtimeModule (global - exports RedisPubSubService + PresenceService; Redis pub/sub bus + online-presence tracking)
 ├── ChatModule (global - real-time DMs over SSE + Redis pub/sub; exports ChatSystemService)
-├── QueueModule (global - BullMQ file ingest/share-notify with inline fallback)
+├── QueueModule (global - BullMQ file share-notify job with inline fallback)
 ├── ImagesModule (exports ImagesService - used by AuthModule for avatar uploads)
-├── PaginationModule (global - exports PaginationService for offset/cursor pagination)
 ├── VersioningModule (global - exports VersioningService; includes TransformerRegistry and VersioningGuard)
+├── BillingModule (hosted-platform billing; off unless BILLING_ENABLED=true)
 └── CacheModule (global - exports CacheService with memory or Redis store)
 ```
 
@@ -165,6 +145,7 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | `grading` | `activity`, `quiz_question`, `quiz_option`, `quiz_answer`, `submission`, `grade_scale`, `grade_scale_band` |
 | `file_manager` | `file`, `file_share`, `notification`, `folder` |
 | `chat` | `conversation`, `conversation_member`, `message` |
+| `billing` | `subscription`, `invoice`, `payment_event`, `provider_setting`, `platform_admin` (hosted platform only) |
 
 ## Guards
 
@@ -206,10 +187,7 @@ bun run test         # Unit tests (Bun test runner)
 ### Deploying
 
 ```bash
-# Vercel
-vercel deploy              # Deploy to Vercel (uses vercel.json)
-
-# Cloudflare Workers
-bun run deploy             # Deploy via wrangler
-bun run deploy:staging     # Deploy to staging environment
+# from the repo root
+docker build -f infrastructure/Dockerfile -t gb-backend .
+docker run --env-file infrastructure/.env -p 3001:3001 gb-backend
 ```

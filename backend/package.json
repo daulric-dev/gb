@@ -7,7 +7,6 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "prisma generate && nest build",
-    "vercel-build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "student:check": "bun run scripts/student-flow-check.ts",
     "seed:demo": "bun run scripts/seed-demo.ts",
@@ -23,8 +22,6 @@
     "start:dev": "bunx cross-env NODE_ENV=development bun --watch src/main.ts",
     "start:debug": "bunx cross-env NODE_ENV=development nest start --debug --watch",
     "start:prod": "bunx cross-env NODE_ENV=production bun src/main.ts",
-    "deploy": "wrangler deploy",
-    "deploy:staging": "wrangler deploy --env staging",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "bun test src",
     "test:watch": "bun test src --watch"
@@ -65,7 +62,6 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "stripe": "^23.0.1",
-    "wrangler": "^4.136.1",
     "write-excel-file": "^4.1.1"
   },
   "devDependencies": {

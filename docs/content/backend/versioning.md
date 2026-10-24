@@ -637,7 +637,7 @@ Separately from header-based versioning, list endpoints can support **pagination
 | `page` | number | - | Page number (1-based). Activates offset mode. |
 | `pageSize` | number | 20 | Items per page (min: 1, max: 100). |
 | `cursor` | string | - | Cursor value from a previous `nextCursor`. Activates cursor mode. |
-| `cursorColumn` | string | `id` | Database column to paginate on. |
+| `cursorColumn` | string | `id` | Database column to paginate on. Each endpoint has its own allow-list; an unknown column is a `400`. |
 | `cursorDirection` | `asc` \| `desc` | `asc` | Sort direction for the cursor column. |
 
 When no pagination params are sent, the endpoint returns its original flat array. When `page` or `cursor` is present, the response is wrapped:
@@ -661,14 +661,15 @@ When no pagination params are sent, the endpoint returns its original flat array
 | File | Purpose |
 |------|---------|
 | `src/pagination/pagination.dto.ts` | `PaginationQueryDto` and `PaginatedResult<T>` types |
-| `src/pagination/pagination.service.ts` | Generic `paginate<T>()` supporting offset and cursor modes |
-| `src/pagination/pagination.module.ts` | Global module exporting `PaginationService` |
+
+There is no shared paginator: each endpoint implements both modes itself with Prisma (`skip`/`take` for offset, a `where` on the cursor column for cursor mode) and reuses these types.
 
 ### Endpoints with Pagination
 
 | Endpoint | Supported |
 |----------|-----------|
 | `GET /api/students` | Yes |
+| `GET /api/files` | Offset only (`page`, `pageSize`); its own `{ data, meta }` envelope without `nextCursor` |
 
 ---
 
@@ -682,7 +683,6 @@ When no pagination params are sent, the endpoint returns its original flat array
 | `src/versioning/versioning.module.ts` | Global module providing `VersioningService` and `TransformerRegistry` |
 | `src/<module>/transformer.ts` | Per-module transformer functions (pure, typed) |
 | `src/createApp.ts` | Global prefix (`/api`), CORS config allowing `X-API-Version` header |
-| `src/worker.ts` | Same prefix and CORS config; forwards all headers through Fastify `.inject()` |
 
 ---
 

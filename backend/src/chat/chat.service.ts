@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -298,6 +299,10 @@ export class ChatService {
     body: string,
   ): Promise<ChatMessage> {
     const message = await this.loadOwnMessage(userId, messageId);
+    // Editing a deleted message would put a body back on it.
+    if (message.deleted_at) {
+      throw new BadRequestException('A deleted message cannot be edited');
+    }
     const data = await this.updateMessage(messageId, {
       body: this.cipher.encrypt(body),
       edited_at: new Date(),
@@ -488,6 +493,7 @@ export class ChatService {
             conversation_id: true,
             sender_id: true,
             action_state: true,
+            deleted_at: true,
           },
         })
       : null;
@@ -502,8 +508,13 @@ export class ChatService {
     if (message.sender_id === userId) {
       throw new ForbiddenException('You cannot act on your own request');
     }
-    if (message.action_state === null) {
+    if (message.action_state === null || message.deleted_at) {
       throw new BadRequestException('This message has no action');
+    }
+    // A request is answered once; accepting after dismissing (or the reverse)
+    // would let the outcome flip after the sender has acted on it.
+    if (message.action_state !== 'pending') {
+      throw new ConflictException('This request has already been answered');
     }
 
     const data = await this.updateMessage(messageId, { action_state: state });

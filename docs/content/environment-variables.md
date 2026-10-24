@@ -52,7 +52,7 @@ No `.env` files are committed to the repository. You must create them manually i
 | `CHAT_CHANNELS_ENABLED`       | No                       | `false`                 | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md).                                                                                                                                                |
 | `CHAT_ENCRYPTION_KEY`         | **Prod**                 | -                       | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning).                                  |
 | `CHAT_ENCRYPTION_KEYS`        | No                       | -                       | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version.                                                                                                                        |
-| `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with.                                                                                                                                                                                                                       |
+| `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with: a bare number from the ring (`2`, not `v2`). Ignored if it is not in the ring.                                                                                                                                                                                                                       |
 | `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes student claim codes (`openssl rand -base64 32`). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
 | `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
@@ -305,8 +305,9 @@ Add `CODECOV_TOKEN` and `DISCORD_WEBHOOK_URL` if using those workflows.
 
 ## Edge Functions
 
-There are none; `file-share-notify` and `file-ingest` run in the backend as
-BullMQ jobs (`backend/src/queue/handlers/`).
+There are none. The one background job, `file-share-notify`, runs in the
+backend as a BullMQ job, or inline when Redis is off
+(`backend/src/queue/handlers/`).
 
 ---
 

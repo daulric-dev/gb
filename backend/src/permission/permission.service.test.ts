@@ -192,7 +192,7 @@ describe('PermissionService', () => {
     const result = await svc.getMyPermissions('u1');
     expect(result.isAdmin).toBe(true);
     expect(result.role).toBe('admin');
-    expect(result.permissions).toContain('student:delete');
+    expect(result.permissions).toContain('term:delete');
   });
 
   test('getMyPermissions serves a cached effective set without re-querying', async () => {

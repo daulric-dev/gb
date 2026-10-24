@@ -59,7 +59,7 @@ Schema: `backend/prisma/schema/chat.prisma` (Postgres schema `chat`; created by 
 
 ## Realtime: SSE + Redis pub/sub
 
-The transport has to satisfy three constraints: **3 stateless replicas behind nginx with no sticky sessions**, **cookie-based auth**, and a **Cloudflare Worker entrypoint that cannot hold a streaming response**.
+The transport has to satisfy two constraints: **several stateless replicas behind nginx with no sticky sessions**, and **cookie-based auth**.
 
 ```
  browser ──EventSource──►  nginx  ──►  replica N (app1|app2|app3)
@@ -88,9 +88,9 @@ A user is **online while they hold ≥1 open SSE stream** (any tab/device/replic
 
 State is shared across replicas in Redis: a per-user connection counter (`presence:count:<userId>`, `INCR`/`DECR`, TTL-refreshed by the heartbeat) drives the online/offline **transition** (publish on 1st connect, on last disconnect), and a per-school sorted set (`presence:online:<schoolId>`, scored by last-seen) answers `GET /chat/presence`. If a replica dies without a clean disconnect, the counter TTL lapses and the stale sorted-set entry is pruned on the next query — and the frontend reconciles presence every 45s as a backstop. With `USE_REDIS` off it all runs in-process.
 
-> **CORS on the stream.** `GET /chat/stream` calls `reply.hijack()` to own the socket, which **skips Fastify's onSend hooks — including the global CORS plugin**. The handler therefore writes `Access-Control-Allow-Origin` (the exact `FRONTEND_URL`, never `*`) and `Access-Control-Allow-Credentials: true` itself. Without this the browser blocks the cross-origin `EventSource` (frontend and API are different origins) and **no events are delivered** — the symptom is "messages only appear after you click into the conversation," because only the on-open fetch runs.
+> **CORS on the stream.** `GET /chat/stream` calls `reply.hijack()` to own the socket, which **skips Fastify's onSend hooks — including the global CORS plugin**. The handler therefore writes `Access-Control-Allow-Origin` (from `corsOriginFor()`: the request's origin when it is allowed, otherwise the first `FRONTEND_URL` entry, never `*`) and `Access-Control-Allow-Credentials: true` itself. Without this the browser blocks the cross-origin `EventSource` (frontend and API are different origins) and **no events are delivered** — the symptom is "messages only appear after you click into the conversation," because only the on-open fetch runs.
 
-> The SSE endpoint requires the long-lived Node deployment (`infrastructure/docker-compose.yml`). It does **not** work on the Worker entrypoint (`worker.ts`), which replays requests through `fastify.inject()` and cannot stream. The frontend degrades to polling if the stream can't be established.
+> The SSE endpoint needs a long-lived server process, which the supported deployment (the container from `infrastructure/Dockerfile`) is. The frontend degrades to polling if the stream can't be established.
 
 ## REST API
 

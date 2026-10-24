@@ -1,15 +1,11 @@
 import { Global, Module, Logger, type DynamicModule } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { QUEUE_FILE_INGEST, QUEUE_FILE_SHARE_NOTIFY } from './queue.constants';
+import { QUEUE_FILE_SHARE_NOTIFY } from './queue.constants';
 import { FileQueueService } from './file-queue.service';
-import { FileIngestHandler } from './handlers/file-ingest.handler';
 import { FileShareNotifyHandler } from './handlers/file-share-notify.handler';
-import {
-  FileIngestProcessor,
-  FileShareNotifyProcessor,
-} from './processors/file.processors';
+import { FileShareNotifyProcessor } from './processors/file.processors';
 
-const HANDLERS = [FileIngestHandler, FileShareNotifyHandler];
+const HANDLERS = [FileShareNotifyHandler];
 
 @Global()
 @Module({})
@@ -43,15 +39,11 @@ export class QueueModule {
       module: QueueModule,
       imports: [
         BullModule.forRoot({ connection }),
-        BullModule.registerQueue(
-          { name: QUEUE_FILE_INGEST },
-          { name: QUEUE_FILE_SHARE_NOTIFY },
-        ),
+        BullModule.registerQueue({ name: QUEUE_FILE_SHARE_NOTIFY }),
       ],
       providers: [
         FileQueueService,
         ...HANDLERS,
-        FileIngestProcessor,
         FileShareNotifyProcessor,
       ],
       exports: [FileQueueService],

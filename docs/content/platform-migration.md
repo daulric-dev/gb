@@ -15,7 +15,7 @@ Status (2026-10-21), branch `feat/platform-independence`:
 
 `bun run smoke` (backend) passes end to end after each phase, with no Supabase service running.
 
-GradeBook depends on Supabase for its database client, authentication, file storage, email and a few edge functions. This plan replaces each with a component we own, so the app runs on any host - containers, serverless Node, or Cloudflare Workers - against any Postgres, any S3-compatible store and any SMTP server.
+GradeBook depends on Supabase for its database client, authentication, file storage, email and a few edge functions. This plan replaces each with a component we own, so the app runs on any container host against any Postgres, any S3-compatible store and any SMTP server.
 
 ## Decisions
 
@@ -26,12 +26,12 @@ GradeBook depends on Supabase for its database client, authentication, file stor
 | Auth | Supabase Auth: email OTP, `sb-*` cookies, OAuth/SAML, `auth.users` | **Own auth module**: `app_user` table, hashed one-time codes, opaque server sessions (hashed in Postgres, cached in Redis) in our own cookie, OIDC via `openid-client`, SAML via `@node-saml/node-saml`. Same SSO adapter interface |
 | Storage | Supabase Storage buckets + direct TUS uploads | **S3-compatible** adapter (`@aws-sdk/client-s3`): SeaweedFS locally (MinIO no longer publishes community images), R2/S3/any S3 in production. Uploads go straight from the client to S3 with **presigned URLs** (multipart for large files) - works on every host |
 | Email | Supabase SMTP + templates | **SMTP adapter** (`nodemailer`); Mailpit locally |
-| Edge functions | `file-share-notify`, `file-ingest` (others unused) | Backend BullMQ jobs - **done, all edge functions deleted** |
+| Edge functions | `file-share-notify`, `file-ingest` (others unused) | `file-share-notify` became a backend BullMQ job; `file-ingest` had no producer and was later removed - **done, all edge functions deleted** |
 | Row-level security | Defence in depth only (API uses service role) | Dropped; the API already enforces access in code |
-| Background work | `setInterval` sweeps, BullMQ | Worker process **or** `POST /api/internal/cron/*` with a shared secret, for hosts without long-running processes |
+| Background work | `setInterval` sweeps, BullMQ | Unchanged: sweeps and BullMQ workers run inside the API process (no separate worker, no cron endpoint) |
 | Realtime | Redis pub/sub + SSE (not Supabase) | Unchanged |
 
-**Hosting:** one Docker image (API + worker) is the reference deployment. The API stays a plain Nest/Fastify app with no host-specific code beyond the existing thin entry points, so Vercel and Workers remain possible (Workers needs Prisma's `@prisma/adapter-pg` driver adapter and a pooled connection).
+**Hosting:** one Docker image (`infrastructure/Dockerfile`, running `bun dist/src/main`) is the supported deployment. The serverless entry points (Vercel `api/index.ts`, Cloudflare Workers `src/worker.ts`, its `src/stubs/` and the `wrangler` scripts) were removed on 2026-10-25; see the [cleanup changelog](./changelog/2026-10-25/cleanup.md).
 
 ## Phases
 
@@ -39,8 +39,8 @@ Each phase ships on its own and keeps the app working.
 
 ### Phase 1 - Prisma on the current database (done)
 
-- **Prisma 7** (`prisma-client` generator, `@prisma/adapter-pg` driver adapter - the same client runs in containers, serverless Node and Workers). Config in `backend/prisma.config.ts`; client generated to `backend/src/generated/prisma` (gitignored; `postinstall`, `pretest` and `build` regenerate it).
-- **Multi-file schema** in `backend/prisma/schema/`: `main.prisma` (generator, datasource) plus one file per database schema - `school`, `course`, `grading`, `student`, `files`, `chat`, `staff`, `reporting`, `account` (the `auth` file went with phase 4). See its README. `bun run db:pull` re-introspects and keeps models in their files.
+- **Prisma 7** (`prisma-client` generator, `@prisma/adapter-pg` driver adapter). Config in `backend/prisma.config.ts`; client generated to `backend/src/generated/prisma` (gitignored; `postinstall`, `pretest` and `build` regenerate it).
+- **Multi-file schema** in `backend/prisma/schema/`: `main.prisma` (generator, datasource) plus one file per database schema - `school`, `course`, `grading`, `student`, `files`, `chat`, `account`, `billing`, plus `discussion` (course discussions). The `auth` file went with phase 4; the empty `staff` and `reporting` schemas were dropped from the datasource list. See its README. `bun run db:pull` re-introspects and keeps models in their files.
 - Global `PrismaService`. Every service moves to Prisma, module by module. SQL functions are called through `prisma.$queryRaw`.
 - Shared helpers: `src/common/user-school.ts` (current school), `src/common/db-values.ts` (`dateOnly`, `num` and error-code checks, so responses keep their old JSON shapes - date columns as `YYYY-MM-DD`, numerics as numbers), `src/test/prisma-mock.ts` (`createMockPrisma()` for unit tests).
 - Done when no service imports the Supabase client for data. Auth and storage still use Supabase.
@@ -50,7 +50,7 @@ Each phase ships on its own and keeps the app working.
 - Global `StorageService` (`backend/src/storage/storage.service.ts`, `@aws-sdk/client-s3`): `put`, `get` (stream), `getBuffer`, `exists`, `delete`, `downloadUrl` (presigned GET), `uploadUrl` (presigned PUT).
 - **One bucket, keyed `<old bucket>/<old path>`** (`objectKey()` in `src/storage/keys.ts`): `file-manager/<schoolId>/<userId>/<id>-<name>`, `images/avatars/<userId>.<ext>`, `report-books/...`. `file_manager.file` rows keep `bucket` + `storage_path` unchanged.
 - TUS and the upload-token signer are gone. Server-side writes (`POST /files`, `POST /portal/me/activities/:id/file`, `POST /auth/avatar`) use `put`; content, download and submission-file endpoints read the object back through the API with the same headers as before; rejected uploads are deleted.
-- `file-share-notify` and `file-ingest` run in the backend (`src/queue/handlers/`), as BullMQ jobs or inline without Redis. Share notifications go to: a user share's user; a role share's holders in the school; a course share's staff (still school members) and active students' linked accounts; never the sharer. Rows are unique on (user_id, share_id) and duplicates are skipped. **Every edge function has been deleted** (`announcement-feed`, `bulk-import-preview`, `notification-summary` were unused).
+- `file-share-notify` runs in the backend (`src/queue/handlers/`), as a BullMQ job or inline without Redis. (`file-ingest` was ported too, but nothing ever enqueued it, so it was removed.) Share notifications go to: a user share's user; a role share's holders in the school; a course share's staff (still school members) and active students' linked accounts; never the sharer. Rows are unique on (user_id, share_id) and duplicates are skipped. **Every edge function has been deleted** (`announcement-feed`, `bulk-import-preview`, `notification-summary` were unused).
 
 #### Upload contract
 

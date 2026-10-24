@@ -144,31 +144,3 @@ describe('FolderService.move', () => {
     expect(err).toBeInstanceOf(BadRequestException);
   });
 });
-
-describe('FolderService.findOrCreateSystemPath', () => {
-  test('creates each missing segment and returns the leaf id', async () => {
-    const { svc } = service((p) => {
-      // No existing folder — force the create path for both segments.
-      p.folder.findFirst.mockResolvedValue(null);
-      p.folder.create.mockImplementation(async ({ data }) => ({
-        id: data.name === 'Reports' ? 'reports-id' : 'date-id',
-      }));
-    });
-    const leaf = await svc.findOrCreateSystemPath(USER, 's1', [
-      'Reports',
-      '2026-07-12',
-    ]);
-    expect(leaf).toBe('date-id');
-  });
-
-  test('reuses an existing folder without inserting', async () => {
-    const { svc } = service((p) => {
-      p.folder.findFirst.mockResolvedValue({ id: 'existing' });
-      p.folder.create.mockImplementation(() => {
-        throw new Error('should not insert when the folder already exists');
-      });
-    });
-    const leaf = await svc.findOrCreateSystemPath(USER, 's1', ['Reports']);
-    expect(leaf).toBe('existing');
-  });
-});

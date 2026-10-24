@@ -88,15 +88,6 @@ export class SeatService {
     return updated;
   }
 
-  /** Sync one school now (after checkout, or when its count is known to change). */
-  async syncSchool(schoolId: string): Promise<boolean> {
-    const sub = await this.prisma.subscription.findUnique({
-      where: { school_id: schoolId },
-    });
-    if (!sub) return false;
-    return this.syncOne(sub, Math.max(1, await this.countBillable(schoolId)));
-  }
-
   private async syncOne(
     sub: {
       school_id: string;

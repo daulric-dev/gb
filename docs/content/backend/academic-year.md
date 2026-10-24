@@ -72,7 +72,7 @@ Returns a single academic year.
 
 ### `PATCH /api/academic-years/:id`
 
-Updates `name`, `startDate` and/or `endDate`. All fields are optional.
+Updates `name`, `startDate` and/or `endDate`. All fields are optional. There is no `isActive` field (sending one is a 400); use the activate and deactivate routes below.
 
 ---
 

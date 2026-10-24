@@ -1,6 +1,5 @@
 import { describe, test, expect } from 'bun:test';
 import { FileShareNotifyHandler } from './file-share-notify.handler';
-import { FileIngestHandler } from './file-ingest.handler';
 import { createMockPrisma } from '@/test/prisma-mock';
 
 const OWNER = 'owner';
@@ -91,45 +90,5 @@ describe('FileShareNotifyHandler', () => {
     prisma.file_share.findUnique.mockResolvedValue(null);
     await handler.run({ shareId: 'nope' });
     expect(prisma.notification.createMany).not.toHaveBeenCalled();
-  });
-});
-
-describe('FileIngestHandler', () => {
-  const PDF = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
-  const job = {
-    schoolId: 'school-1',
-    ownerId: OWNER,
-    bucket: 'report-books',
-    storagePath: 'school-1/r.pdf',
-    name: 'Report.pdf',
-    contentType: 'application/pdf',
-    sizeBytes: 0,
-    folderPath: ['Reports', '2026'],
-  };
-
-  test('records a stored object as a ready file under system folders', async () => {
-    const prisma = createMockPrisma();
-    let n = 0;
-    prisma.folder.create.mockImplementation(async () => ({ id: `folder-${++n}` }));
-    prisma.file.create.mockResolvedValue({ id: 'f' });
-    const storage = { getBuffer: async () => PDF };
-    await new FileIngestHandler(prisma as any, storage as any).run(job);
-    const row = prisma.file.create.mock.calls[0][0].data;
-    expect(row).toMatchObject({
-      status: 'ready',
-      source: 'report',
-      folder_id: 'folder-2',
-      size_bytes: PDF.byteLength,
-    });
-    expect(prisma.folder.create.mock.calls[1][0].data.parent_id).toBe('folder-1');
-  });
-
-  test('throws (so the job retries) while the object is missing', async () => {
-    const prisma = createMockPrisma();
-    const storage = { getBuffer: async () => null };
-    await expect(
-      new FileIngestHandler(prisma as any, storage as any).run(job),
-    ).rejects.toThrow();
-    expect(prisma.file.create).not.toHaveBeenCalled();
   });
 });

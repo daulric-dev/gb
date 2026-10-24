@@ -74,7 +74,8 @@ describe('seat sync', () => {
   });
 
   test('flat plans, invoice-mode providers and dead subscriptions are skipped', async () => {
-    prisma.user_profile.count.mockResolvedValue(30);
+    prisma.$queryRaw.mockResolvedValue([{ school_id: 'school-1', n: 15 }]);
+    // The query filters these out; syncOne refuses them too in case a row slips through.
     for (const sub of [
       live({ plan: 'flat' }),
       live({ provider: 'invp' }),
@@ -82,8 +83,8 @@ describe('seat sync', () => {
       live({ provider_subscription_id: null }),
       live({ cancel_at_period_end: true }), // e.g. a suspended PayPal subscription
     ]) {
-      prisma.subscription.findUnique.mockResolvedValue(sub);
-      expect(await seats.syncSchool('school-1')).toBe(false);
+      prisma.subscription.findMany.mockResolvedValue([sub]);
+      expect(await seats.syncAll()).toBe(0);
     }
     expect(stripe.updateQuantity).not.toHaveBeenCalled();
     expect(invoiceP.updateQuantity).not.toHaveBeenCalled();
@@ -91,9 +92,9 @@ describe('seat sync', () => {
 
   test('a provider failure leaves the stored quantity alone', async () => {
     stripe.updateQuantity.mockRejectedValue(new Error('provider down'));
-    prisma.subscription.findUnique.mockResolvedValue(live());
-    prisma.user_profile.count.mockResolvedValue(20);
-    expect(await seats.syncSchool('school-1')).toBe(false);
+    prisma.subscription.findMany.mockResolvedValue([live()]);
+    prisma.$queryRaw.mockResolvedValue([{ school_id: 'school-1', n: 10 }]);
+    expect(await seats.syncAll()).toBe(0);
     expect(prisma.subscription.update).not.toHaveBeenCalled();
   });
 });

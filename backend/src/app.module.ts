@@ -27,7 +27,6 @@ import { RealtimeModule } from '@/realtime/realtime.module';
 import { ChatModule } from '@/chat/chat.module';
 import { QueueModule } from '@/queue/queue.module';
 import { CacheModule } from '@/cache/cache.module';
-import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
 import { CourseAccessModule } from '@/course/access/course-access.module';
@@ -97,7 +96,6 @@ import { BillingModule } from '@/billing/billing.module';
     StudentPortalModule,
     CacheModule,
     QueueModule.forRoot(),
-    PaginationModule,
     VersioningModule,
     CourseAccessModule,
     CourseModule,

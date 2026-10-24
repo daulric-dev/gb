@@ -239,24 +239,6 @@ export class GradeScaleService {
     return this.attachBands(data);
   }
 
-  convertScore(
-    scale: GradeScaleDetail | null,
-    score: number | null,
-    maxScore: number | null | undefined,
-  ): { label: string; gpaPoints: number | null; isPass: boolean } | null {
-    if (!scale || score == null || !maxScore || maxScore <= 0) return null;
-    const percentage = (score / maxScore) * 100;
-    const band = scale.bands.find(
-      (b) => percentage >= b.minPercentage && percentage <= b.maxPercentage,
-    );
-    if (!band) return null;
-    return {
-      label: band.label,
-      gpaPoints: band.gpaPoints,
-      isPass: band.isPass,
-    };
-  }
-
   async delete(id: string, userId: string) {
     const scale = await this.assertScaleInUserSchool(id, userId);
 

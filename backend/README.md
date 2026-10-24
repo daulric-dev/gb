@@ -1,95 +1,100 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# GradeBook Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The GradeBook API: one NestJS service that every client - the Next.js web app (`frontend/`) and the Expo mobile app (`mobile/`) - talks to over HTTP. It holds all the secrets and all the access rules. It covers sign-in (email codes and single sign-on), schools and staff, the student roster, academic years and terms, courses (modules, pages, files, join codes, copy and templates), grading (activities, quizzes, submissions, rubrics, gradebook), attendance with student check-in, discussions, announcements, calendars, chat, a personal file manager, notifications, the student portal, and - on the hosted platform only - billing.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+All routes are under `/api` (e.g. `GET /api/students`), except `GET /health`, `GET /` and, outside production, Swagger at `/docs`.
 
-## Description
+## Stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+|                        |                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework              | NestJS 12 on Fastify 5 (`@nestjs/platform-fastify`), validation with `class-validator`, OpenAPI with `@nestjs/swagger`                                                                |
+| Runtime                | Bun (dev server, tests, scripts, production container)                                                                                                                                      |
+| Database               | Postgres through Prisma 7 with the `pg` driver adapter; several Postgres schemas (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `billing`) |
+| Cache, queue, realtime | Redis (optional): cache store, BullMQ jobs, pub/sub for SSE chat and attendance. Without it everything runs in-process, which is right for one instance only.                               |
+| Files                  | Any S3-compatible object store (AWS S3, R2, B2; SeaweedFS locally), with presigned upload and download URLs                                                                                 |
+| Email                  | SMTP via nodemailer (Mailpit locally)                                                                                                                                                       |
+| Auth                   | Our own: email sign-in codes and `gb_session` cookie sessions; SSO with our own OpenID Connect (Google, Microsoft) and SAML 2.0                                                           |
+| Push                   | Expo push service                                                                                                                                                                           |
+| Payments (hosted only) | Stripe, PayPal, Paddle, WiPay or manual invoices                                                                                                                                            |
 
-## Project setup
+## Running it locally
+
+Full walkthrough: [docs/content/developer-guide.md](../docs/content/developer-guide.md). The short version, from the **repo root** unless noted:
 
 ```bash
-$ npm install
+bun install                                  # every workspace; also runs prisma generate
+cp backend/.env.example backend/.env         # defaults match the dev containers
+bun run preload                              # start Postgres, Redis, S3 and Mailpit (docker-compose.dev.yml) and apply migrations
+bun run dev:backend                          # or, in backend/: bun run start:dev  -> http://localhost:3001
 ```
 
-## Compile and run the project
+Check it with `curl localhost:3001/health`. Swagger UI is at `http://localhost:3001/docs`. Sign-in codes are emailed to Mailpit at `http://127.0.0.1:8025`.
 
-```bash
-# development
-$ npm run start
+Local services from `docker-compose.dev.yml`:
 
-# watch mode
-$ npm run start:dev
+| Service      | Address                                                  | Used for                                                           |
+| ------------ | -------------------------------------------------------- | ------------------------------------------------------------------ |
+| Postgres 17  | `127.0.0.1:5432` (`gradebook` / `gradebook`)       | `DATABASE_URL`                                                   |
+| Redis        | `127.0.0.1:6379`                                       | `REDIS_URL` (only used when `USE_REDIS=true`)                  |
+| SeaweedFS S3 | `http://127.0.0.1:8333`                                | `S3_*`; the API creates the bucket on first start in development |
+| Mailpit      | SMTP `127.0.0.1:1025`, inbox `http://127.0.0.1:8025` | `SMTP_URL`                                                       |
 
-# production mode
-$ npm run start:prod
-```
+`bun run postload` stops the containers; data survives in Docker volumes.
 
-## Run tests
+### Backend commands (run in `backend/`)
 
-```bash
-# unit tests
-$ bun run test
+| Command                                              | What it does                                                                                               |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `bun run start:dev`                                | API with file watching (`NODE_ENV=development bun --watch src/main.ts`).                                 |
+| `bun run start:prod`                               | API in production mode from source (`bun src/main.ts`).                                                  |
+| `bun run build`                                    | `prisma generate && nest build` into `dist/`.                                                          |
+| `bun run test`                                     | `bun test src` (Bun's runner; `prisma generate` runs first). `bun test src/<folder>` for one module. |
+| `bun run lint`                                     | ESLint over `src` with `--fix`.                                                                        |
+| `bunx tsc --noEmit`                                | Typecheck, including test files (neither `bun test` nor the build typechecks tests).                     |
+| `bun run db:deploy`                                | Apply pending migrations (`prisma migrate deploy`).                                                      |
+| `bun run db:generate`                              | Regenerate the Prisma client into `src/generated/prisma`.                                                |
+| `bun run db:pull` / `db:studio` / `db:migrate` | Introspect, browse, or `prisma migrate dev` (local only).                                                |
+| `bun run seed:demo [--fresh]`                      | Create the demo school (API must be running with `ALLOW_DEV_LOGIN=true`).                                |
+| `bun run smoke`                                    | End-to-end API check against the demo school.                                                              |
+| `bun run student:check`                            | Student onboarding check: join code, link to roster record, portal; cleans up (see [scripts/README.md](./scripts/README.md)). |
 
-# watch mode
-$ bun run test:watch
-```
+Demo accounts, prerequisites and what each script checks: [scripts/README.md](./scripts/README.md).
 
-## Deployment
+### Configuration
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+All configuration is environment variables in `backend/.env` (template: [`.env.example`](./.env.example)). For local development the template works as is. In production `AUTH_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` are required, and `FRONTEND_URL`, `API_URL` and `AUTH_COOKIE_DOMAIN` must match the real hosts. Every variable, its default and its failure mode: [docs/content/environment-variables.md](../docs/content/environment-variables.md). Each module README lists the variables it reads.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Architecture
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+A request goes through these layers (details in [src/README.md](./src/README.md#request-flow)):
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+1. **Fastify** - cookies, multipart (10 MB), raw body for billing webhooks, CORS for the origins in `FRONTEND_URL`.
+2. **Global guards** - `ThrottlerGuard` (rate limits keyed by session or client IP, [src/throttle](./src/throttle/README.md)) and `VersioningGuard` (`X-API-Version` header, [src/versioning](./src/versioning/README.md)).
+3. **Route guards** - `AuthGuard` resolves the `gb_session` cookie into `req.user`; then `PermissionGuard` with `@RequirePermission(resource, action)` for staff routes, `AdminGuard` for school-admin routes, `StudentGuard` for `/api/portal/me/...`, or the billing guards. Course routes also check course roles with `CourseAccessService`.
+4. **Interceptors** - `BillingEntitlementInterceptor` (global; with `BILLING_ENABLED=true` it answers 402 to mutations from schools whose subscription lapsed).
+5. **Pipes** - the global `ValidationPipe` (whitelisting, rejecting unknown fields, transforming DTOs).
+6. **Controllers -> services -> Prisma.** Services do the work, scoped to the caller's school, and use the shared global services: `PrismaService`, `CacheService`, `StorageService`, `MailService`, `FileQueueService`, the realtime bus. Some controllers pass results through `VersioningService`.
 
-## Resources
+There is no row-level security in Postgres: the API connects as the schema owner, so guards and service code are the only access rules.
 
-Check out a few resources that may come in handy when working with NestJS:
+Entry points: `src/main.ts` (the server; used by `start:dev`, `start:prod` and the container in `infrastructure/Dockerfile`, which runs `prisma migrate deploy` on start). The container is the supported deployment: it runs the built server with `bun dist/src/main`.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Folder index
 
-## Support
+| Path                                                          | What it is                                                                                                            |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [src/](./src/README.md)                                        | The application: root module, bootstrap, and one folder per module, each with its own README.                         |
+| [prisma/](./prisma/README.md)                                  | Prisma schema ([schema/](./prisma/schema/README.md)) and SQL migrations ([migrations/](./prisma/migrations/README.md)). |
+| [scripts/](./scripts/README.md)                                | `seed-demo`, `smoke`, `student-flow-check`.                                                                     |
+| `prisma.config.ts`                                          | Prisma CLI config (schema and migrations paths, `DATABASE_URL`).                                                    |
+| `nest-cli.json`, `tsconfig.json`, `tsconfig.build.json` | Nest build with the Swagger plugin; `@/*` path alias; tests excluded from the build.                                |
+| `eslint.config.mjs`                                         | Lint config.                                                                                                          |
+| `.env.example`                                              | Environment template.                                                                                                 |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Documentation
 
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- [docs/content/developer-guide.md](../docs/content/developer-guide.md) - setup, deployment, everyday commands.
+- [docs/content/environment-variables.md](../docs/content/environment-variables.md) - every variable.
+- Backend reference: [overview](../docs/content/backend/overview.md), [auth](../docs/content/backend/auth.md), [school](../docs/content/backend/school.md), [student](../docs/content/backend/student.md), [academic-year](../docs/content/backend/academic-year.md), [term](../docs/content/backend/term.md), [grading](../docs/content/backend/grading.md), [course-copy](../docs/content/backend/course-copy.md), [discussion](../docs/content/backend/discussion.md), [announcement](../docs/content/backend/announcement.md), [calendar-notifications](../docs/content/backend/calendar-notifications.md), [chat](../docs/content/backend/chat.md), [file-manager](../docs/content/backend/file-manager.md), [images](../docs/content/backend/images.md), [cache](../docs/content/backend/cache.md), [versioning](../docs/content/backend/versioning.md), [billing](../docs/content/backend/billing.md).
+- [docs/content/sso.md](../docs/content/sso.md), [docs/content/dedicated-deployment.md](../docs/content/dedicated-deployment.md), [docs/content/billing-providers.md](../docs/content/billing-providers.md), [docs/content/platform-migration.md](../docs/content/platform-migration.md).
