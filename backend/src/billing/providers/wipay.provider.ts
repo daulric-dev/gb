@@ -237,12 +237,24 @@ export class WiPayProvider implements PaymentProvider {
     const status = q.status;
     const transactionId = q.transaction_id;
 
-    if (!invoiceId || !amount || !currency || !signature || !orderId || !status) {
+    if (
+      !invoiceId ||
+      !amount ||
+      !currency ||
+      !signature ||
+      !orderId ||
+      !status
+    ) {
       throw new WebhookVerificationError(
         'WiPay callback is missing parameters',
       );
     }
-    if (!safeEqual(signature, signParams(apiKey, invoiceId, amount, currency, orderId))) {
+    if (
+      !safeEqual(
+        signature,
+        signParams(apiKey, invoiceId, amount, currency, orderId),
+      )
+    ) {
       throw new WebhookVerificationError(
         'WiPay callback parameters were altered',
       );
@@ -266,14 +278,20 @@ export class WiPayProvider implements PaymentProvider {
         );
       }
 
+      // WiPay defines its response signature as
+      // md5(transaction_id + total + API key); recomputing exactly that is the
+      // only way to verify the callback. It checks a third-party signature,
+      // it is not password storage, and our own HMAC-SHA256 gb_sig already
+      // binds the invoice, amount and order to the request.
       const expected = createHash('md5')
+        // codeql[js/insufficient-password-hash] WiPay's API mandates this md5 response signature; not password storage.
         .update(`${transactionId}${amount}${apiKey}`)
         .digest('hex');
 
       if (!safeEqual(hash.toLowerCase(), expected)) {
         throw new WebhookVerificationError('WiPay hash does not match');
       }
-      
+
       let amountCents: number;
       try {
         amountCents = decimalToCents(amount, currency);
