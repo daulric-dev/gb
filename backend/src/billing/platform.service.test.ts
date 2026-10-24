@@ -116,7 +116,9 @@ describe('overview and schools', () => {
       subRow({ school_id: 's2', status: 'unpaid', plan: 'flat' }),
       subRow({ school_id: 's3', status: 'active', plan: 'flat', comp_until: new Date(Date.now() + 86_400_000) }),
     ]);
-    prisma.invoice.findMany.mockResolvedValue([{ school_id: 's2', due_at: new Date() }]);
+    prisma.invoice.findMany.mockImplementation(async ({ where }: any) =>
+      where?.status === 'open' ? [{ school_id: 's2', due_at: new Date() }] : [],
+    );
   });
 
   test('overview counts and MRR (excluding read-only and comped schools)', async () => {

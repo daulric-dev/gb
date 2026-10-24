@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 import { mock } from 'bun:test';
 import type {
   BillingEvent,
@@ -14,7 +16,7 @@ export class FakeProvider implements PaymentProvider {
   configured = true;
 
   createCheckout = mock(
-    (): Promise<CheckoutResult> =>
+    (..._args: any[]): Promise<CheckoutResult> =>
       Promise.resolve({
         redirectUrl: 'https://pay.test/checkout',
         providerRef: 'cs_1',
@@ -22,15 +24,15 @@ export class FakeProvider implements PaymentProvider {
       }),
   );
   payInvoice = mock(
-    (): Promise<CheckoutResult> =>
+    (..._args: any[]): Promise<CheckoutResult> =>
       Promise.resolve({ redirectUrl: 'https://pay.test/invoice', providerRef: null }),
   );
-  updateQuantity = mock(() => Promise.resolve());
-  changePlan = mock(() => Promise.resolve());
-  cancel = mock(() => Promise.resolve());
-  resume = mock(() => Promise.resolve());
-  portalUrl = mock(() => Promise.resolve('https://pay.test/portal'));
-  parseWebhook = mock((): Promise<BillingEvent[]> => Promise.resolve([]));
+  updateQuantity = mock((..._args: any[]): Promise<void> => Promise.resolve());
+  changePlan = mock((..._args: any[]): Promise<void> => Promise.resolve());
+  cancel = mock((..._args: any[]): Promise<void> => Promise.resolve());
+  resume = mock((..._args: any[]): Promise<void> => Promise.resolve());
+  portalUrl = mock((..._args: any[]): Promise<string | null> => Promise.resolve('https://pay.test/portal'));
+  parseWebhook = mock((..._args: any[]): Promise<BillingEvent[]> => Promise.resolve([]));
 
   constructor(
     readonly id = 'fake',

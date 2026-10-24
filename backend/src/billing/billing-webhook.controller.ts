@@ -28,14 +28,18 @@ import {
 
 type WebhookReq = FastifyRequest & RawBodyRequest;
 
+function scalar(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return `${v}`;
+  return JSON.stringify(v);
+}
+
 function flatten(source: unknown): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {};
   if (!source || typeof source !== 'object') return out;
   for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
     if (value === undefined || value === null) continue;
-    out[key] = Array.isArray(value)
-      ? value.map(String).join(',')
-      : String(value);
+    out[key] = Array.isArray(value) ? value.map(scalar).join(',') : scalar(value);
   }
   return out;
 }
@@ -89,20 +93,22 @@ export class BillingWebhookController {
     return events;
   }
 
-  @Post(':providerId')
-  @HttpCode(200)
-  async post(@Param('providerId') providerId: string, @Req() req: WebhookReq) {
-    await this.receive(providerId, req);
-    return { received: true };
+  /**
+   * A browser rather than a provider's server: WiPay sends the payer back to
+   * the callback URL (GET with a query, or a form POST). Those are applied
+   * and then redirected to the billing page; nothing retries them.
+   */
+  private isBrowserReturn(req: WebhookReq): boolean {
+    if (req.method === 'GET') return true;
+    const accept = String(req.headers.accept ?? '');
+    const type = String(req.headers['content-type'] ?? '');
+    return (
+      accept.includes('text/html') ||
+      type.startsWith('application/x-www-form-urlencoded')
+    );
   }
 
-  /** A browser coming back from a hosted payment page: apply it, then go to the app. */
-  @Get(':providerId')
-  async get(
-    @Param('providerId') providerId: string,
-    @Req() req: WebhookReq,
-    @Res() reply: FastifyReply,
-  ) {
+  private async browserReturn(providerId: string, req: WebhookReq, reply: FastifyReply) {
     const cfg = loadBillingConfig();
     let paid = false;
     try {
@@ -112,5 +118,29 @@ export class BillingWebhookController {
       if (err instanceof NotFoundException) throw err;
     }
     return reply.redirect(billingReturnUrl(cfg, paid ? 'success' : 'cancel'), 302);
+  }
+
+  @Post(':providerId')
+  @HttpCode(200)
+  async post(
+    @Param('providerId') providerId: string,
+    @Req() req: WebhookReq,
+    @Res() reply: FastifyReply,
+  ) {
+    if (this.isBrowserReturn(req)) {
+      return this.browserReturn(providerId, req, reply);
+    }
+    await this.receive(providerId, req);
+    return reply.status(200).send({ received: true });
+  }
+
+  /** A browser coming back from a hosted payment page: apply it, then go to the app. */
+  @Get(':providerId')
+  get(
+    @Param('providerId') providerId: string,
+    @Req() req: WebhookReq,
+    @Res() reply: FastifyReply,
+  ) {
+    return this.browserReturn(providerId, req, reply);
   }
 }

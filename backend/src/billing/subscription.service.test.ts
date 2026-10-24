@@ -67,6 +67,24 @@ describe('SubscriptionService', () => {
     expect(prisma.user_profile.findUnique).toHaveBeenCalledTimes(2);
   });
 
+  test('expireCanceled ends subscriptions past a cancel-at-period-end date', async () => {
+    const now = new Date('2026-10-24T00:00:00Z');
+    prisma.subscription.findMany.mockResolvedValue([{ school_id: 'a' }, { school_id: 'b' }]);
+    await cache.set('billing:ent:a', { readOnly: false }, 60);
+    expect(await service.expireCanceled(now)).toBe(2);
+    expect(prisma.subscription.findMany.mock.calls[0][0].where).toMatchObject({
+      cancel_at_period_end: true,
+      current_period_end: { lte: now },
+    });
+    expect(prisma.subscription.updateMany.mock.calls[0][0].data).toMatchObject({ status: 'canceled', cancel_at_period_end: false });
+    expect(await cache.get('billing:ent:a')).toBeNull();
+  });
+
+  test('expireCanceled with nothing due does no writes', async () => {
+    expect(await service.expireCanceled()).toBe(0);
+    expect(prisma.subscription.updateMany).not.toHaveBeenCalled();
+  });
+
   test('schoolOfUser: no profile, no school', async () => {
     expect(await service.schoolOfUser('nobody')).toBeNull();
   });

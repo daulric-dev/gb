@@ -8,7 +8,7 @@ How to set up each payment provider the hosted platform can offer schools:
 Stripe, PayPal and Paddle run the subscription themselves; WiPay collects
 one monthly invoice at a time on its hosted card page. How billing works
 overall (plans, trial, read-only mode, invoices, `PAYMENT_PROVIDERS`) is in
-**[Billing](./billing.md)**; every variable is listed in
+**[Billing](./backend/billing.md)**; every variable is listed in
 **[Environment variables](./environment-variables.md)**.
 
 A provider is offered only when it is listed in `PAYMENT_PROVIDERS`, its

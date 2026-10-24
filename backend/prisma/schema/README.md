@@ -13,6 +13,7 @@ as a single schema (`prisma.config.ts` points here).
 | `student.prisma` | `student` | Student roster, school join codes; legacy class enrolment, subject profiles and class attendance |
 | `files.prisma` | `file_manager` | Files, folders, shares, notifications |
 | `chat.prisma` | `chat` | Conversations, members, messages |
+| `billing.prisma` | `billing` | Hosted-platform billing: subscriptions, invoices, webhook events, provider switches, platform admins (unused unless `BILLING_ENABLED=true`) |
 
 ## Changing the schema
 

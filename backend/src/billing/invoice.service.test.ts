@@ -116,7 +116,7 @@ describe('raise', () => {
     expect(created).toBe(true);
     expect(invoice).toMatchObject({ plan: 'per_user', seats: 16, amount_cents: 8000, currency: 'USD', status: 'open', provider: 'manual' });
     expect(invoice.due_at).toEqual(new Date(NOW.getTime() + 14 * DAY));
-    expect(invoice.period_start).toEqual(sub.trial_ends_at);
+    expect(invoice.period_start).toEqual(sub.trial_ends_at!);
     expect(invoice.period_end).toEqual(new Date('2026-11-27T12:00:00Z'));
     expect(subs.get('school-1')!.quantity).toBe(16);
   });

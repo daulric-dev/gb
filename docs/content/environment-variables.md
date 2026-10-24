@@ -56,6 +56,29 @@ No `.env` files are committed to the repository. You must create them manually i
 | `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes student claim codes (`openssl rand -base64 32`). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
 | `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
+### Billing
+
+SaaS billing for the **hosted platform**: schools pay for GradeBook. **Self-hosted deployments leave `BILLING_ENABLED` unset** - billing is off by default, so there is no trial, no read-only mode, no `402`, and every `/api/billing/*` and `/api/platform/*` route answers 404 (except `GET /api/billing/status`, which reports `enabled: false` so the apps hide billing UI). See [Billing](./backend/billing.md), [Billing providers](./billing-providers.md) and the [staging checklist](./billing-staging.md).
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `BILLING_ENABLED` | No | off | `true` turns billing on. Anything else (or unset) = off. |
+| `BILLING_PER_USER_CENTS` | No | `500` | Per-user plan: price per billable user per month, in minor units. |
+| `BILLING_FLAT_CENTS` | No | `30000` | Flat plan: price per month, unlimited users. |
+| `BILLING_CURRENCY` | No | `USD` | ISO currency code for every price and invoice. |
+| `BILLING_TRIAL_DAYS` | No | `30` | Free trial for a new school (existing schools get it from the day billing is first turned on). |
+| `BILLING_GRACE_DAYS` | No | `7` | How long a missed payment (past due, overdue invoice) stays writable before the school turns read-only. |
+| `PAYMENT_PROVIDERS` | With billing | none | Comma list of providers that may be offered: `stripe`, `paypal`, `paddle`, `wipay`, `manual`. Unset or empty = none. A provider is offered only when listed here **and** its credentials are set **and** a platform admin has not switched it off. |
+| `PLATFORM_ADMIN_EMAILS` | With billing | - | Comma list of account emails (verified) that get the platform dashboard (`/platform`). Admins can also be rows in `billing.platform_admin`. |
+| `APP_URL` | No | first `FRONTEND_URL` | Web app origin for checkout return URLs (`${APP_URL}/dashboard/settings/billing?checkout=success`). |
+| `BILLING_MANUAL_INSTRUCTIONS` | For `manual` | generic text | Bank details shown to school admins paying a manual invoice; the invoice number to quote is appended. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | For Stripe | - | API key and webhook signing secret. Optional `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` reuse existing prices. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | For PayPal | - | REST app credentials and the webhook id used to verify events. `PAYPAL_ENV` = `sandbox` (default) or `live`. Optional `PAYPAL_PLAN_PER_USER`, `PAYPAL_PLAN_FLAT`, `PAYPAL_PRODUCT_ID`. |
+| `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` | For Paddle | - | Paddle Billing API key and notification secret. `PADDLE_ENV` = `sandbox` (default) or `production`. Optional `PADDLE_PRICE_PER_USER`, `PADDLE_PRICE_FLAT`, `PADDLE_PRODUCT_ID`, `PADDLE_CHECKOUT_URL` (default payment link). |
+| `WIPAY_ACCOUNT_NUMBER`, `WIPAY_API_KEY` | For WiPay | - | Merchant account and API key (sandbox: `1234567890` / `123`). `WIPAY_ENV` = `sandbox` (default) or `live`; `WIPAY_COUNTRY_CODE` = `TT` (default), `JM` or `BB`; `WIPAY_CURRENCY` (`USD` default, `TTD`, `JMD`) must equal `BILLING_CURRENCY`; `WIPAY_FEE_STRUCTURE` = `merchant_absorb` (default), `customer_pay` or `split`. |
+
+Webhook URL for every provider: `${API_URL}/api/billing/webhooks/<provider id>`.
+
 ### Example `backend/.env`
 
 `backend/.env.example` is the full, commented template; its defaults match `docker-compose.dev.yml`.

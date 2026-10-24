@@ -81,6 +81,30 @@ export class SubscriptionService {
       ON CONFLICT (school_id) DO NOTHING`;
   }
 
+  /**
+   * End subscriptions set to cancel at period end once that period is over.
+   * Not every provider ends them itself - PayPal only suspends billing - so
+   * the hourly sweep does it for all of them. Returns how many ended.
+   */
+  async expireCanceled(now = new Date()): Promise<number> {
+    const due = await this.prisma.subscription.findMany({
+      where: {
+        cancel_at_period_end: true,
+        status: { in: ['active', 'trialing', 'past_due'] },
+        current_period_end: { lte: now },
+      },
+      select: { school_id: true },
+    });
+    if (due.length === 0) return 0;
+    const ids = due.map((d) => d.school_id);
+    await this.prisma.subscription.updateMany({
+      where: { school_id: { in: ids }, cancel_at_period_end: true },
+      data: { status: 'canceled', cancel_at_period_end: false, updated_at: now },
+    });
+    for (const id of ids) await this.invalidate(id);
+    return ids.length;
+  }
+
   /** The due date of each school's oldest open invoice. */
   async oldestOpenDue(schoolId: string): Promise<Date | null> {
     const open = await this.prisma.invoice.findFirst({

@@ -80,6 +80,7 @@ describe('seat sync', () => {
       live({ provider: 'invp' }),
       live({ status: 'canceled' }),
       live({ provider_subscription_id: null }),
+      live({ cancel_at_period_end: true }), // e.g. a suspended PayPal subscription
     ]) {
       prisma.subscription.findUnique.mockResolvedValue(sub);
       expect(await seats.syncSchool('school-1')).toBe(false);

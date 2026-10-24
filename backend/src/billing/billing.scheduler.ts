@@ -14,8 +14,9 @@ const INVOICE_EVERY_MS = 24 * HOUR_MS;
  * instance, with a Postgres advisory lock so only one instance runs a tick
  * when several are up.
  *
- * Hourly: give schools without a row their trial row, and push per-seat
- * counts to subscription providers. Daily (and via
+ * Hourly: give schools without a row their trial row, end subscriptions
+ * whose cancel-at-period-end date has passed, and push per-seat counts to
+ * subscription providers. Daily (and via
  * POST /platform/invoices/generate): raise invoice-mode invoices.
  */
 @Injectable()
@@ -71,6 +72,8 @@ export class BillingScheduler implements OnModuleInit, OnModuleDestroy {
       await this.withLock('gradebook:billing:sweep', async () => {
         const made = await this.subscriptions.ensureAll();
         if (made > 0) this.logger.log(`Started trials for ${made} school(s)`);
+        const ended = await this.subscriptions.expireCanceled();
+        if (ended > 0) this.logger.log(`Ended ${ended} canceled subscription(s)`);
         const synced = await this.seats.syncAll();
         if (synced > 0) this.logger.log(`Synced seats for ${synced} subscription(s)`);
         if (now - this.lastInvoiceSweep >= INVOICE_EVERY_MS) {

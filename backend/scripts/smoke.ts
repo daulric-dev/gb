@@ -529,6 +529,13 @@ async function main() {
         const { id: _id, school_id: _school, ...fields } = snapshot;
         await db.subscription.update({ where: { school_id: schoolId }, data: fields });
       }
+      // The API caches each school's entitlement for a minute; with Redis,
+      // drop it so the restored row is what the next request sees.
+      if (process.env.USE_REDIS === 'true' && process.env.REDIS_URL) {
+        const redis = new (await import('bun')).RedisClient(process.env.REDIS_URL);
+        await redis.del(`billing:ent:${schoolId}`).catch(() => undefined);
+        redis.close();
+      }
     }
     check('billing state restored', (await db.invoice.count({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } })) === 0 && (await teacher('GET', '/billing/status')).data?.readOnly === false);
   }

@@ -9,6 +9,10 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-10-24
+
+- [SaaS billing](./2026-10-24/billing.md) - schools pay the **hosted** platform: 30-day trial, then a per-user ($5/user/month) or flat ($300/month) plan through Stripe, PayPal, Paddle, WiPay or manual bank-transfer invoices; lapsed schools turn **read-only** (`402 SUBSCRIPTION_REQUIRED`). School admins get *Settings → Billing*, operators a `/platform` dashboard. **Off unless `BILLING_ENABLED=true` - self-hosted deployments leave it unset.** Migration `20261024100000_billing`; new permission key `school:update`.
+
 ## 2026-10-23
 
 - [Course gap fixes](./2026-10-23/gap-fixes.md) - course staff open any file the course offers (even a colleague's) via `GET /courses/:courseId/files/:fileId`, and the web Modules page opens files through it; **discussion topics as module items** (hidden from students until published, repointed by course copy/import); **discussion notifications** - students hear about published topics and replies to topics they started or posted in (one unread reply notice per topic), staff get reply pushes, push data `course.discussion`; **Import content** in course Settings. Migration `20261023160000_module_discussions_notifications`.
