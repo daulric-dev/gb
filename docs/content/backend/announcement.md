@@ -23,10 +23,10 @@ A school-wide announcement board. Staff post notices that everyone in their scho
 
 | Table | Columns |
 |-------|---------|
-| `announcement` | `id`, `school_id`, `author_user_profile_id`, `title`, `body`, `created_at`, `updated_at` |
+| `announcement` | `id`, `school_id`, `course_id` (null = school-wide), `author_user_profile_id`, `title`, `body`, `created_at`, `updated_at` |
 | `announcement_read` | `(announcement_id, user_profile_id)` PK, `read_at` |
 
-RLS: everyone in the school reads announcements; members may insert; author-or-admin may update/delete. Read receipts are visible to the school and writable only for oneself. The backend uses the service client and enforces authorization in code (RLS is the secondary defense).
+All authorization is enforced in the service: everyone in the school reads school-wide announcements, and read receipts are written only for oneself.
 
 ## Permissions
 
@@ -45,6 +45,17 @@ All under `AuthGuard + PermissionGuard`. `:id` mutations additionally require th
 | POST | `/announcements` | `announcement:create` | Author = caller |
 | PATCH | `/announcements/:id` | `announcement:update` | Author/admin only |
 | DELETE | `/announcements/:id` | `announcement:delete` | Author/admin only |
+
+The `/announcements/:id` routes only touch school-wide notices. Course announcements have their own routes, gated by course role instead of the catalog permission:
+
+| Method | Route | Who |
+|--------|-------|-----|
+| GET | `/courses/:courseId/announcements` | Course staff (admin, teacher, TA) |
+| POST | `/courses/:courseId/announcements` | Course staff |
+| PATCH | `/courses/:courseId/announcements/:id` | The author, or the course's teachers and admins |
+| DELETE | `/courses/:courseId/announcements/:id` | The author, or the course's teachers and admins |
+
+So a teacher can correct or remove a TA's post; a TA can change only their own. Students read them at `/portal/me/courses/:courseId/announcements`.
 
 ## Read tracking
 

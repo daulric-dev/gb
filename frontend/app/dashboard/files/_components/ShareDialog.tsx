@@ -27,7 +27,13 @@ import { SearchableSelect } from "./SearchableSelect";
 import type { FileItem, FileShare, SharePrincipalType } from "./types";
 import type { SchoolMember } from "@/app/dashboard/staff/_components/types";
 import type { SchoolRole } from "@/app/dashboard/roles/_components/types";
-import type { ClassItem } from "@/app/dashboard/classes/_components/types";
+
+/** A course to share with: its staff and active students get access. */
+interface CourseItem {
+  id: string;
+  name: string;
+  code: string | null;
+}
 
 const TYPE_META: Record<
   SharePrincipalType,
@@ -35,7 +41,7 @@ const TYPE_META: Record<
 > = {
   user: { label: "Person", icon: UserRound },
   role: { label: "Role", icon: KeyRound },
-  group: { label: "Class", icon: Users },
+  course: { label: "Course", icon: Users },
 };
 
 export function ShareDialog({
@@ -49,7 +55,7 @@ export function ShareDialog({
   const shares = useSignal<FileShare[]>([]);
   const members = useSignal<SchoolMember[]>([]);
   const roles = useSignal<SchoolRole[]>([]);
-  const classes = useSignal<ClassItem[]>([]);
+  const courses = useSignal<CourseItem[]>([]);
   const loading = useSignal(true);
 
   const newType = useSignal<SharePrincipalType>("user");
@@ -71,13 +77,13 @@ export function ShareDialog({
     Promise.all([
       api<SchoolMember[]>("/schools/members").catch(() => []),
       api<SchoolRole[]>("/permissions/roles").catch(() => []),
-      api<ClassItem[]>("/classes").catch(() => []),
+      api<CourseItem[]>("/courses").catch(() => []),
       api<FileShare[]>(`/files/${file.id}/shares`).catch(() => []),
     ])
       .then(([m, r, c, s]) => {
         members.value = m;
         roles.value = r;
-        classes.value = c;
+        courses.value = c;
         shares.value = s;
       })
       .finally(() => (loading.value = false));
@@ -106,9 +112,12 @@ export function ShareDialog({
         .filter((r) => !taken.has(r.id))
         .map((r) => ({ value: r.id, label: r.name }));
     }
-    return classes.value
+    return courses.value
       .filter((c) => !taken.has(c.id))
-      .map((c) => ({ value: c.id, label: c.name }));
+      .map((c) => ({
+        value: c.id,
+        label: c.code ? `${c.name} (${c.code})` : c.name,
+      }));
   }
 
   function principalName(share: FileShare): string {
@@ -122,7 +131,9 @@ export function ShareDialog({
     if (share.principal_type === "role") {
       return roles.value.find((x) => x.id === share.principal_id)?.name ?? "Role";
     }
-    return classes.value.find((x) => x.id === share.principal_id)?.name ?? "Class";
+    return (
+      courses.value.find((x) => x.id === share.principal_id)?.name ?? "Course"
+    );
   }
 
   async function addShare() {

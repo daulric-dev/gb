@@ -1,249 +1,296 @@
 import { describe, expect, test } from 'bun:test';
 import { NotFoundException } from '@nestjs/common';
 import { StudentPortalService } from './student-portal.service';
-import { createRoutingSupabase, expectRejection } from '@/test/mocks';
+import { expectRejection } from '@/test/mocks';
+import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const CTX = { studentId: 'student-1', schoolId: 'school-1' };
 
-function service(sb: any) {
-  return new StudentPortalService(sb as any);
-}
-
-/** Find a recorded query for a table, failing loudly if it never happened. */
-function findCall(sb: any, table: string) {
-  const call = sb._calls.find((c: any) => c.table === table);
-  if (!call) throw new Error(`expected a query against ${table}`);
-  return call;
-}
-
-function assessment(over: Record<string, any> = {}) {
+function course(over: Record<string, any> = {}) {
   return {
-    id: 'a1',
-    title: 'Test 1',
-    assessment_type: 'exam',
-    max_score: 100,
-    weight: 1,
-    assessment_date: '2026-09-01',
-    is_excluded: false,
-    subject_id: 'sub-1',
+    id: 'course-1',
+    school_id: 'school-1',
+    academic_year_id: null,
     term_id: 'term-1',
+    name: 'Maths',
+    code: 'MAT',
+    description: null,
+    status: 'published',
+    join_code: 'SECRET',
+    grade_scale_id: null,
+    created_by: 'teacher-1',
+    created_at: new Date('2026-10-01'),
+    updated_at: new Date('2026-10-01'),
     ...over,
   };
 }
 
-/** public.* lookups the service joins in memory (no cross-schema embeds). */
-const LOOKUPS = {
-  subject: {
-    data: [{ id: 'sub-1', name: 'Maths', code: 'MAT', sort_order: 1 }],
-    error: null,
-  },
-  term: {
-    data: [
-      { id: 'term-1', name: 'michaelmas', sort_order: 1 },
-      { id: 'term-2', name: 'hilary', sort_order: 2 },
-    ],
-    error: null,
-  },
-  academic_year: { data: [{ id: 'y1', name: '2026' }], error: null },
-};
+const GRADE = { percent: 80, letter: 'A', groups: [], dropped: [] };
 
-describe('StudentPortalService scoping', () => {
-  test('every read filters on the resolved student id', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        'student.student': { data: { id: 'student-1' }, error: null },
-        school: { data: { id: 'school-1', name: 'S' }, error: null },
-        'student.student_group_enrollment': { data: [], error: null },
-        'grading.grade': { data: [], error: null },
-        'student.attendance_record': { data: [], error: null },
-        'reporting.report_book': { data: [], error: null },
-        student_group: { data: [], error: null },
-        ...LOOKUPS,
-      },
+/**
+ * Course access, modules and pages are their own services (tested there);
+ * these stand-ins keep their portal-facing rules: a draft course or a
+ * dropped enrolment is a 404, and so is an unpublished page.
+ */
+function service(
+  prisma: MockPrisma,
+  opts: {
+    joinByCode?: (...a: any[]) => any;
+    summary?: () => any;
+    course?: Record<string, any>;
+    enrolment?: string;
+    page?: Record<string, any>;
+  } = {},
+) {
+  const access = {
+    requireStudent: async (_s: string, courseId: string) => {
+      const c = course({ id: courseId, ...opts.course });
+      const enrolment = opts.enrolment ?? 'active';
+      if (
+        !['published', 'archived'].includes(c.status) ||
+        !['active', 'completed'].includes(enrolment)
+      ) {
+        throw new NotFoundException('Course not found');
+      }
+      return c;
+    },
+  };
+  const courses = {
+    joinByCode: opts.joinByCode ?? (async () => ({ id: 'course-1' })),
+  };
+  const modules = { listForStudent: async () => [] };
+  const pages = {
+    getPublished: async () => {
+      if (!opts.page?.is_published) {
+        throw new NotFoundException('Page not found');
+      }
+      return opts.page;
+    },
+  };
+  const announcements = { findForStudent: async () => [] };
+  const gradebook = {
+    studentSummary: opts.summary ?? (async () => GRADE),
+  };
+  const files = {
+    readContentForAuthorisedCaller: async (id: string) => ({
+      buffer: Buffer.from('bytes'),
+      contentType: 'application/pdf',
+      filename: `${id}.pdf`,
+    }),
+  };
+  return new StudentPortalService(
+    prisma as any,
+    access as any,
+    courses as any,
+    modules as any,
+    pages as any,
+    announcements as any,
+    gradebook as any,
+    files as any,
+  );
+}
+
+describe('StudentPortalService.getMe', () => {
+  test('returns the student and school, scoped to the resolved id', async () => {
+    const prisma = createMockPrisma();
+    prisma.student.findUnique.mockResolvedValue({
+      id: 'student-1',
+      first_name: 'Sam',
+      last_name: 'Self',
+      date_of_birth: new Date('2010-04-05T00:00:00Z'),
+      gender: null,
+      enrollment_date: null,
     });
-    const svc = service(sb);
+    prisma.school.findUnique.mockResolvedValue({
+      id: 'school-1',
+      name: 'S',
+      school_type: 'secondary',
+    });
 
-    await svc.getMe(CTX);
-    await svc.getGrades(CTX);
-    await svc.getAttendance(CTX);
-    await svc.getReports(CTX);
+    const me = await service(prisma).getMe(CTX);
+    expect(me.firstName).toBe('Sam');
+    expect(me.dateOfBirth).toBe('2010-04-05');
+    expect(me.enrollmentDate).toBeNull();
+    expect(me.school).toEqual({ id: 'school-1', name: 'S', type: 'secondary' });
+    expect('classes' in me).toBe(false);
 
-    const scoped = sb._calls.filter((c: any) =>
-      ['grade', 'attendance_record', 'report_book', 'student_group_enrollment'].includes(
-        c.table,
-      ),
+    const call = prisma.student.findUnique.mock.calls[0][0];
+    expect(call.where.id).toBe('student-1');
+  });
+
+  test('a missing record is a 404', async () => {
+    const prisma = createMockPrisma();
+    prisma.student.findUnique.mockResolvedValue(null);
+    expect(await expectRejection(service(prisma).getMe(CTX))).toBeInstanceOf(
+      NotFoundException,
     );
-    expect(scoped.length).toBeGreaterThan(0);
-    for (const call of scoped) {
-      expect(call.filters.student_id).toBe('student-1');
-    }
   });
 });
 
-describe('StudentPortalService.getGrades', () => {
-  function svcWith(rows: any[]) {
-    return service(
-      createRoutingSupabase({
-        tables: { 'grading.grade': { data: rows, error: null }, ...LOOKUPS },
-      }),
-    );
-  }
+describe('StudentPortalService courses', () => {
+  const tables = (prisma: MockPrisma) => {
+    prisma.course_student.findMany.mockResolvedValue([
+      { course_id: 'course-1', status: 'active' },
+    ]);
+    prisma.course.findMany.mockResolvedValue([course()]);
+    prisma.course_staff.findMany.mockResolvedValue([
+      { course_id: 'course-1', user_profile_id: 'teacher-1' },
+    ]);
+    prisma.user_profile.findMany.mockResolvedValue([
+      { id: 'teacher-1', first_name: 'Tess', last_name: 'Teach' },
+    ]);
+    return prisma;
+  };
 
-  const withGrades = (rows: any[]) => svcWith(rows).getGrades(CTX);
+  test('lists cards with teachers and grade, never the join code', async () => {
+    const prisma = tables(createMockPrisma());
+    const cards = await service(prisma).listCourses(CTX);
 
-  test('groups by subject and averages as a percentage', async () => {
-    const out = await withGrades([
-      { id: 'g1', score: 80, letter_grade: 'B', remarks: null, is_excluded: false, assessment: assessment() },
+    expect(cards).toEqual([
       {
-        id: 'g2',
-        score: 90,
-        letter_grade: 'A',
-        remarks: null,
-        is_excluded: false,
-        assessment: assessment({ id: 'a2', assessment_date: '2026-09-08' }),
+        id: 'course-1',
+        name: 'Maths',
+        code: 'MAT',
+        description: null,
+        status: 'published',
+        termId: 'term-1',
+        teachers: [{ firstName: 'Tess', lastName: 'Teach' }],
+        grade: GRADE,
       },
     ]);
+    expect(JSON.stringify(cards)).not.toContain('SECRET');
 
-    expect(out).toHaveLength(1);
-    expect(out[0].subject.name).toBe('Maths');
-    expect(out[0].assessments).toHaveLength(2);
-    expect(out[0].average).toBe(85);
+    const enrol = prisma.course_student.findMany.mock.calls[0][0];
+    expect(enrol.where.student_id).toBe('student-1');
+    expect(enrol.where.status).toEqual({ not: 'dropped' });
+    const staff = prisma.course_staff.findMany.mock.calls[0][0];
+    expect(staff.where.role).toBe('teacher');
   });
 
-  test('hides excluded grades and excluded assessments', async () => {
-    const out = await withGrades([
-      { id: 'g1', score: 80, is_excluded: true, assessment: assessment() },
-      {
-        id: 'g2',
-        score: 10,
-        is_excluded: false,
-        assessment: assessment({ id: 'a2', is_excluded: true }),
+  test('a grade that fails to compute leaves the card without one', async () => {
+    const prisma = tables(createMockPrisma());
+    const cards = await service(prisma, {
+      summary: async () => {
+        throw new Error('boom');
       },
-    ]);
-
-    expect(out).toHaveLength(0);
+    }).listCourses(CTX);
+    expect(cards[0].grade).toBeNull();
   });
 
-  test('filters to a single term when asked', async () => {
-    const svc = svcWith([
-      { id: 'g1', score: 80, is_excluded: false, assessment: assessment() },
-      {
-        id: 'g2',
-        score: 40,
-        is_excluded: false,
-        assessment: assessment({ id: 'a2', term_id: 'term-2' }),
-      },
-    ]);
-
-    const out = await svc.getGrades(CTX, 'term-2');
-    expect(out).toHaveLength(1);
-    expect(out[0].assessments[0].term.id).toBe('term-2');
+  test('no enrolments means no courses and no course query', async () => {
+    const prisma = createMockPrisma();
+    prisma.course_student.findMany.mockResolvedValue([]);
+    expect(await service(prisma).listCourses(CTX)).toEqual([]);
+    expect(prisma.course.findMany).not.toHaveBeenCalled();
   });
 
-  test('average is null when nothing is scored yet', async () => {
-    const out = await withGrades([
-      { id: 'g1', score: null, is_excluded: false, assessment: assessment() },
-    ]);
-    expect(out[0].average).toBeNull();
-  });
-
-  test('a zero max score does not produce a divide-by-zero', async () => {
-    const out = await withGrades([
-      {
-        id: 'g1',
-        score: 5,
-        is_excluded: false,
-        assessment: assessment({ max_score: 0 }),
-      },
-    ]);
-    expect(out[0].average).toBeNull();
-  });
-});
-
-describe('StudentPortalService.getAttendance', () => {
-  test('tallies statuses', async () => {
-    const svc = service(
-      createRoutingSupabase({
-        tables: {
-          'student.attendance_record': {
-            data: [
-              { id: '1', attendance_date: '2026-09-01', status: 'present' },
-              { id: '2', attendance_date: '2026-09-02', status: 'absent' },
-              { id: '3', attendance_date: '2026-09-03', status: 'late' },
-              { id: '4', attendance_date: '2026-09-04', status: 'present' },
-            ],
-            error: null,
-          },
-        },
-      }),
-    );
-
-    const { summary, records } = await svc.getAttendance(CTX);
-    expect(summary).toEqual({ present: 2, absent: 1, late: 1, total: 4 });
-    expect(records).toHaveLength(4);
-  });
-});
-
-describe('StudentPortalService reports', () => {
-  test('only published states are requested', async () => {
-    const sb = createRoutingSupabase({
-      tables: { 'reporting.report_book': { data: [], error: null } },
-    });
-    await service(sb).getReports(CTX);
-
-    // `in` is a passthrough in the mock, so the ownership filter is what is
-    // assertable here; the status filter is covered through getReport below.
-    expect(findCall(sb, 'report_book').filters.student_id).toBe('student-1');
-  });
-
-  test('a report belonging to someone else is not found', async () => {
-    const sb = createRoutingSupabase({
-      tables: { 'reporting.report_book': { data: null, error: null } },
-    });
-
+  test('a draft course is hidden even when enrolled', async () => {
+    const prisma = tables(createMockPrisma());
     expect(
-      await expectRejection(service(sb).getReport(CTX, 'report-9')),
+      await expectRejection(
+        service(prisma, { course: { status: 'draft' } }).getCourse(
+          CTX,
+          'course-1',
+        ),
+      ),
     ).toBeInstanceOf(NotFoundException);
   });
 
-  test('a found report is scoped by student id', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        'reporting.report_book': {
-          data: {
-            id: 'r1',
-            student_id: 'student-1',
-            report_type: 'term',
-            status: 'published',
-            published_at: '2026-09-10',
-            term_id: 'term-1',
-            academic_year_id: 'y1',
-          },
-          error: null,
-        },
-        'reporting.report_book_entry': {
-          data: [
-            {
-              id: 'e1',
-              sort_order: 1,
-              is_graded: true,
-              term_average: 80,
-              subject_id: 'sub-1',
-            },
-          ],
-          error: null,
-        },
-        ...LOOKUPS,
+  test('a dropped student cannot open the course', async () => {
+    const prisma = tables(createMockPrisma());
+    expect(
+      await expectRejection(
+        service(prisma, { enrolment: 'dropped' }).getModules(CTX, 'course-1'),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+  });
+
+  test('joining passes the guard-resolved student and school', async () => {
+    const prisma = tables(createMockPrisma());
+    const seen: any[] = [];
+    const card = await service(prisma, {
+      joinByCode: async (...args: any[]) => {
+        seen.push(args);
+        return { id: 'course-1' };
       },
+    }).joinCourse(CTX, 'abc123');
+
+    expect(seen).toEqual([['student-1', 'school-1', 'abc123']]);
+    expect(card.id).toBe('course-1');
+    expect('joinCode' in card).toBe(false);
+  });
+
+  test('an unpublished page is a 404 for students', async () => {
+    const prisma = tables(createMockPrisma());
+    expect(
+      await expectRejection(
+        service(prisma, {
+          page: {
+            id: 'page-1',
+            course_id: 'course-1',
+            title: 'Draft',
+            is_published: false,
+            body: 'secret',
+          },
+        }).getPage(CTX, 'course-1', 'page-1'),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('StudentPortalService.getCourseFile', () => {
+  test('a file linked from a published module item is served', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue({ id: 'item-1' });
+    prisma.file_share.findFirst.mockResolvedValue(null);
+
+    const out = await service(prisma).getCourseFile(CTX, 'course-1', 'file-1');
+    expect(out.filename).toBe('file-1.pdf');
+
+    const where = prisma.module_item.findFirst.mock.calls[0][0].where;
+    expect(where).toMatchObject({
+      course_id: 'course-1',
+      file_id: 'file-1',
+      is_published: true,
+      module: { is_published: true },
     });
+  });
 
-    const out = await service(sb).getReport(CTX, 'r1');
-    expect(out.id).toBe('r1');
-    expect(out.entries).toHaveLength(1);
-    expect(out.entries[0].subject?.name).toBe('Maths');
+  test('a file shared with the course is served', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue(null);
+    prisma.file_share.findFirst.mockResolvedValue({ id: 'share-1' });
 
-    const call = findCall(sb, 'report_book');
-    expect(call.filters.student_id).toBe('student-1');
-    expect(call.filters.id).toBe('r1');
+    const out = await service(prisma).getCourseFile(CTX, 'course-1', 'file-1');
+    expect(out.contentType).toBe('application/pdf');
+    expect(prisma.file_share.findFirst.mock.calls[0][0].where).toMatchObject({
+      principal_type: 'course',
+      principal_id: 'course-1',
+    });
+  });
+
+  test('a file the course does not offer is a 404', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue(null);
+    prisma.file_share.findFirst.mockResolvedValue(null);
+    expect(
+      await expectRejection(
+        service(prisma).getCourseFile(CTX, 'course-1', 'file-1'),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+  });
+
+  test('a dropped student cannot open course files', async () => {
+    const prisma = createMockPrisma();
+    prisma.module_item.findFirst.mockResolvedValue({ id: 'item-1' });
+    expect(
+      await expectRejection(
+        service(prisma, { enrolment: 'dropped' }).getCourseFile(
+          CTX,
+          'course-1',
+          'file-1',
+        ),
+      ),
+    ).toBeInstanceOf(NotFoundException);
   });
 });

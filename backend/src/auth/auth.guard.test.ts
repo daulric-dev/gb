@@ -1,7 +1,8 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, mock } from 'bun:test';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from './auth.guard';
-import { createMockQueryBuilder, expectRejection } from '@/test/mocks';
+import { expectRejection } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 
 function makeContext() {
   const request: any = {};
@@ -15,32 +16,36 @@ function makeContext() {
   return { context, request };
 }
 
-function makeSupabase(opts: {
+let lastSessions: { revoke: ReturnType<typeof mock> };
+
+/** The session lookup and the profile row (Prisma). */
+function makeGuard(opts: {
   user?: any;
   getUserThrows?: Error;
-  profile?: { data: any; error: any };
+  profile?: any;
 }) {
-  const builder = createMockQueryBuilder(
-    opts.profile ?? { data: null, error: null },
-  );
-  return {
-    getUser: () => {
+  const sessions = {
+    resolve: () => {
       if (opts.getUserThrows) return Promise.reject(opts.getUserThrows);
-      return Promise.resolve(opts.user ?? null);
+      const u = opts.user;
+      return Promise.resolve(u ? { sessionId: 's1', userId: u.id, email: u.email } : null);
     },
-    getServiceClient: () => ({ from: () => builder }),
+    revoke: mock(async () => {}),
   };
+  const prisma = createMockPrisma();
+  prisma.user_profile.findUnique.mockResolvedValue(opts.profile ?? null);
+  lastSessions = sessions;
+  return new AuthGuard(sessions as any, prisma as any);
 }
 
 const activeUser = { id: 'user-1', email: 'a@b.com' };
 
 describe('AuthGuard', () => {
   test('allows an active user and attaches id + email to the request', async () => {
-    const sb = makeSupabase({
+    const guard = makeGuard({
       user: activeUser,
-      profile: { data: { is_active: true }, error: null },
+      profile: { is_active: true },
     });
-    const guard = new AuthGuard(sb as any);
     const { context, request } = makeContext();
 
     expect(await guard.canActivate(context)).toBe(true);
@@ -48,45 +53,43 @@ describe('AuthGuard', () => {
   });
 
   test('rejects a deactivated user even with a valid session', async () => {
-    const sb = makeSupabase({
+    const guard = makeGuard({
       user: activeUser,
-      profile: { data: { is_active: false }, error: null },
+      profile: { is_active: false },
     });
-    const guard = new AuthGuard(sb as any);
     const { context, request } = makeContext();
 
     expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(
       UnauthorizedException,
     );
     expect(request.user).toBeUndefined();
+    // The session ends with it, clearing the cookie.
+    expect(lastSessions.revoke).toHaveBeenCalled();
   });
 
   test('allows a brand-new user with no profile row yet (mid-onboarding)', async () => {
-    // maybeSingle returns null data: must NOT lock the user out.
-    const sb = makeSupabase({
+    // No row: must NOT lock the user out.
+    const guard = makeGuard({
       user: activeUser,
-      profile: { data: null, error: null },
+      profile: null,
     });
-    const guard = new AuthGuard(sb as any);
     const { context } = makeContext();
 
     expect(await guard.canActivate(context)).toBe(true);
   });
 
   test('allows when is_active is absent on the row (only explicit false blocks)', async () => {
-    const sb = makeSupabase({
+    const guard = makeGuard({
       user: activeUser,
-      profile: { data: { id: 'user-1' }, error: null },
+      profile: { id: 'user-1' },
     });
-    const guard = new AuthGuard(sb as any);
     const { context } = makeContext();
 
     expect(await guard.canActivate(context)).toBe(true);
   });
 
   test('rejects when there is no valid session', async () => {
-    const sb = makeSupabase({ user: null });
-    const guard = new AuthGuard(sb as any);
+    const guard = makeGuard({ user: null });
     const { context } = makeContext();
 
     expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(
@@ -94,9 +97,8 @@ describe('AuthGuard', () => {
     );
   });
 
-  test('maps an unexpected getUser failure to UnauthorizedException', async () => {
-    const sb = makeSupabase({ getUserThrows: new Error('network down') });
-    const guard = new AuthGuard(sb as any);
+  test('maps an unexpected session lookup failure to UnauthorizedException', async () => {
+    const guard = makeGuard({ getUserThrows: new Error('network down') });
     const { context } = makeContext();
 
     expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(
@@ -104,11 +106,10 @@ describe('AuthGuard', () => {
     );
   });
 
-  test('re-throws an UnauthorizedException from getUser as-is', async () => {
-    const sb = makeSupabase({
+  test('re-throws an UnauthorizedException from the session lookup as-is', async () => {
+    const guard = makeGuard({
       getUserThrows: new UnauthorizedException('expired'),
     });
-    const guard = new AuthGuard(sb as any);
     const { context } = makeContext();
 
     expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(

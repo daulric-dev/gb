@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class SetRolePermissionsDto {
   @ApiProperty({
-    example: ['student:read', 'attendance:create'],
+    example: ['student:read', 'course:create'],
     description: 'Full set of catalog permission keys to grant the role.',
   })
   @IsArray()

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "@/lib/api";
+import { registerForPush, unregisterPush } from "@/lib/push";
 
 export interface UserProfile {
   id: string;
@@ -30,7 +31,8 @@ export interface UserProfile {
 interface AuthContextValue {
   profile: UserProfile | null;
   loading: boolean;
-  refresh: () => Promise<void>;
+  /** Re-reads the session; resolves with the profile (null when signed out). */
+  refresh: () => Promise<UserProfile | null>;
   logout: () => Promise<void>;
 }
 
@@ -39,7 +41,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const inFlight = useRef<Promise<void> | null>(null);
+  const inFlight = useRef<Promise<UserProfile | null> | null>(null);
 
   const fetchProfile = useCallback(() => {
     if (inFlight.current) return inFlight.current;
@@ -49,9 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
       .then((data) => {
         setProfile(data);
+        return data;
       })
       .catch(() => {
         setProfile(null);
+        return null;
       })
       .finally(() => {
         setLoading(false);
@@ -64,12 +68,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void fetchProfile();
   }, [fetchProfile]);
 
+  // Register this device for pushes once per signed-in account. Staff get a
+  // token too; the API only sends them what is meant for them.
+  const userId = profile?.id ?? null;
+  useEffect(() => {
+    if (userId) void registerForPush();
+  }, [userId]);
+
   const refresh = useCallback(async () => {
     inFlight.current = null;
-    await fetchProfile();
+    return fetchProfile();
   }, [fetchProfile]);
 
   const logout = useCallback(async () => {
+    // Before /auth/logout: the device is removed as the signed-in user.
+    await unregisterPush();
     try {
       await api("/auth/logout", { method: "POST", skipAuthRedirect: true });
     } catch {

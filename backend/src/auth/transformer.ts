@@ -1,6 +1,4 @@
-import type { Tables } from '@/types/database.types';
-
-type UserProfile = Tables<'user_profile'>;
+import type { user_profile as UserProfile } from '@/generated/prisma/client';
 
 export interface ProfileResponse {
   id: string;

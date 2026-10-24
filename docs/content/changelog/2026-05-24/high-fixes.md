@@ -15,7 +15,7 @@ Follow-up batch to [the morning's critical fixes](./security-fixes.md). All High
 
 ## ClassTeacherGuard / verifyClassTeacher admin bypass
 
-Both the [`ClassTeacherGuard`](../../../../backend/src/class/class-teacher.guard.ts) and the [`CalculationController.verifyClassTeacher`](../../../../backend/src/calculation/calculation.controller.ts) helper short-circuited on `user_profile.role === 'admin'` without checking which school owned the class. A platform admin in school A could perform class-teacher actions against a class in school B by guessing class ids.
+Both the `ClassTeacherGuard` and the `CalculationController.verifyClassTeacher` helper short-circuited on `user_profile.role === 'admin'` without checking which school owned the class. A platform admin in school A could perform class-teacher actions against a class in school B by guessing class ids.
 
 **Fix.** The admin bypass now resolves the class's school via `student_group → academic_year → school_id` and only returns true when it matches the caller's `user_profile.school_id`. Cross-school admin attempts log a warning and 403.
 
@@ -68,7 +68,7 @@ The "first joiner takes ownership of an orphan school" bootstrap rule in both [`
 
 The audit flagged CSRF as "needs verification" because [frontend/lib/api.ts:41](../../../../frontend/lib/api.ts) uses `credentials: "include"` against the NestJS backend without sending an explicit anti-CSRF token. After re-reading the backend cookie config:
 
-[supabase.service.ts:36-38](../../../../backend/src/supabase/supabase.service.ts) sets the session cookie with `sameSite: 'lax'`, `httpOnly: true`, and `secure: true` in production. `SameSite=Lax` means browsers will not send the cookie on cross-site `POST` / `DELETE` requests originating from third-party pages - which is the exact scenario CSRF exploits. The route also requires a `cookie` header that an attacker page can't forge.
+`supabase.service.ts:36-38` sets the session cookie with `sameSite: 'lax'`, `httpOnly: true`, and `secure: true` in production. `SameSite=Lax` means browsers will not send the cookie on cross-site `POST` / `DELETE` requests originating from third-party pages - which is the exact scenario CSRF exploits. The route also requires a `cookie` header that an attacker page can't forge.
 
 No code change needed. If the cookie ever loses `SameSite=Lax`, add a CSRF token before flipping it.
 

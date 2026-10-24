@@ -3,7 +3,7 @@ import { ChatService } from './chat.service';
 
 interface CreatedShare {
   id: string;
-  principal_type: 'user' | 'role' | 'group';
+  principal_type: string;
   principal_id: string;
   can_download: boolean;
 }
@@ -11,9 +11,12 @@ interface CreatedShare {
 /**
  * Bridges other features into chat as system messages. Every method is
  * best-effort: a chat failure is logged and swallowed so it never breaks the
- * originating action (sharing a file, assigning a teacher). The chat message is
- * an additional notification surface, not the source of truth for access —
- * access is still granted by the file_share row / teacher assignment.
+ * originating action (sharing a file). The chat message is an additional
+ * notification surface, not the source of truth for access — access is still
+ * granted by the file_share row.
+ *
+ * Classes are gone, so nothing sends `class_invite` messages any more; ones
+ * already in conversations still load and render as before.
  */
 @Injectable()
 export class ChatSystemService {
@@ -24,7 +27,7 @@ export class ChatSystemService {
   /**
    * For each direct (user) share of a file, drop a "file shared with you"
    * message with an inline "Accept & view" action into the owner↔recipient DM.
-   * Role/group shares are skipped — they have no single DM target (the file
+   * Role/course shares are skipped — they have no single DM target (the file
    * manager's own notification still covers them).
    */
   async notifyFileShares(
@@ -59,37 +62,6 @@ export class ChatSystemService {
           `file_share chat message failed (file ${file.id} → ${share.principal_id}): ${(err as Error).message}`,
         );
       }
-    }
-  }
-
-  /**
-   * Tell a user they were added to a class, with an inline "View class" action.
-   * Fired when a teacher is assigned to a class.
-   */
-  async notifyClassInvite(
-    inviterId: string,
-    invitedUserId: string,
-    ctx: { classId: string; className: string; schoolId: string },
-  ): Promise<void> {
-    if (invitedUserId === inviterId) return;
-    try {
-      const conversation = await this.chat.ensureDirectConversationRow(
-        ctx.schoolId,
-        inviterId,
-        invitedUserId,
-      );
-      await this.chat.postMessage({
-        conversation,
-        senderId: inviterId,
-        type: 'class_invite',
-        body: `added you to the class "${ctx.className}"`,
-        metadata: { classId: ctx.classId, className: ctx.className },
-        actionState: 'pending',
-      });
-    } catch (err) {
-      this.logger.error(
-        `class_invite chat message failed (class ${ctx.classId} → ${invitedUserId}): ${(err as Error).message}`,
-      );
     }
   }
 }

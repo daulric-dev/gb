@@ -16,18 +16,22 @@ frontend's design system and core flows.
 
 ## Architecture
 
-| Web (`frontend/`)          | Mobile (`mobile/`)                          |
-| -------------------------- | ------------------------------------------- |
-| Next.js app router         | `expo-router` (file-based, `app/`)          |
-| shadcn + Tailwind (oklch)  | `src/theme` tokens + `src/components/ui`    |
-| `lib/api.ts` (cookie auth) | `src/lib/api.ts` (native cookie jar)        |
-| `AuthProvider` (signals)   | `src/providers/AuthProvider` (context)      |
-| `sonner` toasts            | `src/providers/ToastProvider`               |
-| `recharts`                 | `src/components/charts` (`react-native-svg`)|
+| Web (`frontend/`)          | Mobile (`mobile/`)                             |
+| ---------------------------- | ------------------------------------------------ |
+| Next.js app router           | `expo-router` (file-based, `app/`)           |
+| shadcn + Tailwind (oklch)    | `src/theme` tokens + `src/components/ui`     |
+| `lib/api.ts` (cookie auth) | `src/lib/api.ts` (native cookie jar)           |
+| `AuthProvider` (signals)   | `src/providers/AuthProvider` (context)         |
+| `sonner` toasts            | `src/providers/ToastProvider`                  |
+| `recharts`                 | `src/components/charts` (`react-native-svg`) |
 
-Auth is cookie-based: the backend sets Supabase SSR httpOnly cookies on verify,
-and React Native's fetch persists/resends them via the native cookie store — so
-no manual token handling is needed (the web `credentials: "include"` default).
+Auth is cookie-based: the API sets one opaque httpOnly session cookie,
+`gb_session`, on `/auth/otp/verify` and on `/auth/sso/handoff` (SSO sign-ins
+come back as a one-time code that the app trades for the cookie). React
+Native's fetch keeps and resends it through the native cookie store
+(`credentials: "include"`), so the app never handles a token. The cookie
+survives app restarts because the API gives it an expiry (30 days, sliding);
+a cookie without one would be dropped when the app is killed.
 
 ## Running
 

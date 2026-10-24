@@ -1,11 +1,11 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import {
+  BookOpen,
   Megaphone,
   MessageSquare,
   FolderClosed,
   UsersRound,
-  BookText,
   CalendarDays,
   GraduationCap,
   ShieldCheck,
@@ -31,6 +31,12 @@ interface MenuItem {
 
 const ITEMS: MenuItem[] = [
   {
+    href: "/teaching",
+    label: "Courses",
+    description: "Marking, modules, announcements, discussions",
+    icon: BookOpen,
+  },
+  {
     href: "/announcements",
     label: "Announcements",
     description: "School-wide notices",
@@ -53,12 +59,6 @@ const ITEMS: MenuItem[] = [
     label: "Staff",
     description: "Members and join requests",
     icon: UsersRound,
-  },
-  {
-    href: "/subjects",
-    label: "Subjects",
-    description: "Manage subjects",
-    icon: BookText,
   },
   {
     href: "/academic-calendar",

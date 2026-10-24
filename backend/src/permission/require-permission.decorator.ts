@@ -8,7 +8,7 @@ export const PERMISSION_KEY = 'required_permission';
  * Routes without this decorator are not permission-gated (the guard is inert).
  *
  * @example
- *   @RequirePermission('attendance', 'create')
+ *   @RequirePermission('course', 'create')
  *   @Post()
  *   mark() { ... }
  */

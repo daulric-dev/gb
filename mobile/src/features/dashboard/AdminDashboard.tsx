@@ -21,11 +21,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { Text } from "@/components/ui/Text";
 import { StatCard } from "@/components/ui/StatCard";
 import { DonutChart, type DonutSegment } from "@/components/charts/DonutChart";
-import { formatDate, capitalize } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { CoursesOnWebCard } from "./CoursesOnWebCard";
 
 const STAFF_LABELS: Record<SchoolMember["role"], string> = {
   admin: "Admins",
@@ -126,6 +126,8 @@ export function AdminDashboard({ schoolName }: { schoolName: string }) {
         />
       </View>
 
+      <CoursesOnWebCard />
+
       {pendingCount > 0 && (
         <Card style={{ borderColor: colors.primary }}>
           <CardContent style={styles.pendingRow}>
@@ -186,9 +188,6 @@ export function AdminDashboard({ schoolName }: { schoolName: string }) {
               {formatDate(activeYear.start_date)} –{" "}
               {formatDate(activeYear.end_date)}
             </Text>
-            <Badge variant="secondary">
-              {capitalize(activeYear.grading_model.replace("_", " "))}
-            </Badge>
           </CardContent>
         </Card>
       )}

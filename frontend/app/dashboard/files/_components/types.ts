@@ -39,7 +39,7 @@ export interface FolderContents {
   files: FileItem[];
 }
 
-export type SharePrincipalType = "user" | "role" | "group";
+export type SharePrincipalType = "user" | "role" | "course";
 
 export interface FileShare {
   id: string;

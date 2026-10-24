@@ -35,7 +35,29 @@
           "photosPermission": "Allow GradeBook to access your photos to set a profile picture."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#171717"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "GradeBook uses your location only to check you in to class when your teacher asks."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "GradeBook uses the camera to scan your class attendance QR code.",
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
+      "expo-web-browser",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

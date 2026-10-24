@@ -16,7 +16,8 @@ import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { userSchoolId } from '@/common/user-school';
 import { PresenceService } from '@/realtime/presence.service';
 import { ChatService } from './chat.service';
 import { ChatRealtimeService } from './chat-realtime.service';
@@ -39,7 +40,7 @@ export class ChatController {
     private readonly chat: ChatService,
     private readonly realtime: ChatRealtimeService,
     private readonly presence: PresenceService,
-    private readonly supabase: SupabaseService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @RequirePermission('chat', 'read')
@@ -48,7 +49,7 @@ export class ChatController {
     const userId = req.user.id as string;
     let schoolId: string | null = null;
     try {
-      schoolId = await this.supabase.getUserSchoolId(userId);
+      schoolId = await userSchoolId(this.prisma, userId);
     } catch {
       schoolId = null;
     }
@@ -117,13 +118,14 @@ export class ChatController {
   @RequirePermission('chat', 'read')
   @Get('presence')
   async presenceList(@Req() req: any): Promise<{ online: string[] }> {
-    let schoolId: string;
+    let schoolId: string | null;
     try {
       const userId = req.user.id as string;
-      schoolId = await this.supabase.getUserSchoolId(userId);
+      schoolId = await userSchoolId(this.prisma, userId);
     } catch {
       return { online: [] };
     }
+    if (!schoolId) return { online: [] };
     return { online: await this.presence.onlineUserIds(schoolId) };
   }
 

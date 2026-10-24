@@ -6,7 +6,7 @@ sidebar_label: Authentication
 
 **Location**: `backend/src/auth/`
 
-The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. It uses Supabase Auth under the hood, with **`@supabase/ssr` cookie-based sessions** - the access token and refresh token live entirely in HTTP-only cookies, and rotation happens transparently on every authenticated request.
+The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. Sign-in codes and sessions are handled by the backend's own account module (`backend/src/account/`): codes are stored hashed with `AUTH_SECRET`, and a signed-in user holds an **opaque session token in the HTTP-only `gb_session` cookie**, whose hash is stored in the `account.session` table.
 
 ## Files
 
@@ -15,7 +15,7 @@ The authentication module handles user login via email OTP (one-time password), 
 | `auth.module.ts` | Module definition; exports `AuthGuard`, imports `ImagesModule` for avatar endpoints |
 | `auth.controller.ts` | API endpoints for auth operations and avatar management |
 | `auth.service.ts` | Business logic for OTP, profiles, onboarding |
-| `auth.guard.ts` | Validates the SSR cookie session and triggers refresh on expired access tokens |
+| `auth.guard.ts` | Resolves the `gb_session` cookie to a live session and rejects deactivated accounts |
 | `transformer.ts` | Response shaping for API versioning (includes `avatar_url`) |
 | `dto/send-otp.dto.ts` | Validation for OTP send request |
 | `dto/verify-otp.dto.ts` | Validation for OTP verification |
@@ -27,14 +27,15 @@ The authentication module handles user login via email OTP (one-time password), 
 ```
 1. User enters email
    └── POST /auth/otp/send { email }
-       └── Supabase sends an 8-digit OTP to the email
+       └── EmailCodeService stores a hashed 8-digit code (valid 10 minutes)
+           and MailService emails it (Mailpit in development)
 
 2. User enters OTP code
    └── POST /auth/otp/verify { email, token }
        ├─ Returns user profile in response body
-       └─ Calls supabase.auth.setSession() via the SSR cookie client,
-          which writes the chunked sb-<project>-auth-token.* HTTP-only
-          cookies to the response
+       └─ SessionService.create() stores the hashed session token in
+          account.session and writes the gb_session HTTP-only cookie
+          to the response
 
 3. If user has no name/school (first login)
    └── PATCH /auth/onboard { firstName, lastName, schoolId }
@@ -43,23 +44,25 @@ The authentication module handles user login via email OTP (one-time password), 
        │  the profile with a `joinRequest` field - frontend redirects to /onboard/pending
        └─ If no schoolId provided: saves name, leaves school empty
 
-4. Access token expires (default: 1 hour)
-   └── Next authenticated request triggers AuthGuard
-       └── supabase.auth.getUser() detects the expired access token
-       └── Refreshes via the refresh token cookie
-       └── setAll handler writes rotated cookies to the response
-       └── Original request completes normally - frontend never sees a 401
+4. Session renewal (sessions last 30 days, sliding)
+   └── Each authenticated request runs AuthGuard → SessionService.resolve()
+       └── Looks up the token hash (cached for 60 s)
+       └── If more than a day has passed since the session was last renewed,
+           extends expires_at by 30 days and re-sets the cookie
+       └── No refresh token and no client-side refresh - the frontend never
+           sees a 401 while the session is live
 
 5. User logs out
    └── POST /auth/logout
-       └── supabase.auth.signOut() invalidates the session and clears cookies
+       └── SessionService.revoke() marks the session revoked, drops its
+           cache entry and clears the cookie
 ```
 
 ## Session Cookies
 
-The session is stored entirely in HTTP-only cookies managed by `@supabase/ssr`. The session payload (containing both access token and refresh token) is encoded and split across one or more chunks named `sb-<project-ref>-auth-token`, `sb-<project-ref>-auth-token.0`, `sb-<project-ref>-auth-token.1`, etc.
+The session is a single HTTP-only cookie named `gb_session`. Its value is an opaque token - 256 random bits plus an HMAC tag keyed with `AUTH_SECRET` - and only its SHA-256 hash is stored, in `account.session`, so a database leak hands out no usable sessions. Sessions can be revoked individually (logout) or all at once (account deleted or disabled).
 
-Cookie attributes (set in `setAll` inside `SupabaseService.createUserClient`):
+Cookie attributes (set in `SessionService.setCookie`):
 
 | Attribute | Value |
 |-----------|-------|
@@ -67,19 +70,21 @@ Cookie attributes (set in `setAll` inside `SupabaseService.createUserClient`):
 | `secure` | `true` in production, `false` in development |
 | `sameSite` | `lax` (works for same-origin and most cross-origin GETs; switch to `none` if frontend is on a different domain) |
 | `path` | `/` |
+| `domain` | Production only: derived from the app origin, or `AUTH_COOKIE_DOMAIN` (see `config/origins.ts`) |
+| `expires` | 30 days from creation or last renewal |
 
 There is no separate frontend access-token storage. The frontend never reads or writes auth tokens - it only sends `credentials: "include"` on every request, and the browser handles the cookies automatically.
 
-## SupabaseService
+## SessionService
 
-`SupabaseService.createUserClient(req, reply, schema)` builds an `@supabase/ssr` server client wired to the current Fastify request and reply:
+`SessionService` (`backend/src/account/session.service.ts`) owns the session lifecycle:
 
-- `getAll`: reads all cookies from `req.cookies`
-- `setAll`: writes rotated session cookies via `reply.setCookie` with the secure flag set above
+- `create(reply, req, userId, method)`: issues a token, stores its hash with the user agent and IP, and sets the cookie
+- `resolve(req, reply?)`: returns `{ sessionId, userId, email }` for a live session, or `null` (clearing the cookie) if it is missing, revoked, expired, or the user is disabled. Lookups are cached for 60 seconds, so a revoked session stops working within a minute
+- `revoke(req, reply)`: signs this device out
+- `revokeAll(userId)`: signs a user out everywhere
 
-Any service method that needs to make a user-scoped (RLS-respecting) Supabase query takes `req` and `reply` parameters and calls `createUserClient(req, reply, schema)`. Calling `auth.getUser()` on this client triggers automatic refresh and cookie rotation when the access token has expired.
-
-`SupabaseService.getServiceClient()` returns a singleton service-role client that bypasses RLS - used for trusted backend operations.
+There is no database-level row security: services query Postgres through `PrismaService` and enforce access in the API.
 
 ## AuthGuard
 
@@ -87,8 +92,8 @@ The `AuthGuard` is a NestJS `CanActivate` guard that protects endpoints requirin
 
 **How it works:**
 
-1. Builds an SSR client via `SupabaseService.createUserClient(req, reply, 'public')`
-2. Calls `supabase.auth.getUser()` - this validates the session and silently refreshes the access token if expired (rotating cookies on the response in the process)
+1. Calls `SessionService.resolve(req, reply)` to turn the `gb_session` cookie into a live session (renewing it if due)
+2. Checks `user_profile.is_active`; a deactivated account has its session revoked and gets a 401
 3. If valid, attaches `{ id, email }` to `request.user`
 4. If invalid or missing, throws `UnauthorizedException` (the frontend then redirects to `/login`)
 
@@ -113,7 +118,7 @@ Sends a one-time password to the user's email.
 
 ### `POST /api/auth/otp/verify`
 
-Verifies the OTP and returns the user profile. Writes the Supabase session cookies (`sb-*-auth-token*`) on the response.
+Verifies the OTP and returns the user profile. Creates a session and writes the `gb_session` cookie on the response.
 
 **Body:**
 ```json
@@ -127,8 +132,8 @@ Verifies the OTP and returns the user profile. Writes the Supabase session cooki
 ```json
 {
   "session": {
-    "access_token": "...",
-    "expires_in": 3600,
+    "access_token": "",
+    "expires_in": 2592000,
     "expires_at": 1234567890
   },
   "user": {
@@ -144,7 +149,7 @@ Verifies the OTP and returns the user profile. Writes the Supabase session cooki
 }
 ```
 
-The session payload is included in the response body for backwards compatibility, but the frontend doesn't need it - the cookies set on the response are the source of truth.
+The `session` object is kept for clients that read the response shape; `access_token` is always empty, since the token is never exposed to page scripts. The cookie set on the response is the source of truth.
 
 ---
 
@@ -153,22 +158,6 @@ The session payload is included in the response body for backwards compatibility
 **Requires:** `AuthGuard`
 
 Returns the current user's profile including their school.
-
----
-
-### `POST /api/auth/refresh`
-
-A thin compatibility endpoint that returns the current session. Refresh actually happens implicitly inside `AuthGuard` on every authenticated request, so the frontend doesn't need to call this - it exists only to support deployed clients still polling it during the migration.
-
-**Response:**
-```json
-{
-  "access_token": "...",
-  "refresh_token": "...",
-  "expires_in": 3600,
-  "expires_at": 1234567890
-}
-```
 
 ---
 
@@ -215,7 +204,7 @@ When the response includes `joinRequest`, the frontend redirects to `/onboard/pe
 
 **Requires:** `AuthGuard`
 
-Signs out the user via `supabase.auth.signOut()`, which invalidates the session server-side and clears the session cookies on the response.
+Signs out the user via `SessionService.revoke()`, which marks the session revoked in `account.session` and clears the `gb_session` cookie on the response.
 
 ## Avatar Endpoints
 
@@ -236,17 +225,12 @@ If the user has no avatar, returns `400 Bad Request`.
 **Requires:** `AuthGuard`  
 **Content-Type:** `multipart/form-data`
 
-Uploads a profile picture. The file is validated (max 5MB, JPEG/PNG/WebP only), uploaded to Supabase Storage, and the public URL (with cache-busting timestamp) is saved to `user_profile.avatar_url`.
-
-**Query params:**
-| Param | Type | Description |
-|-------|------|-------------|
-| `pathname` | string (optional) | Custom storage path (default: `avatars/`) |
+Uploads a profile picture. The file is validated (max 5MB, JPEG/PNG/WebP only), stored in S3 object storage at `images/avatars/<userId>.<ext>`, and the public URL (with cache-busting timestamp) is saved to `user_profile.avatar_url`. That URL is `<API_URL>/api/images/avatars/<file>` (served by the public `GET /api/images/avatars/:file` route), or `<S3_PUBLIC_URL>/images/avatars/<file>` when a public storage/CDN host is configured.
 
 **Response:**
 ```json
 {
-  "avatar_url": "https://xxx.supabase.co/.../avatars/user-id.jpg?t=1745512900000"
+  "avatar_url": "https://api.example.com/api/images/avatars/user-id.jpg?t=1745512900000"
 }
 ```
 
@@ -256,15 +240,14 @@ Uploads a profile picture. The file is validated (max 5MB, JPEG/PNG/WebP only), 
 
 **Requires:** `AuthGuard`
 
-Creates a TUS resumable upload session. The client uploads directly to Supabase Storage using the returned TUS endpoint and token - no file data passes through the backend.
+Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 minutes) and the client uploads the bytes straight to object storage - no file data passes through the backend.
 
 **Body:**
 ```json
 {
   "filename": "photo.png",
   "contentType": "image/png",
-  "totalSize": 204800,
-  "pathname": "avatars"
+  "totalSize": 204800
 }
 ```
 
@@ -272,12 +255,10 @@ Creates a TUS resumable upload session. The client uploads directly to Supabase 
 ```json
 {
   "path": "avatars/user-id.png",
-  "token": "...",
-  "signed_url": "...",
-  "tus_endpoint": "https://xxx.supabase.co/storage/v1/upload/resumable",
-  "tus_headers": { "authorization": "Bearer ...", "x-upsert": "true" },
-  "tus_metadata": { "bucketName": "images", "objectName": "...", "contentType": "image/png" },
-  "chunk_size": 6291456
+  "method": "PUT",
+  "uploadUrl": "https://<s3-endpoint>/...",
+  "headers": { "Content-Type": "image/png" },
+  "expiresAt": "2026-10-21T12:15:00.000Z"
 }
 ```
 
@@ -287,7 +268,7 @@ Creates a TUS resumable upload session. The client uploads directly to Supabase 
 
 **Requires:** `AuthGuard`
 
-Called after a resumable upload finishes. Verifies the file exists in Supabase Storage and updates `user_profile.avatar_url`.
+Called after the direct upload finishes. Verifies the object exists in storage, re-checks its size, type and magic bytes (deleting it if rejected), and updates `user_profile.avatar_url`.
 
 **Body:**
 ```json

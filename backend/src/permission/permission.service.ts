@@ -5,7 +5,6 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
 import { CacheService } from '@/cache/cache.service';
 import {
   loadEffectivePermissions,
@@ -18,14 +17,28 @@ import {
 } from './permission.catalog';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { userSchoolId } from '@/common/user-school';
+import { isUniqueViolation, pgCode } from '@/common/db-values';
+
+/** The role columns every role endpoint returns. */
+const ROLE_SELECT = {
+  id: true,
+  name: true,
+  description: true,
+  is_system: true,
+  created_at: true,
+  updated_at: true,
+} as const;
 
 @Injectable()
 export class PermissionService {
   private readonly logger = new Logger(PermissionService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
     private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /** The code-defined catalog of assignable permissions (for the admin UI). */
@@ -39,75 +52,68 @@ export class PermissionService {
   }
 
   async listRoles(adminUserId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
 
-    const { data, error } = await supabase
-      .from('school_role')
-      .select('id, name, description, is_system, created_at, updated_at')
-      .eq('school_id', schoolId)
-      .order('is_system', { ascending: false })
-      .order('name', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to list roles: ${error.message}`);
+    try {
+      return await this.prisma.school_role.findMany({
+        where: { school_id: schoolId },
+        select: ROLE_SELECT,
+        orderBy: [{ is_system: 'desc' }, { name: 'asc' }],
+      });
+    } catch (err) {
+      this.logger.error(`Failed to list roles: ${(err as Error).message}`);
       throw new BadRequestException('Failed to list roles');
     }
-    return data ?? [];
   }
 
   async createRole(adminUserId: string, dto: CreateRoleDto) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
 
-    const { data, error } = await supabase
-      .from('school_role')
-      .insert({
-        school_id: schoolId,
-        name: dto.name,
-        description: dto.description ?? null,
-        is_system: false,
-      })
-      .select('id, name, description, is_system, created_at, updated_at')
-      .single();
-
-    if (error || !data) {
-      // 23505 = unique_violation (name already used in this school).
-      if (error?.code === '23505') {
+    try {
+      return await this.prisma.school_role.create({
+        data: {
+          school_id: schoolId,
+          name: dto.name,
+          description: dto.description ?? null,
+          is_system: false,
+        },
+        select: ROLE_SELECT,
+      });
+    } catch (err) {
+      // Unique violation: name already used in this school.
+      if (isUniqueViolation(err)) {
         throw new BadRequestException(
           'A role with this name already exists in your school',
         );
       }
-      this.logger.error(`Failed to create role: ${error?.message}`);
+      this.logger.error(`Failed to create role: ${(err as Error).message}`);
       throw new BadRequestException('Failed to create role');
     }
-    return data;
   }
 
   async updateRole(adminUserId: string, roleId: string, dto: UpdateRoleDto) {
-    const supabase = this.supabaseService.getServiceClient();
     const role = await this.requireEditableRole(adminUserId, roleId);
 
-    const patch: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
+    const patch: Prisma.school_roleUpdateInput = { updated_at: new Date() };
     if (dto.name !== undefined) patch.name = dto.name;
     if (dto.description !== undefined) patch.description = dto.description;
 
-    const { data, error } = await supabase
-      .from('school_role')
-      .update(patch)
-      .eq('id', role.id)
-      .select('id, name, description, is_system, created_at, updated_at')
-      .single();
-
-    if (error || !data) {
-      if (error?.code === '23505') {
+    let data;
+    try {
+      data = await this.prisma.school_role.update({
+        where: { id: role.id },
+        data: patch,
+        select: ROLE_SELECT,
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
         throw new BadRequestException(
           'A role with this name already exists in your school',
         );
       }
-      this.logger.error(`Failed to update role ${roleId}: ${error?.message}`);
+      this.logger.error(
+        `Failed to update role ${roleId}: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to update role');
     }
 
@@ -116,16 +122,14 @@ export class PermissionService {
   }
 
   async deleteRole(adminUserId: string, roleId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const role = await this.requireEditableRole(adminUserId, roleId);
 
-    const { error } = await supabase
-      .from('school_role')
-      .delete()
-      .eq('id', role.id);
-
-    if (error) {
-      this.logger.error(`Failed to delete role ${roleId}: ${error.message}`);
+    try {
+      await this.prisma.school_role.deleteMany({ where: { id: role.id } });
+    } catch (err) {
+      this.logger.error(
+        `Failed to delete role ${roleId}: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to delete role');
     }
 
@@ -134,28 +138,26 @@ export class PermissionService {
   }
 
   async getRolePermissions(adminUserId: string, roleId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const role = await this.requireRoleInSchool(adminUserId, roleId);
 
     if (role.is_system) {
-      return [...defaultsForRole(role.name as string)];
+      return [...defaultsForRole(role.name)];
     }
 
-    const { data, error } = await supabase
-      .from('school_role_permission')
-      .select('permission_catalog:permission_id(key)')
-      .eq('school_role_id', roleId);
-
-    if (error) {
+    try {
+      const grants = await this.prisma.school_role_permission.findMany({
+        where: { school_role_id: roleId },
+        select: { permission_catalog: { select: { key: true } } },
+      });
+      return grants
+        .map((r) => r.permission_catalog?.key)
+        .filter((k): k is string => Boolean(k));
+    } catch (err) {
       this.logger.error(
-        `Failed to read role permissions ${roleId}: ${error.message}`,
+        `Failed to read role permissions ${roleId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to read role permissions');
     }
-
-    return (data ?? [])
-      .map((r) => (r.permission_catalog as { key?: string } | null)?.key)
-      .filter((k): k is string => Boolean(k));
   }
 
   /** Replace a role's entire permission set with the given catalog keys. */
@@ -164,7 +166,6 @@ export class PermissionService {
     roleId: string,
     keys: string[],
   ) {
-    const supabase = this.supabaseService.getServiceClient();
     const role = await this.requireEditableRole(adminUserId, roleId);
 
     const invalid = keys.filter((k) => !isPermissionKey(k));
@@ -176,49 +177,36 @@ export class PermissionService {
 
     const uniqueKeys = [...new Set(keys)];
 
-    // Map keys -> catalog ids.
-    let permissionIds: string[] = [];
-    if (uniqueKeys.length > 0) {
-      const { data: catalog, error: catError } = await supabase
-        .from('permission_catalog')
-        .select('id, key')
-        .in('key', uniqueKeys);
+    try {
+      // Map keys -> catalog ids.
+      const catalog =
+        uniqueKeys.length > 0
+          ? await this.prisma.permission_catalog.findMany({
+              where: { key: { in: uniqueKeys } },
+              select: { id: true },
+            })
+          : [];
+      const permissionIds = catalog.map((c) => c.id);
 
-      if (catError) {
-        this.logger.error(`Failed to read catalog: ${catError.message}`);
-        throw new BadRequestException('Failed to set role permissions');
-      }
-      permissionIds = (catalog ?? []).map((c: { id: string }) => c.id);
-    }
-
-    // Replace: clear existing, then insert the new set.
-    const { error: delError } = await supabase
-      .from('school_role_permission')
-      .delete()
-      .eq('school_role_id', role.id);
-
-    if (delError) {
+      // Replace: clear existing, then insert the new set, atomically.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.school_role_permission.deleteMany({
+          where: { school_role_id: role.id },
+        });
+        if (permissionIds.length > 0) {
+          await tx.school_role_permission.createMany({
+            data: permissionIds.map((permission_id) => ({
+              school_role_id: role.id,
+              permission_id,
+            })),
+          });
+        }
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to clear role permissions ${roleId}: ${delError.message}`,
+        `Failed to set role permissions ${roleId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to set role permissions');
-    }
-
-    if (permissionIds.length > 0) {
-      const rows = permissionIds.map((permission_id) => ({
-        school_role_id: role.id,
-        permission_id,
-      }));
-      const { error: insError } = await supabase
-        .from('school_role_permission')
-        .insert(rows);
-
-      if (insError) {
-        this.logger.error(
-          `Failed to insert role permissions ${roleId}: ${insError.message}`,
-        );
-        throw new BadRequestException('Failed to set role permissions');
-      }
     }
 
     await this.invalidate();
@@ -230,20 +218,23 @@ export class PermissionService {
     membershipId: string,
     roleId: string,
   ) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
     await this.requireMembershipInSchool(membershipId, schoolId);
     await this.requireRoleInSchool(adminUserId, roleId);
 
-    const { error } = await supabase
-      .from('school_management_role')
-      .upsert(
-        { school_management_id: membershipId, school_role_id: roleId },
-        { onConflict: 'school_management_id,school_role_id' },
-      );
-
-    if (error) {
-      this.logger.error(`Failed to assign role: ${error.message}`);
+    try {
+      await this.prisma.school_management_role.upsert({
+        where: {
+          school_management_id_school_role_id: {
+            school_management_id: membershipId,
+            school_role_id: roleId,
+          },
+        },
+        create: { school_management_id: membershipId, school_role_id: roleId },
+        update: {},
+      });
+    } catch (err) {
+      this.logger.error(`Failed to assign role: ${(err as Error).message}`);
       throw new BadRequestException('Failed to assign role');
     }
 
@@ -256,47 +247,49 @@ export class PermissionService {
     membershipId: string,
     role: 'admin' | 'member' | 'teacher' | null,
   ) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
     const membership = await this.requireMembershipInSchool(
       membershipId,
       schoolId,
     );
-    const { data: school } = await supabase
-      .from('school')
-      .select('owner_id')
-      .eq('id', schoolId)
-      .single();
+    const school = await this.prisma.school
+      .findUnique({ where: { id: schoolId }, select: { owner_id: true } })
+      .catch(() => null);
     if (school?.owner_id === membership.user_id) {
       throw new ForbiddenException('The school owner role cannot be changed');
     }
 
-    const { error } = await supabase
-      .from('school_management')
-      .update({ role, updated_at: new Date().toISOString() })
-      .eq('id', membershipId);
-    if (error) {
+    try {
+      await this.prisma.school_management.update({
+        where: { id: membershipId },
+        data: { role, updated_at: new Date() },
+      });
+    } catch (err) {
+      const message = (err as Error).message;
       this.logger.error(
-        `Failed to change member role ${membershipId}: ${error.message}`,
+        `Failed to change member role ${membershipId}: ${message}`,
       );
+      const notNull =
+        pgCode(err) === '23502' ||
+        (err as { code?: string } | null)?.code === 'P2011';
       throw new BadRequestException(
-        role === null && error.code === '23502'
+        role === null && notNull
           ? 'The database must allow members without a default role. Apply the nullable membership role migration first.'
-          : `Failed to change member role: ${error.message}`,
+          : `Failed to change member role: ${message}`,
       );
     }
 
     // user_profile.role is the role in the user's *active* school, and
     // AdminGuard / is_admin() trust it. Only mirror when this membership is
     // that school, or an admin of any school could grant admin elsewhere.
-    const { error: profileError } = await supabase
-      .from('user_profile')
-      .update({ role })
-      .eq('id', membership.user_id)
-      .eq('school_id', schoolId);
-    if (profileError) {
+    try {
+      await this.prisma.user_profile.updateMany({
+        where: { id: membership.user_id, school_id: schoolId },
+        data: { role },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to mirror member role ${membership.user_id}: ${profileError.message}`,
+        `Failed to mirror member role ${membership.user_id}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to synchronize member role');
     }
@@ -310,18 +303,15 @@ export class PermissionService {
     membershipId: string,
     roleId: string,
   ) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
     await this.requireMembershipInSchool(membershipId, schoolId);
 
-    const { error } = await supabase
-      .from('school_management_role')
-      .delete()
-      .eq('school_management_id', membershipId)
-      .eq('school_role_id', roleId);
-
-    if (error) {
-      this.logger.error(`Failed to unassign role: ${error.message}`);
+    try {
+      await this.prisma.school_management_role.deleteMany({
+        where: { school_management_id: membershipId, school_role_id: roleId },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to unassign role: ${(err as Error).message}`);
       throw new BadRequestException('Failed to unassign role');
     }
 
@@ -331,27 +321,23 @@ export class PermissionService {
 
   /** Custom roles currently assigned to a membership (for the admin UI). */
   async getMemberRoles(adminUserId: string, membershipId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
     await this.requireMembershipInSchool(membershipId, schoolId);
 
-    const { data, error } = await supabase
-      .from('school_management_role')
-      .select('school_role:school_role_id(id, name, is_system)')
-      .eq('school_management_id', membershipId);
-
-    if (error) {
-      this.logger.error(`Failed to read member roles: ${error.message}`);
+    try {
+      const rows = await this.prisma.school_management_role.findMany({
+        where: { school_management_id: membershipId },
+        select: {
+          school_role: { select: { id: true, name: true, is_system: true } },
+        },
+      });
+      return rows.map((r) => r.school_role).filter(Boolean);
+    } catch (err) {
+      this.logger.error(
+        `Failed to read member roles: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to read member roles');
     }
-
-    type Role = { id: string; name: string; is_system: boolean };
-    return (data ?? [])
-      .map((r) => {
-        const sr = r.school_role as Role | Role[] | null;
-        return Array.isArray(sr) ? (sr[0] ?? null) : sr;
-      })
-      .filter((r): r is Role => Boolean(r));
   }
 
   /**
@@ -359,16 +345,15 @@ export class PermissionService {
    * any authenticated user (not admin-only) so the frontend can gate its UI.
    */
   async getMyPermissions(userId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id, account_type')
-      .eq('id', userId)
-      .maybeSingle();
+    const profile = await this.prisma.user_profile
+      .findUnique({
+        where: { id: userId },
+        select: { school_id: true, account_type: true },
+      })
+      .catch(() => null);
 
     const accountType = profile?.account_type ?? 'staff';
-    const schoolId: string = profile?.school_id ?? null;
+    const schoolId: string | null = profile?.school_id ?? null;
 
     if (!schoolId) {
       return {
@@ -395,7 +380,7 @@ export class PermissionService {
     }
 
     const effective = await loadEffectivePermissions(
-      this.supabaseService,
+      this.prisma,
       this.cache,
       userId,
       schoolId,
@@ -413,29 +398,26 @@ export class PermissionService {
   // --- helpers -------------------------------------------------------------
 
   private async requireAdminSchool(adminUserId: string): Promise<string> {
-    const supabase = this.supabaseService.getServiceClient();
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', adminUserId)
-      .single();
-
-    if (!profile?.school_id) {
+    const schoolId = await userSchoolId(this.prisma, adminUserId).catch(
+      () => null,
+    );
+    if (!schoolId) {
       throw new BadRequestException('You are not assigned to a school');
     }
-    return profile.school_id;
+    return schoolId;
   }
 
   /** Verify the role exists and belongs to the admin's school. */
   private async requireRoleInSchool(adminUserId: string, roleId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const schoolId = await this.requireAdminSchool(adminUserId);
 
-    const { data: role } = await supabase
-      .from('school_role')
-      .select('id, school_id, is_system, name')
-      .eq('id', roleId)
-      .maybeSingle();
+    // A malformed id matches no role, as before.
+    const role = await this.prisma.school_role
+      .findUnique({
+        where: { id: roleId },
+        select: { id: true, school_id: true, is_system: true, name: true },
+      })
+      .catch(() => null);
 
     if (!role) throw new NotFoundException('Role not found');
     if (role.school_id !== schoolId) {
@@ -457,12 +439,12 @@ export class PermissionService {
     membershipId: string,
     schoolId: string,
   ) {
-    const supabase = this.supabaseService.getServiceClient();
-    const { data: membership } = await supabase
-      .from('school_management')
-      .select('id, user_id, school_id')
-      .eq('id', membershipId)
-      .maybeSingle();
+    const membership = await this.prisma.school_management
+      .findUnique({
+        where: { id: membershipId },
+        select: { id: true, user_id: true, school_id: true },
+      })
+      .catch(() => null);
 
     if (!membership) throw new NotFoundException('Membership not found');
     if (membership.school_id !== schoolId) {

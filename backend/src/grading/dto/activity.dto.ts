@@ -16,33 +16,14 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
-export class ListActivitiesQueryDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUUID()
-  classId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUUID()
-  termId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUUID()
-  subjectId?: string;
-}
-
 export class CreateActivityDto {
-  @ApiProperty() @IsUUID() classId!: string;
-  @ApiProperty() @IsUUID() subjectId!: string;
-  @ApiProperty() @IsUUID() termId!: string;
-
-  @ApiPropertyOptional() @IsOptional() @IsUUID() gradingGroupId?: string;
-
-  @ApiProperty({ enum: ['quiz', 'assignment'] })
-  @IsIn(['quiz', 'assignment'])
-  kind!: 'quiz' | 'assignment';
+  /**
+   * `offline` is marked but never handed in online - paper tests, practicals,
+   * marks carried over from the old gradebook.
+   */
+  @ApiProperty({ enum: ['quiz', 'assignment', 'offline'] })
+  @IsIn(['quiz', 'assignment', 'offline'])
+  kind!: 'quiz' | 'assignment' | 'offline';
 
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(200) title!: string;
 
@@ -55,6 +36,9 @@ export class CreateActivityDto {
   points!: number;
 
   @ApiPropertyOptional() @IsOptional() @IsDateString() dueAt?: string;
+
+  /** Must be one of this course's groups; omit for Ungrouped. */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() assignmentGroupId?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowFile?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowText?: boolean;
@@ -71,17 +55,11 @@ export class CreateActivityDto {
   maxAttempts?: number;
 }
 
-export class ExcludeActivityDto {
+/** Excuse one student from one piece of work, keeping any mark they have. */
+export class ExcuseSubmissionDto {
   @ApiProperty({ example: true })
   @IsBoolean()
-  excluded!: boolean;
-}
-
-/** One student's mark, rather than the whole activity. */
-export class ExcludeStudentGradeDto {
-  @ApiProperty({ example: true })
-  @IsBoolean()
-  excluded!: boolean;
+  excused!: boolean;
 
   @ApiPropertyOptional({ example: 'Absent, sat the makeup instead' })
   @IsOptional()
@@ -105,7 +83,19 @@ export class UpdateActivityDto {
   @Min(1)
   points?: number;
   @ApiPropertyOptional() @IsOptional() @IsDateString() dueAt?: string;
-  @ApiPropertyOptional() @IsOptional() @IsUUID() gradingGroupId?: string;
+
+  /** null moves the activity to Ungrouped. */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUUID()
+  assignmentGroupId?: string | null;
+
+  /** Keep the marks but leave them out of the course total. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  omitFromFinalGrade?: boolean;
+
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowFile?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowText?: boolean;
 
@@ -202,9 +192,15 @@ export class SubmitQuizDto {
 }
 
 export class GradeSubmissionDto {
+  // Marks are shown to two decimals everywhere, so that is all a teacher
+  // may type; a quiz's auto score is the only longer fraction, and it is
+  // rounded on the way out.
   @ApiProperty({ example: 85 })
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'Marks can have at most two decimal places' },
+  )
   @Min(0)
   score!: number;
 

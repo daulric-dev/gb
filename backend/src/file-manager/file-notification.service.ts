@@ -1,49 +1,48 @@
 import { Injectable } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
 
-const NOTIFICATION_COLUMNS =
-  'id, type, file_id, share_id, title, body, can_download, read_at, created_at';
+const NOTIFICATION_COLUMNS = {
+  id: true,
+  type: true,
+  file_id: true,
+  share_id: true,
+  title: true,
+  body: true,
+  can_download: true,
+  read_at: true,
+  created_at: true,
+} satisfies Prisma.notificationSelect;
 const MAX_NOTIFICATIONS = 50;
 
 @Injectable()
 export class FileNotificationService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Most recent notifications for the user, newest first. */
   async list(userId: string) {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('notification')
-      .select(NOTIFICATION_COLUMNS)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(MAX_NOTIFICATIONS);
-    return data ?? [];
+    return this.prisma.notification.findMany({
+      where: { user_id: userId },
+      select: NOTIFICATION_COLUMNS,
+      orderBy: { created_at: 'desc' },
+      take: MAX_NOTIFICATIONS,
+    });
   }
 
   /** Count of the user's unread notifications. */
   async unreadCount(userId: string): Promise<{ count: number }> {
-    const { count } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('notification')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .is('read_at', null);
+    const count = await this.prisma.notification.count({
+      where: { user_id: userId, read_at: null },
+    });
     return { count: count ?? 0 };
   }
 
   /** Mark all of the user's unread notifications as read. */
   async markAllRead(userId: string): Promise<{ count: number }> {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('notification')
-      .update({ read_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .is('read_at', null)
-      .select('id');
-    return { count: (data ?? []).length };
+    const { count } = await this.prisma.notification.updateMany({
+      where: { user_id: userId, read_at: null },
+      data: { read_at: new Date() },
+    });
+    return { count };
   }
 }

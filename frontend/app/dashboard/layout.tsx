@@ -1,7 +1,8 @@
 "use client";
 
 import { useProfile } from "@/providers/AuthProvider";
-import { PermissionsProvider } from "@/providers/PermissionsProvider";
+import { PermissionsProvider, usePermissions } from "@/providers/PermissionsProvider";
+import { BillingBanner, BillingStatusLoader } from "@/components/billing/billing-banner";
 import { isStudentProfile } from "@/lib/routing";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -41,15 +42,25 @@ export default function DashboardLayout({children}: { children: React.ReactNode 
   return (
     <PermissionsProvider>
       <ChatProvider />
+      <BillingStatusLoader schoolId={profile.value.school.id} />
       <SidebarProvider>
         <AppSidebar profile={profile.value} />
         <SidebarInset>
           <Header />
           <main className="flex-1 p-4 md:p-6">
-            <div className="mx-auto max-w-6xl">{children}</div>
+            <div className="mx-auto max-w-6xl">
+              <DashboardBillingBanner />
+              {children}
+            </div>
           </main>
         </SidebarInset>
       </SidebarProvider>
     </PermissionsProvider>
   );
+}
+
+/** Admins (school:update) get links to the billing page; other staff don't. */
+function DashboardBillingBanner() {
+  const { can } = usePermissions();
+  return <BillingBanner audience={can("school", "update") ? "admin" : "staff"} />;
 }

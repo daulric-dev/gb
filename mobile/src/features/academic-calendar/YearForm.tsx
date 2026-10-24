@@ -5,14 +5,8 @@ import { useToast } from "@/providers/ToastProvider";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 import { DateField, toIsoDate } from "@/components/ui/DateField";
-import { Text } from "@/components/ui/Text";
-import {
-  GRADING_MODEL_OPTIONS,
-  type AcademicYear,
-  type GradingModel,
-} from "./types";
+import type { AcademicYear } from "./types";
 
 /**
  * Create or edit an academic year. Pass `year` to edit; otherwise a new year
@@ -32,15 +26,6 @@ export function YearForm({
   const [name, setName] = useState(year?.name ?? "");
   const [startDate, setStartDate] = useState(year?.start_date ?? today);
   const [endDate, setEndDate] = useState(year?.end_date ?? today);
-  const [gradingModel, setGradingModel] = useState<GradingModel>(
-    year?.grading_model ?? "weighted_continuous",
-  );
-  const [examWeight, setExamWeight] = useState(
-    String(year?.year_exam_weight ?? 60),
-  );
-  const [courseworkWeight, setCourseworkWeight] = useState(
-    String(year?.year_coursework_weight ?? 40),
-  );
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -52,9 +37,6 @@ export function YearForm({
       name: name.trim(),
       startDate,
       endDate,
-      gradingModel,
-      yearExamWeight: Number(examWeight),
-      yearCourseworkWeight: Number(courseworkWeight),
     };
     setLoading(true);
     try {
@@ -90,37 +72,6 @@ export function YearForm({
           <DateField value={endDate} onChange={setEndDate} />
         </View>
       </View>
-
-      <View style={{ gap: 6 }}>
-        <Label>Grading Model</Label>
-        <Select<GradingModel>
-          value={gradingModel}
-          onChange={setGradingModel}
-          options={GRADING_MODEL_OPTIONS}
-        />
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 12 }}>
-        <View style={{ flex: 1, gap: 6 }}>
-          <Label>Exam Weight (%)</Label>
-          <Input
-            keyboardType="numeric"
-            value={examWeight}
-            onChangeText={setExamWeight}
-          />
-        </View>
-        <View style={{ flex: 1, gap: 6 }}>
-          <Label>Coursework Weight (%)</Label>
-          <Input
-            keyboardType="numeric"
-            value={courseworkWeight}
-            onChangeText={setCourseworkWeight}
-          />
-        </View>
-      </View>
-      <Text variant="muted" style={{ fontSize: 12 }}>
-        Weights must add up to 100%
-      </Text>
 
       <Button onPress={submit} loading={loading}>
         {editing ? "Save Changes" : "Create Academic Year"}

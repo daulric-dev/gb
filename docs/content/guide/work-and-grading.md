@@ -5,75 +5,89 @@ sidebar_position: 5
 
 # Work and grading
 
-Everything that counts towards a grade is **Work**: a quiz or an assignment, set for one subject in one class in one term. There is no separate place to type marks in — a mark exists because a piece of work produced it.
+Everything that counts towards a grade lives under a course's **Assignments** tab: quizzes, assignments, and offline work. A mark exists because a piece of work produced it.
 
-## The grading scheme comes first
+## Assignment groups
 
-Before setting work, decide how the term is weighted. The **grading scheme** lives on the class and applies to every subject that class takes.
+Groups are the course's weighting - for example Labs 40, Quizzes 30, Exams 30. **Manage groups** adds, renames, reorders and weights them.
 
-A scheme is a set of named **groups** with weights that total 100 — for example Coursework 40, Tests 20, Exam 40. One group is flagged as the exam, which is what feeds the year-end result.
+- If groups have weights, the course grade combines each group's percentage by those weights. **A group with nothing marked yet is left out** and the rest rescale, so an Exams group set up in week one does not drag every grade down until the exam happens.
+- If no group has a weight, the grade is simply points earned out of points available.
+- Work in no group sits in **Ungrouped**.
 
-When you create a piece of work you choose which group it counts toward. That is what "Counts toward" means on the form. Work left ungrouped shows as **Not weighted** and does not affect the term grade.
+Weights need not add up to 100.
 
-Two behaviours worth knowing:
+### Dropping the lowest marks
 
-- **A group with no marks in it is dropped**, and the rest are rescaled. Setting up an Exam group in week one does not drag every average down until the exam happens.
-- **Editing an inherited scheme forks it to your class.** You are not quietly changing the school default for everyone else.
+Each group can **drop lowest** and **drop highest** marks - for example "drop each student's lowest quiz". Set them under **Manage groups**, next to the weight.
+
+- Drops are worked out per student, among the marks that count (marked, not excused, not omitted). Unmarked work is never dropped.
+- "Lowest" means the marks whose removal raises the student's group percentage most, which is not always the smallest percentage: with a 2-point quiz and a 50-point test, dropping the test can help more than dropping the quiz.
+- A group never drops all of a student's marks - at least one always counts.
+- In the gradebook a dropped mark is shown ~~struck through~~, and students see it marked "dropped, not counted" on their grades page. The mark itself is kept; change the rule and it counts again.
 
 ## Setting work
 
-From a class, open **Work** and create either:
+**New** under Assignments creates one of:
 
-- **Quiz** — questions, marked automatically the moment the student submits.
-- **Assignment** — students hand in a file, typed text, or both.
+- **Quiz** - questions, marked automatically the moment the student submits.
+- **Assignment** - students hand in a file, typed text, or both.
+- **Offline** - done on paper or in person; nothing to hand in online, you enter the marks.
 
-Give it a title, instructions, a points total, a due date, and the grading group it counts toward.
-
-New work is created as a **draft**. Students cannot see a draft. This is the stage for writing questions and changing your mind.
+Give it a title, instructions (Markdown), a points total, a due date and its group. New work is a **draft**: students cannot see it.
 
 ### Quiz questions
 
-Three kinds:
-
-- **Multiple choice** — several options, one correct.
+- **Multiple choice** - several options, one correct.
 - **True or false**.
-- **Short answer** — the student types a word or phrase, checked against the answers you accept. Matching ignores capitals and extra spaces. List every reasonable wording; students never see the accepted answers.
+- **Short answer** - checked against the answers you accept, ignoring capitals and extra spaces. List every reasonable wording; students never see them.
 
-You can edit and reorder questions freely while the quiz is a draft.
-
-### Attempts
-
-A quiz can allow more than one attempt. Set **Attempts** to the number allowed, or to `0` for unlimited. Students are told which they are getting before they start.
+**Attempts** sets how many tries a student gets (`0` is unlimited).
 
 ## Publishing
 
-**Publish** makes the work visible to students and creates its place in the gradebook.
-
-**Questions lock at publish.** Editing a question after work has been handed in would silently rescore it, so the app refuses. Title, instructions, due date and points stay editable.
-
-**Close** stops further submissions without hiding anything already done.
+**Publish** makes the work visible to students. **Questions lock at publish** - changing them afterwards would silently rescore work already handed in. Title, instructions, due date and points stay editable. **Close** stops new submissions without hiding anything.
 
 ## Marking
 
-The **Submissions** tab lists every student in the class, whether they handed in or not.
+Open the work to see every student in the course, whether they handed in or not.
 
-- **Quizzes** mark themselves. The score appears as soon as the student submits.
-- **Assignments** you mark: open or download what they handed in, enter a score out of the points total. The mark reaches the gradebook as you enter it — there is no separate save-to-gradebook step.
+- **Quizzes** mark themselves.
+- **Assignments and offline work**: type the score (up to two decimal places) and optional feedback. Students see the mark and feedback once it is marked.
+
+### Rubrics
+
+A rubric breaks a mark into **criteria** (Argument 10 points, Evidence 5 points...), each with **levels** (Excellent 10, Good 7, Needs work 3). Open an assignment or offline work and use its **Rubric** tab:
+
+- **New rubric** builds one. Rubrics belong to the course, so the next piece of work can pick the same one from the list instead of building it again.
+- To mark with it, click the rubric icon on a student's row in the marks table, pick a level for each criterion and add a comment where it helps. The total becomes the student's mark. You can type a **score override** if the total is not what you want to give - for example when the rubric is worth more points than the work.
+- Students see the rubric on the work page before they hand in, and the levels and comments you gave them once it is marked.
+- Once a rubric has been used to mark anyone its criteria can no longer change (the marks would stop matching what they say). Rename it freely, or **Copy to edit** to make a changed version.
+- Quizzes mark themselves and cannot have a rubric.
 
 ### When a mark should not count
 
-Two levels, for two different problems.
+- **The work went wrong** (a bad question, a test nobody could sit): turn on **Omit from final grade** on the work. Marks are kept and visible but do not count.
+- **One student's result should not count** (absent, sat a makeup): **Excuse** them, with an optional reason. Their row shows "EX" and it is left out of their grade.
 
-**The work went wrong** — a bad question, a test nobody could sit. Use **Do not count** on the activity itself. Every mark is kept and stays visible; none of them affect the term. **Count it** puts them back.
+Prefer either to deleting work or entering a zero - a zero is a real mark that pulls the average down.
 
-**One student's result went wrong** — absent for the test, sat a makeup, a lost paper. Use **Do not count** on that student's row in Submissions. You can add a reason, which is shown alongside it. Their mark is kept and visible; it simply stops counting toward the term. **Count it** reverses it.
+### Marking on your phone
 
-Prefer either of these to deleting the work or zeroing a score. A zero is a real mark that drags an average down; an exclusion is the app understanding that this one should not be counted, and the mark stays on record.
+In the app, a course's **Marking** section lists its work; open one for the roster (filter **To mark** / **Marked**) and tap a student. You see what they typed, can open their file (it downloads and opens in your phone's viewer), and enter a score from 0 to the work's points with at most two decimals, plus feedback. If the work has a rubric, tap a level per criterion: the score fills in with their sum and can still be overridden. **Excuse from this work** (and **Remove excuse**) is there too, and **Previous / Next** steps through the roster.
 
-## How a term grade is worked out
+## The gradebook
 
-For each subject, in each group: the marks the student has, as a percentage of what was available. Groups are combined by their weights. Groups with no marks drop out and the remainder rescale. Excluded work and excluded marks are left out at every step.
+**Grades** shows every student against every published piece of work, grouped by assignment group, with each student's percentage and letter (from the course's grade scale, or the school default). Hover a total for the per-group breakdown. **Export** downloads a CSV.
 
-The result is the term grade. Year-end combines the terms, with the exam group carrying its own weight.
+### Importing marks
 
-Because this is calculated rather than stored, a mark you correct today changes the term grade immediately — and everything downstream of it.
+**Import** next to Export takes a CSV back - the easiest way is to export, fill in marks in a spreadsheet, and import the same file.
+
+- Students are matched by the **Student ID** column the export includes (or an Email column, or first and last name). Work columns are matched by their titles. Other columns, like totals and letters, are ignored.
+- A number sets the mark, **EX** excuses the student, and a blank cell is left alone.
+- You see every change - who, which work, the mark now and the new one - and any problems (a mark over the points, a name that matches two students) before anything is saved. A file with problems cannot be imported until they are fixed.
+- Only cells that differ from the current mark are changed, so quizzes keep their automatic scores unless you typed a different number in.
+- Everything in the file is saved together, or nothing is.
+
+Grades are worked out from the marks each time, so correcting a mark changes the grade immediately. Unmarked work does not count yet: the grade is the student's grade *so far*. Scores and percentages are shown to two decimal places.

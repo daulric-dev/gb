@@ -97,8 +97,7 @@ frontend/
 │       ├── sonner.tsx
 │       └── tooltip.tsx
 ├── lib/
-│   ├── api.ts                     # API client with auth, token refresh, and multipart upload
-│   ├── auth.ts                    # Token storage (localStorage + cookie)
+│   ├── api.ts                     # API client (cookie auth, 401 → /login) and multipart upload
 │   ├── utils.ts                   # cn() utility for class merging
 │   ├── use-profile.ts            # Profile fetching hook
 │   └── reports/                   # Report-related utilities (barrel-exported via index.ts)
@@ -166,7 +165,7 @@ The app uses **Tailwind CSS v4** with the CSS-first configuration approach:
 | `/login` | Allow | → Redirect to `/dashboard` |
 | `/login/verify` | Allow | → Redirect to `/dashboard` |
 
-Authentication is determined by the `gb_logged_in` cookie (set when tokens are stored).
+Authentication is determined by the presence of the `gb_session` cookie (set by the API on sign-in; HttpOnly and opaque, so only the API validates it - a stale one gets a 401 from the first API call, which sends the user to `/login`). A signed-in visitor on `/login` goes to a safe `?next=` path when there is one.
 
 ## Running the Frontend
 

@@ -6,186 +6,66 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
-import { RequirePermission } from '@/permission/require-permission.decorator';
 import { ActivityService } from './activity.service';
 import { SubmissionService } from './submission.service';
 import {
   AddQuestionDto,
   CreateActivityDto,
-  ExcludeActivityDto,
-  ExcludeStudentGradeDto,
+  ExcuseSubmissionDto,
   GradeSubmissionDto,
-  ListActivitiesQueryDto,
   UpdateActivityDto,
   UpdateQuestionDto,
 } from './dto/activity.dto';
 
 /**
- * Teacher-facing quizzes and assignments.
+ * Teacher-facing quizzes, assignments and offline work.
  *
- * Gated on the assessment permissions: an activity becomes an assessment when
- * published, so the same people who manage assessments manage these.
+ * No catalog permission gates these: access is the caller's role in the
+ * activity's course, checked by the services through CourseAccessService.
+ * Teachers build and change work; TAs read it and mark.
  */
 @ApiTags('Grading')
 @ApiBearerAuth()
-@Controller('activities')
-@UseGuards(AuthGuard, PermissionGuard)
+@Controller()
+@UseGuards(AuthGuard)
 export class ActivityController {
   constructor(
     private readonly activities: ActivityService,
     private readonly submissions: SubmissionService,
   ) {}
 
-  @RequirePermission('assessment', 'read')
-  @Get()
-  async list(@Req() req: any, @Query() query: ListActivitiesQueryDto) {
-    return this.activities.list(req.user.id as string, query);
-  }
-
-  @RequirePermission('assessment', 'read')
-  @Get(':activityId')
-  async get(@Req() req: any, @Param('activityId') activityId: string) {
-    return this.activities.get(req.user.id as string, activityId);
-  }
-
-  @RequirePermission('assessment', 'create')
-  @Post()
-  async create(@Req() req: any, @Body() dto: CreateActivityDto) {
-    return this.activities.create(req.user.id as string, dto);
-  }
-
-  @RequirePermission('assessment', 'update')
-  @Patch(':activityId')
-  async update(
+  @Get('courses/:courseId/activities')
+  async list(
     @Req() req: any,
-    @Param('activityId') activityId: string,
-    @Body() dto: UpdateActivityDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.activities.update(req.user.id as string, activityId, dto);
+    return this.activities.listForCourse(req.user.id as string, courseId);
   }
 
-  /** Creates the gradebook row and opens the activity to students. */
-  @RequirePermission('assessment', 'update')
-  @Post(':activityId/publish')
-  async publish(@Req() req: any, @Param('activityId') activityId: string) {
-    return this.activities.publish(req.user.id as string, activityId);
-  }
-
-  @RequirePermission('assessment', 'update')
-  @Post(':activityId/close')
-  async close(@Req() req: any, @Param('activityId') activityId: string) {
-    return this.activities.close(req.user.id as string, activityId);
-  }
-
-  /** Leave it out of the calculation without losing the marks. */
-  @RequirePermission('assessment', 'update')
-  @Post(':activityId/exclude')
-  async setExcluded(
+  @Post('courses/:courseId/activities')
+  async create(
     @Req() req: any,
-    @Param('activityId') activityId: string,
-    @Body() dto: ExcludeActivityDto,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() dto: CreateActivityDto,
   ) {
-    return this.activities.setExcluded(
-      req.user.id as string,
-      activityId,
-      dto.excluded,
-    );
+    return this.activities.create(req.user.id as string, courseId, dto);
   }
 
-  /** The same, for one student's mark rather than the whole activity. */
-  @RequirePermission('grade', 'update')
-  @Post(':activityId/students/:studentId/exclude')
-  async setStudentGradeExcluded(
-    @Req() req: any,
-    @Param('activityId') activityId: string,
-    @Param('studentId') studentId: string,
-    @Body() dto: ExcludeStudentGradeDto,
-  ) {
-    return this.activities.setStudentGradeExcluded(
-      req.user.id as string,
-      activityId,
-      studentId,
-      dto.excluded,
-      dto.reason,
-    );
-  }
-
-  @RequirePermission('assessment', 'delete')
-  @Delete(':activityId')
-  @HttpCode(204)
-  async remove(@Req() req: any, @Param('activityId') activityId: string) {
-    await this.activities.remove(req.user.id as string, activityId);
-  }
-
-  // ── quiz questions ────────────────────────────────────────────────────────
-
-  @RequirePermission('assessment', 'update')
-  @Post(':activityId/questions')
-  async addQuestion(
-    @Req() req: any,
-    @Param('activityId') activityId: string,
-    @Body() dto: AddQuestionDto,
-  ) {
-    return this.activities.addQuestion(req.user.id as string, activityId, dto);
-  }
-
-  @RequirePermission('assessment', 'update')
-  @Patch(':activityId/questions/:questionId')
-  async updateQuestion(
-    @Req() req: any,
-    @Param('activityId') activityId: string,
-    @Param('questionId') questionId: string,
-    @Body() dto: UpdateQuestionDto,
-  ) {
-    return this.activities.updateQuestion(
-      req.user.id as string,
-      activityId,
-      questionId,
-      dto,
-    );
-  }
-
-  @RequirePermission('assessment', 'update')
-  @Delete(':activityId/questions/:questionId')
-  @HttpCode(204)
-  async removeQuestion(
-    @Req() req: any,
-    @Param('activityId') activityId: string,
-    @Param('questionId') questionId: string,
-  ) {
-    await this.activities.removeQuestion(
-      req.user.id as string,
-      activityId,
-      questionId,
-    );
-  }
-
-  // ── marking ───────────────────────────────────────────────────────────────
-
-  /** Every student in the class, with their submission or lack of one. */
-  @RequirePermission('grade', 'read')
-  @Get(':activityId/submissions')
-  async submissions_(@Req() req: any, @Param('activityId') activityId: string) {
-    return this.submissions.listForTeacher(req.user.id as string, activityId);
-  }
-
-  /** The file a student handed in, for the teacher marking it. */
-  @RequirePermission('grade', 'read')
-  @Get('submissions/:submissionId/file')
+  /** The file a student handed in, for staff marking it. */
+  @Get('activities/submissions/:submissionId/file')
   @ApiProduces('application/octet-stream')
   async submissionFile(
     @Req() req: any,
-    @Param('submissionId') submissionId: string,
+    @Param('submissionId', ParseUUIDPipe) submissionId: string,
     @Res() res: FastifyReply,
   ) {
     const { buffer, contentType, filename } =
@@ -201,13 +81,145 @@ export class ActivityController {
       .send(buffer);
   }
 
-  @RequirePermission('grade', 'update')
-  @Post('submissions/:submissionId/grade')
-  async grade(
+  /** Marking by submission id, for a screen that already holds one. */
+  @Post('activities/submissions/:submissionId/grade')
+  async gradeSubmission(
     @Req() req: any,
-    @Param('submissionId') submissionId: string,
+    @Param('submissionId', ParseUUIDPipe) submissionId: string,
     @Body() dto: GradeSubmissionDto,
   ) {
-    return this.submissions.grade(req.user.id as string, submissionId, dto);
+    return this.submissions.gradeSubmission(
+      req.user.id as string,
+      submissionId,
+      dto,
+    );
+  }
+
+  @Get('activities/:activityId')
+  async get(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    return this.activities.get(req.user.id as string, activityId);
+  }
+
+  @Patch('activities/:activityId')
+  async update(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Body() dto: UpdateActivityDto,
+  ) {
+    return this.activities.update(req.user.id as string, activityId, dto);
+  }
+
+  @Post('activities/:activityId/publish')
+  async publish(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    return this.activities.publish(req.user.id as string, activityId);
+  }
+
+  @Post('activities/:activityId/close')
+  async close(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    return this.activities.close(req.user.id as string, activityId);
+  }
+
+  @Delete('activities/:activityId')
+  @HttpCode(204)
+  async remove(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    await this.activities.remove(req.user.id as string, activityId);
+  }
+
+  // ── quiz questions ────────────────────────────────────────────────────────
+
+  @Post('activities/:activityId/questions')
+  async addQuestion(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Body() dto: AddQuestionDto,
+  ) {
+    return this.activities.addQuestion(req.user.id as string, activityId, dto);
+  }
+
+  @Patch('activities/:activityId/questions/:questionId')
+  async updateQuestion(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+    @Body() dto: UpdateQuestionDto,
+  ) {
+    return this.activities.updateQuestion(
+      req.user.id as string,
+      activityId,
+      questionId,
+      dto,
+    );
+  }
+
+  @Delete('activities/:activityId/questions/:questionId')
+  @HttpCode(204)
+  async removeQuestion(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+  ) {
+    await this.activities.removeQuestion(
+      req.user.id as string,
+      activityId,
+      questionId,
+    );
+  }
+
+  // ── marking ───────────────────────────────────────────────────────────────
+
+  /** Every student on the roster, with their submission or lack of one. */
+  @Get('activities/:activityId/submissions')
+  async listSubmissions(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    return this.submissions.listForTeacher(req.user.id as string, activityId);
+  }
+
+  /**
+   * Mark one student. Creates the submission when there is none, which is
+   * how offline work and students who never handed in get a mark.
+   */
+  @Patch('activities/:activityId/submissions/:studentId/grade')
+  async grade(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Body() dto: GradeSubmissionDto,
+  ) {
+    return this.submissions.grade(
+      req.user.id as string,
+      activityId,
+      studentId,
+      dto,
+    );
+  }
+
+  /** Leave one student's mark out of the course total, or put it back. */
+  @Patch('activities/:activityId/submissions/:studentId/excuse')
+  async excuse(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Body() dto: ExcuseSubmissionDto,
+  ) {
+    return this.submissions.excuse(
+      req.user.id as string,
+      activityId,
+      studentId,
+      dto,
+    );
   }
 }

@@ -9,7 +9,7 @@ Smaller changes that landed alongside the announcement board and the report-file
 
 ## `user_profile.email` column + backfill
 
-Added an `email` column to `user_profile` ([20260602220815_added_email_column_to_user_profile.sql](../../../../supabase/migrations/20260602220815_added_email_column_to_user_profile.sql)) and populated it from the auth user:
+Added an `email` column to `user_profile` (`20260602220815_added_email_column_to_user_profile.sql`) and populated it from the auth user:
 
 - **New users** - the profile insert on first OTP verification sets `email`.
 - **Existing users** - backfilled lazily in `verifyOtp` (from the session) and in `getProfile` (via `auth.admin.getUserById`), so a profile fills in on the user's next login or profile fetch ([auth.service.ts](../../../../backend/src/auth/auth.service.ts)).
@@ -22,7 +22,7 @@ Added an `email` column to `user_profile` ([20260602220815_added_email_column_to
 
 ## Persistent class sidebar
 
-The class detail page's horizontal button row (Grading, Attendance, Reports, Class Report, Enroll) became a **persistent sidebar** via a shared layout at [classes/[classId]/layout.tsx](../../../../frontend/app/dashboard/classes/[classId]/layout.tsx) - vertical nav on desktop, horizontal scroll on mobile - that stays visible and highlights the active page across all class sub-routes. "Enroll Students" deep-links to the overview with `?enroll=1`, which opens the (now controlled) enroll dialog.
+The class detail page's horizontal button row (Grading, Attendance, Reports, Class Report, Enroll) became a **persistent sidebar** via a shared layout at `classes/[classId]/layout.tsx` - vertical nav on desktop, horizontal scroll on mobile - that stays visible and highlights the active page across all class sub-routes. "Enroll Students" deep-links to the overview with `?enroll=1`, which opens the (now controlled) enroll dialog.
 
 ## Permissions editor redesign
 

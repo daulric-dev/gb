@@ -4,7 +4,7 @@ sidebar_label: Dedicated Deployment
 
 # Dedicated Deployment
 
-A dedicated deployment is a single-school instance of GradeBook hosted on its own infrastructure. The school gets their own Supabase instance (self-hosted or Supabase-managed) and their own backend/frontend deployment.
+A dedicated deployment is a single-school instance of GradeBook hosted on its own infrastructure. The school gets its own Postgres database, S3 bucket and backend/frontend deployment.
 
 This is distinct from the default multi-tenant setup where multiple schools share one platform.
 
@@ -24,19 +24,19 @@ The schema, RLS policies, and all API behaviour remain identical to the multi-te
 
 ## Setup
 
-### 1. Provision a Supabase Instance
+### 1. Provision the services
 
-Use either:
-- **Supabase Cloud** - create a new project at [supabase.com](https://supabase.com)
-- **Self-hosted Supabase** - follow the [official self-hosting guide](https://supabase.com/docs/guides/self-hosting)
+- **PostgreSQL 15+** - any managed Postgres, or the commented-out `db` service in `infrastructure/docker-compose.yml` for a single box
+- **S3-compatible storage** - AWS S3, Cloudflare R2, Backblaze B2, MinIO, SeaweedFS... one bucket, with the CORS rule from [Platform migration](./platform-migration.md#bucket-cors-production)
+- **SMTP** - any provider, for sign-in codes
 
 ### 2. Run Migrations
 
-Pull the schema from the reference project or apply your migration file:
+The backend image applies pending migrations when it starts. To run them yourself:
 
 ```bash
-supabase link --project-ref <your-project-ref>
-supabase db push
+cd backend
+DATABASE_URL=postgresql://... bun run db:deploy   # prisma migrate deploy
 ```
 
 ### 3. Configure Backend
@@ -44,9 +44,17 @@ supabase db push
 **`backend/.env`**
 
 ```env
-SUPABASE_URL=https://your-instance.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-SUPABASE_PUSHABLE_KEY=your-anon-key
+DATABASE_URL=postgresql://gradebook:...@db-host:5432/gradebook
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_BUCKET=gradebook
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+SMTP_URL=smtps://user:pass@smtp.example.com:465
+MAIL_FROM="GradeBook <no-reply@your-school.edu>"
+AUTH_SECRET=...                 # openssl rand -base64 32
+CHAT_ENCRYPTION_KEY=...         # openssl rand -base64 32
+STUDENT_CLAIM_CODE_PEPPER=...   # openssl rand -base64 32
+API_URL=https://your-backend-domain.com
 FRONTEND_URL=https://your-frontend-domain.com
 DEDICATED_DEPLOYMENT=true
 ```
@@ -75,9 +83,9 @@ All subsequent users who log in will be automatically assigned to this school, w
 | School creation | Unlimited | One-time only (first onboard) |
 | Onboarding school selector | Shown | Hidden |
 | School switcher in sidebar | Shown | Hidden |
-| RLS policies | Same | Same |
+| Access rules (API) | Same | Same |
 | API endpoints | Same | Same |
-| Supabase instance | Shared | Dedicated |
+| Database and storage | Shared | Dedicated |
 
 ---
 

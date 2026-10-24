@@ -1,3 +1,9 @@
 {
-  "compilerOptions": {},
+  // Only Bun reads this file: running `bun test` from the repo root compiles
+  // every package with it. The backend's NestJS decorators need the legacy
+  // decorator mode its own tsconfig turns on.
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
 }

@@ -1,7 +1,6 @@
 import { Redirect, Tabs } from "expo-router";
 import {
   LayoutDashboard,
-  Users,
   UserRoundSearch,
   Settings,
   LayoutGrid,
@@ -47,13 +46,6 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard color={color} size={size} />
           ),
-        }}
-      />
-      <Tabs.Screen
-        name="classes"
-        options={{
-          title: "Classes",
-          tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
         }}
       />
       <Tabs.Screen

@@ -1,11 +1,12 @@
-import { createClient } from '@supabase/supabase-js';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client';
 
-const API = process.env.API_URL ?? 'http://127.0.0.1:3001/api';
-const SUPA = 'http://127.0.0.1:54321';
-const SERVICE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
-
-const admin = createClient(SUPA, SERVICE_KEY, { auth: { persistSession: false } });
+// API_URL is the API origin, as in .env.example; routes live under /api.
+const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
+// Fixtures go straight to the database; sign-in goes through the API.
+const db = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 const results: string[] = [];
 function check(name: string, ok: boolean, detail = '') {
@@ -33,7 +34,9 @@ class Session {
     const res = await fetch(`${API}${path}`, {
       ...init,
       headers: {
-        'content-type': 'application/json',
+        // Only with a body: Fastify rejects an empty JSON body (bodiless
+        // POST / DELETE would otherwise be a 400).
+        ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(this.header() ? { cookie: this.header() } : {}),
         ...(init.headers ?? {}),
       },
@@ -51,214 +54,403 @@ class Session {
 }
 
 /**
- * Mint the OTP through the admin API instead of sending mail. Local Supabase
- * caps outbound email at 2/hour, which makes a mail-based flow unrepeatable.
- * The token is the same one the email would carry, so /auth/otp/verify - and
- * everything downstream of it - is still exercised for real.
+ * A sign-in code from the API's dev-only endpoint (ALLOW_DEV_LOGIN=true)
+ * instead of mail. It is a real code, so /auth/otp/verify - and everything
+ * downstream of it - is still exercised for real.
  */
 async function mintOtp(email: string): Promise<string> {
-  const { data, error } = await admin.auth.admin.generateLink({
-    type: 'magiclink',
-    email,
+  const res = await fetch(`${API}/auth/dev/code`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email }),
   });
-  if (error) throw error;
-  const otp = data.properties?.email_otp;
-  if (!otp) throw new Error(`No email_otp returned for ${email}`);
-  return otp;
+  if (!res.ok) throw new Error(`dev code for ${email} -> ${res.status} (is ALLOW_DEV_LOGIN=true?)`);
+  return ((await res.json()) as { code: string }).code;
 }
+
+/** Sign in through the real OTP flow; the session cookie lands in `session`. */
+async function signIn(session: Session, email: string) {
+  const token = await mintOtp(email);
+  return session.fetch('/auth/otp/verify', {
+    method: 'POST',
+    body: JSON.stringify({ email, token }),
+  });
+}
+
+/** Rows in the tables this script writes to, to prove clean-up. */
+async function counts() {
+  const [school, app_user, student] = await Promise.all([
+    db.school.count(),
+    db.app_user.count(),
+    db.student.count(),
+  ]);
+  return { school, app_user, student };
+}
+
+const short = (v: unknown, n = 100) => JSON.stringify(v)?.slice(0, n);
 
 async function main() {
   const stamp = Date.now();
+  const staffEmail = `http-staff-${stamp}@t.test`;
   const studentEmail = `http-stu-${stamp}@t.test`;
+  const student2Email = `http-stu2-${stamp}@t.test`;
+  const emails = [staffEmail, studentEmail, student2Email];
 
-  // ---- fixtures via the service client ------------------------------------
-  const { data: staffUser } = await admin.auth.admin.createUser({
-    email: `http-staff-${stamp}@t.test`,
-    email_confirm: true,
-  });
-  const staffId = staffUser.user!.id;
+  // Everything created is recorded here so `finally` can remove it even when a
+  // step throws half-way through.
+  let schoolId: string | null = null;
 
-  const { data: school } = await admin
-    .from('school')
-    .insert({ name: `HTTP E2E ${stamp}` })
-    .select('id')
-    .single();
-  const schoolId = school!.id;
+  const before = await counts();
 
-  await admin.from('user_profile').upsert({
-    id: staffId,
-    first_name: 'Staff',
-    school_id: schoolId,
-    role: 'admin',
-    account_type: 'staff',
-  });
-  await admin
-    .from('school_management')
-    .insert({ user_id: staffId, school_id: schoolId, role: 'admin' });
+  try {
+    // ---- fixtures straight into the database ------------------------------
+    const staffUser = await db.app_user.create({
+      data: { email: staffEmail, email_verified_at: new Date() },
+      select: { id: true },
+    });
+    const staffId = staffUser.id;
 
-  const { data: year } = await admin
-    .from('academic_year')
-    .insert({ school_id: schoolId, name: '2026/27', is_active: true })
-    .select('id')
-    .single();
-  const { data: term } = await admin
-    .from('term')
-    .insert({ academic_year_id: year!.id, name: 'michaelmas', sort_order: 1 })
-    .select('id')
-    .single();
-  const { data: group } = await admin
-    .from('student_group')
-    .insert({ academic_year_id: year!.id, name: 'Form 1' })
-    .select('id')
-    .single();
-  const { data: subject } = await admin
-    .from('subject')
-    .insert({ school_id: schoolId, name: 'Maths', code: 'MAT' })
-    .select('id')
-    .single();
+    const school = await db.school.create({
+      data: { name: `HTTP E2E ${stamp}` },
+      select: { id: true },
+    });
+    schoolId = school.id;
 
-  const { data: me } = await admin
-    .schema('student')
-    .from('student')
-    .insert({ school_id: schoolId, first_name: 'Sam', last_name: 'Self' })
-    .select('id')
-    .single();
-  const { data: other } = await admin
-    .schema('student')
-    .from('student')
-    .insert({ school_id: schoolId, first_name: 'Class', last_name: 'Mate' })
-    .select('id')
-    .single();
+    await db.user_profile.upsert({
+      where: { id: staffId },
+      create: {
+        id: staffId,
+        first_name: 'Staff',
+        school_id: schoolId,
+        role: 'admin',
+        account_type: 'staff',
+      },
+      update: {
+        first_name: 'Staff',
+        school_id: schoolId,
+        role: 'admin',
+        account_type: 'staff',
+      },
+    });
+    await db.school_management.create({
+      data: { user_id: staffId, school_id: schoolId, role: 'admin' },
+    });
 
-  await admin
-    .schema('student')
-    .from('student_group_enrollment')
-    .insert({ student_id: me!.id, student_group_id: group!.id });
+    const year = await db.academic_year.create({
+      data: { school_id: schoolId, name: '2026/27', is_active: true },
+      select: { id: true },
+    });
+    const term = await db.term.create({
+      data: { academic_year_id: year.id, name: 'Semester 1', sort_order: 1 },
+      select: { id: true },
+    });
 
-  const { data: asmt } = await admin
-    .schema('grading')
-    .from('assessment')
-    .insert({
-      subject_id: subject!.id,
-      term_id: term!.id,
-      title: 'Test 1',
-      assessment_type: 'exam',
-      max_score: 100,
-      weight: 1,
-      assessment_date: '2026-09-15',
-    })
-    .select('id')
-    .single();
+    // `me` is the roster record staff made before the student had an account;
+    // it already carries a mark. The student's login ends up attached to it.
+    const me = await db.student.create({
+      data: { school_id: schoolId, first_name: 'Sam', last_name: 'Self' },
+      select: { id: true },
+    });
+    const other = await db.student.create({
+      data: { school_id: schoolId, first_name: 'Class', last_name: 'Mate' },
+      select: { id: true },
+    });
 
-  await admin.schema('grading').from('grade').insert([
-    { assessment_id: asmt!.id, student_id: me!.id, score: 77 },
-    { assessment_id: asmt!.id, student_id: other!.id, score: 12 },
-  ]);
+    // A published course with a join code. `other` is enrolled; `me` joins
+    // over HTTP below.
+    const joinCode = `J${String(stamp).slice(-5)}`;
+    const course = await db.course.create({
+      data: {
+        school_id: schoolId,
+        academic_year_id: year.id,
+        term_id: term.id,
+        name: 'Maths',
+        code: 'MAT',
+        status: 'published',
+        join_code: joinCode,
+        created_by: staffId,
+      },
+      select: { id: true },
+    });
+    await db.course_staff.create({
+      data: { course_id: course.id, user_profile_id: staffId, role: 'teacher' },
+    });
+    await db.course_student.create({
+      data: { course_id: course.id, student_id: other.id },
+    });
 
-  await admin.schema('student').from('attendance_record').insert([
-    { student_id: me!.id, student_group_id: group!.id, attendance_date: '2026-09-01', status: 'present' },
-    { student_id: other!.id, student_group_id: group!.id, attendance_date: '2026-09-01', status: 'absent' },
-  ]);
+    const activity = await db.activity.create({
+      data: {
+        course_id: course.id,
+        kind: 'offline',
+        title: 'Test 1',
+        points: 100,
+        status: 'published',
+        created_by: staffId,
+      },
+      select: { id: true },
+    });
+    await db.submission.createMany({
+      data: [
+        { activity_id: activity.id, student_id: me.id, status: 'graded', score: 77 },
+        { activity_id: activity.id, student_id: other.id, status: 'graded', score: 12 },
+      ],
+    });
 
-  // ---- staff issues a claim code over HTTP --------------------------------
-  const staffSession = new Session();
-  const staffOtp = await mintOtp(`http-staff-${stamp}@t.test`);
-  const staffVerify = await staffSession.fetch('/auth/otp/verify', {
-    method: 'POST',
-    body: JSON.stringify({ email: `http-staff-${stamp}@t.test`, token: staffOtp }),
-  });
-  check('staff logs in over HTTP', staffVerify.status === 201 || staffVerify.status === 200, `status ${staffVerify.status}`);
+    // Content: one published module with a published page, and a draft page
+    // that must stay hidden.
+    const page = await db.page.create({
+      data: { course_id: course.id, title: 'Welcome', body: '# Hi', is_published: true },
+      select: { id: true },
+    });
+    const draftPage = await db.page.create({
+      data: { course_id: course.id, title: 'Draft', body: 'wip' },
+      select: { id: true },
+    });
+    const mod = await db.module.create({
+      data: { course_id: course.id, title: 'Week 1', is_published: true },
+      select: { id: true },
+    });
+    await db.module_item.createMany({
+      data: [
+        { module_id: mod.id, course_id: course.id, position: 0, item_type: 'page', page_id: page.id },
+        { module_id: mod.id, course_id: course.id, position: 1, item_type: 'page', page_id: draftPage.id },
+      ],
+    });
 
-  const issued = await staffSession.fetch(`/students/${me!.id}/claim-code`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-  check('staff issues a claim code over HTTP', issued.status === 201 && typeof issued.body?.code === 'string', `status ${issued.status} ${JSON.stringify(issued.body).slice(0, 80)}`);
-  const claimCode: string = issued.body.code;
+    // ---- staff issues the school join code over HTTP ----------------------
+    const staff = new Session();
+    const staffVerify = await signIn(staff, staffEmail);
+    check('staff logs in over HTTP', staffVerify.status === 201 || staffVerify.status === 200, `status ${staffVerify.status}`);
 
-  // ---- the student's own journey ------------------------------------------
-  // Normally signInWithOtp creates this user; created here so the admin API
-  // can mint a token for it. The backend still creates the user_profile.
-  await admin.auth.admin.createUser({ email: studentEmail, email_confirm: true });
+    const noCode = await staff.fetch('/schools/join-code');
+    check('no live join code to start with', noCode.status === 200 && noCode.body?.activeCode === null, `status ${noCode.status} ${short(noCode.body)}`);
 
-  const student = new Session();
-  const otp = await mintOtp(studentEmail);
-  const verify = await student.fetch('/auth/otp/verify', {
-    method: 'POST',
-    body: JSON.stringify({ email: studentEmail, token: otp }),
-  });
-  check('student logs in over HTTP', verify.status === 200 || verify.status === 201, `status ${verify.status}`);
-  check('new login reports account_type staff by default', verify.body?.user?.account_type === 'staff', JSON.stringify(verify.body?.user?.account_type));
+    const issued = await staff.fetch('/schools/join-code', {
+      method: 'POST',
+      body: JSON.stringify({ ttlDays: 7 }),
+    });
+    const schoolCode: string = issued.body?.code;
+    check('staff issues the school join code',
+      issued.status === 201 && /^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(schoolCode ?? '') && typeof issued.body?.expiresAt === 'string',
+      `status ${issued.status} ${short(issued.body)}`,
+    );
 
-  // portal is closed before claiming
-  const earlyPortal = await student.fetch('/portal/me');
-  check('portal denied before onboarding', earlyPortal.status === 403, `status ${earlyPortal.status}`);
+    const status = await staff.fetch('/schools/join-code');
+    check('code status is active and never shows the code',
+      status.status === 200 && !!status.body?.activeCode?.expiresAt && !JSON.stringify(status.body).includes(schoolCode),
+      short(status.body),
+    );
 
-  const onboard = await student.fetch('/auth/onboard', {
-    method: 'PATCH',
-    body: JSON.stringify({ firstName: 'Sam', lastName: 'Self', accountType: 'student' }),
-  });
-  check('student onboards as a student', onboard.status === 200 && onboard.body?.account_type === 'student', `status ${onboard.status} type ${onboard.body?.account_type}`);
+    // ---- the student's own journey ----------------------------------------
+    // The first sign-in creates the account and the backend creates the
+    // user_profile.
+    const student = new Session();
+    const verify = await signIn(student, studentEmail);
+    check('student logs in over HTTP', verify.status === 200 || verify.status === 201, `status ${verify.status}`);
+    check('new login reports account_type staff by default', verify.body?.user?.account_type === 'staff', short(verify.body?.user?.account_type));
+    check('new login is not onboarded', verify.body?.user?.is_onboarded === false, short(verify.body?.user?.is_onboarded));
 
-  const stillClosed = await student.fetch('/portal/me');
-  check('portal still denied before the code is redeemed', stillClosed.status === 403, `status ${stillClosed.status}`);
+    // portal is closed before joining
+    const earlyPortal = await student.fetch('/portal/me');
+    check('portal denied before onboarding', earlyPortal.status === 403, `status ${earlyPortal.status}`);
 
-  const badCode = await student.fetch('/auth/claim-student', {
-    method: 'POST',
-    body: JSON.stringify({ code: 'AAAA-BBBB-CCCC' }),
-  });
-  check('a wrong code is rejected', badCode.status === 400, `status ${badCode.status}`);
+    const onboard = await student.fetch('/auth/onboard', {
+      method: 'PATCH',
+      body: JSON.stringify({ firstName: 'Sam', lastName: 'Self', accountType: 'student' }),
+    });
+    check('student onboards as a student', onboard.status === 200 && onboard.body?.account_type === 'student', `status ${onboard.status} type ${onboard.body?.account_type}`);
+    // @t.test is no school's verified email domain, so onboarding must not
+    // auto-join anywhere: the code is the only way in.
+    check('onboarding does not place the student in a school', onboard.body?.school === null, short(onboard.body?.school));
 
-  const claim = await student.fetch('/auth/claim-student', {
-    method: 'POST',
-    body: JSON.stringify({ code: claimCode }),
-  });
-  check('student redeems the real code', claim.status === 201 && claim.body?.studentId === me!.id, `status ${claim.status} ${JSON.stringify(claim.body).slice(0, 80)}`);
+    const asStaff = await student.fetch('/auth/onboard', {
+      method: 'PATCH',
+      body: JSON.stringify({ firstName: 'Sam', lastName: 'Self', accountType: 'staff' }),
+    });
+    check('a student account cannot re-onboard as staff', asStaff.status === 403, `status ${asStaff.status}`);
 
-  // ---- portal reads --------------------------------------------------------
-  const portalMe = await student.fetch('/portal/me');
-  check('GET /portal/me returns the student', portalMe.status === 200 && portalMe.body?.firstName === 'Sam', `status ${portalMe.status}`);
-  check('portal shows the class enrolment', portalMe.body?.classes?.length === 1, JSON.stringify(portalMe.body?.classes?.length));
+    const stillClosed = await student.fetch('/portal/me');
+    check('portal still denied before the code is redeemed', stillClosed.status === 403, `status ${stillClosed.status}`);
 
-  const grades = await student.fetch('/portal/me/grades');
-  const gradeRows: any[] = Array.isArray(grades.body) ? grades.body : [];
-  const scores = gradeRows.flatMap((s: any) => s.assessments.map((a: any) => a.score));
-  check('grades are the caller-only rows', grades.status === 200 && scores.length === 1 && scores[0] === 77, `${JSON.stringify(scores)}`);
+    const badCode = await student.fetch('/auth/join-school', {
+      method: 'POST',
+      body: JSON.stringify({ code: 'AAAA-BBBB-CCCC' }),
+    });
+    check('a wrong code is rejected', badCode.status === 400, `status ${badCode.status}`);
 
-  const attendance = await student.fetch('/portal/me/attendance');
-  check('attendance is caller-only', attendance.status === 200 && attendance.body?.summary?.total === 1, JSON.stringify(attendance.body?.summary));
+    const shortCode = await student.fetch('/auth/join-school', {
+      method: 'POST',
+      body: JSON.stringify({ code: 'ABCD' }),
+    });
+    check('a wrong-length code is rejected the same way', shortCode.status === 400 && shortCode.body?.message === badCode.body?.message, `status ${shortCode.status} ${short(shortCode.body?.message)}`);
 
-  const reports = await student.fetch('/portal/me/reports');
-  check('reports endpoint responds', reports.status === 200 && Array.isArray(reports.body), `status ${reports.status}`);
+    // Case and dashes are ignored.
+    const joinSchool = await student.fetch('/auth/join-school', {
+      method: 'POST',
+      body: JSON.stringify({ code: schoolCode.toLowerCase().replace(/-/g, '') }),
+    });
+    const joinedId: string | undefined = joinSchool.body?.studentId;
+    check('student redeems the school code',
+      joinSchool.status === 201 && joinSchool.body?.schoolId === schoolId && typeof joinedId === 'string',
+      `status ${joinSchool.status} ${short(joinSchool.body)}`,
+    );
+    check('redeeming creates a new record, not the roster one', !!joinedId && joinedId !== me.id, short(joinedId));
 
-  // ---- a student must not reach the staff API -----------------------------
-  for (const [label, path] of [
-    ['students roster', '/students'],
-    ['classes', '/classes'],
-    ['school members', '/schools/members'],
-    ['permission catalog', '/permissions/catalog'],
-  ] as const) {
-    const res = await student.fetch(path);
-    check(`student denied ${label}`, res.status === 403, `status ${res.status}`);
+    const fresh = await student.fetch('/portal/me');
+    check('portal opens on the new record', fresh.status === 200 && fresh.body?.id === joinedId && fresh.body?.school?.id === schoolId, `status ${fresh.status} ${short(fresh.body)}`);
+
+    const replay = await student.fetch('/auth/join-school', {
+      method: 'POST',
+      body: JSON.stringify({ code: schoolCode }),
+    });
+    check('joining a second school is refused', replay.status === 409, `status ${replay.status}`);
+
+    // The code is not consumed: a second student can use it too.
+    const student2 = new Session();
+    await signIn(student2, student2Email);
+    await student2.fetch('/auth/onboard', {
+      method: 'PATCH',
+      body: JSON.stringify({ firstName: 'Nia', lastName: 'New', accountType: 'student' }),
+    });
+    const join2 = await student2.fetch('/auth/join-school', {
+      method: 'POST',
+      body: JSON.stringify({ code: schoolCode }),
+    });
+    check('the code stays valid for the next student', join2.status === 201 && join2.body?.schoolId === schoolId, `status ${join2.status} ${short(join2.body)}`);
+
+    // ---- staff links the login to the roster record -----------------------
+    const dupes = await staff.fetch('/students/duplicates');
+    const pair = Array.isArray(dupes.body)
+      ? dupes.body.filter((d: any) => d.joinedId === joinedId)
+      : [];
+    check('the join shows up as a duplicate of the roster record',
+      dupes.status === 200 && pair.length === 1 && pair[0].existingId === me.id && pair[0].name === 'Sam Self',
+      `status ${dupes.status} ${short(dupes.body, 200)}`,
+    );
+    check('a student with no roster twin is not a duplicate',
+      Array.isArray(dupes.body) && !dupes.body.some((d: any) => d.joinedId === join2.body?.studentId),
+      short(dupes.body, 200),
+    );
+
+    const studentDenied = await student.fetch(`/students/duplicates/${joinedId}/merge/${me.id}`, { method: 'POST' });
+    check('a student cannot merge records', studentDenied.status === 403, `status ${studentDenied.status}`);
+
+    const merge = await staff.fetch(`/students/duplicates/${joinedId}/merge/${me.id}`, { method: 'POST' });
+    check('staff merges the new record into the roster record', merge.status === 201 && merge.body?.studentId === me.id, `status ${merge.status} ${short(merge.body)}`);
+
+    const linked = await db.student.findUnique({ where: { id: me.id }, select: { user_profile_id: true } });
+    const gone = await db.student.findUnique({ where: { id: joinedId ?? me.id }, select: { id: true } }).catch(() => null);
+    check('the roster record now carries the login', linked?.user_profile_id === verify.body?.user?.id, short(linked));
+    check('the join-time record is gone', joinedId !== undefined && gone === null, short(gone));
+
+    const mergeAgain = await staff.fetch(`/students/duplicates/${join2.body?.studentId}/merge/${me.id}`, { method: 'POST' });
+    check('merging into a record that has an account is refused', mergeAgain.status === 409, `status ${mergeAgain.status}`);
+
+    // ---- portal reads -----------------------------------------------------
+    const portalMe = await student.fetch('/portal/me');
+    check('GET /portal/me returns the roster record', portalMe.status === 200 && portalMe.body?.id === me.id && portalMe.body?.firstName === 'Sam', `status ${portalMe.status} ${short(portalMe.body)}`);
+
+    const none = await student.fetch('/portal/me/courses');
+    check('no courses before joining', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, short(none.body));
+
+    const hidden = await student.fetch(`/portal/me/courses/${course.id}`);
+    check('a course the student is not in is a 404', hidden.status === 404, `status ${hidden.status}`);
+
+    const wrongJoin = await student.fetch('/portal/me/courses/join', {
+      method: 'POST',
+      body: JSON.stringify({ joinCode: 'NOPE00' }),
+    });
+    check('a wrong course join code is rejected', wrongJoin.status === 404, `status ${wrongJoin.status}`);
+
+    const joined = await student.fetch('/portal/me/courses/join', {
+      method: 'POST',
+      body: JSON.stringify({ joinCode: joinCode.toLowerCase() }),
+    });
+    check('student joins the course by code', joined.status === 201 && joined.body?.id === course.id, `status ${joined.status} ${short(joined.body)}`);
+    check('the course card never carries the join code', !!joined.body && !('joinCode' in joined.body), short(Object.keys(joined.body ?? {})));
+
+    const courses = await student.fetch('/portal/me/courses');
+    const card = Array.isArray(courses.body) ? courses.body[0] : null;
+    check('the course lists with its teacher', courses.status === 200 && courses.body.length === 1 && card?.teachers?.[0]?.firstName === 'Staff', short(card, 120));
+    check('the card grade is the caller-only mark', card?.grade?.percent === 77, short(card?.grade));
+
+    const grades = await student.fetch(`/portal/me/courses/${course.id}/grades`);
+    const scores = (grades.body?.activities ?? []).map((a: any) => a.submission?.score);
+    check('the grades page shows only the caller\'s score',
+      grades.status === 200 && grades.body?.grade?.percent === 77 && scores.length === 1 && scores[0] === 77,
+      `status ${grades.status} ${short(scores)}`,
+    );
+
+    const modules = await student.fetch(`/portal/me/courses/${course.id}/modules`);
+    const items: any[] = modules.body?.[0]?.items ?? [];
+    check('modules show published items only', modules.status === 200 && items.length === 1 && items[0].title === 'Welcome', short(items.map((i) => i.title)));
+
+    const readPage = await student.fetch(`/portal/me/courses/${course.id}/pages/${page.id}`);
+    check('a published page is readable', readPage.status === 200 && readPage.body?.body === '# Hi', `status ${readPage.status}`);
+
+    const readDraft = await student.fetch(`/portal/me/courses/${course.id}/pages/${draftPage.id}`);
+    check('a draft page is a 404', readDraft.status === 404, `status ${readDraft.status}`);
+
+    const news = await student.fetch(`/portal/me/courses/${course.id}/announcements`);
+    check('course announcements respond', news.status === 200 && Array.isArray(news.body), `status ${news.status}`);
+
+    // ---- a student must not reach the staff API ---------------------------
+    for (const [label, path] of [
+      ['students roster', '/students'],
+      ['staff dashboard', '/dashboard/summary'],
+      ['school members', '/schools/members'],
+      ['permission catalog', '/permissions/catalog'],
+      ['join code status', '/schools/join-code'],
+    ] as const) {
+      const res = await student.fetch(path);
+      check(`student denied ${label}`, res.status === 403, `status ${res.status}`);
+    }
+
+    const mine = await student.fetch('/permissions/me');
+    check('permissions/me reports a student with no permissions',
+      mine.status === 200 && mine.body?.accountType === 'student' && mine.body?.permissions?.length === 0,
+      short(mine.body),
+    );
+
+    // ---- revoking the code closes the door --------------------------------
+    const revoke = await staff.fetch('/schools/join-code', { method: 'DELETE' });
+    check('staff revokes the join code', revoke.status === 204, `status ${revoke.status}`);
+
+    const afterRevoke = await staff.fetch('/schools/join-code');
+    check('no live code after revoking', afterRevoke.status === 200 && afterRevoke.body?.activeCode === null, short(afterRevoke.body));
+
+    // The code is checked before membership, so a revoked code reads as
+    // invalid rather than "already in a school".
+    const revoked = await student.fetch('/auth/join-school', {
+      method: 'POST',
+      body: JSON.stringify({ code: schoolCode }),
+    });
+    check('a revoked code is rejected', revoked.status === 400, `status ${revoked.status}`);
+  } finally {
+    // ---- clean-up -----------------------------------------------------------
+    // The school cascades to its years, terms, courses (and their content,
+    // enrolments, activities, submissions), students, join codes, memberships
+    // and billing rows. Accounts are not under the school: deleting app_user
+    // cascades to user_profile, sessions and identities. Sign-in codes are
+    // keyed by email only.
+    if (schoolId) await db.school.delete({ where: { id: schoolId } }).catch((e) => console.error('clean-up school', e));
+    await db.app_user.deleteMany({ where: { email: { in: emails } } }).catch((e) => console.error('clean-up app_user', e));
+    await db.email_code.deleteMany({ where: { email: { in: emails } } }).catch((e) => console.error('clean-up email_code', e));
+
+    const after = await counts();
+    check('clean-up leaves the row counts as they were',
+      JSON.stringify(after) === JSON.stringify(before),
+      `before ${short(before)} after ${short(after)}`,
+    );
+
+    console.log('\n' + results.join('\n') + '\n');
   }
-
-  const mine = await student.fetch('/permissions/me');
-  check('permissions/me reports a student with no permissions',
-    mine.status === 200 && mine.body?.accountType === 'student' && mine.body?.permissions?.length === 0,
-    JSON.stringify(mine.body),
-  );
-
-  // ---- a second claim of the same code fails ------------------------------
-  const replay = await student.fetch('/auth/claim-student', {
-    method: 'POST',
-    body: JSON.stringify({ code: claimCode }),
-  });
-  check('the code cannot be replayed', replay.status === 409 || replay.status === 400, `status ${replay.status}`);
-
-  console.log('\n' + results.join('\n') + '\n');
 }
 
-main().catch((e) => {
-  console.error('SCRIPT ERROR', e);
-  process.exit(1);
-});
+main()
+  .catch((e) => {
+    console.error('SCRIPT ERROR', e);
+    process.exitCode = 1;
+  })
+  .finally(() => db.$disconnect());

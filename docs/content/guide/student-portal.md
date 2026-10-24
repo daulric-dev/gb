@@ -5,61 +5,61 @@ sidebar_position: 7
 
 # The student portal
 
-Students get their own view — on the web and in the mobile app — showing one person's record and nothing else. There is no way for a student to see another student's marks, a class list, or anything about staff.
+Students get their own view - on the web and in the mobile app - showing one person's record and nothing else.
 
-Five places, on the left (or along the bottom, on a phone).
+## Dashboard and courses
 
-## Overview
+Your course cards, each with your current grade, and what is due next across all of them. **Join a course** takes the six-character code your teacher gives you. **Courses** also lists past (archived) courses, which stay readable.
 
-Where you land. Your classes, and your most recent report if one has been published.
+Inside a course: **Home**, **Modules** (pages, work, files and links in order), **Assignments**, **Grades**, **Announcements**, **Discussions** and **Attendance**.
 
-## Work
+The mobile app has the same course screen: tap a course on **Home** and switch between **Home** (the course description, upcoming work and recent announcements), **Modules**, **Work**, **Grades**, **Announcements**, **Discussions** and **Attendance** with the chips along the top. In **Modules**, a page opens in the app, work opens its hand-in screen, a link opens in the browser, and a file is downloaded and handed to your phone's viewer (Quick Look / "Open with"), where you can also save or share it. Pull down on any screen to refresh.
 
-Everything set for you, in three groups:
+## To-do and handing in work
 
-- **To do** — not handed in yet. Due dates show here.
-- **Handed in** — done, waiting to be marked or already marked.
-- **Closed** — no longer accepting submissions.
+**To-do** lists everything set for you across courses, by due date.
 
-Opening a piece of work shows what to do and how to hand it in.
+- **Assignments** - attach a file, type an answer, or both. Attaching is not handing in: press **Hand in** when you are ready.
+- **Quizzes** - answer and submit; the score appears straight away. If retakes are allowed, **Try again** appears after your result. Correct answers are never shown.
+- **Offline work** - done on paper; your teacher records the mark here.
 
-### Assignments
+Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes are answered and submitted the same way, with **Try again** when retakes are allowed.
 
-Attach a file, type an answer, or both, depending on what the teacher allowed. Two steps, deliberately:
+## Calendar and notifications
 
-1. **Attach or type** your work. A file uploads as soon as you choose it, and the page confirms it — *"File attached — hand in when you are ready."*
-2. **Hand in**, when you are ready.
+**Calendar** shows a month at a time with every piece of work on the day it is due, coloured by course. Pick a day to see what is due, at what time, and whether you have handed it in. **Export .ics** saves the month's due dates for Google Calendar, Outlook or Apple Calendar (a one-off copy; export again to pick up changes). In the app, the **Calendar** tab lists the next two months day by day.
 
-Uploading is not handing in. Work sits as a draft until you hand it in, so you can attach a file now and submit later. The app will not let you hand in nothing.
-
-A large file on a weak connection resumes rather than restarting, so a dropped connection mid-upload is not a lost upload.
-
-### Quizzes
-
-Answer the questions and submit. Quizzes mark themselves immediately, so your score appears as soon as you finish.
-
-Before you start, the app tells you which kind of quiz it is: *"You get one attempt, and it is marked as soon as you submit"*, or *"Marked as soon as you submit, and you can retake it."* Where retakes are allowed, **Try again** appears after your result.
-
-You are never shown the correct answers — not before, during, or after. Your score is the feedback.
+When a teacher publishes new work, posts a course announcement or publishes a discussion topic, or someone replies in a discussion you started or posted in, you get a notification (several replies to the same topic are gathered into one): the **bell** in the portal header shows how many are unread, and the app sends a push. Opening a notification marks it read and takes you to the work, or to the course's announcements - in the app too: a new-work push opens the work screen and an announcement push opens the course on its **Announcements** section. **Mark all read** clears the bell. Draft courses never notify, and work that is closed and reopened does not notify you twice.
 
 ## Grades
 
-Every assessment you have been marked on, with your score. This updates as teachers mark, so a new mark can appear at any time.
+**Grades** shows every course with your percentage and letter, and each course's breakdown by assignment group, with every marked piece of work, its score and your teacher's feedback. Work marked **Excused** does not count towards your grade.
 
-A mark your teacher has excluded — because you were absent, or sat a makeup — still appears here, shown as not counting toward your grade. Nothing is hidden from you; it simply does not affect the total.
+Your grade is your grade *so far* - unmarked work is not counted yet.
 
-## Attendance
+## Discussions
 
-Your register: the dates and whether you were **Present**, **Absent** or **Late**. It updates as soon as a teacher saves, so this is the fastest place to spot a mistake.
+A course's **Discussions** tab lists the topics your teachers have started, with how many replies each has and how many are new since you last looked. Open one to read it and reply; press the reply arrow on a post to answer it directly. Replies are written in Markdown, and **Preview** shows how yours will look.
 
-If a day looks wrong, tell the teacher who takes that class. Students cannot edit attendance.
+You can edit or delete your own posts, not anyone else's. Topics can also appear in **Modules**, beside the week's work. Some topics ask you to **post before seeing replies** - your classmates' answers appear once you have posted yours. A **locked** topic takes no new replies, and an archived course's discussions are read-only. If your teacher allows it, **New topic** lets you start your own.
 
-## Reports
+Other students see your name and photo on your posts - never your email.
 
-Your report cards, once published, and downloadable as PDFs. A term that has ended but shows nothing here usually means the report has not been published yet — not that it is missing.
+In the app, open a topic from the course's **Discussions** section: **Post a reply** answers the topic, **Reply** under a post answers that post, and your own posts have **Edit** and **Delete**.
+
+## Checking in to class
+
+When your teacher opens attendance:
+
+- the app sends a notification - tap it to check in;
+- the web portal shows a banner with a countdown.
+
+Check in by **scanning the QR code** on the board (your phone's camera or the app's **Scan attendance QR**), or by typing the **4-digit code** shown in the room. If your teacher turned on the location check, allow location - you need to be close to the room. Not signed in yet? Scanning still works: sign in and you are checked in.
+
+Miss the window and you are marked absent; talk to your teacher if that is wrong. Each course's **Attendance** tab shows your record and rate.
 
 ## If something looks wrong
 
-- **A mark you expected is not there** — the teacher may not have marked it yet. Check **Work**: if it says handed in, it arrived.
-- **A grade looks lower than it should** — check whether any work is still unmarked; grades are calculated from what exists so far.
-- **You cannot hand something in** — check whether it is under **Closed**. Once closed, submissions are no longer accepted and the teacher has to reopen it.
+- **A mark is missing** - your teacher may not have marked it yet. If the work says handed in, it arrived.
+- **You cannot hand something in** - it may be closed, or the course archived.
+- **"That code has expired"** - the QR code changes every few seconds; scan the one on screen again.

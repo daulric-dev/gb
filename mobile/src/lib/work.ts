@@ -7,7 +7,9 @@
  * because its options are the accepted wordings.
  */
 
-export type WorkKind = "quiz" | "assignment";
+import type { Rubric, RubricAssessment } from "@/lib/course";
+
+export type WorkKind = "quiz" | "assignment" | "offline";
 export type QuestionKind = "multiple_choice" | "true_false" | "short_answer";
 
 export interface PortalWorkItem {
@@ -20,7 +22,8 @@ export interface PortalWorkItem {
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
-  subject: { id: string; name: string | null; code: string | null } | null;
+  courseId: string | null;
+  courseName: string | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";
@@ -40,6 +43,8 @@ export interface PortalWorkDetail {
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
+  courseId?: string | null;
+  courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
   attemptsUsed: number;
@@ -50,6 +55,10 @@ export interface PortalWorkDetail {
     points: number;
     options: { id: string; label: string }[];
   }[];
+  /** Shown up front so the student knows how the work will be marked. */
+  rubric?: Rubric | null;
+  /** The levels picked, once marked with the rubric. */
+  rubricAssessment?: RubricAssessment[] | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";
@@ -58,6 +67,7 @@ export interface PortalWorkDetail {
     fileName: string | null;
     score: number | null;
     feedback: string | null;
+    excused?: boolean;
     submittedAt: string | null;
     gradedAt: string | null;
     attemptCount: number;
@@ -81,8 +91,12 @@ export function dueLabel(value: string | null) {
   return `Due ${formatted}`;
 }
 
-/** Work needing action sorts above work already handed in. */
+/**
+ * Work needing action sorts above work already handed in. Offline work is
+ * handed in on paper, so it is never outstanding here.
+ */
 export function isOutstanding(item: PortalWorkItem) {
+  if (item.kind === "offline") return false;
   return (
     item.status === "published" &&
     (!item.submission || item.submission.status === "draft")

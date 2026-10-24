@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight, Mail, UserRound } from "lucide-react";
 import type { StudentProfile } from "../_components/types";
+import { courseColor } from "@/lib/courses/format";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -76,10 +77,10 @@ export default function StudentProfilePage() {
     );
   }
 
-  const { student, classes, subjects, account, guardians } = profile.value;
+  const { student, courses = [], account, guardians } = profile.value;
   const name = `${student.first_name ?? ""} ${student.last_name ?? ""}`.trim();
-  const current = classes.filter((c) => c.academicYear?.isActive);
-  const past = classes.filter((c) => !c.academicYear?.isActive);
+  const current = courses.filter((c) => c.enrollmentStatus === "active");
+  const past = courses.filter((c) => c.enrollmentStatus !== "active");
 
   return (
     <div className="space-y-6">
@@ -87,8 +88,8 @@ export default function StudentProfilePage() {
         title={name || "Student"}
         description={
           current.length > 0
-            ? current.map((c) => c.name).join(", ")
-            : "Not in a class this year"
+            ? `${current.length} ${current.length === 1 ? "course" : "courses"}`
+            : "Not enrolled in any course"
         }
         onBack={() => router.push("/dashboard/students")}
         actions={
@@ -125,25 +126,34 @@ export default function StudentProfilePage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Classes</CardTitle>
+          <CardTitle className="text-base">Courses</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {classes.length === 0 ? (
+          {courses.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              Not enrolled in any class yet.
+              Not enrolled in any course yet.
             </p>
           ) : (
             <>
               {current.map((c) => (
-                <Link key={c.id} href={`/dashboard/classes/${c.id}`}>
+                <Link key={c.id} href={`/dashboard/courses/${c.id}`}>
                   <div className="flex items-center gap-3 rounded-md border px-3 py-2 transition-colors hover:bg-muted/50">
+                    <span
+                      className="h-8 w-1 shrink-0 rounded-full"
+                      style={{ background: courseColor(c.id) }}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{c.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {c.academicYear?.name ?? "No academic year"}
+                        {c.code ?? "No code"} · enrolled{" "}
+                        {formatDate(c.enrolledAt)}
                       </p>
                     </div>
-                    <Badge variant="secondary">This year</Badge>
+                    {c.status !== "published" && (
+                      <Badge variant="secondary" className="capitalize">
+                        {c.status}
+                      </Badge>
+                    )}
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                   </div>
                 </Link>
@@ -155,14 +165,14 @@ export default function StudentProfilePage() {
                     Previously
                   </p>
                   {past.map((c) => (
-                    <Link key={c.id} href={`/dashboard/classes/${c.id}`}>
+                    <Link key={c.id} href={`/dashboard/courses/${c.id}`}>
                       <div className="flex items-center gap-3 rounded-md border px-3 py-2 opacity-70 transition-colors hover:bg-muted/50">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">
                             {c.name}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            {c.academicYear?.name ?? "No academic year"}
+                          <p className="text-xs capitalize text-muted-foreground">
+                            {c.enrollmentStatus}
                           </p>
                         </div>
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -172,29 +182,6 @@ export default function StudentProfilePage() {
                 </>
               )}
             </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Subjects this year</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {subjects.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No subjects recorded for this year.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {subjects.map((s) => (
-                <Badge key={s.id} variant="outline">
-                  {s.name}
-                  {s.code ? ` (${s.code})` : ""}
-                  {!s.isGraded && " · not graded"}
-                </Badge>
-              ))}
-            </div>
           )}
         </CardContent>
       </Card>

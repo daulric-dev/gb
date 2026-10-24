@@ -31,6 +31,12 @@
 				<string>dev.daulric.gradebook</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>exp+gradebook-mobile</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
@@ -45,12 +51,34 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_expo._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>GradeBook uses the camera to scan your class attendance QR code.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to access your location</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to access your location</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>GradeBook uses your location only to check you in to class when your teacher asks.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to detect your current motion activity</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow GradeBook to access your photos to set a profile picture.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
 	</array>
+	<key>RCTMetroPort</key>
+	<string>$(RCT_METRO_PORT)</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
