@@ -35,7 +35,7 @@ Local services from `docker-compose.dev.yml`:
 
 | Service      | Address                                                  | Used for                                                           |
 | ------------ | -------------------------------------------------------- | ------------------------------------------------------------------ |
-| Postgres 17  | `127.0.0.1:5432` (`gradebook` / `gradebook`)       | `DATABASE_URL`                                                   |
+| Postgres 18  | `127.0.0.1:5432` (`gradebook` / `gradebook`)       | `DATABASE_URL`                                                   |
 | Redis        | `127.0.0.1:6379`                                       | `REDIS_URL` (only used when `USE_REDIS=true`)                  |
 | SeaweedFS S3 | `http://127.0.0.1:8333`                                | `S3_*`; the API creates the bucket on first start in development |
 | Mailpit      | SMTP `127.0.0.1:1025`, inbox `http://127.0.0.1:8025` | `SMTP_URL`                                                       |

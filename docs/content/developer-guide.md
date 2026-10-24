@@ -62,7 +62,7 @@ Starts four containers from `docker-compose.dev.yml` and waits for them to be he
 
 | Service | Address | What for |
 | --- | --- | --- |
-| `db` - Postgres 17 | `127.0.0.1:5432` (`gradebook` / `gradebook`) | The database (`DATABASE_URL`) |
+| `db` - Postgres 18 | `127.0.0.1:5432` (`gradebook` / `gradebook`) | The database (`DATABASE_URL`) |
 | `redis` | `127.0.0.1:6379` | Cache, queue, chat pub/sub |
 | `s3` - SeaweedFS | `http://127.0.0.1:8333` | File storage (`S3_*`) |
 | `mailpit` | SMTP `127.0.0.1:1025`, inbox `http://127.0.0.1:8025` | Catches every outgoing email |

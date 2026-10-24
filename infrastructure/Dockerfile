@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.13-alpine AS base
+FROM oven/bun:1.4.4-alpine AS base
 WORKDIR /app
 
 # --- install: resolve the whole workspace (turbo + every workspace's deps) ---
