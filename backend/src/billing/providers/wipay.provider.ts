@@ -282,9 +282,10 @@ export class WiPayProvider implements PaymentProvider {
       // md5(transaction_id + total + API key); recomputing exactly that is the
       // only way to verify the callback. It checks a third-party signature,
       // it is not password storage, and our own HMAC-SHA256 gb_sig already
-      // binds the invoice, amount and order to the request.
+      // binds the invoice, amount and order to the request. CodeQL's
+      // js/insufficient-password-hash flags this line; the exception is filtered
+      // in .github/workflows/codeql.yml with the same reason.
       const expected = createHash('md5')
-        // codeql[js/insufficient-password-hash] WiPay's API mandates this md5 response signature; not password storage.
         .update(`${transactionId}${amount}${apiKey}`)
         .digest('hex');
 

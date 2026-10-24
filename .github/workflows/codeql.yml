@@ -32,3 +32,26 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:javascript-typescript"
+          output: sarif-results
+          upload: failure-only
+
+      - name: Locate SARIF
+        id: sarif
+        run: |
+          file=$(ls sarif-results/*.sarif | head -n 1)
+          test -n "$file" || { echo "No SARIF produced"; exit 1; }
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - name: Filter accepted exceptions
+        uses: advanced-security/filter-sarif@v1
+        with:
+          patterns: |
+            -backend/src/billing/providers/wipay.provider.ts:js/insufficient-password-hash
+          input: ${{ steps.sarif.outputs.file }}
+          output: ${{ steps.sarif.outputs.file }}
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.sarif.outputs.file }}
+          category: "/language:javascript-typescript"
