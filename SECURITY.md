@@ -61,4 +61,4 @@ The following are **out of scope**:
 
 - Social engineering attacks
 - Denial-of-service attacks against infrastructure providers
-- Issues in third-party services (Supabase, Vercel, etc.) - please report those to the respective providers
+- Issues in third-party services (Vercel, your database, storage or email provider, etc.) - please report those to the respective providers

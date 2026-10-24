@@ -29,7 +29,6 @@ import { CreateTermForm } from "./CreateTermForm";
 import { EditTermForm } from "./EditTermForm";
 import { usePermissions } from "@/providers/PermissionsProvider";
 
-const TERM_SLOTS = 3;
 
 function YearSectionSkeleton() {
   return (
@@ -86,7 +85,7 @@ export function TermsTab({
   }, [fetchAllTerms]);
 
   async function handleDelete(term: Term) {
-    if (!confirm(`Delete ${termLabel[term.name]} term? This cannot be undone.`))
+    if (!confirm(`Delete ${termLabel(term.name)} term? This cannot be undone.`))
       return;
 
     try {
@@ -121,7 +120,6 @@ export function TermsTab({
     <div className="space-y-6">
       {years.map((year) => {
         const yearTerms = termsByYear.value[year.id] ?? [];
-        const canAdd = yearTerms.length < TERM_SLOTS;
         return (
           <section
             key={year.id}
@@ -136,20 +134,11 @@ export function TermsTab({
                 ) : (
                   <Badge variant="secondary">Inactive</Badge>
                 )}
-                <Badge variant="outline">
-                  {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
-                </Badge>
               </div>
               {can("term", "create") && (
                 <Button
                   size="sm"
                   onClick={() => (createForYear.value = year)}
-                  disabled={!canAdd}
-                  title={
-                    !canAdd
-                      ? "Maximum of 3 terms per year"
-                      : undefined
-                  }
                 >
                   <Plus className="mr-1.5 size-3.5" />
                   Add Term
@@ -169,8 +158,6 @@ export function TermsTab({
                       <TableHead>Term</TableHead>
                       <TableHead>Start</TableHead>
                       <TableHead>End</TableHead>
-                      <TableHead>Exam / CW</TableHead>
-                      <TableHead>Ministry</TableHead>
                       {(can("term", "update") || can("term", "delete")) && (
                         <TableHead className="text-right">Actions</TableHead>
                       )}
@@ -180,25 +167,13 @@ export function TermsTab({
                     {yearTerms.map((term) => (
                       <TableRow key={term.id}>
                         <TableCell className="font-medium">
-                          {termLabel[term.name]}
+                          {termLabel(term.name)}
                         </TableCell>
                         <TableCell>
                           {new Date(term.start_date).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
                           {new Date(term.end_date).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {term.exam_weight}% / {term.coursework_weight}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {term.is_ministry_reporting ? (
-                            <Badge>Yes</Badge>
-                          ) : (
-                            <span className="text-muted-foreground">No</span>
-                          )}
                         </TableCell>
                         {(can("term", "update") || can("term", "delete")) && (
                           <TableCell className="text-right space-x-1">

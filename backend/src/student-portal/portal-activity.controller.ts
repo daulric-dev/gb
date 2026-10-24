@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
@@ -12,23 +13,53 @@ import type { MultipartFile } from '@fastify/multipart';
 import { AuthGuard } from '@/auth/auth.guard';
 import { StudentGuard, type StudentRequest } from './student.guard';
 import { SubmissionService } from '@/grading/submission.service';
+import { GradebookService } from '@/grading/gradebook.service';
 import { SubmitAssignmentDto, SubmitQuizDto } from '@/grading/dto/activity.dto';
 import { CreateUploadTicketDto } from '@/file-manager/dto/upload-ticket.dto';
 
+/**
+ * A student's own work: the to-do across their courses, one course's
+ * activities and grades, and handing work in. The student is always the one
+ * StudentGuard resolved from the session, never an id from the client.
+ */
 @ApiTags('Student Portal')
 @ApiBearerAuth()
-@Controller('portal/me/activities')
+@Controller('portal/me')
 @UseGuards(AuthGuard, StudentGuard)
 export class PortalActivityController {
-  constructor(private readonly submissions: SubmissionService) {}
+  constructor(
+    private readonly submissions: SubmissionService,
+    private readonly gradebook: GradebookService,
+  ) {}
 
-  /** Quizzes and assignments set for the classes this student is in. */
-  @Get()
+  /** Published work across every course the student can see. */
+  @Get('activities')
   async list(@Req() req: StudentRequest) {
     return this.submissions.listForStudent(req.student!.studentId);
   }
 
-  @Get(':activityId')
+  /** One course's published and closed work, with the student's state. */
+  @Get('courses/:courseId/activities')
+  async courseActivities(
+    @Req() req: StudentRequest,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+  ) {
+    return this.submissions.listCourseForStudent(
+      req.student!.studentId,
+      courseId,
+    );
+  }
+
+  /** The student's scores by group, total and letter in one course. */
+  @Get('courses/:courseId/grades')
+  async courseGrades(
+    @Req() req: StudentRequest,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+  ) {
+    return this.gradebook.studentGrades(req.student!.studentId, courseId);
+  }
+
+  @Get('activities/:activityId')
   async get(
     @Req() req: StudentRequest,
     @Param('activityId') activityId: string,
@@ -37,13 +68,13 @@ export class PortalActivityController {
   }
 
   /**
-   * Start a resumable upload for this assignment. The browser sends the bytes
-   * to Storage over TUS, then calls the complete endpoint below.
+   * Start a direct upload for this assignment. The client PUTs the bytes to
+   * the returned presigned `uploadUrl`, then calls the complete endpoint below.
    *
    * Students hold no catalog permissions, so the portal is the only place they
    * can obtain a ticket.
    */
-  @Post(':activityId/upload-ticket')
+  @Post('activities/:activityId/upload-ticket')
   async createUploadTicket(
     @Req() req: StudentRequest,
     @Param('activityId') activityId: string,
@@ -53,12 +84,11 @@ export class PortalActivityController {
       req.student!.studentId,
       activityId,
       dto,
-      (req as { headers?: { host?: string } }).headers?.host,
     );
   }
 
-  /** Scan the uploaded bytes and attach the file to the draft. */
-  @Post(':activityId/upload-ticket/:fileId/complete')
+  /** Check the uploaded bytes and attach the file to the draft. */
+  @Post('activities/:activityId/upload-ticket/:fileId/complete')
   async finaliseUpload(
     @Req() req: StudentRequest,
     @Param('activityId') activityId: string,
@@ -73,9 +103,9 @@ export class PortalActivityController {
 
   /**
    * Attach a file in one request. Kept for small files and as a fallback when
-   * a resumable upload cannot be used; the path above is preferred.
+   * a direct upload cannot be used; the path above is preferred.
    */
-  @Post(':activityId/file')
+  @Post('activities/:activityId/file')
   @ApiConsumes('multipart/form-data')
   async attachFile(
     @Req() req: StudentRequest & { file: () => Promise<MultipartFile> },
@@ -89,7 +119,7 @@ export class PortalActivityController {
     );
   }
 
-  @Post(':activityId/submit')
+  @Post('activities/:activityId/submit')
   async submitAssignment(
     @Req() req: StudentRequest,
     @Param('activityId') activityId: string,
@@ -102,8 +132,8 @@ export class PortalActivityController {
     );
   }
 
-  /** Answers are scored on submit; there is one attempt. */
-  @Post(':activityId/quiz')
+  /** Answers are scored on submit, up to the quiz's attempt limit. */
+  @Post('activities/:activityId/quiz')
   async submitQuiz(
     @Req() req: StudentRequest,
     @Param('activityId') activityId: string,

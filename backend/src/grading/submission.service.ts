@@ -5,159 +5,247 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
-import { CacheService } from '@/cache/cache.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { pgCode, raisedMessage } from '@/common/db-values';
+import { roundScore, scoreOrNull } from './round';
 import { FileManagerService } from '@/file-manager/file-manager.service';
+import {
+  CourseAccessService,
+  STAFF_ROLES,
+} from '@/course/access/course-access.service';
 import type { MultipartFile } from '@fastify/multipart';
+import {
+  ACTIVITY_ORDER,
+  ACTIVITY_SELECT,
+  toPortalActivity,
+  ts,
+} from './activity.mapper';
+import { loadAssessments, loadRubric } from './rubric.service';
 
+const STUDENT_ACTIVITY_SELECT = {
+  id: true,
+  course_id: true,
+  kind: true,
+  title: true,
+  instructions: true,
+  points: true,
+  due_at: true,
+  status: true,
+  allow_file: true,
+  allow_text: true,
+  max_attempts: true,
+  rubric_id: true,
+} satisfies Prisma.activitySelect;
+
+const DRAFT_SELECT = {
+  id: true,
+  status: true,
+  file_id: true,
+  attempt_count: true,
+} satisfies Prisma.submissionSelect;
+
+const MARKED_SELECT = {
+  id: true,
+  student_id: true,
+  status: true,
+  score: true,
+  feedback: true,
+  excused: true,
+  excused_reason: true,
+  graded_at: true,
+} satisfies Prisma.submissionSelect;
+
+/**
+ * Submissions: a student's work on an activity, and the mark on it.
+ *
+ * Since the move to courses the submission is the only place a mark lives
+ * (the Canvas model). Nothing here writes grading.grade any more; the course
+ * gradebook reads submissions directly.
+ */
 @Injectable()
 export class SubmissionService {
   private readonly logger = new Logger(SubmissionService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
-    private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
     private readonly files: FileManagerService,
+    private readonly access: CourseAccessService,
   ) {}
-
-  private async invalidate(): Promise<void> {
-    await this.cache.deleteByPrefix('calc:');
-  }
 
   // ── student side ──────────────────────────────────────────────────────────
 
-  /** Activities published to the classes this student is enrolled in. */
+  /**
+   * The courses whose work a student can see: enrolled and not dropped, in a
+   * course that is published (or archived, so past work stays readable).
+   */
+  private async visibleCourses(
+    studentId: string,
+  ): Promise<Map<string, string>> {
+    const enrolments = await this.prisma.course_student.findMany({
+      where: { student_id: studentId, status: { in: ['active', 'completed'] } },
+      select: { course_id: true },
+    });
+
+    const courseIds = [...new Set(enrolments.map((e) => e.course_id))];
+    if (courseIds.length === 0) return new Map();
+
+    const courses = await this.prisma.course.findMany({
+      where: { id: { in: courseIds }, status: { in: ['published', 'archived'] } },
+      select: { id: true, name: true },
+    });
+
+    return new Map(courses.map((c) => [c.id, c.name]));
+  }
+
+  /**
+   * The student's to-do: published and closed work across every course they
+   * can see. Drafts are the teacher's working copy; closed work stays so a
+   * student can still see what they did and what it scored.
+   */
   async listForStudent(studentId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const courses = await this.visibleCourses(studentId);
+    if (courses.size === 0) return [];
 
-    const { data: enrolments } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('student_group_id')
-      .eq('student_id', studentId);
+    const rows = await this.prisma.activity.findMany({
+      where: {
+        course_id: { in: [...courses.keys()] },
+        status: { in: ['published', 'closed'] },
+      },
+      select: STUDENT_ACTIVITY_SELECT,
+      orderBy: { due_at: { sort: 'asc', nulls: 'last' } },
+    });
 
-    const classIds = [
-      ...new Set(
-        (enrolments ?? [])
-          .map((e: any) => e.student_group_id as string | null)
-          .filter(Boolean) as string[],
-      ),
-    ];
-
-    if (classIds.length === 0) return [];
-
-    // Drafts are the teacher's working copy; closed work stays visible so a
-    // student can still see what they did and what it scored.
-    const { data: activities } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select(
-        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts',
-      )
-      .in('student_group_id', classIds)
-      .in('status', ['published', 'closed'])
-      .order('due_at', { ascending: true });
-
-    const rows = (activities ?? []) as any[];
     if (rows.length === 0) return [];
 
-    const { data: submissions } = await supabase
-      .schema('grading')
-      .from('submission')
-      .select('id, activity_id, status, score, submitted_at, graded_at')
-      .eq('student_id', studentId)
-      .in(
-        'activity_id',
-        rows.map((a) => a.id as string),
-      );
+    const submissions = await this.prisma.submission.findMany({
+      where: {
+        student_id: studentId,
+        activity_id: { in: rows.map((a) => a.id) },
+      },
+      select: {
+        id: true,
+        activity_id: true,
+        status: true,
+        score: true,
+        excused: true,
+        submitted_at: true,
+        graded_at: true,
+      },
+    });
 
-    const byActivity = new Map(
-      (submissions ?? []).map((s: any) => [s.activity_id as string, s]),
-    );
-
-    const subjectIds = [...new Set(rows.map((a) => a.subject_id as string))];
-    const { data: subjects } = subjectIds.length
-      ? await supabase
-          .from('subject')
-          .select('id, name, code')
-          .in('id', subjectIds)
-      : { data: [] as any[] };
-    const subjectById = new Map(
-      (subjects ?? []).map((s: any) => [s.id as string, s]),
-    );
+    const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
 
     return rows.map((a) => {
-      const submission = byActivity.get(a.id as string);
-      const subject = subjectById.get(a.subject_id as string);
+      const submission = byActivity.get(a.id);
+      const graded = submission?.status === 'graded';
 
       return {
         id: a.id,
+        courseId: a.course_id,
+        courseName: courses.get(a.course_id) ?? null,
         kind: a.kind,
         title: a.title,
         instructions: a.instructions,
         points: Number(a.points),
-        dueAt: a.due_at,
+        dueAt: ts(a.due_at),
         status: a.status,
         allowFile: a.allow_file,
         allowText: a.allow_text,
-        subject: subject
-          ? { id: subject.id, name: subject.name, code: subject.code }
-          : null,
         submission: submission
           ? {
               id: submission.id,
               status: submission.status,
               score:
-                submission.score === null ? null : Number(submission.score),
-              submittedAt: submission.submitted_at,
-              gradedAt: submission.graded_at,
+                graded && submission.score !== null
+                  ? roundScore(Number(submission.score))
+                  : null,
+              excused: !!submission.excused,
+              submittedAt: ts(submission.submitted_at),
+              gradedAt: ts(submission.graded_at),
             }
           : null,
       };
     });
   }
 
+  /** One course's published and closed work, with the student's state on each. */
+  async listCourseForStudent(studentId: string, courseId: string) {
+    await this.access.requireStudent(studentId, courseId);
+
+    const rows = await this.prisma.activity.findMany({
+      where: { course_id: courseId, status: { in: ['published', 'closed'] } },
+      select: ACTIVITY_SELECT,
+      orderBy: ACTIVITY_ORDER,
+    });
+
+    if (rows.length === 0) return [];
+
+    const submissions = await this.prisma.submission.findMany({
+      where: {
+        student_id: studentId,
+        activity_id: { in: rows.map((a) => a.id) },
+      },
+      select: {
+        activity_id: true,
+        status: true,
+        score: true,
+        excused: true,
+        feedback: true,
+        submitted_at: true,
+        attempt_count: true,
+      },
+    });
+
+    const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
+
+    return rows.map((a) => toPortalActivity(a, byActivity.get(a.id)));
+  }
+
   /** The activity itself, with questions but never the correct answers. */
   async getForStudent(studentId: string, activityId: string) {
-    const supabase = this.supabaseService.getServiceClient();
     const activity = await this.requireAssignedActivity(studentId, activityId);
 
-    const { data: submission } = await supabase
-      .schema('grading')
-      .from('submission')
-      .select(
-        'id, status, text_body, file_id, score, feedback, submitted_at, graded_at, attempt_count',
-      )
-      .eq('activity_id', activityId)
-      .eq('student_id', studentId)
-      .maybeSingle();
+    const submission = await this.prisma.submission.findFirst({
+      where: { activity_id: activityId, student_id: studentId },
+      select: {
+        id: true,
+        status: true,
+        text_body: true,
+        file_id: true,
+        score: true,
+        feedback: true,
+        excused: true,
+        submitted_at: true,
+        graded_at: true,
+        attempt_count: true,
+      },
+    });
 
     let questions: any[] = [];
 
     if (activity.kind === 'quiz') {
-      const { data: qs } = await supabase
-        .schema('grading')
-        .from('quiz_question')
-        .select('id, prompt, kind, points, sort_order')
-        .eq('activity_id', activityId)
-        .order('sort_order', { ascending: true });
+      const qs = await this.prisma.quiz_question.findMany({
+        where: { activity_id: activityId },
+        select: { id: true, prompt: true, kind: true, points: true, sort_order: true },
+        orderBy: { sort_order: 'asc' },
+      });
 
-      const questionIds = (qs ?? []).map((q: any) => q.id as string);
+      const questionIds = qs.map((q) => q.id);
 
-      const { data: options } = questionIds.length
-        ? await supabase
-            .schema('grading')
-            .from('quiz_option')
-            .select('id, question_id, label, sort_order')
-            .in('question_id', questionIds)
-            .order('sort_order', { ascending: true })
-        : { data: [] as any[] };
+      const options = questionIds.length
+        ? await this.prisma.quiz_option.findMany({
+            where: { question_id: { in: questionIds } },
+            select: { id: true, question_id: true, label: true, sort_order: true },
+            orderBy: { sort_order: 'asc' },
+          })
+        : [];
 
       // is_correct is deliberately not selected: the answer key must not reach
       // the student's browser, where it is one devtools tab from being read.
       // A short answer goes further and sends no options at all - there its
       // labels are the accepted wordings, so the labels are the answer key.
-      questions = (qs ?? []).map((q: any) => ({
+      questions = qs.map((q) => ({
         id: q.id,
         prompt: q.prompt,
         kind: q.kind,
@@ -165,28 +253,43 @@ export class SubmissionService {
         options:
           q.kind === 'short_answer'
             ? []
-            : (options ?? [])
-                .filter((o: any) => o.question_id === q.id)
-                .map((o: any) => ({ id: o.id, label: o.label })),
+            : options
+                .filter((o) => o.question_id === q.id)
+                .map((o) => ({ id: o.id, label: o.label })),
       }));
     }
 
     const names = await this.fileNames([submission?.file_id as string]);
+    const graded = submission?.status === 'graded';
+
+    // The rubric is shown up front so the student knows how the work will be
+    // marked; the levels they were given only once the mark is final (and
+    // only if it was marked with the rubric rather than a bare score).
+    const rubric = await loadRubric(this.prisma, activity.rubric_id);
+    const rubricAssessment =
+      rubric && graded && submission
+        ? ((await loadAssessments(this.prisma, [submission.id], rubric)).get(
+            submission.id,
+          ) ?? null)
+        : null;
 
     return {
       id: activity.id,
+      courseId: activity.course_id,
       kind: activity.kind,
       title: activity.title,
       instructions: activity.instructions,
       points: Number(activity.points),
-      dueAt: activity.due_at,
+      dueAt: ts(activity.due_at),
       status: activity.status,
       allowFile: activity.allow_file,
       allowText: activity.allow_text,
       // 0 means unlimited, matching the teacher's editor.
-      maxAttempts: (activity.max_attempts as number | null) ?? 0,
-      attemptsUsed: (submission?.attempt_count as number) ?? 0,
+      maxAttempts: activity.max_attempts ?? 0,
+      attemptsUsed: submission?.attempt_count ?? 0,
       questions,
+      rubric,
+      rubricAssessment,
       submission: submission
         ? {
             id: submission.id,
@@ -194,10 +297,16 @@ export class SubmissionService {
             textBody: submission.text_body,
             fileId: submission.file_id,
             fileName: names.get(submission.file_id as string) ?? null,
-            score: submission.score === null ? null : Number(submission.score),
-            feedback: submission.feedback,
-            submittedAt: submission.submitted_at,
-            gradedAt: submission.graded_at,
+            // A teacher may be partway through marking; show the mark once
+            // it is final.
+            score:
+              graded && submission.score !== null
+                ? roundScore(Number(submission.score))
+                : null,
+            feedback: graded ? submission.feedback : null,
+            excused: !!submission.excused,
+            submittedAt: ts(submission.submitted_at),
+            gradedAt: ts(submission.graded_at),
             attemptCount: submission.attempt_count ?? 0,
           }
         : null,
@@ -209,83 +318,93 @@ export class SubmissionService {
     const unique = [...new Set(ids.filter(Boolean))];
     if (unique.length === 0) return new Map();
 
-    const { data } = await this.supabaseService
-      .getServiceClient()
-      .schema('file_manager')
-      .from('file')
-      .select('id, name')
-      .in('id', unique);
+    const data = await this.prisma.file.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, name: true },
+    });
 
-    return new Map(
-      (data ?? []).map((f: any) => [f.id as string, f.name as string]),
-    );
+    return new Map(data.map((f) => [f.id, f.name]));
   }
 
-  /** An activity is only this student's if it is set for a class they are in. */
+  /**
+   * An activity is only this student's if it is published (or closed) in a
+   * course they are enrolled in and can see. Anything else is reported as
+   * missing, so ids from other courses reveal nothing.
+   */
   private async requireAssignedActivity(studentId: string, activityId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: activity } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select(
-        'id, student_group_id, subject_id, kind, title, instructions, points, due_at, status, allow_file, allow_text, max_attempts',
-      )
-      .eq('id', activityId)
-      .maybeSingle();
+    const activity = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: STUDENT_ACTIVITY_SELECT,
+    });
 
     if (
-      !activity ||
-      !['published', 'closed'].includes(activity.status as string)
+      !activity?.course_id ||
+      !['published', 'closed'].includes(activity.status)
     ) {
       throw new NotFoundException('Activity not found');
     }
 
-    const { data: enrolment } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('id')
-      .eq('student_id', studentId)
-      .eq('student_group_id', activity.student_group_id)
-      .maybeSingle();
-
-    if (!enrolment) {
+    try {
+      await this.access.requireStudent(studentId, activity.course_id);
+    } catch {
       throw new NotFoundException('Activity not found');
     }
 
+    return activity as typeof activity & { course_id: string };
+  }
+
+  /**
+   * The same, for the routes that hand work in. Offline work is marked by the
+   * teacher from paper or in person; there is nothing to submit online.
+   */
+  private async requireSubmittable(studentId: string, activityId: string) {
+    const activity = await this.requireAssignedActivity(studentId, activityId);
+    if (activity.kind === 'offline') {
+      throw new ConflictException(
+        'This is marked offline; there is nothing to hand in here',
+      );
+    }
+
+    // An archived course stays readable for the record, but archiving does
+    // not close its activities, so hand-ins are refused at the course level.
+    try {
+      await this.access.requireStudent(
+        studentId,
+        activity.course_id,
+        {
+          allowArchived: false,
+        },
+      );
+    } catch {
+      throw new ConflictException('This course is closed to new work');
+    }
     return activity;
   }
 
   /** The draft a student works in; created on first touch. */
   private async ensureDraft(studentId: string, activityId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: existing } = await supabase
-      .schema('grading')
-      .from('submission')
-      .select('id, status, file_id, attempt_count')
-      .eq('activity_id', activityId)
-      .eq('student_id', studentId)
-      .maybeSingle();
+    const existing = await this.prisma.submission.findFirst({
+      where: { activity_id: activityId, student_id: studentId },
+      select: DRAFT_SELECT,
+    });
 
     if (existing) return existing;
 
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('submission')
-      .insert({
-        activity_id: activityId,
-        student_id: studentId,
-        status: 'draft',
-      })
-      .select('id, status, file_id, attempt_count')
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to open submission: ${error?.message}`);
+    try {
+      return await this.prisma.submission.create({
+        data: {
+          activity_id: activityId,
+          student_id: studentId,
+          status: 'draft',
+        },
+        select: DRAFT_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to open submission: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to start this work');
     }
-    return data;
   }
 
   /**
@@ -296,7 +415,7 @@ export class SubmissionService {
    * to their own draft for an activity set to their class.
    */
   async attachFile(studentId: string, activityId: string, file: MultipartFile) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment') {
       throw new BadRequestException('This is not an assignment');
@@ -318,15 +437,13 @@ export class SubmissionService {
     const owner = await this.userIdForStudent(studentId);
     const uploaded = await this.files.uploadManual(owner, file);
 
-    const supabase = this.supabaseService.getServiceClient();
-    const { error } = await supabase
-      .schema('grading')
-      .from('submission')
-      .update({ file_id: uploaded.id, updated_at: new Date().toISOString() })
-      .eq('id', draft.id);
-
-    if (error) {
-      this.logger.error(`Failed to attach file: ${error.message}`);
+    try {
+      await this.prisma.submission.updateMany({
+        where: { id: draft.id },
+        data: { file_id: uploaded.id, updated_at: new Date() },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to attach file: ${(error as Error).message}`);
       throw new BadRequestException('Failed to attach the file');
     }
 
@@ -337,9 +454,8 @@ export class SubmissionService {
     studentId: string,
     activityId: string,
     input: { name: string; sizeBytes: number; contentType: string },
-    requestHost?: string,
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment') {
       throw new BadRequestException('This is not an assignment');
@@ -357,7 +473,7 @@ export class SubmissionService {
     }
 
     const owner = await this.userIdForStudent(studentId);
-    return this.files.createUploadTicket(owner, input, requestHost);
+    return this.files.createUploadTicket(owner, input);
   }
 
   async finaliseUploadedFile(
@@ -365,7 +481,7 @@ export class SubmissionService {
     activityId: string,
     fileId: string,
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment' || !activity.allow_file) {
       throw new BadRequestException('This assignment does not accept files');
@@ -379,15 +495,13 @@ export class SubmissionService {
     const owner = await this.userIdForStudent(studentId);
     const file = await this.files.finaliseUpload(owner, fileId);
 
-    const { error } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('submission')
-      .update({ file_id: file.id, updated_at: new Date().toISOString() })
-      .eq('id', draft.id);
-
-    if (error) {
-      this.logger.error(`Failed to attach file: ${error.message}`);
+    try {
+      await this.prisma.submission.updateMany({
+        where: { id: draft.id },
+        data: { file_id: file.id, updated_at: new Date() },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to attach file: ${(error as Error).message}`);
       throw new BadRequestException('Failed to attach the file');
     }
 
@@ -396,13 +510,10 @@ export class SubmissionService {
 
   /** The login behind a student record, which owns anything they upload. */
   private async userIdForStudent(studentId: string): Promise<string> {
-    const supabase = this.supabaseService.getServiceClient();
-    const { data } = await supabase
-      .schema('student')
-      .from('student')
-      .select('user_profile_id')
-      .eq('id', studentId)
-      .maybeSingle();
+    const data = await this.prisma.student.findUnique({
+      where: { id: studentId },
+      select: { user_profile_id: true },
+    });
 
     if (!data?.user_profile_id) {
       throw new BadRequestException('This student has no account');
@@ -410,36 +521,23 @@ export class SubmissionService {
     return data.user_profile_id;
   }
 
+  /** The file a student handed in, for staff marking it. */
   async readSubmissionFile(userId: string, submissionId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: submission } = await supabase
-      .schema('grading')
-      .from('submission')
-      .select('id, activity_id, file_id')
-      .eq('id', submissionId)
-      .maybeSingle();
+    const submission = await this.prisma.submission.findUnique({
+      where: { id: submissionId },
+      select: { id: true, activity_id: true, file_id: true },
+    });
 
     if (!submission?.file_id) {
       throw new NotFoundException('No file was handed in');
     }
 
-    const { data: activity } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select('student_group_id')
-      .eq('id', submission.activity_id)
-      .maybeSingle();
-
-    if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(
-      userId,
-      activity.student_group_id as string,
+    const courseId = await this.access.courseIdOfActivity(
+      submission.activity_id,
     );
+    await this.access.require(userId, courseId, STAFF_ROLES);
 
-    return this.files.readContentForAuthorisedCaller(
-      submission.file_id as string,
-    );
+    return this.files.readContentForAuthorisedCaller(submission.file_id);
   }
 
   /** Hand in an assignment: text, a file, or both. */
@@ -448,7 +546,7 @@ export class SubmissionService {
     activityId: string,
     input: { textBody?: string; fileId?: string },
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'assignment') {
       throw new BadRequestException('This is not an assignment');
@@ -464,7 +562,7 @@ export class SubmissionService {
 
     // A file attached earlier stays attached: handing in text as well must not
     // silently drop it.
-    const fileId = (input.fileId ?? draft.file_id ?? null) as string | null;
+    const fileId = (input.fileId ?? draft.file_id ?? null);
 
     if (!input.textBody?.trim() && !fileId) {
       throw new BadRequestException('Add your work before submitting');
@@ -476,56 +574,56 @@ export class SubmissionService {
       throw new BadRequestException('This assignment does not accept text');
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
     // A client-supplied fileId must be the student's own finished upload;
     // otherwise any file id - a classmate's work included - could be handed in.
     if (input.fileId && input.fileId !== draft.file_id) {
       const owner = await this.userIdForStudent(studentId);
-      const { data: file } = await supabase
-        .schema('file_manager')
-        .from('file')
-        .select('id')
-        .eq('id', input.fileId)
-        .eq('owner_id', owner)
-        .eq('status', 'ready')
-        .maybeSingle();
+      const file = await this.prisma.file.findFirst({
+        where: { id: input.fileId, owner_id: owner, status: 'ready' },
+        select: { id: true },
+      });
       if (!file) throw new BadRequestException('File not found');
     }
 
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('submission')
-      .update({
-        status: 'submitted',
-        text_body: input.textBody?.trim() ?? null,
-        file_id: fileId,
-        submitted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', draft.id)
-      // Guards a second submit racing the first.
-      .eq('status', 'draft')
-      .select('id, status, submitted_at')
-      .maybeSingle();
+    let data;
+    try {
+      [data] = await this.prisma.submission.updateManyAndReturn({
+        // The status guards a second submit racing the first.
+        where: { id: draft.id, status: 'draft' },
+        data: {
+          status: 'submitted',
+          text_body: input.textBody?.trim() ?? null,
+          file_id: fileId,
+          submitted_at: new Date(),
+          updated_at: new Date(),
+        },
+        select: { id: true, status: true, submitted_at: true },
+      });
+    } catch {
+      data = undefined;
+    }
 
-    if (error || !data) {
+    if (!data) {
       throw new ConflictException('You have already submitted this');
     }
 
-    return { id: data.id, status: data.status, submittedAt: data.submitted_at };
+    return {
+      id: data.id,
+      status: data.status,
+      submittedAt: ts(data.submitted_at),
+    };
   }
 
   /**
-   * Answer and submit a quiz. Scoring, marking and the gradebook write all
-   * happen inside submit_quiz so a scored attempt always has a grade.
+   * Answer and submit a quiz. Scoring and marking happen inside submit_quiz,
+   * which writes the score onto the submission - the one place a mark lives.
    */
   async submitQuiz(
     studentId: string,
     activityId: string,
     answers: { questionId: string; optionId?: string; text?: string }[],
   ) {
-    const activity = await this.requireAssignedActivity(studentId, activityId);
+    const activity = await this.requireSubmittable(studentId, activityId);
 
     if (activity.kind !== 'quiz') {
       throw new BadRequestException('This is not a quiz');
@@ -539,8 +637,8 @@ export class SubmissionService {
     // A retake is allowed while attempts remain, so a graded submission is not
     // automatically the end of it. The limit is enforced again inside
     // submit_quiz, which holds the row lock while it counts.
-    const limit = activity.max_attempts as number | null;
-    const used = (draft.attempt_count as number) ?? 0;
+    const limit = activity.max_attempts;
+    const used = draft.attempt_count ?? 0;
 
     if (limit !== null && used >= limit) {
       throw new ConflictException(
@@ -550,171 +648,208 @@ export class SubmissionService {
       );
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
     // Only answers belonging to this quiz count; anything else is ignored
     // rather than trusted.
-    const { data: questions } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .select('id, kind')
-      .eq('activity_id', activityId);
+    const questions = await this.prisma.quiz_question.findMany({
+      where: { activity_id: activityId },
+      select: { id: true, kind: true },
+    });
 
     // An answer is stored in the shape its question is marked in, whatever the
     // client sent: text for a short answer, an option for the choice kinds.
-    const kindById = new Map(
-      (questions ?? []).map((q: any) => [q.id as string, q.kind as string]),
+    const kindById = new Map<string, string>(
+      questions.map((q) => [q.id, q.kind]),
     );
-    const accepted = answers.filter((a) => kindById.has(a.questionId));
+
+    // An option id is only an answer to the question it belongs to. Without
+    // this, one option id known to be correct - learned on a retake of any
+    // quiz - could be sent as the answer to every question everywhere.
+    const questionIds = [...kindById.keys()];
+    const options = questionIds.length
+      ? await this.prisma.quiz_option.findMany({
+          where: { question_id: { in: questionIds } },
+          select: { id: true, question_id: true },
+        })
+      : [];
+    const questionOfOption = new Map(
+      options.map((o) => [o.id, o.question_id]),
+    );
+
+    const accepted = answers.filter(
+      (a) =>
+        kindById.has(a.questionId) &&
+        (kindById.get(a.questionId) === 'short_answer' ||
+          !a.optionId ||
+          questionOfOption.get(a.optionId) === a.questionId),
+    );
 
     // Clear the previous attempt first: upserting alone would leave answers to
     // questions this attempt skipped, silently scoring them again.
     if (used > 0) {
-      await supabase
-        .schema('grading')
-        .from('quiz_answer')
-        .delete()
-        .eq('submission_id', draft.id);
+      await this.prisma.quiz_answer.deleteMany({
+        where: { submission_id: draft.id },
+      });
     }
 
     if (accepted.length > 0) {
-      const { error } = await supabase
-        .schema('grading')
-        .from('quiz_answer')
-        .upsert(
-          accepted.map((a) => {
-            const isText = kindById.get(a.questionId) === 'short_answer';
-            return {
+      // An upsert on (submission, question): replace any answer already
+      // stored for these questions, in one transaction.
+      try {
+        await this.prisma.$transaction([
+          this.prisma.quiz_answer.deleteMany({
+            where: {
               submission_id: draft.id,
-              question_id: a.questionId,
-              option_id: isText ? null : (a.optionId ?? null),
-              text_answer: isText ? (a.text?.trim() ?? null) : null,
-            };
+              question_id: { in: accepted.map((a) => a.questionId) },
+            },
           }),
-          { onConflict: 'submission_id,question_id' },
+          this.prisma.quiz_answer.createMany({
+            data: accepted.map((a) => {
+              const isText = kindById.get(a.questionId) === 'short_answer';
+              return {
+                submission_id: draft.id,
+                question_id: a.questionId,
+                option_id: isText ? null : (a.optionId ?? null),
+                text_answer: isText ? (a.text?.trim() ?? null) : null,
+              };
+            }),
+          }),
+        ]);
+      } catch (error) {
+        this.logger.error(
+          `Failed to record answers: ${(error as Error).message}`,
         );
-
-      if (error) {
-        this.logger.error(`Failed to record answers: ${error.message}`);
         throw new BadRequestException('Failed to record your answers');
       }
     }
 
-    const { data, error } = await supabase
-      .schema('grading')
-      .rpc('submit_quiz', {
-        p_submission_id: draft.id,
-        p_student_id: studentId,
-      });
-
-    if (error) {
-      const detail = `${error.code ?? ''} ${error.message ?? ''}`;
+    let data: {
+      score: Prisma.Decimal | null;
+      points: Prisma.Decimal | null;
+      attempts_used: number | null;
+    }[];
+    try {
+      data = await this.prisma.$queryRaw`
+        select * from grading.submit_quiz(${draft.id}::uuid, ${studentId}::uuid)
+      `;
+    } catch (error) {
+      const detail = `${pgCode(error) ?? ''} ${raisedMessage(error)}`;
       if (detail.includes('no_attempts_left')) {
         throw new ConflictException('You have no attempts left');
       }
       if (detail.includes('activity_not_open')) {
         throw new ConflictException('This quiz is closed');
       }
-      this.logger.error(`Quiz submission failed: ${error.message}`);
+      this.logger.error(
+        `Quiz submission failed: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to submit quiz');
     }
 
-    const row = Array.isArray(data) ? data[0] : data;
-    await this.invalidate();
+    const row = data[0];
 
     return {
-      score: row?.score === undefined ? null : Number(row.score),
+      score: row?.score === undefined ? null : scoreOrNull(row.score),
+      // A null points column is Number(null) = 0, as before.
       points: row?.points === undefined ? null : Number(row.points),
     };
   }
 
   // ── teacher side ──────────────────────────────────────────────────────────
 
-  /** Every submission for an activity, with who has not handed in. */
+  /**
+   * Load an activity for marking: the caller must be staff in its course and
+   * the work must have gone out. Marking a draft would put a score on
+   * something students have never seen.
+   */
+  private async requireMarkable(userId: string, activityId: string) {
+    const activity = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, course_id: true, points: true, status: true, kind: true },
+    });
+
+    if (!activity?.course_id) throw new NotFoundException('Activity not found');
+    await this.access.require(userId, activity.course_id, STAFF_ROLES);
+    return activity as typeof activity & { course_id: string };
+  }
+
+  /**
+   * The student must be on the course's roster. Any status will do - a
+   * dropped student's existing work can still be marked or excused, so the
+   * record is right if they come back.
+   */
+  private async requireCourseStudent(courseId: string, studentId: string) {
+    const data = await this.prisma.course_student.findFirst({
+      where: { course_id: courseId, student_id: studentId },
+      select: { student_id: true },
+    });
+
+    if (!data)
+      throw new NotFoundException('That student is not in this course');
+  }
+
+  /**
+   * Everyone who should have done the work, with their submission or lack of
+   * one: the active and completed roster, plus anyone else who has a
+   * submission (a student dropped after handing in keeps showing up).
+   */
   async listForTeacher(userId: string, activityId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const activity = await this.requireMarkable(userId, activityId);
+    const roster = await this.prisma.course_student.findMany({
+      where: { course_id: activity.course_id },
+      select: { student_id: true, status: true },
+    });
 
-    const { data: activity } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select('id, student_group_id, points, kind, assessment_id')
-      .eq('id', activityId)
-      .maybeSingle();
+    const submissions = await this.prisma.submission.findMany({
+      where: { activity_id: activityId },
+      select: {
+        id: true,
+        student_id: true,
+        status: true,
+        text_body: true,
+        file_id: true,
+        score: true,
+        feedback: true,
+        excused: true,
+        excused_reason: true,
+        submitted_at: true,
+        graded_at: true,
+        attempt_count: true,
+      },
+    });
 
-    if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(
-      userId,
-      activity.student_group_id as string,
+    const byStudent = new Map(submissions.map((s) => [s.student_id, s]));
+    const statusOf = new Map<string, string>(
+      roster.map((r) => [r.student_id, r.status]),
     );
 
-    const { data: enrolments } = await supabase
-      .schema('student')
-      .from('student_group_enrollment')
-      .select('student_id')
-      .eq('student_group_id', activity.student_group_id);
+    const studentIds = [
+      ...new Set([
+        ...roster
+          .filter((r) => r.status !== 'dropped')
+          .map((r) => r.student_id),
+        ...byStudent.keys(),
+      ]),
+    ];
 
-    const studentIds = (enrolments ?? [])
-      .map((e: any) => e.student_id as string | null)
-      .filter(Boolean) as string[];
-
-    const { data: students } = studentIds.length
-      ? await supabase
-          .schema('student')
-          .from('student')
-          .select('id, first_name, last_name')
-          .in('id', studentIds)
-      : { data: [] as any[] };
-
-    const { data: submissions } = studentIds.length
-      ? await supabase
-          .schema('grading')
-          .from('submission')
-          .select(
-            'id, student_id, status, text_body, file_id, score, feedback, submitted_at, graded_at, attempt_count',
-          )
-          .eq('activity_id', activityId)
-      : { data: [] as any[] };
-
-    const byStudent = new Map(
-      (submissions ?? []).map((s: any) => [s.student_id as string, s]),
-    );
-
-    // The gradebook row behind each mark. It is a separate table because a
-    // mark can be dropped from the term without touching the submission, so
-    // the exclusion lives here and not on the submission.
-    const { data: grades } =
-      activity.assessment_id && studentIds.length
-        ? await supabase
-            .schema('grading')
-            .from('grade')
-            .select('id, student_id, is_excluded, exclusion_reason')
-            .eq('assessment_id', activity.assessment_id)
-            .in('student_id', studentIds)
-        : { data: [] as any[] };
-
-    const gradeByStudent = new Map(
-      (grades ?? []).map((g: any) => [g.student_id as string, g]),
-    );
+    const students = studentIds.length
+      ? await this.prisma.student.findMany({
+          where: { id: { in: studentIds } },
+          select: { id: true, first_name: true, last_name: true },
+        })
+      : [];
 
     const names = await this.fileNames(
-      (submissions ?? []).map((s: any) => s.file_id as string),
+      submissions.map((s) => s.file_id as string),
     );
 
-    return (students ?? [])
-      .map((s: any) => {
-        const submission = byStudent.get(s.id as string);
-        const grade = gradeByStudent.get(s.id as string);
+    return students
+      .map((s) => {
+        const submission = byStudent.get(s.id);
         return {
           studentId: s.id,
           name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
-          grade: grade
-            ? {
-                id: grade.id as string,
-                isExcluded: !!grade.is_excluded,
-                exclusionReason:
-                  (grade.exclusion_reason as string | null) ?? null,
-              }
-            : null,
+          enrollmentStatus: (statusOf.get(s.id) ?? null) as
+            'active' | 'dropped' | 'completed' | null,
           submission: submission
             ? {
                 id: submission.id,
@@ -723,10 +858,14 @@ export class SubmissionService {
                 fileId: submission.file_id,
                 fileName: names.get(submission.file_id as string) ?? null,
                 score:
-                  submission.score === null ? null : Number(submission.score),
+                  submission.score === null
+                    ? null
+                    : roundScore(Number(submission.score)),
                 feedback: submission.feedback,
-                submittedAt: submission.submitted_at,
-                gradedAt: submission.graded_at,
+                excused: !!submission.excused,
+                excusedReason: submission.excused_reason ?? null,
+                submittedAt: ts(submission.submitted_at),
+                gradedAt: ts(submission.graded_at),
                 attemptCount: submission.attempt_count ?? 0,
               }
             : null,
@@ -735,62 +874,76 @@ export class SubmissionService {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private async requireClassOwnership(userId: string, classId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!profile?.school_id) {
-      throw new BadRequestException('You are not assigned to a school');
-    }
-
-    const { data } = await supabase
-      .from('student_group')
-      .select('id, academic_year:academic_year_id(school_id)')
-      .eq('id', classId)
-      .maybeSingle();
-
-    const owner = (data?.academic_year as { school_id?: string } | null)
-      ?.school_id;
-
-    if (!data || owner !== profile.school_id) {
-      throw new NotFoundException('Activity not found');
-    }
+  private toMarked(row: any) {
+    return {
+      id: row.id as string,
+      studentId: row.student_id as string,
+      status: row.status as 'draft' | 'submitted' | 'graded',
+      score: scoreOrNull(row.score),
+      feedback: (row.feedback as string | null) ?? null,
+      excused: !!row.excused,
+      excusedReason: (row.excused_reason as string | null) ?? null,
+      gradedAt: ts(row.graded_at),
+    };
   }
 
-  /** Mark a submission and write the result through to the gradebook. */
+  /**
+   * Write to a student's submission, creating it when there is none.
+   *
+   * Offline work never has one until it is marked, and a student who never
+   * handed in can still be given a mark (or excused), so marking cannot
+   * assume the row exists. One upsert on the (activity, student) key keeps
+   * that race-free and leaves the student's own text and file untouched.
+   */
+  private async writeSubmission(
+    activityId: string,
+    studentId: string,
+    fields: Omit<
+      Prisma.submissionUncheckedCreateInput,
+      'activity_id' | 'student_id'
+    >,
+  ) {
+    const now = new Date();
+    let data;
+    try {
+      data = await this.prisma.submission.upsert({
+        where: {
+          activity_id_student_id: {
+            activity_id: activityId,
+            student_id: studentId,
+          },
+        },
+        create: {
+          activity_id: activityId,
+          student_id: studentId,
+          ...fields,
+          updated_at: now,
+        },
+        update: { ...fields, updated_at: now },
+        select: MARKED_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to write submission: ${(error as Error).message}`,
+      );
+      throw new BadRequestException('Failed to save the mark');
+    }
+    return this.toMarked(data);
+  }
+
+  /** Mark one student's work on an activity. The submission is the mark. */
   async grade(
     userId: string,
-    submissionId: string,
+    activityId: string,
+    studentId: string,
     input: { score: number; feedback?: string },
   ) {
-    const supabase = this.supabaseService.getServiceClient();
+    const activity = await this.requireMarkable(userId, activityId);
 
-    const { data: submission } = await supabase
-      .schema('grading')
-      .from('submission')
-      .select('id, activity_id, student_id, status')
-      .eq('id', submissionId)
-      .maybeSingle();
-
-    if (!submission) throw new NotFoundException('Submission not found');
-
-    const { data: activity } = await supabase
-      .schema('grading')
-      .from('activity')
-      .select('id, student_group_id, assessment_id, points')
-      .eq('id', submission.activity_id)
-      .maybeSingle();
-
-    if (!activity) throw new NotFoundException('Activity not found');
-    await this.requireClassOwnership(
-      userId,
-      activity.student_group_id as string,
-    );
+    if (activity.status === 'draft') {
+      throw new ConflictException('Publish this before marking it');
+    }
+    await this.requireCourseStudent(activity.course_id, studentId);
 
     if (input.score < 0 || input.score > Number(activity.points)) {
       throw new BadRequestException(
@@ -798,50 +951,82 @@ export class SubmissionService {
       );
     }
 
-    const { error } = await supabase
-      .schema('grading')
-      .from('submission')
-      .update({
-        status: 'graded',
-        score: input.score,
-        feedback: input.feedback ?? null,
-        graded_at: new Date().toISOString(),
-        graded_by: userId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', submissionId);
+    return this.writeSubmission(activityId, studentId, {
+      status: 'graded',
+      score: input.score,
+      feedback: input.feedback ?? null,
+      graded_at: new Date(),
+      graded_by: userId,
+    });
+  }
 
-    if (error) {
-      this.logger.error(`Failed to grade submission: ${error.message}`);
-      throw new BadRequestException('Failed to save the mark');
+  /**
+   * Marking by submission id, for the marking screen that already holds one.
+   * Resolves to the (activity, student) pair and marks it the same way.
+   */
+  async gradeSubmission(
+    userId: string,
+    submissionId: string,
+    input: { score: number; feedback?: string },
+  ) {
+    const submission = await this.prisma.submission.findUnique({
+      where: { id: submissionId },
+      select: { id: true, activity_id: true, student_id: true },
+    });
+
+    if (!submission) throw new NotFoundException('Submission not found');
+
+    return this.grade(
+      userId,
+      submission.activity_id,
+      submission.student_id,
+      input,
+    );
+  }
+
+  /**
+   * Excuse a student from one piece of work, or take the excuse back.
+   *
+   * An excused mark is left out of the course total entirely - score and
+   * points - for the student who was absent or sat a makeup. Any mark they
+   * already have is kept, so un-excusing restores it. A student with no
+   * submission gets one, marked graded with no score, so the to-do list stops
+   * asking them for it.
+   */
+  async excuse(
+    userId: string,
+    activityId: string,
+    studentId: string,
+    input: { excused: boolean; reason?: string },
+  ) {
+    const activity = await this.requireMarkable(userId, activityId);
+
+    if (activity.status === 'draft') {
+      throw new ConflictException('Publish this before excusing anyone');
     }
+    await this.requireCourseStudent(activity.course_id, studentId);
 
-    // Without this the mark lives only on the submission and never reaches a
-    // report, which is the whole point of linking an activity to an assessment.
-    if (activity.assessment_id) {
-      const { error: gradeError } = await supabase
-        .schema('grading')
-        .from('grade')
-        .upsert(
-          {
-            assessment_id: activity.assessment_id,
-            student_id: submission.student_id,
-            score: input.score,
-          },
-          { onConflict: 'assessment_id,student_id' },
-        );
+    const existing = await this.prisma.submission.findFirst({
+      where: { activity_id: activityId, student_id: studentId },
+      select: { id: true },
+    });
 
-      if (gradeError) {
-        this.logger.error(
-          `Marked submission ${submissionId} but failed to write the grade: ${gradeError.message}`,
-        );
-        throw new BadRequestException(
-          'The mark was saved but did not reach the gradebook',
-        );
+    const fields: Parameters<SubmissionService['writeSubmission']>[2] = {
+      excused: input.excused,
+      // Dropping the reason when the excuse is lifted stops a stale note
+      // reappearing the next time.
+      excused_reason: input.excused ? input.reason?.trim() || null : null,
+    };
+
+    if (!existing) {
+      if (!input.excused) {
+        throw new NotFoundException('This student is not excused');
       }
+      fields.status = 'graded';
+      fields.graded_at = new Date();
+      fields.graded_by = userId;
     }
 
-    await this.invalidate();
-    return { id: submissionId, score: input.score };
+    return this.writeSubmission(activityId, studentId, fields);
   }
 }

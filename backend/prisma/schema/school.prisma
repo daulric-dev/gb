@@ -1,0 +1,371 @@
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model academic_year {
+  school_id  String?   @db.Uuid
+  name       String?
+  start_date DateTime? @db.Date
+  end_date   DateTime? @db.Date
+  is_active  Boolean?  @default(true)
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  course     course[]
+  school     school?   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term       term[]
+
+  @@index([school_id], map: "idx_academic_year_school")
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model announcement {
+  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id              String              @db.Uuid
+  author_user_profile_id String?             @db.Uuid
+  title                  String
+  body                   String?
+  created_at             DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at             DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  course_id              String?             @db.Uuid
+  user_profile           user_profile?       @relation(fields: [author_user_profile_id], references: [id], onUpdate: NoAction)
+  course                 course?             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school                 school              @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  announcement_read      announcement_read[]
+  course_notification    course_notification[]
+
+  @@index([course_id])
+  @@index([author_user_profile_id], map: "idx_announcement_author")
+  @@index([school_id], map: "idx_announcement_school")
+  @@index([school_id, created_at(sort: Desc)], map: "idx_announcement_school_created")
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model announcement_read {
+  announcement_id String       @db.Uuid
+  user_profile_id String       @db.Uuid
+  read_at         DateTime?    @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  announcement    announcement @relation(fields: [announcement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile    user_profile @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([announcement_id, user_profile_id])
+  @@index([user_profile_id], map: "idx_announcement_read_user")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model permission_catalog {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resource               String
+  action                 String
+  key                    String                   @unique(map: "permission_catalog_key_unique")
+  description            String?
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  school_role_permission school_role_permission[]
+
+  @@unique([resource, action], map: "permission_catalog_resource_action_unique")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model push_device {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String       @db.Uuid
+  token        String       @unique
+  platform     String
+  created_at   DateTime     @default(now()) @db.Timestamptz(6)
+  last_seen_at DateTime     @default(now()) @db.Timestamptz(6)
+  user_profile user_profile @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id])
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school {
+  id                                          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                        String?
+  code                                        String?
+  school_type                                 schooltype?
+  address                                     String?
+  phone                                       String?
+  email                                       String?
+  is_active                                   Boolean?              @default(true)
+  created_at                                  DateTime?             @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at                                  DateTime?             @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  owner_id                                    String?               @db.Uuid
+  conversation                                conversation[]
+  message                                     message[]
+  course                                      course[]
+  file                                        file[]
+  file_share                                  file_share[]
+  folder                                      folder[]
+  notification                                notification[]
+  grade_scale                                 grade_scale?
+  academic_year                               academic_year[]
+  announcement                                announcement[]
+  user_profile_school_owner_idTouser_profile  user_profile?         @relation("school_owner_idTouser_profile", fields: [owner_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  school_email_domain                         school_email_domain[]
+  school_join_request                         school_join_request[]
+  school_management                           school_management?
+  school_role                                 school_role[]
+  user_profile_user_profile_school_idToschool user_profile[]        @relation("user_profile_school_idToschool")
+  school_join_code                            school_join_code?
+  student                                     student[]
+  subscription                                subscription?
+  invoice                                     invoice[]
+  payment_event                               payment_event[]
+
+  @@index([owner_id], map: "idx_school_owner")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_email_domain {
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id          String                @db.Uuid
+  domain             String                @unique(map: "school_email_domain_verified_key", where: raw("(verified_at IS NOT NULL)"))
+  audience           email_domain_audience
+  auto_join          Boolean               @default(true)
+  staff_role         role                  @default(teacher)
+  verification_token String
+  verified_at        DateTime?             @db.Timestamptz(6)
+  created_by         String?               @db.Uuid
+  created_at         DateTime              @default(now()) @db.Timestamptz(6)
+  sso_provider       String?
+  sso_required       Boolean               @default(false)
+  azure_tenant_id    String?
+  saml_entry_point   String?
+  saml_issuer        String?
+  saml_certificate   String?
+  user_profile       user_profile?         @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  school             school                @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([school_id, domain], map: "school_email_domain_school_domain_key")
+  @@index([created_by])
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_join_request {
+  id                                                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                                    String              @db.Uuid
+  school_id                                                  String              @db.Uuid
+  status                                                     join_request_status @default(pending)
+  message                                                    String?
+  requested_at                                               DateTime            @default(now()) @db.Timestamptz(6)
+  reviewed_at                                                DateTime?           @db.Timestamptz(6)
+  reviewed_by                                                String?             @db.Uuid
+  user_profile_school_join_request_reviewed_byTouser_profile user_profile?       @relation("school_join_request_reviewed_byTouser_profile", fields: [reviewed_by], references: [id], onUpdate: NoAction)
+  school                                                     school              @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile_school_join_request_user_idTouser_profile     user_profile        @relation("school_join_request_user_idTouser_profile", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, school_id], map: "school_join_request_pending_unique", where: raw("(status = 'pending'::join_request_status)"))
+  @@index([school_id], map: "idx_school_join_request_school")
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_management {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                String                   @db.Uuid
+  school_id              String                   @unique(map: "school_management_one_admin_per_school", where: raw("(role = 'admin'::role)")) @db.Uuid
+  role                   role?
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  school                 school                   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile           user_profile             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school_management_role school_management_role[]
+
+  @@unique([user_id, school_id], map: "school_management_user_school_unique")
+  @@index([user_id])
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_management_role {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_management_id String            @db.Uuid
+  school_role_id       String            @db.Uuid
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  school_management    school_management @relation(fields: [school_management_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_management_role_management_fkey")
+  school_role          school_role       @relation(fields: [school_role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_management_role_role_fkey")
+
+  @@unique([school_management_id, school_role_id], map: "school_management_role_unique")
+  @@index([school_role_id], map: "idx_school_management_role_role")
+  @@index([school_management_id], map: "school_management_role_management_idx")
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_role {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id              String                   @db.Uuid
+  name                   String
+  description            String?
+  is_system              Boolean                  @default(false)
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  school_management_role school_management_role[]
+  school                 school                   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school_role_permission school_role_permission[]
+
+  @@unique([school_id, name], map: "school_role_school_name_unique")
+  @@index([school_id])
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model school_role_permission {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_role_id     String             @db.Uuid
+  permission_id      String             @db.Uuid
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  permission_catalog permission_catalog @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_role_permission_permission_fkey")
+  school_role        school_role        @relation(fields: [school_role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_role_permission_role_fkey")
+
+  @@unique([school_role_id, permission_id], map: "school_role_permission_unique")
+  @@index([permission_id], map: "idx_school_role_permission_permission")
+  @@index([school_role_id], map: "school_role_permission_role_idx")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model term {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String?
+  academic_year_id String?        @db.Uuid
+  start_date       DateTime?      @db.Date
+  end_date         DateTime?      @db.Date
+  sort_order       Int?           @db.SmallInt
+  course           course[]
+  academic_year    academic_year? @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([academic_year_id, name], map: "term_academic_year_id_name_unique")
+  @@index([academic_year_id], map: "idx_term_year")
+  @@schema("public")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model user_profile {
+  id                                                                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id                                                         String?                    @db.Uuid
+  first_name                                                        String?
+  last_name                                                         String?
+  role                                                              role?
+  avatar_url                                                        String?
+  is_active                                                         Boolean?                   @default(true)
+  created_at                                                        DateTime?                  @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  updated_at                                                        DateTime?                  @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
+  email                                                             String?
+  account_type                                                      account_type               @default(staff)
+  conversation                                                      conversation[]
+  conversation_member                                               conversation_member[]
+  message                                                           message[]
+  attendance_record                                                 course_attendance_record[]
+  attendance_session                                                attendance_session[]
+  course                                                            course[]
+  course_staff                                                      course_staff[]
+  page                                                              page[]
+  file                                                              file[]
+  file_share                                                        file_share[]
+  folder                                                            folder[]
+  notification                                                      notification[]
+  activity                                                          activity[]
+  grade_scale_grade_scale_created_byTouser_profile                  grade_scale[]              @relation("grade_scale_created_byTouser_profile")
+  grade_scale_grade_scale_updated_byTouser_profile                  grade_scale[]              @relation("grade_scale_updated_byTouser_profile")
+  submission                                                        submission[]
+  announcement                                                      announcement[]
+  announcement_read                                                 announcement_read[]
+  push_device                                                       push_device[]
+  rubric                                                            rubric[]
+  course_notification                                               course_notification[]
+  school_school_owner_idTouser_profile                              school[]                   @relation("school_owner_idTouser_profile")
+  school_email_domain                                               school_email_domain[]
+  school_join_request_school_join_request_reviewed_byTouser_profile school_join_request[]      @relation("school_join_request_reviewed_byTouser_profile")
+  school_join_request_school_join_request_user_idTouser_profile     school_join_request[]      @relation("school_join_request_user_idTouser_profile")
+  school_management                                                 school_management[]
+  app_user                                                          app_user                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school_user_profile_school_idToschool                             school?                    @relation("user_profile_school_idToschool", fields: [school_id], references: [id], onUpdate: NoAction)
+  parent_student_link                                               parent_student_link[]
+  school_join_code                                                  school_join_code[]
+  student                                                           student?
+  discussion_topic                                                  discussion_topic[]
+  discussion_reply                                                  discussion_reply[]
+  discussion_read                                                   discussion_read[]
+
+  @@index([school_id], map: "idx_user_profile_school")
+  @@schema("public")
+}
+
+enum account_type {
+  staff
+  student
+
+  @@schema("public")
+}
+
+enum public_attendance_status {
+  present
+  absent
+  late
+
+  @@map("attendance_status")
+  @@schema("public")
+}
+
+enum email_domain_audience {
+  student
+  staff
+  any
+
+  @@schema("public")
+}
+
+enum gender {
+  male
+  female
+
+  @@schema("public")
+}
+
+enum grade_scale_type {
+  letter
+  gpa
+  pass_fail
+
+  @@schema("public")
+}
+
+enum join_request_status {
+  pending
+  approved
+  rejected
+
+  @@schema("public")
+}
+
+enum relationship_type {
+  mother
+  father
+  guardian
+
+  @@schema("public")
+}
+
+enum role {
+  admin
+  teacher
+  member
+
+  @@schema("public")
+}
+
+enum schooltype {
+  primary
+  secondary
+
+  @@schema("public")
+}

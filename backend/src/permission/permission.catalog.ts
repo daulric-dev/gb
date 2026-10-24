@@ -1,21 +1,17 @@
 export const ACTIONS = ['create', 'read', 'update', 'delete'] as const;
 export type Action = (typeof ACTIONS)[number];
 
-// One entry per feature controller surface. `grading` is split into the two
-// underlying resources (assessment, grade) it manages.
+// One entry per school-level surface. Work inside a course (content, marking,
+// people) is governed by the caller's course role instead - see
+// CourseAccessService - so it has no catalog keys of its own. `course` here is
+// the school-wide power: creating courses, and with update/delete, managing
+// every course in the school as an admin would.
 export const RESOURCES = [
-  'class',
-  'attendance',
-  'enrollment',
-  'assessment',
-  'grade',
-  'reporting',
+  'course',
   'student',
-  'subject',
   'term',
   'academic-year',
   'grade-scale',
-  'calculation',
   'school',
   'announcement',
   'file',
@@ -25,8 +21,18 @@ export type Resource = (typeof RESOURCES)[number];
 
 export type PermissionKey = `${Resource}:${Action}`;
 
+// Resources without the full create/read/update/delete set. A key exists only
+// when something enforces it:
+// - school:update gates the school's own settings that are not a resource of
+//   their own - billing (plan, payment, invoices). Admins hold it by default.
+// - course: reading and deleting a course are decided by the course role
+//   (CourseAccessService), so only create and update are school-wide powers.
+// - student and academic-year have no delete route.
 const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
-  school: ['read'],
+  school: ['read', 'update'],
+  course: ['create', 'update'],
+  student: ['create', 'read', 'update'],
+  'academic-year': ['create', 'read', 'update'],
 };
 
 export function actionsFor(resource: Resource): readonly Action[] {
@@ -47,18 +53,11 @@ export interface CatalogEntry {
 }
 
 const RESOURCE_LABELS: Record<Resource, string> = {
-  class: 'classes',
-  attendance: 'attendance records',
-  enrollment: 'class enrollments',
-  assessment: 'assessments',
-  grade: 'grades',
-  reporting: 'reports',
+  course: 'courses',
   student: 'students',
-  subject: 'subjects',
   term: 'academic terms',
   'academic-year': 'academic years',
   'grade-scale': 'grade scales',
-  calculation: 'grade calculations',
   school: 'school settings',
   announcement: 'announcements',
   file: 'files',
@@ -100,26 +99,15 @@ const readKeys = (...resources: Resource[]): PermissionKey[] =>
 export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   admin: '*',
 
+  // Teachers create their own courses and run them through their course role.
   teacher: [
-    ...allKeys(
-      'attendance',
-      'assessment',
-      'grade',
-      'enrollment',
-      'reporting',
-      'announcement',
-      'file',
-      'chat',
-    ),
-    permKey('class', 'create'),
+    ...allKeys('announcement', 'file', 'chat'),
+    permKey('course', 'create'),
     ...readKeys(
-      'class',
       'student',
-      'subject',
       'term',
       'academic-year',
       'grade-scale',
-      'calculation',
       'school',
     ),
   ],
@@ -128,14 +116,10 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   // plus the ability to manage their own files (upload, view, share own).
   member: [
     ...readKeys(
-      'class',
       'student',
-      'subject',
       'term',
       'academic-year',
       'grade-scale',
-      'reporting',
-      'calculation',
       'announcement',
       'file',
       'school',

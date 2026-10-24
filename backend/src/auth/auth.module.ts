@@ -4,9 +4,10 @@ import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { ImagesModule } from '@/images/images.module';
 import { StudentAccountModule } from '@/student-account/student-account.module';
+import { EmailDomainModule } from '@/email-domain/email-domain.module';
 
 @Module({
-  imports: [ImagesModule, StudentAccountModule],
+  imports: [ImagesModule, StudentAccountModule, EmailDomainModule],
   controllers: [AuthController],
   providers: [AuthService, AuthGuard],
   exports: [AuthGuard],

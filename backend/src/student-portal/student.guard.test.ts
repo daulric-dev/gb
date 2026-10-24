@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { StudentGuard } from './student.guard';
-import { createRoutingSupabase, expectRejection } from '@/test/mocks';
+import { expectRejection } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 
 function makeContext(request: any) {
   return {
@@ -17,8 +18,14 @@ const noopCache = {
   deleteByPrefix: async () => {},
 } as any;
 
-function guardWith(tables: Record<string, any>, cache: any = noopCache) {
-  return new StudentGuard(createRoutingSupabase({ tables }) as any, cache);
+function guardWith(
+  rows: { profile?: any; student?: any } = {},
+  cache: any = noopCache,
+) {
+  const prisma = createMockPrisma();
+  prisma.user_profile.findUnique.mockResolvedValue(rows.profile ?? null);
+  prisma.student.findFirst.mockResolvedValue(rows.student ?? null);
+  return new StudentGuard(prisma as any, cache);
 }
 
 const STUDENT_PROFILE = { account_type: 'student', is_active: true };
@@ -33,11 +40,8 @@ describe('StudentGuard', () => {
 
   test('pins the linked student to the request', async () => {
     const guard = guardWith({
-      user_profile: { data: STUDENT_PROFILE, error: null },
-      'student.student': {
-        data: { id: 'student-1', school_id: 'school-1', is_active: true },
-        error: null,
-      },
+      profile: STUDENT_PROFILE,
+      student: { id: 'student-1', school_id: 'school-1', is_active: true },
     });
 
     const req: any = { user: { id: 'u1' } };
@@ -50,7 +54,7 @@ describe('StudentGuard', () => {
 
   test('denies a staff account outright', async () => {
     const guard = guardWith({
-      user_profile: { data: { account_type: 'staff', is_active: true }, error: null },
+      profile: { account_type: 'staff', is_active: true },
     });
 
     const err = await expectRejection(
@@ -62,8 +66,8 @@ describe('StudentGuard', () => {
 
   test('denies a student who has not redeemed a claim code', async () => {
     const guard = guardWith({
-      user_profile: { data: STUDENT_PROFILE, error: null },
-      'student.student': { data: null, error: null },
+      profile: STUDENT_PROFILE,
+      student: null,
     });
 
     const err = await expectRejection(
@@ -75,10 +79,7 @@ describe('StudentGuard', () => {
 
   test('denies a deactivated account', async () => {
     const guard = guardWith({
-      user_profile: {
-        data: { account_type: 'student', is_active: false },
-        error: null,
-      },
+      profile: { account_type: 'student', is_active: false },
     });
 
     expect(
@@ -90,11 +91,8 @@ describe('StudentGuard', () => {
 
   test('denies an inactive student record', async () => {
     const guard = guardWith({
-      user_profile: { data: STUDENT_PROFILE, error: null },
-      'student.student': {
-        data: { id: 'student-1', school_id: 'school-1', is_active: false },
-        error: null,
-      },
+      profile: STUDENT_PROFILE,
+      student: { id: 'student-1', school_id: 'school-1', is_active: false },
     });
 
     expect(
@@ -106,11 +104,8 @@ describe('StudentGuard', () => {
 
   test('resolves the student id from the account, never from the request', async () => {
     const guard = guardWith({
-      user_profile: { data: STUDENT_PROFILE, error: null },
-      'student.student': {
-        data: { id: 'student-1', school_id: 'school-1', is_active: true },
-        error: null,
-      },
+      profile: STUDENT_PROFILE,
+      student: { id: 'student-1', school_id: 'school-1', is_active: true },
     });
 
     // A caller trying to pin someone else's record must not be believed.
@@ -123,7 +118,7 @@ describe('StudentGuard', () => {
   });
 
   test('serves a cached context without re-querying', async () => {
-    const sb = createRoutingSupabase({});
+    const prisma = createMockPrisma();
     const cache = {
       get: () =>
         Promise.resolve({ studentId: 'student-1', schoolId: 'school-1' }),
@@ -131,11 +126,12 @@ describe('StudentGuard', () => {
       deleteByPrefix: async () => {},
     } as any;
 
-    const guard = new StudentGuard(sb as any, cache);
+    const guard = new StudentGuard(prisma as any, cache);
     const req: any = { user: { id: 'u1' } };
 
     expect(await guard.canActivate(makeContext(req))).toBe(true);
     expect(req.student.studentId).toBe('student-1');
-    expect(sb._calls).toHaveLength(0);
+    expect(prisma.user_profile.findUnique).not.toHaveBeenCalled();
+    expect(prisma.student.findFirst).not.toHaveBeenCalled();
   });
 });

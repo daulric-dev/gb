@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { StudentMembershipService } from './student-membership.service';
-import { createRoutingSupabase, expectRejection } from '@/test/mocks';
+import { expectRejection } from '@/test/mocks';
+import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const ACTOR = 'staff-1';
 const SCHOOL = 'school-1';
@@ -29,112 +30,117 @@ function recordingCache() {
   };
 }
 
-function service(sb: any, cache: any = recordingCache().cache) {
-  return new StudentMembershipService(sb as any, cache);
+function service(prisma: MockPrisma, cache: any = recordingCache().cache) {
+  return new StudentMembershipService(prisma as any, cache);
+}
+
+/** A database where the actor (and anyone) is in SCHOOL. */
+function db(): MockPrisma {
+  const prisma = createMockPrisma();
+  prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
+  return prisma;
+}
+
+/** An error as raised by a SQL function through $queryRaw. */
+const raised = (message: string, code = 'P0001') =>
+  Object.assign(new Error(`Raw query failed. Message: \`${message}\``), {
+    code: 'P2010',
+    meta: { code, message },
+  });
+
+/** The SQL text and bound values of the nth raw query. */
+function rawCall(prisma: MockPrisma, n = 0) {
+  const [strings, ...values] = prisma.$queryRaw.mock.calls[n];
+  return { sql: (strings as string[]).join('?'), values };
 }
 
 describe('StudentMembershipService codes', () => {
-  function issuer() {
-    return createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.school_join_code': { data: null, error: null },
-      },
-    });
-  }
-
   test('issues a grouped code and stores only its hash', async () => {
-    const sb = issuer();
-    const result = await service(sb).issueCode(ACTOR);
+    const prisma = db();
+    const result = await service(prisma).issueCode(ACTOR);
 
     expect(result.code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
 
-    const insert = sb._calls.find(
-      (c: any) => c.table === 'school_join_code' && c.op === 'insert',
-    );
-    if (!insert) throw new Error('expected a join code insert');
-    expect(insert.payload.code_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(insert.payload.code_hash).not.toContain(
-      result.code.replace(/-/g, ''),
-    );
+    const data = prisma.school_join_code.create.mock.calls[0][0].data;
+    expect(data.code_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(data.code_hash).not.toContain(result.code.replace(/-/g, ''));
+    expect(data.expires_at.toISOString()).toBe(result.expiresAt);
   });
 
-  test('reissuing clears the previous code first', async () => {
-    const sb = issuer();
-    await service(sb).issueCode(ACTOR);
+  test('reissuing clears the previous code first, atomically', async () => {
+    const prisma = db();
+    const ops: string[] = [];
+    prisma.school_join_code.deleteMany.mockImplementation(async () => {
+      ops.push('delete');
+      return { count: 1 };
+    });
+    prisma.school_join_code.create.mockImplementation(async () => {
+      ops.push('insert');
+      return {};
+    });
+    await service(prisma).issueCode(ACTOR);
 
-    const ops = sb._calls
-      .filter((c: any) => c.table === 'school_join_code')
-      .map((c: any) => c.op);
     expect(ops).toEqual(['delete', 'insert']);
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.school_join_code.deleteMany.mock.calls[0][0].where).toEqual({
+      school_id: SCHOOL,
+      revoked_at: null,
+    });
   });
 
   test('rejects an out-of-range expiry', async () => {
-    const sb = issuer();
-    expect(await expectRejection(service(sb).issueCode(ACTOR, 0))).toBeInstanceOf(
-      BadRequestException,
-    );
+    const prisma = db();
     expect(
-      await expectRejection(service(sb).issueCode(ACTOR, 365)),
+      await expectRejection(service(prisma).issueCode(ACTOR, 0)),
+    ).toBeInstanceOf(BadRequestException);
+    expect(
+      await expectRejection(service(prisma).issueCode(ACTOR, 365)),
     ).toBeInstanceOf(BadRequestException);
   });
 
   test('status never returns the code itself', async () => {
-    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
-    const sb = createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.school_join_code': {
-          data: { expires_at: expiresAt, created_at: '2026-09-01' },
-          error: null,
-        },
-      },
+    const expiresAt = new Date(Date.now() + 86_400_000);
+    const prisma = db();
+    prisma.school_join_code.findFirst.mockResolvedValue({
+      expires_at: expiresAt,
+      created_at: new Date('2026-09-01T00:00:00Z'),
     });
 
-    const out = await service(sb).getCodeStatus(ACTOR);
-    expect(out.activeCode?.expiresAt).toBe(expiresAt);
+    const out = await service(prisma).getCodeStatus(ACTOR);
+    expect(out.activeCode?.expiresAt).toBe(expiresAt.toISOString());
+    expect(out.activeCode?.issuedAt).toBe('2026-09-01T00:00:00.000Z');
     expect(JSON.stringify(out)).not.toContain('hash');
   });
 
   test('a past expiry is not an active code', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.school_join_code': {
-          data: {
-            expires_at: new Date(Date.now() - 1000).toISOString(),
-            created_at: '2026-09-01',
-          },
-          error: null,
-        },
-      },
+    const prisma = db();
+    prisma.school_join_code.findFirst.mockResolvedValue({
+      expires_at: new Date(Date.now() - 1000),
+      created_at: new Date('2026-09-01T00:00:00Z'),
     });
 
-    const out = await service(sb).getCodeStatus(ACTOR);
+    const out = await service(prisma).getCodeStatus(ACTOR);
     expect(out.activeCode).toBeNull();
     expect(out.expired).toBe(true);
   });
 });
 
 describe('StudentMembershipService.joinByCode', () => {
-  function joiner(rpcResult: any) {
+  function joiner(result: unknown[] | Error) {
     const { deleted, cache } = recordingCache();
-    const sb = createRoutingSupabase({
-      tables: { user_profile: { data: { school_id: SCHOOL }, error: null } },
-      rpc: { redeem_school_join_code: () => rpcResult },
-    });
-    return { svc: service(sb, cache), sb, deleted };
+    const prisma = db();
+    if (result instanceof Error) prisma.$queryRaw.mockRejectedValue(result);
+    else prisma.$queryRaw.mockResolvedValue(result);
+    return { svc: service(prisma, cache), prisma, deleted };
   }
 
-  const ok = {
-    data: [{ student_id: JOINED, school_id: SCHOOL }],
-    error: null,
-  };
+  const ok = [{ student_id: JOINED, school_id: SCHOOL }];
 
   test('joining drops every membership cache key', async () => {
     const { svc, deleted } = joiner(ok);
 
-    await svc.joinByCode(USER, 'ABCD-EFGH-JKMN');
+    const out = await svc.joinByCode(USER, 'ABCD-EFGH-JKMN');
+    expect(out).toEqual({ studentId: JOINED, schoolId: SCHOOL });
 
     // The bug this service exists to prevent: profile and students hold for
     // thirty days, so a miss is effectively permanent.
@@ -144,12 +150,14 @@ describe('StudentMembershipService.joinByCode', () => {
   });
 
   test('never sends the plaintext code to the database', async () => {
-    const { svc, sb } = joiner(ok);
+    const { svc, prisma } = joiner(ok);
     await svc.joinByCode(USER, 'ABCD-EFGH-JKMN');
 
-    const call = sb._rpcCalls[0];
-    expect(call.args.p_code_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(JSON.stringify(call.args)).not.toContain('ABCD');
+    const { sql, values } = rawCall(prisma);
+    expect(sql).toContain('redeem_school_join_code');
+    expect(values[0]).toBe(USER);
+    expect(values[1]).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(values)).not.toContain('ABCD');
   });
 
   test('accepts any case or dash formatting', async () => {
@@ -158,44 +166,42 @@ describe('StudentMembershipService.joinByCode', () => {
     const b = joiner(ok);
     await b.svc.joinByCode(USER, 'ABCDEFGHJKMN');
 
-    expect(a.sb._rpcCalls[0].args.p_code_hash).toBe(
-      b.sb._rpcCalls[0].args.p_code_hash,
-    );
+    expect(rawCall(a.prisma).values[1]).toBe(rawCall(b.prisma).values[1]);
   });
 
   test('a wrong-length code never reaches the database', async () => {
-    const { svc, sb } = joiner(ok);
+    const { svc, prisma } = joiner(ok);
     expect(await expectRejection(svc.joinByCode(USER, 'SHORT'))).toBeInstanceOf(
       BadRequestException,
     );
-    expect(sb._rpcCalls).toHaveLength(0);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  test('no row back is an invalid code', async () => {
+    const { svc } = joiner([]);
+    expect(
+      await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
+    ).toBeInstanceOf(BadRequestException);
   });
 
   test('an account already in a school is refused', async () => {
-    const { svc } = joiner({
-      data: null,
-      error: { code: 'P0012', message: 'already_in_a_school' },
-    });
+    const { svc } = joiner(raised('already_in_a_school', 'P0012'));
     expect(
       await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
     ).toBeInstanceOf(ConflictException);
   });
 
   test('an unknown or expired code gives a generic error', async () => {
-    const { svc } = joiner({
-      data: null,
-      error: { code: 'P0011', message: 'invalid_join_code' },
-    });
+    const { svc } = joiner(raised('invalid_join_code', 'P0011'));
     const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
     expect(err).toBeInstanceOf(BadRequestException);
     expect(String((err as Error).message)).toContain('Invalid or expired');
   });
 
   test('a missing migration says so', async () => {
-    const { svc } = joiner({
-      data: null,
-      error: { code: 'PGRST202', message: 'Could not find the function' },
-    });
+    const { svc } = joiner(
+      raised('function public.redeem_school_join_code does not exist', '42883'),
+    );
     const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
     expect(String((err as Error).message)).toContain('pending migrations');
   });
@@ -203,103 +209,67 @@ describe('StudentMembershipService.joinByCode', () => {
 
 describe('StudentMembershipService duplicates', () => {
   test('lists candidate pairs for the actor school', async () => {
-    const sb = createRoutingSupabase({
-      tables: { user_profile: { data: { school_id: SCHOOL }, error: null } },
-      rpc: {
-        student_duplicate_candidates: () => ({
-          data: [
-            { joined_id: JOINED, existing_id: EXISTING, full_name: 'Sam Self' },
-          ],
-          error: null,
-        }),
-      },
-    });
+    const prisma = db();
+    prisma.$queryRaw.mockResolvedValue([
+      { joined_id: JOINED, existing_id: EXISTING, full_name: 'Sam Self' },
+    ]);
 
-    const out = await service(sb).listDuplicates(ACTOR);
+    const out = await service(prisma).listDuplicates(ACTOR);
     expect(out).toEqual([
       { joinedId: JOINED, existingId: EXISTING, name: 'Sam Self' },
     ]);
-    expect(sb._rpcCalls[0].args.p_school_id).toBe(SCHOOL);
+    const { sql, values } = rawCall(prisma);
+    expect(sql).toContain('student_duplicate_candidates');
+    expect(values).toEqual([SCHOOL]);
   });
 
-  test('merging drops the caches of the account that moved', async () => {
-    const { deleted, cache } = recordingCache();
-    const sb = createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.student': { data: { user_profile_id: USER }, error: null },
-      },
-      rpc: {
-        merge_student_records: () => ({
-          data: [{ student_id: EXISTING }],
-          error: null,
-        }),
-      },
-    });
+  test('a missing function lists nothing', async () => {
+    const prisma = db();
+    prisma.$queryRaw.mockRejectedValue(raised('does not exist', '42883'));
+    expect(await service(prisma).listDuplicates(ACTOR)).toEqual([]);
+  });
 
-    const out = await service(sb, cache).mergeDuplicate(ACTOR, JOINED, EXISTING);
+  function merger(result: unknown[] | Error) {
+    const { deleted, cache } = recordingCache();
+    const prisma = db();
+    prisma.student.findUnique.mockResolvedValue({ user_profile_id: USER });
+    if (result instanceof Error) prisma.$queryRaw.mockRejectedValue(result);
+    else prisma.$queryRaw.mockResolvedValue(result);
+    return { svc: service(prisma, cache), prisma, deleted };
+  }
+
+  test('merging drops the caches of the account that moved', async () => {
+    const { svc, prisma, deleted } = merger([{ student_id: EXISTING }]);
+
+    const out = await svc.mergeDuplicate(ACTOR, JOINED, EXISTING);
 
     expect(out.studentId).toBe(EXISTING);
+    expect(rawCall(prisma).values).toEqual([ACTOR, JOINED, EXISTING]);
     expect(deleted).toContain(`profile:${USER}`);
     expect(deleted).toContain(`students:${SCHOOL}`);
   });
 
   test('refuses to discard a record that carries results', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.student': { data: { user_profile_id: USER }, error: null },
-      },
-      rpc: {
-        merge_student_records: () => ({
-          data: null,
-          error: { code: 'P0017', message: 'joined_record_has_data' },
-        }),
-      },
-    });
+    const { svc } = merger(raised('joined_record_has_data', 'P0017'));
 
     const err = await expectRejection(
-      service(sb).mergeDuplicate(ACTOR, JOINED, EXISTING),
+      svc.mergeDuplicate(ACTOR, JOINED, EXISTING),
     );
     expect(err).toBeInstanceOf(BadRequestException);
     expect(String((err as Error).message)).toContain('results recorded');
   });
 
   test('refuses a target that already has an account', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.student': { data: { user_profile_id: USER }, error: null },
-      },
-      rpc: {
-        merge_student_records: () => ({
-          data: null,
-          error: { code: 'P0016', message: 'existing_record_already_claimed' },
-        }),
-      },
-    });
-
+    const { svc } = merger(raised('existing_record_already_claimed', 'P0016'));
     expect(
-      await expectRejection(service(sb).mergeDuplicate(ACTOR, JOINED, EXISTING)),
+      await expectRejection(svc.mergeDuplicate(ACTOR, JOINED, EXISTING)),
     ).toBeInstanceOf(ConflictException);
   });
 
   test('a record from another school is not found', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        user_profile: { data: { school_id: SCHOOL }, error: null },
-        'student.student': { data: { user_profile_id: USER }, error: null },
-      },
-      rpc: {
-        merge_student_records: () => ({
-          data: null,
-          error: { code: 'P0014', message: 'student_other_school' },
-        }),
-      },
-    });
-
+    const { svc } = merger(raised('student_other_school', 'P0014'));
     expect(
-      await expectRejection(service(sb).mergeDuplicate(ACTOR, JOINED, EXISTING)),
+      await expectRejection(svc.mergeDuplicate(ACTOR, JOINED, EXISTING)),
     ).toBeInstanceOf(NotFoundException);
   });
 });

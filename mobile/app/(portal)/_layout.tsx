@@ -1,10 +1,9 @@
 import { Redirect, Tabs } from "expo-router";
 import {
+  CalendarDays,
+  GraduationCap,
   LayoutDashboard,
   NotebookPen,
-  ClipboardList,
-  CalendarCheck,
-  ScrollText,
   Settings,
 } from "lucide-react-native";
 import { useAuth } from "@/providers/AuthProvider";
@@ -46,7 +45,7 @@ export default function PortalLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Overview",
+          title: "Home",
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard color={color} size={size} />
           ),
@@ -62,29 +61,20 @@ export default function PortalLayout() {
         }}
       />
       <Tabs.Screen
+        name="calendar"
+        options={{
+          title: "Calendar",
+          tabBarIcon: ({ color, size }) => (
+            <CalendarDays color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="grades"
         options={{
           title: "Grades",
           tabBarIcon: ({ color, size }) => (
-            <ClipboardList color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="attendance"
-        options={{
-          title: "Attendance",
-          tabBarIcon: ({ color, size }) => (
-            <CalendarCheck color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          title: "Reports",
-          tabBarIcon: ({ color, size }) => (
-            <ScrollText color={color} size={size} />
+            <GraduationCap color={color} size={size} />
           ),
         }}
       />

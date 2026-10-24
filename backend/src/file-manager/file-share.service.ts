@@ -1,7 +1,17 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { isNotFound } from '@/common/db-values';
 import { FileQueueService } from '@/queue/file-queue.service';
-import type { ShareTargetDto } from './dto/share-file.dto';
+import { SharePrincipalType, type ShareTargetDto } from './dto/share-file.dto';
+
+const SHARE_COLUMNS = {
+  id: true,
+  principal_type: true,
+  principal_id: true,
+  can_download: true,
+  created_at: true,
+} satisfies Prisma.file_shareSelect;
 
 /**
  * Manages a file's share list. All methods assume ownership has already been
@@ -12,19 +22,16 @@ export class FileShareService {
   private readonly logger = new Logger(FileShareService.name);
 
   constructor(
-    private readonly supabase: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly queue: FileQueueService,
   ) {}
 
   async list(fileId: string) {
-    const { data } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('file_share')
-      .select('id, principal_type, principal_id, can_download, created_at')
-      .eq('file_id', fileId)
-      .order('created_at', { ascending: true });
-    return data ?? [];
+    return this.prisma.file_share.findMany({
+      where: { file_id: fileId },
+      select: SHARE_COLUMNS,
+      orderBy: { created_at: 'asc' },
+    });
   }
 
   async share(
@@ -33,26 +40,40 @@ export class FileShareService {
     createdBy: string,
     targets: ShareTargetDto[],
   ) {
-    const client = this.supabase.getServiceClient();
+    await this.assertCoursesInSchool(schoolId, targets);
 
-    const rows = targets.map((t) => ({
-      file_id: fileId,
-      school_id: schoolId,
-      principal_type: t.principalType,
-      principal_id: t.principalId,
-      can_download: t.canDownload ?? false,
-      created_by: createdBy,
-    }));
-
-    const { data, error } = await client
-      .schema('file_manager')
-      .from('file_share')
-      .upsert(rows, { onConflict: 'file_id,principal_type,principal_id' })
-      .select('id, principal_type, principal_id, can_download, created_at');
-
-    if (error) {
+    let data: Prisma.file_shareGetPayload<{ select: typeof SHARE_COLUMNS }>[];
+    try {
+      // Re-sharing with a principal updates the existing row in place.
+      data = await this.prisma.$transaction(
+        targets.map((t) => {
+          const row = {
+            school_id: schoolId,
+            can_download: t.canDownload ?? false,
+            created_by: createdBy,
+          };
+          return this.prisma.file_share.upsert({
+            where: {
+              file_id_principal_type_principal_id: {
+                file_id: fileId,
+                principal_type: t.principalType,
+                principal_id: t.principalId,
+              },
+            },
+            create: {
+              file_id: fileId,
+              principal_type: t.principalType,
+              principal_id: t.principalId,
+              ...row,
+            },
+            update: row,
+            select: SHARE_COLUMNS,
+          });
+        }),
+      );
+    } catch (error) {
       this.logger.error(
-        `Failed to create shares for ${fileId}: ${error.message}`,
+        `Failed to create shares for ${fileId}: ${(error as Error).message}`,
       );
       throw error;
     }
@@ -64,31 +85,50 @@ export class FileShareService {
     return data ?? [];
   }
 
-  async updateDownload(fileId: string, shareId: string, canDownload: boolean) {
-    const client = this.supabase.getServiceClient();
-    const { data, error } = await client
-      .schema('file_manager')
-      .from('file_share')
-      .update({ can_download: canDownload })
-      .eq('id', shareId)
-      .eq('file_id', fileId)
-      .select('id, principal_type, principal_id, can_download, created_at')
-      .maybeSingle();
+  /**
+   * A course share must name a course of the file's own school; anything else
+   * would be a share nobody can ever match, or a probe for course ids.
+   */
+  private async assertCoursesInSchool(
+    schoolId: string,
+    targets: ShareTargetDto[],
+  ) {
+    const courseIds = [
+      ...new Set(
+        targets
+          .filter((t) => t.principalType === SharePrincipalType.Course)
+          .map((t) => t.principalId),
+      ),
+    ];
+    if (courseIds.length === 0) return;
 
-    if (error) throw error;
-    if (!data) throw new NotFoundException('Share not found');
-    return data;
+    const data = await this.prisma.course.findMany({
+      where: { school_id: schoolId, id: { in: courseIds } },
+      select: { id: true },
+    });
+
+    if ((data ?? []).length !== courseIds.length) {
+      throw new NotFoundException('Course not found');
+    }
+  }
+
+  async updateDownload(fileId: string, shareId: string, canDownload: boolean) {
+    try {
+      return await this.prisma.file_share.update({
+        where: { id: shareId, file_id: fileId },
+        data: { can_download: canDownload },
+        select: SHARE_COLUMNS,
+      });
+    } catch (error) {
+      if (isNotFound(error)) throw new NotFoundException('Share not found');
+      throw error;
+    }
   }
 
   async revoke(fileId: string, shareId: string) {
-    const client = this.supabase.getServiceClient();
-    const { error } = await client
-      .schema('file_manager')
-      .from('file_share')
-      .delete()
-      .eq('id', shareId)
-      .eq('file_id', fileId);
-    if (error) throw error;
+    await this.prisma.file_share.deleteMany({
+      where: { id: shareId, file_id: fileId },
+    });
     return { id: shareId, revoked: true };
   }
 }

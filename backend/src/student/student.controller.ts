@@ -13,7 +13,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
-import { PaginationQueryDto } from '@/pagination/pagination.dto';
+import { ListStudentsQueryDto } from './dto/list-students.query.dto';
 import { VersioningService } from '@/versioning/versioning.service';
 import { StudentService } from './student.service';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -33,11 +33,11 @@ export class StudentController {
   @Get()
   async findAll(
     @Req() req: any,
-    @Query('search') search?: string,
-    @Query() pagination?: PaginationQueryDto,
+    @Query() query: ListStudentsQueryDto,
   ) {
+    const { search, ...pagination } = query;
     const hasPaginationParams =
-      pagination?.page !== undefined || pagination?.cursor !== undefined;
+      pagination.page !== undefined || pagination.cursor !== undefined;
 
     const userId: string = req.user.id;
 
@@ -62,7 +62,7 @@ export class StudentController {
     return this.versioning.resolve(req, 'student.detail')(raw);
   }
 
-  /** The student's own page: classes, subjects, account and guardians. */
+  /** The student's own page: courses, account and guardians. */
   @RequirePermission('student', 'read')
   @Get(':id/profile')
   async profile(@Req() req: any, @Param('id') id: string) {

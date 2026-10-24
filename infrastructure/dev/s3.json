@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "gradebook",
+      "credentials": [
+        { "accessKey": "gradebook", "secretKey": "gradebook-secret" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

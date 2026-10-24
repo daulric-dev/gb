@@ -1,6 +1,4 @@
-import type { Tables } from '@/types/database.types';
-
-type AcademicYear = Tables<'academic_year'>;
+import type { AcademicYearRow as AcademicYear } from './academic-year.rows';
 
 export function v1YearList(data: AcademicYear[]): AcademicYear[] {
   return data;

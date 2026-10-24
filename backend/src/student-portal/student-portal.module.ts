@@ -1,12 +1,20 @@
 import { Module } from '@nestjs/common';
 import { GradingModule } from '@/grading/grading.module';
+import { CourseModule } from '@/course/course.module';
+import { AnnouncementModule } from '@/announcement/announcement.module';
+import { FileManagerModule } from '@/file-manager/file-manager.module';
 import { StudentPortalController } from './student-portal.controller';
 import { StudentPortalService } from './student-portal.service';
 import { StudentGuard } from './student.guard';
 import { PortalActivityController } from './portal-activity.controller';
 
 @Module({
-  imports: [GradingModule],
+  imports: [
+    GradingModule,
+    CourseModule,
+    AnnouncementModule,
+    FileManagerModule,
+  ],
   controllers: [StudentPortalController, PortalActivityController],
   providers: [StudentPortalService, StudentGuard],
   exports: [StudentGuard],

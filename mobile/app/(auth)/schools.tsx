@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import { GraduationCap, LogOut, Plus, Search } from "lucide-react-native";
+import {
+  GraduationCap,
+  LogOut,
+  Mail,
+  Plus,
+  Search,
+} from "lucide-react-native";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { homeRouteFor, isStudentProfile } from "@/lib/routing";
@@ -87,6 +93,69 @@ function CreateSchool({ onCreated }: { onCreated: (s: School) => void }) {
   );
 }
 
+/** A school that verified the domain of the signed-in user's email address. */
+interface DomainMatch {
+  domainId: string;
+  domain: string;
+  schoolId: string;
+  schoolName: string;
+  audience: "student" | "staff";
+  autoJoin: boolean;
+}
+
+type DomainJoinResult =
+  | { status: "joined"; schoolId: string; audience: "student" | "staff" }
+  | { status: "requested"; schoolId: string };
+
+/**
+ * Offers the school that owns the user's email domain. Students and staff on
+ * an auto-join domain get in at once; other staff send a join request.
+ */
+function DomainMatchCard({
+  match,
+  pending,
+  joining,
+  disabled,
+  onJoin,
+}: {
+  match: DomainMatch;
+  pending: boolean;
+  joining: boolean;
+  disabled: boolean;
+  onJoin: () => void;
+}) {
+  const { colors } = useTheme();
+  const direct = match.audience === "student" || match.autoJoin;
+  return (
+    <Card style={{ borderWidth: 1, borderColor: colors.primary }}>
+      <CardContent style={{ gap: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Mail size={20} color={colors.primary} />
+          <Text variant="subtitle" style={{ flex: 1 }}>
+            Your @{match.domain} address belongs to {match.schoolName}
+          </Text>
+        </View>
+        {pending ? (
+          <Text variant="muted">
+            Join request sent — waiting for admin approval.
+          </Text>
+        ) : (
+          <>
+            <Text variant="muted">
+              {direct
+                ? "Join now — no approval needed."
+                : "An administrator approves staff before you get access."}
+            </Text>
+            <Button loading={joining} disabled={disabled} onPress={onJoin}>
+              {direct ? `Join ${match.schoolName}` : "Ask to join"}
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /** How often a waiting applicant re-checks whether they have been approved. */
 const POLL_MS = 8000;
 
@@ -102,6 +171,8 @@ export default function SchoolsScreen() {
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [match, setMatch] = useState<DomainMatch | null>(null);
+  const [domainJoining, setDomainJoining] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -111,9 +182,13 @@ export default function SchoolsScreen() {
       api<{ school_id: string } | null>("/schools/my-pending-request", {
         skipAuthRedirect: true,
       }).catch(() => null),
+      api<{ match: DomainMatch | null }>("/auth/email-domain/match", {
+        skipAuthRedirect: true,
+      }).catch(() => ({ match: null })),
     ])
-      .then(([list, pending]) => {
+      .then(([list, pending, domain]) => {
         setSchools(list);
+        setMatch(domain.match);
         if (pending?.school_id) setPendingId(pending.school_id);
       })
       .finally(() => setLoading(false));
@@ -168,6 +243,31 @@ export default function SchoolsScreen() {
     }
   }
 
+  async function joinByDomain() {
+    if (!match) return;
+    setDomainJoining(true);
+    try {
+      const result = await api<DomainJoinResult>("/auth/email-domain/join", {
+        method: "POST",
+        skipAuthRedirect: true,
+      });
+      if (result.status === "joined") {
+        toast.success(`You've joined ${match.schoolName}!`);
+        // The effect above routes home once the refreshed profile has a school.
+        await refresh();
+      } else {
+        setPendingId(result.schoolId);
+        setDomainJoining(false);
+        toast.success(`Join request sent — waiting for admin approval.`);
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to join the school",
+      );
+      setDomainJoining(false);
+    }
+  }
+
   async function onCreated(school: School) {
     toast.success(`${school.name} created! You're the admin.`);
     await refresh();
@@ -184,6 +284,21 @@ export default function SchoolsScreen() {
     : "";
   const anyPending = pendingId !== null;
 
+  const domainCard = match ? (
+    <DomainMatchCard
+      match={match}
+      pending={pendingId === match.schoolId}
+      joining={domainJoining}
+      disabled={anyPending || joiningId !== null}
+      onJoin={joinByDomain}
+    />
+  ) : null;
+  const otherWays = match ? (
+    <Text variant="muted" style={{ textAlign: "center" }}>
+      Or join another way
+    </Text>
+  ) : null;
+
   // A student joins by redeeming the code their school issued, so they get the
   // code field alone - no school list, no create-a-school option.
   if (isStudentProfile(profile)) {
@@ -196,6 +311,9 @@ export default function SchoolsScreen() {
               {displayName ? `Welcome, ${displayName}` : "Join your school"}
             </Text>
           </View>
+
+          {domainCard}
+          {otherWays}
 
           <JoinCodeForm />
 
@@ -219,6 +337,9 @@ export default function SchoolsScreen() {
             Create your own school or request to join an existing one.
           </Text>
         </View>
+
+        {domainCard}
+        {otherWays}
 
         {showCreate ? (
           <CreateSchool onCreated={onCreated} />
@@ -298,7 +419,9 @@ export default function SchoolsScreen() {
                             size="sm"
                             variant="outline"
                             loading={isJoining}
-                            disabled={anyPending || joiningId !== null}
+                            disabled={
+                              anyPending || joiningId !== null || domainJoining
+                            }
                             onPress={() => join(school)}
                           >
                             Request

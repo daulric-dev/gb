@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useSignal, type Signal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api, setUnauthorizedHandler } from "@/lib/api";
+import { loginPath } from "@/lib/routing";
 
 export interface UserProfile {
   id: string;
@@ -76,7 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Drop the stale profile first, so nothing renders as signed in during
       // the transition.
       profile.value = null;
-      router.push("/login");
+      const { pathname, search } = window.location;
+      router.push(loginPath(`${pathname}${search}`));
     });
     return () => setUnauthorizedHandler(null);
   }, [router, profile]);

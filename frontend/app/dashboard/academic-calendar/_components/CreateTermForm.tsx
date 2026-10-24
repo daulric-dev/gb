@@ -7,8 +7,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { termLabel, type Term } from "./types";
+import { termLabel } from "./types";
 
 interface CreateTermFormProps {
   academicYearId: string;
@@ -18,19 +17,23 @@ interface CreateTermFormProps {
 
 export function CreateTermForm({ academicYearId, existingNames, onSuccess }: CreateTermFormProps) {
   useSignals();
-  const availableNames = (["michaelmas", "hilary", "trinity"] as const).filter(
-    (n) => !existingNames.includes(n),
-  );
-  const name = useSignal<Term["name"]>(availableNames[0] ?? "michaelmas");
+  const taken = existingNames.map((n) => termLabel(n).toLowerCase());
+  const name = useSignal(`Term ${existingNames.length + 1}`);
   const startDate = useSignal("");
   const endDate = useSignal("");
-  const examWeight = useSignal(60);
-  const courseworkWeight = useSignal(40);
-  const isMinistryReporting = useSignal(false);
   const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const trimmed = name.value.trim();
+    if (!trimmed) {
+      toast.error("Give the term a name");
+      return;
+    }
+    if (taken.includes(trimmed.toLowerCase())) {
+      toast.error("This year already has a term with that name");
+      return;
+    }
     loading.value = true;
 
     try {
@@ -38,12 +41,9 @@ export function CreateTermForm({ academicYearId, existingNames, onSuccess }: Cre
         method: "POST",
         body: {
           academicYearId,
-          name: name.value,
+          name: trimmed,
           startDate: startDate.value,
           endDate: endDate.value,
-          examWeight: examWeight.value,
-          courseworkWeight: courseworkWeight.value,
-          isMinistryReporting: isMinistryReporting.value,
         },
       });
       toast.success("Term created");
@@ -59,24 +59,15 @@ export function CreateTermForm({ academicYearId, existingNames, onSuccess }: Cre
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="termName">Term</Label>
-        <Select
+        <Label htmlFor="termName">Name</Label>
+        <Input
+          id="termName"
+          placeholder="Term 1, Fall, Semester 2..."
           value={name.value}
-          onValueChange={(v) => (name.value = v as Term["name"])}
-          items={availableNames.map((n) => ({ value: n, label: termLabel[n] }))}
+          onChange={(e) => (name.value = e.target.value)}
+          maxLength={60}
           required
-        >
-          <SelectTrigger id="termName" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {availableNames.map((n) => (
-              <SelectItem key={n} value={n}>
-                {termLabel[n]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -100,49 +91,10 @@ export function CreateTermForm({ academicYearId, existingNames, onSuccess }: Cre
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="examWeight">Exam Weight (%)</Label>
-          <Input
-            id="examWeight"
-            type="number"
-            min={0}
-            max={100}
-            value={examWeight.value}
-            onChange={(e) => (examWeight.value = Number(e.target.value))}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="cwWeight">Coursework Weight (%)</Label>
-          <Input
-            id="cwWeight"
-            type="number"
-            min={0}
-            max={100}
-            value={courseworkWeight.value}
-            onChange={(e) => (courseworkWeight.value = Number(e.target.value))}
-            required
-          />
-        </div>
-        <p className="col-span-2 text-xs text-muted-foreground">
-          Weights must add up to 100%
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          id="ministry"
-          type="checkbox"
-          checked={isMinistryReporting.value}
-          onChange={(e) => (isMinistryReporting.value = e.target.checked)}
-          className="size-4 rounded border-input"
-        />
-        <Label htmlFor="ministry">Ministry Reporting Term</Label>
-      </div>
       <Button
         type="submit"
         className="w-full"
-        disabled={loading.value || availableNames.length === 0}
+        disabled={loading.value}
       >
         {loading.value ? "Creating..." : "Create Term"}
       </Button>

@@ -66,8 +66,9 @@ export class FileManagerController {
   }
 
   /**
-   * Start a resumable upload. The browser sends the bytes straight to Storage
-   * over TUS with the returned token, then calls the complete endpoint below.
+   * Start a direct upload. The client PUTs the bytes to the returned presigned
+   * `uploadUrl` with the returned headers, then calls the complete endpoint
+   * below.
    */
   @RequirePermission('file', 'create')
   @Post('upload-ticket')
@@ -76,14 +77,10 @@ export class FileManagerController {
     @Body() dto: CreateUploadTicketDto,
   ) {
     const userId: string = req.user.id;
-    return this.files.createUploadTicket(
-      userId,
-      dto,
-      req.headers?.host as string | undefined,
-    );
+    return this.files.createUploadTicket(userId, dto);
   }
 
-  /** Scan the uploaded bytes and release the file for use. */
+  /** Check the uploaded bytes and release the file for use. */
   @RequirePermission('file', 'create')
   @Post('upload-ticket/:fileId/complete')
   async finaliseUpload(@Req() req: any, @Param('fileId') fileId: string) {

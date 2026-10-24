@@ -1,32 +1,38 @@
 import { Module } from '@nestjs/common';
-import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
 import { FileManagerModule } from '@/file-manager/file-manager.module';
-import { AssessmentService } from './assessment.service';
-import { GradingGroupService } from './grading-group.service';
 import { ActivityService } from './activity.service';
 import { SubmissionService } from './submission.service';
-import { GradeService } from './grade.service';
-import { AssessmentController } from './assessment.controller';
-import { GradingGroupController } from './grading-group.controller';
+import { AssignmentGroupService } from './assignment-group.service';
+import { GradebookService } from './gradebook.service';
 import { ActivityController } from './activity.controller';
-import { GradeController } from './grade.controller';
+import { AssignmentGroupController } from './assignment-group.controller';
+import { GradebookController } from './gradebook.controller';
+import { RubricService } from './rubric.service';
+import { GradebookImportService } from './gradebook-import.service';
+import { RubricController } from './rubric.controller';
 
+/**
+ * Course work and marks: activities, submissions, assignment groups, rubrics
+ * and the gradebook. Course access comes from the global CourseAccessModule.
+ */
 @Module({
-  imports: [GradeScaleModule, FileManagerModule],
+  imports: [FileManagerModule],
   providers: [
-    AssessmentService,
-    GradeService,
-    GradingGroupService,
     ActivityService,
     SubmissionService,
+    AssignmentGroupService,
+    GradebookService,
+    RubricService,
+    GradebookImportService,
   ],
-  // The student portal submits and reads its own work through these.
-  exports: [SubmissionService],
+  // The student portal submits work, lists course activities and reads
+  // grades through these.
+  exports: [SubmissionService, GradebookService],
   controllers: [
-    AssessmentController,
-    GradeController,
-    GradingGroupController,
     ActivityController,
+    AssignmentGroupController,
+    GradebookController,
+    RubricController,
   ],
 })
 export class GradingModule {}

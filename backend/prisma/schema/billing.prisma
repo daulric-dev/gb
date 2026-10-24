@@ -1,0 +1,93 @@
+/// One per school (hosted deployments only). A school without a row has not
+/// been seen by billing yet; the row is created lazily with a fresh trial.
+model subscription {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id                String    @unique @db.Uuid
+  plan                     String?
+  status                   String    @default("trialing")
+  provider                 String?
+  provider_customer_id     String?
+  provider_subscription_id String?
+  quantity                 Int       @default(1)
+  trial_ends_at            DateTime? @db.Timestamptz(6)
+  current_period_start     DateTime? @db.Timestamptz(6)
+  current_period_end       DateTime? @db.Timestamptz(6)
+  cancel_at_period_end     Boolean   @default(false)
+  comp_until               DateTime? @db.Timestamptz(6)
+  comp_note                String?
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @default(now()) @db.Timestamptz(6)
+  school                   school    @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider, provider_subscription_id], map: "subscription_provider_subscription_key")
+  @@index([provider])
+  @@schema("billing")
+}
+
+model invoice {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number              String    @unique
+  school_id           String    @db.Uuid
+  plan                String
+  seats               Int
+  amount_cents        Int
+  currency            String
+  status              String    @default("open")
+  provider            String?
+  provider_invoice_id String?
+  period_start        DateTime  @db.Timestamptz(6)
+  period_end          DateTime  @db.Timestamptz(6)
+  due_at              DateTime  @db.Timestamptz(6)
+  paid_at             DateTime? @db.Timestamptz(6)
+  method              String?
+  reference           String?
+  note                String?
+  marked_by           String?   @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  school              school    @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  app_user            app_user? @relation(fields: [marked_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([provider, provider_invoice_id], map: "invoice_provider_invoice_key")
+  @@unique([school_id, period_start], map: "invoice_school_period_key", where: raw("((status <> 'void'::text) AND (provider_invoice_id IS NULL))"))
+  @@index([school_id, created_at(sort: Desc)])
+  @@index([status, due_at])
+  @@index([marked_by])
+  @@schema("billing")
+}
+
+model payment_event {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider     String
+  event_id     String
+  type         String
+  school_id    String?   @db.Uuid
+  payload      Json      @default("{}")
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  processed_at DateTime? @db.Timestamptz(6)
+  error        String?
+  school       school?   @relation(fields: [school_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([provider, event_id])
+  @@index([school_id, created_at(sort: Desc)])
+  @@schema("billing")
+}
+
+/// A platform admin's on/off switch for one provider. No row = on.
+model provider_setting {
+  provider_id String   @id
+  enabled     Boolean  @default(true)
+  updated_by  String?  @db.Uuid
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("billing")
+}
+
+model platform_admin {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @unique @db.Uuid
+  note       String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  app_user   app_user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("billing")
+}

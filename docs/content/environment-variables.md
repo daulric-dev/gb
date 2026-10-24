@@ -16,13 +16,35 @@ No `.env` files are committed to the repository. You must create them manually i
 
 | Variable                      | Required                 | Default                 | Description                                                                                                                                                                                                                                                           |
 | ----------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SUPABASE_URL`                | **Yes**                  | -                       | Your Supabase project URL (e.g., `https://abcdef.supabase.co`)                                                                                                                                                                                                        |
-| `SUPABASE_SERVICE_ROLE_KEY`   | **Yes**                  | -                       | Supabase service role **JWT** (starts `eyJ`). Full database access, bypasses RLS. **Keep secret.** A `sb_secret_…` key is accepted by PostgREST but **rejected by the edge function gateway**, which silently disables the dashboard, class summary, grade analytics, attendance summary and file ingest while ordinary queries keep working. |
-| `SUPABASE_JWT_SECRET`         | **Prod**                 | -                       | The project's JWT secret (Supabase dashboard → Settings → API → JWT Secret). Signs the short-lived tokens clients use to upload directly to Storage over TUS, and **must belong to the same project as `SUPABASE_URL`** or Storage rejects every upload. **Required in production** — the app refuses to boot without it. Unset in dev = resumable uploads fail (with a warning at boot). |
-| `SUPABASE_PUSHABLE_KEY`       | **Yes**                  | -                       | Supabase anon/public key. Used for user-context clients that respect RLS policies.                                                                                                                                                                                    |
+| `DATABASE_URL`                | **Yes**                  | -                       | PostgreSQL 15+ connection string, used by Prisma (`src/prisma/prisma.service.ts`, `prisma.config.ts`). Dev: `postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook` (the `db` service in `docker-compose.dev.yml`). Apply the schema with `bun run db:deploy`. Not needed by `prisma generate`. |
+| `AUTH_SECRET`                 | **Prod**                 | -                       | 32+ characters (`openssl rand -base64 32`). Keys the HMAC hashes of sign-in codes and signs short-lived tokens. **Required in production** - the app refuses to boot without it. Unset in dev = an insecure development secret (with a warning). Changing it voids outstanding codes. |
+| `ALLOW_DEV_LOGIN`             | No (dev)                 | `false`                 | `true` turns on `POST /auth/dev/code`, which returns a sign-in code instead of mailing it, so `seed:demo` and `smoke` can sign in. Refused (404) when `NODE_ENV=production`. Never set it on a shared deployment. |
+| `ALLOW_UNVERIFIED_EMAIL_DOMAINS` | No (dev)              | `false`                 | Skips the DNS TXT check for school email domains so a local stack can use made-up domains like `demo.test`. Ignored in production. |
+| `API_URL`                     | For SSO / avatars        | request host            | Absolute URL of this API. SSO redirect URIs (`${API_URL}/api/auth/sso/callback`), the SAML entity ID and avatar URLs are built from it. |
+| `SMTP_URL`                    | One of `SMTP_URL` or `SMTP_HOST`/`SMTP_SERVICE` (to send mail) | -   | SMTP connection URL, e.g. `smtp://127.0.0.1:1025` (Mailpit in dev, inbox at http://127.0.0.1:8025) or `smtps://user:pass@smtp.example.com:465`. The password must be URL-encoded; prefer the separate fields below for app passwords. Wins over the fields when both are set. |
+| `SMTP_SERVICE`                | No                       | -                       | Preset host/port: `gmail`, `outlook`, `office365`, `yahoo`, `icloud`, `zoho`. |
+| `SMTP_HOST` / `SMTP_PORT`     | No                       | port `587` (or preset)  | Any other SMTP server. Port 465 uses implicit TLS; other ports use STARTTLS. |
+| `SMTP_SECURE`                 | No                       | on for port 465         | Force implicit TLS on or off. |
+| `SMTP_USER`                   | No                       | -                       | SMTP login, usually the sending mailbox. |
+| `SMTP_PASSWORD`               | No                       | -                       | Password or **app password**. Gmail, Outlook and Yahoo need an app password once 2-step verification is on; paste Google's as shown (`abcd efgh ijkl mnop`) - the spaces are removed. No URL-encoding needed. |
+| `SMTP_PASSWORD_FILE`          | No                       | -                       | Read the password from a file (Docker/Kubernetes secret) instead of `SMTP_PASSWORD`. |
+| `SMTP_ALLOW_INSECURE`         | No                       | `false`                 | `true` allows sending credentials without TLS (not recommended). |
+| `MAIL_FROM`                   | No                       | `SMTP_USER`             | From address, e.g. `"GradeBook <no-reply@example.com>"`. Gmail and Outlook only send as the signed-in account or a verified alias. |
+| `SSO_PROVIDERS`               | No                       | -                       | Comma-separated SSO providers to enable: `google`, `azure`, `saml`. See [Single sign-on](./sso.md). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google SSO | -                    | OAuth client from Google Cloud. Redirect URI: `${API_URL}/api/auth/sso/callback`. |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | For Microsoft SSO | -         | Multi-tenant app registration in Microsoft Entra. Each school's tenant is taken from its email domain. |
+| `SAML_SP_ENTITY_ID`           | No                       | `${API_URL}/api/auth/sso/saml/metadata` | Our SAML entity ID. Change it only together with the frontend's `NEXT_PUBLIC_SAML_SP_ENTITY_ID`. |
+| `MOBILE_SSO_RETURN_URL`       | No                       | `gradebook://sso`       | Where the mobile app picks up a finished SSO sign-in. |
+| `TRUST_PROXY_HOPS`            | No                       | -                       | Number of proxies in front of the API, so rate limits see the real client IP. |
+| `EXPO_ACCESS_TOKEN`           | No                       | -                       | Expo push access token, when push security is enabled on the Expo project. |
 | `NODE_ENV`                    | No                       | -                       | `production` turns on the fail-closed secret checks, marks the auth cookie `Secure`, and applies `AUTH_COOKIE_DOMAIN`. Anything else is treated as development. |
-| `SUPABASE_PUBLIC_URL`         | No                       | derived                 | The Storage origin handed to clients for direct (TUS) uploads. Unset, it is derived from the request's `Host` when `SUPABASE_URL` is loopback, so a phone gets a routable address in development; a hosted `SUPABASE_URL` is used as-is. Set it only when Storage is reachable at an address the backend cannot infer. |
-| `AUTH_COOKIE_DOMAIN`          | No                       | derived                 | `Domain` for the auth cookie in production. The web middleware reads this cookie on the **frontend's** domain, so it must be visible to both app and API. Derived from the last two labels of `FRONTEND_URL` when unset — set it explicitly if the API is on a different registrable domain, or the domain has a multi-part suffix (`app.example.co.uk` derives `.co.uk`, which browsers reject). `none` = host-only cookie. |
+| `S3_ENDPOINT`                 | Dev / non-AWS            | -                       | S3-compatible endpoint (SeaweedFS `http://127.0.0.1:8333` in dev, R2/B2/MinIO URL in production). Omit for AWS S3. |
+| `S3_REGION`, `S3_BUCKET`      | Yes                      | `auto`, `gradebook`     | Region and the single bucket every object lives in, under `<area>/<path>` (`file-manager/...`, `images/...`, `report-books/...`). |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes         | -                       | Store credentials. |
+| `S3_PUBLIC_ENDPOINT`          | No                       | `S3_ENDPOINT`           | The store's address as browsers and phones reach it; presigned upload/download URLs are signed for this host. |
+| `S3_PUBLIC_URL`               | No                       | -                       | A public CDN/bucket host for avatars. Unset, avatar URLs point at the API's public route `/api/images/avatars/<file>`. |
+| `S3_FORCE_PATH_STYLE`         | No                       | `true` with an endpoint | Path-style bucket addressing (needed by SeaweedFS/MinIO). |
+| `AUTH_COOKIE_DOMAIN`          | No                       | derived                 | `Domain` for the `gb_session` auth cookie in production. The web proxy (`frontend/proxy.ts`) checks for this cookie on the **frontend's** domain, so it must be visible to both app and API. Derived from the last two labels of `FRONTEND_URL` when unset — set it explicitly if the API is on a different registrable domain, or the domain has a multi-part suffix (`app.example.co.uk` derives `.co.uk`, which browsers reject). `none` = host-only cookie. |
 | `FRONTEND_URL`                | No                       | `http://localhost:3000` | Allowed CORS origins, **comma-separated**. The first is canonical: it is what the auth cookie domain is derived from, and the fallback for endpoints that write the CORS header by hand. In development, private/LAN origins are also accepted by shape (for the mobile app over Expo web) without being listed. |
 | `PORT`                        | No                       | `3001`                  | Port the backend server listens on.                                                                                                                                                                                                                                   |
 | `USE_REDIS`                   | No                       | `false`                 | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica).                                                                                                    |
@@ -30,16 +52,52 @@ No `.env` files are committed to the repository. You must create them manually i
 | `CHAT_CHANNELS_ENABLED`       | No                       | `false`                 | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md).                                                                                                                                                |
 | `CHAT_ENCRYPTION_KEY`         | **Prod**                 | -                       | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning).                                  |
 | `CHAT_ENCRYPTION_KEYS`        | No                       | -                       | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version.                                                                                                                        |
-| `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with.                                                                                                                                                                                                                       |
+| `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with: a bare number from the ring (`2`, not `v2`). Ignored if it is not in the ring.                                                                                                                                                                                                                       |
 | `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes student claim codes (`openssl rand -base64 32`). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
 | `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
+### Billing
+
+SaaS billing for the **hosted platform**: schools pay for GradeBook. **Self-hosted deployments leave `BILLING_ENABLED` unset** - billing is off by default, so there is no trial, no read-only mode, no `402`, and every `/api/billing/*` and `/api/platform/*` route answers 404 (except `GET /api/billing/status`, which reports `enabled: false` so the apps hide billing UI). See [Billing](./backend/billing.md), [Billing providers](./billing-providers.md) and the [staging checklist](./billing-staging.md).
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `BILLING_ENABLED` | No | off | `true` turns billing on. Anything else (or unset) = off. |
+| `BILLING_PER_USER_CENTS` | No | `500` | Per-user plan: price per billable user per month, in minor units. |
+| `BILLING_FLAT_CENTS` | No | `30000` | Flat plan: price per month, unlimited users. |
+| `BILLING_CURRENCY` | No | `USD` | ISO currency code for every price and invoice. |
+| `BILLING_TRIAL_DAYS` | No | `30` | Free trial for a new school (existing schools get it from the day billing is first turned on). |
+| `BILLING_GRACE_DAYS` | No | `7` | How long a missed payment (past due, overdue invoice) stays writable before the school turns read-only. |
+| `PAYMENT_PROVIDERS` | With billing | none | Comma list of providers that may be offered: `stripe`, `paypal`, `paddle`, `wipay`, `manual`. Unset or empty = none. A provider is offered only when listed here **and** its credentials are set **and** a platform admin has not switched it off. |
+| `PLATFORM_ADMIN_EMAILS` | With billing | - | Comma list of account emails (verified) that get the platform dashboard (`/platform`). Admins can also be rows in `billing.platform_admin`. |
+| `APP_URL` | No | first `FRONTEND_URL` | Web app origin for checkout return URLs (`${APP_URL}/dashboard/settings/billing?checkout=success`). |
+| `BILLING_MANUAL_INSTRUCTIONS` | For `manual` | generic text | Bank details shown to school admins paying a manual invoice; the invoice number to quote is appended. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | For Stripe | - | API key and webhook signing secret. Optional `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` reuse existing prices. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | For PayPal | - | REST app credentials and the webhook id used to verify events. `PAYPAL_ENV` = `sandbox` (default) or `live`. Optional `PAYPAL_PLAN_PER_USER`, `PAYPAL_PLAN_FLAT`, `PAYPAL_PRODUCT_ID`. |
+| `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` | For Paddle | - | Paddle Billing API key and notification secret. `PADDLE_ENV` = `sandbox` (default) or `production`. Optional `PADDLE_PRICE_PER_USER`, `PADDLE_PRICE_FLAT`, `PADDLE_PRODUCT_ID`, `PADDLE_CHECKOUT_URL` (default payment link). |
+| `WIPAY_ACCOUNT_NUMBER`, `WIPAY_API_KEY` | For WiPay | - | Merchant account and API key (sandbox: `1234567890` / `123`). `WIPAY_ENV` = `sandbox` (default) or `live`; `WIPAY_COUNTRY_CODE` = `TT` (default), `JM` or `BB`; `WIPAY_CURRENCY` (`USD` default, `TTD`, `JMD`) must equal `BILLING_CURRENCY`; `WIPAY_FEE_STRUCTURE` = `merchant_absorb` (default), `customer_pay` or `split`. |
+
+Webhook URL for every provider: `${API_URL}/api/billing/webhooks/<provider id>`.
+
 ### Example `backend/.env`
 
+`backend/.env.example` is the full, commented template; its defaults match `docker-compose.dev.yml`.
+
 ```env
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
-SUPABASE_PUSHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
+DATABASE_URL=postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook
+S3_ENDPOINT=http://127.0.0.1:8333
+S3_REGION=us-east-1
+S3_BUCKET=gradebook
+S3_ACCESS_KEY_ID=gradebook
+S3_SECRET_ACCESS_KEY=gradebook-secret
+SMTP_URL=smtp://127.0.0.1:1025
+MAIL_FROM="GradeBook <no-reply@gradebook.local>"
+# Production with Gmail / Google Workspace (app password):
+# SMTP_SERVICE=gmail
+# SMTP_USER=office@yourschool.edu
+# SMTP_PASSWORD="abcd efgh ijkl mnop"
+# AUTH_SECRET=   # required in production: openssl rand -base64 32
+ALLOW_DEV_LOGIN=true
 FRONTEND_URL=http://localhost:3000
 PORT=3001
 USE_REDIS=false
@@ -65,9 +123,11 @@ USE_REDIS=false
 
 | Variable                                            | File                               | Usage                                                        |
 | --------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ |
-| `SUPABASE_URL`                                      | `src/supabase/supabase.service.ts` | Creating both service and user Supabase clients              |
-| `SUPABASE_SERVICE_ROLE_KEY`                         | `src/supabase/supabase.service.ts` | Service client - bypasses RLS for admin operations           |
-| `SUPABASE_PUSHABLE_KEY`                             | `src/supabase/supabase.service.ts` | User client - respects RLS using the user's JWT              |
+| `DATABASE_URL`                                      | `src/prisma/prisma.service.ts`     | Prisma client (`pg` driver adapter); also `prisma.config.ts` |
+| `S3_*`                                              | `src/storage/storage.service.ts`   | Object storage client and presigned URLs                     |
+| `SMTP_*`, `MAIL_FROM`                               | `src/mail/`                        | Outgoing email                                               |
+| `AUTH_SECRET`                                       | `src/account/secret.ts`            | Hashes of sign-in codes and session tokens                   |
+| `GOOGLE_*`, `MICROSOFT_*`, `SAML_SP_ENTITY_ID`      | `src/sso/`                         | SSO adapters                                                 |
 | `FRONTEND_URL`                                      | `src/createApp.ts`                 | CORS `origin` configuration                                  |
 | `PORT`                                              | `src/main.ts`                      | Fastify listen port (local dev only; not used in serverless) |
 | `USE_REDIS`                                         | `src/cache/cache.service.ts`       | Selects Redis store when `true`                              |
@@ -83,6 +143,8 @@ USE_REDIS=false
 | ---------------------------------- | -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | No       | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically)                                                                                                               |
 | `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No       | `false`                 | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
+| `NEXT_PUBLIC_SAML_SP_ENTITY_ID`    | No       | API metadata URL        | The SAML entity ID the email-domain admin shows schools. Set it only when the backend's `SAML_SP_ENTITY_ID` is overridden, to the same value. |
+| `NEXT_PUBLIC_STORAGE_URL`          | **Prod** | -                       | Origin browsers upload to with presigned URLs: the origin of the backend's `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT`), e.g. `http://127.0.0.1:8333` in dev, `https://<account-id>.r2.cloudflarestorage.com` in production. Added to the production CSP (`connect-src`, `img-src`); without it uploads are blocked. |
 
 ### Example `frontend/.env.local`
 
@@ -99,6 +161,8 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 | ---------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | `lib/api.ts`                                                | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
 | `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | `app/onboard/page.tsx`, `components/layout/app-sidebar.tsx` | Hides school selection UI on dedicated instances            |
+| `NEXT_PUBLIC_STORAGE_URL`          | `next.config.ts`                                            | Allows direct uploads to object storage in the CSP          |
+| `NEXT_PUBLIC_SAML_SP_ENTITY_ID`    | `lib/sso.ts`                                                | SP entity ID shown in Email domains > SAML                  |
 
 > **Note**: The `NEXT_PUBLIC_` prefix makes this variable available in the browser bundle. Do **not** put secrets in `NEXT_PUBLIC_` variables.
 
@@ -145,9 +209,9 @@ The app has no secrets of its own; what breaks it lives on the backend.
 
 | Backend variable      | Why mobile cares                                                                                                                                                                                                                              |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTH_COOKIE_DOMAIN`  | Auth is httpOnly cookies, stored by the platform's native cookie store. If the cookie's `Domain` does not cover the API's own host, the client **rejects it and every request after login is unauthenticated**, with no error pointing at it. |
+| `AUTH_COOKIE_DOMAIN`  | Auth is one httpOnly cookie, `gb_session`, stored by the platform's native cookie store. If the cookie's `Domain` does not cover the API's own host, the client **rejects it and every request after login is unauthenticated**, with no error pointing at it. |
 | `NODE_ENV`            | `production` marks the cookie `Secure`, so the API must be served over HTTPS or the cookie is never stored.                                                                                                                                    |
-| `SUPABASE_JWT_SECRET` | Signs the short-lived token used for direct file uploads. Must belong to the same project as `SUPABASE_URL` or Storage rejects every upload.                                                                                                   |
+| `API_URL`             | SSO sign-in from the app returns through `${API_URL}/api/auth/sso/callback`; avatar URLs are built from it, so it must be reachable from the phone. |
 | `FRONTEND_URL`        | Only matters for the app served over **Expo web**, which is a browser origin and so subject to CORS. Native React Native sends no `Origin` header.                                                                                             |
 
 See [Mobile in production](./mobile-production.md) for the full shipping checklist.
@@ -180,37 +244,23 @@ These secrets must be configured in the repository's **Settings → Secrets and 
 
 ### CI Build Variables
 
-The `ci.yml` workflow uses placeholder values for the frontend build (since the actual Supabase keys aren't needed at build time):
-
-```yaml
-env:
-  NEXT_PUBLIC_SUPABASE_URL: "https://your-project.supabase.co"
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: "supabase-anon-key"
-```
-
-These are dummy values to prevent the build from failing. The frontend doesn't currently read these variables at runtime - it only uses `NEXT_PUBLIC_API_URL`.
+`ci.yml` sets none. Lint, tests and builds need no database: the backend's unit tests use mocks, and `prisma generate` (run by `bun install`, `pretest` and `build`) falls back to a placeholder `DATABASE_URL` when it is unset. Every other Prisma command still requires the real one.
 
 ---
 
 ## Quick Setup
 
-### 1. Get Supabase Keys
+### 1. Start the local services
 
-1. Go to your [Supabase Dashboard](https://supabase.com/dashboard)
-2. Select your project
-3. Go to **Settings → API**
-4. Copy:
-   - **Project URL** → `SUPABASE_URL`
-   - **service_role key** (under "Project API keys") → `SUPABASE_SERVICE_ROLE_KEY` - use the **JWT** (starts `eyJ`), not an `sb_secret_…` key
-   - **anon public key** → `SUPABASE_PUSHABLE_KEY`
-   - **JWT Secret** (further down the same page) → `SUPABASE_JWT_SECRET`
+```bash
+bun run preload    # Postgres, Redis, S3 and Mailpit (docker-compose.dev.yml), then prisma migrate deploy
+```
 
 ### 2. Create Backend `.env`
 
 ```bash
 cd backend
-cp .env.example .env   # if an example exists, or create manually
-# Fill in the three Supabase values
+cp .env.example .env   # defaults match docker-compose.dev.yml
 ```
 
 ### 3. Create Frontend `.env.local`
@@ -234,10 +284,12 @@ echo "EXPO_PUBLIC_API_URL=https://api.example.com" > .env
 Three are **required in production** and the backend refuses to boot without them:
 
 ```bash
+openssl rand -base64 32   # AUTH_SECRET
 openssl rand -base64 32   # CHAT_ENCRYPTION_KEY
 openssl rand -base64 32   # STUDENT_CLAIM_CODE_PEPPER
-# SUPABASE_JWT_SECRET comes from the Supabase dashboard (step 1)
 ```
+
+A deployment also needs `DATABASE_URL`, the `S3_*` variables and email (`SMTP_URL`, or `SMTP_SERVICE`/`SMTP_HOST` with `SMTP_USER` and `SMTP_PASSWORD`).
 
 `infrastructure/env.example` is the template for a deployed stack and lists all of them.
 
@@ -251,18 +303,17 @@ Repository → Settings → Secrets and variables → Actions → New repository
 
 Add `CODECOV_TOKEN` and `DISCORD_WEBHOOK_URL` if using those workflows.
 
-## Supabase Edge Functions
+## Edge Functions
 
-The current data-processing Edge Functions do not require application secrets.
-They use the public Supabase URL and anon key with the caller's JWT; row-level
-security remains active. See [Supabase Edge Functions](./edge-functions.md) for
-the deployment and authentication model.
+There are none. The one background job, `file-share-notify`, runs in the
+backend as a BullMQ job, or inline when Redis is off
+(`backend/src/queue/handlers/`).
 
 ---
 
 ## Security Notes
 
 - **Never commit `.env` files** - they are in `.gitignore`
-- `SUPABASE_SERVICE_ROLE_KEY` has **full database access** - treat it like a database admin password
-- `SUPABASE_PUSHABLE_KEY` is the anon key - safe to expose in user-context clients since RLS policies protect the data
+- `DATABASE_URL` carries a role that owns the schema - treat it like a database admin password. The API enforces every access rule in code; there is no row-level security behind it
+- `AUTH_SECRET`, `S3_SECRET_ACCESS_KEY`, SMTP credentials and the SSO client secrets are server-only secrets
 - Frontend variables prefixed with `NEXT_PUBLIC_` are embedded in the JavaScript bundle and visible to users

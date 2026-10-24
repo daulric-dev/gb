@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Send } from "lucide-react-native";
 import { api, buildUrl } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
@@ -198,10 +198,9 @@ export default function ChatThreadScreen() {
           () => toast.error("Could not open file"),
         );
       }
-    } else if (message.type === "class_invite") {
-      const classId = message.metadata.classId;
-      if (classId) router.push(`/class/${String(classId)}` as Href);
     }
+    // Legacy class invites have nowhere to go now that classes are courses
+    // (web only); accepting above is all there is to do.
   };
 
   const title = conversation

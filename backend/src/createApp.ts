@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
 import { isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
+import { registerWebhookRawBody } from './billing/raw-body';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -22,6 +23,9 @@ export async function createApp(): Promise<NestFastifyApplication> {
   );
 
   await app.register(cookie);
+
+  // Billing webhooks verify signatures over the exact bytes received.
+  registerWebhookRawBody(app.getHttpAdapter().getInstance());
 
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },

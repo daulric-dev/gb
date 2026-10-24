@@ -20,7 +20,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { YearForm } from "@/features/academic-calendar/YearForm";
 import { TermsTab } from "@/features/academic-calendar/TermsTab";
 import {
-  gradingModelLabel,
   sortYearsActiveFirst,
   type AcademicYear,
 } from "@/features/academic-calendar/types";
@@ -128,17 +127,6 @@ export default function AcademicCalendarScreen() {
                 <Text variant="muted" style={{ fontSize: 13 }}>
                   {formatDate(year.start_date)} – {formatDate(year.end_date)}
                 </Text>
-                <View style={{ flexDirection: "row" }}>
-                  <Badge variant="outline">
-                    {gradingModelLabel(year.grading_model)}
-                  </Badge>
-                </View>
-                {year.year_exam_weight != null ? (
-                  <Text variant="muted" style={{ fontSize: 12 }}>
-                    Exam {year.year_exam_weight}% · CW{" "}
-                    {year.year_coursework_weight}%
-                  </Text>
-                ) : null}
               </View>
               {canUpdate ? (
                 <Pressable

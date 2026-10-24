@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { KeyRound, Trash2, UserRound, Users } from "lucide-react-native";
+import {
+  BookOpen,
+  KeyRound,
+  Trash2,
+  UserRound,
+} from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -13,7 +18,7 @@ import { Select, type SelectOption } from "@/components/ui/Select";
 import type {
   FileItem,
   FileShare,
-  ShareClass,
+  ShareCourse,
   ShareMember,
   ShareRole,
   SharePrincipalType,
@@ -25,13 +30,13 @@ const TYPE_META: Record<
 > = {
   user: { label: "Person", icon: UserRound },
   role: { label: "Role", icon: KeyRound },
-  group: { label: "Class", icon: Users },
+  course: { label: "Course", icon: BookOpen },
 };
 
 const TYPE_OPTIONS: SelectOption<SharePrincipalType>[] = [
   { value: "user", label: "Person" },
   { value: "role", label: "Role" },
-  { value: "group", label: "Class" },
+  { value: "course", label: "Course" },
 ];
 
 function memberLabel(m: ShareMember): string {
@@ -54,7 +59,7 @@ export function ShareSheet({
   const [shares, setShares] = useState<FileShare[]>([]);
   const [members, setMembers] = useState<ShareMember[]>([]);
   const [roles, setRoles] = useState<ShareRole[]>([]);
-  const [classes, setClasses] = useState<ShareClass[]>([]);
+  const [courses, setCourses] = useState<ShareCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [newType, setNewType] = useState<SharePrincipalType>("user");
@@ -78,13 +83,13 @@ export function ShareSheet({
     Promise.all([
       api<ShareMember[]>("/schools/members").catch(() => []),
       api<ShareRole[]>("/permissions/roles").catch(() => []),
-      api<ShareClass[]>("/classes").catch(() => []),
+      api<ShareCourse[]>("/courses").catch(() => []),
       api<FileShare[]>(`/files/${file.id}/shares`).catch(() => []),
     ])
       .then(([m, r, c, s]) => {
         setMembers(m);
         setRoles(r);
-        setClasses(c);
+        setCourses(c);
         setShares(s);
       })
       .finally(() => setLoading(false));
@@ -105,9 +110,9 @@ export function ShareSheet({
         .filter((r) => !taken.has(r.id))
         .map((r) => ({ value: r.id, label: r.name }));
     }
-    return classes
+    return courses
       .filter((c) => !taken.has(c.id))
-      .map((c) => ({ value: c.id, label: c.name ?? "Unnamed class" }));
+      .map((c) => ({ value: c.id, label: c.name ?? "Unnamed course" }));
   };
 
   const principalName = (share: FileShare): string => {
@@ -119,7 +124,7 @@ export function ShareSheet({
       return roles.find((x) => x.id === share.principal_id)?.name ?? "Role";
     }
     return (
-      classes.find((x) => x.id === share.principal_id)?.name ?? "Class"
+      courses.find((x) => x.id === share.principal_id)?.name ?? "Course"
     );
   };
 

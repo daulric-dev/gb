@@ -12,14 +12,15 @@ import {
 export enum SharePrincipalType {
   User = 'user',
   Role = 'role',
-  Group = 'group',
+  /** Everyone on a course: its staff and its actively enrolled students. */
+  Course = 'course',
 }
 
 export class ShareTargetDto {
   @IsEnum(SharePrincipalType)
   principalType!: SharePrincipalType;
 
-  /** A user_profile id, school_role id, or student_group id per principalType. */
+  /** A user_profile id, school_role id, or course id per principalType. */
   @IsUUID()
   principalId!: string;
 

@@ -6,23 +6,19 @@ import { getClientIp, getSessionTracker, type ThrottlerReq } from '@/throttle/tr
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
-import { SupabaseModule } from '@/supabase/supabase.module';
+import { PrismaModule } from '@/prisma/prisma.module';
+import { StorageModule } from '@/storage/storage.module';
+import { MailModule } from '@/mail/mail.module';
+import { AccountModule } from '@/account/account.module';
 import { StudentAccountModule } from '@/student-account/student-account.module';
 import { StudentPortalModule } from '@/student-portal/student-portal.module';
 import { AuthModule } from '@/auth/auth.module';
-import { ClassModule } from '@/class/class.module';
 import { AcademicYearModule } from '@/academic-year/academic-year.module';
 import { SchoolModule } from '@/school/school.module';
 import { StudentModule } from '@/student/student.module';
-import { SubjectModule } from '@/subject/subject.module';
 import { TermModule } from '@/term/term.module';
-import { EnrollmentModule } from '@/enrollment/enrollment.module';
-import { AttendanceModule } from '@/attendance/attendance.module';
 import { GradingModule } from '@/grading/grading.module';
 import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
-import { CalculationModule } from '@/calculation/calculation.module';
-import { ReportingModule } from '@/reporting/reporting.module';
-import { ReportFilesModule } from '@/report-files/report-files.module';
 import { PermissionModule } from '@/permission/permission.module';
 import { AnnouncementModule } from '@/announcement/announcement.module';
 import { ImagesModule } from '@/images/images.module';
@@ -31,9 +27,18 @@ import { RealtimeModule } from '@/realtime/realtime.module';
 import { ChatModule } from '@/chat/chat.module';
 import { QueueModule } from '@/queue/queue.module';
 import { CacheModule } from '@/cache/cache.module';
-import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
+import { CourseAccessModule } from '@/course/access/course-access.module';
+import { CourseModule } from '@/course/course.module';
+import { SsoCoreModule } from '@/sso/sso-core.module';
+import { SsoModule } from '@/sso/sso.module';
+import { NotificationsModule } from '@/notifications/notifications.module';
+import { AttendanceModule } from '@/attendance/attendance.module';
+import { DiscussionModule } from '@/discussion/discussion.module';
+import { CalendarModule } from '@/calendar/calendar.module';
+import { CourseNotificationModule } from '@/course-notification/course-notification.module';
+import { BillingModule } from '@/billing/billing.module';
 
 @Module({
   imports: [
@@ -82,28 +87,27 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
       },
     }),
 
-    SupabaseModule,
+    PrismaModule,
+    StorageModule,
+    MailModule,
+    AccountModule,
     AuthModule,
     StudentAccountModule,
     StudentPortalModule,
     CacheModule,
     QueueModule.forRoot(),
-    PaginationModule,
     VersioningModule,
-    ClassModule,
+    CourseAccessModule,
+    CourseModule,
+    SsoCoreModule,
+    SsoModule,
 
     AcademicYearModule,
     SchoolModule,
     StudentModule,
-    SubjectModule,
     TermModule,
-    EnrollmentModule,
-    AttendanceModule,
     GradingModule,
     GradeScaleModule,
-    CalculationModule,
-    ReportingModule,
-    ReportFilesModule,
     PermissionModule,
     AnnouncementModule,
     ImagesModule,
@@ -111,6 +115,12 @@ import { DashboardModule } from '@/dashboard/dashboard.module';
     RealtimeModule,
     ChatModule,
     DashboardModule,
+    NotificationsModule,
+    AttendanceModule,
+    DiscussionModule,
+    CalendarModule,
+    CourseNotificationModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [

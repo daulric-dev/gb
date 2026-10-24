@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
-import { uploadResumable } from "@/lib/files/resumable";
+import { uploadFile } from "@/lib/files/upload";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -19,7 +19,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BackTitleToolbar } from "@/components/dashboard/back-title-toolbar";
-import { CheckCircle2, Loader2, Paperclip, Upload } from "lucide-react";
+import Link from "next/link";
+import {
+  BookOpen,
+  CheckCircle2,
+  Loader2,
+  Paperclip,
+  PenLine,
+  Upload,
+} from "lucide-react";
+import { Markdown } from "@/components/markdown";
+import { RubricGrid } from "@/components/rubric/RubricGrid";
 import { cn } from "@/lib/utils";
 import { dueLabel, type PortalWorkDetail } from "../../_components/work-types";
 
@@ -107,7 +117,7 @@ export default function PortalWorkDetailPage() {
     uploading.value = true;
     uploadProgress.value = 0;
     try {
-      await uploadResumable(
+      await uploadFile(
         file,
         {
           ticket: `/portal/me/activities/${activityId}/upload-ticket`,
@@ -169,7 +179,7 @@ export default function PortalWorkDetailPage() {
       <div className="space-y-6">
         <BackTitleToolbar
           title="Work"
-          description="This could not be loaded"
+          description="This could not be loaded, or is no longer available"
           onBack={() => router.push("/portal/work")}
         />
       </div>
@@ -177,6 +187,10 @@ export default function PortalWorkDetailPage() {
   }
 
   const w = work.value;
+  const backHref = w.courseId
+    ? `/portal/courses/${w.courseId}/assignments`
+    : "/portal/work";
+  const offline = w.kind === "offline";
   const submitted = !!w.submission && w.submission.status !== "draft";
   // A quiz can be sat again while attempts remain; anything else is done once.
   const attemptsLeft =
@@ -184,15 +198,26 @@ export default function PortalWorkDetailPage() {
       ? Infinity
       : Math.max(0, (w.maxAttempts || 1) - (w.attemptsUsed ?? 0));
   const canRetake = w.kind === "quiz" && attemptsLeft > 0;
-  const open = w.status === "published" && (!submitted || canRetake);
+  const open =
+    !offline && w.status === "published" && (!submitted || canRetake);
 
   return (
     <div className="space-y-6">
       <BackTitleToolbar
         title={w.title}
         description={`${w.points} points · ${dueLabel(w.dueAt)}`}
-        onBack={() => router.push("/portal/work")}
+        onBack={() => router.push(backHref)}
       />
+
+      {w.courseId && w.courseName && (
+        <Link
+          href={`/portal/courses/${w.courseId}`}
+          className="-mt-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+        >
+          <BookOpen className="size-4" />
+          {w.courseName}
+        </Link>
+      )}
 
       {submitted && (
         <Card className="border-emerald-500/40 bg-emerald-500/5">
@@ -200,9 +225,11 @@ export default function PortalWorkDetailPage() {
             <CheckCircle2 className="size-5 shrink-0 text-emerald-600" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">
-                {w.submission?.status === "graded"
-                  ? `Marked: ${w.submission.score}/${w.points}`
-                  : "Handed in"}
+                {w.submission?.excused
+                  ? "Excused - this doesn't count toward your grade"
+                  : w.submission?.status === "graded"
+                    ? `Marked: ${w.submission.score}/${w.points}`
+                    : "Handed in"}
               </p>
               {w.submission?.feedback && (
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -225,13 +252,40 @@ export default function PortalWorkDetailPage() {
 
       {w.instructions && (
         <Card>
-          <CardContent className="py-4 text-sm text-muted-foreground">
-            {w.instructions}
+          <CardContent className="py-2">
+            <Markdown>{w.instructions}</Markdown>
           </CardContent>
         </Card>
       )}
 
-      {w.kind === "quiz" ? (
+      {w.rubric && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {w.rubricAssessment ? "How this was marked" : "Rubric"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RubricGrid rubric={w.rubric} assessments={w.rubricAssessment} />
+          </CardContent>
+        </Card>
+      )}
+
+      {offline ? (
+        !submitted && (
+          <Card className="border-dashed">
+            <CardContent className="flex items-start gap-3 py-4">
+              <PenLine className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Handed in on paper</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Your teacher records the mark here.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      ) : w.kind === "quiz" ? (
         <div className="space-y-3">
           {w.questions.map((q, i) => (
             <Card key={q.id}>
@@ -393,7 +447,7 @@ export default function PortalWorkDetailPage() {
         </Card>
       )}
 
-      {w.status === "closed" && !submitted && (
+      {!offline && w.status === "closed" && !submitted && (
         <p className="text-center text-sm text-muted-foreground">
           This closed before you handed anything in.
         </p>

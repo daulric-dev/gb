@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { api, ApiError } from "@/lib/api";
-import { useAuth } from "@/providers/AuthProvider";
+import { useAuth, type UserProfile } from "@/providers/AuthProvider";
+import { homeRouteFor } from "@/lib/routing";
+import { fetchSuggestedProfile } from "@/lib/sso";
 import { useToast } from "@/providers/ToastProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
 import {
@@ -29,6 +31,28 @@ export default function OnboardScreen() {
   const [accountType, setAccountType] = useState<AccountType>("staff");
   const [loading, setLoading] = useState(false);
 
+  // Someone who arrived by single sign-on already told their provider their
+  // name; offer it rather than asking again. Only fills fields still empty.
+  useEffect(() => {
+    let cancelled = false;
+    fetchSuggestedProfile()
+      .then((suggested) => {
+        if (cancelled || !suggested) return;
+        if (suggested.firstName) {
+          setFirstName((v) => v || suggested.firstName || "");
+        }
+        if (suggested.lastName) {
+          setLastName((v) => v || suggested.lastName || "");
+        }
+      })
+      .catch(() => {
+        /* nothing to suggest; they type it */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function handleSubmit() {
     if (!firstName.trim() || !lastName.trim()) {
       toast.error("Enter your first and last name");
@@ -36,7 +60,7 @@ export default function OnboardScreen() {
     }
     setLoading(true);
     try {
-      await api("/auth/onboard", {
+      const updated = await api<UserProfile>("/auth/onboard", {
         method: "PATCH",
         body: {
           firstName: firstName.trim(),
@@ -46,9 +70,15 @@ export default function OnboardScreen() {
         skipAuthRedirect: true,
       });
       await refresh();
-      // Both branches request to join a school and wait for an admin; the
-      // choice decides what they are approved as, not whether they get in.
-      router.replace("/(auth)/schools");
+      // A school email address joins its school during onboarding, so the
+      // returned profile may already have one. Without it, both account types
+      // land on the schools screen to request to join.
+      const joined =
+        updated?.school && updated.school_management?.role !== "admin"
+          ? updated.school
+          : null;
+      if (joined) toast.success(`You've joined ${joined.name}`);
+      router.replace(homeRouteFor(updated ?? null));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Onboarding failed");
     } finally {

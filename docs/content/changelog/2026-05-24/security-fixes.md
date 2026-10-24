@@ -27,7 +27,7 @@ The `WHERE` clause on `grading.assessment`'s INSERT policy contained `tsa.subjec
 
 **Fix.**
 
-- Added [`SupabaseService.getUserSchoolId(userId)`](../../../../backend/src/supabase/supabase.service.ts) as a single source of truth for resolving the caller's school.
+- Added `SupabaseService.getUserSchoolId(userId)` as a single source of truth for resolving the caller's school.
 - Every affected service method now adds `.eq('school_id', schoolId)` (or, for `term`, joins through `academic_year` since term has no direct `school_id`).
 - Cache invalidation in `subject.delete` / `subject.reorder` is now scoped to the caller's school instead of using `deleteByPrefix('subjects:')` - the old behavior was purging other schools' caches unnecessarily.
 - Controllers now plumb `req.user.id` through to the service.
@@ -36,7 +36,7 @@ The `WHERE` clause on `grading.assessment`'s INSERT policy contained `tsa.subjec
 
 `POST /reports/:id/pdf` accepted an `objectPath` multipart field from the client and wrote it to the `report-books` bucket with `upsert: true`. Any class teacher could overwrite any other school's PDFs.
 
-**Fix.** [report.controller.ts](../../../../backend/src/reporting/report.controller.ts) and [report.service.ts](../../../../backend/src/reporting/report.service.ts) no longer accept `objectPath` from the client. The storage path is derived server-side as `${reportId}/${timestamp}-${crypto.randomUUID()}.pdf`, and `upsert` is now `false` so collisions fail instead of overwriting.
+**Fix.** `report.controller.ts` and `report.service.ts` no longer accept `objectPath` from the client. The storage path is derived server-side as `${reportId}/${timestamp}-${crypto.randomUUID()}.pdf`, and `upsert` is now `false` so collisions fail instead of overwriting.
 
 **No backfill needed.** Existing PDFs at flat paths (`<reportId>.pdf`) are still downloadable because `downloadPdf` reads `file_path` from the DB row.
 
@@ -44,7 +44,7 @@ The `WHERE` clause on `grading.assessment`'s INSERT policy contained `tsa.subjec
 
 `GET /reports/:id/pdf/:pdfId/download` used the service client and never verified `pdfRow.report_book_id === :id`. The `ClassTeacherGuard` authorized against `:id` (the report id in the URL), but `pdfId` could point to any PDF in any school.
 
-**Fix.** [report.service.ts](../../../../backend/src/reporting/report.service.ts) `downloadPdf` now takes both `reportId` and `pdfId`, fetches `report_book_id` alongside `file_path`, and throws `NotFoundException` if they don't match.
+**Fix.** `report.service.ts` `downloadPdf` now takes both `reportId` and `pdfId`, fetches `report_book_id` alongside `file_path`, and throws `NotFoundException` if they don't match.
 
 ## Tests
 
@@ -65,8 +65,8 @@ These were rated High or below and were not fixed at the time of writing:
 
 - `PATCH /auth/profile` accepts `schoolId` in the DTO and writes it raw without a membership check ([update-profile.dto.ts](../../../../backend/src/auth/dto/update-profile.dto.ts), [auth.service.ts](../../../../backend/src/auth/auth.service.ts)).
 - First-admin race in `onboard` and `school.createJoinRequest` - non-transactional check-then-insert can produce two admins. Needs a unique partial index `(school_id) WHERE role='admin'`.
-- `ClassTeacherGuard` short-circuits on platform-`admin` role without checking the class's school ([class-teacher.guard.ts](../../../../backend/src/class/class-teacher.guard.ts)).
-- `/calculations/student-term` and `/calculations/student-year` accept `studentId` with no authorization check at all ([calculation.controller.ts](../../../../backend/src/calculation/calculation.controller.ts)).
+- `ClassTeacherGuard` short-circuits on platform-`admin` role without checking the class's school (`class-teacher.guard.ts`).
+- `/calculations/student-term` and `/calculations/student-year` accept `studentId` with no authorization check at all (`calculation.controller.ts`).
 - nginx config: no TLS, `X-Real-IP $host` (should be `$remote_addr`), no security headers, no `client_max_body_size`.
 - Avatar upload path injection via `Query('pathname')` ([auth.controller.ts](../../../../backend/src/auth/auth.controller.ts)).
 - UPDATE RLS policies on grading tables lack `WITH CHECK` (this batch added `WITH CHECK` to the policies it rewrote, but a full audit of other UPDATE policies is still pending).

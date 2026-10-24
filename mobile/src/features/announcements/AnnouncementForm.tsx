@@ -15,9 +15,12 @@ import type { Announcement } from "./types";
 export function AnnouncementForm({
   announcement,
   onSuccess,
+  basePath = "/announcements",
 }: {
-  announcement?: Announcement;
+  announcement?: Pick<Announcement, "id" | "title" | "body">;
   onSuccess: () => void;
+  /** Collection route; a course passes `/courses/:courseId/announcements`. */
+  basePath?: string;
 }) {
   const toast = useToast();
   const isEdit = !!announcement;
@@ -38,13 +41,13 @@ export function AnnouncementForm({
     };
     try {
       if (isEdit) {
-        await api(`/announcements/${announcement.id}`, {
+        await api(`${basePath}/${announcement.id}`, {
           method: "PATCH",
           body: payload,
         });
         toast.success("Announcement updated");
       } else {
-        await api("/announcements", { method: "POST", body: payload });
+        await api(basePath, { method: "POST", body: payload });
         toast.success("Announcement posted");
       }
       onSuccess();

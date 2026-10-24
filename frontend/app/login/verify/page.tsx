@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
+import { loginPath, NEXT_PARAM, safeNextPath } from "@/lib/routing";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
@@ -34,6 +35,8 @@ function VerifyOtpForm() {
   const { refresh } = useAuth();
   const searchParams = useSearchParams();
   const email = searchParams?.get("email") || "";
+  // Same-origin path to return to once signed in (validated, never a URL).
+  const next = safeNextPath(searchParams?.get(NEXT_PARAM));
 
   const code = useSignal("");
   const loading = useSignal(false);
@@ -64,7 +67,7 @@ function VerifyOtpForm() {
       const isStudent = data.user.account_type === "student";
 
       if (data.user.is_onboarded) {
-        router.push(isStudent ? "/portal" : "/dashboard");
+        router.push(next ?? (isStudent ? "/portal" : "/dashboard"));
       } else if (data.user.first_name) {
         // Named but school-less: they still have to join one. Sending them
         // back to /onboard would just loop.
@@ -82,7 +85,7 @@ function VerifyOtpForm() {
     } finally {
       loading.value = false;
     }
-  }, [code, email, error, loading, refresh, router]);
+  }, [code, email, error, loading, next, refresh, router]);
 
   // Submitting is the obvious next step once the last digit lands, so do it
   // rather than making them reach for the button.
@@ -127,7 +130,7 @@ function VerifyOtpForm() {
   }
 
   if (!email) {
-    router.push("/login");
+    router.push(loginPath(next));
     return null;
   }
 
@@ -221,7 +224,7 @@ function VerifyOtpForm() {
           </p>
           <button
             type="button"
-            onClick={() => router.push("/login")}
+            onClick={() => router.push(loginPath(next))}
             className="text-muted-foreground underline underline-offset-4 hover:text-foreground"
           >
             Use a different email

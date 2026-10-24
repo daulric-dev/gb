@@ -6,7 +6,7 @@
 export enum FileListFilter {
   /** Files the caller owns. */
   Own = 'own',
-  /** Files shared with the caller (directly, by role, or by group). */
+  /** Files shared with the caller (directly, by role, or by course). */
   Shared = 'shared',
   /** Both of the above. */
   All = 'all',

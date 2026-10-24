@@ -17,13 +17,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TermForm } from "./TermForm";
-import {
-  MAX_TERMS,
-  TERM_LABELS,
-  gradingModelLabel,
-  type AcademicYear,
-  type Term,
-} from "./types";
+import { termLabel, type AcademicYear, type Term } from "./types";
 
 /**
  * Terms tab: pick an academic year, then view / create / edit / delete its
@@ -110,7 +104,6 @@ export function TermsTab({
     );
   }
 
-  const canAdd = terms.length < MAX_TERMS;
   const existingNames = terms.map((t) => t.name);
 
   return (
@@ -131,23 +124,20 @@ export function TermsTab({
           ) : (
             <Badge variant="secondary">Inactive</Badge>
           )}
-          <Badge variant="outline">
-            {gradingModelLabel(selectedYear.grading_model)}
-          </Badge>
         </View>
       ) : null}
 
       {canCreate ? (
         <Button
           size="sm"
-          disabled={!canAdd || !yearId}
+          disabled={!yearId}
           onPress={() => {
             setEditing(null);
             setFormOpen(true);
           }}
           icon={<Plus size={16} color={colors.primaryForeground} />}
         >
-          {canAdd ? "Add Term" : "Max 3 terms"}
+          Add Term
         </Button>
       ) : null}
 
@@ -170,16 +160,10 @@ export function TermsTab({
               <CardContent style={styles.termRow}>
                 <View style={{ flex: 1, gap: 4 }}>
                   <View style={styles.termTitle}>
-                    <Text weight="600">{TERM_LABELS[term.name]}</Text>
-                    {term.is_ministry_reporting ? (
-                      <Badge variant="default">Ministry</Badge>
-                    ) : null}
+                    <Text weight="600">{termLabel(term.name)}</Text>
                   </View>
                   <Text variant="muted" style={{ fontSize: 13 }}>
                     {formatDate(term.start_date)} – {formatDate(term.end_date)}
-                  </Text>
-                  <Text variant="muted" style={{ fontSize: 13 }}>
-                    Exam {term.exam_weight}% · CW {term.coursework_weight}%
                   </Text>
                 </View>
                 <View style={styles.actions}>
@@ -233,7 +217,7 @@ export function TermsTab({
         title="Delete term?"
         message={
           confirmDelete
-            ? `The ${TERM_LABELS[confirmDelete.name]} term will be removed. This cannot be undone.`
+            ? `The ${termLabel(confirmDelete.name)} term will be removed. This cannot be undone.`
             : undefined
         }
         confirmLabel="Delete"

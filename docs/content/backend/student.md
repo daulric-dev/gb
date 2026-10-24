@@ -183,5 +183,7 @@ triggers guard columns that RLS cannot gate per-column:
 - `guard_student_account_link` - `student.user_profile_id` may only change
   under the service role, so a student cannot re-point their record.
 
-Verify with `bun run rls:check` (from `backend/`, against a local Supabase).
-Unit tests mock Supabase, so policies never execute there.
+The API connects as a privileged role, so these policies are a backstop for
+direct database clients only; they are being dropped with the move off the
+hosted database (see `platform-migration.md`). The API's own guards are what
+enforce access, and its tests cover them.

@@ -1,178 +1,277 @@
 import { describe, test, expect } from 'bun:test';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ActivityService } from './activity.service';
-import { createRoutingSupabase, createMockCacheService } from '@/test/mocks';
+import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 /**
- * Excluding one student's mark.
+ * Activities keyed to courses.
  *
- * The activity-wide toggle drops every mark on a piece of work; this drops
- * one, for the student who was absent or sat a makeup. It authorises by the
- * class rather than by a subject assignment, which is what separates it from
- * `PATCH /grades/:id/exclude`, so the checks around it are worth pinning.
+ * Access is the caller's course role (CourseAccessService, stubbed here), so
+ * these pin which role each operation asks for and the course-scoped checks
+ * the service adds on top: groups must be the course's own, offline work
+ * accepts nothing, and publishing no longer touches the old gradebook.
  */
 
 const ACTIVITY = {
   id: 'act-1',
-  student_group_id: 'class-1',
-  subject_id: 'sub-1',
-  term_id: 'term-1',
-  grading_group_id: null,
-  assessment_id: 'assess-1',
+  course_id: 'course-1',
+  assignment_group_id: null,
   kind: 'assignment',
   title: 'Essay',
   instructions: null,
   points: 20,
   due_at: null,
-  status: 'published',
-  published_at: '2026-09-01T00:00:00Z',
+  status: 'draft',
+  published_at: null,
   allow_file: true,
   allow_text: true,
-  max_attempts: 0,
+  max_attempts: 1,
+  omit_from_final_grade: false,
   created_by: 'user-1',
   created_at: '2026-09-01T00:00:00Z',
 };
 
-function build(over: Record<string, any> = {}) {
-  const supabase = createRoutingSupabase({
-    tables: {
-      // requireActivity -> requireClass -> requireSchool
-      'public.user_profile': { data: { school_id: 'school-1' }, error: null },
-      'public.student_group': {
-        data: { id: 'class-1', academic_year: { school_id: 'school-1' } },
-        error: null,
-      },
-      'grading.activity': { data: { ...ACTIVITY }, error: null },
-      'grading.grade': { data: { id: 'grade-1' }, error: null },
-      ...over,
+function stubAccess(role: 'admin' | 'teacher' | 'ta' | null = 'teacher') {
+  const asked: { courseId: string; roles: readonly string[] }[] = [];
+  return {
+    asked,
+    require: async (_u: string, courseId: string, roles: readonly string[]) => {
+      asked.push({ courseId, roles });
+      if (!role) throw new NotFoundException('Course not found');
+      if (!roles.includes(role)) throw new ForbiddenException('nope');
+      return { course: { id: courseId, school_id: 'school-1' }, role };
     },
-  });
-  const service = new ActivityService(
-    supabase as any,
-    createMockCacheService() as any,
-  );
-  return { service, supabase };
+  };
 }
 
-describe('ActivityService.setStudentGradeExcluded', () => {
-  test('refuses while the activity is still unpublished', async () => {
-    const { service } = build({
-      'grading.activity': {
-        data: { ...ACTIVITY, assessment_id: null, status: 'draft' },
-        error: null,
-      },
+function build(
+  setup: (prisma: MockPrisma) => void = () => {},
+  role: 'admin' | 'teacher' | 'ta' | null = 'teacher',
+) {
+  const prisma = createMockPrisma();
+  prisma.activity.findUnique.mockResolvedValue({ ...ACTIVITY });
+  prisma.activity.create.mockImplementation(async ({ data }: any) => ({
+    ...ACTIVITY,
+    ...data,
+  }));
+  prisma.activity.update.mockImplementation(async ({ data }: any) => ({
+    ...ACTIVITY,
+    ...data,
+  }));
+  setup(prisma);
+  const access = stubAccess(role);
+  const service = new ActivityService(prisma as any, access as any);
+  return { service, prisma, access };
+}
+
+describe('ActivityService.create', () => {
+  test('creates in the course and returns the Activity contract', async () => {
+    const { service, prisma } = build();
+
+    const result = await service.create('user-1', 'course-1', {
+      kind: 'assignment',
+      title: ' Essay ',
+      points: 20,
+      allowText: true,
     });
 
-    await expect(
-      service.setStudentGradeExcluded('user-1', 'act-1', 'stu-1', true),
-    ).rejects.toThrow(ConflictException);
+    const insert = prisma.activity.create.mock.calls[0][0].data;
+    expect(insert.course_id).toBe('course-1');
+    expect(insert.title).toBe('Essay');
+    expect(insert).not.toHaveProperty('student_group_id');
+
+    expect(Object.keys(result).sort()).toEqual(
+      [
+        'id',
+        'courseId',
+        'assignmentGroupId',
+        'kind',
+        'title',
+        'instructions',
+        'points',
+        'dueAt',
+        'status',
+        'publishedAt',
+        'allowFile',
+        'allowText',
+        'maxAttempts',
+        'omitFromFinalGrade',
+        'rubricId',
+        'createdAt',
+      ].sort(),
+    );
   });
 
-  test('refuses when the student has no mark yet', async () => {
-    const { service } = build({ 'grading.grade': { data: null, error: null } });
-
+  test('a TA cannot create work', async () => {
+    const { service } = build(undefined, 'ta');
     await expect(
-      service.setStudentGradeExcluded('user-1', 'act-1', 'stu-1', true),
+      service.create('user-1', 'course-1', {
+        kind: 'quiz',
+        title: 'Quiz',
+        points: 10,
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  test('refuses a group from another course', async () => {
+    const { service } = build((p) =>
+      p.assignment_group.findFirst.mockResolvedValue(null),
+    );
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'quiz',
+        title: 'Quiz',
+        points: 10,
+        assignmentGroupId: 'group-x',
+      }),
     ).rejects.toThrow(NotFoundException);
   });
 
-  test("refuses an activity outside the caller's school", async () => {
-    const { service } = build({
-      'public.student_group': {
-        data: { id: 'class-1', academic_year: { school_id: 'other-school' } },
-        error: null,
-      },
+  test('accepts a group in the course', async () => {
+    const { service, prisma } = build((p) =>
+      p.assignment_group.findFirst.mockResolvedValue({ id: 'group-1' }),
+    );
+    await service.create('user-1', 'course-1', {
+      kind: 'quiz',
+      title: 'Quiz',
+      points: 10,
+      assignmentGroupId: 'group-1',
+    });
+    const lookup = prisma.assignment_group.findFirst.mock.calls[0][0];
+    expect(lookup.where.course_id).toBe('course-1');
+  });
+
+  test('offline work accepts neither files nor text', async () => {
+    const { service, prisma } = build();
+    await service.create('user-1', 'course-1', {
+      kind: 'offline',
+      title: 'Practical',
+      points: 50,
+      allowFile: true,
+      allowText: true,
+    });
+    const insert = prisma.activity.create.mock.calls[0][0].data;
+    expect(insert.kind).toBe('offline');
+    expect(insert.allow_file).toBe(false);
+    expect(insert.allow_text).toBe(false);
+  });
+
+  test('an assignment must accept something', async () => {
+    const { service } = build();
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'assignment',
+        title: 'Essay',
+        points: 10,
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('ActivityService.update', () => {
+  test('moves to Ungrouped and omits from the final grade', async () => {
+    const { service, prisma } = build();
+    const result = await service.update('user-1', 'act-1', {
+      assignmentGroupId: null,
+      omitFromFinalGrade: true,
     });
 
+    const update = prisma.activity.update.mock.calls[0][0].data;
+    expect(update.assignment_group_id).toBeNull();
+    expect(update.omit_from_final_grade).toBe(true);
+    expect(result.omitFromFinalGrade).toBe(true);
+  });
+
+  test('refuses a group outside the course', async () => {
+    const { service } = build((p) =>
+      p.assignment_group.findFirst.mockResolvedValue(null),
+    );
     await expect(
-      service.setStudentGradeExcluded('user-1', 'act-1', 'stu-1', true),
+      service.update('user-1', 'act-1', { assignmentGroupId: 'group-x' }),
     ).rejects.toThrow(NotFoundException);
   });
 
-  test('excludes the mark and records the reason', async () => {
-    const { service, supabase } = build();
-
-    const result = await service.setStudentGradeExcluded(
-      'user-1',
-      'act-1',
-      'stu-1',
-      true,
-      '  Absent, sat the makeup  ',
+  test('an activity with no course is not found', async () => {
+    const { service } = build((p) =>
+      p.activity.findUnique.mockResolvedValue({ ...ACTIVITY, course_id: null }),
     );
+    await expect(
+      service.update('user-1', 'act-1', { title: 'x' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
 
-    expect(result).toEqual({
-      studentId: 'stu-1',
-      gradeId: 'grade-1',
-      isExcluded: true,
-      exclusionReason: 'Absent, sat the makeup',
+describe('ActivityService.publish', () => {
+  test('only sets the status; no assessment is created', async () => {
+    const { service, prisma } = build();
+    const result = await service.publish('user-1', 'act-1');
+
+    expect(result.status).toBe('published');
+    expect(result.publishedAt).toBeTruthy();
+    expect(typeof result.publishedAt).toBe('string');
+    expect(prisma.assessment.create).not.toHaveBeenCalled();
+    expect(prisma.assessment.createMany).not.toHaveBeenCalled();
+  });
+
+  test('refuses work already published', async () => {
+    const { service } = build((p) =>
+      p.activity.findUnique.mockResolvedValue({
+        ...ACTIVITY,
+        status: 'published',
+      }),
+    );
+    await expect(service.publish('user-1', 'act-1')).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  test('a quiz needs a question first', async () => {
+    const { service } = build((p) => {
+      p.activity.findUnique.mockResolvedValue({ ...ACTIVITY, kind: 'quiz' });
+      p.quiz_question.count.mockResolvedValue(0);
     });
-
-    const update = supabase._calls.find(
-      (c: any) => c.table === 'grade' && c.op === 'update',
+    await expect(service.publish('user-1', 'act-1')).rejects.toThrow(
+      BadRequestException,
     );
-    expect(update).toBeDefined();
-    expect(update!.payload).toMatchObject({
-      is_excluded: true,
-      exclusion_reason: 'Absent, sat the makeup',
-      updated_by: 'user-1',
+  });
+});
+
+describe('ActivityService roles', () => {
+  test('reading asks for any staff role', async () => {
+    const { service, access } = build(undefined, 'ta');
+    await service.get('user-1', 'act-1');
+    expect(access.asked[0].roles).toContain('ta');
+  });
+
+  test('listing a course asks for any staff role', async () => {
+    const { service, access } = build(
+      (p) => p.activity.findMany.mockResolvedValue([ACTIVITY]),
+      'ta',
+    );
+    const list = await service.listForCourse('user-1', 'course-1');
+    expect(list).toHaveLength(1);
+    expect(access.asked[0]).toEqual({
+      courseId: 'course-1',
+      roles: ['admin', 'teacher', 'ta'],
     });
   });
 
-  test('looks the grade up by assessment as well as student', async () => {
-    const { service, supabase } = build();
-
-    await service.setStudentGradeExcluded('user-1', 'act-1', 'stu-1', true);
-
-    // Student id alone would reach that student's grade on someone else's
-    // assessment, which this activity has no business touching.
-    const lookup = supabase._calls.find(
-      (c: any) => c.table === 'grade' && c.op === 'select',
+  test('a TA cannot delete', async () => {
+    const { service } = build(undefined, 'ta');
+    await expect(service.remove('user-1', 'act-1')).rejects.toThrow(
+      ForbiddenException,
     );
-    expect(lookup).toBeDefined();
-    expect(lookup!.filters).toMatchObject({
-      assessment_id: 'assess-1',
-      student_id: 'stu-1',
-    });
   });
 
-  test('clears the reason when the mark goes back in', async () => {
-    const { service, supabase } = build();
-
-    const result = await service.setStudentGradeExcluded(
-      'user-1',
-      'act-1',
-      'stu-1',
-      false,
-      'ignored',
+  test('someone outside the course gets a 404', async () => {
+    const { service } = build(undefined, null);
+    await expect(service.get('user-1', 'act-1')).rejects.toThrow(
+      NotFoundException,
     );
-
-    expect(result.exclusionReason).toBeNull();
-
-    const update = supabase._calls.find(
-      (c: any) => c.table === 'grade' && c.op === 'update',
-    );
-    expect(update).toBeDefined();
-    expect(update!.payload).toMatchObject({
-      is_excluded: false,
-      exclusion_reason: null,
-    });
-  });
-
-  test('a blank reason is stored as no reason', async () => {
-    const { service, supabase } = build();
-
-    await service.setStudentGradeExcluded(
-      'user-1',
-      'act-1',
-      'stu-1',
-      true,
-      '   ',
-    );
-
-    const update = supabase._calls.find(
-      (c: any) => c.table === 'grade' && c.op === 'update',
-    );
-    expect(update).toBeDefined();
-    expect(update!.payload.exclusion_reason).toBeNull();
   });
 });

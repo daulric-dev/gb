@@ -35,7 +35,7 @@ The verification page shows an 8-digit OTP input. The email is read from the URL
 2. User enters the 8-digit code from their email
 3. Calls `POST /api/auth/otp/verify` with email + token
 4. On success:
-   - The backend writes the Supabase session cookies (`sb-*-auth-token*`) on the response - the frontend doesn't need to store anything
+   - The backend sets the `gb_session` cookie on the response - the frontend doesn't need to store anything
    - `await refresh()` (from `useAuth()`) re-fetches `/auth/me` so the persistent `AuthProvider` profile is populated **before** navigating - otherwise the dashboard layout reads the stale logged-out profile and bounces straight back to `/login`
    - If `user.is_onboarded` is false → redirect to `/onboard`
    - Otherwise → redirect to `/dashboard`
@@ -69,13 +69,13 @@ Shown to first-time users who have authenticated but haven't completed their pro
 
 ## Authentication State
 
-The frontend has **no token storage** - there is no `lib/auth.ts`, no `localStorage`, no in-memory access token. All session state lives in HTTP-only cookies set by the backend, and the browser sends them automatically on every request thanks to `credentials: "include"` in `lib/api.ts`.
+The frontend has **no token storage** - there is no `lib/auth.ts`, no `localStorage`, no in-memory access token. All session state lives in one HTTP-only cookie set by the backend, and the browser sends it automatically on every request thanks to `credentials: "include"` in `lib/api.ts`.
 
 | Cookie | Set by | Purpose |
 |--------|--------|---------|
-| `sb-<project>-auth-token` (chunked: `.0`, `.1`, ...) | Backend `setAll` handler in `SupabaseService` | Encoded session payload (access token + refresh token) |
+| `gb_session` | Backend `SessionService`, on `/auth/otp/verify` and the SSO callback / handoff | Opaque random token; the API stores only its hash |
 
-The access token expires after 1 hour, but the backend's `AuthGuard` calls `auth.getUser()` on every authenticated request, which silently refreshes the token and writes new cookies on the response. The frontend never sees a 401 unless the refresh token itself is invalid (30+ days inactive, revoked, or cookies manually cleared).
+The session lasts 30 days and slides: each authenticated request extends it, so there is no access/refresh token pair and nothing to refresh on the client. The frontend only sees a 401 when the session has expired (30 days inactive), was revoked (logout, "sign out everywhere", account deleted), or the cookie was cleared.
 
 When a 401 does occur, `lib/api.ts` bounces to `/login` automatically.
 
@@ -83,9 +83,11 @@ When a 401 does occur, `lib/api.ts` bounces to `/login` automatically.
 
 ## Route Protection
 
-The `proxy.ts` middleware runs on every navigation to `/dashboard/*`, `/onboard/*`, and `/login/*`. It checks for the presence of any cookie matching `sb-*-auth-token*`:
+The `proxy.ts` middleware runs on every navigation to `/dashboard/*`, `/onboard/*`, and `/login/*`. It checks for the presence of the `gb_session` cookie:
 
 - If navigating to a protected route without a session cookie → redirect to `/login`
-- If navigating to `/login` with a session cookie → redirect to `/dashboard`
+- If navigating to `/login` with a session cookie → redirect to the safe `?next=` path, or `/dashboard`
 
-The check is only a presence test. If the cookies are corrupted or the session is invalid, the middleware will let the user through and the first API call from `useProfile` will return 401 - at which point `lib/api.ts` redirects to `/login`. There is a brief flash of the dashboard frame in this edge case, but no broken state.
+The check is only a presence test - the cookie is opaque and only the API can validate it. If the session is expired or revoked, the middleware will let the user through and the first API call from `useProfile` will return 401 - at which point `lib/api.ts` redirects to `/login`. There is a brief flash of the dashboard frame in this edge case, but no broken state.
+
+For the proxy to see the cookie at all it must be sent to the frontend's host. In production the API sets it with `Domain=AUTH_COOKIE_DOMAIN`, a parent domain shared by the app and the API (see [Environment variables](../environment-variables.md)); in development both run on `localhost`, where cookies ignore the port.

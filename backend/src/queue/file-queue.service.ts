@@ -2,12 +2,9 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import {
-  QUEUE_FILE_INGEST,
   QUEUE_FILE_SHARE_NOTIFY,
-  type IngestJobData,
   type ShareNotifyJobData,
 } from './queue.constants';
-import { FileIngestHandler } from './handlers/file-ingest.handler';
 import { FileShareNotifyHandler } from './handlers/file-share-notify.handler';
 
 const JOB_OPTS = {
@@ -25,26 +22,14 @@ export class FileQueueService {
 
   constructor(
     @Optional()
-    @InjectQueue(QUEUE_FILE_INGEST)
-    private readonly ingestQueue: Queue | undefined,
-    @Optional()
     @InjectQueue(QUEUE_FILE_SHARE_NOTIFY)
     private readonly shareNotifyQueue: Queue | undefined,
-    private readonly ingestHandler: FileIngestHandler,
     private readonly shareNotifyHandler: FileShareNotifyHandler,
   ) {
-    this.async = !!this.ingestQueue;
+    this.async = !!this.shareNotifyQueue;
     this.logger.log(
       `File queue running in ${this.async ? 'async (Redis/BullMQ)' : 'inline'} mode`,
     );
-  }
-
-  async enqueueIngest(data: IngestJobData): Promise<void> {
-    if (this.ingestQueue) {
-      await this.ingestQueue.add('ingest', data, JOB_OPTS);
-      return;
-    }
-    await this.runInline('ingest', () => this.ingestHandler.run(data));
   }
 
   async enqueueShareNotify(data: ShareNotifyJobData): Promise<void> {
