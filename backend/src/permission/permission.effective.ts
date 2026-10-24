@@ -1,4 +1,4 @@
-import { SupabaseService } from '@/supabase/supabase.service';
+import type { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { defaultsForRole, PermissionKey } from './permission.catalog';
 
@@ -26,18 +26,28 @@ export const permCacheKey = (userId: string, schoolId: string) =>
  * and the `/permissions/me` endpoint, so both agree on what a user can do.
  */
 export async function computeEffectivePermissions(
-  supabaseService: SupabaseService,
+  prisma: PrismaService,
   userId: string,
   schoolId: string,
 ): Promise<EffectivePermissions> {
-  const supabase = supabaseService.getServiceClient();
-
-  const { data: membership } = await supabase
-    .from('school_management')
-    .select('id, role')
-    .eq('user_id', userId)
-    .eq('school_id', schoolId)
-    .maybeSingle();
+  const membership = await prisma.school_management.findFirst({
+    where: { user_id: userId, school_id: schoolId },
+    select: {
+      role: true,
+      // Custom roles assigned to this membership, with their grants.
+      school_management_role: {
+        select: {
+          school_role: {
+            select: {
+              school_role_permission: {
+                select: { permission_catalog: { select: { key: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
 
   if (!membership) {
     return { member: false, role: null, keys: [] };
@@ -55,24 +65,9 @@ export async function computeEffectivePermissions(
   const keys = defaultsForRole(membership.role as string);
 
   // Union any custom roles assigned to this membership.
-  const { data: assignedRoles } = await supabase
-    .from('school_management_role')
-    .select('school_role_id')
-    .eq('school_management_id', membership.id);
-
-  const roleIds = (assignedRoles ?? []).map(
-    (r: { school_role_id: string }) => r.school_role_id,
-  );
-
-  if (roleIds.length > 0) {
-    const { data: grants } = await supabase
-      .from('school_role_permission')
-      .select('permission_catalog:permission_id(key)')
-      .in('school_role_id', roleIds);
-
-    for (const g of grants ?? []) {
-      const grantKey = (g.permission_catalog as { key?: string } | null)?.key;
-      if (grantKey) keys.add(grantKey as PermissionKey);
+  for (const assigned of membership.school_management_role) {
+    for (const grant of assigned.school_role.school_role_permission) {
+      keys.add(grant.permission_catalog.key as PermissionKey);
     }
   }
 
@@ -80,7 +75,7 @@ export async function computeEffectivePermissions(
 }
 
 export async function loadEffectivePermissions(
-  supabaseService: SupabaseService,
+  prisma: PrismaService,
   cache: CacheService,
   userId: string,
   schoolId: string,
@@ -90,7 +85,7 @@ export async function loadEffectivePermissions(
   if (cached) return cached;
 
   const effective = await computeEffectivePermissions(
-    supabaseService,
+    prisma,
     userId,
     schoolId,
   );

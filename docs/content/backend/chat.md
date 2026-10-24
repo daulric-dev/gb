@@ -8,7 +8,7 @@ sidebar_label: Chat
 
 Real-time direct messaging between users in the same school. Any active member can message any other active member; messages are delivered live over **Server-Sent Events (SSE)**, fanned out across the stateless backend replicas by **Redis pub/sub**. The same surface renders **system messages** — a shared file or a class invitation arrive in the relevant DM as a message with an inline action button.
 
-Postgres (Supabase) is the source of truth for every message. Redis is only a fan-out bus, so nothing is lost if Redis restarts (prod runs it with `--appendonly no`).
+Postgres is the source of truth for every message. Redis is only a fan-out bus, so nothing is lost if Redis restarts (prod runs it with `--appendonly no`).
 
 ## Files
 
@@ -34,9 +34,9 @@ The Redis pub/sub transport itself is a **shared, generic service**, not chat-sp
 
 ## Message encryption at rest
 
-Message content is encrypted before it is stored and decrypted on read, so a database dump, a leaked backup, or a direct SQL read yields ciphertext. This is **defense-in-depth** on top of TLS in transit and Supabase's disk encryption — it is **not** end-to-end: the server holds the key (it must, to render previews, unread, system messages, and SSE), the same trust already placed in this backend for grades and PII.
+Message content is encrypted before it is stored and decrypted on read, so a database dump, a leaked backup, or a direct SQL read yields ciphertext. This is **defense-in-depth** on top of TLS in transit and the database host's disk encryption — it is **not** end-to-end: the server holds the key (it must, to render previews, unread, system messages, and SSE), the same trust already placed in this backend for grades and PII.
 
-- **`MessageCipher`** ([message-cipher.service.ts](../../../../backend/src/chat/message-cipher.service.ts)) encrypts with **AES-256-GCM** (random 12-byte IV per message, GCM auth tag). Hooked at exactly three points: `ChatService.postMessage` and `editMessage` encrypt the `body` before write; `presentMessage` decrypts on the way out — which covers every read path, including conversation-list previews.
+- **`MessageCipher`** ([message-cipher.service.ts](../../../backend/src/chat/message-cipher.service.ts)) encrypts with **AES-256-GCM** (random 12-byte IV per message, GCM auth tag). Hooked at exactly three points: `ChatService.postMessage` and `editMessage` encrypt the `body` before write; `presentMessage` decrypts on the way out — which covers every read path, including conversation-list previews.
 - **Envelope** (stored in the existing `body` column, no schema change): `enc:v<version>:<iv_b64>:<tag_b64>:<ciphertext_b64>`. A value without the `enc:` prefix is treated as **legacy plaintext and passed through**, so enabling encryption doesn't break rows already in the DB.
 - **Keys** are base64 of 32 bytes, from the environment, and **versioned for rotation**: `CHAT_ENCRYPTION_KEY` (single → v1) or `CHAT_ENCRYPTION_KEYS` (`1:<b64>,2:<b64>`). New rows encrypt with the current version; old rows decrypt by the version tag in their envelope. See [Environment Variables](../environment-variables.md).
 - **Fail-closed:** in production a missing key **stops the app from booting** (never silently store plaintext). In dev, a missing key logs a warning and passes through. A tampered ciphertext fails GCM auth and yields no plaintext (never the raw bytes).
@@ -45,7 +45,7 @@ Scope: message **body** is encrypted (this includes system-message captions, e.g
 
 ## Data model
 
-Migration: `supabase/migrations/20260712120000_chat.sql`, schema `chat`.
+Schema: `backend/prisma/schema/chat.prisma` (Postgres schema `chat`; created by `backend/prisma/migrations/0_baseline`).
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
@@ -53,13 +53,13 @@ Migration: `supabase/migrations/20260712120000_chat.sql`, schema `chat`.
 | `conversation_member` | `conversation_id`, `user_id`, `role`, `last_read_at` | `last_read_at` is the unread high-water mark; unique on `(conversation_id, user_id)` |
 | `message` | `sender_id`, `type`, `body`, `metadata` (jsonb), `action_state` | `type` is `text` / `file_share` / `class_invite` / `system`; `action_state` (`pending`/`accepted`/`dismissed`, nullable) tracks an actionable system message |
 
-**RLS** is enabled on all three tables as defense-in-depth (the API writes/reads via the service role): a user may only see a conversation, its membership, and its messages if they are a member, scoped to their school via `get_user_school_id()`.
+**Access is enforced in the API** (there is no row-level security): a user may only see a conversation, its membership, and its messages if they are a member, scoped to their school.
 
-> After applying the migration, regenerate types with `bun db:types` so `database.types.ts` includes the `chat` schema.
+> After changing the schema, run `bun db:migrate` (which also regenerates the Prisma client; `bun db:generate` regenerates it alone).
 
 ## Realtime: SSE + Redis pub/sub
 
-The transport has to satisfy three constraints: **3 stateless replicas behind nginx with no sticky sessions**, **cookie-based auth**, and a **Cloudflare Worker entrypoint that cannot hold a streaming response**.
+The transport has to satisfy two constraints: **several stateless replicas behind nginx with no sticky sessions**, and **cookie-based auth**.
 
 ```
  browser ──EventSource──►  nginx  ──►  replica N (app1|app2|app3)
@@ -88,9 +88,9 @@ A user is **online while they hold ≥1 open SSE stream** (any tab/device/replic
 
 State is shared across replicas in Redis: a per-user connection counter (`presence:count:<userId>`, `INCR`/`DECR`, TTL-refreshed by the heartbeat) drives the online/offline **transition** (publish on 1st connect, on last disconnect), and a per-school sorted set (`presence:online:<schoolId>`, scored by last-seen) answers `GET /chat/presence`. If a replica dies without a clean disconnect, the counter TTL lapses and the stale sorted-set entry is pruned on the next query — and the frontend reconciles presence every 45s as a backstop. With `USE_REDIS` off it all runs in-process.
 
-> **CORS on the stream.** `GET /chat/stream` calls `reply.hijack()` to own the socket, which **skips Fastify's onSend hooks — including the global CORS plugin**. The handler therefore writes `Access-Control-Allow-Origin` (the exact `FRONTEND_URL`, never `*`) and `Access-Control-Allow-Credentials: true` itself. Without this the browser blocks the cross-origin `EventSource` (frontend and API are different origins) and **no events are delivered** — the symptom is "messages only appear after you click into the conversation," because only the on-open fetch runs.
+> **CORS on the stream.** `GET /chat/stream` calls `reply.hijack()` to own the socket, which **skips Fastify's onSend hooks — including the global CORS plugin**. The handler therefore writes `Access-Control-Allow-Origin` (from `corsOriginFor()`: the request's origin when it is allowed, otherwise the first `FRONTEND_URL` entry, never `*`) and `Access-Control-Allow-Credentials: true` itself. Without this the browser blocks the cross-origin `EventSource` (frontend and API are different origins) and **no events are delivered** — the symptom is "messages only appear after you click into the conversation," because only the on-open fetch runs.
 
-> The SSE endpoint requires the long-lived Node deployment (`infrastructure/docker-compose.yml`). It does **not** work on the Worker entrypoint (`worker.ts`), which replays requests through `fastify.inject()` and cannot stream. The frontend degrades to polling if the stream can't be established.
+> The SSE endpoint needs a long-lived server process, which the supported deployment (the container from `infrastructure/Dockerfile`) is. The frontend degrades to polling if the stream can't be established.
 
 ## REST API
 

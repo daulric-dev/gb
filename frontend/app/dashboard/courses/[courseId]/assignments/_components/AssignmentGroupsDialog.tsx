@@ -44,6 +44,59 @@ function parseWeight(raw: string): number | null | undefined {
   return n;
 }
 
+type GroupPatch = {
+  name?: string;
+  weight?: number | null;
+  dropLowest?: number;
+  dropHighest?: number;
+};
+
+/** A whole number 0-50; undefined when it is not one. */
+function parseDrop(raw: string): number | undefined {
+  if (raw.trim() === "") return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 50) return undefined;
+  return n;
+}
+
+function DropInput({
+  label,
+  value,
+  canEdit,
+  onSaveAction,
+}: {
+  label: string;
+  value: number;
+  canEdit: boolean;
+  onSaveAction: (n: number) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5">
+      {label}
+      <Input
+        key={`${label}-${value}`}
+        type="number"
+        min={0}
+        max={50}
+        step={1}
+        defaultValue={value}
+        disabled={!canEdit}
+        aria-label={label}
+        className="h-7 w-14"
+        onBlur={(e) => {
+          const n = parseDrop(e.target.value);
+          if (n === undefined) {
+            toast.error("Use a whole number from 0 to 50");
+            e.target.value = String(value);
+            return;
+          }
+          if (n !== value) onSaveAction(n);
+        }}
+      />
+    </label>
+  );
+}
+
 function GroupRow({
   group,
   canEdit,
@@ -52,75 +105,104 @@ function GroupRow({
 }: {
   group: AssignmentGroup;
   canEdit: boolean;
-  onSaveAction: (patch: { name?: string; weight?: number | null }) => void;
+  onSaveAction: (patch: GroupPatch) => void;
   onRemoveAction: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: group.id, disabled: !canEdit });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: group.id, disabled: !canEdit });
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "flex items-center gap-2 rounded-md border bg-background px-2 py-1.5",
+        "rounded-md border bg-background px-2 py-1.5",
         isDragging && "relative z-10 shadow-md",
       )}
     >
-      {canEdit && (
-        <button
-          type="button"
-          aria-label="Drag to reorder"
-          className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-muted active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-4" />
-        </button>
-      )}
-      <Input
-        key={`${group.id}-name-${group.name}`}
-        defaultValue={group.name}
-        disabled={!canEdit}
-        aria-label="Group name"
-        className="h-8 min-w-0 flex-1"
-        onBlur={(e) => {
-          const name = e.target.value.trim();
-          if (name && name !== group.name) onSaveAction({ name });
-          else e.target.value = group.name;
-        }}
-      />
-      <Input
-        key={`${group.id}-w-${group.weight}`}
-        type="number"
-        min={0}
-        max={100}
-        placeholder="-"
-        defaultValue={group.weight ?? ""}
-        disabled={!canEdit}
-        aria-label="Weight"
-        className="h-8 w-20"
-        onBlur={(e) => {
-          const weight = parseWeight(e.target.value);
-          if (weight === undefined) {
-            toast.error("Weight must be between 0 and 100");
-            e.target.value = group.weight === null ? "" : String(group.weight);
-            return;
-          }
-          if (weight !== group.weight) onSaveAction({ weight });
-        }}
-      />
-      <span className="text-sm text-muted-foreground">%</span>
-      {canEdit && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onRemoveAction}
-          aria-label="Remove group"
-        >
-          <Trash2 className="size-4 text-destructive" />
-        </Button>
-      )}
+      <div className="flex items-center gap-2">
+        {canEdit && (
+          <button
+            type="button"
+            aria-label="Drag to reorder"
+            className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-muted active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        )}
+        <Input
+          key={`${group.id}-name-${group.name}`}
+          defaultValue={group.name}
+          disabled={!canEdit}
+          aria-label="Group name"
+          className="h-8 min-w-0 flex-1"
+          onBlur={(e) => {
+            const name = e.target.value.trim();
+            if (name && name !== group.name) onSaveAction({ name });
+            else e.target.value = group.name;
+          }}
+        />
+        <Input
+          key={`${group.id}-w-${group.weight}`}
+          type="number"
+          min={0}
+          max={100}
+          placeholder="-"
+          defaultValue={group.weight ?? ""}
+          disabled={!canEdit}
+          aria-label="Weight"
+          className="h-8 w-20"
+          onBlur={(e) => {
+            const weight = parseWeight(e.target.value);
+            if (weight === undefined) {
+              toast.error("Weight must be between 0 and 100");
+              e.target.value =
+                group.weight === null ? "" : String(group.weight);
+              return;
+            }
+            if (weight !== group.weight) onSaveAction({ weight });
+          }}
+        />
+        <span className="text-sm text-muted-foreground">%</span>
+        {canEdit && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onRemoveAction}
+            aria-label="Remove group"
+          >
+            <Trash2 className="size-4 text-destructive" />
+          </Button>
+        )}
+      </div>
+      {/* Per student, among marked work that counts; one mark always stays. */}
+      <div
+        className={cn(
+          "mt-1.5 flex flex-wrap items-center gap-3 text-xs text-muted-foreground",
+          canEdit && "pl-8",
+        )}
+      >
+        <DropInput
+          label="Drop lowest"
+          value={group.dropLowest ?? 0}
+          canEdit={canEdit}
+          onSaveAction={(dropLowest) => onSaveAction({ dropLowest })}
+        />
+        <DropInput
+          label="Drop highest"
+          value={group.dropHighest ?? 0}
+          canEdit={canEdit}
+          onSaveAction={(dropHighest) => onSaveAction({ dropHighest })}
+        />
+      </div>
     </div>
   );
 }
@@ -187,13 +269,15 @@ export function AssignmentGroupsDialog({
       newWeight.value = "";
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to add group");
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to add group",
+      );
     } finally {
       working.value = false;
     }
   }
 
-  async function save(id: string, patch: { name?: string; weight?: number | null }) {
+  async function save(id: string, patch: GroupPatch) {
     try {
       await api(`/courses/${courseId}/assignment-groups/${id}`, {
         method: "PATCH",
@@ -254,9 +338,10 @@ export function AssignmentGroupsDialog({
         <DialogHeader>
           <DialogTitle>Assignment groups</DialogTitle>
           <DialogDescription>
-            Work is averaged inside each group, then groups are weighted
-            against each other. Leave every weight blank to grade on total
-            points instead.
+            Work is averaged inside each group, then groups are weighted against
+            each other. Leave every weight blank to grade on total points
+            instead. Drop rules leave out each student&apos;s lowest (or
+            highest) marks in a group.
           </DialogDescription>
         </DialogHeader>
 
@@ -339,7 +424,11 @@ export function AssignmentGroupsDialog({
                   onChange={(e) => (newWeight.value = e.target.value)}
                 />
               </div>
-              <Button onClick={add} disabled={working.value} aria-label="Add group">
+              <Button
+                onClick={add}
+                disabled={working.value}
+                aria-label="Add group"
+              >
                 {working.value ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (

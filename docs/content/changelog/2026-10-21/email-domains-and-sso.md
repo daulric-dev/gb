@@ -43,7 +43,7 @@ The mobile app signs in through the system browser and receives the session thro
 
 ## Adapters
 
-Providers are adapter classes in `backend/src/sso/adapters`. Adding one (Apple, Keycloak, ...) is one class extending `SupabaseOAuthAdapter`, one line in `sso.registry.ts`, and its id in `SSO_PROVIDERS`; the login buttons and admin picker update themselves. See [Single sign-on](../../sso.md).
+Providers are adapter classes in `backend/src/sso/adapters`. Adding one (Apple, Keycloak, ...) is one class extending `OAuthAdapter`, one line in `sso.registry.ts`, and its id in `SSO_PROVIDERS`; the login buttons and admin picker update themselves. See [Single sign-on](../../sso.md).
 
 ## Configuration
 

@@ -27,19 +27,23 @@ iOS App Transport Security is configured with `NSAllowsArbitraryLoads: false` an
 
 ## Auth cookies
 
-Auth is httpOnly cookies, which React Native persists in the platform's native cookie store - no token handling in app code. Two backend settings decide whether that works:
+Auth is one httpOnly cookie, `gb_session` (opaque, 30-day sliding expiry), which React Native persists in the platform's native cookie store - no token handling in app code. Two backend settings decide whether that works:
 
 - **`NODE_ENV=production`** makes the cookie `Secure`, so the API must be HTTPS (it already must be, for ATS).
 - **`AUTH_COOKIE_DOMAIN`** sets the cookie's `Domain`. If the derived default does not cover the API's own host, the client **rejects the cookie and every request after login is unauthenticated** - with no error to point at it. See [Environment variables](./environment-variables.md).
 
-A native client has no frontend domain of its own; it only ever talks to the API host. The `Domain` attribute exists for the **web** app, whose middleware reads the cookie on its own domain.
+A native client has no frontend domain of its own; it only ever talks to the API host. The `Domain` attribute exists for the **web** app, whose proxy checks for the cookie on its own domain. SSO on mobile ends in `POST /auth/sso/handoff`, which trades a one-time code for the same cookie.
 
 ## Direct uploads
 
-Files upload straight to Supabase Storage over TUS, so the app needs to reach Storage as well as the API:
+Files upload straight to object storage (S3-compatible) with presigned URLs, so the app needs to reach storage as well as the API:
 
-- `SUPABASE_JWT_SECRET` must be set on the backend, and must belong to the same project as `SUPABASE_URL`, or Storage rejects every upload.
-- In production the upload endpoint is the hosted Supabase URL. The request-host derivation only applies when `SUPABASE_URL` is loopback, i.e. local development.
+- The backend signs upload URLs for `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT` when unset). That host must be reachable from the phone - in production an HTTPS endpoint such as `https://<account-id>.r2.cloudflarestorage.com`; in development a LAN address, not `127.0.0.1`.
+- The app sends exactly the headers in the upload ticket and no cookies, then calls the ticket's `complete` route so the backend can check and release the file.
+
+## Opening protected files
+
+Course files and handed-in submissions are served by the API behind the session (`GET /portal/me/courses/:courseId/files/:fileId`, `GET /activities/submissions/:submissionId/file`), so the app cannot just hand their URL to a browser - the browser does not have the `gb_session` cookie. Instead the app fetches the bytes itself (same cookie store as every other request), writes them to the cache directory with `expo-file-system`, and opens the share sheet with `expo-sharing` - Quick Look and "Save to Files" on iOS, "Open with" on Android. Both are native modules, so **a dev client or store build made before they were added must be rebuilt** (`eas build --profile development`, or `bunx expo prebuild` + `pod install` for a local `ios/` build).
 
 ## Build profiles
 
@@ -62,7 +66,7 @@ eas build --profile production --platform all
 
 ## Checklist
 
-1. Backend deployed over HTTPS with `NODE_ENV=production`, `SUPABASE_SERVICE_ROLE_KEY` (the **JWT**), `SUPABASE_JWT_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` set.
+1. Backend deployed over HTTPS with `NODE_ENV=production`, `AUTH_SECRET`, `DATABASE_URL`, the `S3_*` storage settings, `SMTP_URL`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` set.
 2. `AUTH_COOKIE_DOMAIN` set if the API is not a subdomain of the web app's two-label domain.
 3. `EXPO_PUBLIC_API_URL` set in the build profile, HTTPS, no `/api`.
 4. Build, install, and confirm **sign-in persists across an app restart** - that is the check that proves the cookie was accepted.
@@ -71,3 +75,4 @@ eas build --profile production --platform all
 
 - The claymorphic theme and safe-area handling were verified through Expo web and typechecks, **not on a device**.
 - No build has been run through EAS from this repo, so the profiles are unexercised.
+- The course screens (student and staff), file opening and rubric marking were checked with `tsc` and an iOS `expo export` bundle, and their API calls against the demo data, **not on a device**.

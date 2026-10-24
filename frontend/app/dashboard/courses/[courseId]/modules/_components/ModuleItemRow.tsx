@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { toast } from "sonner";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -10,6 +13,8 @@ import {
   IndentDecrease,
   IndentIncrease,
   Link2,
+  Loader2,
+  MessagesSquare,
   MoreVertical,
   Paperclip,
   Pencil,
@@ -17,6 +22,7 @@ import {
 } from "lucide-react";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { formatDue } from "@/lib/courses/format";
+import { fetchStaffCourseFileBlob } from "@/lib/files/content";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -47,6 +53,9 @@ function ItemIcon({
   }
   if (item.itemType === "file") return <Paperclip className={className} />;
   if (item.itemType === "link") return <Link2 className={className} />;
+  if (item.itemType === "discussion") {
+    return <MessagesSquare className={className} />;
+  }
   return <FileText className={className} />;
 }
 
@@ -56,10 +65,12 @@ function itemHref(item: ModuleItem, base: string): string | null {
       return item.pageId ? `${base}/pages/${item.pageId}` : null;
     case "activity":
       return item.activityId ? `${base}/assignments/${item.activityId}` : null;
-    case "file":
-      return "/dashboard/files";
     case "link":
       return item.url;
+    case "discussion":
+      return item.discussionTopicId
+        ? `${base}/discussions/${item.discussionTopicId}`
+        : null;
     default:
       return null;
   }
@@ -78,17 +89,21 @@ export interface ItemActions {
 
 export function ModuleItemRow({
   item,
+  courseId,
   base,
   canEdit,
   otherModules,
   actions,
 }: {
   item: ModuleItem;
+  courseId: string;
   base: string;
   canEdit: boolean;
   otherModules: Pick<CourseModule, "id" | "title">[];
   actions: ItemActions;
 }) {
+  useSignals();
+  const opening = useSignal(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id, disabled: !canEdit });
 
@@ -96,10 +111,42 @@ export function ModuleItemRow({
   const href = itemHref(item, base);
   const external = item.itemType === "link";
 
+  // Files open through the course, so a colleague's linked file opens too.
+  async function openFile(fileId: string) {
+    // Open the tab synchronously so popup blockers allow it, then point it
+    // at the file once the bytes arrive.
+    const win = window.open("", "_blank");
+    opening.value = true;
+    try {
+      const blob = await fetchStaffCourseFileBlob(courseId, fileId);
+      const url = URL.createObjectURL(blob);
+      if (win) win.location.href = url;
+      else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      win?.close();
+      toast.error("This file could not be opened. It may have been deleted.");
+    } finally {
+      opening.value = false;
+    }
+  }
+
   const titleNode = isHeader ? (
     <span className="truncate text-sm font-semibold uppercase tracking-wide text-muted-foreground">
       {item.title}
     </span>
+  ) : item.itemType === "file" && item.fileId ? (
+    <button
+      type="button"
+      onClick={() => openFile(item.fileId!)}
+      disabled={opening.value}
+      className="flex items-center truncate text-left text-sm font-medium hover:underline disabled:opacity-70"
+    >
+      {item.title}
+      {opening.value && (
+        <Loader2 className="ml-1.5 size-3 shrink-0 animate-spin text-muted-foreground" />
+      )}
+    </button>
   ) : href ? (
     <Link
       href={href}

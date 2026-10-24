@@ -6,20 +6,16 @@ export function v1Uploaded(raw: { avatar_url: string }) {
 
 export function v1Resumable(raw: {
   path: string;
-  token: string;
-  signedUrl: string;
-  tusEndpoint: string;
-  tusHeaders: Record<string, string>;
-  tusMetadata: Record<string, string>;
-  chunkSize: number;
+  method: 'PUT';
+  uploadUrl: string;
+  headers: Record<string, string>;
+  expiresAt: string;
 }) {
   return {
     path: raw.path,
-    token: raw.token,
-    signed_url: raw.signedUrl,
-    tus_endpoint: raw.tusEndpoint,
-    tus_headers: raw.tusHeaders,
-    tus_metadata: raw.tusMetadata,
-    chunk_size: raw.chunkSize,
+    method: raw.method,
+    uploadUrl: raw.uploadUrl,
+    headers: raw.headers,
+    expiresAt: raw.expiresAt,
   };
 }

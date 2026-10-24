@@ -25,7 +25,7 @@ Per-email keying means an attacker can't drain a victim's allowance by rotating 
 
 `ClassTeacherGuard` restricted *who* could call enroll, but a class teacher in school A could pass any `studentId` from school B in the body - there was no check that the student actually belonged to the class's school. Combined with the IDOR fixes from the [critical batch](./security-fixes.md), this closes the last cross-school write path through enrollment.
 
-**Fix.** New private helper [`EnrollmentService.assertSameSchool`](../../../../backend/src/enrollment/enrollment.service.ts) resolves the class's school via `student_group → academic_year → school_id`, then verifies every supplied `studentId` belongs to the same school. `enroll` and `bulkEnroll` call it before the insert. Mismatches throw `BadRequestException` with `"Students must belong to the same school as the class"`. Non-existent students throw `"One or more students do not exist"`.
+**Fix.** New private helper `EnrollmentService.assertSameSchool` resolves the class's school via `student_group → academic_year → school_id`, then verifies every supplied `studentId` belongs to the same school. `enroll` and `bulkEnroll` call it before the insert. Mismatches throw `BadRequestException` with `"Students must belong to the same school as the class"`. Non-existent students throw `"One or more students do not exist"`.
 
 A new test covers the cross-school rejection case.
 

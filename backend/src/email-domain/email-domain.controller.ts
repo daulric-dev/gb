@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -73,7 +74,14 @@ export class EmailDomainJoinController {
 
   @Get('match')
   async match(@Req() req: any) {
-    const match = await this.domains.matchFor(req.user.id as string, req.user.email);
+    const userId = req?.user?.id;
+    const email = req?.user?.email as string;
+
+    if (!userId || !email) {
+      throw new BadRequestException('Invalid user information');
+    }
+
+    const match = await this.domains.matchFor(userId as string, email);
     return { match };
   }
 
@@ -81,6 +89,6 @@ export class EmailDomainJoinController {
   @Post('join')
   @HttpCode(200)
   async join(@Req() req: any) {
-    return this.domains.join(req.user.id as string, req.user.email);
+    return this.domains.join(req.user.id as string, req.user.email as string);
   }
 }

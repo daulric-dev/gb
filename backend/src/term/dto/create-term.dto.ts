@@ -5,7 +5,6 @@ import {
   IsDateString,
   IsInt,
   IsOptional,
-  IsBoolean,
   IsUUID,
   Min,
   Max,
@@ -29,20 +28,6 @@ export class CreateTermDto {
   @IsDateString()
   @IsNotEmpty()
   endDate!: string;
-
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  examWeight!: number;
-
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  courseworkWeight!: number;
-
-  @IsOptional()
-  @IsBoolean()
-  isMinistryReporting?: boolean;
 
   @IsOptional()
   @IsInt()

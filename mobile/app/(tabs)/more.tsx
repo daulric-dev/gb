@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import {
+  BookOpen,
   Megaphone,
   MessageSquare,
   FolderClosed,
@@ -29,6 +30,12 @@ interface MenuItem {
 }
 
 const ITEMS: MenuItem[] = [
+  {
+    href: "/teaching",
+    label: "Courses",
+    description: "Marking, modules, announcements, discussions",
+    icon: BookOpen,
+  },
   {
     href: "/announcements",
     label: "Announcements",

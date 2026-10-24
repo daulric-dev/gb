@@ -74,6 +74,50 @@ export function ssoErrorMessage(raw: string | null | undefined): string | null {
 
 /** How the admin screens name a provider ("your school (SSO)" reads oddly there). */
 export function ssoProviderName(provider: SsoProvider | undefined, id: string): string {
-  if (!provider) return id;
-  return provider.kind === "saml" ? "SAML" : provider.label;
+  if (provider?.kind === "saml" || (!provider && id === "saml")) return "SAML";
+  return provider ? provider.label : id;
+}
+
+/**
+ * What a school's SAML identity provider needs to know about us. The API
+ * serves the metadata and receives assertions at the ACS URL. The entity ID is
+ * the API's `SAML_SP_ENTITY_ID`; it defaults to the metadata URL, and
+ * `NEXT_PUBLIC_SAML_SP_ENTITY_ID` must match the API when that is overridden.
+ */
+export function samlServiceProvider(): {
+  metadataUrl: string;
+  acsUrl: string;
+  entityId: string;
+} {
+  const metadataUrl = buildUrl("/auth/sso/saml/metadata");
+  return {
+    metadataUrl,
+    acsUrl: buildUrl("/auth/sso/saml/acs"),
+    entityId: process.env.NEXT_PUBLIC_SAML_SP_ENTITY_ID || metadataUrl,
+  };
+}
+
+/** True for an absolute https:// URL (the IdP sign-on URL must be one). */
+export function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" && !!url.hostname;
+  } catch {
+    return false;
+  }
+}
+
+const PEM_CERT =
+  /^-----BEGIN CERTIFICATE-----\s*[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----$/;
+const BARE_BASE64 = /^[A-Za-z0-9+/=\s]+$/;
+
+/**
+ * A light shape check for an IdP signing certificate: a PEM block, or the
+ * bare base64 body many IdPs show. The API parses it properly.
+ */
+export function looksLikeCertificate(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  if (v.includes("-----")) return PEM_CERT.test(v);
+  return BARE_BASE64.test(v) && v.replace(/\s/g, "").length >= 100;
 }

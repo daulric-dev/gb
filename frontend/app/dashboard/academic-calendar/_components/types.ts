@@ -1,23 +1,9 @@
-export type GradingModel =
-  | "weighted_continuous"
-  | "weighted_cumulative"
-  | "continuous_cumulative";
-
-export const GRADING_MODEL_LABELS: Record<GradingModel, string> = {
-  weighted_continuous: "Weighted Continuous Assessment",
-  weighted_cumulative: "Weighted Cumulative",
-  continuous_cumulative: "Continuous-Cumulative",
-};
-
 export interface AcademicYear {
   id: string;
   name: string;
   start_date: string;
   end_date: string;
-  grading_model: GradingModel;
   is_active: boolean;
-  year_exam_weight: number | null;
-  year_coursework_weight: number | null;
 }
 
 export interface Term {
@@ -27,9 +13,6 @@ export interface Term {
   name: string;
   start_date: string;
   end_date: string;
-  exam_weight: number;
-  coursework_weight: number;
-  is_ministry_reporting: boolean;
   sort_order: number;
 }
 

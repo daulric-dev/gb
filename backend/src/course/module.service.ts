@@ -4,7 +4,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { isoDate } from '@/common/db-values';
 import {
   CourseAccessService,
   CourseRow,
@@ -12,9 +14,47 @@ import {
 } from './access/course-access.service';
 import type { ModuleItemType } from './dto/content.dto';
 
-const MODULE_COLUMNS = 'id, course_id, title, position, is_published';
-const ITEM_COLUMNS =
-  'id, module_id, course_id, position, item_type, title, page_id, activity_id, file_id, url, indent, is_published';
+const MODULE_SELECT = {
+  id: true,
+  course_id: true,
+  title: true,
+  position: true,
+  is_published: true,
+} as const;
+
+/** An item's columns plus what it points at, so one query shapes it. */
+const ITEM_SELECT = {
+  id: true,
+  module_id: true,
+  course_id: true,
+  position: true,
+  item_type: true,
+  title: true,
+  page_id: true,
+  activity_id: true,
+  file_id: true,
+  discussion_topic_id: true,
+  url: true,
+  indent: true,
+  is_published: true,
+  page: { select: { id: true, title: true, is_published: true } },
+  activity: {
+    select: {
+      id: true,
+      title: true,
+      kind: true,
+      points: true,
+      due_at: true,
+      status: true,
+    },
+  },
+  file: { select: { id: true, name: true, deleted_at: true } },
+  discussion_topic: { select: { id: true, title: true, is_published: true } },
+} as const;
+
+type ItemWithTargets = Prisma.module_itemGetPayload<{
+  select: typeof ITEM_SELECT;
+}>;
 
 interface ModuleRow {
   id: string;
@@ -34,6 +74,7 @@ interface ItemRow {
   page_id: string | null;
   activity_id: string | null;
   file_id: string | null;
+  discussion_topic_id: string | null;
   url: string | null;
   indent: number;
   is_published: boolean;
@@ -61,13 +102,9 @@ export class ModuleService {
   private readonly logger = new Logger(ModuleService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
   ) {}
-
-  private db() {
-    return this.supabaseService.getServiceClient();
-  }
 
   // ── reading ───────────────────────────────────────────────────────────────
 
@@ -87,38 +124,33 @@ export class ModuleService {
   }
 
   private async build(courseId: string, studentView: boolean) {
-    const supabase = this.db();
+    const where = {
+      course_id: courseId,
+      ...(studentView ? { is_published: true } : {}),
+    };
+    const orderBy = [
+      { position: 'asc' as const },
+      { created_at: 'asc' as const },
+    ];
 
-    let modulesQuery = supabase
-      .schema('course')
-      .from('module')
-      .select(MODULE_COLUMNS)
-      .eq('course_id', courseId)
-      .order('position', { ascending: true })
-      .order('created_at', { ascending: true });
-    if (studentView) modulesQuery = modulesQuery.eq('is_published', true);
-
-    let itemsQuery = supabase
-      .schema('course')
-      .from('module_item')
-      .select(ITEM_COLUMNS)
-      .eq('course_id', courseId)
-      .order('position', { ascending: true })
-      .order('created_at', { ascending: true });
-    if (studentView) itemsQuery = itemsQuery.eq('is_published', true);
-
-    const [{ data: modules, error }, { data: items, error: itemsError }] =
-      await Promise.all([modulesQuery, itemsQuery]);
-
-    if (error || itemsError) {
-      this.logger.error(
-        `Failed to load modules: ${(error ?? itemsError)?.message}`,
-      );
+    let modules: ModuleRow[];
+    let items: ItemWithTargets[];
+    try {
+      [modules, items] = await Promise.all([
+        this.prisma.module.findMany({ where, orderBy, select: MODULE_SELECT }),
+        this.prisma.module_item.findMany({
+          where,
+          orderBy,
+          select: ITEM_SELECT,
+        }),
+      ]);
+    } catch (error) {
+      this.logger.error(`Failed to load modules: ${(error as Error).message}`);
       throw new BadRequestException('Failed to load modules');
     }
 
-    const itemRows = (items ?? []) as ItemRow[];
-    const targets = await this.loadTargets(itemRows);
+    const itemRows: ItemRow[] = items;
+    const targets = this.targetsOf(items);
 
     const byModule = new Map<string, ReturnType<typeof this.toItem>[]>();
     for (const row of itemRows) {
@@ -128,7 +160,7 @@ export class ModuleService {
       byModule.set(row.module_id, list);
     }
 
-    return ((modules ?? []) as ModuleRow[]).map((m) => ({
+    return modules.map((m) => ({
       id: m.id,
       courseId: m.course_id,
       title: m.title,
@@ -140,7 +172,7 @@ export class ModuleService {
 
   private visibleToStudent(
     row: ItemRow,
-    targets: Awaited<ReturnType<typeof this.loadTargets>>,
+    targets: ReturnType<typeof this.targetsOf>,
   ) {
     if (row.item_type === 'page') {
       return targets.pages.get(row.page_id!)?.is_published === true;
@@ -150,65 +182,46 @@ export class ModuleService {
       return status === 'published' || status === 'closed';
     }
     if (row.item_type === 'file') return targets.files.has(row.file_id!);
+    // A draft topic does not exist for a student.
+    if (row.item_type === 'discussion') {
+      return targets.topics.get(row.discussion_topic_id!)?.is_published === true;
+    }
     return true;
   }
 
-  /** The pages, activities and files items point at, in three queries. */
-  private async loadTargets(items: ItemRow[]) {
-    const supabase = this.db();
-    const ids = (pick: (i: ItemRow) => string | null) => [
-      ...new Set(items.map(pick).filter((v): v is string => !!v)),
-    ];
-    const pageIds = ids((i) => (i.item_type === 'page' ? i.page_id : null));
-    const activityIds = ids((i) =>
-      i.item_type === 'activity' ? i.activity_id : null,
-    );
-    const fileIds = ids((i) => (i.item_type === 'file' ? i.file_id : null));
+  /** The pages, activities, files and topics items point at. */
+  private targetsOf(items: ItemWithTargets[]) {
+    const pages = new Map<string, { title: string; is_published: boolean }>();
+    const topics = new Map<string, { title: string; is_published: boolean }>();
+    const activities = new Map<string, ActivitySummary>();
+    const files = new Map<string, { name: string }>();
 
-    const none = Promise.resolve({ data: [] as any[] });
-    const [{ data: pages }, { data: activities }, { data: files }] =
-      await Promise.all([
-        pageIds.length
-          ? supabase
-              .schema('course')
-              .from('page')
-              .select('id, title, is_published')
-              .in('id', pageIds)
-          : none,
-        activityIds.length
-          ? supabase
-              .schema('grading')
-              .from('activity')
-              .select('id, title, kind, points, due_at, status')
-              .in('id', activityIds)
-          : none,
-        fileIds.length
-          ? supabase
-              .schema('file_manager')
-              .from('file')
-              .select('id, name')
-              .in('id', fileIds)
-              .is('deleted_at', null)
-          : none,
-      ]);
+    for (const i of items) {
+      if (i.item_type === 'page' && i.page) pages.set(i.page.id, i.page);
+      if (i.item_type === 'activity' && i.activity) {
+        const a = i.activity;
+        activities.set(a.id, {
+          id: a.id,
+          title: a.title,
+          kind: a.kind,
+          points: Number(a.points),
+          due_at: isoDate(a.due_at),
+          status: a.status,
+        });
+      }
+      // A deleted file is as good as gone.
+      if (i.item_type === 'file' && i.file && i.file.deleted_at === null) {
+        files.set(i.file.id, { name: i.file.name });
+      }
+      if (i.item_type === 'discussion' && i.discussion_topic) {
+        topics.set(i.discussion_topic.id, i.discussion_topic);
+      }
+    }
 
-    return {
-      pages: new Map<string, { title: string; is_published: boolean }>(
-        (pages ?? []).map((p: any) => [p.id, p]),
-      ),
-      activities: new Map<string, ActivitySummary>(
-        (activities ?? []).map((a: any) => [a.id, a]),
-      ),
-      files: new Map<string, { name: string }>(
-        (files ?? []).map((f: any) => [f.id, f]),
-      ),
-    };
+    return { pages, activities, files, topics };
   }
 
-  private toItem(
-    row: ItemRow,
-    targets: Awaited<ReturnType<typeof this.loadTargets>>,
-  ) {
+  private toItem(row: ItemRow, targets: ReturnType<typeof this.targetsOf>) {
     const activity = row.activity_id
       ? targets.activities.get(row.activity_id)
       : undefined;
@@ -217,6 +230,8 @@ export class ModuleService {
       (row.page_id && targets.pages.get(row.page_id)?.title) ||
       activity?.title ||
       (row.file_id && targets.files.get(row.file_id)?.name) ||
+      (row.discussion_topic_id &&
+        targets.topics.get(row.discussion_topic_id)?.title) ||
       'Untitled';
 
     return {
@@ -228,6 +243,7 @@ export class ModuleService {
       pageId: row.page_id,
       activityId: row.activity_id,
       fileId: row.file_id,
+      discussionTopicId: row.discussion_topic_id,
       url: row.url,
       indent: row.indent,
       isPublished: row.is_published,
@@ -245,20 +261,17 @@ export class ModuleService {
   }
 
   /** One item, shaped exactly as it appears in a module listing. */
-  private async shapeOne(row: ItemRow) {
-    return this.toItem(row, await this.loadTargets([row]));
+  private shapeOne(row: ItemWithTargets) {
+    return this.toItem(row, this.targetsOf([row]));
   }
 
   // ── modules ───────────────────────────────────────────────────────────────
 
   private async loadModule(courseId: string, moduleId: string) {
-    const { data } = await this.db()
-      .schema('course')
-      .from('module')
-      .select(MODULE_COLUMNS)
-      .eq('id', moduleId)
-      .eq('course_id', courseId)
-      .maybeSingle();
+    const data = await this.prisma.module.findFirst({
+      where: { id: moduleId, course_id: courseId },
+      select: MODULE_SELECT,
+    });
 
     if (!data) throw new NotFoundException('Module not found');
     return data;
@@ -273,19 +286,17 @@ export class ModuleService {
 
     const position = await this.nextPosition('module', 'course_id', courseId);
 
-    const { data, error } = await this.db()
-      .schema('course')
-      .from('module')
-      .insert({ course_id: courseId, title: trimmed, position })
-      .select(MODULE_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to create module: ${error?.message}`);
+    let m: ModuleRow;
+    try {
+      m = await this.prisma.module.create({
+        data: { course_id: courseId, title: trimmed, position },
+        select: MODULE_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to create module: ${(error as Error).message}`);
       throw new BadRequestException('Failed to create the module');
     }
 
-    const m = data;
     return {
       id: m.id,
       courseId: m.course_id,
@@ -305,7 +316,7 @@ export class ModuleService {
     await this.access.require(userId, courseId, MANAGE_ROLES);
     await this.loadModule(courseId, moduleId);
 
-    const changes: Record<string, unknown> = {};
+    const changes: Prisma.moduleUncheckedUpdateManyInput = {};
     if (patch.title !== undefined) {
       const title = patch.title.trim();
       if (!title) throw new BadRequestException('Give the module a title');
@@ -318,15 +329,13 @@ export class ModuleService {
       throw new BadRequestException('Nothing to update');
     }
 
-    const { error } = await this.db()
-      .schema('course')
-      .from('module')
-      .update(changes)
-      .eq('id', moduleId)
-      .eq('course_id', courseId);
-
-    if (error) {
-      this.logger.error(`Failed to update module: ${error.message}`);
+    try {
+      await this.prisma.module.updateMany({
+        where: { id: moduleId, course_id: courseId },
+        data: changes,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to update module: ${(error as Error).message}`);
       throw new BadRequestException('Failed to update the module');
     }
 
@@ -339,15 +348,12 @@ export class ModuleService {
     await this.access.require(userId, courseId, MANAGE_ROLES);
     await this.loadModule(courseId, moduleId);
 
-    const { error } = await this.db()
-      .schema('course')
-      .from('module')
-      .delete()
-      .eq('id', moduleId)
-      .eq('course_id', courseId);
-
-    if (error) {
-      this.logger.error(`Failed to delete module: ${error.message}`);
+    try {
+      await this.prisma.module.deleteMany({
+        where: { id: moduleId, course_id: courseId },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to delete module: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete the module');
     }
   }
@@ -356,14 +362,13 @@ export class ModuleService {
   async reorder(userId: string, courseId: string, moduleIds: string[]) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
-    const { data } = await this.db()
-      .schema('course')
-      .from('module')
-      .select('id')
-      .eq('course_id', courseId);
+    const data = await this.prisma.module.findMany({
+      where: { course_id: courseId },
+      select: { id: true },
+    });
 
     this.assertSameSet(
-      (data ?? []).map((r: any) => r.id as string),
+      data.map((r) => r.id),
       moduleIds,
       'module',
     );
@@ -374,14 +379,10 @@ export class ModuleService {
   // ── items ─────────────────────────────────────────────────────────────────
 
   private async loadItem(courseId: string, moduleId: string, itemId: string) {
-    const { data } = await this.db()
-      .schema('course')
-      .from('module_item')
-      .select(ITEM_COLUMNS)
-      .eq('id', itemId)
-      .eq('module_id', moduleId)
-      .eq('course_id', courseId)
-      .maybeSingle();
+    const data = await this.prisma.module_item.findFirst({
+      where: { id: itemId, module_id: moduleId, course_id: courseId },
+      select: ITEM_SELECT,
+    });
 
     if (!data) throw new NotFoundException('Module item not found');
     return data;
@@ -400,10 +401,10 @@ export class ModuleService {
       pageId?: string;
       activityId?: string;
       fileId?: string;
+      discussionTopicId?: string;
       url?: string;
     },
   ) {
-    const supabase = this.db();
     const title = input.title?.trim() || null;
     const row = {
       item_type: input.itemType,
@@ -411,19 +412,17 @@ export class ModuleService {
       page_id: null as string | null,
       activity_id: null as string | null,
       file_id: null as string | null,
+      discussion_topic_id: null as string | null,
       url: null as string | null,
     };
 
     switch (input.itemType) {
       case 'page': {
         if (!input.pageId) throw new BadRequestException('Choose a page');
-        const { data } = await supabase
-          .schema('course')
-          .from('page')
-          .select('id')
-          .eq('id', input.pageId)
-          .eq('course_id', course.id)
-          .maybeSingle();
+        const data = await this.prisma.page.findFirst({
+          where: { id: input.pageId, course_id: course.id },
+          select: { id: true },
+        });
         if (!data) throw new NotFoundException('Page not found');
         row.page_id = input.pageId;
         break;
@@ -432,32 +431,41 @@ export class ModuleService {
         if (!input.activityId) {
           throw new BadRequestException('Choose an assignment or quiz');
         }
-        const { data } = await supabase
-          .schema('grading')
-          .from('activity')
-          .select('id')
-          .eq('id', input.activityId)
-          .eq('course_id', course.id)
-          .maybeSingle();
+        const data = await this.prisma.activity.findFirst({
+          where: { id: input.activityId, course_id: course.id },
+          select: { id: true },
+        });
         if (!data) throw new NotFoundException('Assignment not found');
         row.activity_id = input.activityId;
         break;
       }
       case 'file': {
         if (!input.fileId) throw new BadRequestException('Choose a file');
-        const { data } = await supabase
-          .schema('file_manager')
-          .from('file')
-          .select('id')
-          .eq('id', input.fileId)
-          .eq('school_id', course.school_id)
-          // Only your own files: a colleague's private file id would
-          // otherwise put its name in front of the whole course.
-          .eq('owner_id', userId)
-          .is('deleted_at', null)
-          .maybeSingle();
+        const data = await this.prisma.file.findFirst({
+          where: {
+            id: input.fileId,
+            school_id: course.school_id,
+            // Only your own files: a colleague's private file id would
+            // otherwise put its name in front of the whole course.
+            owner_id: userId,
+            deleted_at: null,
+          },
+          select: { id: true },
+        });
         if (!data) throw new NotFoundException('File not found');
         row.file_id = input.fileId;
+        break;
+      }
+      case 'discussion': {
+        if (!input.discussionTopicId) {
+          throw new BadRequestException('Choose a discussion topic');
+        }
+        const data = await this.prisma.discussion_topic.findFirst({
+          where: { id: input.discussionTopicId, course_id: course.id },
+          select: { id: true },
+        });
+        if (!data) throw new NotFoundException('Discussion topic not found');
+        row.discussion_topic_id = input.discussionTopicId;
         break;
       }
       case 'link':
@@ -483,6 +491,7 @@ export class ModuleService {
       pageId?: string;
       activityId?: string;
       fileId?: string;
+      discussionTopicId?: string;
       url?: string;
       indent?: number;
     },
@@ -501,21 +510,22 @@ export class ModuleService {
       moduleId,
     );
 
-    const { data, error } = await this.db()
-      .schema('course')
-      .from('module_item')
-      .insert({
-        ...target,
-        module_id: moduleId,
-        course_id: courseId,
-        position,
-        indent: input.indent ?? 0,
-      })
-      .select(ITEM_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to add module item: ${error?.message}`);
+    let data: ItemWithTargets;
+    try {
+      data = await this.prisma.module_item.create({
+        data: {
+          ...target,
+          module_id: moduleId,
+          course_id: courseId,
+          position,
+          indent: input.indent ?? 0,
+        },
+        select: ITEM_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to add module item: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to add to the module');
     }
 
@@ -537,11 +547,14 @@ export class ModuleService {
     await this.access.require(userId, courseId, MANAGE_ROLES);
     const item = await this.loadItem(courseId, moduleId, itemId);
 
-    const changes: Record<string, unknown> = {};
+    const changes: Prisma.module_itemUncheckedUpdateInput = {};
     if (patch.title !== undefined) {
       const title = patch.title?.trim() || null;
       // Links and headers have nothing else to show.
-      if (!title && (item.item_type === 'link' || item.item_type === 'header')) {
+      if (
+        !title &&
+        (item.item_type === 'link' || item.item_type === 'header')
+      ) {
         throw new BadRequestException('This item needs a title');
       }
       changes.title = title;
@@ -563,24 +576,25 @@ export class ModuleService {
       throw new BadRequestException('Nothing to update');
     }
 
-    const { data, error } = await this.db()
-      .schema('course')
-      .from('module_item')
-      .update(changes)
-      .eq('id', itemId)
-      .eq('course_id', courseId)
-      .select(ITEM_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to update module item: ${error?.message}`);
+    let data: ItemWithTargets;
+    try {
+      // loadItem proved the item is in this course, so `id` alone is enough.
+      data = await this.prisma.module_item.update({
+        where: { id: itemId },
+        data: changes,
+        select: ITEM_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update module item: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to update the module item');
     }
 
     return this.shapeOne(data);
   }
 
-  /** Removes the item only; the page, activity or file it linked stays. */
+  /** Removes the item only; the page, activity, file or topic it linked stays. */
   async removeItem(
     userId: string,
     courseId: string,
@@ -590,15 +604,14 @@ export class ModuleService {
     await this.access.require(userId, courseId, MANAGE_ROLES);
     await this.loadItem(courseId, moduleId, itemId);
 
-    const { error } = await this.db()
-      .schema('course')
-      .from('module_item')
-      .delete()
-      .eq('id', itemId)
-      .eq('course_id', courseId);
-
-    if (error) {
-      this.logger.error(`Failed to delete module item: ${error.message}`);
+    try {
+      await this.prisma.module_item.deleteMany({
+        where: { id: itemId, course_id: courseId },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete module item: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to remove from the module');
     }
   }
@@ -613,15 +626,13 @@ export class ModuleService {
     await this.access.require(userId, courseId, MANAGE_ROLES);
     await this.loadModule(courseId, moduleId);
 
-    const { data } = await this.db()
-      .schema('course')
-      .from('module_item')
-      .select('id')
-      .eq('module_id', moduleId)
-      .eq('course_id', courseId);
+    const data = await this.prisma.module_item.findMany({
+      where: { module_id: moduleId, course_id: courseId },
+      select: { id: true },
+    });
 
     this.assertSameSet(
-      (data ?? []).map((r: any) => r.id as string),
+      data.map((r) => r.id),
       itemIds,
       'item',
     );
@@ -638,15 +649,17 @@ export class ModuleService {
     column: 'course_id' | 'module_id',
     id: string,
   ) {
-    const { data } = await this.db()
-      .schema('course')
-      .from(table)
-      .select('position')
-      .eq(column, id)
-      .order('position', { ascending: false })
-      .limit(1);
+    const query = {
+      where: { [column]: id },
+      orderBy: { position: 'desc' as const },
+      select: { position: true },
+    };
+    const data =
+      table === 'module'
+        ? await this.prisma.module.findFirst(query)
+        : await this.prisma.module_item.findFirst(query);
 
-    const top = (data)?.[0]?.position;
+    const top = data?.position;
     return top === undefined ? 0 : top + 1;
   }
 
@@ -670,16 +683,24 @@ export class ModuleService {
   }
 
   private async writePositions(table: 'module' | 'module_item', ids: string[]) {
-    const supabase = this.db();
-    const results = await Promise.all(
-      ids.map((id, position) =>
-        supabase.schema('course').from(table).update({ position }).eq('id', id),
-      ),
-    );
-
-    const failed = results.find((r: any) => r?.error);
-    if (failed) {
-      this.logger.error(`Failed to reorder ${table}: ${failed.error?.message}`);
+    try {
+      await this.prisma.$transaction(
+        ids.map((id, position) =>
+          table === 'module'
+            ? this.prisma.module.updateMany({
+                where: { id },
+                data: { position },
+              })
+            : this.prisma.module_item.updateMany({
+                where: { id },
+                data: { position },
+              }),
+        ),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to reorder ${table}: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to save the new order');
     }
   }

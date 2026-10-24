@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { buildUrl } from "@/lib/api";
 import {
+  isHttpsUrl,
   isSsoRequiredMessage,
+  looksLikeCertificate,
+  samlServiceProvider,
   ssoErrorMessage,
   ssoProviderName,
   ssoStartUrl,
@@ -57,4 +60,41 @@ test("ssoProviderName", () => {
     ssoProviderName({ id: "saml", label: "your school (SSO)", kind: "saml" }, "saml"),
   ).toBe("SAML");
   expect(ssoProviderName(undefined, "okta")).toBe("okta");
+  expect(ssoProviderName(undefined, "saml")).toBe("SAML");
+});
+
+describe("samlServiceProvider", () => {
+  test("points the IdP at the API's metadata and ACS routes", () => {
+    const sp = samlServiceProvider();
+    expect(sp.metadataUrl).toBe(buildUrl("/auth/sso/saml/metadata"));
+    expect(sp.acsUrl).toBe(buildUrl("/auth/sso/saml/acs"));
+    expect(sp.entityId).toBe(sp.metadataUrl);
+  });
+});
+
+describe("isHttpsUrl", () => {
+  test("accepts https only", () => {
+    expect(isHttpsUrl("https://idp.example.edu/sso/saml")).toBe(true);
+    expect(isHttpsUrl(" https://idp.example.edu ")).toBe(true);
+    expect(isHttpsUrl("http://idp.example.edu/sso")).toBe(false);
+    expect(isHttpsUrl("idp.example.edu")).toBe(false);
+    expect(isHttpsUrl("")).toBe(false);
+  });
+});
+
+describe("looksLikeCertificate", () => {
+  const body = "MIIC".padEnd(200, "A");
+  test("accepts a PEM block or a bare base64 body", () => {
+    expect(
+      looksLikeCertificate(`-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`),
+    ).toBe(true);
+    expect(looksLikeCertificate(body)).toBe(true);
+  });
+
+  test("rejects other text", () => {
+    expect(looksLikeCertificate("")).toBe(false);
+    expect(looksLikeCertificate("MIIC")).toBe(false);
+    expect(looksLikeCertificate(`-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`)).toBe(false);
+    expect(looksLikeCertificate("not a certificate at all, really")).toBe(false);
+  });
 });

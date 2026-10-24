@@ -2,7 +2,6 @@ import {
   IsOptional,
   IsDateString,
   IsInt,
-  IsBoolean,
   IsNotEmpty,
   IsString,
   MaxLength,
@@ -24,22 +23,6 @@ export class UpdateTermDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  examWeight?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  courseworkWeight?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  isMinistryReporting?: boolean;
 
   @IsOptional()
   @IsInt()

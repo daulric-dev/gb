@@ -1,6 +1,4 @@
-import type { Tables } from '@/types/database.types';
-
-type Term = Tables<'term'>;
+import type { TermRow as Term } from './term.rows';
 
 export interface MessageResponse {
   message: string;

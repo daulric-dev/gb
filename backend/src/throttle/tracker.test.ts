@@ -1,22 +1,14 @@
-import { afterAll, beforeAll, describe, test, expect } from 'bun:test';
-import {
-  accessTokenFromCookies,
-  getClientIp,
-  getSessionTracker,
-  fingerprint,
-  verifiedSubject,
-} from './tracker';
-import { mintUploadToken } from '@/supabase/upload-token';
+import { describe, test, expect } from 'bun:test';
+import { createMockPrisma } from '@/test/prisma-mock';
+import { createMockCacheService } from '@/test/mocks';
+import { SESSION_COOKIE, SessionService } from '@/account/session.service';
+import { getClientIp, getSessionTracker, fingerprint } from './tracker';
 
-const SECRET = 'test-jwt-secret-with-enough-length';
-
-function token(userId: string, ttlSeconds = 60, secret = SECRET) {
-  return mintUploadToken({ userId, ttlSeconds, secret }).token;
-}
-
-function ssrCookie(accessToken: string) {
-  const json = JSON.stringify({ access_token: accessToken, token_type: 'bearer' });
-  return `base64-${Buffer.from(json).toString('base64url')}`;
+/** A session token as SessionService issues it. */
+async function issuedToken(): Promise<string> {
+  const service = new SessionService(createMockPrisma() as any, createMockCacheService() as any);
+  const reply = { setCookie: () => {}, clearCookie: () => {} };
+  return service.create(reply as any, { headers: {} } as any, 'u1', 'email-code');
 }
 
 describe('getClientIp', () => {
@@ -41,109 +33,34 @@ describe('getClientIp', () => {
   });
 });
 
-describe('verifiedSubject', () => {
-  test('returns sub for a correctly signed, unexpired token', () => {
-    expect(verifiedSubject(token('user-1'), SECRET)).toBe('user-1');
-  });
-
-  test('rejects a token signed with another secret', () => {
-    expect(verifiedSubject(token('user-1', 60, 'other'), SECRET)).toBeUndefined();
-  });
-
-  test('rejects an expired token', () => {
-    const t = token('user-1', 60);
-    const later = Math.floor(Date.now() / 1000) + 3600;
-    expect(verifiedSubject(t, SECRET, later)).toBeUndefined();
-  });
-
-  test('rejects a tampered payload', () => {
-    const [h, , s] = token('user-1').split('.');
-    const forged = Buffer.from(JSON.stringify({ sub: 'admin' })).toString('base64url');
-    expect(verifiedSubject(`${h}.${forged}.${s}`, SECRET)).toBeUndefined();
-  });
-
-  test('rejects garbage and missing secrets', () => {
-    expect(verifiedSubject('abc.def', SECRET)).toBeUndefined();
-    expect(verifiedSubject('a.b.c', SECRET)).toBeUndefined();
-    expect(verifiedSubject(token('user-1'), undefined)).toBeUndefined();
-    expect(verifiedSubject(token('user-1'), '')).toBeUndefined();
-  });
-});
-
-describe('accessTokenFromCookies', () => {
-  test('reads a base64 @supabase/ssr session cookie', () => {
-    const t = token('user-1');
-    expect(accessTokenFromCookies({ 'sb-ref-auth-token': ssrCookie(t) })).toBe(t);
-  });
-
-  test('reassembles chunked cookies in order', () => {
-    const t = token('user-1');
-    const full = ssrCookie(t);
-    const mid = Math.floor(full.length / 2);
-    expect(
-      accessTokenFromCookies({
-        'sb-ref-auth-token.1': full.slice(mid),
-        'sb-ref-auth-token.0': full.slice(0, mid),
-      }),
-    ).toBe(t);
-  });
-
-  test('ignores unrelated and malformed cookies', () => {
-    expect(accessTokenFromCookies({ theme: 'dark' })).toBeUndefined();
-    expect(accessTokenFromCookies({ 'sb-ref-auth-token': 'junk' })).toBeUndefined();
-  });
-});
-
 describe('getSessionTracker', () => {
-  const prev = process.env.SUPABASE_JWT_SECRET;
-  beforeAll(() => {
-    process.env.SUPABASE_JWT_SECRET = SECRET;
-  });
-  afterAll(() => {
-    if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
-    else process.env.SUPABASE_JWT_SECRET = prev;
-  });
-
-  test('keys a verified Bearer token by user, not by token', () => {
-    const a = getSessionTracker({ headers: { authorization: `Bearer ${token('u1', 60)}` } });
-    const b = getSessionTracker({ headers: { authorization: `bearer  ${token('u1', 120)} ` } });
-    expect(a).toBe(`u:${fingerprint('u1')}`);
-    expect(b).toBe(a);
+  test('keys an issued session cookie by session', async () => {
+    const a = await issuedToken();
+    const b = await issuedToken();
+    const ta = getSessionTracker({ cookies: { [SESSION_COOKIE]: a } });
+    expect(ta).toBe(`s:${fingerprint(a)}`);
+    expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: a, theme: 'x' } })).toBe(ta);
+    expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: b } })).not.toBe(ta);
   });
 
-  test('random Bearer values do not get their own bucket', () => {
-    expect(
-      getSessionTracker({ headers: { authorization: 'Bearer rotating-1' } }),
-    ).toBeUndefined();
-    expect(
-      getSessionTracker({ headers: { authorization: 'Bearer a.b.c' } }),
-    ).toBeUndefined();
+  test('made-up and tampered cookies do not get their own bucket', async () => {
+    const real = await issuedToken();
+    const [random, tag] = real.split('.');
+    for (const value of ['rotating-1', 'a.b', `${random}x.${tag}`, `${random}.${tag}x`, '.x']) {
+      expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: value } })).toBeUndefined();
+    }
   });
 
-  test('falls back to the session cookie', () => {
-    const tracker = getSessionTracker({
-      cookies: { 'sb-ref-auth-token': ssrCookie(token('u2')), theme: 'x' },
-    });
-    expect(tracker).toBe(`u:${fingerprint('u2')}`);
+  test('does not leak the token', async () => {
+    const t = await issuedToken();
+    expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: t } })).not.toContain(t);
   });
 
-  test('forged cookies do not get their own bucket', () => {
-    expect(
-      getSessionTracker({ cookies: { 'sb-ref-auth-token': ssrCookie('x.y.z') } }),
-    ).toBeUndefined();
-  });
-
-  test('does not leak the user id or token', () => {
-    const t = token('user-secret-id');
-    const tracker = getSessionTracker({ headers: { authorization: `Bearer ${t}` } });
-    expect(tracker).not.toContain('user-secret-id');
-    expect(tracker).not.toContain(t);
-  });
-
-  test('returns undefined when there is no identifying material', () => {
+  test('ignores bearer headers and other cookies', async () => {
+    const t = await issuedToken();
+    expect(getSessionTracker({ headers: { authorization: `Bearer ${t}` } })).toBeUndefined();
+    expect(getSessionTracker({ cookies: { 'sb-ref-auth-token': t } })).toBeUndefined();
     expect(getSessionTracker({ headers: {} })).toBeUndefined();
     expect(getSessionTracker({})).toBeUndefined();
-    expect(getSessionTracker({ headers: { authorization: 'Basic xyz' } })).toBeUndefined();
   });
-
 });

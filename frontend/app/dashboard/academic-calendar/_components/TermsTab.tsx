@@ -134,9 +134,6 @@ export function TermsTab({
                 ) : (
                   <Badge variant="secondary">Inactive</Badge>
                 )}
-                <Badge variant="outline">
-                  {year.grading_model.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
-                </Badge>
               </div>
               {can("term", "create") && (
                 <Button
@@ -161,8 +158,6 @@ export function TermsTab({
                       <TableHead>Term</TableHead>
                       <TableHead>Start</TableHead>
                       <TableHead>End</TableHead>
-                      <TableHead>Exam / CW</TableHead>
-                      <TableHead>Ministry</TableHead>
                       {(can("term", "update") || can("term", "delete")) && (
                         <TableHead className="text-right">Actions</TableHead>
                       )}
@@ -179,18 +174,6 @@ export function TermsTab({
                         </TableCell>
                         <TableCell>
                           {new Date(term.end_date).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {term.exam_weight}% / {term.coursework_weight}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {term.is_ministry_reporting ? (
-                            <Badge>Yes</Badge>
-                          ) : (
-                            <span className="text-muted-foreground">No</span>
-                          )}
                         </TableCell>
                         {(can("term", "update") || can("term", "delete")) && (
                           <TableCell className="text-right space-x-1">

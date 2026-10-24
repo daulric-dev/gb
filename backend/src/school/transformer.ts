@@ -1,6 +1,4 @@
-import type { Tables } from '@/types/database.types';
-
-type School = Tables<'school'>;
+import type { school as School } from '@/generated/prisma/client';
 
 export function v1SchoolList(data: School[]): School[] {
   return data;

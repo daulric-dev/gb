@@ -6,7 +6,11 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Plus } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { Course } from "@/lib/courses/types";
+import type {
+  CopiedCourse,
+  Course,
+  CourseTemplate,
+} from "@/lib/courses/types";
 import type { TermOption, YearOption } from "@/lib/courses/calendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +25,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CourseCalendarFields } from "./CourseCalendarFields";
+import {
+  CopyDateFields,
+  copyDatesOf,
+  EMPTY_DATE_CHOICE,
+  type DateChoice,
+} from "./CopyDateFields";
+
+const BLANK = "blank";
 
 export function CreateCourseDialog({
   years,
@@ -40,8 +59,18 @@ export function CreateCourseDialog({
   const yearId = useSignal("");
   const termId = useSignal("");
   const saving = useSignal(false);
+  // "Start from a template": the school's templates, loaded when the dialog
+  // opens; BLANK is an empty course.
+  const templates = useSignal<CourseTemplate[]>([]);
+  const templateId = useSignal(BLANK);
+  const dates = useSignal<DateChoice>(EMPTY_DATE_CHOICE);
 
   function reset() {
+    templateId.value = BLANK;
+    dates.value = EMPTY_DATE_CHOICE;
+    api<CourseTemplate[]>("/courses/templates")
+      .then((data) => (templates.value = data))
+      .catch(() => (templates.value = []));
     name.value = "";
     code.value = "";
     description.value = "";
@@ -54,6 +83,11 @@ export function CreateCourseDialog({
     e.preventDefault();
     if (!name.value.trim()) {
       toast.error("Give the course a name");
+      return;
+    }
+
+    if (templateId.value !== BLANK) {
+      await createFromTemplate(templateId.value);
       return;
     }
 
@@ -79,6 +113,41 @@ export function CreateCourseDialog({
     }
   }
 
+  /** Copy the template into a new draft course the caller teaches. */
+  async function createFromTemplate(id: string) {
+    const dateFields = copyDatesOf(dates.value);
+    if (typeof dateFields === "string") {
+      toast.error(dateFields);
+      return;
+    }
+    saving.value = true;
+    try {
+      const course = await api<CopiedCourse>(`/courses/${id}/copy`, {
+        method: "POST",
+        body: {
+          name: name.value.trim(),
+          code: code.value.trim() || undefined,
+          academicYearId: yearId.value || undefined,
+          termId: termId.value || undefined,
+          ...dateFields,
+        },
+      });
+      toast.success("Course created from the template as a draft");
+      open.value = false;
+      router.push(`/dashboard/courses/${course.id}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to create");
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  const fromTemplate = templateId.value !== BLANK;
+  const templateItems = [
+    { value: BLANK, label: "Blank course" },
+    ...templates.value.map((t) => ({ value: t.id, label: t.name })),
+  ];
+
   return (
     <Dialog
       open={open.value}
@@ -100,6 +169,37 @@ export function CreateCourseDialog({
               until you publish it.
             </DialogDescription>
           </DialogHeader>
+
+          {templates.value.length > 0 && (
+            <div className="space-y-2">
+              <Label>Start from a template</Label>
+              <Select
+                value={templateId.value}
+                onValueChange={(v) => (templateId.value = v as string)}
+                items={templateItems}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {templateItems.map((t) => {
+                    const tpl = templates.value.find((x) => x.id === t.value);
+                    return (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                        {tpl && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {tpl.moduleCount} modules · {tpl.activityCount}{" "}
+                            activities
+                          </span>
+                        )}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
             <div className="space-y-2">
@@ -126,16 +226,18 @@ export function CreateCourseDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="courseDescription">Description</Label>
-            <Textarea
-              id="courseDescription"
-              rows={3}
-              placeholder="What the course covers. Markdown works."
-              value={description.value}
-              onChange={(e) => (description.value = e.target.value)}
-            />
-          </div>
+          {!fromTemplate && (
+            <div className="space-y-2">
+              <Label htmlFor="courseDescription">Description</Label>
+              <Textarea
+                id="courseDescription"
+                rows={3}
+                placeholder="What the course covers. Markdown works."
+                value={description.value}
+                onChange={(e) => (description.value = e.target.value)}
+              />
+            </div>
+          )}
 
           <CourseCalendarFields
             years={years}
@@ -147,6 +249,14 @@ export function CreateCourseDialog({
               termId.value = next.termId;
             }}
           />
+
+          {fromTemplate && (
+            <CopyDateFields
+              value={dates.value}
+              onChangeAction={(next) => (dates.value = next)}
+              disabled={saving.value}
+            />
+          )}
 
           <DialogFooter>
             <Button

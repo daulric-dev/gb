@@ -12,10 +12,11 @@ import {
   Layers,
   Link2,
   Loader2,
+  MessagesSquare,
   Paperclip,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { fetchFileBlob } from "@/lib/files/content";
+import { fetchCourseFileBlob } from "@/lib/files/content";
 import { cn } from "@/lib/utils";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { Badge } from "@/components/ui/badge";
@@ -179,6 +180,21 @@ function ModuleItemRow({
     );
   }
 
+  if (item.itemType === "discussion" && item.discussionTopicId) {
+    return (
+      <li>
+        <Link
+          href={`/portal/courses/${courseId}/discussions/${item.discussionTopicId}`}
+          style={indent}
+          className={rowClass}
+        >
+          <MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
+        </Link>
+      </li>
+    );
+  }
+
   if (item.itemType === "link" && item.url) {
     return (
       <li>
@@ -205,14 +221,14 @@ function ModuleItemRow({
       const win = window.open("", "_blank");
       opening.value = true;
       try {
-        const blob = await fetchFileBlob(fileId, "content");
+        const blob = await fetchCourseFileBlob(courseId, fileId);
         const url = URL.createObjectURL(blob);
         if (win) win.location.href = url;
         else window.location.href = url;
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       } catch {
         win?.close();
-        toast.error("This file isn't available to you yet. Ask your teacher to share it.");
+        toast.error("This file could not be opened. Try again, or ask your teacher.");
       } finally {
         opening.value = false;
       }

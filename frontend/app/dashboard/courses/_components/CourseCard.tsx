@@ -15,6 +15,8 @@ export type CourseCardData = Pick<
 > & {
   /** Handed-in work not yet marked, when known. */
   awaitingMarking?: number;
+  /** A school template; the dashboard summary leaves it out. */
+  isTemplate?: boolean;
 };
 
 export function CourseCard({
@@ -46,10 +48,20 @@ export function CourseCard({
               {course.code}
             </span>
           )}
-          <CourseStatusBadge
-            status={course.status}
-            className="absolute top-2 right-2 bg-background/90 backdrop-blur-sm"
-          />
+          <div className="absolute top-2 right-2 flex gap-1">
+            {course.isTemplate && (
+              <Badge
+                variant="secondary"
+                className="bg-background/90 backdrop-blur-sm"
+              >
+                Template
+              </Badge>
+            )}
+            <CourseStatusBadge
+              status={course.status}
+              className="bg-background/90 backdrop-blur-sm"
+            />
+          </div>
         </div>
         <div className="flex flex-1 flex-col gap-2 p-4">
           <h3 className="line-clamp-2 font-semibold leading-snug group-hover:underline group-hover:underline-offset-4">

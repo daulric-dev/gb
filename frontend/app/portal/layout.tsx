@@ -9,10 +9,13 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
 import { isStudentProfile, loginPath, SCAN_PATH } from "@/lib/routing";
 import { api } from "@/lib/api";
+import { resetBillingState } from "@/lib/billing";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { AttendanceBanner } from "./_components/attendance-banner";
+import { BillingBanner, BillingStatusLoader } from "@/components/billing/billing-banner";
+import { NotificationBell } from "./_components/notification-bell";
 import {
   Avatar,
   AvatarFallback,
@@ -26,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BookOpen,
+  CalendarDays,
   CheckSquare,
   GraduationCap,
   LayoutDashboard,
@@ -37,6 +41,7 @@ const NAV = [
   { href: "/portal/courses", label: "Courses", icon: BookOpen },
   { href: "/portal/grades", label: "Grades", icon: GraduationCap },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
+  { href: "/portal/calendar", label: "Calendar", icon: CalendarDays },
 ];
 
 export default function PortalLayout({
@@ -102,6 +107,7 @@ export default function PortalLayout({
     } catch {
       toast.error("Failed to log out");
     }
+    resetBillingState();
     router.push("/login");
   }
 
@@ -126,6 +132,7 @@ export default function PortalLayout({
           </Link>
 
           <div className="ml-auto flex items-center gap-1">
+            <NotificationBell />
             <ModeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -175,7 +182,9 @@ export default function PortalLayout({
         </nav>
       </header>
 
+      <BillingStatusLoader schoolId={student.school.id} />
       <main className="mx-auto max-w-5xl p-4 md:p-6">
+        <BillingBanner audience="student" />
         {/* The scan page is itself the check-in for that session. */}
         {!isScan && <AttendanceBanner />}
         {children}

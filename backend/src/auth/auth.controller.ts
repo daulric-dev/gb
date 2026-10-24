@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiConsumes,
+  ApiExcludeEndpoint,
   ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
@@ -30,9 +31,8 @@ import { StudentMembershipService } from '@/student-account/student-membership.s
 import { UpdateProfileDto } from '@/auth/dto/update-profile.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { SessionService } from '@/account/session.service';
 import { VersioningService } from '@/versioning/versioning.service';
-import { MultipartFile } from '@fastify/multipart';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -40,7 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly imagesService: ImagesService,
-    private readonly supabaseService: SupabaseService,
+    private readonly sessions: SessionService,
     private readonly versioning: VersioningService,
     private readonly membership: StudentMembershipService,
     private readonly emailDomains: EmailDomainService,
@@ -54,6 +54,17 @@ export class AuthController {
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
     const message = await this.authService.sendOtp(dto.email);
     return this.versioning.resolve(req, 'auth.message')(message);
+  }
+
+  /**
+   * Dev-only: issue a sign-in code and return it instead of mailing it, for
+   * local scripts. 404 unless NODE_ENV !== 'production' and
+   * ALLOW_DEV_LOGIN=true.
+   */
+  @ApiExcludeEndpoint()
+  @Post('dev/code')
+  async devCode(@Body() dto: SendOtpDto) {
+    return this.authService.devCode(dto.email);
   }
 
   @Post('otp/verify')
@@ -100,7 +111,10 @@ export class AuthController {
     // the domain. Skipped when they picked a school themselves, and harmless
     // when nothing matches.
     if (!raw?.school_id && !dto.schoolId) {
-      const joined = await this.emailDomains.tryAutoJoin(userId, req.user.email as string);
+      const joined = await this.emailDomains.tryAutoJoin(
+        userId,
+        req.user.email as string,
+      );
       if (joined?.status === 'joined') {
         raw = await this.authService.getProfile(userId);
       }
@@ -144,7 +158,7 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<string> {
-    await this.supabaseService.signOut(req, res);
+    await this.sessions.revoke(req, res);
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 
@@ -156,32 +170,35 @@ export class AuthController {
   @ApiProduces('image/*')
   async getAvatar(@Req() req: any, @Res() res: FastifyReply) {
     const userId: string = req.user.id;
-    const { blob, contentType } =
+    const { body, contentType, size } =
       await this.imagesService.getImageFromUserProfile(userId);
 
-    const buffer = Buffer.from(await blob.arrayBuffer());
-
-    return res
+    res
       .header('Content-Type', contentType)
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, max-age=3600')
-      .send(buffer);
+      .header('X-Content-Type-Options', 'nosniff');
+    if (size !== null) res.header('Content-Length', size);
+    return res.send(body);
   }
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Post('avatar')
   @ApiConsumes('multipart/form-data')
-  async uploadAvatar(@Req() req: any) {
-    const file: MultipartFile = await req.file();
+  async uploadAvatar(@Req() req: FastifyRequest) {
+    const file = await req.file();
 
     if (!file) {
       throw new BadRequestException('No file provided');
     }
 
-    const userId: string = req.user.id;
+    const userId: string = (req as any).user.id;
 
-    const result = await this.imagesService.setImageToUserProfile(userId, file);
+    const result = await this.imagesService.setImageToUserProfile(
+      userId,
+      file,
+      requestOrigin(req),
+    );
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
 
@@ -189,10 +206,10 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar/resumable')
   async createResumableUpload(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Body() dto: CreateResumableUploadDto,
   ) {
-    const userId: string = req.user.id;
+    const userId: string = (req as any).user.id;
     const result = await this.imagesService.createResumableUpload(
       userId,
       dto.filename,
@@ -206,14 +223,21 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('avatar/complete')
   async completeResumableUpload(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Body() dto: CompleteUploadDto,
   ) {
-    const userId: string = req.user.id;
+    const userId: string = (req as any).user.id;
     const result = await this.imagesService.completeResumableUpload(
       userId,
       dto.path,
+      requestOrigin(req),
     );
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
+}
+
+/** This API's origin as the caller reached it, for links back to it. */
+function requestOrigin(req: FastifyRequest): string | undefined {
+  const host = req.headers?.host;
+  return host ? `${req.protocol}://${host}` : undefined;
 }

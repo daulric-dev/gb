@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { PermissionGuard } from './permission.guard';
-import { createRoutingSupabase, expectRejection } from '@/test/mocks';
+import { expectRejection } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 
 function makeContext(request: any) {
   return {
@@ -21,53 +22,61 @@ const noopCache = {
   deleteByPrefix: async () => {},
 } as any;
 
-const guardWith = (sb: any, key: string | undefined, cache: any = noopCache) =>
-  new PermissionGuard(reflector(key), sb, cache);
+const guardWith = (
+  prisma: any,
+  key: string | undefined,
+  cache: any = noopCache,
+) => new PermissionGuard(reflector(key), cache, prisma);
+
+/** A membership as computeEffectivePermissions selects it. */
+const membership = (role: string, grantedKeys: string[] = []) => ({
+  role,
+  school_management_role: grantedKeys.length
+    ? [
+        {
+          school_role: {
+            school_role_permission: grantedKeys.map((key) => ({
+              permission_catalog: { key },
+            })),
+          },
+        },
+      ]
+    : [],
+});
 
 describe('PermissionGuard', () => {
   test('is inert when the route has no @RequirePermission metadata', async () => {
-    const guard = guardWith({}, undefined);
+    const guard = guardWith(createMockPrisma(), undefined);
     expect(await guard.canActivate(makeContext({}))).toBe(true);
   });
 
   test('fails closed when request.user is missing', async () => {
-    const guard = guardWith({}, 'student:read');
+    const guard = guardWith(createMockPrisma(), 'student:read');
     expect(
       await expectRejection(guard.canActivate(makeContext({}))),
     ).toBeInstanceOf(ForbiddenException);
   });
 
   test('admin is granted any catalog permission in their school', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        school_management: { data: { id: 'm1', role: 'admin' }, error: null },
-      },
-    });
-    const guard = guardWith(sb, 'student:delete');
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(membership('admin'));
+    const guard = guardWith(prisma, 'term:delete');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
 
   test('teacher default allows a mapped key', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        school_management: { data: { id: 'm1', role: 'teacher' }, error: null },
-        school_management_role: { data: [], error: null },
-      },
-    });
-    const guard = guardWith(sb, 'course:create');
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(membership('teacher'));
+    const guard = guardWith(prisma, 'course:create');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
 
   test('teacher default denies an unmapped key', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        school_management: { data: { id: 'm1', role: 'teacher' }, error: null },
-        school_management_role: { data: [], error: null },
-      },
-    });
-    const guard = guardWith(sb, 'course:delete');
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(membership('teacher'));
+    const guard = guardWith(prisma, 'course:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
       ForbiddenException,
@@ -75,20 +84,11 @@ describe('PermissionGuard', () => {
   });
 
   test('a custom role grants an otherwise-denied key', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        school_management: { data: { id: 'm1', role: 'member' }, error: null },
-        school_management_role: {
-          data: [{ school_role_id: 'r1' }],
-          error: null,
-        },
-        school_role_permission: {
-          data: [{ permission_catalog: { key: 'course:delete' } }],
-          error: null,
-        },
-      },
-    });
-    const guard = guardWith(sb, 'course:delete');
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(
+      membership('member', ['course:update']),
+    );
+    const guard = guardWith(prisma, 'course:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
   });
@@ -96,10 +96,8 @@ describe('PermissionGuard', () => {
   test('a student is denied every staff route', async () => {
     // A claimed student has a school_id, so the guard resolves a school - but
     // students have no school_management row, which is what fails them closed.
-    const sb = createRoutingSupabase({
-      tables: { school_management: { data: null, error: null } },
-    });
-    const guard = guardWith(sb, 'student:read');
+    const prisma = createMockPrisma();
+    const guard = guardWith(prisma, 'student:read');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
 
     const err = await expectRejection(guard.canActivate(ctx));
@@ -108,10 +106,8 @@ describe('PermissionGuard', () => {
   });
 
   test('a non-member of the resolved school is denied', async () => {
-    const sb = createRoutingSupabase({
-      tables: { school_management: { data: null, error: null } },
-    });
-    const guard = guardWith(sb, 'student:read');
+    const prisma = createMockPrisma();
+    const guard = guardWith(prisma, 'student:read');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
       ForbiddenException,
@@ -119,20 +115,20 @@ describe('PermissionGuard', () => {
   });
 
   test('resolves school context from a courseId when no :schoolId is present', async () => {
-    const sb = createRoutingSupabase({
-      tables: {
-        'course.course': { data: { school_id: 's1' }, error: null },
-        school_management: { data: { id: 'm1', role: 'admin' }, error: null },
-      },
-    });
-    const guard = guardWith(sb, 'course:read');
+    const prisma = createMockPrisma();
+    prisma.course.findUnique.mockResolvedValue({ school_id: 's1' });
+    prisma.school_management.findFirst.mockResolvedValue(membership('admin'));
+    const guard = guardWith(prisma, 'course:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { courseId: 'c1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
 
-    const lookup = sb._calls.find(
-      (c: any) => c.schema === 'course' && c.table === 'course',
-    );
-    expect(lookup?.filters.id).toBe('c1');
+    expect(prisma.course.findUnique.mock.calls[0][0].where).toEqual({
+      id: 'c1',
+    });
+    expect(prisma.school_management.findFirst.mock.calls[0][0].where).toEqual({
+      user_id: 'u1',
+      school_id: 's1',
+    });
   });
 
   test('uses the cached effective set without hitting the DB', async () => {
@@ -141,12 +137,15 @@ describe('PermissionGuard', () => {
       set: async () => {},
       deleteByPrefix: async () => {},
     } as any;
-    // Supabase that throws if queried, proving the cache short-circuits.
-    const exploding = {
-      getServiceClient: () => {
-        throw new Error('should not query the DB on a cache hit');
+    // A database that throws if queried, proving the cache short-circuits.
+    const exploding = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('should not query the DB on a cache hit');
+        },
       },
-    };
+    );
     const guard = guardWith(exploding, 'student:read', cache);
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);

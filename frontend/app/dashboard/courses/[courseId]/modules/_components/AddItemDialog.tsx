@@ -10,6 +10,7 @@ import {
   Heading,
   Link2,
   Loader2,
+  MessagesSquare,
   Paperclip,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -20,6 +21,10 @@ import type {
   ModuleItemType,
 } from "@/lib/courses/types";
 import { ACTIVITY_KIND_LABEL } from "@/lib/courses/format";
+import type {
+  DiscussionList,
+  DiscussionTopicSummary,
+} from "@/lib/courses/discussions";
 import type { FileItem } from "@/app/dashboard/files/_components/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -46,6 +51,7 @@ const TYPES: { type: ModuleItemType; label: string; icon: typeof FileText }[] = 
   { type: "page", label: "Page", icon: FileText },
   { type: "activity", label: "Assignment", icon: ClipboardList },
   { type: "file", label: "File", icon: Paperclip },
+  { type: "discussion", label: "Discussion", icon: MessagesSquare },
   { type: "link", label: "Link", icon: Link2 },
   { type: "header", label: "Text header", icon: Heading },
 ];
@@ -72,6 +78,7 @@ export function AddItemDialog({
   const pages = useSignal<CoursePageSummary[]>([]);
   const activities = useSignal<Activity[]>([]);
   const files = useSignal<FileItem[]>([]);
+  const topics = useSignal<DiscussionTopicSummary[]>([]);
   const loading = useSignal(true);
   const target = useSignal("");
   const title = useSignal("");
@@ -93,13 +100,17 @@ export function AddItemDialog({
         () => [] as Activity[],
       ),
       api<FileItem[]>("/files?filter=all").catch(() => [] as FileItem[]),
-    ]).then(([p, a, f]) => {
+      api<DiscussionList>(`/courses/${courseId}/discussions`)
+        .then((d) => d.topics)
+        .catch(() => [] as DiscussionTopicSummary[]),
+    ]).then(([p, a, f, d]) => {
       pages.value = p;
       activities.value = a;
       files.value = f.filter((x) => x.status === "ready");
+      topics.value = d;
       loading.value = false;
     });
-  }, [open, courseId, type, target, title, url, loading, pages, activities, files]);
+  }, [open, courseId, type, target, title, url, loading, pages, activities, files, topics]);
 
   function pick(next: ModuleItemType) {
     type.value = next;
@@ -124,6 +135,9 @@ export function AddItemDialog({
     } else if (t === "file") {
       if (!target.value) return toast.error("Choose a file");
       body.fileId = target.value;
+    } else if (t === "discussion") {
+      if (!target.value) return toast.error("Choose a discussion topic");
+      body.discussionTopicId = target.value;
     } else if (t === "link") {
       let parsed: URL;
       try {
@@ -180,9 +194,16 @@ export function AddItemDialog({
           }))
         : type.value === "file"
           ? files.value.map((f) => ({ value: f.id, label: f.name }))
-          : [];
+          : type.value === "discussion"
+            ? topics.value.map((d) => ({
+                value: d.id,
+                label: d.isPublished ? d.title : `${d.title} (draft)`,
+              }))
+            : [];
 
-  const needsTarget = ["page", "activity", "file"].includes(type.value);
+  const needsTarget = ["page", "activity", "file", "discussion"].includes(
+    type.value,
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChangeAction}>
@@ -195,7 +216,7 @@ export function AddItemDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {TYPES.map((t) => {
               const Icon = t.icon;
               const active = type.value === t.type;
@@ -226,7 +247,9 @@ export function AddItemDialog({
               <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
                 {type.value === "activity"
                   ? "No assignments yet. Create one on the Assignments tab."
-                  : "No files yet. Upload one in Files first."}
+                  : type.value === "discussion"
+                    ? "No discussion topics yet. Start one on the Discussions tab."
+                    : "No files yet. Upload one in Files first."}
               </p>
             ) : (
               <div className="space-y-2">
@@ -235,7 +258,9 @@ export function AddItemDialog({
                     ? "Page"
                     : type.value === "activity"
                       ? "Assignment"
-                      : "File"}
+                      : type.value === "discussion"
+                        ? "Discussion topic"
+                        : "File"}
                 </Label>
                 <Select
                   value={target.value || null}

@@ -5,37 +5,43 @@
  *   bun run seed:demo --fresh    delete the demo school and accounts first
  *   bun run seed:demo otp <email>  print a login code without sending mail
  *
- * Needs the local Supabase stack (`bun run db:start` at the root) and the API
- * running on :3001 (`bun run start:dev`). Accounts, the school and its roster
- * go in through the service client - that is what onboarding would have done.
- * Everything course-shaped goes through the real API as the teacher or
- * student who would do it, so seeding also exercises the endpoints.
+ * Needs the local database (DATABASE_URL in backend/.env) and the API running
+ * on :3001 (`bun run start:dev`) with ALLOW_DEV_LOGIN=true. Accounts, the
+ * school and its roster go straight into the database - that is what
+ * onboarding would have done. Everything course-shaped goes through the real
+ * API as the teacher or student who would do it, so seeding also exercises
+ * the endpoints.
  *
- * Local Supabase sends at most two emails an hour, so log in with the `otp`
- * mode rather than asking the login page to email a code.
+ * Sign-in codes come from the API's dev-only endpoint (POST /auth/dev/code),
+ * so the `otp` mode prints a code without sending mail.
  */
-import { createClient } from '@supabase/supabase-js';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client';
 
 // API_URL is the API origin, as in .env.example; routes live under /api.
 const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
-const SUPA = 'http://127.0.0.1:54321';
-// The fixed service-role key every local Supabase stack uses.
-const SERVICE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
 
 const SCHOOL_NAME = 'Riverside Academy';
 const DOMAIN = 'demo.test';
 
-const db = createClient(SUPA, SERVICE_KEY, { auth: { persistSession: false } });
+const db = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
+/** A sign-in code from the API's dev-only endpoint (needs ALLOW_DEV_LOGIN=true). */
 async function mintOtp(email: string): Promise<string> {
-  const { data, error } = await db.auth.admin.generateLink({ type: 'magiclink', email });
-  if (error) throw error;
-  const otp = data.properties?.email_otp;
-  if (!otp) throw new Error(`No email_otp returned for ${email}`);
-  return otp;
+  const res = await fetch(`${API}/auth/dev/code`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'X-API-Version': '1' },
+    body: JSON.stringify({ email }),
+  });
+  if (res.status === 404) {
+    throw new Error('POST /auth/dev/code is off: run the API with ALLOW_DEV_LOGIN=true (not in production)');
+  }
+  if (!res.ok) throw new Error(`dev code for ${email} -> ${res.status}: ${await res.text()}`);
+  return ((await res.json()) as { code: string }).code;
 }
 
 /** Minimal cookie jar: the backend authenticates by cookie, not bearer. */
@@ -59,10 +65,18 @@ class Session {
       method,
       headers: {
         'X-API-Version': '1',
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        // A FormData body (a file upload) sets its own multipart type.
+        ...(body !== undefined && !(body instanceof FormData)
+          ? { 'content-type': 'application/json' }
+          : {}),
         ...(this.cookies.size ? { cookie: this.header() } : {}),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body:
+        body instanceof FormData
+          ? body
+          : body !== undefined
+            ? JSON.stringify(body)
+            : undefined,
     });
     for (const raw of res.headers.getSetCookie?.() ?? []) {
       const [pair] = raw.split(';');
@@ -83,17 +97,8 @@ class Session {
   }
 }
 
-// Untyped like the rest of the service-client code: the client carries no
-// Database generic, so rows come back as `any` either way.
-function must(
-  result: { data: any; error: { message: string } | null },
-  what: string,
-): any {
-  if (result.error || result.data === null || result.data === undefined) {
-    throw new Error(`${what}: ${result.error?.message ?? 'no data'}`);
-  }
-  return result.data;
-}
+/** A calendar date for a `date` column. */
+const day = (iso: string) => new Date(`${iso}T00:00:00Z`);
 
 function daysFromNow(days: number, hour = 23, minute = 59) {
   const d = new Date();
@@ -129,32 +134,33 @@ const STUDENTS = [
 ] as const;
 
 async function createUser(email: string) {
-  const { data, error } = await db.auth.admin.createUser({ email, email_confirm: true });
-  if (error) throw new Error(`create ${email}: ${error.message}`);
-  return data.user!.id;
+  const user = await db.app_user.create({
+    data: { email, email_verified_at: new Date() },
+    select: { id: true },
+  });
+  return user.id;
 }
 
 async function wipe() {
-  const { data: school } = await db.from('school').select('id').eq('name', SCHOOL_NAME).maybeSingle();
-  if (school) {
-    // owner_id is ON DELETE RESTRICT, so the school goes before its owner.
-    await db.from('school').delete().eq('id', school.id);
-  }
-  const { data: list } = await db.auth.admin.listUsers({ perPage: 1000 });
-  for (const u of list?.users ?? []) {
-    if (u.email?.endsWith(`@${DOMAIN}`)) {
-      await db.from('user_profile').delete().eq('id', u.id);
-      await db.auth.admin.deleteUser(u.id);
-    }
-  }
+  // owner_id is ON DELETE RESTRICT, so the school goes before its owner.
+  await db.school.deleteMany({ where: { name: SCHOOL_NAME } });
+  const users = await db.app_user.findMany({
+    where: { email: { endsWith: `@${DOMAIN}` } },
+    select: { id: true },
+  });
+  const ids = users.map((u) => u.id);
+  await db.user_profile.deleteMany({ where: { id: { in: ids } } });
+  // Cascades to their sessions and linked identities.
+  await db.app_user.deleteMany({ where: { id: { in: ids } } });
+  await db.email_code.deleteMany({ where: { email: { endsWith: `@${DOMAIN}` } } });
   console.log('Removed the previous demo school and accounts.');
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
 
 async function seed() {
-  const existing = await db.from('school').select('id').eq('name', SCHOOL_NAME).maybeSingle();
-  if (existing.data) {
+  const existing = await db.school.findFirst({ where: { name: SCHOOL_NAME }, select: { id: true } });
+  if (existing) {
     throw new Error(`"${SCHOOL_NAME}" already exists. Re-run with --fresh to replace it.`);
   }
 
@@ -163,72 +169,49 @@ async function seed() {
   for (const s of STAFF) staffIds[s.key] = await createUser(`${s.key}@${DOMAIN}`);
 
   for (const s of STAFF) {
-    must(
-      await db
-        .from('user_profile')
-        .insert({
-          id: staffIds[s.key],
-          first_name: s.first,
-          last_name: s.last,
-          email: `${s.key}@${DOMAIN}`,
-          role: s.role,
-          account_type: 'staff',
-        })
-        .select('id'),
-      `profile ${s.key}`,
-    );
+    await db.user_profile.create({
+      data: {
+        id: staffIds[s.key],
+        first_name: s.first,
+        last_name: s.last,
+        email: `${s.key}@${DOMAIN}`,
+        role: s.role,
+        account_type: 'staff',
+      },
+    });
   }
 
-  const school = must(
-    await db
-      .from('school')
-      .insert({ name: SCHOOL_NAME, code: 'RVA', school_type: 'secondary', owner_id: staffIds.admin })
-      .select('id')
-      .single(),
-    'school',
-  );
+  const school = await db.school.create({
+    data: { name: SCHOOL_NAME, code: 'RVA', school_type: 'secondary', owner_id: staffIds.admin },
+    select: { id: true },
+  });
 
   for (const s of STAFF) {
-    must(
-      await db.from('user_profile').update({ school_id: school.id }).eq('id', staffIds[s.key]).select('id'),
-      `school for ${s.key}`,
-    );
-    must(
-      await db
-        .from('school_management')
-        .insert({ user_id: staffIds[s.key], school_id: school.id, role: s.role })
-        .select('id'),
-      `membership ${s.key}`,
-    );
+    await db.user_profile.update({ where: { id: staffIds[s.key] }, data: { school_id: school.id } });
+    await db.school_management.create({
+      data: { user_id: staffIds[s.key], school_id: school.id, role: s.role },
+    });
   }
 
-  const year = must(
-    await db
-      .from('academic_year')
-      .insert({
-        school_id: school.id,
-        name: '2026/27',
-        start_date: '2026-09-01',
-        end_date: '2027-06-30',
-        is_active: true,
-        grading_model: 'weighted_continuous',
-      })
-      .select('id')
-      .single(),
-    'academic year',
-  );
+  const year = await db.academic_year.create({
+    data: {
+      school_id: school.id,
+      name: '2026/27',
+      start_date: day('2026-09-01'),
+      end_date: day('2027-06-30'),
+      is_active: true,
+    },
+    select: { id: true },
+  });
 
-  const terms = must(
-    await db
-      .from('term')
-      .insert([
-        { academic_year_id: year.id, name: 'Fall 2026', start_date: '2026-09-01', end_date: '2026-12-18', sort_order: 1, exam_weight: 50, coursework_weight: 50 },
-        { academic_year_id: year.id, name: 'Spring 2027', start_date: '2027-01-06', end_date: '2027-06-30', sort_order: 2, exam_weight: 50, coursework_weight: 50 },
-      ])
-      .select('id, name'),
-    'terms',
-  );
-  const fall = terms.find((t: any) => t.name === 'Fall 2026')!;
+  const terms = await db.term.createManyAndReturn({
+    data: [
+      { academic_year_id: year.id, name: 'Fall 2026', start_date: day('2026-09-01'), end_date: day('2026-12-18'), sort_order: 1 },
+      { academic_year_id: year.id, name: 'Spring 2027', start_date: day('2027-01-06'), end_date: day('2027-06-30'), sort_order: 2 },
+    ],
+    select: { id: true, name: true },
+  });
+  const fall = terms.find((t) => t.name === 'Fall 2026')!;
 
   // Students: a roster record each, plus a login for the first three.
   const studentIds: string[] = [];
@@ -236,36 +219,27 @@ async function seed() {
     let profileId: string | null = null;
     if ('email' in s) {
       profileId = await createUser(s.email);
-      must(
-        await db
-          .from('user_profile')
-          .insert({
-            id: profileId,
-            school_id: school.id,
-            first_name: s.first,
-            last_name: s.last,
-            email: s.email,
-            account_type: 'student',
-          })
-          .select('id'),
-        `student profile ${s.email}`,
-      );
-    }
-    const rec = must(
-      await db
-        .schema('student')
-        .from('student')
-        .insert({
+      await db.user_profile.create({
+        data: {
+          id: profileId,
           school_id: school.id,
           first_name: s.first,
           last_name: s.last,
-          user_profile_id: profileId,
-          enrollment_date: '2026-09-01',
-        })
-        .select('id')
-        .single(),
-      `student ${s.first}`,
-    );
+          email: s.email,
+          account_type: 'student',
+        },
+      });
+    }
+    const rec = await db.student.create({
+      data: {
+        school_id: school.id,
+        first_name: s.first,
+        last_name: s.last,
+        user_profile_id: profileId,
+        enrollment_date: day('2026-09-01'),
+      },
+      select: { id: true },
+    });
     studentIds.push(rec.id);
   }
   const [jordan, priya, marcus] = studentIds;
@@ -423,6 +397,25 @@ async function seed() {
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: cellDiagram.id, indent: 1 });
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: cellQuiz.id, indent: 1 });
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: microscope.id, indent: 1 });
+  // A handout uploaded to Maya's files (S3, like any upload) and linked in
+  // the module, so students open it through the portal.
+  const handoutForm = new FormData();
+  handoutForm.append(
+    'file',
+    new Blob(
+      [
+        'Microscope practical checklist\n\n',
+        '1. Clean the lenses with lens paper only.\n',
+        '2. Start on the lowest power objective.\n',
+        '3. Focus with the coarse knob, then the fine knob.\n',
+        '4. Draw what you see, with a title and the magnification.\n',
+      ],
+      { type: 'text/plain' },
+    ),
+    'microscope-checklist.txt',
+  );
+  const handout = await maya.call('POST', '/files?name=microscope-checklist.txt', handoutForm);
+  await maya.call('POST', items(week1), { itemType: 'file', fileId: handout.id, title: 'Microscope checklist', indent: 1 });
   await maya.call('POST', items(week2), { itemType: 'page', pageId: genetics.id });
   await maya.call('POST', items(week2), {
     itemType: 'link',
@@ -510,6 +503,27 @@ async function seed() {
   });
   await priyaS.call('POST', `/portal/me/activities/${hw1.id}/submit`, { textBody: 'x=3, x=-2, x=11' });
 
+  // A discussion with a short thread.
+  const topic = await maya.call('POST', `/courses/${bio.id}/discussions`, {
+    title: 'Why do plant cells need a cell wall?',
+    body: 'Animal cells manage without one. In a sentence or two: what does the **cell wall** give a plant cell that the membrane alone does not?',
+    isPinned: true,
+  });
+  const topicReplies = `/portal/me/courses/${bio.id}/discussions/${topic.id}/replies`;
+  const jordanReply = await jordanS.call('POST', topicReplies, {
+    body: 'It keeps the cell rigid so the plant can stand up without a skeleton.',
+  });
+  await priyaS.call('POST', topicReplies, {
+    body: 'Also stops the cell bursting when it takes in lots of water.',
+    parentId: jordanReply.id,
+  });
+  await maya.call('POST', `/courses/${bio.id}/discussions/${topic.id}/replies`, {
+    body: 'Both right - that water pressure against the wall is called *turgor pressure*.',
+    parentId: jordanReply.id,
+  });
+  // The topic sits in Week 1 beside the cell work.
+  await maya.call('POST', items(week1), { itemType: 'discussion', discussionTopicId: topic.id });
+
   // Jordan sits the quiz: two right, one wrong (scored automatically).
   const quiz = await jordanS.call('GET', `/portal/me/activities/${cellQuiz.id}`);
   const opt = (qid: string, label: string) =>
@@ -536,6 +550,66 @@ async function seed() {
     excused: true,
     reason: 'Medical note',
   });
+
+  // A rubric on a practice write-up. It is left out of the final grade, so
+  // it shows rubric marking without moving anyone's course total; Priya and
+  // Marcus are marked through it (the score is the sum of their levels).
+  const writeUpRubric = await maya.call('POST', `/courses/${bio.id}/rubrics`, {
+    title: 'Lab write-up rubric',
+    criteria: [
+      {
+        title: 'Method',
+        description: 'Steps are clear enough to repeat.',
+        points: 4,
+        ratings: [
+          { label: 'Complete', points: 4 },
+          { label: 'Mostly there', points: 2 },
+          { label: 'Missing', points: 0 },
+        ],
+      },
+      {
+        title: 'Observations',
+        description: 'Labelled drawing and notes.',
+        points: 4,
+        ratings: [
+          { label: 'Detailed', points: 4 },
+          { label: 'Basic', points: 2 },
+          { label: 'None', points: 0 },
+        ],
+      },
+      {
+        title: 'Conclusion',
+        points: 2,
+        ratings: [
+          { label: 'Answers the question', points: 2 },
+          { label: 'Unclear', points: 0 },
+        ],
+      },
+    ],
+  });
+  const writeUp = await maya.call('POST', `/courses/${bio.id}/activities`, {
+    kind: 'offline',
+    title: 'Practice lab write-up',
+    instructions: 'A practice run before the graded labs. Marked with the rubric; not part of your grade.',
+    points: 10,
+    dueAt: daysFromNow(-3, 15, 0),
+    assignmentGroupId: labs.id,
+  });
+  await maya.call('PATCH', `/activities/${writeUp.id}`, { omitFromFinalGrade: true });
+  await maya.call('PUT', `/activities/${writeUp.id}/rubric`, { rubricId: writeUpRubric.id });
+  await maya.call('POST', `/activities/${writeUp.id}/publish`);
+  const level = (criterion: number, rating: number) => ({
+    criterionId: writeUpRubric.criteria[criterion].id,
+    ratingId: writeUpRubric.criteria[criterion].ratings[rating].id,
+  });
+  await maya.call('PUT', `/activities/${writeUp.id}/submissions/${priya}/rubric`, {
+    assessments: [level(0, 0), level(1, 1), { ...level(2, 0), comment: 'Link it back to your hypothesis.' }],
+  });
+  await maya.call('PUT', `/activities/${writeUp.id}/submissions/${marcus}/rubric`, {
+    assessments: [level(0, 1), level(1, 0), level(2, 1)],
+  });
+  await maya.call('POST', items(week1), { itemType: 'activity', activityId: writeUp.id, indent: 1 });
+
   for (const [i, score] of [[0, 9], [2, 7], [3, 10], [4, 6], [5, 8]] as const) {
     await leo.call('PATCH', `/activities/${hw1.id}/submissions/${studentIds[i]}/grade`, { score });
   }
@@ -543,35 +617,30 @@ async function seed() {
   // Email domains, written verified: demo.test has no DNS to check. Anyone
   // signing in as <name>@students.demo.test joins as a student; staff at
   // staff.demo.test ask the admin to approve them.
-  must(
-    await db
-      .from('school_email_domain')
-      .insert([
-        {
-          school_id: school.id,
-          domain: `students.${DOMAIN}`,
-          audience: 'student',
-          auto_join: true,
-          // Rows in one insert need the same columns; unused for students.
-          staff_role: 'teacher',
-          verification_token: 'demo-students',
-          verified_at: new Date().toISOString(),
-          created_by: staffIds.admin,
-        },
-        {
-          school_id: school.id,
-          domain: `staff.${DOMAIN}`,
-          audience: 'staff',
-          auto_join: false,
-          staff_role: 'teacher',
-          verification_token: 'demo-staff',
-          verified_at: new Date().toISOString(),
-          created_by: staffIds.admin,
-        },
-      ])
-      .select('id'),
-    'email domains',
-  );
+  await db.school_email_domain.createMany({
+    data: [
+      {
+        school_id: school.id,
+        domain: `students.${DOMAIN}`,
+        audience: 'student',
+        auto_join: true,
+        staff_role: 'teacher',
+        verification_token: 'demo-students',
+        verified_at: new Date(),
+        created_by: staffIds.admin,
+      },
+      {
+        school_id: school.id,
+        domain: `staff.${DOMAIN}`,
+        audience: 'staff',
+        auto_join: false,
+        staff_role: 'teacher',
+        verification_token: 'demo-staff',
+        verified_at: new Date(),
+        created_by: staffIds.admin,
+      },
+    ],
+  });
 
   // Three past Biology classes of attendance. Written directly rather than
   // through the API, which can only open a session now.
@@ -580,49 +649,37 @@ async function seed() {
     ['present', 'present', 'present', 'absent', 'absent', 'present', 'late', 'present', 'present', 'present', 'absent', 'present'],
     ['present', 'late', 'present', 'present', 'present', 'present', 'present', 'absent', 'present', 'present', 'present', 'present'],
   ];
-  for (let day = 0; day < pattern.length; day++) {
+  for (let n = 0; n < pattern.length; n++) {
     const opened = new Date();
-    opened.setDate(opened.getDate() - 7 * (pattern.length - day));
+    opened.setDate(opened.getDate() - 7 * (pattern.length - n));
     opened.setHours(9, 0, 0, 0);
     const closes = new Date(opened.getTime() + 5 * 60_000);
-    const session = must(
-      await db
-        .schema('course')
-        .from('attendance_session')
-        .insert({
-          course_id: bio.id,
-          opened_by: staffIds.teacher,
-          opened_at: opened.toISOString(),
-          closes_at: closes.toISOString(),
-          closed_at: closes.toISOString(),
-          check_in_code: String(1000 + day * 1111),
-          late_after_minutes: 2,
-        })
-        .select('id')
-        .single(),
-      'attendance session',
-    );
-    must(
-      await db
-        .schema('course')
-        .from('attendance_record')
-        .insert(
-          pattern[day].map((status, i) => ({
-            session_id: session.id,
-            course_id: bio.id,
-            student_id: studentIds[i],
-            status,
-            method: status === 'absent' ? 'auto' : status === 'excused' ? 'teacher' : 'self',
-            checked_in_at:
-              status === 'present' || status === 'late'
-                ? new Date(opened.getTime() + (status === 'late' ? 180_000 : 45_000)).toISOString()
-                : null,
-            note: status === 'excused' ? 'Doctor appointment' : null,
-          })),
-        )
-        .select('id'),
-      'attendance records',
-    );
+    const session = await db.attendance_session.create({
+      data: {
+        course_id: bio.id,
+        opened_by: staffIds.teacher,
+        opened_at: opened,
+        closes_at: closes,
+        closed_at: closes,
+        check_in_code: String(1000 + n * 1111),
+        late_after_minutes: 2,
+      },
+      select: { id: true },
+    });
+    await db.course_attendance_record.createMany({
+      data: pattern[n].map((status, i) => ({
+        session_id: session.id,
+        course_id: bio.id,
+        student_id: studentIds[i],
+        status,
+        method: status === 'absent' ? 'auto' : status === 'excused' ? 'teacher' : 'self',
+        checked_in_at:
+          status === 'present' || status === 'late'
+            ? new Date(opened.getTime() + (status === 'late' ? 180_000 : 45_000))
+            : null,
+        note: status === 'excused' ? 'Doctor appointment' : null,
+      })),
+    });
   }
 
   await admin.call('POST', '/announcements', {
@@ -641,7 +698,7 @@ Staff (web: http://localhost:3000/login)
 
 Students
   student@${DOMAIN}   Jordan Lee     Biology, Algebra, Creative Writing; quiz taken, lab marked
-  student2@${DOMAIN}  Priya Shah     lab handed in, waiting to be marked
+  student2@${DOMAIN}  Priya Shah     lab handed in, waiting to be marked; write-up marked by rubric
   student3@${DOMAIN}  Marcus Bell
   + 9 roster-only students
 
@@ -651,7 +708,7 @@ Email domains (Admin > Email Domains)
   anyone@students.${DOMAIN}   joins Riverside as a student on sign-up
   anyone@staff.${DOMAIN}      asks the admin to join as staff
 
-Log in without email (local mail is capped at 2/hour):
+Log in without opening the mail catcher (needs the API running):
   bun run seed:demo otp teacher@${DOMAIN}
 `);
 }
@@ -667,7 +724,9 @@ async function main() {
   await seed();
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+main()
+  .then(() => db.$disconnect())
+  .catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });

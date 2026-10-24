@@ -1,4 +1,8 @@
 import { loginPath } from "@/lib/routing";
+import {
+  isSubscriptionRequired,
+  notifySubscriptionRequired,
+} from "@/lib/subscription-required";
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
 
@@ -52,6 +56,17 @@ async function fetchOrThrow(
   }
 }
 
+/**
+ * The ApiError for a failed response. A 402 SUBSCRIPTION_REQUIRED (the school
+ * is read-only) also raises the app-wide notice; it is still thrown so the
+ * caller stops what it was doing.
+ */
+async function errorFrom(res: Response): Promise<ApiError> {
+  const error = await res.json().catch(() => ({ message: res.statusText }));
+  if (isSubscriptionRequired(res.status, error)) notifySubscriptionRequired();
+  return new ApiError(res.status, error?.message || res.statusText, error);
+}
+
 export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
@@ -76,10 +91,7 @@ export async function api<T = unknown>(
 
   if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new ApiError(res.status, error.message || res.statusText, error);
-  }
+  if (!res.ok) throw await errorFrom(res);
 
   const text = await res.text();
   try {
@@ -102,10 +114,7 @@ export async function apiUpload<T = unknown>(
 
   if (res.status === 401) handleUnauthorized(false);
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new ApiError(res.status, error.message || res.statusText, error);
-  }
+  if (!res.ok) throw await errorFrom(res);
 
   return res.json();
 }

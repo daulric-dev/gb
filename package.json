@@ -5,13 +5,13 @@
         "turbo": "^2.11.10"
     },
     "private": true,
-    "packageManager": "bun@1.3.13",
+    "packageManager": "bun@1.4.4",
     "bin": {
         "gb": "./command/index.ts"
     },
     "scripts": {
-        "preload": "docker compose -f ./docker-compose.dev.yml up -d && bunx supabase start",
-        "postload": "docker compose -f ./docker-compose.dev.yml down && bunx supabase stop",
+        "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup",
+        "postload": "docker compose -f ./docker-compose.dev.yml down",
         "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",
@@ -25,13 +25,15 @@
         "test:frontend": "turbo run test --filter=frontend",
         "test:backend": "turbo run test --filter=backend",
         "preview": "turbo run start:prod",
-        "db:start": "bunx supabase start",
-        "db:stop": "bunx supabase stop",
-        "db:types": "cd backend && chmod +x ./scripts/gen_types.sh && ./scripts/gen_types.sh",
         "dev:docs": "turbo run dev --filter=docs",
         "build:docs": "turbo run build --filter=docs",
-        "db:diff": "bunx supabase db diff --schema '*',storage -f",
-        "db:pull": "bunx supabase db pull --schema '*',storage"
+        "db:setup": "bun run --cwd backend db:deploy",
+        "db:migrate": "bun run --cwd backend db:migrate",
+        "db:deploy": "bun run --cwd backend db:deploy",
+        "db:pull": "bun run --cwd backend db:pull",
+        "db:studio": "bun run --cwd backend db:studio",
+        "seed:demo": "bun run --cwd backend seed:demo",
+        "smoke": "bun run --cwd backend smoke"
     },
     "workspaces": ["backend", "frontend", "docs", "mobile"],
     "overrides": {

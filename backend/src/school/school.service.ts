@@ -5,17 +5,19 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
 
+type BaseRole = 'admin' | 'member' | 'teacher' | null;
+
 @Injectable()
 export class SchoolService {
   private readonly logger = new Logger(SchoolService.name);
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}
 
@@ -23,16 +25,15 @@ export class SchoolService {
     const cached = await this.cache.get('schools:all');
     if (cached) return cached;
 
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data, error } = await supabase
-      .from('school')
-      .select('id, name, school_type')
-      .eq('is_active', true)
-      .order('name', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to fetch schools: ${error.message}`);
+    let data;
+    try {
+      data = await this.prisma.school.findMany({
+        where: { is_active: true },
+        select: { id: true, name: true, school_type: true },
+        orderBy: { name: 'asc' },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to fetch schools: ${(err as Error).message}`);
       return [];
     }
 
@@ -42,93 +43,88 @@ export class SchoolService {
 
   async create(dto: CreateSchoolDto, userId: string) {
     if (process.env.DEDICATED_DEPLOYMENT === 'true') {
-      const supabase = this.supabaseService.getServiceClient();
-      const { count } = await supabase
-        .from('school')
-        .select('id', { count: 'exact', head: true });
+      const count = await this.prisma.school.count().catch(() => 0);
 
-      if ((count ?? 0) > 0) {
+      if (count > 0) {
         throw new ForbiddenException(
           'School creation is disabled on dedicated deployments',
         );
       }
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data, error } = await supabase
-      .from('school')
-      .insert({
-        name: dto.name,
-        code: dto.code ?? null,
-        school_type: dto.schoolType,
-        address: dto.address ?? null,
-        email: dto.email ?? null,
-        phone: dto.phone ?? null,
-        is_active: true,
-        owner_id: userId,
-      })
-      .select()
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to create school: ${error?.message}`);
+    let data;
+    try {
+      data = await this.prisma.school.create({
+        data: {
+          name: dto.name,
+          code: dto.code ?? null,
+          school_type: dto.schoolType,
+          address: dto.address ?? null,
+          email: dto.email ?? null,
+          phone: dto.phone ?? null,
+          is_active: true,
+          owner_id: userId,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Failed to create school: ${(err as Error).message}`);
       throw new BadRequestException('Failed to create school');
     }
 
     // Canonical membership record - creator is admin
-    const { error: managementError } = await supabase
-      .from('school_management')
-      .insert({ user_id: userId, school_id: data.id, role: 'admin' });
-
-    if (managementError) {
+    try {
+      await this.prisma.school_management.create({
+        data: { user_id: userId, school_id: data.id, role: 'admin' },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to create school_management row for ${userId} at ${data.id}: ${managementError.message}`,
+        `Failed to create school_management row for ${userId} at ${data.id}: ${(err as Error).message}`,
       );
     }
 
     // Mirror to user_profile (denormalized cache for active school + role)
-    const { error: profileError } = await supabase
-      .from('user_profile')
-      .update({ school_id: data.id, role: 'admin' })
-      .eq('id', userId);
-
-    if (profileError) {
+    try {
+      await this.prisma.user_profile.updateMany({
+        where: { id: userId },
+        data: { school_id: data.id, role: 'admin' },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to assign creator ${userId} to school ${data.id}: ${profileError.message}`,
+        `Failed to assign creator ${userId} to school ${data.id}: ${(err as Error).message}`,
       );
     }
 
     await this.cache.delete(`profile:${userId}`);
     await this.cache.update<any[]>(
       'schools:all',
-      (list) => [...list, data].sort((a, b) => a.name.localeCompare(b.name)),
+      (list) =>
+        [...list, data].sort((a, b) =>
+          (a.name ?? '').localeCompare(b.name ?? ''),
+        ),
       SCHOOL_TTL,
     );
     return data;
   }
 
   async createJoinRequest(userId: string, schoolId: string, message?: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
     // Verify the school exists and is active
-    const { data: school } = await supabase
-      .from('school')
-      .select('id, name')
-      .eq('id', schoolId)
-      .eq('is_active', true)
-      .single();
+    const school = await this.prisma.school
+      .findFirst({
+        where: { id: schoolId, is_active: true },
+        select: { id: true, name: true },
+      })
+      .catch(() => null);
 
     if (!school) {
       throw new NotFoundException('School not found');
     }
 
-    const { data: existing } = await supabase
-      .from('school_join_request')
-      .select('id, school_id')
-      .eq('user_id', userId)
-      .eq('status', 'pending')
-      .maybeSingle();
+    const existing = await this.prisma.school_join_request
+      .findFirst({
+        where: { user_id: userId, status: 'pending' },
+        select: { id: true, school_id: true },
+      })
+      .catch(() => null);
 
     if (existing) {
       throw new BadRequestException(
@@ -136,19 +132,18 @@ export class SchoolService {
       );
     }
 
-    const { data, error } = await supabase
-      .from('school_join_request')
-      .insert({
-        user_id: userId,
-        school_id: schoolId,
-        message: message ?? null,
-      })
-      .select()
-      .single();
-
-    if (error || !data) {
+    let data;
+    try {
+      data = await this.prisma.school_join_request.create({
+        data: {
+          user_id: userId,
+          school_id: schoolId,
+          message: message ?? null,
+        },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to create join request for user ${userId}: ${error?.message}`,
+        `Failed to create join request for user ${userId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to submit join request');
     }
@@ -157,60 +152,59 @@ export class SchoolService {
   }
 
   async getPendingRequests(adminUserId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.adminSchoolId(adminUserId);
 
-    const { data: adminProfile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', adminUserId)
-      .single();
+    try {
+      const rows = await this.prisma.school_join_request.findMany({
+        where: { school_id: schoolId, status: 'pending' },
+        select: {
+          id: true,
+          status: true,
+          message: true,
+          requested_at: true,
+          user_profile_school_join_request_user_idTouser_profile: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              account_type: true,
+            },
+          },
+          school: { select: { id: true, name: true } },
+        },
+        orderBy: { requested_at: 'asc' },
+      });
 
-    if (!adminProfile?.school_id) {
-      throw new BadRequestException('Admin is not assigned to a school');
-    }
-
-    const { data, error } = await supabase
-      .from('school_join_request')
-      .select(
-        `id, status, message, requested_at,
-         user:user_id ( id, first_name, last_name, account_type ),
-         school:school_id ( id, name )`,
-      )
-      .eq('school_id', adminProfile.school_id)
-      .eq('status', 'pending')
-      .order('requested_at', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to fetch join requests: ${error.message}`);
+      return rows.map((r) => ({
+        id: r.id,
+        status: r.status,
+        message: r.message,
+        requested_at: r.requested_at,
+        user: r.user_profile_school_join_request_user_idTouser_profile,
+        school: r.school,
+      }));
+    } catch (err) {
+      this.logger.error(
+        `Failed to fetch join requests: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to fetch join requests');
     }
-
-    return data ?? [];
   }
 
   async approveRequest(
     adminUserId: string,
     requestId: string,
-    role: 'admin' | 'member' | 'teacher' | null,
+    role: BaseRole,
     customRoleIds: string[] = [],
   ) {
-    const supabase = this.supabaseService.getServiceClient();
+    const adminSchoolId = await this.adminSchoolId(adminUserId);
 
-    const { data: adminProfile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', adminUserId)
-      .single();
-
-    if (!adminProfile?.school_id) {
-      throw new BadRequestException('Admin is not assigned to a school');
-    }
-
-    const { data: request } = await supabase
-      .from('school_join_request')
-      .select('id, user_id, school_id, status')
-      .eq('id', requestId)
-      .single();
+    const request = await this.prisma.school_join_request
+      .findUnique({
+        where: { id: requestId },
+        select: { id: true, user_id: true, school_id: true, status: true },
+      })
+      .catch(() => null);
 
     if (!request) {
       throw new NotFoundException('Join request not found');
@@ -218,11 +212,12 @@ export class SchoolService {
 
     // Students do not arrive this way: they join with the school's code, which
     // creates their record directly. Join requests are staff only.
-    const { data: requester } = await supabase
-      .from('user_profile')
-      .select('account_type')
-      .eq('id', request.user_id)
-      .maybeSingle();
+    const requester = await this.prisma.user_profile
+      .findUnique({
+        where: { id: request.user_id },
+        select: { account_type: true },
+      })
+      .catch(() => null);
 
     if (requester?.account_type === 'student') {
       throw new BadRequestException(
@@ -230,7 +225,7 @@ export class SchoolService {
       );
     }
 
-    if (request.school_id !== adminProfile.school_id) {
+    if (request.school_id !== adminSchoolId) {
       throw new ForbiddenException(
         'This request does not belong to your school',
       );
@@ -240,257 +235,267 @@ export class SchoolService {
       throw new BadRequestException('This request has already been reviewed');
     }
 
-    // Canonical membership record (upsert in case a prior membership exists for this pair)
-    const { error: managementError } = await supabase
-      .from('school_management')
-      .upsert(
-        {
-          user_id: request.user_id,
-          school_id: request.school_id,
-          role,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,school_id' },
-      );
-
-    if (managementError) {
-      this.logger.error(
-        `Failed to upsert school_management for ${request.user_id}: ${managementError.message}`,
-      );
-      throw new BadRequestException('Failed to approve request');
-    }
-
-    if (customRoleIds.length > 0) {
-      const uniqueRoleIds = [...new Set(customRoleIds)];
-      const { data: customRoles, error: roleError } = await supabase
-        .from('school_role')
-        .select('id, school_id, is_system')
-        .in('id', uniqueRoleIds);
+    const uniqueRoleIds = [...new Set(customRoleIds)];
+    if (uniqueRoleIds.length > 0) {
+      const customRoles = await this.prisma.school_role
+        .findMany({
+          where: { id: { in: uniqueRoleIds } },
+          select: { id: true, school_id: true, is_system: true },
+        })
+        .catch(() => null);
       if (
-        roleError ||
-        (customRoles ?? []).length !== uniqueRoleIds.length ||
-        (customRoles ?? []).some(
+        !customRoles ||
+        customRoles.length !== uniqueRoleIds.length ||
+        customRoles.some(
           (customRole) =>
             customRole.school_id !== request.school_id || customRole.is_system,
         )
       ) {
         throw new BadRequestException('Invalid custom role selection');
       }
-      const { data: membership } = await supabase
-        .from('school_management')
-        .select('id')
-        .eq('user_id', request.user_id)
-        .eq('school_id', request.school_id)
-        .single();
-      if (!membership) {
-        throw new BadRequestException('Failed to load approved membership');
-      }
-      const { error: assignmentError } = await supabase
-        .from('school_management_role')
-        .insert(
-          uniqueRoleIds.map((school_role_id) => ({
-            school_management_id: membership.id,
-            school_role_id,
-          })),
+    }
+
+    // Membership, custom roles, profile mirror and the request's status
+    // change together: a failure part-way leaves nothing behind.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Canonical membership record (upsert in case a prior membership
+      // exists for this pair).
+      let membership: { id: string };
+      try {
+        membership = await tx.school_management.upsert({
+          where: {
+            user_id_school_id: {
+              user_id: request.user_id,
+              school_id: request.school_id,
+            },
+          },
+          create: {
+            user_id: request.user_id,
+            school_id: request.school_id,
+            role,
+            updated_at: new Date(),
+          },
+          update: { role, updated_at: new Date() },
+          select: { id: true },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to upsert school_management for ${request.user_id}: ${(err as Error).message}`,
         );
-      if (assignmentError) {
-        throw new BadRequestException('Failed to assign custom roles');
+        throw new BadRequestException('Failed to approve request');
       }
-    }
 
-    // Mirror to user_profile (denormalized cache)
-    const { error: profileError } = await supabase
-      .from('user_profile')
-      .update({ school_id: request.school_id, role, is_active: true })
-      .eq('id', request.user_id);
+      if (uniqueRoleIds.length > 0) {
+        try {
+          await tx.school_management_role.createMany({
+            data: uniqueRoleIds.map((school_role_id) => ({
+              school_management_id: membership.id,
+              school_role_id,
+            })),
+          });
+        } catch {
+          throw new BadRequestException('Failed to assign custom roles');
+        }
+      }
 
-    if (profileError) {
-      this.logger.error(
-        `Failed to update profile for user ${request.user_id}: ${profileError.message}`,
-      );
-      throw new BadRequestException('Failed to approve request');
-    }
+      // Mirror to user_profile (denormalized cache)
+      try {
+        await tx.user_profile.updateMany({
+          where: { id: request.user_id },
+          data: { school_id: request.school_id, role, is_active: true },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to update profile for user ${request.user_id}: ${(err as Error).message}`,
+        );
+        throw new BadRequestException('Failed to approve request');
+      }
 
-    const { data: updated, error } = await supabase
-      .from('school_join_request')
-      .update({
-        status: 'approved',
-        reviewed_by: adminUserId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', requestId)
-      .select()
-      .single();
-
-    if (error) {
-      this.logger.error(
-        `Failed to update join request ${requestId}: ${error.message}`,
-      );
-      throw new BadRequestException('Failed to approve request');
-    }
+      try {
+        return await tx.school_join_request.update({
+          where: { id: requestId },
+          data: {
+            status: 'approved',
+            reviewed_by: adminUserId,
+            reviewed_at: new Date(),
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to update join request ${requestId}: ${(err as Error).message}`,
+        );
+        throw new BadRequestException('Failed to approve request');
+      }
+    });
 
     await this.cache.delete(`profile:${request.user_id}`);
     return updated;
   }
 
   async getMyPendingRequest(userId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data } = await supabase
-      .from('school_join_request')
-      .select('id, school_id, status, requested_at')
-      .eq('user_id', userId)
-      .eq('status', 'pending')
-      .maybeSingle();
-
-    return data;
+    return this.prisma.school_join_request
+      .findFirst({
+        where: { user_id: userId, status: 'pending' },
+        select: {
+          id: true,
+          school_id: true,
+          status: true,
+          requested_at: true,
+        },
+      })
+      .catch(() => null);
   }
 
   async getMembers(userId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const schoolId = await this.ownSchoolId(userId);
 
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', userId)
-      .single();
-
-    if (!profile?.school_id) {
-      throw new BadRequestException('You are not assigned to a school');
-    }
-
-    const { data, error } = await supabase
-      .from('school_management')
-      .select(
-        `id, role, created_at,
-         school:school_id ( owner_id ),
-         user:user_id ( id, first_name, last_name, avatar_url ),
-         role_links:school_management_role (
-           school_role:school_role_id ( id, name, is_system )
-         )`,
-      )
-      .eq('school_id', profile.school_id)
-      .order('role', { ascending: true })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to fetch school members: ${error.message}`);
+    let data;
+    try {
+      data = await this.prisma.school_management.findMany({
+        where: { school_id: schoolId },
+        select: {
+          id: true,
+          role: true,
+          created_at: true,
+          school: { select: { owner_id: true } },
+          user_profile: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              avatar_url: true,
+            },
+          },
+          school_management_role: {
+            select: {
+              school_role: {
+                select: { id: true, name: true, is_system: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ role: 'asc' }, { created_at: 'asc' }],
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to fetch school members: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to fetch school members');
     }
 
-    type RoleRow = { id: string; name: string; is_system: boolean };
-    return (data ?? []).map((member) => {
-      const { role_links, ...rest } = member as typeof member & {
-        role_links?: { school_role: RoleRow | RoleRow[] | null }[];
-      };
+    return data.map((member) => {
       // Only the custom (non-system) roles are worth surfacing — the base
       // enum role is already conveyed by the section the member sits under.
-      const roles = (role_links ?? [])
-        .map((link) =>
-          Array.isArray(link.school_role)
-            ? (link.school_role[0] ?? null)
-            : link.school_role,
-        )
-        .filter((r): r is RoleRow => Boolean(r) && !r.is_system)
+      const roles = member.school_management_role
+        .map((link) => link.school_role)
+        .filter((r) => Boolean(r) && !r.is_system)
         .map((r) => ({ id: r.id, name: r.name }));
-      const school = member.school as { owner_id?: string | null } | null;
-      const user = member.user as { id?: string } | { id?: string }[] | null;
-      const userId = Array.isArray(user) ? user[0]?.id : user?.id;
-      return { ...rest, is_owner: school?.owner_id === userId, roles };
+      return {
+        id: member.id,
+        role: member.role,
+        created_at: member.created_at,
+        school: member.school,
+        user: member.user_profile,
+        is_owner: member.school?.owner_id === member.user_profile?.id,
+        roles,
+      };
     });
   }
 
   async leaveSchool(userId: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('school_id, role')
-      .eq('id', userId)
-      .single();
+    const profile = await this.prisma.user_profile
+      .findUnique({
+        where: { id: userId },
+        select: { school_id: true, role: true },
+      })
+      .catch(() => null);
 
     if (!profile?.school_id) {
       throw new BadRequestException('You are not assigned to a school');
     }
+    const schoolId = profile.school_id;
 
-    const { data: school } = await supabase
-      .from('school')
-      .select('owner_id')
-      .eq('id', profile.school_id)
-      .single();
+    const school = await this.prisma.school
+      .findUnique({ where: { id: schoolId }, select: { owner_id: true } })
+      .catch(() => null);
     if (school?.owner_id === userId) {
       throw new ForbiddenException('The school owner cannot leave the school');
     }
 
     if (profile.role === 'admin') {
-      const { count } = await supabase
-        .from('school_management')
-        .select('id', { count: 'exact', head: true })
-        .eq('school_id', profile.school_id)
-        .eq('role', 'admin');
+      const count = await this.prisma.school_management
+        .count({ where: { school_id: schoolId, role: 'admin' } })
+        .catch(() => 0);
 
-      if ((count ?? 0) <= 1) {
+      if (count <= 1) {
         throw new BadRequestException(
           'You are the only admin. Assign another admin before leaving.',
         );
       }
     }
 
-    await supabase
-      .from('school_management')
-      .delete()
-      .eq('user_id', userId)
-      .eq('school_id', profile.school_id);
-
-    await supabase
-      .from('school_join_request')
-      .delete()
-      .eq('user_id', userId)
-      .eq('status', 'pending');
-
-    await supabase
-      .from('user_profile')
-      .update({ school_id: null, role: null })
-      .eq('id', userId);
+    // As before, each clean-up step is best effort.
+    const steps: [string, () => Promise<unknown>][] = [
+      [
+        'remove membership',
+        () =>
+          this.prisma.school_management.deleteMany({
+            where: { user_id: userId, school_id: schoolId },
+          }),
+      ],
+      [
+        'withdraw pending requests',
+        () =>
+          this.prisma.school_join_request.deleteMany({
+            where: { user_id: userId, status: 'pending' },
+          }),
+      ],
+      [
+        'detach profile',
+        () =>
+          this.prisma.user_profile.updateMany({
+            where: { id: userId },
+            data: { school_id: null, role: null },
+          }),
+      ],
+    ];
+    for (const [label, run] of steps) {
+      try {
+        await run();
+      } catch (err) {
+        this.logger.error(
+          `Leave school: failed to ${label} for ${userId}: ${(err as Error).message}`,
+        );
+      }
+    }
 
     await this.cache.delete(`profile:${userId}`);
     return { left: true };
   }
 
   async removeMember(adminUserId: string, membershipId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const adminSchoolId = await this.adminSchoolId(adminUserId);
 
-    const { data: adminProfile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', adminUserId)
-      .single();
-
-    if (!adminProfile?.school_id) {
-      throw new BadRequestException('Admin is not assigned to a school');
-    }
-
-    const { data: membership } = await supabase
-      .from('school_management')
-      .select('id, user_id, school_id, role')
-      .eq('id', membershipId)
-      .single();
+    const membership = await this.prisma.school_management
+      .findUnique({
+        where: { id: membershipId },
+        select: { id: true, user_id: true, school_id: true, role: true },
+      })
+      .catch(() => null);
 
     if (!membership) {
       throw new NotFoundException('Membership not found');
     }
 
-    if (membership.school_id !== adminProfile.school_id) {
+    if (membership.school_id !== adminSchoolId) {
       throw new ForbiddenException(
         'This membership does not belong to your school',
       );
     }
 
-    const { data: school } = await supabase
-      .from('school')
-      .select('owner_id')
-      .eq('id', adminProfile.school_id)
-      .single();
+    const school = await this.prisma.school
+      .findUnique({ where: { id: adminSchoolId }, select: { owner_id: true } })
+      .catch(() => null);
     if (school?.owner_id === membership.user_id) {
       throw new ForbiddenException('The school owner cannot be removed');
     }
@@ -499,53 +504,48 @@ export class SchoolService {
       throw new BadRequestException('You cannot remove yourself');
     }
 
-    const { error } = await supabase
-      .from('school_management')
-      .delete()
-      .eq('id', membershipId);
-
-    if (error) {
+    try {
+      await this.prisma.school_management.deleteMany({
+        where: { id: membershipId },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to remove member ${membershipId}: ${error.message}`,
+        `Failed to remove member ${membershipId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to remove member');
     }
 
     // Only detach the user if this was their active school.
-    await supabase
-      .from('user_profile')
-      .update({ school_id: null, role: null })
-      .eq('id', membership.user_id)
-      .eq('school_id', membership.school_id);
+    try {
+      await this.prisma.user_profile.updateMany({
+        where: { id: membership.user_id, school_id: membership.school_id },
+        data: { school_id: null, role: null },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to detach removed member ${membership.user_id}: ${(err as Error).message}`,
+      );
+    }
 
     await this.cache.delete(`profile:${membership.user_id}`);
     return { removed: true };
   }
 
   async rejectRequest(adminUserId: string, requestId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const adminSchoolId = await this.adminSchoolId(adminUserId);
 
-    const { data: adminProfile } = await supabase
-      .from('user_profile')
-      .select('school_id')
-      .eq('id', adminUserId)
-      .single();
-
-    if (!adminProfile?.school_id) {
-      throw new BadRequestException('Admin is not assigned to a school');
-    }
-
-    const { data: request } = await supabase
-      .from('school_join_request')
-      .select('id, school_id, status')
-      .eq('id', requestId)
-      .single();
+    const request = await this.prisma.school_join_request
+      .findUnique({
+        where: { id: requestId },
+        select: { id: true, school_id: true, status: true },
+      })
+      .catch(() => null);
 
     if (!request) {
       throw new NotFoundException('Join request not found');
     }
 
-    if (request.school_id !== adminProfile.school_id) {
+    if (request.school_id !== adminSchoolId) {
       throw new ForbiddenException(
         'This request does not belong to your school',
       );
@@ -555,24 +555,45 @@ export class SchoolService {
       throw new BadRequestException('This request has already been reviewed');
     }
 
-    const { data: updated, error } = await supabase
-      .from('school_join_request')
-      .update({
-        status: 'rejected',
-        reviewed_by: adminUserId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', requestId)
-      .select()
-      .single();
-
-    if (error) {
+    try {
+      return await this.prisma.school_join_request.update({
+        where: { id: requestId },
+        data: {
+          status: 'rejected',
+          reviewed_by: adminUserId,
+          reviewed_at: new Date(),
+        },
+      });
+    } catch (err) {
       this.logger.error(
-        `Failed to reject join request ${requestId}: ${error.message}`,
+        `Failed to reject join request ${requestId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to reject request');
     }
+  }
 
-    return updated;
+  // --- helpers -------------------------------------------------------------
+
+  private async activeSchoolId(userId: string): Promise<string | null> {
+    const profile = await this.prisma.user_profile
+      .findUnique({ where: { id: userId }, select: { school_id: true } })
+      .catch(() => null);
+    return profile?.school_id ?? null;
+  }
+
+  private async adminSchoolId(adminUserId: string): Promise<string> {
+    const schoolId = await this.activeSchoolId(adminUserId);
+    if (!schoolId) {
+      throw new BadRequestException('Admin is not assigned to a school');
+    }
+    return schoolId;
+  }
+
+  private async ownSchoolId(userId: string): Promise<string> {
+    const schoolId = await this.activeSchoolId(userId);
+    if (!schoolId) {
+      throw new BadRequestException('You are not assigned to a school');
+    }
+    return schoolId;
   }
 }

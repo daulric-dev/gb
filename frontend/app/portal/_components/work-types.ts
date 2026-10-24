@@ -1,4 +1,9 @@
-import type { ActivityKind, PortalCourseActivity } from "@/lib/courses/types";
+import type {
+  ActivityKind,
+  PortalCourseActivity,
+  Rubric,
+  RubricAssessment,
+} from "@/lib/courses/types";
 
 export interface PortalWorkItem {
   id: string;
@@ -37,6 +42,10 @@ export interface PortalWorkDetail {
   /** 0 means unlimited. */
   maxAttempts: number;
   attemptsUsed: number;
+  /** How the work is marked, shown before and after marking. */
+  rubric?: Rubric | null;
+  /** The levels this student was given; only once the mark is final. */
+  rubricAssessment?: RubricAssessment[] | null;
   questions: {
     id: string;
     prompt: string;

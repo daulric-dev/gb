@@ -7,7 +7,7 @@ sidebar_position: 1
 
 GradeBook is now a course-based LMS in the mould of Canvas and Moodle. Teachers create **courses** and build them out of modules, pages, assignments and quizzes; students take courses rather than belonging to a class that takes subjects. Report cards are gone in favour of a live gradebook per course.
 
-Deployment steps: [Upgrading to courses](../../upgrading-to-courses.md).
+Deployment steps: [Platform migration](../../platform-migration.md).
 
 ## What a course has
 

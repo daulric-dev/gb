@@ -20,6 +20,12 @@ export interface EmailDomain {
   ssoRequired: boolean;
   /** Microsoft Entra tenant whose sign-ins may join (provider "azure"). */
   azureTenantId: string | null;
+  /** SAML (provider "saml"): the IdP's single sign-on URL (https). */
+  samlEntryPoint: string | null;
+  /** SAML: the IdP's entity ID, checked as the response issuer. */
+  samlIssuer: string | null;
+  /** SAML: the IdP's signing certificate (PEM). */
+  samlCertificate: string | null;
 }
 
 export interface DomainMatch {

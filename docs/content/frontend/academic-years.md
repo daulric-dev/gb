@@ -11,42 +11,40 @@ This page hosts both academic-year and term management as tabs. The **Academic Y
 
 The legacy URL `/dashboard/academic-years` is permanently redirected to `/dashboard/academic-calendar` (see `frontend/next.config.ts`).
 
+An academic year is a named date range. It carries no grading settings: how a course's grade is worked out lives on the course itself (its assignment groups and grade scale).
+
 ## Features
 
 ### Academic Year List
 
-Displays all academic years as cards with:
+A table of the school's academic years, active year first, then newest first. Each row shows:
 - Year name
-- Date range
-- Grading model badge (`Term-Based` or `Year-Based`)
-- Active status indicator (green badge if active)
-- Activate/Deactivate button
-- Edit button
-- Delete button (if not active)
+- Start and end dates
+- Active / Inactive badge
+- Activate or Deactivate button, and an Edit button (for users with `academic-year:update`)
 
 ### Create Academic Year
 
-A dialog form to create a new academic year:
+A dialog form (for users with `academic-year:create`):
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| Name | Yes | e.g., "2025-2026" |
+| Name | Yes | e.g. "2025/2026" |
 | Start Date | Yes | Year start date |
-| End Date | Yes | Year end date |
-| Grading Model | Yes | `term_based` or `year_based` |
-| Year Exam Weight | Conditional | Required when `year_based`; must sum to 100 with coursework |
-| Year Coursework Weight | Conditional | Required when `year_based` |
+| End Date | Yes | Year end date; must be after the start |
 
-When `year_based` is selected, two additional weight fields appear. The frontend validates that they sum to 100 before submission.
+New years start inactive.
 
 ### Edit Academic Year
 
-Same form as create, pre-filled with existing data.
+Same form as create, pre-filled with the year's name and dates.
 
 ### Activate / Deactivate
 
 - **Activate**: Sets this year as the active one. Only one year can be active at a time - activating one deactivates all others.
 - **Deactivate**: Removes the active status.
+
+Academic years cannot be deleted from the app.
 
 ## API Calls
 
@@ -57,4 +55,3 @@ Same form as create, pre-filled with existing data.
 | Update | `PATCH /api/academic-years/:id` |
 | Activate | `PATCH /api/academic-years/:id/activate` |
 | Deactivate | `PATCH /api/academic-years/:id/deactivate` |
-| Delete | `DELETE /api/academic-years/:id` |

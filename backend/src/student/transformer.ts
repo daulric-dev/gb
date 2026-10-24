@@ -1,7 +1,7 @@
-import type { Tables } from '@/types/database.types';
+import type { StudentRow } from './student.rows';
 import type { PaginatedResult } from '@/pagination/pagination.dto';
 
-type Student = Tables<{ schema: 'student' }, 'student'>;
+type Student = StudentRow;
 
 export function v1StudentList(data: Student[]): Student[] {
   return data;

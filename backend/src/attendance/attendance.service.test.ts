@@ -8,12 +8,41 @@ import {
 } from '@nestjs/common';
 import { AttendanceService, MAX_WRONG_CODES, tally } from './attendance.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
+import { Prisma } from '@/generated/prisma/client';
 
 /**
- * A tiny in-memory PostgREST stand-in: enough filters, unique constraints
- * and upsert semantics to run whole open → check-in → close flows.
+ * A tiny in-memory database behind the Prisma mock: enough filters, unique
+ * constraints and upsert semantics to run whole open → check-in → close flows.
  */
 type Row = Record<string, any>;
+
+/** Prisma model name → the table key the tests read. */
+const TABLES: Record<string, string> = {
+  attendance_session: 'course.attendance_session',
+  course_attendance_record: 'course.attendance_record',
+  course_student: 'course.course_student',
+  course: 'course.course',
+  student: 'student.student',
+};
+
+const cmp = (a: any, b: any) => (a instanceof Date ? a.getTime() : a) - (b instanceof Date ? b.getTime() : b);
+
+function matches(row: Row, where: Row = {}): boolean {
+  return Object.entries(where).every(([col, cond]) => {
+    const v = row[col] ?? null;
+    if (cond === null) return v === null;
+    if (cond instanceof Date) return v !== null && cmp(v, cond) === 0;
+    if (typeof cond === 'object') {
+      if ('in' in cond) return cond.in.includes(v);
+      if ('lte' in cond) return v !== null && cmp(v, cond.lte) <= 0;
+      if ('gt' in cond) return v !== null && cmp(v, cond.gt) > 0;
+      // A compound unique key, e.g. session_id_student_id: { ... }.
+      return matches(row, cond);
+    }
+    return v === cond;
+  });
+}
 
 function fakeDb(seed: Record<string, Row[]>) {
   const tables: Record<string, Row[]> = {};
@@ -26,88 +55,81 @@ function fakeDb(seed: Record<string, Row[]>) {
     'course.attendance_record': (a, b) =>
       a.session_id === b.session_id && a.student_id === b.student_id,
   };
+  const dup = () =>
+    new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
 
-  function builder(key: string) {
-    const preds: ((r: Row) => boolean)[] = [];
-    let op: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
-    let payload: any = null;
-    let opts: any = {};
-    let returning = false;
-    const b: any = {};
-
-    const run = () => {
-      const rows = (tables[key] ??= []);
-      const match = (r: Row) => preds.every((p) => p(r));
+  const prisma = createMockPrisma();
+  for (const [model, key] of Object.entries(TABLES)) {
+    const rows = () => (tables[key] ??= []);
+    const insert = (item: Row) => {
+      const row = {
+        id: `${key.split('.')[1]}-${++seq}`,
+        closed_at: null,
+        note: null,
+        checked_in_at: null,
+        distance_m: null,
+        ...item,
+      };
       const clash = unique[key];
-      if (op === 'select') return { data: rows.filter(match), error: null };
-      if (op === 'insert' || op === 'upsert') {
-        const items = Array.isArray(payload) ? payload : [payload];
-        const out: Row[] = [];
-        for (const item of items) {
-          const row = {
-            id: `${key.split('.')[1]}-${++seq}`,
-            closed_at: null,
-            note: null,
-            checked_in_at: null,
-            distance_m: null,
-            ...item,
-          };
-          const existing = clash ? rows.find((r) => clash(r, row)) : undefined;
-          if (existing) {
-            if (op === 'insert') {
-              return { data: null, error: { code: '23505', message: 'dup' } };
-            }
-            if (opts.ignoreDuplicates) continue;
-            Object.assign(existing, item);
-            out.push(existing);
-            continue;
-          }
-          rows.push(row);
-          out.push(row);
+      const existing = clash ? rows().find((r) => clash(r, row)) : undefined;
+      return { row, existing };
+    };
+    const m = prisma[model];
+    m.findMany.mockImplementation(async ({ where, orderBy } = {}) => {
+      const out = rows().filter((r) => matches(r, where)).map((r) => ({ ...r }));
+      if (orderBy) {
+        const [[col, dir]] = Object.entries(orderBy as Record<string, string>);
+        out.sort((a, b) => cmp(a[col], b[col]) * (dir === 'desc' ? -1 : 1));
+      }
+      return out;
+    });
+    const first = async ({ where }: Row = {}) => {
+      const hit = rows().find((r) => matches(r, where));
+      return hit ? { ...hit } : null;
+    };
+    m.findFirst.mockImplementation(first);
+    m.findUnique.mockImplementation(first);
+    m.create.mockImplementation(async ({ data }) => {
+      const { row, existing } = insert(data);
+      if (existing) throw dup();
+      rows().push(row);
+      return { ...row };
+    });
+    m.createMany.mockImplementation(async ({ data, skipDuplicates }) => {
+      let count = 0;
+      for (const item of data) {
+        const { row, existing } = insert(item);
+        if (existing) {
+          if (skipDuplicates) continue;
+          throw dup();
         }
-        return { data: out, error: null };
+        rows().push(row);
+        count++;
       }
-      if (op === 'update') {
-        const hit = rows.filter(match);
-        for (const r of hit) Object.assign(r, payload);
-        return { data: hit, error: null };
-      }
-      const keep = rows.filter((r) => !match(r));
-      tables[key] = keep;
-      return { data: null, error: null };
-    };
-
-    const one = () => {
-      const res = run();
-      if (res.error) return { data: null, error: res.error };
-      const rows = Array.isArray(res.data) ? res.data : [];
-      return { data: rows[0] ?? null, error: null };
-    };
-
-    b.select = () => ((returning = true), b);
-    b.insert = (p: any) => ((op = 'insert'), (payload = p), b);
-    b.upsert = (p: any, o: any) => ((op = 'upsert'), (payload = p), (opts = o ?? {}), b);
-    b.update = (p: any) => ((op = 'update'), (payload = p), b);
-    b.delete = () => ((op = 'delete'), b);
-    b.eq = (c: string, v: any) => (preds.push((r) => r[c] === v), b);
-    b.in = (c: string, v: any[]) => (preds.push((r) => v.includes(r[c])), b);
-    b.is = (c: string, v: any) => (preds.push((r) => (r[c] ?? null) === v), b);
-    b.lte = (c: string, v: string) => (preds.push((r) => r[c] <= v), b);
-    b.gt = (c: string, v: string) => (preds.push((r) => r[c] > v), b);
-    b.order = () => b;
-    b.single = () => Promise.resolve(one());
-    b.maybeSingle = () => Promise.resolve(one());
-    b.then = (resolve: any, reject: any) =>
-      Promise.resolve(run()).then(resolve, reject);
-    void returning;
-    return b;
+      return { count };
+    });
+    m.upsert.mockImplementation(async ({ where, create, update }) => {
+      const hit = rows().find((r) => matches(r, where));
+      if (hit) return { ...Object.assign(hit, update) };
+      const { row } = insert(create);
+      rows().push(row);
+      return { ...row };
+    });
+    m.updateManyAndReturn.mockImplementation(async ({ where, data }) => {
+      const hit = rows().filter((r) => matches(r, where));
+      for (const r of hit) Object.assign(r, data);
+      return hit.map((r) => ({ ...r }));
+    });
+    m.deleteMany.mockImplementation(async ({ where }) => {
+      const before = rows().length;
+      tables[key] = rows().filter((r) => !matches(r, where));
+      return { count: before - tables[key].length };
+    });
   }
-
-  const client = {
-    from: (t: string) => builder(`public.${t}`),
-    schema: (s: string) => ({ from: (t: string) => builder(`${s}.${t}`) }),
-  };
-  return { getServiceClient: () => client, tables };
+  return { prisma, tables };
 }
 
 const TEACHER = 'teacher-1';
@@ -174,7 +196,7 @@ function setup(opts: { status?: string; role?: string } = {}) {
     },
   };
   const service = new AttendanceService(
-    sb as any,
+    sb.prisma as any,
     cache as any,
     access as any,
     push as any,
@@ -188,8 +210,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 /** Move a session's window into the past, as if minutes had gone by. */
 function age(sb: ReturnType<typeof fakeDb>, sessionId: string, minutes: number) {
   const s = sb.tables['course.attendance_session'].find((r) => r.id === sessionId)!;
-  const shift = (iso: string) =>
-    new Date(Date.parse(iso) - minutes * 60_000).toISOString();
+  const shift = (d: Date) => new Date(d.getTime() - minutes * 60_000);
   s.opened_at = shift(s.opened_at);
   s.closes_at = shift(s.closes_at);
 }
@@ -445,10 +466,15 @@ describe('AttendanceService finalising', () => {
 
     // Again: nothing new, nothing re-announced.
     const row = sb.tables['course.attendance_session'].find((r) => r.id === s.id)!;
-    const again = await service.finalize({ ...row, closed_at: null } as any);
+    const again = await service.finalize({
+      ...row,
+      opened_at: row.opened_at.toISOString(),
+      closes_at: row.closes_at.toISOString(),
+      closed_at: null,
+    } as any);
     await service.close(TEACHER, COURSE, s.id);
     await tick();
-    expect(again.closed_at).toBe(row.closed_at);
+    expect(again.closed_at).toBe(row.closed_at.toISOString());
     expect(sb.tables['course.attendance_record']).toHaveLength(3);
     expect(events.filter((e) => e.event.type === 'attendance.closed')).toHaveLength(3);
   });
@@ -460,7 +486,7 @@ describe('AttendanceService finalising', () => {
     age(sb, s.id, 6);
     await service.sweep();
     const row = sb.tables['course.attendance_session'].find((r) => r.id === s.id)!;
-    expect(row.closed_at).toBe(row.closes_at);
+    expect(row.closed_at).toEqual(row.closes_at);
     expect(sb.tables['course.attendance_record']).toHaveLength(3);
     await service.sweep();
     expect(sb.tables['course.attendance_record']).toHaveLength(3);

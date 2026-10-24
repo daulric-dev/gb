@@ -14,8 +14,10 @@ import { unreadChat, refreshChatUnread } from "@/lib/chat";
 import {
   AtSign,
   BookOpen,
+  CalendarDays,
   CalendarRange,
   ChevronsUpDown,
+  CreditCard,
   FileText,
   FolderOpen,
   GraduationCap,
@@ -27,12 +29,20 @@ import {
   Scale,
   Settings,
   Shield,
+  ShieldEllipsis,
   UserRoundSearch,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import {
+  BILLING_PATH,
+  billingStatus,
+  loadPlatformAdmin,
+  platformAdmin,
+  resetBillingState,
+} from "@/lib/billing";
 import type { UserProfile } from "@/providers/AuthProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import {
@@ -64,6 +74,8 @@ type NavItem = {
   permission?: [string, string];
   /** Mirrors a backend AdminGuard rather than a catalog permission. */
   adminOnly?: boolean;
+  /** Only shown on the hosted platform, where billing is on. */
+  billing?: boolean;
 };
 
 const navItems: NavItem[] = [
@@ -71,6 +83,8 @@ const navItems: NavItem[] = [
   // Everyone on staff may teach or assist, so no catalog permission gates the
   // list; the API returns only the courses the caller has a role in.
   { title: "Courses", href: "/dashboard/courses", icon: BookOpen },
+  // Due dates across the caller's own courses; no permission, like Courses.
+  { title: "Calendar", href: "/dashboard/calendar", icon: CalendarDays },
   {
     title: "Students",
     href: "/dashboard/students",
@@ -123,6 +137,13 @@ const adminNavItems: NavItem[] = [
     icon: AtSign,
     adminOnly: true,
   },
+  {
+    title: "Billing",
+    href: BILLING_PATH,
+    icon: CreditCard,
+    permission: ["school", "update"],
+    billing: true,
+  },
 ];
 
 function getInitials(profile: UserProfile | null) {
@@ -144,6 +165,11 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const { state } = useSidebar();
   const { can, isAdmin } = usePermissions();
   const collapsed = state === "collapsed";
+  const billingEnabled = billingStatus.value.enabled;
+
+  useEffect(() => {
+    if (billingEnabled) void loadPlatformAdmin();
+  }, [billingEnabled]);
 
   // Keep the unread badges fresh as the user navigates.
   useEffect(() => {
@@ -158,12 +184,15 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     } catch {
       toast.error("Failed to logout");
     }
+    resetBillingState();
     router.push("/login");
     toast.success("Logged out");
   }
 
   const visibleAdminNavItems = adminNavItems.filter((item) =>
-    item.adminOnly
+    item.billing && !billingEnabled
+      ? false
+      : item.adminOnly
       ? isAdmin
       : !item.permission || can(item.permission[0], item.permission[1]),
   );
@@ -360,6 +389,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
               <Settings className="mr-2 size-4" />
               Settings
             </DropdownMenuItem>
+            {billingEnabled && platformAdmin.value && (
+              <DropdownMenuItem onClick={() => router.push("/platform")}>
+                <ShieldEllipsis className="mr-2 size-4" />
+                Platform admin
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 size-4" />
               Log out

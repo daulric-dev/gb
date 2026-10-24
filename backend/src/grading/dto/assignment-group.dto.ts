@@ -1,5 +1,6 @@
 import {
   ArrayNotEmpty,
+  IsInt,
   IsArray,
   IsNotEmpty,
   IsNumber,
@@ -28,6 +29,24 @@ export class CreateAssignmentGroupDto {
   @Min(0)
   @Max(100)
   weight?: number | null;
+
+  /** Leave out each student's N marks that hurt the group most. */
+  @ApiPropertyOptional({ example: 1, minimum: 0, maximum: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  dropLowest?: number;
+
+  /** Leave out each student's N best marks (after the lowest are dropped). */
+  @ApiPropertyOptional({ example: 0, minimum: 0, maximum: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  dropHighest?: number;
 }
 
 export class UpdateAssignmentGroupDto {
@@ -46,6 +65,24 @@ export class UpdateAssignmentGroupDto {
   @Min(0)
   @Max(100)
   weight?: number | null;
+
+  /** Leave out each student's N marks that hurt the group most. */
+  @ApiPropertyOptional({ example: 1, minimum: 0, maximum: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  dropLowest?: number;
+
+  /** Leave out each student's N best marks (after the lowest are dropped). */
+  @ApiPropertyOptional({ example: 0, minimum: 0, maximum: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  dropHighest?: number;
 }
 
 export class ReorderAssignmentGroupsDto {

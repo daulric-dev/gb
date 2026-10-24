@@ -21,8 +21,18 @@ export type Resource = (typeof RESOURCES)[number];
 
 export type PermissionKey = `${Resource}:${Action}`;
 
+// Resources without the full create/read/update/delete set. A key exists only
+// when something enforces it:
+// - school:update gates the school's own settings that are not a resource of
+//   their own - billing (plan, payment, invoices). Admins hold it by default.
+// - course: reading and deleting a course are decided by the course role
+//   (CourseAccessService), so only create and update are school-wide powers.
+// - student and academic-year have no delete route.
 const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
-  school: ['read'],
+  school: ['read', 'update'],
+  course: ['create', 'update'],
+  student: ['create', 'read', 'update'],
+  'academic-year': ['create', 'read', 'update'],
 };
 
 export function actionsFor(resource: Resource): readonly Action[] {
@@ -89,13 +99,11 @@ const readKeys = (...resources: Resource[]): PermissionKey[] =>
 export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   admin: '*',
 
-  // Teachers create their own courses and run them through their course
-  // role; `course:read` lists the school's catalogue, not its contents.
+  // Teachers create their own courses and run them through their course role.
   teacher: [
     ...allKeys('announcement', 'file', 'chat'),
     permKey('course', 'create'),
     ...readKeys(
-      'course',
       'student',
       'term',
       'academic-year',
@@ -108,7 +116,6 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   // plus the ability to manage their own files (upload, view, share own).
   member: [
     ...readKeys(
-      'course',
       'student',
       'term',
       'academic-year',

@@ -11,7 +11,8 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import {
   CourseAccessService,
@@ -46,10 +47,35 @@ import type {
   PortalOpenAttendance,
 } from './attendance.types';
 
-const SESSION_COLUMNS =
-  'id, course_id, title, opened_by, opened_at, closes_at, closed_at, check_in_code, late_after_minutes, latitude, longitude, radius_m';
-const RECORD_COLUMNS =
-  'session_id, student_id, status, method, checked_in_at, distance_m, note';
+const SESSION_SELECT = {
+  id: true,
+  course_id: true,
+  title: true,
+  opened_by: true,
+  opened_at: true,
+  closes_at: true,
+  closed_at: true,
+  check_in_code: true,
+  late_after_minutes: true,
+  latitude: true,
+  longitude: true,
+  radius_m: true,
+} as const;
+const RECORD_SELECT = {
+  session_id: true,
+  student_id: true,
+  status: true,
+  method: true,
+  checked_in_at: true,
+  distance_m: true,
+  note: true,
+} as const;
+const STUDENT_SELECT = {
+  id: true,
+  first_name: true,
+  last_name: true,
+  user_profile_id: true,
+} as const;
 
 const DEFAULT_DURATION_MINUTES = 5;
 const DEFAULT_RADIUS_M = 100;
@@ -83,6 +109,32 @@ interface RecordRow {
   distance_m: number | null;
   note: string | null;
 }
+
+/**
+ * Sessions and records are handled with ISO-string timestamps, as the API
+ * has always sent them; the database rows carry Dates.
+ */
+type SessionDbRow = Omit<SessionRow, 'opened_at' | 'closes_at' | 'closed_at'> & {
+  opened_at: Date;
+  closes_at: Date;
+  closed_at: Date | null;
+};
+
+const toSessionRow = (r: SessionDbRow): SessionRow => ({
+  ...r,
+  opened_at: r.opened_at.toISOString(),
+  closes_at: r.closes_at.toISOString(),
+  closed_at: isoDate(r.closed_at),
+});
+
+type RecordDbRow = Omit<RecordRow, 'checked_in_at'> & {
+  checked_in_at: Date | null;
+};
+
+const toRecordRow = (r: RecordDbRow): RecordRow => ({
+  ...r,
+  checked_in_at: isoDate(r.checked_in_at),
+});
 
 interface StudentRow {
   id: string;
@@ -156,7 +208,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   private sweeping = false;
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly access: CourseAccessService,
     private readonly push: PushService,
@@ -173,56 +225,52 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     this.sweepTimer = undefined;
   }
 
-  private db() {
-    return this.supabaseService.getServiceClient();
-  }
-
   // ── loading ───────────────────────────────────────────────────────────────
 
   private async loadSession(
     courseId: string,
     sessionId: string,
   ): Promise<SessionRow> {
-    const { data } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .eq('id', sessionId)
-      .eq('course_id', courseId)
-      .maybeSingle();
+    const data = await this.prisma.attendance_session.findFirst({
+      where: { id: sessionId, course_id: courseId },
+      select: SESSION_SELECT,
+    });
     if (!data) throw new NotFoundException('Attendance session not found');
-    return data;
+    return toSessionRow(data);
+  }
+
+  private async findSession(sessionId: string): Promise<SessionRow | null> {
+    const data = await this.prisma.attendance_session.findUnique({
+      where: { id: sessionId },
+      select: SESSION_SELECT,
+    });
+    return data ? toSessionRow(data) : null;
   }
 
   private async students(ids: string[]): Promise<StudentRow[]> {
     if (ids.length === 0) return [];
-    const { data } = await this.db()
-      .schema('student')
-      .from('student')
-      .select('id, first_name, last_name, user_profile_id')
-      .in('id', ids);
-    return (data ?? []);
+    return this.prisma.student.findMany({
+      where: { id: { in: ids } },
+      select: STUDENT_SELECT,
+    });
   }
 
   /** Students actively enrolled in the course right now. */
   private async activeStudents(courseId: string): Promise<StudentRow[]> {
-    const { data } = await this.db()
-      .schema('course')
-      .from('course_student')
-      .select('student_id')
-      .eq('course_id', courseId)
-      .eq('status', 'active');
-    return this.students((data ?? []).map((r: any) => r.student_id as string));
+    const rows = await this.prisma.course_student.findMany({
+      where: { course_id: courseId, status: 'active' },
+      select: { student_id: true },
+    });
+    return this.students(rows.map((r) => r.student_id));
   }
 
   private async recordsFor(sessionIds: string[]): Promise<RecordRow[]> {
     if (sessionIds.length === 0) return [];
-    const { data } = await this.db()
-      .schema('course')
-      .from('attendance_record')
-      .select(RECORD_COLUMNS)
-      .in('session_id', sessionIds);
-    return (data ?? []);
+    const rows = await this.prisma.course_attendance_record.findMany({
+      where: { session_id: { in: sessionIds } },
+      select: RECORD_SELECT,
+    });
+    return rows.map(toRecordRow);
   }
 
   // ── shaping ───────────────────────────────────────────────────────────────
@@ -357,28 +405,27 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
    */
   async finalize(session: SessionRow, closedAt?: string): Promise<SessionRow> {
     if (session.closed_at) return session;
-    const supabase = this.db();
     const active = await this.activeStudents(session.course_id);
 
     if (active.length > 0) {
-      const now = new Date().toISOString();
-      const { error } = await supabase
-        .schema('course')
-        .from('attendance_record')
-        .upsert(
-          active.map((st) => ({
+      const now = new Date();
+      try {
+        await this.prisma.course_attendance_record.createMany({
+          data: active.map((st) => ({
             session_id: session.id,
             course_id: session.course_id,
             student_id: st.id,
-            status: 'absent',
-            method: 'auto',
+            status: 'absent' as const,
+            method: 'auto' as const,
             created_at: now,
             updated_at: now,
           })),
-          { onConflict: 'session_id,student_id', ignoreDuplicates: true },
+          skipDuplicates: true,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to record absentees: ${(err as Error).message}`,
         );
-      if (error) {
-        this.logger.error(`Failed to record absentees: ${error.message}`);
         throw new BadRequestException('Failed to close attendance');
       }
     }
@@ -388,32 +435,24 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       closedAt ??
       new Date(Math.min(Date.now(), Date.parse(session.closes_at))).toISOString();
 
-    const { data, error } = await supabase
-      .schema('course')
-      .from('attendance_session')
-      .update({ closed_at: stamp })
-      .eq('id', session.id)
-      .is('closed_at', null)
-      .select(SESSION_COLUMNS)
-      .maybeSingle();
-
-    if (error) {
-      this.logger.error(`Failed to close attendance: ${error.message}`);
+    let updated: SessionDbRow[];
+    try {
+      updated = await this.prisma.attendance_session.updateManyAndReturn({
+        where: { id: session.id, closed_at: null },
+        data: { closed_at: new Date(stamp) },
+        select: SESSION_SELECT,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to close attendance: ${(err as Error).message}`);
       throw new BadRequestException('Failed to close attendance');
     }
 
-    if (!data) {
+    if (updated.length === 0) {
       // Someone else finalised it first; they announce it.
-      const { data: fresh } = await supabase
-        .schema('course')
-        .from('attendance_session')
-        .select(SESSION_COLUMNS)
-        .eq('id', session.id)
-        .maybeSingle();
-      return (fresh) ?? session;
+      return (await this.findSession(session.id)) ?? session;
     }
 
-    const closed = data;
+    const closed = toSessionRow(updated[0]);
     void this.announceClosed(closed, active);
     return closed;
   }
@@ -447,22 +486,26 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
   /** Finalise every session past its window, in one course or everywhere. */
   async finalizeExpired(courseId?: string): Promise<number> {
-    let query = this.db()
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .is('closed_at', null)
-      .lte('closes_at', new Date().toISOString());
-    if (courseId) query = query.eq('course_id', courseId);
-
-    const { data, error } = await query;
-    if (error) {
-      this.logger.error(`Failed to find expired attendance: ${error.message}`);
+    let data: SessionRow[];
+    try {
+      const rows = await this.prisma.attendance_session.findMany({
+        where: {
+          closed_at: null,
+          closes_at: { lte: new Date() },
+          ...(courseId ? { course_id: courseId } : {}),
+        },
+        select: SESSION_SELECT,
+      });
+      data = rows.map(toSessionRow);
+    } catch (err) {
+      this.logger.error(
+        `Failed to find expired attendance: ${(err as Error).message}`,
+      );
       return 0;
     }
 
     let done = 0;
-    for (const s of (data ?? []) as SessionRow[]) {
+    for (const s of data) {
       if (!isExpired(s)) continue;
       try {
         await this.finalize(s);
@@ -499,19 +542,18 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     await this.access.require(userId, courseId, STAFF_ROLES);
     await this.finalizeExpired(courseId);
 
-    const { data, error } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .eq('course_id', courseId)
-      .order('opened_at', { ascending: false });
-
-    if (error) {
-      this.logger.error(`Failed to list attendance: ${error.message}`);
+    let sessions: SessionRow[];
+    try {
+      const rows = await this.prisma.attendance_session.findMany({
+        where: { course_id: courseId },
+        orderBy: { opened_at: 'desc' },
+        select: SESSION_SELECT,
+      });
+      sessions = rows.map(toSessionRow);
+    } catch (err) {
+      this.logger.error(`Failed to list attendance: ${(err as Error).message}`);
       throw new BadRequestException('Failed to load attendance');
     }
-
-    const sessions = (data ?? []) as SessionRow[];
     const [records, active] = await Promise.all([
       this.recordsFor(sessions.map((s) => s.id)),
       this.activeStudents(courseId),
@@ -556,15 +598,15 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         ? null
         : String(randomInt(0, 10_000)).padStart(4, '0');
 
-    const { data, error } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .insert({
+    let data: SessionDbRow;
+    try {
+      data = await this.prisma.attendance_session.create({
+        data: {
         course_id: courseId,
         title: input.title?.trim() || null,
         opened_by: userId,
-        opened_at: openedAt.toISOString(),
-        closes_at: closesAt.toISOString(),
+        opened_at: openedAt,
+        closes_at: closesAt,
         check_in_code: code,
         qr_secret: newQrSecret(),
         late_after_minutes: input.lateAfterMinutes ?? null,
@@ -573,19 +615,20 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         radius_m: input.location
           ? (input.location.radiusM ?? DEFAULT_RADIUS_M)
           : null,
-      })
-      .select(SESSION_COLUMNS)
-      .single();
-
-    if (error?.code === '23505') {
-      throw new ConflictException('Attendance is already open in this course');
-    }
-    if (error || !data) {
-      this.logger.error(`Failed to open attendance: ${error?.message}`);
+        },
+        select: SESSION_SELECT,
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(
+          'Attendance is already open in this course',
+        );
+      }
+      this.logger.error(`Failed to open attendance: ${(err as Error).message}`);
       throw new BadRequestException('Failed to open attendance');
     }
 
-    const session = data;
+    const session = toSessionRow(data);
     // Fire and forget: opening never waits on pushes or the bus.
     void this.announceOpened(course, session);
     return this.detailOf(session);
@@ -658,15 +701,14 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     await this.access.require(userId, courseId, MANAGE_ROLES);
     const session = await this.loadSession(courseId, sessionId);
 
-    const { error } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .delete()
-      .eq('id', sessionId)
-      .eq('course_id', courseId);
-
-    if (error) {
-      this.logger.error(`Failed to delete attendance: ${error.message}`);
+    try {
+      await this.prisma.attendance_session.deleteMany({
+        where: { id: sessionId, course_id: courseId },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to delete attendance: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to delete the attendance session');
     }
 
@@ -698,39 +740,46 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     const session = await this.current(
       await this.loadSession(courseId, sessionId),
     );
-    const supabase = this.db();
-
-    const { data: enrollment } = await supabase
-      .schema('course')
-      .from('course_student')
-      .select('status')
-      .eq('course_id', courseId)
-      .eq('student_id', studentId)
-      .maybeSingle();
+    const enrollment = await this.prisma.course_student.findFirst({
+      where: { course_id: courseId, student_id: studentId },
+      select: { status: true },
+    });
     if (!enrollment) {
       throw new NotFoundException('Student not found in this course');
     }
 
-    const row: Record<string, unknown> = {
-      session_id: session.id,
-      course_id: courseId,
-      student_id: studentId,
+    const changes = {
       status: input.status,
-      method: 'teacher',
+      method: 'teacher' as const,
       updated_by: userId,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(),
+      ...(input.note !== undefined
+        ? { note: input.note?.trim() || null }
+        : {}),
     };
-    if (input.note !== undefined) row.note = input.note?.trim() || null;
 
-    const { data, error } = await supabase
-      .schema('course')
-      .from('attendance_record')
-      .upsert(row, { onConflict: 'session_id,student_id' })
-      .select(RECORD_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to set attendance: ${error?.message}`);
+    let data: RecordRow;
+    try {
+      data = toRecordRow(
+        await this.prisma.course_attendance_record.upsert({
+          where: {
+            session_id_student_id: {
+              session_id: session.id,
+              student_id: studentId,
+            },
+          },
+          create: {
+            session_id: session.id,
+            course_id: courseId,
+            student_id: studentId,
+            ...changes,
+          },
+          update: { course_id: courseId, ...changes },
+          select: RECORD_SELECT,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(`Failed to set attendance: ${(err as Error).message}`);
       throw new BadRequestException('Failed to update attendance');
     }
 
@@ -745,21 +794,20 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
   private async courseSheet(courseId: string) {
     await this.finalizeExpired(courseId);
-    const { data } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .eq('course_id', courseId)
-      .order('opened_at', { ascending: true });
-    const sessions = (data ?? []) as SessionRow[];
+    const sessions = (
+      await this.prisma.attendance_session.findMany({
+        where: { course_id: courseId },
+        orderBy: { opened_at: 'asc' },
+        select: SESSION_SELECT,
+      })
+    ).map(toSessionRow);
 
-    const { data: recordData } = await this.db()
-      .schema('course')
-      .from('attendance_record')
-      .select(RECORD_COLUMNS)
-      .eq('course_id', courseId);
+    const recordData = await this.prisma.course_attendance_record.findMany({
+      where: { course_id: courseId },
+      select: RECORD_SELECT,
+    });
     const sessionIds = new Set(sessions.map((s) => s.id));
-    const records = ((recordData ?? []) as RecordRow[]).filter((r) =>
+    const records = recordData.map(toRecordRow).filter((r) =>
       sessionIds.has(r.session_id),
     );
 
@@ -864,56 +912,48 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
   /** Open sessions in the student's active, published courses. No codes. */
   async openForStudent(studentId: string): Promise<PortalOpenAttendance[]> {
-    const supabase = this.db();
-    const { data: enrollments } = await supabase
-      .schema('course')
-      .from('course_student')
-      .select('course_id')
-      .eq('student_id', studentId)
-      .eq('status', 'active');
-    const courseIds = (enrollments ?? []).map((e: any) => e.course_id as string);
+    const enrollments = await this.prisma.course_student.findMany({
+      where: { student_id: studentId, status: 'active' },
+      select: { course_id: true },
+    });
+    const courseIds = enrollments.map((e) => e.course_id);
     if (courseIds.length === 0) return [];
 
-    const { data: sessionData } = await supabase
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .in('course_id', courseIds)
-      .is('closed_at', null)
-      .gt('closes_at', new Date().toISOString())
-      .order('closes_at', { ascending: true });
-    const sessions = ((sessionData ?? []) as SessionRow[]).filter(
+    const sessionData = await this.prisma.attendance_session.findMany({
+      where: {
+        course_id: { in: courseIds },
+        closed_at: null,
+        closes_at: { gt: new Date() },
+      },
+      orderBy: { closes_at: 'asc' },
+      select: SESSION_SELECT,
+    });
+    const sessions = sessionData.map(toSessionRow).filter(
       (s) => courseIds.includes(s.course_id) && isOpen(s),
     );
     if (sessions.length === 0) return [];
 
-    const [{ data: courses }, { data: mine }] = await Promise.all([
-      supabase
-        .schema('course')
-        .from('course')
-        .select('id, name, status')
-        .in('id', [...new Set(sessions.map((s) => s.course_id))]),
-      supabase
-        .schema('course')
-        .from('attendance_record')
-        .select('session_id, status')
-        .eq('student_id', studentId)
-        .in(
-          'session_id',
-          sessions.map((s) => s.id),
-        ),
+    const [courses, mine] = await Promise.all([
+      this.prisma.course.findMany({
+        where: { id: { in: [...new Set(sessions.map((s) => s.course_id))] } },
+        select: { id: true, name: true, status: true },
+      }),
+      this.prisma.course_attendance_record.findMany({
+        where: {
+          student_id: studentId,
+          session_id: { in: sessions.map((s) => s.id) },
+        },
+        select: { session_id: true, status: true },
+      }),
     ]);
 
     const published = new Map(
-      (courses ?? [])
-        .filter((c: any) => c.status === 'published')
-        .map((c: any) => [c.id as string, c.name as string]),
+      courses
+        .filter((c) => c.status === 'published')
+        .map((c) => [c.id, c.name]),
     );
     const myStatus = new Map(
-      (mine ?? []).map((r: any) => [
-        r.session_id as string,
-        r.status as AttendanceStatus,
-      ]),
+      mine.map((r) => [r.session_id, r.status]),
     );
 
     return sessions
@@ -929,13 +969,11 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
   /** The secret behind a session's QR codes; never selected with the rest. */
   private async qrSecretOf(sessionId: string): Promise<string | null> {
-    const { data } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .select('qr_secret')
-      .eq('id', sessionId)
-      .maybeSingle();
-    return (data?.qr_secret as string | null) ?? null;
+    const data = await this.prisma.attendance_session.findUnique({
+      where: { id: sessionId },
+      select: { qr_secret: true },
+    });
+    return data?.qr_secret ?? null;
   }
 
   /**
@@ -972,12 +1010,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
    * is that someone saw the screen in the last few seconds.
    */
   async scanClaim(sessionId: string, token: string) {
-    const { data } = await this.db()
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .eq('id', sessionId)
-      .maybeSingle();
+    const data = await this.findSession(sessionId);
     const now = Date.now();
     if (!data || !isOpen(data, now)) {
       throw new ConflictException('Attendance has closed');
@@ -1000,30 +1033,20 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     sessionId: string,
     input: CheckInInput,
   ): Promise<PortalOpenAttendance> {
-    const supabase = this.db();
-    const { data } = await supabase
-      .schema('course')
-      .from('attendance_session')
-      .select(SESSION_COLUMNS)
-      .eq('id', sessionId)
-      .maybeSingle();
-    if (!data) throw new NotFoundException('Attendance session not found');
-    const session = data;
+    const session = await this.findSession(sessionId);
+    if (!session) throw new NotFoundException('Attendance session not found');
 
     // Only an active student of a published course; anything else looks
     // like a session that does not exist.
     const course = await this.access.requireStudent(
       studentId,
-      session.course_id as string,
+      session.course_id,
       { allowArchived: false },
     );
-    const { data: enrollment } = await supabase
-      .schema('course')
-      .from('course_student')
-      .select('status')
-      .eq('course_id', session.course_id)
-      .eq('student_id', studentId)
-      .maybeSingle();
+    const enrollment = await this.prisma.course_student.findFirst({
+      where: { course_id: session.course_id, student_id: studentId },
+      select: { status: true },
+    });
     if (enrollment?.status !== 'active') {
       throw new NotFoundException('Attendance session not found');
     }
@@ -1034,25 +1057,24 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('Attendance has closed');
     }
 
-    const { data: existing } = await supabase
-      .schema('course')
-      .from('attendance_record')
-      .select('status')
-      .eq('session_id', session.id)
-      .eq('student_id', studentId)
-      .maybeSingle();
+    const existing = await this.prisma.course_attendance_record.findUnique({
+      where: {
+        session_id_student_id: { session_id: session.id, student_id: studentId },
+      },
+      select: { status: true },
+    });
     if (existing) throw new ConflictException('You have already checked in');
 
     // A valid QR frame proves the student is looking at the screen in the
     // room, which is all the code proves, so it stands in for the code.
     let viaQr = false;
     if (input.qrToken || input.qrClaim) {
-      const secret = await this.qrSecretOf(session.id as string);
+      const secret = await this.qrSecretOf(session.id);
       const valid =
         !!secret &&
         (input.qrToken
           ? verifyQrToken(secret, input.qrToken, now)
-          : verifyQrClaim(secret, session.id as string, input.qrClaim!, now));
+          : verifyQrClaim(secret, session.id, input.qrClaim!, now));
       if (!valid) {
         throw new ConflictException(
           'That QR code has expired. Scan the one on screen again',
@@ -1074,7 +1096,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       }
       const fence = withinGeofence(
         { latitude: session.latitude, longitude: session.longitude },
-        session.radius_m as number,
+        session.radius_m,
         input.location,
       );
       distanceM = Math.round(fence.distanceM);
@@ -1088,49 +1110,48 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     const lateAt =
       session.late_after_minutes === null
         ? null
-        : Date.parse(session.opened_at as string) + session.late_after_minutes * 60_000;
+        : Date.parse(session.opened_at) + session.late_after_minutes * 60_000;
     const status: AttendanceStatus =
       lateAt !== null && now > lateAt ? 'late' : 'present';
-    const stamp = new Date(now).toISOString();
+    const stamp = new Date(now);
 
-    const { data: record, error } = await supabase
-      .schema('course')
-      .from('attendance_record')
-      .insert({
-        session_id: session.id,
-        course_id: session.course_id,
-        student_id: studentId,
-        status,
-        method: viaQr ? 'qr' : 'self',
-        checked_in_at: stamp,
-        distance_m: distanceM,
-        created_at: stamp,
-        updated_at: stamp,
-      })
-      .select(RECORD_COLUMNS)
-      .single();
-
-    if (error?.code === '23505') {
-      // Lost a race with the close (marked absent) or a double tap.
-      const { data: fresh } = await supabase
-        .schema('course')
-        .from('attendance_session')
-        .select('closed_at')
-        .eq('id', session.id)
-        .maybeSingle();
-      throw new ConflictException(
-        fresh?.closed_at
-          ? 'Attendance has closed'
-          : 'You have already checked in',
+    let record: RecordRow;
+    try {
+      record = toRecordRow(
+        await this.prisma.course_attendance_record.create({
+          data: {
+            session_id: session.id,
+            course_id: session.course_id,
+            student_id: studentId,
+            status,
+            method: viaQr ? 'qr' : 'self',
+            checked_in_at: stamp,
+            distance_m: distanceM,
+            created_at: stamp,
+            updated_at: stamp,
+          },
+          select: RECORD_SELECT,
+        }),
       );
-    }
-    if (error || !record) {
-      this.logger.error(`Failed to check in: ${error?.message}`);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        // Lost a race with the close (marked absent) or a double tap.
+        const fresh = await this.prisma.attendance_session.findUnique({
+          where: { id: session.id },
+          select: { closed_at: true },
+        });
+        throw new ConflictException(
+          fresh?.closed_at
+            ? 'Attendance has closed'
+            : 'You have already checked in',
+        );
+      }
+      this.logger.error(`Failed to check in: ${(err as Error).message}`);
       throw new BadRequestException('Failed to check in');
     }
 
     const [student] = await this.students([studentId]);
-    void this.realtime.publishStaff(session.id as string, {
+    void this.realtime.publishStaff(session.id, {
       type: 'attendance.record',
       data: this.toEntry(student, studentId, record),
     });
@@ -1173,25 +1194,20 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   ): Promise<PortalCourseAttendance> {
     await this.access.requireStudent(studentId, courseId);
     await this.finalizeExpired(courseId);
-    const supabase = this.db();
-
-    const [{ data: sessionData }, { data: mineData }] = await Promise.all([
-      supabase
-        .schema('course')
-        .from('attendance_session')
-        .select(SESSION_COLUMNS)
-        .eq('course_id', courseId)
-        .order('opened_at', { ascending: false }),
-      supabase
-        .schema('course')
-        .from('attendance_record')
-        .select(RECORD_COLUMNS)
-        .eq('course_id', courseId)
-        .eq('student_id', studentId),
+    const [sessionData, mineData] = await Promise.all([
+      this.prisma.attendance_session.findMany({
+        where: { course_id: courseId },
+        orderBy: { opened_at: 'desc' },
+        select: SESSION_SELECT,
+      }),
+      this.prisma.course_attendance_record.findMany({
+        where: { course_id: courseId, student_id: studentId },
+        select: RECORD_SELECT,
+      }),
     ]);
 
-    const sessions = (sessionData ?? []) as SessionRow[];
-    const mine = ((mineData ?? []) as RecordRow[]).filter(
+    const sessions = sessionData.map(toSessionRow);
+    const mine = mineData.map(toRecordRow).filter(
       (r) => r.student_id === studentId,
     );
     const bySession = new Map(mine.map((r) => [r.session_id, r]));

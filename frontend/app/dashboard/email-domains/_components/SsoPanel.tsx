@@ -6,12 +6,20 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { KeyRound, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { EmailDomain } from "@/lib/email-domains";
-import { ssoProviderName, type SsoProvider } from "@/lib/sso";
+import {
+  isHttpsUrl,
+  looksLikeCertificate,
+  samlServiceProvider,
+  ssoProviderName,
+  type SsoProvider,
+} from "@/lib/sso";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { CopyRow } from "./CopyRow";
 import {
   Select,
   SelectContent,
@@ -44,6 +52,9 @@ export function SsoPanel({
   const provider = useSignal(domain.ssoProvider ?? NONE);
   const tenant = useSignal(domain.azureTenantId ?? "");
   const required = useSignal(domain.ssoRequired);
+  const samlEntryPoint = useSignal(domain.samlEntryPoint ?? "");
+  const samlIssuer = useSignal(domain.samlIssuer ?? "");
+  const samlCertificate = useSignal(domain.samlCertificate ?? "");
   const saving = useSignal(false);
 
   if (!domain.verified) {
@@ -90,7 +101,7 @@ export function SsoPanel({
   if (domain.ssoProvider && !providers.some((p) => p.id === domain.ssoProvider)) {
     items.push({
       value: domain.ssoProvider,
-      label: `${domain.ssoProvider} (not available)`,
+      label: `${ssoProviderName(undefined, domain.ssoProvider)} (not available)`,
     });
   }
 
@@ -98,13 +109,29 @@ export function SsoPanel({
   const isAzure = chosen === "azure";
   const tenantValue = tenant.value.trim();
   const tenantInvalid = isAzure && tenantValue !== "" && !TENANT_ID.test(tenantValue);
-  const canRequire = !!chosen && (!isAzure || (tenantValue !== "" && !tenantInvalid));
+  const isSaml = chosen === "saml";
+  const entryPointValue = samlEntryPoint.value.trim();
+  const issuerValue = samlIssuer.value.trim();
+  const certificateValue = samlCertificate.value.trim();
+  const entryPointInvalid = isSaml && entryPointValue !== "" && !isHttpsUrl(entryPointValue);
+  const certificateInvalid =
+    isSaml && certificateValue !== "" && !looksLikeCertificate(certificateValue);
+  // The API only accepts provider "saml" once all three are set.
+  const samlIncomplete =
+    isSaml &&
+    (!entryPointValue || !issuerValue || !certificateValue || entryPointInvalid || certificateInvalid);
+  const canRequire =
+    !!chosen && (!isAzure || (tenantValue !== "" && !tenantInvalid)) && !samlIncomplete;
   const ids = `sso-${domain.id}`;
 
   const dirty =
     chosen !== domain.ssoProvider ||
     (tenantValue || null) !== (domain.azureTenantId ?? null) ||
-    required.value !== domain.ssoRequired;
+    required.value !== domain.ssoRequired ||
+    (isSaml &&
+      (entryPointValue !== (domain.samlEntryPoint ?? "") ||
+        issuerValue !== (domain.samlIssuer ?? "") ||
+        certificateValue !== (domain.samlCertificate?.trim() ?? "")));
 
   async function save() {
     saving.value = true;
@@ -115,6 +142,12 @@ export function SsoPanel({
           ssoProvider: chosen,
           azureTenantId: tenantValue || null,
           ssoRequired: chosen ? required.value : false,
+          // Sent only with SAML chosen, so switching provider keeps them.
+          ...(isSaml && {
+            samlEntryPoint: entryPointValue,
+            samlIssuer: issuerValue,
+            samlCertificate: certificateValue,
+          }),
         },
       });
       toast.success(`Sign-in settings saved for ${domain.domain}`);
@@ -182,6 +215,20 @@ export function SsoPanel({
         </div>
       )}
 
+      {isSaml && (
+        <SamlFields
+          ids={ids}
+          entryPoint={samlEntryPoint.value}
+          issuer={samlIssuer.value}
+          certificate={samlCertificate.value}
+          entryPointInvalid={entryPointInvalid}
+          certificateInvalid={certificateInvalid}
+          onEntryPoint={(v) => (samlEntryPoint.value = v)}
+          onIssuer={(v) => (samlIssuer.value = v)}
+          onCertificate={(v) => (samlCertificate.value = v)}
+        />
+      )}
+
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-0.5">
           <Label htmlFor={`${ids}-required`}>Require single sign-on</Label>
@@ -190,6 +237,7 @@ export function SsoPanel({
             disabled at the school, access here ends too.
             {!chosen && " Choose a provider first."}
             {chosen && isAzure && !canRequire && " Add the tenant ID first."}
+            {isSaml && samlIncomplete && " Fill in the identity provider details first."}
           </p>
         </div>
         <Switch
@@ -204,13 +252,119 @@ export function SsoPanel({
         <Button
           size="sm"
           onClick={save}
-          disabled={!dirty || saving.value || tenantInvalid}
+          disabled={!dirty || saving.value || tenantInvalid || samlIncomplete}
         >
           {saving.value && <Loader2 className="mr-1.5 size-4 animate-spin" />}
           Save sign-in settings
         </Button>
       </div>
     </Section>
+  );
+}
+
+/** The school's IdP details, and what to register with the IdP in return. */
+function SamlFields({
+  ids,
+  entryPoint,
+  issuer,
+  certificate,
+  entryPointInvalid,
+  certificateInvalid,
+  onEntryPoint,
+  onIssuer,
+  onCertificate,
+}: {
+  ids: string;
+  entryPoint: string;
+  issuer: string;
+  certificate: string;
+  entryPointInvalid: boolean;
+  certificateInvalid: boolean;
+  onEntryPoint: (value: string) => void;
+  onIssuer: (value: string) => void;
+  onCertificate: (value: string) => void;
+}) {
+  const sp = samlServiceProvider();
+  return (
+    <div className="space-y-4">
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Give your identity provider these</p>
+          <p className="text-xs text-muted-foreground">
+            Most identity providers can read everything from the metadata URL.
+            Otherwise enter the ACS URL and entity ID by hand, and have it send
+            the user&apos;s email address as the NameID or an email attribute.
+          </p>
+        </div>
+        <CopyRow label="Metadata URL" value={sp.metadataUrl} />
+        <CopyRow label="ACS (reply) URL" value={sp.acsUrl} />
+        <CopyRow label="Entity ID (audience)" value={sp.entityId} />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${ids}-saml-entry`}>Identity provider sign-on URL</Label>
+        <Input
+          id={`${ids}-saml-entry`}
+          className="font-mono"
+          type="url"
+          inputMode="url"
+          placeholder="https://idp.example.edu/sso/saml"
+          value={entryPoint}
+          onChange={(e) => onEntryPoint(e.target.value)}
+          aria-invalid={entryPointInvalid || undefined}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <p
+          className={
+            entryPointInvalid ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+          }
+        >
+          {entryPointInvalid
+            ? "Use the full https:// address."
+            : "The SAML single sign-on (SSO) URL, also called the login or redirect URL."}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${ids}-saml-issuer`}>Identity provider entity ID</Label>
+        <Input
+          id={`${ids}-saml-issuer`}
+          className="font-mono"
+          placeholder="https://idp.example.edu/saml/metadata"
+          value={issuer}
+          onChange={(e) => onIssuer(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <p className="text-xs text-muted-foreground">
+          Also called the issuer. Sign-ins from any other issuer are refused.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${ids}-saml-cert`}>Identity provider signing certificate</Label>
+        <Textarea
+          id={`${ids}-saml-cert`}
+          className="min-h-28 font-mono text-xs"
+          placeholder={"-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----"}
+          value={certificate}
+          onChange={(e) => onCertificate(e.target.value)}
+          aria-invalid={certificateInvalid || undefined}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <p
+          className={
+            certificateInvalid ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+          }
+        >
+          {certificateInvalid
+            ? "Paste the whole certificate, from -----BEGIN CERTIFICATE----- to -----END CERTIFICATE-----."
+            : "The X.509 certificate the identity provider signs with (PEM). Not a private key."}
+        </p>
+      </div>
+    </div>
   );
 }
 

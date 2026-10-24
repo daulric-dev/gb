@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { PrismaService } from '@/prisma/prisma.service';
 
 /** The principals a user matches when resolving shares in a given school. */
 export interface UserPrincipals {
@@ -9,17 +10,9 @@ export interface UserPrincipals {
   courseIds: string[];
 }
 
-type PrincipalType = 'user' | 'role' | 'course' | 'group';
-
-/**
- * Whether a share row names one of the user's principals.
- *
- * `group` shares (the old class shares) no longer match anyone: classes are
- * gone, and an owner who still wants those students to see a file shares it
- * with the course that replaced the class.
- */
+/** Whether a share row names one of the user's principals. */
 function matches(
-  share: { principal_type: PrincipalType; principal_id: string },
+  share: { principal_type: string; principal_id: string },
   principals: UserPrincipals,
 ): boolean {
   switch (share.principal_type) {
@@ -48,7 +41,7 @@ interface FileRow {
 
 @Injectable()
 export class FileAccessService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Courses in the school a file shared "with the course" reaches this user
@@ -60,51 +53,39 @@ export class FileAccessService {
     schoolId: string,
     isMember: boolean,
   ): Promise<string[]> {
-    const client = this.supabase.getServiceClient();
-
-    const [{ data: staffRows }, { data: student }] = await Promise.all([
-      client
-        .schema('course')
-        .from('course_staff')
-        .select('course_id')
-        .eq('user_profile_id', userId),
-      client
-        .schema('student')
-        .from('student')
-        .select('id')
-        .eq('user_profile_id', userId)
-        .eq('school_id', schoolId)
-        .maybeSingle(),
+    const [staffRows, student] = await Promise.all([
+      this.prisma.course_staff.findMany({
+        where: { user_profile_id: userId },
+        select: { course_id: true },
+      }),
+      this.prisma.student.findFirst({
+        where: { user_profile_id: userId, school_id: schoolId },
+        select: { id: true },
+      }),
     ]);
 
     // course_staff rows outlive removal from the school, so they only count
     // while the user is still a member of it.
     const ids = new Set(
-      isMember
-        ? (staffRows ?? []).map((r: { course_id: string }) => r.course_id)
-        : [],
+      isMember ? (staffRows ?? []).map((r) => r.course_id) : [],
     );
 
     if (student?.id) {
-      const { data: enrolled } = await client
-        .schema('course')
-        .from('course_student')
-        .select('course_id')
-        .eq('student_id', student.id)
-        .eq('status', 'active');
-      for (const r of enrolled ?? []) ids.add((r).course_id as string);
+      const enrolled = await this.prisma.course_student.findMany({
+        where: { student_id: student.id, status: 'active' },
+        select: { course_id: true },
+      });
+      for (const r of enrolled ?? []) ids.add(r.course_id);
     }
 
     if (ids.size === 0) return [];
 
     // Staff rows are not school-scoped; keep only this school's courses.
-    const { data: courses } = await client
-      .schema('course')
-      .from('course')
-      .select('id')
-      .eq('school_id', schoolId)
-      .in('id', [...ids]);
-    return (courses ?? []).map((c: { id: string }) => c.id);
+    const courses = await this.prisma.course.findMany({
+      where: { school_id: schoolId, id: { in: [...ids] } },
+      select: { id: true },
+    });
+    return (courses ?? []).map((c) => c.id);
   }
 
   /** Role ids and course ids the user matches in the given school. */
@@ -112,27 +93,25 @@ export class FileAccessService {
     userId: string,
     schoolId: string,
   ): Promise<UserPrincipals> {
-    const client = this.supabase.getServiceClient();
-
-    const { data: membership } = await client
-      .from('school_management')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('school_id', schoolId)
-      .maybeSingle();
+    const membership = await this.prisma.school_management.findFirst({
+      where: { user_id: userId, school_id: schoolId },
+      select: { id: true },
+    });
 
     let roleIds: string[] = [];
     if (membership?.id) {
-      const { data: roles } = await client
-        .from('school_management_role')
-        .select('school_role_id')
-        .eq('school_management_id', membership.id);
-      roleIds = (roles ?? []).map(
-        (r: { school_role_id: string }) => r.school_role_id,
-      );
+      const roles = await this.prisma.school_management_role.findMany({
+        where: { school_management_id: membership.id },
+        select: { school_role_id: true },
+      });
+      roleIds = (roles ?? []).map((r) => r.school_role_id);
     }
 
-    const courseIds = await this.courseIdsFor(userId, schoolId, !!membership?.id);
+    const courseIds = await this.courseIdsFor(
+      userId,
+      schoolId,
+      !!membership?.id,
+    );
 
     return { userId, roleIds, courseIds };
   }
@@ -141,23 +120,16 @@ export class FileAccessService {
     fileId: string,
     principals: UserPrincipals,
   ): Promise<{ canDownload: boolean } | null> {
-    const client = this.supabase.getServiceClient();
-
-    const { data: shares } = await client
-      .schema('file_manager')
-      .from('file_share')
-      .select('principal_type, principal_id, can_download')
-      .eq('file_id', fileId);
+    const shares = await this.prisma.file_share.findMany({
+      where: { file_id: fileId },
+      select: { principal_type: true, principal_id: true, can_download: true },
+    });
 
     if (!shares || shares.length === 0) return null;
 
     let matched = false;
     let canDownload = false;
-    for (const s of shares as Array<{
-      principal_type: PrincipalType;
-      principal_id: string;
-      can_download: boolean;
-    }>) {
+    for (const s of shares) {
       const isMatch = matches(s, principals);
       if (isMatch) {
         matched = true;
@@ -197,32 +169,28 @@ export class FileAccessService {
     principals: UserPrincipals,
     schoolId: string,
   ): Promise<string[]> {
-    const client = this.supabase.getServiceClient();
-
-    const orClauses = [
-      `and(principal_type.eq.user,principal_id.eq.${principals.userId})`,
+    const or: Prisma.file_shareWhereInput[] = [
+      { principal_type: 'user', principal_id: principals.userId },
     ];
     if (principals.roleIds.length > 0) {
-      orClauses.push(
-        `and(principal_type.eq.role,principal_id.in.(${principals.roleIds.join(',')}))`,
-      );
+      or.push({
+        principal_type: 'role',
+        principal_id: { in: principals.roleIds },
+      });
     }
     if (principals.courseIds.length > 0) {
-      orClauses.push(
-        `and(principal_type.eq.course,principal_id.in.(${principals.courseIds.join(',')}))`,
-      );
+      or.push({
+        principal_type: 'course',
+        principal_id: { in: principals.courseIds },
+      });
     }
 
-    const { data: shares } = await client
-      .schema('file_manager')
-      .from('file_share')
-      .select('file_id')
-      .eq('school_id', schoolId)
-      .or(orClauses.join(','));
+    const shares = await this.prisma.file_share.findMany({
+      where: { school_id: schoolId, OR: or },
+      select: { file_id: true },
+    });
 
-    return [
-      ...new Set((shares ?? []).map((s: { file_id: string }) => s.file_id)),
-    ] as string[];
+    return [...new Set((shares ?? []).map((s) => s.file_id))];
   }
 
   /** Convenience wrapper that resolves principals then the shared ids. */
@@ -238,19 +206,17 @@ export class FileAccessService {
     const flags = new Map<string, boolean>();
     if (fileIds.length === 0) return flags;
 
-    const { data: shares } = await this.supabase
-      .getServiceClient()
-      .schema('file_manager')
-      .from('file_share')
-      .select('file_id, principal_type, principal_id, can_download')
-      .in('file_id', fileIds);
+    const shares = await this.prisma.file_share.findMany({
+      where: { file_id: { in: fileIds } },
+      select: {
+        file_id: true,
+        principal_type: true,
+        principal_id: true,
+        can_download: true,
+      },
+    });
 
-    for (const s of (shares ?? []) as Array<{
-      file_id: string;
-      principal_type: PrincipalType;
-      principal_id: string;
-      can_download: boolean;
-    }>) {
+    for (const s of shares ?? []) {
       const isMatch = matches(s, principals);
       if (!isMatch) continue;
       // Most permissive wins: OR can_download across all matching shares.

@@ -7,10 +7,13 @@ import { GradebookService } from './gradebook.service';
 import { ActivityController } from './activity.controller';
 import { AssignmentGroupController } from './assignment-group.controller';
 import { GradebookController } from './gradebook.controller';
+import { RubricService } from './rubric.service';
+import { GradebookImportService } from './gradebook-import.service';
+import { RubricController } from './rubric.controller';
 
 /**
- * Course work and marks: activities, submissions, assignment groups and the
- * gradebook. Course access comes from the global CourseAccessModule.
+ * Course work and marks: activities, submissions, assignment groups, rubrics
+ * and the gradebook. Course access comes from the global CourseAccessModule.
  */
 @Module({
   imports: [FileManagerModule],
@@ -19,6 +22,8 @@ import { GradebookController } from './gradebook.controller';
     SubmissionService,
     AssignmentGroupService,
     GradebookService,
+    RubricService,
+    GradebookImportService,
   ],
   // The student portal submits work, lists course activities and reads
   // grades through these.
@@ -27,6 +32,7 @@ import { GradebookController } from './gradebook.controller';
     ActivityController,
     AssignmentGroupController,
     GradebookController,
+    RubricController,
   ],
 })
 export class GradingModule {}
