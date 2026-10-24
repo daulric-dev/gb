@@ -17,7 +17,6 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
-    "pretest": "prisma generate",
     "start": "nest start",
     "start:dev": "bunx cross-env NODE_ENV=development bun --watch src/main.ts",
     "start:debug": "bunx cross-env NODE_ENV=development nest start --debug --watch",
