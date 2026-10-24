@@ -64,12 +64,28 @@ export interface ImportPlan {
   errors: ImportError[];
 }
 
+/** Largest sheet accepted, in characters (same cap as ImportGradebookDto). */
+export const MAX_CSV_LENGTH = 1_000_000;
+
 /**
  * RFC 4180 CSV: quoted fields, doubled quotes, CRLF or LF, a leading BOM.
  * Blank lines are dropped. Returns rows with their 1-based line number.
  */
 export function parseCsv(text: string): { line: number; cells: string[] }[] {
+
+  if (typeof text !== 'string') throw new TypeError('CSV must be text');
+  if (text.length > MAX_CSV_LENGTH) {
+    throw new RangeError(`CSV is longer than ${MAX_CSV_LENGTH} characters`);
+  }
+
   const src = text.replace(/^\uFEFF/, '');
+  
+  if (src.length === 0) return [];
+
+  if (src.length > MAX_CSV_LENGTH) {
+    throw new RangeError(`CSV is longer than ${MAX_CSV_LENGTH} characters`);
+  }
+
   const rows: { line: number; cells: string[] }[] = [];
   let cells: string[] = [];
   let cell = '';

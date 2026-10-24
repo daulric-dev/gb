@@ -108,13 +108,22 @@ export class WiPayProvider implements PaymentProvider {
     const country = this.countryCode();
     const feeStructure = this.feeStructure();
     if (!environment) {
-      throw new ProviderApiError(this.label, 'WIPAY_ENV must be sandbox or live');
+      throw new ProviderApiError(
+        this.label,
+        'WIPAY_ENV must be sandbox or live',
+      );
     }
     if (!COUNTRIES.has(country)) {
-      throw new ProviderApiError(this.label, `unsupported WIPAY_COUNTRY_CODE ${country}`);
+      throw new ProviderApiError(
+        this.label,
+        `unsupported WIPAY_COUNTRY_CODE ${country}`,
+      );
     }
     if (!FEE_STRUCTURES.has(feeStructure)) {
-      throw new ProviderApiError(this.label, `unsupported WIPAY_FEE_STRUCTURE ${feeStructure}`);
+      throw new ProviderApiError(
+        this.label,
+        `unsupported WIPAY_FEE_STRUCTURE ${feeStructure}`,
+      );
     }
 
     const currency = ctx.currency.toUpperCase();
@@ -125,7 +134,10 @@ export class WiPayProvider implements PaymentProvider {
       );
     }
     if (currency === 'USD' && ctx.amountCents < 100) {
-      throw new ProviderApiError(this.label, 'the minimum WiPay payment is 1.00 USD');
+      throw new ProviderApiError(
+        this.label,
+        'the minimum WiPay payment is 1.00 USD',
+      );
     }
 
     const total = centsToDecimal(ctx.amountCents, currency);
@@ -134,7 +146,13 @@ export class WiPayProvider implements PaymentProvider {
       [P.invoice]: ctx.invoiceId,
       [P.amount]: total,
       [P.currency]: currency,
-      [P.signature]: signParams(apiKey, ctx.invoiceId, total, currency, orderId),
+      [P.signature]: signParams(
+        apiKey,
+        ctx.invoiceId,
+        total,
+        currency,
+        orderId,
+      ),
     });
     if (responseUrl.length > MAX_RESPONSE_URL) {
       throw new ProviderApiError(
@@ -183,7 +201,10 @@ export class WiPayProvider implements PaymentProvider {
     const hostedPage: string | null =
       data?.url ?? res.headers.get('location') ?? null;
     if (!hostedPage) {
-      throw new ProviderApiError(this.label, 'payment request returned no hosted page URL');
+      throw new ProviderApiError(
+        this.label,
+        'payment request returned no hosted page URL',
+      );
     }
     return {
       redirectUrl: hostedPage,
@@ -217,34 +238,42 @@ export class WiPayProvider implements PaymentProvider {
     const transactionId = q.transaction_id;
 
     if (!invoiceId || !amount || !currency || !signature || !orderId || !status) {
-      throw new WebhookVerificationError('WiPay callback is missing parameters');
+      throw new WebhookVerificationError(
+        'WiPay callback is missing parameters',
+      );
     }
-    if (
-      !safeEqual(signature, signParams(apiKey, invoiceId, amount, currency, orderId))
-    ) {
-      throw new WebhookVerificationError('WiPay callback parameters were altered');
+    if (!safeEqual(signature, signParams(apiKey, invoiceId, amount, currency, orderId))) {
+      throw new WebhookVerificationError(
+        'WiPay callback parameters were altered',
+      );
     }
     if (transactionId && !transactionId.includes(`-${orderId}-`)) {
-      throw new WebhookVerificationError('WiPay transaction does not match the order');
+      throw new WebhookVerificationError(
+        'WiPay transaction does not match the order',
+      );
     }
-    if (
-      transactionId?.startsWith('SB-') &&
-      this.environment() === 'live'
-    ) {
-      throw new WebhookVerificationError('Sandbox WiPay transaction in live mode');
+    if (transactionId?.startsWith('SB-') && this.environment() === 'live') {
+      throw new WebhookVerificationError(
+        'Sandbox WiPay transaction in live mode',
+      );
     }
 
     if (status === 'success') {
       const hash = q.hash;
       if (!transactionId || !hash) {
-        throw new WebhookVerificationError('WiPay success without transaction_id/hash');
+        throw new WebhookVerificationError(
+          'WiPay success without transaction_id/hash',
+        );
       }
+
       const expected = createHash('md5')
         .update(`${transactionId}${amount}${apiKey}`)
         .digest('hex');
+
       if (!safeEqual(hash.toLowerCase(), expected)) {
         throw new WebhookVerificationError('WiPay hash does not match');
       }
+      
       let amountCents: number;
       try {
         amountCents = decimalToCents(amount, currency);
@@ -272,7 +301,11 @@ export class WiPayProvider implements PaymentProvider {
         providerInvoiceId: transactionId ?? null,
       };
     }
-    return { type: 'ignored', eventId, reason: `unknown WiPay status ${status}` };
+    return {
+      type: 'ignored',
+      eventId,
+      reason: `unknown WiPay status ${status}`,
+    };
   }
 
   private environment(): 'sandbox' | 'live' | null {
@@ -346,8 +379,12 @@ function normalizeParams(req: WebhookRequest): Record<string, string> {
     if (typeof v === 'string') add(k, v);
   }
   const contentType = req.headers['content-type'] ?? '';
-  if (req.rawBody?.length && contentType.includes('application/x-www-form-urlencoded')) {
-    for (const [k, v] of new URLSearchParams(req.rawBody.toString('utf8'))) add(k, v);
+  if (
+    req.rawBody?.length &&
+    contentType.includes('application/x-www-form-urlencoded')
+  ) {
+    for (const [k, v] of new URLSearchParams(req.rawBody.toString('utf8')))
+      add(k, v);
   }
   return out;
 }

@@ -3,6 +3,7 @@ import {
   ImportActivity,
   ImportCurrent,
   ImportStudent,
+  MAX_CSV_LENGTH,
   parseCsv,
   planImport,
 } from './gradebook-import';
@@ -67,7 +68,18 @@ describe('planImport', () => {
   test('an untouched export changes nothing', () => {
     const csv = [
       HEAD,
-      row('Adams', 'Ann', 'stu-1', 'active', '9', '2.67', 'EX', '90', '90', 'A'),
+      row(
+        'Adams',
+        'Ann',
+        'stu-1',
+        'active',
+        '9',
+        '2.67',
+        'EX',
+        '90',
+        '90',
+        'A',
+      ),
       row('Brown', 'Bo', 'stu-2', 'active', '', '', '', '', '', ''),
     ].join('\r\n');
     const plan = planImport(
@@ -106,9 +118,7 @@ describe('planImport', () => {
       }),
     );
     expect(plan.errors).toEqual([]);
-    expect(
-      plan.changes.map((c) => [c.studentId, c.activityId, c.to]),
-    ).toEqual([
+    expect(plan.changes.map((c) => [c.studentId, c.activityId, c.to])).toEqual([
       ['stu-1', 'a1', { score: 7.5, excused: false }],
       ['stu-1', 'q1', { score: 3, excused: false }],
       ['stu-1', 'f1', { score: null, excused: true }],
@@ -153,12 +163,9 @@ describe('planImport', () => {
   });
 
   test('an unknown Student ID or a repeated student is a row error', () => {
-    const csv = [
-      'Student ID,Essay (10)',
-      'stu-9,5',
-      'stu-1,5',
-      'STU-1,6',
-    ].join('\n');
+    const csv = ['Student ID,Essay (10)', 'stu-9,5', 'stu-1,5', 'STU-1,6'].join(
+      '\n',
+    );
     const plan = planImport(csv, ACTS, STUDENTS, current());
     expect(plan.errors.map((e) => e.line)).toEqual([2, 4]);
     expect(plan.changes.length).toBe(1);
@@ -180,13 +187,37 @@ describe('planImport', () => {
       { id: 'x1', title: 'Lab', points: 10, kind: 'offline' },
       { id: 'x2', title: 'Lab', points: 10, kind: 'offline' },
     ];
-    const plan = planImport('Student ID,Lab (10)\nstu-1,5', acts, STUDENTS, current());
+    const plan = planImport(
+      'Student ID,Lab (10)\nstu-1,5',
+      acts,
+      STUDENTS,
+      current(),
+    );
     expect(plan.columns[1].status).toBe('ambiguous');
     expect(plan.errors.length).toBeGreaterThan(0);
   });
 
   test('a bare title matches when it names one activity', () => {
-    const plan = planImport('Student ID,essay\nstu-1,4', ACTS, STUDENTS, current());
+    const plan = planImport(
+      'Student ID,essay\nstu-1,4',
+      ACTS,
+      STUDENTS,
+      current(),
+    );
     expect(plan.changes.map((c) => c.activityId)).toEqual(['a1']);
+  });
+});
+
+describe('parseCsv input guards', () => {
+  test('refuses anything that is not a string, such as an array-like object', () => {
+    expect(() => parseCsv({ length: 1e9 } as unknown as string)).toThrow(
+      TypeError,
+    );
+    expect(() => parseCsv(['a,b'] as unknown as string)).toThrow(TypeError);
+  });
+
+  test('refuses text over the size cap', () => {
+    expect(() => parseCsv('a'.repeat(MAX_CSV_LENGTH + 1))).toThrow(RangeError);
+    expect(parseCsv('a'.repeat(10))).toHaveLength(1);
   });
 });
