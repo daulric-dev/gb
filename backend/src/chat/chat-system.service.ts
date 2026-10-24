@@ -3,7 +3,7 @@ import { ChatService } from './chat.service';
 
 interface CreatedShare {
   id: string;
-  principal_type: 'user' | 'role' | 'course' | 'group';
+  principal_type: string;
   principal_id: string;
   can_download: boolean;
 }

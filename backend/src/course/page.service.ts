@@ -4,14 +4,46 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { isoDate } from '@/common/db-values';
 import {
   CourseAccessService,
   MANAGE_ROLES,
 } from './access/course-access.service';
 
-const PAGE_SUMMARY_COLUMNS = 'id, course_id, title, is_published, updated_at';
-const PAGE_COLUMNS = `${PAGE_SUMMARY_COLUMNS}, body, created_by, created_at`;
+const PAGE_SUMMARY_SELECT = {
+  id: true,
+  course_id: true,
+  title: true,
+  is_published: true,
+  updated_at: true,
+} as const;
+const PAGE_SELECT = {
+  ...PAGE_SUMMARY_SELECT,
+  body: true,
+  created_by: true,
+  created_at: true,
+} as const;
+
+type PageRecord = {
+  id: string;
+  course_id: string;
+  title: string;
+  is_published: boolean;
+  updated_at: Date;
+  body?: string;
+  created_by?: string | null;
+  created_at?: Date;
+};
+
+function toPageRow(p: PageRecord): PageRow {
+  return {
+    ...p,
+    updated_at: isoDate(p.updated_at)!,
+    created_at: p.created_at ? isoDate(p.created_at)! : undefined,
+  };
+}
 
 export interface PageRow {
   id: string;
@@ -35,29 +67,27 @@ export class PageService {
   private readonly logger = new Logger(PageService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
   ) {}
-
-  private pages() {
-    return this.supabaseService.getServiceClient().schema('course').from('page');
-  }
 
   /** Every page in the course, without bodies - a list can be long. */
   async list(userId: string, courseId: string) {
     await this.access.require(userId, courseId);
 
-    const { data, error } = await this.pages()
-      .select(PAGE_SUMMARY_COLUMNS)
-      .eq('course_id', courseId)
-      .order('title', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to list pages: ${error.message}`);
+    let data: PageRecord[];
+    try {
+      data = await this.prisma.page.findMany({
+        where: { course_id: courseId },
+        select: PAGE_SUMMARY_SELECT,
+        orderBy: { title: 'asc' },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to list pages: ${(error as Error).message}`);
       throw new BadRequestException('Failed to load pages');
     }
 
-    return ((data ?? []) as PageRow[]).map((p) => this.toSummary(p));
+    return data.map((p) => this.toSummary(toPageRow(p)));
   }
 
   async get(userId: string, courseId: string, pageId: string) {
@@ -84,23 +114,24 @@ export class PageService {
     const title = input.title.trim();
     if (!title) throw new BadRequestException('Give the page a title');
 
-    const { data, error } = await this.pages()
-      .insert({
-        course_id: courseId,
-        title,
-        body: input.body ?? '',
-        is_published: input.isPublished ?? false,
-        created_by: userId,
-      })
-      .select(PAGE_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to create page: ${error?.message}`);
+    let data: PageRecord;
+    try {
+      data = await this.prisma.page.create({
+        data: {
+          course_id: courseId,
+          title,
+          body: input.body ?? '',
+          is_published: input.isPublished ?? false,
+          created_by: userId,
+        },
+        select: PAGE_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to create page: ${(error as Error).message}`);
       throw new BadRequestException('Failed to create the page');
     }
 
-    return this.toPage(data);
+    return this.toPage(toPageRow(data));
   }
 
   async update(
@@ -111,7 +142,7 @@ export class PageService {
   ) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
-    const changes: Record<string, unknown> = {};
+    const changes: Prisma.pageUncheckedUpdateManyInput = {};
     if (patch.title !== undefined) {
       const title = patch.title.trim();
       if (!title) throw new BadRequestException('Give the page a title');
@@ -124,52 +155,49 @@ export class PageService {
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
     }
-    changes.updated_at = new Date().toISOString();
+    changes.updated_at = new Date();
 
-    const { data, error } = await this.pages()
-      .update(changes)
-      .eq('id', pageId)
-      .eq('course_id', courseId)
-      .select(PAGE_COLUMNS)
-      .maybeSingle();
-
-    if (error) {
-      this.logger.error(`Failed to update page: ${error.message}`);
+    let data: PageRecord[];
+    try {
+      data = await this.prisma.page.updateManyAndReturn({
+        where: { id: pageId, course_id: courseId },
+        data: changes,
+        select: PAGE_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to update page: ${(error as Error).message}`);
       throw new BadRequestException('Failed to update the page');
     }
-    if (!data) throw new NotFoundException('Page not found');
+    if (!data[0]) throw new NotFoundException('Page not found');
 
-    return this.toPage(data);
+    return this.toPage(toPageRow(data[0]));
   }
 
   /** Module items linking the page go with it (FK cascade). */
   async remove(userId: string, courseId: string, pageId: string) {
     await this.access.require(userId, courseId, MANAGE_ROLES);
 
-    const { data, error } = await this.pages()
-      .delete()
-      .eq('id', pageId)
-      .eq('course_id', courseId)
-      .select('id')
-      .maybeSingle();
-
-    if (error) {
-      this.logger.error(`Failed to delete page: ${error.message}`);
+    let count: number;
+    try {
+      ({ count } = await this.prisma.page.deleteMany({
+        where: { id: pageId, course_id: courseId },
+      }));
+    } catch (error) {
+      this.logger.error(`Failed to delete page: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete the page');
     }
-    if (!data) throw new NotFoundException('Page not found');
+    if (count === 0) throw new NotFoundException('Page not found');
   }
 
   /** Scoped by course, so a page id from another course is simply missing. */
   private async load(courseId: string, pageId: string): Promise<PageRow> {
-    const { data } = await this.pages()
-      .select(PAGE_COLUMNS)
-      .eq('id', pageId)
-      .eq('course_id', courseId)
-      .maybeSingle();
+    const data = await this.prisma.page.findFirst({
+      where: { id: pageId, course_id: courseId },
+      select: PAGE_SELECT,
+    });
 
     if (!data) throw new NotFoundException('Page not found');
-    return data;
+    return toPageRow(data);
   }
 
   private toSummary(p: PageRow) {

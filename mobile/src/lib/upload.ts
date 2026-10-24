@@ -1,17 +1,17 @@
-import * as tus from "tus-js-client";
 import { api, buildUrl } from "@/lib/api";
 
 /**
- * Resumable uploads (TUS) from the app, straight to Supabase Storage.
+ * Direct uploads from the app to object storage with a presigned URL.
  *
  * Same three steps as the web client, because it is the same API: the backend
- * issues a ticket, the bytes go to Storage, then the backend scans what landed
- * and releases the file. Nothing is readable until it does.
+ * issues a ticket (a reserved file row and a short-lived signed URL), the
+ * bytes are PUT straight to storage, then the backend checks what landed and
+ * releases the file. Nothing is readable until it does.
  *
  * The picked document arrives as a `file://` URI rather than a File, so it is
  * read into a Blob first. Uploads are capped at 10MB server-side, which keeps
- * that affordable, and it means the upload itself is byte-for-byte the same
- * code path the browser takes.
+ * that affordable. XMLHttpRequest rather than fetch, because only XHR reports
+ * upload progress in React Native.
  */
 
 export interface PickedFile {
@@ -23,12 +23,25 @@ export interface PickedFile {
 
 interface UploadTicket {
   fileId: string;
-  endpoint: string;
-  token: string;
-  bucket: string;
-  objectName: string;
+  method: "PUT";
+  uploadUrl: string;
+  /** Sent exactly as given: the signature covers them. */
+  headers: Record<string, string>;
+  expiresAt: string;
   contentType: string;
-  chunkSize: number;
+  maxBytes: number;
+}
+
+/** A failed transfer to storage (storage answers in XML, not API JSON). */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    /** HTTP status from storage; 0 when the request never completed. */
+    public status: number,
+  ) {
+    super(message);
+    this.name = "UploadError";
+  }
 }
 
 async function readBlob(file: PickedFile): Promise<Blob> {
@@ -36,39 +49,58 @@ async function readBlob(file: PickedFile): Promise<Blob> {
   return response.blob();
 }
 
-function sendToStorage(
+function putOnce(
   blob: Blob,
   ticket: UploadTicket,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const upload = new tus.Upload(blob, {
-      endpoint: ticket.endpoint,
-      retryDelays: [0, 1000, 3000, 5000, 10000],
-      metadata: {
-        bucketName: ticket.bucket,
-        objectName: ticket.objectName,
-        contentType: ticket.contentType,
-      },
-      headers: { Authorization: `Bearer ${ticket.token}` },
-      // Supabase Storage requires exactly this chunk size.
-      chunkSize: ticket.chunkSize,
-      uploadDataDuringCreation: true,
-      removeFingerprintOnSuccess: true,
-      fingerprint: () => Promise.resolve(`tus:${ticket.fileId}`),
-      onProgress: (sent, total) => onProgress?.(total > 0 ? sent / total : 0),
-      onSuccess: () => resolve(),
-      onError: (error) => reject(error),
-    });
+    const xhr = new XMLHttpRequest();
+    xhr.open(ticket.method ?? "PUT", ticket.uploadUrl);
+    // A presigned URL on another host: no cookies, only the signed headers.
+    xhr.withCredentials = false;
+    for (const [name, value] of Object.entries(ticket.headers ?? {})) {
+      xhr.setRequestHeader(name, value);
+    }
 
-    upload
-      .findPreviousUploads()
-      .then((previous) => {
-        if (previous.length > 0) upload.resumeFromPreviousUpload(previous[0]);
-        upload.start();
-      })
-      .catch(() => upload.start());
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress?.(event.loaded / event.total);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(1);
+        resolve();
+      } else {
+        reject(new UploadError(`Upload failed (${xhr.status})`, xhr.status));
+      }
+    };
+    const networkError = () =>
+      reject(
+        new UploadError("Upload failed. Check your connection and try again.", 0),
+      );
+    xhr.onerror = networkError;
+    xhr.ontimeout = networkError;
+    xhr.onabort = () => reject(new UploadError("Upload cancelled", 0));
+
+    xhr.send(blob);
   });
+}
+
+/** PUT the bytes, retrying once if the connection drops. */
+async function sendToStorage(
+  blob: Blob,
+  ticket: UploadTicket,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
+  try {
+    await putOnce(blob, ticket, onProgress);
+  } catch (err) {
+    if (!(err instanceof UploadError) || err.status !== 0) throw err;
+    onProgress?.(0);
+    await putOnce(blob, ticket, onProgress);
+  }
 }
 
 /**
@@ -98,7 +130,7 @@ export async function uploadSubmissionFile(
 
   await sendToStorage(blob, ticket, onProgress);
 
-  // The scan runs here, so a rejected file throws with the reason.
+  // The check runs here, so a rejected file throws with the reason.
   return api<{ fileId: string; name: string }>(
     `/portal/me/activities/${activityId}/upload-ticket/${ticket.fileId}/complete`,
     { method: "POST" },

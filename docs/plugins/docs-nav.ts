@@ -10,12 +10,10 @@ const SECTIONS: { label: string; dir?: string; items?: string[] }[] = [
     label: "Getting Started",
     items: [
       "developer-guide",
-      "implementation-guide",
-      "upgrading-to-courses",
+      "platform-migration",
       "environment-variables",
       "dedicated-deployment",
       "sso",
-      "edge-functions",
       "mobile-production",
     ],
   },

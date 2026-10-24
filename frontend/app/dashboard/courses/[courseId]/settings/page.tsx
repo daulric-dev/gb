@@ -45,6 +45,10 @@ import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { MarkdownEditor } from "../_components/MarkdownEditor";
 import { CourseCalendarFields } from "../../_components/CourseCalendarFields";
+import { CopyCourseDialog } from "../../_components/CopyCourseDialog";
+import { ImportContentDialog } from "../../_components/ImportContentDialog";
+import { Switch } from "@/components/ui/switch";
+import { usePermissions } from "@/providers/PermissionsProvider";
 
 const STATUS_ITEMS: { value: CourseStatus; label: string; hint: string }[] = [
   { value: "draft", label: "Draft", hint: "Hidden from students" },
@@ -58,6 +62,8 @@ export default function CourseSettingsPage() {
   useSignals();
   const router = useRouter();
   const { course, canManage, reload } = useCourse();
+  const { can } = usePermissions();
+  const togglingTemplate = useSignal(false);
 
   const name = useSignal(course.name);
   const code = useSignal(course.code ?? "");
@@ -124,6 +130,25 @@ export default function CourseSettingsPage() {
       toast.error(err instanceof ApiError ? err.message : "Failed to save");
     } finally {
       saving.value = false;
+    }
+  }
+
+  async function setTemplate(isTemplate: boolean) {
+    togglingTemplate.value = true;
+    try {
+      await api(`/courses/${course.id}`, {
+        method: "PATCH",
+        body: { isTemplate },
+      });
+      toast.success(
+        isTemplate ? "Offered as a school template" : "No longer a template",
+      );
+      await reload();
+    } catch (err) {
+      // 409: a course with students can't become a template.
+      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+    } finally {
+      togglingTemplate.value = false;
     }
   }
 
@@ -275,6 +300,44 @@ export default function CourseSettingsPage() {
           </Button>
         </div>
       </form>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Copy and templates</CardTitle>
+          <CardDescription>
+            Start next term from this course, bring in another course&apos;s
+            content, or offer it to the school as a template for new courses.
+            A template never takes students.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="settingsTemplate">School template</Label>
+              <p className="text-sm text-muted-foreground">
+                Anyone who can create courses can start one from it, without
+                joining this course.
+              </p>
+            </div>
+            <Switch
+              id="settingsTemplate"
+              checked={course.isTemplate}
+              disabled={togglingTemplate.value}
+              onCheckedChange={(v) => void setTemplate(v)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {can("course", "create") && (
+              <CopyCourseDialog
+                course={course}
+                years={years.value}
+                terms={terms.value}
+              />
+            )}
+            <ImportContentDialog course={course} onImportedAction={reload} />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-destructive/40">
         <CardHeader>

@@ -32,10 +32,12 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 | **Web**                | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui (Base UI), Preact Signals        |
 | **Mobile**             | Expo (SDK 57), expo-router, expo-notifications, expo-camera                      |
 | **Backend**            | NestJS 12, Fastify, Swagger                                                      |
-| **Database**           | Supabase (PostgreSQL) with Row-Level Security                                    |
+| **Database**           | PostgreSQL with Prisma 7 (Prisma Migrate)                                        |
+| **File storage**       | Any S3-compatible store (SeaweedFS in development)                               |
+| **Email**              | Any SMTP server (Mailpit in development)                                         |
 | **Realtime and cache** | Redis (pub/sub, cache, BullMQ queue); in-memory fallback for single-instance dev |
 | **Push**               | Expo push service                                                                |
-| **Auth**               | Passwordless OTP via email                                                       |
+| **Auth**               | Own passwordless email codes and server sessions; Google, Microsoft and SAML SSO |
 | **Monorepo**           | Turborepo, Bun                                                                   |
 | **CI/CD**              | GitHub Actions (with CI Gate required status check)                              |
 
@@ -44,7 +46,8 @@ GradeBook is not affiliated with any specific school - any educator can sign up,
 ```
 gb/
 ├── backend/                 # NestJS API (all routes under /api)
-│   ├── scripts/             # seed-demo, rls-check, student-flow-check, type generation
+│   ├── prisma/              # Prisma schema (one file per database schema) and migrations
+│   ├── scripts/             # seed-demo, smoke, student-flow-check, one-off data/storage copy
 │   └── src/
 │       ├── course/          # Courses, people, join codes, modules, pages, course access
 │       ├── grading/         # Activities, quizzes, submissions, assignment groups, gradebook
@@ -52,11 +55,12 @@ gb/
 │       ├── notifications/   # Push device registration and Expo push
 │       ├── student-portal/  # Student-facing endpoints (/portal/me)
 │       ├── announcement/    # School-wide and course announcements
-│       ├── auth/            # OTP sign-in, guards, profile
+│       ├── auth/  account/  # Email-code sign-in, sessions, guards, profile
+│       ├── sso/             # OIDC (Google, Microsoft) and SAML sign-in
 │       ├── permission/      # Roles and permission catalog
 │       ├── school/  student/  student-account/  academic-year/  term/  grade-scale/
 │       ├── chat/  file-manager/  dashboard/  images/
-│       └── cache/  realtime/  queue/  supabase/  versioning/  throttle/
+│       └── prisma/  storage/  mail/  cache/  realtime/  queue/  versioning/  throttle/
 ├── frontend/                # Next.js web app
 │   └── app/
 │       ├── dashboard/       # Staff: courses, students, staff, calendar, files, chat, settings
@@ -64,9 +68,8 @@ gb/
 │       ├── scan/            # Public landing page for the attendance QR code
 │       └── login/  onboard/  schools/  privacy/  terms/
 ├── mobile/                  # Expo app for students and teachers
-├── supabase/                # Migrations, config, edge functions
 ├── docs/                    # Documentation site
-├── infrastructure/          # Production Docker Compose, nginx
+├── infrastructure/          # Production Docker Compose, nginx, dev S3 config
 └── .github/                 # CI workflows and scripts
 ```
 
@@ -75,7 +78,7 @@ gb/
 ### Prerequisites
 
 - [Bun](https://bun.sh) 1.3+
-- [Docker](https://www.docker.com) (for local Supabase and Redis)
+- [Docker](https://www.docker.com) (for local Postgres, Redis, S3 and Mailpit)
 
 ### 1. Install dependencies
 
@@ -83,27 +86,21 @@ gb/
 bun install
 ```
 
-### 2. Start Supabase and Redis
+### 2. Configure environment variables
+
+**Backend** - copy `backend/.env.example` to `backend/.env`. Its defaults match `docker-compose.dev.yml`:
 
 ```bash
-bun run preload    # Redis via docker-compose.dev.yml + local Supabase
+cp backend/.env.example backend/.env
 ```
 
-`bun run postload` stops both. Supabase applies every migration in `supabase/migrations` on first start.
-
-### 3. Configure environment variables
-
-**Backend** - copy `backend/.env.example` to `backend/.env`. For a local stack, `bunx supabase status` prints the keys:
-
 ```env
-SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=<service_role JWT>
-SUPABASE_PUSHABLE_KEY=<anon key>
-SUPABASE_JWT_SECRET=<JWT secret>
+DATABASE_URL=postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook
+S3_ENDPOINT=http://127.0.0.1:8333
+SMTP_URL=smtp://127.0.0.1:1025
 FRONTEND_URL=http://localhost:3000
 PORT=3001
-USE_REDIS=true
-REDIS_URL=redis://localhost:6379
+ALLOW_DEV_LOGIN=true
 ```
 
 **Frontend** - create `frontend/.env.local`:
@@ -113,6 +110,14 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
 **Mobile** - nothing needed in development; the app finds the API through the Expo dev server.
+
+### 3. Start the local services and create the schema
+
+```bash
+bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `prisma migrate deploy`
+```
+
+`bun run postload` stops them. `bun run db:setup` applies pending migrations on its own. Sign-in emails land in Mailpit at http://127.0.0.1:8025.
 
 See [`docs/content/environment-variables.md`](docs/content/environment-variables.md) for every variable, and [`docs/content/developer-guide.md`](docs/content/developer-guide.md) for the full path from clone to deployed.
 
@@ -136,7 +141,6 @@ bun run dev:docs       # Docs site on :3002
 With the API running:
 
 ```bash
-cd backend
 bun run seed:demo              # creates "Riverside Academy" with courses, work, grades and attendance
 bun run seed:demo --fresh      # replace it
 bun run seed:demo otp <email>  # print a sign-in code without sending email
@@ -151,7 +155,7 @@ bun run seed:demo otp <email>  # print a sign-in code without sending email
 | `student@demo.test`                          | Student with marked work, a quiz attempt and attendance history |
 | `student2@demo.test`, `student3@demo.test` | More students                                                   |
 
-Local Supabase sends at most two emails an hour, so sign in with the `otp` command rather than waiting for an email.
+Every sign-in email is also in Mailpit (http://127.0.0.1:8025); the `otp` command skips email altogether.
 
 ### Mobile push and camera
 
@@ -170,7 +174,7 @@ When the backend is running, Swagger docs are at:
 http://localhost:3001/docs
 ```
 
-Upgrading an existing deployment to courses - migrations, Supabase settings, environment variables, mobile rebuild - is covered in [`docs/content/upgrading-to-courses.md`](docs/content/upgrading-to-courses.md); single sign-on setup in [`docs/content/sso.md`](docs/content/sso.md); what changed in the [2026-10-21 changelog](docs/content/changelog/overview.md).
+Deploying is covered in [`docs/content/platform-migration.md`](docs/content/platform-migration.md); single sign-on setup in [`docs/content/sso.md`](docs/content/sso.md); what changed in the [2026-10-21 changelog](docs/content/changelog/overview.md).
 
 ## Scripts
 
@@ -178,7 +182,7 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 
 | Command                                                                    | Description                           |
 | -------------------------------------------------------------------------- | ------------------------------------- |
-| `bun run preload` / `postload`                                         | Start / stop local Redis and Supabase |
+| `bun run preload` / `postload`                                         | Start (and migrate) / stop local Postgres, Redis, S3 and Mailpit |
 | `bun run dev`                                                            | Start every workspace in development  |
 | `bun run dev:frontend` / `dev:backend` / `dev:mobile` / `dev:docs` | Start one workspace                   |
 | `bun run build`                                                          | Build all projects (cached)           |
@@ -187,9 +191,10 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 | `bun run test`                                                           | Run all tests                         |
 | `bun run test:frontend` / `test:backend`                               | Run one project's tests               |
 | `bun run preview`                                                        | Run in production mode                |
-| `bun run db:start` / `db:stop`                                         | Start / stop local Supabase only      |
-| `bun run db:types`                                                       | Generate Supabase database types      |
-| `bun run db:diff` / `db:pull`                                          | Diff or pull the database schema      |
+| `bun run db:setup` / `db:deploy`                                       | Apply pending Prisma migrations       |
+| `bun run db:migrate --name <change>`                                     | Create and apply a migration from `.prisma` edits |
+| `bun run db:pull` / `db:studio`                                        | Introspect the database / open Prisma Studio |
+| `bun run seed:demo` / `smoke`                                          | Load demo data / end-to-end API check (API running) |
 
 You can also use `turbo` directly:
 

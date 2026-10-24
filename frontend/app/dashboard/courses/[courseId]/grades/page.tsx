@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { BarChart3, Download, Loader2, Search } from "lucide-react";
+import { BarChart3, Download, Loader2, Search, Upload } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { downloadFromUrl } from "@/lib/download";
 import type {
@@ -34,10 +34,26 @@ import {
 } from "@/components/ui/empty";
 import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
+import { ImportGradesDialog } from "./_components/ImportGradesDialog";
 
 interface Column {
-  group: { id: string | null; name: string; weight: number | null };
+  group: {
+    id: string | null;
+    name: string;
+    weight: number | null;
+    dropLowest: number;
+    dropHighest: number;
+  };
   activities: Activity[];
+}
+
+/** "drops lowest 1, highest 1" for a group header; empty when no rule. */
+function dropRule(group: Column["group"]): string {
+  const parts = [
+    group.dropLowest ? `lowest ${group.dropLowest}` : "",
+    group.dropHighest ? `highest ${group.dropHighest}` : "",
+  ].filter(Boolean);
+  return parts.length ? `drops ${parts.join(", ")}` : "";
 }
 
 /** Activities grouped by assignment group, groups in their own order. */
@@ -46,7 +62,13 @@ function buildColumns(groups: AssignmentGroup[], activities: Activity[]): Column
   const known = new Set(ordered.map((g) => g.id));
   const columns: Column[] = ordered
     .map((g) => ({
-      group: { id: g.id, name: g.name, weight: g.weight },
+      group: {
+        id: g.id,
+        name: g.name,
+        weight: g.weight,
+        dropLowest: g.dropLowest ?? 0,
+        dropHighest: g.dropHighest ?? 0,
+      },
       activities: activities.filter((a) => a.assignmentGroupId === g.id),
     }))
     .filter((c) => c.activities.length > 0);
@@ -55,7 +77,13 @@ function buildColumns(groups: AssignmentGroup[], activities: Activity[]): Column
   );
   if (rest.length) {
     columns.push({
-      group: { id: null, name: "Ungrouped", weight: null },
+      group: {
+        id: null,
+        name: "Ungrouped",
+        weight: null,
+        dropLowest: 0,
+        dropHighest: 0,
+      },
       activities: rest,
     });
   }
@@ -83,8 +111,10 @@ function Cell({
         className={cn(
           "tabular-nums",
           pct < 0.5 && "text-destructive",
-          activity.omitFromFinalGrade && "text-muted-foreground line-through",
+          (activity.omitFromFinalGrade || cell.dropped) &&
+            "text-muted-foreground line-through",
         )}
+        title={cell.dropped ? "Dropped by the group's rule" : undefined}
       >
         {cell.score}
       </span>
@@ -108,15 +138,21 @@ export default function CourseGradesPage() {
   const book = useSignal<Gradebook | null>(null);
   const loading = useSignal(true);
   const exporting = useSignal(false);
+  const importing = useSignal(false);
   const search = useSignal("");
   const showInactive = useSignal(false);
 
-  useEffect(() => {
-    api<Gradebook>(`/courses/${course.id}/gradebook`)
+  function load() {
+    return api<Gradebook>(`/courses/${course.id}/gradebook`)
       .then((data) => (book.value = data))
       .catch(() => toast.error("Failed to load the gradebook"))
       .finally(() => (loading.value = false));
-  }, [course.id, book, loading]);
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.id]);
 
   async function exportCsv() {
     exporting.value = true;
@@ -138,18 +174,34 @@ export default function CourseGradesPage() {
       title="Grades"
       description="Current grade: marked work only, excused and omitted work left out"
       actions={
-        <Button
-          variant="outline"
-          onClick={exportCsv}
-          disabled={exporting.value || !book.value}
-        >
-          {exporting.value ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <Download className="mr-2 size-4" />
-          )}
-          Export CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => (importing.value = true)}
+            disabled={!book.value}
+          >
+            <Upload className="mr-2 size-4" />
+            Import
+          </Button>
+          <Button
+            variant="outline"
+            onClick={exportCsv}
+            disabled={exporting.value || !book.value}
+          >
+            {exporting.value ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 size-4" />
+            )}
+            Export CSV
+          </Button>
+          <ImportGradesDialog
+            open={importing.value}
+            courseId={course.id}
+            onOpenChangeAction={(open) => (importing.value = open)}
+            onImportedAction={() => void load()}
+          />
+        </div>
       }
     />
   );
@@ -264,6 +316,11 @@ export default function CourseGradesPage() {
                       {c.group.weight}%
                     </span>
                   )}
+                  {dropRule(c.group) && (
+                    <span className="ml-1 font-normal text-muted-foreground">
+                      · {dropRule(c.group)}
+                    </span>
+                  )}
                 </th>
               ))}
               <th
@@ -373,7 +430,8 @@ export default function CourseGradesPage() {
           handed in, not marked
         </span>
         <span>
-          <span className="line-through">12</span> omitted from the final grade
+          <span className="line-through">12</span> omitted from the final grade,
+          or dropped by a group&apos;s rule
         </span>
       </div>
     </div>

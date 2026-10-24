@@ -89,7 +89,7 @@ export default function CourseAnnouncementsPage() {
     const payload = { title: title.value.trim(), body: body.value.trim() };
     try {
       if (editing.value) {
-        await api(`/announcements/${editing.value.id}`, {
+        await api(`/courses/${course.id}/announcements/${editing.value.id}`, {
           method: "PATCH",
           body: payload,
         });
@@ -113,7 +113,7 @@ export default function CourseAnnouncementsPage() {
   async function remove(a: CourseAnnouncement) {
     if (!window.confirm(`Delete "${a.title}"? This cannot be undone.`)) return;
     try {
-      await api(`/announcements/${a.id}`, { method: "DELETE" });
+      await api(`/courses/${course.id}/announcements/${a.id}`, { method: "DELETE" });
       toast.success("Announcement deleted");
       load();
     } catch (err) {

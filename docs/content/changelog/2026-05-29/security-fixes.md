@@ -15,19 +15,19 @@ The attendance service issued service-client (RLS-bypassing) queries keyed off `
 
 `PATCH /classes/:classId/attendance/:recordId` updated by record id only. A teacher of class A could pass any `recordId` from class B (including another school) and overwrite it.
 
-**Fix.** [attendance.service.ts](../../../../backend/src/attendance/attendance.service.ts) `update` now takes `classId` and adds `.eq('student_group_id', classId)` to the update. [attendance.controller.ts](../../../../backend/src/attendance/attendance.controller.ts) plumbs the `classId` param through.
+**Fix.** `backend/src/attendance/attendance.service.ts` `update` now takes `classId` and adds `.eq('student_group_id', classId)` to the update. `backend/src/attendance/attendance.controller.ts` plumbs the `classId` param through.
 
 ### Attendance delete IDOR
 
 `DELETE /classes/:classId/attendance/:recordId` had the same defect: the lookup and delete were both keyed on `recordId` only, so any teacher could delete any attendance record by iterating ids.
 
-**Fix.** [attendance.service.ts](../../../../backend/src/attendance/attendance.service.ts) `delete` now takes `classId` and adds `.eq('student_group_id', classId)` to both the lookup and the delete. The controller plumbs `classId` through.
+**Fix.** `backend/src/attendance/attendance.service.ts` `delete` now takes `classId` and adds `.eq('student_group_id', classId)` to both the lookup and the delete. The controller plumbs `classId` through.
 
 ### Attendance roster missing authorization
 
 `GET /classes/:classId/attendance?date=` was guarded only by the class-level `AuthGuard`, with no ownership check, unlike the sibling `studentRange` and `studentSummary` endpoints. Any authenticated user could read any class's roster (student names plus attendance) for any `classId`.
 
-**Fix.** [attendance.controller.ts](../../../../backend/src/attendance/attendance.controller.ts) `roster` now calls `assertCanViewClass(req.user.id, classId)` before reading, matching the per-student report endpoints.
+**Fix.** `backend/src/attendance/attendance.controller.ts` `roster` now calls `assertCanViewClass(req.user.id, classId)` before reading, matching the per-student report endpoints.
 
 ## Avatar object IDOR
 
@@ -57,7 +57,7 @@ The `onboard` and `createJoinRequest` flows had an "orphaned school takeover" ru
 
 `/calculations/student-term`, `/calculations/student-year`, and report generation accepted a `studentId` and returned that student's data after authorizing only against `studentGroupId`, without confirming the student belonged to the class.
 
-**Fix.** [calculation.service.ts](../../../../backend/src/calculation/calculation.service.ts) `calculateStudentTermResult` and `calculateStudentYearResult` now call `assertStudentInGroup`, which verifies enrollment in `studentGroupId` before returning anything. Report generation inherits this because it calls through the same methods.
+**Fix.** `calculation.service.ts` `calculateStudentTermResult` and `calculateStudentYearResult` now call `assertStudentInGroup`, which verifies enrollment in `studentGroupId` before returning anything. Report generation inherits this because it calls through the same methods.
 
 ## Spoofable rate-limit identity
 

@@ -49,6 +49,27 @@ export class UpdateEmailDomainDto {
   @MaxLength(64)
   azureTenantId?: string | null;
 
+  /** SAML: the IdP's single sign-on URL (https). */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  samlEntryPoint?: string | null;
+
+  /** SAML: the IdP's entity ID, checked as the assertion issuer. */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  samlIssuer?: string | null;
+
+  /** SAML: the IdP's signing certificate, PEM or bare base64. */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(16384)
+  samlCertificate?: string | null;
+
   @ApiPropertyOptional({ enum: AUDIENCES })
   @IsOptional()
   @IsIn(AUDIENCES)

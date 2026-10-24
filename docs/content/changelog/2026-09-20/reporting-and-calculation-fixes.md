@@ -17,7 +17,7 @@ A student's subjects are now the **union** of the profile and the subjects they 
 
 Applied to all three paths - single-student term, class term, class year. The year path needed no extra query; it already had the assessments and grades in hand.
 
-Pinned by [class-summary.test.ts](../../../../backend/src/calculation/class-summary.test.ts): a graded subject appears with no profile, and a profiled subject is not listed twice when both sources agree.
+Pinned by `class-summary.test.ts`: a graded subject appears with no profile, and a profiled subject is not listed twice when both sources agree.
 
 ## Every edge-function feature was down
 

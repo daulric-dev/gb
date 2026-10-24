@@ -23,6 +23,7 @@ import { dueLabel } from "@/lib/work";
 import { formatScore } from "@/lib/format-number";
 import {
   activityGradeState,
+  dropRuleLabel,
   gradeColor,
   percentLabel,
   type PortalCourseGrades,
@@ -32,7 +33,16 @@ import { GradeBar } from "@/features/grades/GradeBits";
 
 const UNGROUPED = "Ungrouped";
 
-function ActivityRow({ item }: { item: PortalGradeActivity }) {
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function ActivityRow({
+  item,
+  dropped,
+}: {
+  item: PortalGradeActivity;
+  /** Left out of the total by its group's drop rule. */
+  dropped: boolean;
+}) {
   const router = useRouter();
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
@@ -63,8 +73,21 @@ function ActivityRow({ item }: { item: PortalGradeActivity }) {
             {dueLabel(item.dueAt)}
           </Text>
         </View>
+        {dropped && state.kind !== "excused" ? (
+          <Badge variant="secondary">Dropped</Badge>
+        ) : null}
         {state.kind === "graded" ? (
-          <Text weight="600">
+          <Text
+            weight="600"
+            style={
+              dropped
+                ? {
+                    color: colors.mutedForeground,
+                    textDecorationLine: "line-through",
+                  }
+                : undefined
+            }
+          >
             {formatScore(state.score)}/{formatScore(item.points)}
           </Text>
         ) : state.kind === "excused" ? (
@@ -188,6 +211,15 @@ export default function CourseGradesScreen() {
   }
   const sections = [...buckets.entries()].filter(([, items]) => items.length);
 
+  // Marks the drop rules leave out: per activity when the server says so,
+  // else from the grade summary's list.
+  const droppedIds = new Set(data.grade.dropped ?? []);
+  const isDropped = (a: PortalGradeActivity) => a.dropped ?? droppedIds.has(a.id);
+  const ruleFor = (groupId: string | null, name: string) =>
+    dropRuleLabel(
+      data.groups.find((g) => (groupId ? g.id === groupId : g.name === name)),
+    );
+
   return (
     <Screen
       title={title}
@@ -234,6 +266,7 @@ export default function CourseGradesScreen() {
                           ? `${formatScore(g.weight)}% of total`
                           : null,
                         `${formatScore(g.earned)}/${formatScore(g.possible)} points`,
+                        ruleFor(g.groupId, g.name),
                       ]
                         .filter(Boolean)
                         .join(" · ")}
@@ -266,10 +299,19 @@ export default function CourseGradesScreen() {
           <Card key={name}>
             <CardHeader>
               <CardTitle>{name}</CardTitle>
+              {ruleFor(null, name) ? (
+                <Text variant="muted" size="xs">
+                  {capitalize(ruleFor(null, name)!)}
+                </Text>
+              ) : null}
             </CardHeader>
             <CardContent style={{ gap: 8 }}>
               {items.map((item) => (
-                <ActivityRow key={item.id} item={item} />
+                <ActivityRow
+                  key={item.id}
+                  item={item}
+                  dropped={isDropped(item)}
+                />
               ))}
             </CardContent>
           </Card>

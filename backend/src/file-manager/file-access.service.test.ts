@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { FileAccessService } from './file-access.service';
-import { createRoutingSupabase } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 
 const USER = 'user-1';
 const SCHOOL = 'school-1';
@@ -14,30 +14,21 @@ function makeService(opts: {
   courseIds?: string[];
   shares?: any[];
 }) {
-  const supabase = createRoutingSupabase({
-    userSchoolId: SCHOOL,
-    tables: {
-      // principalsFor: membership → roles → courses
-      school_management: { data: { id: 'mgmt-1' }, error: null },
-      school_management_role: {
-        data: (opts.roleIds ?? []).map((school_role_id) => ({
-          school_role_id,
-        })),
-        error: null,
-      },
-      'course.course_staff': {
-        data: (opts.courseIds ?? []).map((course_id) => ({ course_id })),
-        error: null,
-      },
-      'student.student': { data: null, error: null },
-      'course.course': {
-        data: (opts.courseIds ?? []).map((id) => ({ id })),
-        error: null,
-      },
-      'file_manager.file_share': { data: opts.shares ?? [], error: null },
-    },
-  });
-  return new FileAccessService(supabase as any);
+  const prisma = createMockPrisma();
+  // principalsFor: membership → roles → courses
+  prisma.school_management.findFirst.mockResolvedValue({ id: 'mgmt-1' });
+  prisma.school_management_role.findMany.mockResolvedValue(
+    (opts.roleIds ?? []).map((school_role_id) => ({ school_role_id })),
+  );
+  prisma.course_staff.findMany.mockResolvedValue(
+    (opts.courseIds ?? []).map((course_id) => ({ course_id })),
+  );
+  prisma.student.findFirst.mockResolvedValue(null);
+  prisma.course.findMany.mockResolvedValue(
+    (opts.courseIds ?? []).map((id) => ({ id })),
+  );
+  prisma.file_share.findMany.mockResolvedValue(opts.shares ?? []);
+  return new FileAccessService(prisma as any);
 }
 
 describe('accessFor', () => {

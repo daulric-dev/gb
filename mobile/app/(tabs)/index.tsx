@@ -5,6 +5,7 @@ import { Screen } from "@/components/layout/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { AdminDashboard } from "@/features/dashboard/AdminDashboard";
 import { TeacherDashboard } from "@/features/dashboard/TeacherDashboard";
+import { ReadOnlyBanner } from "@/features/billing/ReadOnlyBanner";
 
 type Tab = "admin" | "teacher";
 
@@ -31,6 +32,7 @@ export default function DashboardScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      <ReadOnlyBanner isAdmin={isAdmin} />
       {isAdmin ? (
         <View style={{ gap: 20 }}>
           <SegmentedControl<Tab>

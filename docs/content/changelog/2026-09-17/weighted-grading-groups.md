@@ -23,7 +23,7 @@ The three grading models (`weighted_continuous`, `weighted_cumulative`, `continu
 
 ## The calculation
 
-[grouped-term.helper.ts](../../../../backend/src/calculation/helpers/grouped-term.helper.ts) computes one subject's term figures from N groups, and all three strategies share it - they differ only in year aggregation, so term scoring now lives in one place.
+`grouped-term.helper.ts` computes one subject's term figures from N groups, and all three strategies share it - they differ only in year aggregation, so term scoring now lives in one place.
 
 Two behaviours worth knowing:
 

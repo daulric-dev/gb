@@ -14,7 +14,6 @@ export interface AcademicYear {
   name: string;
   start_date: string;
   end_date: string;
-  grading_model: string;
   is_active?: boolean;
 }
 

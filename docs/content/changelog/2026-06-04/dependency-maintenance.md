@@ -13,7 +13,7 @@ The backend used `xlsx@0.18.5` to generate the class-summary and year-end XLSX e
 
 Since the code only ever *writes* spreadsheets (it never parses them), it was swapped for [`write-excel-file`](https://www.npmjs.com/package/write-excel-file) — an actively maintained, write-only library whose feature set (multiple named sheets, column widths, horizontal cell merges) covers everything the generators need.
 
-**Fix.** [export.generator.ts](../../../../backend/src/report-files/generation/export.generator.ts) and [year-export.generator.ts](../../../../backend/src/report-files/generation/year-export.generator.ts) now build sheet data for `writeXlsxFile(...)` instead of `XLSX.utils`:
+**Fix.** `export.generator.ts` and `year-export.generator.ts` now build sheet data for `writeXlsxFile(...)` instead of `XLSX.utils`:
 
 - `worksheet['!cols'] = [{ wch }]` → the sheet's `columns: [{ width }]`.
 - `worksheet['!merges'] = [{ s, e }]` → a `columnSpan` on the subject-header cell, with the covered cells left as `null` (the library's merge convention). The resulting merge range is byte-for-range identical to the old SheetJS output (e.g. `C1:E1`).
@@ -21,7 +21,7 @@ Since the code only ever *writes* spreadsheets (it never parses them), it was sw
 
 ### Behavior change: XLSX builders are now async
 
-`writeXlsxFile(...).toBuffer()` returns a `Promise<Buffer>`, so `buildClassSummaryXlsxBuffer` and `buildYearClassSummaryXlsxBuffer` now return `Promise<Buffer>` rather than `Buffer`. The single consumer, [report-files.service.ts](../../../../backend/src/report-files/report-files.service.ts), `await`s them inside the existing async `getClassSummaryFile`; the CSV and PDF branches are unchanged. No controller or route signatures changed, and the generated files are identical (validated as a valid zip container with the expected `Summary`/`Students` sheets and merge ranges).
+`writeXlsxFile(...).toBuffer()` returns a `Promise<Buffer>`, so `buildClassSummaryXlsxBuffer` and `buildYearClassSummaryXlsxBuffer` now return `Promise<Buffer>` rather than `Buffer`. The single consumer, `report-files.service.ts`, `await`s them inside the existing async `getClassSummaryFile`; the CSV and PDF branches are unchanged. No controller or route signatures changed, and the generated files are identical (validated as a valid zip container with the expected `Summary`/`Students` sheets and merge ranges).
 
 The `xlsx` dependency was removed from the backend entirely.
 
@@ -35,7 +35,7 @@ The root [package.json](../../../../package.json) `overrides` block pinned `reac
 
 ## archiver: evaluated v8, stayed on v7
 
-`archiver` is one major behind (`8.0.0` is out), but v8 is a ground-up **ESM-only rewrite** with a new class-based API (`ZipArchive`/`TarArchive`) and **no TypeScript types** — DefinitelyTyped's `@types/archiver` still only covers v7. Adopting it today would mean losing type coverage and rewriting the streaming zip logic in [report-files.controller.ts](../../../../backend/src/report-files/report-files.controller.ts) against an unproven API, for no functional gain. It is the same maintainers' work and v7 carries no security advisories, so the dependency was deliberately kept at `^7`. Worth revisiting once `@types/archiver@8` ships and the rewrite stabilizes.
+`archiver` is one major behind (`8.0.0` is out), but v8 is a ground-up **ESM-only rewrite** with a new class-based API (`ZipArchive`/`TarArchive`) and **no TypeScript types** — DefinitelyTyped's `@types/archiver` still only covers v7. Adopting it today would mean losing type coverage and rewriting the streaming zip logic in `report-files.controller.ts` against an unproven API, for no functional gain. It is the same maintainers' work and v7 carries no security advisories, so the dependency was deliberately kept at `^7`. Worth revisiting once `@types/archiver@8` ships and the rewrite stabilizes.
 
 ## Tests
 

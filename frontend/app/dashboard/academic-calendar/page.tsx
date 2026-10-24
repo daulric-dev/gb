@@ -128,7 +128,6 @@ export default function AcademicYearsPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Start</TableHead>
                 <TableHead>End</TableHead>
-                <TableHead>Model</TableHead>
                 <TableHead>Status</TableHead>
                 {can("academic-year", "update") && (
                   <TableHead className="text-right">Actions</TableHead>
@@ -144,19 +143,6 @@ export default function AcademicYearsPage() {
                   </TableCell>
                   <TableCell>
                     {new Date(year.end_date).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {year.grading_model
-                        .replace(/_/g, " ")
-                        .replace(/\b\w/g, (c) => c.toUpperCase())}
-                    </Badge>
-                    {year.year_exam_weight != null && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        Exam {year.year_exam_weight}% / CW{" "}
-                        {year.year_coursework_weight}%
-                      </span>
-                    )}
                   </TableCell>
                   <TableCell>
                     {year.is_active ? (

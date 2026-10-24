@@ -12,7 +12,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 /**
- * What the browser declares before a resumable upload starts. Every field is
+ * What the client declares before a direct upload starts. Every field is
  * checked again against the stored bytes when the upload is finalised, so this
  * is a fast rejection, not the security boundary.
  */

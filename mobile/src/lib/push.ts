@@ -7,6 +7,9 @@ import { api } from "@/lib/api";
 /** Android channel the backend's attendance pushes are delivered on. */
 export const ATTENDANCE_CHANNEL = "attendance";
 
+/** Android channel for new work and course announcements. */
+export const COURSE_CHANNEL = "coursework";
+
 /** The token this device registered, so logout can hand it back. */
 let registeredToken: string | null = null;
 
@@ -33,6 +36,11 @@ export async function registerForPush(): Promise<string | null> {
         name: "Attendance",
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
+        sound: "default",
+      });
+      await Notifications.setNotificationChannelAsync(COURSE_CHANNEL, {
+        name: "New work and announcements",
+        importance: Notifications.AndroidImportance.DEFAULT,
         sound: "default",
       });
     }

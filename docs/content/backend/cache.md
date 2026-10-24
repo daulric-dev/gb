@@ -4,7 +4,7 @@ sidebar_label: Cache
 
 # Cache Module
 
-The cache module provides a pluggable caching layer that sits in front of Supabase database queries. When a service fetches data from Supabase, the result is cached for a configurable period. Subsequent requests for the same data are served from the cache instead of hitting Supabase again. On writes (inserts, updates, upserts), the cache is invalidated or updated to keep it consistent with the database.
+The cache module provides a pluggable caching layer that sits in front of Postgres queries (made through `PrismaService`). When a service fetches data from the database, the result is cached for a configurable period. Subsequent requests for the same data are served from the cache instead of hitting the database again. On writes (inserts, updates, upserts), the cache is invalidated or updated to keep it consistent with the database.
 
 ## How It Works
 
@@ -15,19 +15,19 @@ Client Request
   Service
     │
     ├── GET: cache.get(key)
-    │     ├── Cache HIT  → return cached data (no Supabase call)
-    │     └── Cache MISS → fetch from Supabase → cache.set(key, data, ttl) → return data
+    │     ├── Cache HIT  → return cached data (no database call)
+    │     └── Cache MISS → fetch from Postgres → cache.set(key, data, ttl) → return data
     │
-    ├── INSERT / UPSERT: write to Supabase → cache.set(key, newData, ttl)
+    ├── INSERT / UPSERT: write to Postgres → cache.set(key, newData, ttl)
     │
-    ├── UPDATE (list): write to Supabase → cache.delete(key) or cache.deleteByPrefix(prefix)
+    ├── UPDATE (list): write to Postgres → cache.delete(key) or cache.deleteByPrefix(prefix)
     │
-    └── DELETE: delete from Supabase → cache.delete(key) or cache.deleteByPrefix(prefix)
+    └── DELETE: delete from Postgres → cache.delete(key) or cache.deleteByPrefix(prefix)
 ```
 
 This pattern ensures:
-- **Reads are fast** - repeated requests for the same data don't hit Supabase.
-- **Writes stay consistent** - the cache is invalidated or updated immediately after a successful write to Supabase, so subsequent reads reflect the latest data.
+- **Reads are fast** - repeated requests for the same data don't hit the database.
+- **Writes stay consistent** - the cache is invalidated or updated immediately after a successful write to the database, so subsequent reads reflect the latest data.
 - **TTL provides a safety net** - even if a cache update is missed, stale data expires automatically.
 
 ## Architecture
@@ -97,12 +97,12 @@ The cache is treated as a best-effort layer, never a hard dependency. `CacheServ
 
 | Operation | On store error |
 |-----------|----------------|
-| `get` | Logs error, returns `null` (treated as cache miss → caller falls through to Supabase) |
+| `get` | Logs error, returns `null` (treated as cache miss → caller falls through to the database) |
 | `set` | Logs error, no-op |
 | `update` | Logs error, returns `false` |
 | `delete` / `deleteByPrefix` / `clear` | Logs error, no-op |
 
-This means callers do not need to catch cache errors themselves. Catch blocks in services should only convert *domain* errors (e.g. Supabase row-not-found) into `HttpException`s - they must not re-wrap arbitrary errors, or genuine 500s will be hidden behind misleading 404s.
+This means callers do not need to catch cache errors themselves. Catch blocks in services should only convert *domain* errors (e.g. Prisma record-not-found, `P2025`) into `HttpException`s - they must not re-wrap arbitrary errors, or genuine 500s will be hidden behind misleading 404s.
 
 ## Environment Variables
 
@@ -126,18 +126,16 @@ export class SomeService {
 
 ### Cached Read (read-through)
 
-Check the cache before querying Supabase. On a miss, fetch from Supabase and populate the cache.
+Check the cache before querying the database. On a miss, fetch from Postgres and populate the cache.
 
 ```typescript
 async getProfile(userId: string) {
   const cached = await this.cache.get(`profile:${userId}`);
   if (cached) return cached;
 
-  const { data } = await supabase
-    .from('user_profile')
-    .select('*')
-    .eq('id', userId)
-    .single();
+  const data = await this.prisma.user_profile.findUnique({
+    where: { id: userId },
+  });
 
   if (data) {
     await this.cache.set(`profile:${userId}`, data, 300);
@@ -148,16 +146,14 @@ async getProfile(userId: string) {
 
 ### Cached Write (write-through)
 
-After a successful write to Supabase, update the cache so reads immediately reflect the new data.
+After a successful database write, update the cache so reads immediately reflect the new data.
 
 ```typescript
 async updateProfile(userId: string, dto: UpdateProfileDto) {
-  const { data } = await supabase
-    .from('user_profile')
-    .update({ first_name: dto.firstName })
-    .eq('id', userId)
-    .select('*')
-    .single();
+  const data = await this.prisma.user_profile.update({
+    where: { id: userId },
+    data: { first_name: dto.firstName },
+  });
 
   if (data) {
     await this.cache.set(`profile:${userId}`, data, 300);
@@ -172,7 +168,7 @@ Remove the cache entry when the underlying data is deleted.
 
 ```typescript
 async deleteAccount(userId: string) {
-  await supabase.from('user_profile').delete().eq('id', userId);
+  await this.prisma.user_profile.delete({ where: { id: userId } });
   await this.cache.delete(`profile:${userId}`);
 }
 ```

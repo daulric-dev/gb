@@ -11,7 +11,7 @@ Requires two migrations. No behavior changes to existing features.
 
 ## Data model
 
-Three additions in the `public` schema (see [20260603120000_announcement.sql](../../../../supabase/migrations/20260603120000_announcement.sql) and [20260603140000_announcement_read_receipts.sql](../../../../supabase/migrations/20260603140000_announcement_read_receipts.sql)):
+Three additions in the `public` schema (see `20260603120000_announcement.sql` and `20260603140000_announcement_read_receipts.sql`):
 
 - `announcement` - `id`, `school_id`, `author_user_profile_id`, `title`, `body`, timestamps. FK-cascaded to `school` and (set-null) `user_profile`. RLS: anyone in the school reads; members insert; author-or-admin update/delete.
 - `announcement_read` - `(announcement_id, user_profile_id)` read receipts with `read_at`. RLS: school members see in-school receipts; a user records only their own.

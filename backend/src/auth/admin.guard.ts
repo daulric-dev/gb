@@ -5,13 +5,13 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
   private readonly logger = new Logger(AdminGuard.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -21,24 +21,26 @@ export class AdminGuard implements CanActivate {
       throw new ForbiddenException('Admin access required');
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('role, is_active, school_id')
-      .eq('id', userId)
-      .single();
+    const profile = await this.prisma.user_profile
+      .findUnique({
+        where: { id: userId },
+        select: { role: true, is_active: true, school_id: true },
+      })
+      .catch(() => null);
 
     if (profile?.role === 'admin' && profile?.is_active && profile.school_id) {
       // The profile role is a denormalised copy; the membership in the active
       // school is the source of truth.
-      const { data: membership } = await supabase
-        .from('school_management')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('school_id', profile.school_id)
-        .eq('role', 'admin')
-        .maybeSingle();
+      const membership = await this.prisma.school_management
+        .findFirst({
+          where: {
+            user_id: userId,
+            school_id: profile.school_id,
+            role: 'admin',
+          },
+          select: { id: true },
+        })
+        .catch(() => null);
 
       if (membership) return true;
     }

@@ -391,7 +391,13 @@ function GradedItemRow({ item }: { item: GradedItem }) {
         {s?.excused ? (
           <Badge variant="outline">Excused</Badge>
         ) : (
-          <span className="shrink-0 text-sm font-medium tabular-nums">
+          <span
+            className={cn(
+              "shrink-0 text-sm font-medium tabular-nums",
+              item.dropped && "text-muted-foreground line-through",
+            )}
+            title={item.dropped ? "Dropped by the group's rule" : undefined}
+          >
             {formatScore(s?.score)}
             <span className="text-muted-foreground">/{formatScore(item.points)}</span>
           </span>

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -15,7 +16,6 @@ import { ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { AuthGuard } from '@/auth/auth.guard';
-import { SupabaseService } from '@/supabase/supabase.service';
 import { SsoService } from './sso.service';
 
 class DiscoverQueryDto {
@@ -40,10 +40,7 @@ class HandoffDto {
 @ApiTags('Auth')
 @Controller('auth/sso')
 export class SsoController {
-  constructor(
-    private readonly sso: SsoService,
-    private readonly supabaseService: SupabaseService,
-  ) {}
+  constructor(private readonly sso: SsoService) {}
 
   /** The providers this deployment offers, for the login buttons. */
   @Get('providers')
@@ -56,6 +53,32 @@ export class SsoController {
   @Get('discover')
   async discover(@Query() query: DiscoverQueryDto) {
     return this.sso.discover(query.email);
+  }
+
+  /** Our SAML service provider metadata, for schools to give their IdP. */
+  @Get('saml/metadata')
+  samlMetadata(@Res() reply: FastifyReply) {
+    const xml = this.sso.samlMetadata();
+    if (!xml) throw new NotFoundException('SAML sign-in is not enabled');
+    return reply
+      .header('Content-Type', 'application/samlmetadata+xml; charset=utf-8')
+      .header('Cache-Control', 'public, max-age=3600')
+      .send(xml);
+  }
+
+  /**
+   * SAML assertion consumer service: the IdP's form POST
+   * (application/x-www-form-urlencoded, SAMLResponse + RelayState).
+   */
+  @Throttle({ 'auth-ip': { limit: 120, ttl: 60 * 60 * 1000 } })
+  @Post('saml/acs')
+  async samlAcs(
+    @Res() reply: FastifyReply,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const url = await this.sso.samlAcs(body ?? {});
+    // 303: the browser follows with a GET.
+    return reply.redirect(url, 303);
   }
 
   @Throttle({ 'auth-ip': { limit: 120, ttl: 60 * 60 * 1000 } })
@@ -95,11 +118,8 @@ export class SsoController {
   /** Names from the provider, to prefill onboarding. */
   @UseGuards(AuthGuard)
   @Get('suggested-profile')
-  async suggestedProfile(
-    @Req() req: FastifyRequest,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ) {
-    const user = await this.supabaseService.getUser(req, reply);
-    return { profile: user ? this.sso.suggestedProfile(user) : null };
+  async suggestedProfile(@Req() req: FastifyRequest & { user?: { id: string } }) {
+    const userId = req.user?.id;
+    return { profile: userId ? await this.sso.suggestedProfile(userId) : null };
   }
 }

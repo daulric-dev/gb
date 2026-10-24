@@ -22,6 +22,7 @@ export const MODULE_ITEM_TYPES = [
   'file',
   'link',
   'header',
+  'discussion',
 ] as const;
 export type ModuleItemType = (typeof MODULE_ITEM_TYPES)[number];
 
@@ -69,6 +70,7 @@ export class CreateModuleItemDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() pageId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() activityId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() fileId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() discussionTopicId?: string;
 
   // Only http(s): a module link is clicked by students, so no javascript: or
   // data: URLs.

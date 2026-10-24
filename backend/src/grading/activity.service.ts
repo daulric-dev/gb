@@ -4,17 +4,34 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { SupabaseService } from '@/supabase/supabase.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import type { Prisma } from '@/generated/prisma/client';
 import {
   CourseAccessService,
   CourseRole,
   MANAGE_ROLES,
   STAFF_ROLES,
 } from '@/course/access/course-access.service';
-import { ACTIVITY_COLUMNS, ActivityKind, toActivity } from './activity.mapper';
+import {
+  ACTIVITY_ORDER,
+  ACTIVITY_SELECT,
+  ActivityKind,
+  toActivity,
+  toTimestamp,
+} from './activity.mapper';
+import { CourseNotificationService } from '@/course-notification/course-notification.service';
 
 type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
+
+const QUESTION_SELECT = {
+  id: true,
+  prompt: true,
+  kind: true,
+  points: true,
+  sort_order: true,
+} satisfies Prisma.quiz_questionSelect;
 
 /**
  * Quizzes, assignments and offline work inside a course.
@@ -29,8 +46,9 @@ export class ActivityService {
   private readonly logger = new Logger(ActivityService.name);
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
   /**
@@ -42,20 +60,17 @@ export class ActivityService {
     activityId: string,
     roles: readonly CourseRole[] = MANAGE_ROLES,
   ) {
-    const { data } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('activity')
-      .select(ACTIVITY_COLUMNS)
-      .eq('id', activityId)
-      .maybeSingle();
+    const data = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: ACTIVITY_SELECT,
+    });
 
     if (!data?.course_id) {
       throw new NotFoundException('Activity not found');
     }
 
-    await this.access.require(userId, data.course_id as string, roles);
-    return data as any;
+    await this.access.require(userId, data.course_id, roles);
+    return data as typeof data & { course_id: string };
   }
 
   /**
@@ -63,14 +78,10 @@ export class ActivityService {
    * activity would count toward a total it does not belong to.
    */
   private async requireGroupInCourse(courseId: string, groupId: string) {
-    const { data } = await this.supabaseService
-      .getServiceClient()
-      .schema('course')
-      .from('assignment_group')
-      .select('id')
-      .eq('id', groupId)
-      .eq('course_id', courseId)
-      .maybeSingle();
+    const data = await this.prisma.assignment_group.findFirst({
+      where: { id: groupId, course_id: courseId },
+      select: { id: true },
+    });
 
     if (!data) throw new NotFoundException('Assignment group not found');
   }
@@ -79,21 +90,21 @@ export class ActivityService {
   async listForCourse(userId: string, courseId: string) {
     await this.access.require(userId, courseId, STAFF_ROLES);
 
-    const { data, error } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('activity')
-      .select(ACTIVITY_COLUMNS)
-      .eq('course_id', courseId)
-      .order('due_at', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to list activities: ${error.message}`);
+    let data;
+    try {
+      data = await this.prisma.activity.findMany({
+        where: { course_id: courseId },
+        select: ACTIVITY_SELECT,
+        orderBy: ACTIVITY_ORDER,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to list activities: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to load activities');
     }
 
-    return (data ?? []).map((a: any) => toActivity(a));
+    return data.map((a) => toActivity(a));
   }
 
   /** One activity, with its questions when it is a quiz. */
@@ -103,41 +114,44 @@ export class ActivityService {
       activityId,
       STAFF_ROLES,
     );
-    const supabase = this.supabaseService.getServiceClient();
 
     if (activity.kind !== 'quiz') {
       return { ...toActivity(activity), questions: [] };
     }
 
-    const { data: questions } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .select('id, prompt, kind, points, sort_order')
-      .eq('activity_id', activityId)
-      .order('sort_order', { ascending: true });
+    const questions = await this.prisma.quiz_question.findMany({
+      where: { activity_id: activityId },
+      select: QUESTION_SELECT,
+      orderBy: { sort_order: 'asc' },
+    });
 
-    const questionIds = (questions ?? []).map((q: any) => q.id as string);
+    const questionIds = questions.map((q) => q.id);
 
-    const { data: options } = questionIds.length
-      ? await supabase
-          .schema('grading')
-          .from('quiz_option')
-          .select('id, question_id, label, is_correct, sort_order')
-          .in('question_id', questionIds)
-          .order('sort_order', { ascending: true })
-      : { data: [] as any[] };
+    const options = questionIds.length
+      ? await this.prisma.quiz_option.findMany({
+          where: { question_id: { in: questionIds } },
+          select: {
+            id: true,
+            question_id: true,
+            label: true,
+            is_correct: true,
+            sort_order: true,
+          },
+          orderBy: { sort_order: 'asc' },
+        })
+      : [];
 
     return {
       ...toActivity(activity),
-      questions: (questions ?? []).map((q: any) => ({
+      questions: questions.map((q) => ({
         id: q.id,
         prompt: q.prompt,
         kind: q.kind,
         points: Number(q.points),
         sortOrder: q.sort_order,
-        options: (options ?? [])
-          .filter((o: any) => o.question_id === q.id)
-          .map((o: any) => ({
+        options: options
+          .filter((o) => o.question_id === q.id)
+          .map((o) => ({
             id: o.id,
             label: o.label,
             sortOrder: o.sort_order,
@@ -182,28 +196,29 @@ export class ActivityService {
     // Offline work is never handed in online, so it accepts nothing.
     const online = input.kind === 'assignment';
 
-    const { data, error } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('activity')
-      .insert({
-        course_id: courseId,
-        assignment_group_id: input.assignmentGroupId ?? null,
-        max_attempts: input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
-        kind: input.kind,
-        title,
-        instructions: input.instructions ?? null,
-        points: input.points,
-        due_at: input.dueAt ?? null,
-        allow_file: online ? (input.allowFile ?? false) : false,
-        allow_text: online ? (input.allowText ?? false) : false,
-        created_by: userId,
-      })
-      .select(ACTIVITY_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to create activity: ${error?.message}`);
+    let data;
+    try {
+      data = await this.prisma.activity.create({
+        data: {
+          course_id: courseId,
+          assignment_group_id: input.assignmentGroupId ?? null,
+          max_attempts:
+            input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
+          kind: input.kind,
+          title,
+          instructions: input.instructions ?? null,
+          points: input.points,
+          due_at: toTimestamp(input.dueAt ?? null),
+          allow_file: online ? (input.allowFile ?? false) : false,
+          allow_text: online ? (input.allowText ?? false) : false,
+          created_by: userId,
+        },
+        select: ACTIVITY_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to create activity: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to create activity');
     }
 
@@ -227,7 +242,7 @@ export class ActivityService {
   ) {
     const activity = await this.requireActivity(userId, activityId);
 
-    const changes: Record<string, unknown> = {};
+    const changes: Prisma.activityUncheckedUpdateInput = {};
     if (patch.title !== undefined) {
       const title = patch.title.trim();
       if (!title) throw new BadRequestException('Give the activity a title');
@@ -236,11 +251,11 @@ export class ActivityService {
     if (patch.instructions !== undefined)
       changes.instructions = patch.instructions;
     if (patch.points !== undefined) changes.points = patch.points;
-    if (patch.dueAt !== undefined) changes.due_at = patch.dueAt;
+    if (patch.dueAt !== undefined) changes.due_at = toTimestamp(patch.dueAt);
     if (patch.assignmentGroupId !== undefined) {
       if (patch.assignmentGroupId) {
         await this.requireGroupInCourse(
-          activity.course_id as string,
+          activity.course_id,
           patch.assignmentGroupId,
         );
       }
@@ -260,19 +275,19 @@ export class ActivityService {
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
     }
-    changes.updated_at = new Date().toISOString();
+    changes.updated_at = new Date();
 
-    const { data, error } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('activity')
-      .update(changes)
-      .eq('id', activityId)
-      .select(ACTIVITY_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to update activity: ${error?.message}`);
+    let data;
+    try {
+      data = await this.prisma.activity.update({
+        where: { id: activityId },
+        data: changes,
+        select: ACTIVITY_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update activity: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to update activity');
     }
 
@@ -290,38 +305,42 @@ export class ActivityService {
       throw new ConflictException('This activity is already published');
     }
 
-    const supabase = this.supabaseService.getServiceClient();
-
     if (activity.kind === 'quiz') {
-      const { count } = await supabase
-        .schema('grading')
-        .from('quiz_question')
-        .select('id', { count: 'exact', head: true })
-        .eq('activity_id', activityId);
+      const count = await this.prisma.quiz_question.count({
+        where: { activity_id: activityId },
+      });
 
       if ((count ?? 0) === 0) {
         throw new BadRequestException('Add a question before publishing');
       }
     }
 
-    const now = new Date().toISOString();
-    const { data, error } = await supabase
-      .schema('grading')
-      .from('activity')
-      .update({
-        status: 'published',
-        // Reopening closed work keeps the date it first went out.
-        published_at: activity.published_at ?? now,
-        updated_at: now,
-      })
-      .eq('id', activityId)
-      .select(ACTIVITY_COLUMNS)
-      .single();
-
-    if (error || !data) {
-      this.logger.error(`Failed to publish activity: ${error?.message}`);
+    const now = new Date();
+    let data;
+    try {
+      data = await this.prisma.activity.update({
+        where: { id: activityId },
+        data: {
+          status: 'published',
+          // Reopening closed work keeps the date it first went out.
+          published_at: activity.published_at ?? now,
+          updated_at: now,
+        },
+        select: ACTIVITY_SELECT,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to publish activity: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to publish activity');
     }
+
+    // Fire and forget: publishing never waits on notices or pushes.
+    void this.notices?.activityPublished(activity.course_id, {
+      id: activityId,
+      title: data.title,
+      kind: data.kind,
+    });
 
     return toActivity(data);
   }
@@ -330,16 +349,14 @@ export class ActivityService {
   async close(userId: string, activityId: string) {
     await this.requireActivity(userId, activityId);
 
-    const { data, error } = await this.supabaseService
-      .getServiceClient()
-      .schema('grading')
-      .from('activity')
-      .update({ status: 'closed', updated_at: new Date().toISOString() })
-      .eq('id', activityId)
-      .select(ACTIVITY_COLUMNS)
-      .single();
-
-    if (error || !data) {
+    let data;
+    try {
+      data = await this.prisma.activity.update({
+        where: { id: activityId },
+        data: { status: 'closed', updated_at: new Date() },
+        select: ACTIVITY_SELECT,
+      });
+    } catch {
       throw new BadRequestException('Failed to close activity');
     }
     return toActivity(data);
@@ -352,13 +369,10 @@ export class ActivityService {
    */
   async remove(userId: string, activityId: string) {
     await this.requireActivity(userId, activityId);
-    const supabase = this.supabaseService.getServiceClient();
 
-    const { count } = await supabase
-      .schema('grading')
-      .from('submission')
-      .select('id', { count: 'exact', head: true })
-      .eq('activity_id', activityId);
+    const count = await this.prisma.submission.count({
+      where: { activity_id: activityId },
+    });
 
     if ((count ?? 0) > 0) {
       throw new ConflictException(
@@ -366,13 +380,9 @@ export class ActivityService {
       );
     }
 
-    const { error } = await supabase
-      .schema('grading')
-      .from('activity')
-      .delete()
-      .eq('id', activityId);
-
-    if (error) {
+    try {
+      await this.prisma.activity.deleteMany({ where: { id: activityId } });
+    } catch {
       throw new BadRequestException('Failed to delete activity');
     }
   }
@@ -460,55 +470,49 @@ export class ActivityService {
 
     this.validateOptions(input.kind, options);
 
-    const supabase = this.supabaseService.getServiceClient();
+    const last = await this.prisma.quiz_question.findFirst({
+      where: { activity_id: activityId },
+      select: { sort_order: true },
+      orderBy: { sort_order: 'desc' },
+    });
 
-    const { data: siblings } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .select('sort_order')
-      .eq('activity_id', activityId)
-      .order('sort_order', { ascending: false })
-      .limit(1);
+    // One transaction: a question left with no options would make the quiz
+    // unanswerable, so a failed option insert takes the question with it.
+    const question = await this.prisma.$transaction(async (tx) => {
+      let created;
+      try {
+        created = await tx.quiz_question.create({
+          data: {
+            activity_id: activityId,
+            prompt,
+            kind: input.kind,
+            points: input.points ?? 1,
+            sort_order: (last?.sort_order ?? -1) + 1,
+          },
+          select: QUESTION_SELECT,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to add question: ${(error as Error).message}`,
+        );
+        throw new BadRequestException('Failed to add question');
+      }
 
-    const { data: question, error } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .insert({
-        activity_id: activityId,
-        prompt,
-        kind: input.kind,
-        points: input.points ?? 1,
-        sort_order: ((siblings?.[0]?.sort_order as number) ?? -1) + 1,
-      })
-      .select('id, prompt, kind, points, sort_order')
-      .single();
+      try {
+        await tx.quiz_option.createMany({
+          data: options.map((o, i) => ({
+            question_id: created.id,
+            label: o.label,
+            is_correct: o.isCorrect,
+            sort_order: i,
+          })),
+        });
+      } catch {
+        throw new BadRequestException('Failed to add question options');
+      }
 
-    if (error || !question) {
-      this.logger.error(`Failed to add question: ${error?.message}`);
-      throw new BadRequestException('Failed to add question');
-    }
-
-    const { error: optionError } = await supabase
-      .schema('grading')
-      .from('quiz_option')
-      .insert(
-        options.map((o, i) => ({
-          question_id: question.id,
-          label: o.label,
-          is_correct: o.isCorrect,
-          sort_order: i,
-        })),
-      );
-
-    if (optionError) {
-      // Leaving a question with no options would make the quiz unanswerable.
-      await supabase
-        .schema('grading')
-        .from('quiz_question')
-        .delete()
-        .eq('id', question.id);
-      throw new BadRequestException('Failed to add question options');
-    }
+      return created;
+    });
 
     return {
       id: question.id,
@@ -535,21 +539,17 @@ export class ActivityService {
     },
   ) {
     await this.requireDraftQuiz(userId, activityId);
-    const supabase = this.supabaseService.getServiceClient();
 
-    const { data: existing } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .select('id, prompt, kind, points, sort_order')
-      .eq('id', questionId)
-      .eq('activity_id', activityId)
-      .maybeSingle();
+    const existing = await this.prisma.quiz_question.findFirst({
+      where: { id: questionId, activity_id: activityId },
+      select: QUESTION_SELECT,
+    });
 
     if (!existing) {
       throw new NotFoundException('Question not found');
     }
 
-    const changes: Record<string, unknown> = {};
+    const changes: Prisma.quiz_questionUncheckedUpdateInput = {};
     if (patch.prompt !== undefined) {
       const prompt = patch.prompt.trim();
       if (!prompt) throw new BadRequestException('Give the question a prompt');
@@ -557,7 +557,7 @@ export class ActivityService {
     }
     if (patch.points !== undefined) changes.points = patch.points;
 
-    const kind = existing.kind as QuestionKind;
+    const kind = existing.kind;
     const options =
       patch.options && kind === 'short_answer'
         ? patch.options.map((o) => ({ ...o, isCorrect: true }))
@@ -571,74 +571,68 @@ export class ActivityService {
       throw new BadRequestException('Nothing to update');
     }
 
-    if (Object.keys(changes).length > 0) {
-      const { error } = await supabase
-        .schema('grading')
-        .from('quiz_question')
-        .update(changes)
-        .eq('id', questionId);
-
-      if (error) {
-        this.logger.error(`Failed to update question: ${error.message}`);
-        throw new BadRequestException('Failed to save the question');
-      }
-    }
-
-    if (options) {
-      const { error: clearError } = await supabase
-        .schema('grading')
-        .from('quiz_option')
-        .delete()
-        .eq('question_id', questionId);
-
-      if (clearError) {
-        this.logger.error(`Failed to clear options: ${clearError.message}`);
-        throw new BadRequestException('Failed to save the options');
+    // One transaction, so a failed option insert cannot leave the question
+    // with no options (unanswerable) or half-edited.
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(changes).length > 0) {
+        try {
+          await tx.quiz_question.update({
+            where: { id: questionId },
+            data: changes,
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to update question: ${(error as Error).message}`,
+          );
+          throw new BadRequestException('Failed to save the question');
+        }
       }
 
-      const { error: insertError } = await supabase
-        .schema('grading')
-        .from('quiz_option')
-        .insert(
-          options.map((o, i) => ({
-            question_id: questionId,
-            label: o.label.trim(),
-            is_correct: o.isCorrect,
-            sort_order: i,
-          })),
-        );
+      if (options) {
+        try {
+          await tx.quiz_option.deleteMany({
+            where: { question_id: questionId },
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to clear options: ${(error as Error).message}`,
+          );
+          throw new BadRequestException('Failed to save the options');
+        }
 
-      if (insertError) {
-        // A question with no options is unanswerable, so say so loudly rather
-        // than leaving the quiz quietly broken.
-        this.logger.error(
-          `Question ${questionId} left without options: ${insertError.message}`,
-        );
-        throw new BadRequestException('Failed to save the options');
+        try {
+          await tx.quiz_option.createMany({
+            data: options.map((o, i) => ({
+              question_id: questionId,
+              label: o.label.trim(),
+              is_correct: o.isCorrect,
+              sort_order: i,
+            })),
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to save options for question ${questionId}: ${(error as Error).message}`,
+          );
+          throw new BadRequestException('Failed to save the options');
+        }
       }
-    }
+    });
 
     return this.getQuestion(activityId, questionId);
   }
 
   /** One question with its options, as the editor redraws it after a save. */
   private async getQuestion(activityId: string, questionId: string) {
-    const supabase = this.supabaseService.getServiceClient();
+    const question = await this.prisma.quiz_question.findFirst({
+      where: { id: questionId, activity_id: activityId },
+      select: QUESTION_SELECT,
+    });
 
-    const { data: question } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .select('id, prompt, kind, points, sort_order')
-      .eq('id', questionId)
-      .eq('activity_id', activityId)
-      .single();
-
-    const { data: options } = await supabase
-      .schema('grading')
-      .from('quiz_option')
-      .select('id, label, is_correct, sort_order')
-      .eq('question_id', questionId)
-      .order('sort_order', { ascending: true });
+    const options = await this.prisma.quiz_option.findMany({
+      where: { question_id: questionId },
+      select: { id: true, label: true, is_correct: true, sort_order: true },
+      orderBy: { sort_order: 'asc' },
+    });
 
     return {
       id: question!.id,
@@ -646,7 +640,7 @@ export class ActivityService {
       kind: question!.kind,
       points: Number(question!.points),
       sortOrder: question!.sort_order,
-      options: (options ?? []).map((o: any) => ({
+      options: options.map((o) => ({
         id: o.id,
         label: o.label,
         isCorrect: o.is_correct,
@@ -656,16 +650,12 @@ export class ActivityService {
 
   async removeQuestion(userId: string, activityId: string, questionId: string) {
     await this.requireDraftQuiz(userId, activityId);
-    const supabase = this.supabaseService.getServiceClient();
 
-    const { error } = await supabase
-      .schema('grading')
-      .from('quiz_question')
-      .delete()
-      .eq('id', questionId)
-      .eq('activity_id', activityId);
-
-    if (error) {
+    try {
+      await this.prisma.quiz_question.deleteMany({
+        where: { id: questionId, activity_id: activityId },
+      });
+    } catch {
       throw new BadRequestException('Failed to remove question');
     }
   }

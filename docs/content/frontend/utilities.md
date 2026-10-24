@@ -27,12 +27,12 @@ The main export. Makes authenticated JSON requests to the backend.
 | `options.body` | object | Request body (auto-serialized to JSON) |
 
 **Authentication:**
-- Sends `credentials: "include"` so the browser forwards the Supabase session cookies (`sb-*-auth-token*`) on every request
-- The frontend never reads or attaches an access token - the backend's `AuthGuard` validates and silently refreshes the session via cookies on every authenticated request
+- Sends `credentials: "include"` so the browser forwards the `gb_session` cookie on every request
+- The frontend never reads or attaches a token - the backend's `AuthGuard` validates the session cookie on every authenticated request and slides its expiry
 
 ### 401 Handling
 
-If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry - the backend rotates the access token transparently on every authenticated call, so a 401 means the refresh token itself is invalid (expired, revoked, or the session cookies were cleared).
+If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry - there is no token to refresh, so a 401 means the session itself is gone (expired, revoked, or the cookie was cleared).
 
 ### `apiUpload<T>(path, formData)` Function
 
@@ -75,13 +75,13 @@ try {
 
 ## Session Cookies
 
-The frontend has no client-side token storage. Auth state lives entirely in HTTP-only cookies (`sb-<project>-auth-token` and chunks `.0`, `.1`, ...) set by the backend after `POST /api/auth/otp/verify`. The browser sends them on every request via `credentials: "include"`, and `proxy.ts` checks for their presence to gate protected routes.
+The frontend has no client-side token storage. Auth state lives entirely in one HTTP-only cookie, `gb_session` (an opaque random token, 30-day sliding expiry), set by the backend after `POST /api/auth/otp/verify` or an SSO sign-in. The browser sends it on every request via `credentials: "include"`, and `proxy.ts` checks for its presence to gate protected routes.
 
-Because the cookies are HTTP-only, JavaScript cannot read them - there's nothing to coordinate across tabs, no `localStorage` sync, no single-flight refresh logic. Refresh is handled server-side by `AuthGuard` on every authenticated request.
+Because the cookie is HTTP-only, JavaScript cannot read it - there's nothing to coordinate across tabs, no `localStorage` sync, no refresh logic. The backend extends the session as it is used.
 
 ### Multi-Tab Behavior
 
-All tabs share the same cookies (browser-managed) and the backend serializes refresh internally, so concurrent requests from multiple tabs always see a valid rotated session. There is no client-side coordination required.
+All tabs share the same cookie (browser-managed) and the token never changes during a session, so concurrent requests from multiple tabs always see the same valid session. There is no client-side coordination required.
 
 ---
 

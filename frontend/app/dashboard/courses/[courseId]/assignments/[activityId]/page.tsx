@@ -16,7 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { AssignmentGroup } from "@/lib/courses/types";
+import type { ActivityRubric, AssignmentGroup } from "@/lib/courses/types";
 import {
   ACTIVITY_KIND_LABEL,
   formatDue,
@@ -58,6 +58,7 @@ import { MarkdownEditor } from "../../_components/MarkdownEditor";
 import { QuestionCard } from "../_components/QuestionCard";
 import { QuestionForm, type QuestionPayload } from "../_components/QuestionForm";
 import { MarksTable } from "../_components/MarksTable";
+import { RubricPanel } from "../_components/RubricPanel";
 import {
   ACTIVITY_ICON,
   ActivityStatusBadge,
@@ -76,6 +77,7 @@ export default function CourseActivityPage() {
   const activity = useSignal<ActivityDetail | null>(null);
   const submissions = useSignal<SubmissionRow[]>([]);
   const groups = useSignal<AssignmentGroup[]>([]);
+  const rubric = useSignal<ActivityRubric>({ rubric: null, assessments: {} });
   const loading = useSignal(true);
   const working = useSignal(false);
   const confirmDelete = useSignal(false);
@@ -103,13 +105,21 @@ export default function CourseActivityPage() {
       .catch(() => (submissions.value = []));
   }, [activityId, submissions]);
 
+  const loadRubric = useCallback(() => {
+    if (!activityId) return;
+    api<ActivityRubric>(`/activities/${activityId}/rubric`)
+      .then((data) => (rubric.value = data))
+      .catch(() => (rubric.value = { rubric: null, assessments: {} }));
+  }, [activityId, rubric]);
+
   useEffect(() => {
     load();
     loadSubmissions();
+    loadRubric();
     api<AssignmentGroup[]>(`/courses/${course.id}/assignment-groups`)
       .then((data) => (groups.value = data))
       .catch(() => (groups.value = []));
-  }, [load, loadSubmissions, course.id, groups]);
+  }, [load, loadSubmissions, loadRubric, course.id, groups]);
 
   const backToList = () => router.push(`${base}/assignments`);
 
@@ -494,6 +504,11 @@ export default function CourseActivityPage() {
               ? `Marks (${marked}/${submissions.value.length})`
               : `Submissions (${handedIn}/${submissions.value.length})`}
           </TabsTrigger>
+          {a.kind !== "quiz" && (
+            <TabsTrigger value="rubric">
+              Rubric{rubric.value.rubric ? "" : " (none)"}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {a.kind === "quiz" && (
@@ -542,8 +557,35 @@ export default function CourseActivityPage() {
             canGrade
             isDraft={isDraft}
             onRowsChangeAction={(rows) => (submissions.value = rows)}
+            rubric={a.kind === "quiz" ? null : rubric.value.rubric}
+            assessments={rubric.value.assessments}
+            onAssessedAction={(studentId, marks) => {
+              // The rubric is now in use, so its criteria are locked.
+              rubric.value = {
+                rubric: rubric.value.rubric
+                  ? { ...rubric.value.rubric, assessed: true }
+                  : null,
+                assessments: { ...rubric.value.assessments, [studentId]: marks },
+              };
+            }}
           />
         </TabsContent>
+
+        {a.kind !== "quiz" && (
+          <TabsContent value="rubric" className="mt-3">
+            <RubricPanel
+              courseId={course.id}
+              activityId={activityId}
+              points={a.points}
+              rubric={rubric.value.rubric}
+              canManage={canManage}
+              onChangedAction={() => {
+                loadRubric();
+                load();
+              }}
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
       <AlertDialog

@@ -210,6 +210,7 @@ export function ModuleCard({
                   <ModuleItemRow
                     key={item.id}
                     item={item}
+                    courseId={module.courseId}
                     base={base}
                     canEdit={canEdit}
                     otherModules={otherModules}

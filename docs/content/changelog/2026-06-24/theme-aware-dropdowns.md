@@ -27,6 +27,6 @@ Each conversion preserved the original `onChange` side effects, `required` / `di
 
 ## Modal and list improvements
 
-- **Enroll Students "Select all".** The enroll modal ([EnrollForm.tsx](../../../../frontend/app/dashboard/classes/[classId]/_components/EnrollForm.tsx)) gained a "Select all" checkbox with a live "N of M selected" count that drives the existing selection signal.
-- **Subject assignment modal.** The student subjects modal added a "Select all" control ([AddSubjectsForm.tsx](../../../../frontend/app/dashboard/classes/[classId]/_components/AddSubjectsForm.tsx)), and the assigned-subjects list ([ManageSubjects.tsx](../../../../frontend/app/dashboard/classes/[classId]/_components/ManageSubjects.tsx)) is now capped with a scroll (`max-h-56 overflow-y-auto`) so a long list of assignments no longer grows the modal past the viewport.
-- **Enrolled Students sorted by last name.** The enrolled students table on the class page ([page.tsx](../../../../frontend/app/dashboard/classes/[classId]/page.tsx)) now renders sorted by last name, then first name, via `localeCompare` on a copy of the signal array (no in-place mutation).
+- **Enroll Students "Select all".** The enroll modal (`EnrollForm.tsx`) gained a "Select all" checkbox with a live "N of M selected" count that drives the existing selection signal.
+- **Subject assignment modal.** The student subjects modal added a "Select all" control (`AddSubjectsForm.tsx`), and the assigned-subjects list (`ManageSubjects.tsx`) is now capped with a scroll (`max-h-56 overflow-y-auto`) so a long list of assignments no longer grows the modal past the viewport.
+- **Enrolled Students sorted by last name.** The enrolled students table on the class page (`page.tsx`) now renders sorted by last name, then first name, via `localeCompare` on a copy of the signal array (no in-place mutation).

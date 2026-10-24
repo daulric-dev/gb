@@ -9,7 +9,7 @@ Final cleanup batch from the audit. Small, mostly-isolated changes; no migration
 
 ## `BulkGradeDto` had no payload bounds
 
-[bulk-grade.dto.ts](../../../../backend/src/grading/dto/bulk-grade.dto.ts) accepted unbounded `grades[]` and unbounded `score` per entry. A single request could submit millions of grade entries or 1e300 scores and tie up the worker / blow past sensible row limits.
+`bulk-grade.dto.ts` accepted unbounded `grades[]` and unbounded `score` per entry. A single request could submit millions of grade entries or 1e300 scores and tie up the worker / blow past sensible row limits.
 
 **Fix.** Added:
 
@@ -33,7 +33,7 @@ Final cleanup batch from the audit. Small, mostly-isolated changes; no migration
 
 ## `worker.ts` Cloudflare entrypoint missed `@fastify/cookie`
 
-[worker.ts](../../../../backend/src/worker.ts) registers `@fastify/multipart` but not `@fastify/cookie`. The main entrypoint [createApp.ts](../../../../backend/src/createApp.ts) does register cookie. So the Cloudflare worker entrypoint would boot fine but silently drop every cookie the Supabase SSR adapter tries to set - sessions would never persist on this entrypoint.
+`worker.ts` (since removed, see [2026-10-25 cleanup](../2026-10-25/cleanup.md)) registers `@fastify/multipart` but not `@fastify/cookie`. The main entrypoint [createApp.ts](../../../../backend/src/createApp.ts) does register cookie. So the Cloudflare worker entrypoint would boot fine but silently drop every cookie the Supabase SSR adapter tries to set - sessions would never persist on this entrypoint.
 
 **Fix.** Imported and registered `@fastify/cookie` in `worker.ts`, immediately before multipart, mirroring the order in `createApp.ts`.
 
@@ -72,13 +72,13 @@ The audit also flagged `report.service.ts` for mixing the service client (RLS-by
 
 Instead, this batch closes the same defense-in-depth gap by **re-verifying report ownership in the service layer itself**. The `ClassTeacherGuard` (which became school-aware in the [High batch](./high-fixes.md#classteacherguard--verifyclassteacher-admin-bypass)) is still the primary gate, but a guard regression would no longer let a write slip through.
 
-**Fix.** New private helper [`ReportService.assertReportInCallerSchool(reportId, userId)`](../../../../backend/src/reporting/report.service.ts) resolves the report's school via `report_book → academic_year → school_id`, fetches the caller's school via `SupabaseService.getUserSchoolId`, and throws `ForbiddenException('You cannot modify reports from another school')` on mismatch. Applied to the four mutating methods that use the service client:
+**Fix.** New private helper `ReportService.assertReportInCallerSchool(reportId, userId)` resolves the report's school via `report_book → academic_year → school_id`, fetches the caller's school via `SupabaseService.getUserSchoolId`, and throws `ForbiddenException('You cannot modify reports from another school')` on mismatch. Applied to the four mutating methods that use the service client:
 
 - `updateReport(userId, reportId, dto)`
 - `publish(userId, reportId)`
 - `sendToMinistry(userId, reportId)`
 - `regenerateReport(userId, reportId)`
 
-Controllers now plumb `req.user.id` through to each ([report.controller.ts](../../../../backend/src/reporting/report.controller.ts)). Existing tests were updated to satisfy the new check; a new test confirms the cross-school rejection path returns 403. Suite is now 103 passing.
+Controllers now plumb `req.user.id` through to each (`report.controller.ts`). Existing tests were updated to satisfy the new check; a new test confirms the cross-school rejection path returns 403. Suite is now 103 passing.
 
 Everything from the audit (Critical / High / Medium / Low) is now closed.

@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
-import { uploadResumable } from "@/lib/files/resumable";
+import { uploadFile } from "@/lib/files/upload";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
@@ -37,7 +37,7 @@ export function UploadButton({
     uploading.value = true;
     progress.value = 0;
     try {
-      await uploadResumable(
+      await uploadFile(
         file,
         {
           ticket: "/files/upload-ticket",

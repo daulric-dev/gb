@@ -1,19 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { EXPO_PUSH_URL, PushService } from './push.service';
-import { createRoutingSupabase } from '@/test/mocks';
+import { createMockPrisma } from '@/test/prisma-mock';
 
 const token = (i: number) => `ExponentPushToken[tok-${i}]`;
 
 function setup(tokens: string[], respond?: (messages: any[]) => any) {
-  const sb = createRoutingSupabase({
-    tables: {
-      push_device: (call) =>
-        call.op === 'select'
-          ? { data: tokens.map((t) => ({ token: t })), error: null }
-          : { data: null, error: null },
-    },
-  });
-  const service = new PushService(sb as any);
+  const prisma = createMockPrisma();
+  prisma.push_device.findMany.mockResolvedValue(tokens.map((t) => ({ token: t })));
+  const service = new PushService(prisma as any);
   const requests: { url: string; init: RequestInit; messages: any[] }[] = [];
   service.fetchImpl = async (url, init) => {
     const messages = JSON.parse(String(init.body));
@@ -23,7 +17,7 @@ function setup(tokens: string[], respond?: (messages: any[]) => any) {
     };
     return new Response(JSON.stringify(body), { status: 200 });
   };
-  return { service, sb, requests };
+  return { service, prisma, requests };
 }
 
 describe('PushService.sendToUsers', () => {
@@ -54,7 +48,7 @@ describe('PushService.sendToUsers', () => {
   });
 
   test('forgets tokens Expo reports as DeviceNotRegistered', async () => {
-    const { service, sb } = setup([token(1), token(2), token(3)], (messages) => ({
+    const { service, prisma } = setup([token(1), token(2), token(3)], (messages) => ({
       data: messages.map((m: any) =>
         m.to === token(2)
           ? { status: 'error', message: 'gone', details: { error: 'DeviceNotRegistered' } }
@@ -66,8 +60,9 @@ describe('PushService.sendToUsers', () => {
 
     await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
 
-    const deletes = sb._calls.filter((c: any) => c.table === 'push_device' && c.op === 'delete');
+    const deletes = prisma.push_device.deleteMany.mock.calls;
     expect(deletes).toHaveLength(1);
+    expect(deletes[0][0].where).toEqual({ token: { in: [token(2)] } });
   });
 
   test('nothing to do without users or devices', async () => {
@@ -102,18 +97,18 @@ describe('PushService.sendToUsers', () => {
 
 describe('PushService devices', () => {
   test('register upserts on token so it moves to the caller', async () => {
-    const sb = createRoutingSupabase();
-    await new PushService(sb as any).register('u-2', ' ExpoPushToken[a] ', 'ios');
-    const call = sb._calls.find((c: any) => c.table === 'push_device')!;
-    expect(call.op).toBe('upsert');
-    expect(call.payload).toMatchObject({ user_id: 'u-2', token: 'ExpoPushToken[a]', platform: 'ios' });
+    const prisma = createMockPrisma();
+    await new PushService(prisma as any).register('u-2', ' ExpoPushToken[a] ', 'ios');
+    const [args] = prisma.push_device.upsert.mock.calls[0];
+    expect(args.where).toEqual({ token: 'ExpoPushToken[a]' });
+    expect(args.create).toMatchObject({ user_id: 'u-2', token: 'ExpoPushToken[a]', platform: 'ios' });
+    expect(args.update).toMatchObject({ user_id: 'u-2', platform: 'ios' });
   });
 
   test('unregister only touches the caller’s own token', async () => {
-    const sb = createRoutingSupabase();
-    await new PushService(sb as any).unregister('u-2', 'ExpoPushToken[a]');
-    const call = sb._calls.find((c: any) => c.table === 'push_device')!;
-    expect(call.op).toBe('delete');
-    expect(call.filters).toEqual({ user_id: 'u-2', token: 'ExpoPushToken[a]' });
+    const prisma = createMockPrisma();
+    await new PushService(prisma as any).unregister('u-2', 'ExpoPushToken[a]');
+    const [args] = prisma.push_device.deleteMany.mock.calls[0];
+    expect(args.where).toEqual({ user_id: 'u-2', token: 'ExpoPushToken[a]' });
   });
 });

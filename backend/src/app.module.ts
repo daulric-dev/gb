@@ -6,7 +6,10 @@ import { getClientIp, getSessionTracker, type ThrottlerReq } from '@/throttle/tr
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
-import { SupabaseModule } from '@/supabase/supabase.module';
+import { PrismaModule } from '@/prisma/prisma.module';
+import { StorageModule } from '@/storage/storage.module';
+import { MailModule } from '@/mail/mail.module';
+import { AccountModule } from '@/account/account.module';
 import { StudentAccountModule } from '@/student-account/student-account.module';
 import { StudentPortalModule } from '@/student-portal/student-portal.module';
 import { AuthModule } from '@/auth/auth.module';
@@ -24,7 +27,6 @@ import { RealtimeModule } from '@/realtime/realtime.module';
 import { ChatModule } from '@/chat/chat.module';
 import { QueueModule } from '@/queue/queue.module';
 import { CacheModule } from '@/cache/cache.module';
-import { PaginationModule } from '@/pagination/pagination.module';
 import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
 import { CourseAccessModule } from '@/course/access/course-access.module';
@@ -33,6 +35,10 @@ import { SsoCoreModule } from '@/sso/sso-core.module';
 import { SsoModule } from '@/sso/sso.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AttendanceModule } from '@/attendance/attendance.module';
+import { DiscussionModule } from '@/discussion/discussion.module';
+import { CalendarModule } from '@/calendar/calendar.module';
+import { CourseNotificationModule } from '@/course-notification/course-notification.module';
+import { BillingModule } from '@/billing/billing.module';
 
 @Module({
   imports: [
@@ -81,13 +87,15 @@ import { AttendanceModule } from '@/attendance/attendance.module';
       },
     }),
 
-    SupabaseModule,
+    PrismaModule,
+    StorageModule,
+    MailModule,
+    AccountModule,
     AuthModule,
     StudentAccountModule,
     StudentPortalModule,
     CacheModule,
     QueueModule.forRoot(),
-    PaginationModule,
     VersioningModule,
     CourseAccessModule,
     CourseModule,
@@ -109,6 +117,10 @@ import { AttendanceModule } from '@/attendance/attendance.module';
     DashboardModule,
     NotificationsModule,
     AttendanceModule,
+    DiscussionModule,
+    CalendarModule,
+    CourseNotificationModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [

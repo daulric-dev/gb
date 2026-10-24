@@ -4,9 +4,7 @@
     "FRONTEND_URL",
     "PORT",
     "REDIS_URL",
-    "SUPABASE_URL",
-    "SUPABASE_PUSHABLE_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
+    "DATABASE_URL",
     "USE_REDIS"
   ],
   "tasks": {

@@ -7,6 +7,8 @@
  * because its options are the accepted wordings.
  */
 
+import type { Rubric, RubricAssessment } from "@/lib/course";
+
 export type WorkKind = "quiz" | "assignment" | "offline";
 export type QuestionKind = "multiple_choice" | "true_false" | "short_answer";
 
@@ -53,6 +55,10 @@ export interface PortalWorkDetail {
     points: number;
     options: { id: string; label: string }[];
   }[];
+  /** Shown up front so the student knows how the work will be marked. */
+  rubric?: Rubric | null;
+  /** The levels picked, once marked with the rubric. */
+  rubricAssessment?: RubricAssessment[] | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";
@@ -61,6 +67,7 @@ export interface PortalWorkDetail {
     fileName: string | null;
     score: number | null;
     feedback: string | null;
+    excused?: boolean;
     submittedAt: string | null;
     gradedAt: string | null;
     attemptCount: number;

@@ -11,7 +11,7 @@ Indexed the foreign keys flagged by Supabase's Performance Advisor. One new migr
 
 The Performance Advisor's "unindexed foreign keys" lint flagged 27 foreign keys with no covering index whose leading column is the FK column. Without one, lookups and joins on the FK, and the parent-side `ON DELETE` cascade / set-null scans, fall back to sequential scans.
 
-[20260623120000_index_foreign_keys.sql](../../../../supabase/migrations/20260623120000_index_foreign_keys.sql) adds 16 indexes, covering the foreign keys that sit on real query paths or back cascade deletes:
+`20260623120000_index_foreign_keys.sql` adds 16 indexes, covering the foreign keys that sit on real query paths or back cascade deletes:
 
 - `grading`: `grade.student_id`, `assessment.subject_id`
 - `reporting`: `report_book.student_group_id`, `report_book.term_id`, `report_book_entry.subject_id`, `report_book_pdf.report_book_id`
@@ -25,7 +25,7 @@ All index creations use `CREATE INDEX IF NOT EXISTS`, so the migration is safe t
 
 ## Related
 
-A separate, pre-existing index migration ([20260624023717_added_indexes_to_stuff.sql](../../../../supabase/migrations/20260624023717_added_indexes_to_stuff.sql), which adds `school_management_user_id_idx`) was made idempotent with `IF NOT EXISTS` so `supabase migration up` stops erroring on an already-present index.
+A separate, pre-existing index migration (`20260624023717_added_indexes_to_stuff.sql`, which adds `school_management_user_id_idx`) was made idempotent with `IF NOT EXISTS` so `supabase migration up` stops erroring on an already-present index.
 
 ## Deploy
 

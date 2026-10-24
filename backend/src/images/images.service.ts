@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { SupabaseService } from '../supabase/supabase.service';
+import type { Readable } from 'node:stream';
+import { StorageService } from '@/storage/storage.service';
+import { objectKey } from '@/storage/keys';
+import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { MultipartFile } from '@fastify/multipart';
 
@@ -15,7 +17,8 @@ export class ImagesService {
     'image/webp',
   ];
   private static readonly BUCKET = 'images';
-  private static readonly TUS_CHUNK_SIZE = 6 * 1024 * 1024; // Supabase requires 6MB chunks
+  /** How long a presigned avatar upload URL stays valid. */
+  private static readonly UPLOAD_URL_TTL = 15 * 60;
   private static readonly CACHE_TTL = 3600; // 1 hour
   private static cacheKey(userId: string) {
     return `avatar:${userId}`;
@@ -47,29 +50,31 @@ export class ImagesService {
   }
 
   constructor(
-    private readonly supabaseService: SupabaseService,
+    private readonly storage: StorageService,
+    private readonly prisma: PrismaService,
     private readonly cacheService: CacheService,
-    private readonly configService: ConfigService,
   ) {}
 
+  /** The signed-in user's own avatar, streamed from storage. */
   async getImageFromUserProfile(
     userId: string,
-  ): Promise<{ blob: Blob; contentType: string }> {
+  ): Promise<{ body: Readable; contentType: string; size: number | null }> {
     const key = ImagesService.cacheKey(userId);
 
     let avatarUrl: string = (await this.cacheService.get(key)) as string;
 
     if (!avatarUrl) {
-      const supabase = this.supabaseService.getServiceClient();
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profile')
-        .select('avatar_url')
-        .eq('id', userId)
-        .single();
+      let profileError: Error | null = null;
+      const profile = await this.prisma.user_profile
+        .findUnique({ where: { id: userId }, select: { avatar_url: true } })
+        .catch((err: Error) => {
+          profileError = err;
+          return null;
+        });
 
-      if (profileError || !profile?.avatar_url) {
+      if (!profile?.avatar_url) {
         this.logger.error(
-          `Failed to get avatar URL: ${profileError?.message ?? 'No avatar set'}`,
+          `Failed to get avatar URL: ${(profileError as Error | null)?.message ?? 'No avatar set'}`,
         );
         throw new BadRequestException('No avatar found for this user');
       }
@@ -78,35 +83,69 @@ export class ImagesService {
       await this.cacheService.set(key, avatarUrl, ImagesService.CACHE_TTL);
     }
 
-    const storagePath = this.extractStoragePath(avatarUrl);
-    const supabase = this.supabaseService.getServiceClient();
-    const storageBucket = supabase.storage.from(ImagesService.BUCKET);
-
-    const { data, error } = await storageBucket.download(storagePath);
-
-    if (error || !data) {
-      this.logger.error(`Failed to download avatar: ${error?.message}`);
+    const image = await this.readAvatar(this.extractStoragePath(avatarUrl));
+    if (!image) {
+      this.logger.error(`Avatar object missing for ${userId}`);
       throw new BadRequestException('Failed to download avatar image');
     }
-
-    const contentType = data.type || 'application/octet-stream';
-
-    return { blob: data, contentType };
+    return image;
   }
 
-  private extractStoragePath(publicUrl: string): string {
-    const marker = `/object/public/${ImagesService.BUCKET}/`;
-    const idx = publicUrl.indexOf(marker);
+  /**
+   * An avatar object by its path inside the images area, for the public
+   * avatar route. Avatars were a public bucket, so no auth is involved; the
+   * name is validated so nothing outside `avatars/` can be read.
+   */
+  async readAvatar(
+    path: string,
+  ): Promise<{ body: Readable; contentType: string; size: number | null } | null> {
+    if (!ImagesService.AVATAR_PATH.test(path)) return null;
+    const obj = await this.storage.get(objectKey(ImagesService.BUCKET, path));
+    if (!obj) return null;
+    return {
+      body: obj.body,
+      contentType: obj.contentType || 'application/octet-stream',
+      size: obj.size,
+    };
+  }
+
+  private static readonly AVATAR_PATH = /^avatars\/[A-Za-z0-9._-]+$/;
+
+  /**
+   * The object path inside an avatar URL. Accepts both the old hosted-storage
+   * public URL (`.../storage/v1/object/public/images/avatars/<file>`) and the
+   * URLs written now (`<API_URL>/api/images/avatars/<file>`, or
+   * `<S3_PUBLIC_URL>/images/avatars/<file>`).
+   */
+  private extractStoragePath(url: string): string {
+    const marker = `/${ImagesService.BUCKET}/avatars/`;
+    const idx = url.indexOf(marker);
     if (idx === -1) {
       throw new BadRequestException('Invalid avatar URL format');
     }
-    const raw = publicUrl.slice(idx + marker.length).split('?')[0];
+    const raw = url.slice(idx + `/${ImagesService.BUCKET}/`.length).split('?')[0];
     // Defense-in-depth: the stored URL must point at an avatar object and
     // must not contain path-traversal segments.
-    if (!/^avatars\/[A-Za-z0-9._-]+$/.test(raw)) {
+    if (!ImagesService.AVATAR_PATH.test(raw)) {
       throw new BadRequestException('Invalid avatar URL format');
     }
     return raw;
+  }
+
+  /**
+   * The URL stored in `user_profile.avatar_url` and rendered by every client
+   * as an image source. With S3_PUBLIC_URL (a CDN or public bucket host in
+   * front of the store) it points there; otherwise at this API's public
+   * avatar route.
+   */
+  private publicUrl(path: string, requestOrigin?: string): string {
+    const cdn = process.env.S3_PUBLIC_URL?.replace(/\/+$/, '');
+    if (cdn) return `${cdn}/${objectKey(ImagesService.BUCKET, path)}`;
+    const api =
+      process.env.API_URL?.replace(/\/+$/, '') ||
+      requestOrigin?.replace(/\/+$/, '') ||
+      'http://localhost:3001';
+    return `${api}/api/${objectKey(ImagesService.BUCKET, path)}`;
   }
 
   /**
@@ -122,7 +161,11 @@ export class ImagesService {
 
   // ── Standard upload (small files, backend-mediated) ─────────────────
 
-  async setImageToUserProfile(userId: string, file: MultipartFile) {
+  async setImageToUserProfile(
+    userId: string,
+    file: MultipartFile,
+    requestOrigin?: string,
+  ) {
     const buffer = await file.toBuffer();
 
     if (buffer.byteLength > ImagesService.MAX_FILE_SIZE) {
@@ -152,41 +195,37 @@ export class ImagesService {
     const path = this.buildPath(userId, ext);
 
     this.logger.log(
-      `Uploading to bucket "${ImagesService.BUCKET}" at path "${path}" (${buffer.byteLength} bytes, ${file.mimetype})`,
+      `Uploading avatar to "${objectKey(ImagesService.BUCKET, path)}" (${buffer.byteLength} bytes, ${file.mimetype})`,
     );
 
-    const result = await this.supabaseService.uploadFile(
-      ImagesService.BUCKET,
-      path,
-      buffer,
-      file.mimetype,
-    );
-
-    if (!result) {
-      this.logger.error(`Failed to upload avatar at path "${path}"`);
+    try {
+      await this.storage.put(
+        objectKey(ImagesService.BUCKET, path),
+        buffer,
+        file.mimetype,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to upload avatar at path "${path}": ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to upload image');
     }
 
-    this.logger.log(`Upload successful: ${result.path}`);
-
-    const avatarUrl = this.cacheBust(result.publicUrl);
-    this.logger.log(`Public URL: ${avatarUrl}`);
-
+    const avatarUrl = this.cacheBust(this.publicUrl(path, requestOrigin));
     await this.updateProfileAvatar(userId, avatarUrl);
 
     return { avatar_url: avatarUrl };
   }
 
-  // ── Resumable upload (TUS protocol via Supabase Storage) ────────────
+  // ── Direct upload (presigned PUT) ───────────────────────────────────
 
   /**
-   * Creates a signed upload URL for the client to use with the TUS protocol.
-   * The client uploads directly to Supabase - no chunks pass through the backend.
+   * A presigned URL the client PUTs the image to, straight into storage.
    *
    * Flow:
-   *  1. Client calls this endpoint to get TUS credentials
-   *  2. Client uses tus-js-client / Uppy to upload directly to Supabase
-   *  3. Client calls `completeResumableUpload` to update the profile
+   *  1. Client calls this endpoint and gets `{ path, uploadUrl, headers }`
+   *  2. Client PUTs the bytes to `uploadUrl` with exactly those headers
+   *  3. Client calls `completeResumableUpload` with `path`
    */
   async createResumableUpload(
     userId: string,
@@ -208,66 +247,79 @@ export class ImagesService {
 
     const ext = this.safeExtension(filename);
     const path = this.buildPath(userId, ext);
+    const ttl = ImagesService.UPLOAD_URL_TTL;
 
-    const supabase = this.supabaseService.getServiceClient();
-    const storageBucket = supabase.storage.from(ImagesService.BUCKET);
-
-    const { data, error } = await storageBucket.createSignedUploadUrl(path, {
-      upsert: true,
-    });
-
-    if (error || !data) {
+    let uploadUrl: string;
+    try {
+      uploadUrl = await this.storage.uploadUrl(
+        objectKey(ImagesService.BUCKET, path),
+        contentType,
+        ttl,
+      );
+    } catch (error) {
       this.logger.error(
-        `Failed to create signed upload URL: ${error?.message}`,
+        `Failed to create upload URL: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to create upload session');
     }
 
-    const supabaseUrl = this.configService.get<string>('SUPABASE_URL')!;
-    const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
-    const tusEndpoint = `https://${projectRef}.supabase.co/storage/v1/upload/resumable`;
-
     return {
       path,
-      token: data.token,
-      signedUrl: data.signedUrl,
-      tusEndpoint,
-      tusHeaders: {
-        authorization: `Bearer ${data.token}`,
-        'x-upsert': 'true',
-      },
-      tusMetadata: {
-        bucketName: ImagesService.BUCKET,
-        objectName: path,
-        contentType,
-        cacheControl: '3600',
-      },
-      chunkSize: ImagesService.TUS_CHUNK_SIZE,
+      method: 'PUT' as const,
+      uploadUrl,
+      headers: { 'Content-Type': contentType },
+      expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     };
   }
 
   /**
-   * After the client finishes the TUS upload, call this to update the
-   * user profile with the public URL of the uploaded image.
+   * After the client finishes the PUT, check what arrived and point the
+   * user's profile at it. A rejected object is deleted.
    */
-  async completeResumableUpload(userId: string, path: string) {
+  async completeResumableUpload(
+    userId: string,
+    path: string,
+    requestOrigin?: string,
+  ) {
     this.assertOwnedPath(userId, path);
+    const key = objectKey(ImagesService.BUCKET, path);
 
-    const supabase = this.supabaseService.getServiceClient();
-    const storageBucket = supabase.storage.from(ImagesService.BUCKET);
-
-    const { data: exists } = await storageBucket.exists(path);
-    if (!exists) {
+    const head = await this.storage.exists(key);
+    if (!head) {
       throw new BadRequestException(
         `File at "${path}" not found. Upload may not be complete yet.`,
       );
     }
 
-    const {
-      data: { publicUrl },
-    } = storageBucket.getPublicUrl(path);
-    const avatarUrl = this.cacheBust(publicUrl);
+    const reject = async (message: string): Promise<never> => {
+      await this.storage
+        .delete(key)
+        .catch((err: Error) =>
+          this.logger.error(`Could not remove rejected avatar: ${err.message}`),
+        );
+      throw new BadRequestException(message);
+    };
 
+    if (head.size > ImagesService.MAX_FILE_SIZE) {
+      await reject(
+        `File too large (${(head.size / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`,
+      );
+    }
+    const contentType = head.contentType ?? '';
+    if (!ImagesService.ALLOWED_TYPES.includes(contentType)) {
+      await reject(
+        `Invalid file type "${contentType || 'unknown'}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
+      );
+    }
+    const buffer = await this.storage.getBuffer(key);
+    if (
+      !buffer ||
+      !ImagesService.matchesImageSignature(buffer, contentType)
+    ) {
+      await reject('File content does not match an allowed image format');
+    }
+
+    const avatarUrl = this.cacheBust(this.publicUrl(path, requestOrigin));
     await this.updateProfileAvatar(userId, avatarUrl);
 
     return { avatar_url: avatarUrl };
@@ -289,17 +341,17 @@ export class ImagesService {
   }
 
   private async updateProfileAvatar(userId: string, publicUrl: string) {
-    const supabase = this.supabaseService.getServiceClient();
-
-    const { data, error } = await supabase
-      .from('user_profile')
-      .update({ avatar_url: publicUrl })
-      .eq('id', userId)
-      .select('id, avatar_url')
-      .single();
-
-    if (error) {
-      this.logger.error(`Failed to update profile: ${error.message}`);
+    let data: { id: string; avatar_url: string | null };
+    try {
+      data = await this.prisma.user_profile.update({
+        where: { id: userId },
+        data: { avatar_url: publicUrl },
+        select: { id: true, avatar_url: true },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update profile: ${(error as Error).message}`,
+      );
       throw new BadRequestException('Failed to update profile image');
     }
 

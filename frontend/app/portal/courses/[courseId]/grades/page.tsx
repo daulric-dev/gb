@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { GraduationCap, MessageSquareText } from "lucide-react";
@@ -168,6 +169,7 @@ function GradeTableRow({ row }: { row: GradeRow }) {
           </Link>
           <p className="text-xs text-muted-foreground">
             {row.groupName ?? "Ungrouped"} · {kindLabel(row.kind)}
+            {row.dropped && " · dropped, not counted"}
           </p>
         </TableCell>
         <TableCell className="hidden text-muted-foreground sm:table-cell">
@@ -182,7 +184,13 @@ function GradeTableRow({ row }: { row: GradeRow }) {
           {s?.excused ? (
             <span className="text-muted-foreground">EX</span>
           ) : s?.status === "graded" && s.score !== null ? (
-            <span className="font-medium">
+            <span
+              className={cn(
+                "font-medium",
+                row.dropped && "text-muted-foreground line-through",
+              )}
+              title={row.dropped ? "Dropped by the group's rule" : undefined}
+            >
               {formatScore(s.score)}
               <span className="text-muted-foreground">/{formatScore(row.points)}</span>
             </span>

@@ -21,7 +21,7 @@ Subject-scoped rows have no faithful home under the new scope - one subject sche
 
 The editor shows the term default until a class diverges. Editing a weight there **looked local but would have changed the school default for every other class**.
 
-Editing or removing an inherited group now forks the whole scheme to that class first and applies the change to the copy - the same rule that already covered adding a group. `resolveTarget` in [grading-group.service.ts](../../../../backend/src/grading/grading-group.service.ts) does the redirect; `PATCH`/`DELETE` take an optional `studentGroupId` to say which class is being edited.
+Editing or removing an inherited group now forks the whole scheme to that class first and applies the change to the copy - the same rule that already covered adding a group. `resolveTarget` in `grading-group.service.ts` does the redirect; `PATCH`/`DELETE` take an optional `studentGroupId` to say which class is being edited.
 
 ## Every term starts with a scheme
 

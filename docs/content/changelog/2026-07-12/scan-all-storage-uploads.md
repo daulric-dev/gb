@@ -13,7 +13,7 @@ Virus scanning was previously wired only into file-manager uploads. It now runs 
 
 ## Scanning centralized in `uploadFile`
 
-`ClamavScanner` moved out of the queue module into a small global `ScanModule` (`scan/clamav.scanner.ts`, since removed) so it has no module-cycle with `SupabaseService`. `SupabaseService` gained a `scanOrThrow` and now scans inside `uploadFile` ([supabase/supabase.service.ts](../../../../backend/src/supabase/supabase.service.ts)): every backend-buffered upload is scanned before it is stored. A `FOUND` verdict throws a `400` (file never stored); an unreachable/`ERROR` clamd **fails closed** (the upload errors rather than storing unscanned bytes). With `CLAMAV_HOST` unset, scanning is disabled and uploads pass through (dev only).
+`ClamavScanner` moved out of the queue module into a small global `ScanModule` (`scan/clamav.scanner.ts`, since removed) so it has no module-cycle with `SupabaseService`. `SupabaseService` gained a `scanOrThrow` and now scans inside `uploadFile` (`supabase/supabase.service.ts`): every backend-buffered upload is scanned before it is stored. A `FOUND` verdict throws a `400` (file never stored); an unreachable/`ERROR` clamd **fails closed** (the upload errors rather than storing unscanned bytes). With `CLAMAV_HOST` unset, scanning is disabled and uploads pass through (dev only).
 
 Coverage by path:
 
