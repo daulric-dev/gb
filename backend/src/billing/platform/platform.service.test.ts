@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, subRow } from '@/test/billing-fakes';
-import { BillingRegistry } from './billing.registry';
-import { BillingEnabledGuard, PlatformAdminGuard } from './billing.guards';
+import { BillingRegistry } from '../providers/billing.registry';
+import { BillingEnabledGuard, PlatformAdminGuard } from '../access/billing.guards';
 import { PlatformService } from './platform.service';
 
 let prisma: MockPrisma;

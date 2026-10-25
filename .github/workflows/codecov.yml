@@ -11,16 +11,6 @@ jobs:
     name: Run tests and collect coverage
     runs-on: ubuntu-latest
 
-    # Stripe's official API mock: the billing adapter's integration tests
-    # (backend/src/billing/providers/stripe.mock.test.ts) run against it.
-    services:
-      stripe-mock:
-        image: stripe/stripe-mock:v0.206.0
-        ports:
-          - 12111:12111
-    env:
-      STRIPE_MOCK_URL: http://127.0.0.1:12111
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

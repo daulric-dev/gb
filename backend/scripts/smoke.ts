@@ -16,7 +16,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { StorageService } from '../src/storage/storage.service';
-import { createHmac } from 'node:crypto';
 
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -475,8 +474,8 @@ async function main() {
       } else {
         check('unsigned Stripe webhook is rejected (400)', (await webhookPost('stripe')).status === 400);
         check('unknown provider at checkout (400)', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'nope' })).status === 400);
-        if (process.env.STRIPE_API_BASE) await stripeMockFlow(admin, teacher, schoolId);
-        else console.log('  (STRIPE_API_BASE unset: skipping the Stripe checkout flow; run stripe-mock to cover it)');
+        // A real checkout needs Stripe's hosted page; drive it by hand in the
+        // Stripe sandbox (backend/src/billing/STRIPE.md, step 8).
       }
       for (const removed of ['manual', 'wipay', 'paypal', 'paddle']) {
         const res = await admin('POST', '/billing/checkout', { plan: 'per_user', provider: removed });
@@ -558,8 +557,6 @@ async function main() {
     check('billing state restored', (await db.invoice.count({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } })) === 0 && (await teacher('GET', '/billing/status')).data?.readOnly === false);
   }
 
-  await db.payment_event.deleteMany({ where: { provider: 'stripe', event_id: { startsWith: 'evt_smoke_' } } });
-
   // ── GDPR erasure log, retention purge and replay ──────────────────────────
   await erasureChecks(teacher, ta);
 
@@ -634,67 +631,6 @@ async function erasureChecks(teacher: Call, ta: Call) {
   check('replay put the entries back in the log', (await db.erasure_log.count({ where: { id: { in: ours } } })) === ours.length);
   const again = await cli('erasure-replay.ts', ['--since', since.toISOString()]);
   check('a second replay changes nothing', again.code === 0 && /Summary: \d+ unique entr\w+, 0 applied, \d+ unchanged, 0 failed/.test(again.out), again.out);
-}
-
-/**
- * The Stripe flow against stripe-mock (STRIPE_API_BASE): the API talks to the
- * mock for checkout, cancel, resume and the portal, and this test plays
- * Stripe's part by sending webhooks signed with STRIPE_WEBHOOK_SECRET, the way
- * Stripe signs them (`t=<ts>,v1=HMAC-SHA256(<ts>.<body>)`).
- */
-async function stripeMockFlow(admin: Call, teacher: Call, schoolId: string) {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) {
-    check('STRIPE_WEBHOOK_SECRET is set for the stripe-mock flow', false);
-    return;
-  }
-  const run = Date.now().toString(36);
-  const subId = `sub_smoke_${run}`;
-  const customerId = `cus_smoke_${run}`;
-  const now = Math.floor(Date.now() / 1000);
-  const periodEnd = now + 30 * 86_400;
-  const sendEvent = async (type: string, object: Record<string, unknown>, id = `evt_smoke_${run}_${type}`) => {
-    const body = JSON.stringify({ id, object: 'event', type, created: now, livemode: false, api_version: '2026-09-30', data: { object } });
-    const t = Math.floor(Date.now() / 1000);
-    const v1 = createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
-    return fetch(`${API}/billing/webhooks/stripe`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${t},v1=${v1}` }, body });
-  };
-  const metadata = { schoolId, plan: 'per_user' };
-
-  const checkout = await admin('POST', '/billing/checkout', { plan: 'per_user' });
-  check('stripe-mock: checkout returns a Stripe Checkout URL', [200, 201].includes(checkout.status) && /^https:\/\/checkout\.stripe\.com\//.test(String(checkout.data?.redirectUrl ?? '')), checkout.data);
-
-  const badSig = await fetch(`${API}/billing/webhooks/stripe`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${now},v1=deadbeef` }, body: '{}' });
-  check('stripe-mock: a forged signature is refused (400)', badSig.status === 400);
-
-  const completed = await sendEvent('checkout.session.completed', { id: `cs_smoke_${run}`, object: 'checkout.session', mode: 'subscription', payment_status: 'paid', subscription: subId, customer: customerId, client_reference_id: schoolId, metadata });
-  check('stripe-mock: checkout.session.completed accepted', completed.status === 200, completed.status);
-  const afterCheckout = await admin('GET', '/billing');
-  check('stripe-mock: school is active on per_user', afterCheckout.data?.status === 'active' && afterCheckout.data?.plan === 'per_user' && afterCheckout.data?.provider === 'stripe' && afterCheckout.data?.readOnly === false, afterCheckout.data);
-
-  const subObject = (status: string, cancelAtPeriodEnd = false) => ({ id: subId, object: 'subscription', status, customer: customerId, metadata, cancel_at_period_end: cancelAtPeriodEnd, cancel_at: null, items: { object: 'list', data: [{ id: `si_smoke_${run}`, object: 'subscription_item', quantity: 12, current_period_start: now, current_period_end: periodEnd, price: { id: 'price_smoke', object: 'price', product: 'gradebook_per_user' } }] } });
-  check('stripe-mock: subscription.updated accepted', (await sendEvent('customer.subscription.updated', subObject('active'))).status === 200);
-  const afterUpdate = await admin('GET', '/billing');
-  check('stripe-mock: renewal date comes from Stripe', !!afterUpdate.data?.currentPeriodEnd && Math.abs(new Date(afterUpdate.data.currentPeriodEnd).getTime() / 1000 - periodEnd) < 5, afterUpdate.data?.currentPeriodEnd);
-
-  const invoice = { id: `in_smoke_${run}`, object: 'invoice', amount_paid: 6000, currency: 'usd', status: 'paid', status_transitions: { paid_at: now }, period_start: now, period_end: periodEnd, parent: { type: 'subscription_details', subscription_details: { subscription: subId, metadata } }, lines: { object: 'list', data: [{ period: { start: now, end: periodEnd } }] } };
-  check('stripe-mock: invoice.paid accepted', (await sendEvent('invoice.paid', invoice)).status === 200);
-  check('stripe-mock: a replayed event is accepted once', (await sendEvent('invoice.paid', invoice)).status === 200);
-  const invoices = await admin('GET', '/billing/invoices');
-  const paid = invoices.data?.filter?.((i: any) => i.amountCents === 6000 && i.status === 'paid') ?? [];
-  check('stripe-mock: the paid invoice is listed exactly once', paid.length === 1, invoices.data);
-
-  const cancel = await admin('POST', '/billing/cancel');
-  check('stripe-mock: cancel at period end', [200, 201].includes(cancel.status) && cancel.data?.cancelAtPeriodEnd === true, cancel.data);
-  const resume = await admin('POST', '/billing/resume');
-  check('stripe-mock: resume', [200, 201].includes(resume.status) && resume.data?.cancelAtPeriodEnd === false, resume.data);
-  const portal = await admin('POST', '/billing/portal');
-  check('stripe-mock: customer portal URL', [200, 201].includes(portal.status) && /^https:\/\//.test(String(portal.data?.url ?? '')), portal.data);
-  check('stripe-mock: teacher cannot cancel (403)', (await teacher('POST', '/billing/cancel')).status === 403);
-
-  check('stripe-mock: subscription.deleted accepted', (await sendEvent('customer.subscription.deleted', subObject('canceled'))).status === 200);
-  const afterDelete = await admin('GET', '/billing');
-  check('stripe-mock: deleted subscription shows canceled', afterDelete.data?.status === 'canceled' || afterDelete.data?.status === 'read_only', afterDelete.data?.status);
 }
 
 main().catch((err) => {

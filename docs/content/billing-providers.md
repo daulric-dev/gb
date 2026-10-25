@@ -47,9 +47,11 @@ endpoints and portal settings are separate per mode).
    `sk_live_...`) into `STRIPE_SECRET_KEY`. A restricted key works if it can
    write Checkout Sessions, Customers, Products, Prices, Subscriptions and
    Billing Portal sessions.
-2. **Developers > Webhooks > Add endpoint** (in newer dashboards it's
-   *Workbench > Webhooks > Create an event destination*, type
-   *Your account*):
+2. **Developers > Webhooks > Add destination** (older dashboards: *Add
+   endpoint*). Events from *Your account*, payload style **Snapshot** (not
+   Thin), destination type *Webhook endpoint*. Not needed for local
+   development, where `stripe listen` forwards events and
+   `stripe listen --print-secret` prints the secret:
    - URL: `${API_URL}/api/billing/webhooks/stripe`, for example
      `https://api.example.com/api/billing/webhooks/stripe`.
    - Enable exactly these events:
@@ -118,7 +120,7 @@ endpoints and portal settings are separate per mode).
 
   ```bash
   stripe login
-  stripe listen --forward-to localhost:3001/api/billing/webhooks/stripe
+  stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to localhost:3001/api/billing/webhooks/stripe
   ```
 
   It prints a temporary `whsec_...`. Put that in `STRIPE_WEBHOOK_SECRET` in
@@ -144,7 +146,7 @@ of billing:
    **must** verify the raw body and throw `WebhookVerificationError` when it
    does not check out.
 2. Register it in `defaultProviders()` in
-   `backend/src/billing/billing.registry.ts`.
+   `backend/src/billing/providers/billing.registry.ts`.
 3. Document its env vars here, in `backend/.env.example`,
    `infrastructure/env.example` and
    [Environment variables](./environment-variables.md), and point its

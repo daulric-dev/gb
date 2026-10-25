@@ -7,8 +7,8 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { from, mergeMap, type Observable } from 'rxjs';
-import { billingEnabled } from './billing.config';
-import { SubscriptionService } from './subscription.service';
+import { billingEnabled } from '../config/billing.config';
+import { SubscriptionService } from '../subscriptions/subscription.service';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 

@@ -32,7 +32,7 @@ Every throttler applies to every route through the global `ThrottlerGuard`; indi
 - `src/auth/auth.controller.ts` - `auth-strict` on `otp/send` (5/h) and `otp/verify` (10 per 15 min), `claim-code` on `join-school`, `default` on account deletion (3/h).
 - `src/sso/sso.controller.ts` - `auth-ip` on `discover`, `saml/acs`, `:provider/start`, `handoff`.
 - `claim-code` on guessable codes: `src/student-portal/student-portal.controller.ts` (course join), `src/email-domain/email-domain.controller.ts`, `src/attendance/portal-attendance.controller.ts`, `src/attendance/scan-claim.controller.ts`.
-- `src/billing/billing-webhook.controller.ts` uses `@SkipThrottle()` (provider webhooks).
+- `src/billing/webhooks/billing-webhook.controller.ts` uses `@SkipThrottle()` (provider webhooks).
 
 ## Depends on
 

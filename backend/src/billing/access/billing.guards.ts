@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { billingEnabled } from './billing.config';
-import { PlatformService } from './platform.service';
+import { billingEnabled } from '../config/billing.config';
+import { PlatformService } from '../platform/platform.service';
 
 /**
  * Billing and platform routes do not exist on a deployment without billing

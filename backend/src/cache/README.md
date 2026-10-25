@@ -42,7 +42,7 @@ When the module is destroyed (`onModuleDestroy`), `CacheService` disposes of the
   - `announcement/announcement.service.ts`;
   - `attendance/attendance.service.ts`;
   - `auth/auth.service.ts`;
-  - `billing/subscription.service.ts`;
+  - `billing/subscriptions/subscription.service.ts`;
   - `course/course.service.ts`, `course/course-copy.service.ts`, `course/access/course-access.service.ts`;
   - `dashboard/dashboard.service.ts`;
   - `email-domain/email-domain.service.ts`;

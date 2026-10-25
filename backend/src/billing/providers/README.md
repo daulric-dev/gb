@@ -2,7 +2,7 @@
 
 GradeBook takes payment through **one provider: Stripe**. Payment is Stripe-hosted: schools subscribe on Stripe Checkout and manage their card and invoices in the Stripe Customer Portal, so no card form is ever shown on our pages. There is no manual / bank-transfer option, and invoices cannot be marked paid by hand.
 
-The rest of billing still only talks to the `PaymentProvider` interface (in `payment-provider.ts`) through `BillingRegistry` in `../billing.registry.ts`, and never imports `StripeProvider` directly. That keeps the door open to adding another provider later (see below) without touching the controllers, the DTOs or the database.
+The rest of billing still only talks to the `PaymentProvider` interface (in `payment-provider.ts`) through `BillingRegistry` in `./billing.registry.ts`, and never imports `StripeProvider` directly. That keeps the door open to adding another provider later (see below) without touching the controllers, the DTOs or the database.
 
 The provider runs the recurring billing itself: billing starts a subscription with `createCheckout`, keeps the seat count in step with `updateQuantity`, and learns about payments and status changes from signed webhooks (`parseWebhook`).
 
@@ -31,10 +31,10 @@ The Stripe dashboard setup (webhook endpoint and events, Customer Portal, test m
 
 ## How the parent module uses providers
 
-- `BillingRegistry` (`../billing.registry.ts`) builds the list with `defaultProviders()`. `enabled()` / `getEnabled(id)` return the configured ones; `find(id)` returns any registered one. An id that is not registered (such as `manual` on a row left from an older release) is simply unknown: the school is treated as having no provider and can subscribe again.
+- `BillingRegistry` (`./billing.registry.ts`) builds the list with `defaultProviders()`. `enabled()` / `getEnabled(id)` return the configured ones; `find(id)` returns any registered one. An id that is not registered (such as `manual` on a row left from an older release) is simply unknown: the school is treated as having no provider and can subscribe again.
 - `BillingService` calls `createCheckout`, `changePlan`, `cancel`, `resume` and `portalUrl`.
 - `SeatService` calls `updateQuantity` from the hourly sync.
-- `BillingWebhookController` hands `POST /api/billing/webhooks/<id>` requests to `parseWebhook`, with `rawBody` (the exact bytes, kept by `../raw-body.ts`), lower-cased `headers` and `query`, then passes the returned events to `BillingEventsService`.
+- `BillingWebhookController` hands `POST /api/billing/webhooks/<id>` requests to `parseWebhook`, with `rawBody` (the exact bytes, kept by `../webhooks/raw-body.ts`), lower-cased `headers` and `query`, then passes the returned events to `BillingEventsService`.
 - `BillingEventsService` matches events to schools by `(provider, providerSubscriptionId)` or by the `schoolId` taken from the metadata attached at checkout, and makes every event idempotent on `(provider, eventId)`. `invoice.paid` is stored as a paid invoice for the school's history.
 
 ## How to add another payment provider later
@@ -49,8 +49,8 @@ The Stripe dashboard setup (webhook endpoint and events, Customer Portal, test m
    - Verify the signature over `req.rawBody` (the exact bytes) with the provider's secret, using a constant-time comparison.
    - On any failure, **throw `WebhookVerificationError`**. Never trust an unverified body.
    - Translate each provider event into a `BillingEvent`. Map the provider's statuses to `SubscriptionStatus`. Fill `eventId` with the provider's own event id, which is used for idempotency. Return `{ type: 'ignored', eventId, reason }` for event types you do not handle. Exposing a `mapEvent()` method helps tests, as `StripeProvider` does.
-4. **Register it** in `defaultProviders()` in `../billing.registry.ts`. That is the only place in the app that lists providers.
-5. **Update the registry test.** `../billing.registry.test.ts` asserts the exact list of ids returned by `defaultProviders()` (`['stripe']`).
+4. **Register it** in `defaultProviders()` in `./billing.registry.ts`. That is the only place in the app that lists providers.
+5. **Update the registry test.** `./billing.registry.test.ts` asserts the exact list of ids returned by `defaultProviders()` (`['stripe']`).
 6. **Write `providers/<name>.provider.test.ts`**, modelled on `stripe.provider.test.ts`. Then run `cd backend && bun test src/billing`.
 7. **Choose how schools pick it.** With more than one provider configured, `GET /api/billing` lists them all in `providers` and `CheckoutDto.provider` selects one (it defaults to the first configured provider when omitted); the web billing page currently shows a single "Continue to payment" button, so it would need a provider choice. If you need per-deployment on/off control, the `billing.provider_setting` table is still in the schema (unused).
 8. **Document the configuration**: add the variables, commented out, to `backend/.env.example` and `infrastructure/env.example`, to `docs/content/environment-variables.md`, and a section to `docs/content/billing-providers.md` and the table above. Point the provider's webhook at `https://<API_URL>/api/billing/webhooks/<id>`.

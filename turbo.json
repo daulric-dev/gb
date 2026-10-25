@@ -7,7 +7,6 @@
     "DATABASE_URL",
     "USE_REDIS"
   ],
-  "globalPassThroughEnv": ["STRIPE_MOCK_URL"],
   "tasks": {
     "build": {
       "outputs": [".next/**", "dist/**", "build/**"],

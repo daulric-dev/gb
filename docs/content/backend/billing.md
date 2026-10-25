@@ -34,19 +34,19 @@ and the pre-launch walkthrough in the [staging checklist](../billing-staging.md)
 ## Architecture
 
 ```
-billing.config.ts        env -> BillingConfig (prices, trial, admins, APP_URL)
-billing.registry.ts      every PaymentProvider (today: Stripe); enabled() = isConfigured(); startup warning if none
-billing.entitlement.ts   pure: subscription row -> { status, readOnly }
-subscription.service.ts  lazy rows, cached entitlement (60s, invalidated on every billing write), user -> school
-seat.service.ts          billable counts, seat sync to the provider (Stripe quantity)
-invoice.service.ts       invoice numbering for invoices recorded from Stripe webhooks
-billing-events.service.ts  webhook events -> rows (idempotent, out-of-order safe)
-billing.service.ts       school admin API
-platform.service.ts      operator API, platform-admin check
-billing.interceptor.ts   global: 402 for mutations from read-only schools
-billing.scheduler.ts     hourly sweep under a Postgres advisory lock
-raw-body.ts              keeps the exact webhook bytes for signature checks
-providers/               payment-provider.ts (the interface) + stripe.provider.ts
+config/billing.config.ts               env -> BillingConfig (prices, trial, admins, APP_URL)
+providers/billing.registry.ts          every PaymentProvider (today: Stripe); enabled() = isConfigured(); startup warning if none
+subscriptions/billing.entitlement.ts   pure: subscription row -> { status, readOnly }
+subscriptions/subscription.service.ts  lazy rows, cached entitlement (60s, invalidated on every billing write), user -> school
+subscriptions/seat.service.ts          billable counts, seat sync to the provider (Stripe quantity)
+subscriptions/invoice.service.ts       invoice numbering for invoices recorded from Stripe webhooks
+webhooks/billing-events.service.ts     webhook events -> rows (idempotent, out-of-order safe)
+school/billing.service.ts              school admin API
+platform/platform.service.ts           operator API, platform-admin check
+access/billing.interceptor.ts          global: 402 for mutations from read-only schools
+jobs/billing.scheduler.ts              hourly sweep under a Postgres advisory lock
+webhooks/raw-body.ts                   keeps the exact webhook bytes for signature checks
+providers/                             payment-provider.ts (the interface) + stripe.provider.ts
 ```
 
 ### Entitlement check
@@ -127,7 +127,7 @@ active ──subscription.canceled──> canceled (writable until the paid peri
 ### Webhooks
 
 `POST /api/billing/webhooks/:providerId` (Stripe: `/api/billing/webhooks/stripe`).
-Public; `raw-body.ts` keeps the exact request bytes for this route only (a
+Public; `webhooks/raw-body.ts` keeps the exact request bytes for this route only (a
 `preParsing` hook, so JSON bodies still parse normally) so the signature can
 be checked over them.
 
@@ -197,7 +197,7 @@ Stripe is the only provider today, but the seam is kept:
    does not check out, and maps provider events to `BillingEvent`s (unknown
    types -> `ignored`). Attach our `schoolId` as metadata so events can be
    matched to a school.
-2. Register it in `defaultProviders()` in `billing.registry.ts`. It is
+2. Register it in `defaultProviders()` in `providers/billing.registry.ts`. It is
    offered as soon as `isConfigured()` is true.
 3. Document its env vars in `backend/.env.example`,
    `infrastructure/env.example`, [Environment variables](../environment-variables.md#billing)

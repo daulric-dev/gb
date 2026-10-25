@@ -1,5 +1,5 @@
 import { primaryOrigin } from '@/config/origins';
-import type { BillingPlan, PlanPrice } from './providers/payment-provider';
+import type { BillingPlan, PlanPrice } from '../providers/payment-provider';
 
 /**
  * Billing settings, read from the environment.

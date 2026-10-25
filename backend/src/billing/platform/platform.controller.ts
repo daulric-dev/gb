@@ -12,9 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
-import { BillingEnabledGuard, PlatformAdminGuard } from './billing.guards';
+import { BillingEnabledGuard, PlatformAdminGuard } from '../access/billing.guards';
 import { PlatformService } from './platform.service';
-import { CompDto, ExtendTrialDto, INVOICE_STATUSES } from './dto/billing.dto';
+import { CompDto, ExtendTrialDto, INVOICE_STATUSES } from '../dto/billing.dto';
 
 type Req = { user: { id: string } };
 

@@ -25,7 +25,7 @@ Full walkthrough: [docs/content/developer-guide.md](../docs/content/developer-gu
 ```bash
 bun install                                  # every workspace; also runs prisma generate
 cp backend/.env.example backend/.env         # defaults match the dev containers
-bun run preload                              # start Postgres, Redis, S3 and Mailpit (docker-compose.dev.yml) and apply migrations
+bun run preload                              # start Postgres, Redis, S3 and Mailpit (docker-compose.dev.yml), apply migrations, and the Stripe webhook listener when billing is on with a sandbox key
 bun run dev:backend                          # or, in backend/: bun run start:dev  -> http://localhost:3001
 ```
 

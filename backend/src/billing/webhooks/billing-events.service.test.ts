@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, invoiceRow, subRow } from '@/test/billing-fakes';
 import { BillingEventsService } from './billing-events.service';
-import type { BillingEvent } from './providers/payment-provider';
+import type { BillingEvent } from '../providers/payment-provider';
 
 const DAY = 86_400_000;
 const T0 = new Date('2026-10-01T00:00:00Z');

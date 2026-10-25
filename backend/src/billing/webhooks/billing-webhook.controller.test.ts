@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import Fastify from 'fastify';
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { FakeProvider } from '@/test/billing-fakes';
-import { BillingRegistry } from './billing.registry';
+import { BillingRegistry } from '../providers/billing.registry';
 import { BillingWebhookController } from './billing-webhook.controller';
 import { registerWebhookRawBody } from './raw-body';
-import { WebhookVerificationError } from './providers/payment-provider';
+import { WebhookVerificationError } from '../providers/payment-provider';
 
 const savedEnv = { ...process.env };
 afterEach(() => {

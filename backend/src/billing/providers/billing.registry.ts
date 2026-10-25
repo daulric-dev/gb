@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
-import { billingEnabled } from './billing.config';
-import type { PaymentProvider } from './providers/payment-provider';
-import { StripeProvider } from './providers/stripe.provider';
+import { billingEnabled } from '../config/billing.config';
+import type { PaymentProvider } from './payment-provider';
+import { StripeProvider } from './stripe.provider';
 
 /** Injection token for the provider list (tests pass their own). */
 export const PAYMENT_PROVIDER_LIST = Symbol('PAYMENT_PROVIDER_LIST');

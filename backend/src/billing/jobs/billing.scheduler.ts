@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { billingEnabled } from './billing.config';
-import { SeatService } from './seat.service';
-import { SubscriptionService } from './subscription.service';
+import { billingEnabled } from '../config/billing.config';
+import { SeatService } from '../subscriptions/seat.service';
+import { SubscriptionService } from '../subscriptions/subscription.service';
 
 const HOUR_MS = 60 * 60 * 1000;
 const FIRST_RUN_MS = 30 * 1000;

@@ -13,15 +13,15 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { FastifyRequest } from 'fastify';
-import { BillingEnabledGuard } from './billing.guards';
+import { BillingEnabledGuard } from '../access/billing.guards';
 import { BillingEventsService } from './billing-events.service';
-import { BillingRegistry } from './billing.registry';
+import { BillingRegistry } from '../providers/billing.registry';
 import type { RawBodyRequest } from './raw-body';
 import {
   WebhookVerificationError,
   type BillingEvent,
   type WebhookRequest,
-} from './providers/payment-provider';
+} from '../providers/payment-provider';
 
 type WebhookReq = FastifyRequest & RawBodyRequest;
 

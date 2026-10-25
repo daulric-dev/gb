@@ -3,9 +3,9 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
-import { BillingEnabledGuard } from './billing.guards';
+import { BillingEnabledGuard } from '../access/billing.guards';
 import { BillingService, type Caller } from './billing.service';
-import { ChangePlanDto, CheckoutDto } from './dto/billing.dto';
+import { ChangePlanDto, CheckoutDto } from '../dto/billing.dto';
 
 type Req = { user: Caller };
 

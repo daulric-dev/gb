@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, invoiceRow, subRow } from '@/test/billing-fakes';
-import { BillingRegistry } from './billing.registry';
+import { BillingRegistry } from '../providers/billing.registry';
 import { BillingService } from './billing.service';
 
 let prisma: MockPrisma;

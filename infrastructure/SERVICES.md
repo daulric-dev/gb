@@ -21,7 +21,6 @@ by the hosting platform (it starts with `bun dist/src/main`). See
 | [Redis](#redis-redis) | `redis:7.4-alpine` | `redis` | `redis` | Optional for one instance, **yes** for more than one | `src/cache/`, `src/realtime/`, `src/queue/` |
 | [S3 object storage](#s3-object-storage-s3) | `chrislusf/seaweedfs:4.48` | `s3` | not included (use any S3 provider) | **Yes** | `src/storage/` → `src/file-manager/`, `src/images/` |
 | [Mailpit / SMTP](#mailpit--smtp-mailpit) | `axllent/mailpit:v1.27` | `mailpit` | not included (use any SMTP server) | **Yes** (sign-in sends email) | `src/mail/` → `src/account/email-code.service.ts` |
-| stripe-mock | `stripe/stripe-mock:v0.206.0` | `stripe-mock` | - | Dev/tests only | `src/billing/providers/stripe.provider.ts` via `STRIPE_API_BASE` (see `backend/src/billing/STRIPE.md`) |
 | [migrate](#migrate-release-step) | the API image | - | `migrate` (profile `release`) | Only with `MIGRATE_ON_START=false` | `backend/prisma/migrations/` |
 | [backup](#database-backups-backup-db-backup) | `infrastructure/backup/` (Postgres 18 client, age, rclone, supercronic) | `backup` (profile `backup`) | `backup` (runs by default) | **Yes** in production | None: reads the database, writes an S3 bucket |
 
@@ -55,8 +54,8 @@ chat message, notification and billing row lives here.
 | School join codes | SQL function `public.redeem_school_join_code` | Called by `src/student-account/` |
 | Student duplicates / merge | SQL functions `merge_student_records`, `student_duplicate_candidates` | Called by `src/student/` |
 | Search | `pg_trgm` extension (created by the baseline migration in schema `extensions`) | Fuzzy name search |
-| Billing sweeps | `pg_try_advisory_xact_lock` in `src/billing/billing.scheduler.ts` | Only one API replica runs the hourly billing sweep |
-| Invoice numbers | `pg_advisory_xact_lock` in `src/billing/invoice.service.ts` | `GB-YYYYMM-<seq>` numbers for invoices recorded from Stripe never collide |
+| Billing sweeps | `pg_try_advisory_xact_lock` in `src/billing/jobs/billing.scheduler.ts` | Only one API replica runs the hourly billing sweep |
+| Invoice numbers | `pg_advisory_xact_lock` in `src/billing/subscriptions/invoice.service.ts` | `GB-YYYYMM-<seq>` numbers for invoices recorded from Stripe never collide |
 
 **Migrations.** Hand-written SQL in `backend/prisma/migrations/`, applied with
 `prisma migrate deploy` (the container does this on start; see
@@ -137,7 +136,7 @@ and presence would only be seen by the instance that produced them.
 | Signed-in session lookups (`session:<hash>`) | `src/account/session.service.ts` | Saves a database read on every authenticated request; deleted on sign-out |
 | SSO sign-in state and mobile hand-off codes | `src/sso/sso.service.ts` | Short-lived (minutes); single use |
 | Effective permissions per user and school | `src/permission/` | Invalidated when roles change |
-| Billing entitlement (is the school read-only?) | `src/billing/subscription.service.ts` | Read by the billing interceptor on every write; ~60 s TTL, invalidated on any billing change |
+| Billing entitlement (is the school read-only?) | `src/billing/subscriptions/subscription.service.ts` | Read by the billing interceptor on every write; ~60 s TTL, invalidated on any billing change |
 | School, academic year, term, grade-scale, announcement and student lists | the matching modules | Invalidated on writes |
 | Student portal guard lookups | `src/student-portal/student.guard.ts` | Maps a signed-in user to their student record |
 | Auth helpers (profile, join requests) | `src/auth/auth.service.ts`, `src/email-domain/`, `src/student-account/` | |

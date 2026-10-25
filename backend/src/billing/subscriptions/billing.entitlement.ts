@@ -1,5 +1,5 @@
-import { DAY_MS } from './billing.config';
-import type { SubscriptionStatus } from './providers/payment-provider';
+import { DAY_MS } from '../config/billing.config';
+import type { SubscriptionStatus } from '../providers/payment-provider';
 
 /** What the API reports: the stored status, or `read_only` once lapsed. */
 export type DisplayStatus = SubscriptionStatus | 'read_only';

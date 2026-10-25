@@ -18,8 +18,8 @@ How payment works, so the steps make sense:
    (per-user plan), with proration.
 
 Code: [`providers/stripe.provider.ts`](./providers/stripe.provider.ts) (the
-adapter), [`billing-webhook.controller.ts`](./billing-webhook.controller.ts),
-[`billing-events.service.ts`](./billing-events.service.ts). Module overview:
+adapter), [`billing-webhook.controller.ts`](./webhooks/billing-webhook.controller.ts),
+[`billing-events.service.ts`](./webhooks/billing-events.service.ts). Module overview:
 [`README.md`](./README.md).
 
 ---
@@ -77,19 +77,32 @@ period to the Stripe prices.
 
 ## 4. Webhook endpoint
 
-Developers → **Webhooks** → **Add endpoint**:
+For staging (sandbox) and production (a public URL). For production, follow
+the full checklist in step 9. For local development skip this step and use
+the Stripe CLI instead (step 8): its `whsec_…` comes from
+`stripe listen --print-secret`.
 
+In the dashboard open **Developers → Webhooks** (Workbench) → **Add
+destination**:
+
+- **Events from**: Your account.
+- **Payload style**: **Snapshot** (not "Thin" - GradeBook reads the full
+  objects inside each event). **API version**: leave the default.
+- **Destination type**: Webhook endpoint.
 - **Endpoint URL**: `https://<your API host>/api/billing/webhooks/stripe`
-  (the API's public address, the same host as `API_URL`).
-- **Events to send** (exactly these six):
+  (the API's public address, the same host as `API_URL`; `localhost` won't
+  work here).
+- **Events** (exactly these six):
   - `checkout.session.completed`
   - `customer.subscription.created`
   - `customer.subscription.updated`
   - `customer.subscription.deleted`
   - `invoice.paid`
   - `invoice.payment_failed`
-- After saving, reveal the **Signing secret** (`whsec_…`) and set it as
-  `STRIPE_WEBHOOK_SECRET`.
+- Create it, open the destination, and under **Signing secret** click
+  **Reveal**. Set that `whsec_…` as `STRIPE_WEBHOOK_SECRET`.
+
+Older dashboards call this **Add endpoint**; the fields are the same.
 
 The API verifies every webhook against that secret over the exact request body
 and refuses anything older than 5 minutes, so the endpoint must be reached
@@ -166,16 +179,29 @@ The full variable list is in
 
 ## 8. Test it locally
 
-1. Install the Stripe CLI (https://stripe.com/docs/stripe-cli) and log in:
-   `stripe login`.
-2. Forward webhooks to your local API:
+1. Put your sandbox key in `backend/.env` (`BILLING_ENABLED=true`,
+   `STRIPE_SECRET_KEY=sk_test_…`).
+2. Start the dev services:
 
    ```bash
-   stripe listen --forward-to localhost:3001/api/billing/webhooks/stripe
+   bun run preload        # Docker services + migrations + the Stripe listener
    ```
 
-   It prints a `whsec_…` secret for this session: put it in `backend/.env` as
-   `STRIPE_WEBHOOK_SECRET` (with your `sk_test_…` key) and restart the API.
+   `preload` runs `bun run stripe:listen` (`scripts/dev-stripe.ts`), which
+   starts the `stripe-listen` container (the official Stripe CLI image,
+   pinned in `docker-compose.dev.yml`), forwarding the six events to
+   `http://localhost:3001/api/billing/webhooks/stripe`, and writes its signing
+   secret into `backend/.env` as `STRIPE_WEBHOOK_SECRET`. If it updated the
+   secret it says so: restart the API. It skips itself when billing is off or
+   there is no key, and refuses live (`sk_live_`) keys.
+
+   - Watch deliveries: `docker compose -f docker-compose.dev.yml logs -f stripe-listen`
+     (each event shows `<-- [200]` once the API is running).
+   - Stop just the listener: `bun run stripe:stop`; `bun run postload` stops
+     everything.
+   - No Docker? Use the CLI directly instead: `stripe login`, then
+     `stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to localhost:3001/api/billing/webhooks/stripe`
+     and copy the printed `whsec_…` into `backend/.env`.
 3. Sign in as `admin@demo.test` (`bun run seed:demo` creates it), open
    **Settings → Billing**, pick a plan and pay with a test card:
 
@@ -194,86 +220,132 @@ The full variable list is in
 6. Simulate time passing with **Test clocks** (Billing → Test clocks) to see
    renewals, failed payments and the read-only mode after the grace period.
 
-## 8b. Testing with stripe-mock (no Stripe account)
+## 9. Production webhook
 
-[stripe-mock](https://github.com/stripe/stripe-mock) is Stripe's official mock of
-its API. It accepts any `sk_test_` key, checks every request against Stripe's
-API specification (wrong parameter names or types fail), and answers with
-realistic fixture objects. It is **stateless** (it doesn't remember what you
-created) and **sends no webhooks**, so tests play Stripe's part by signing
-webhooks themselves. Use it for development and automated tests; use real test
-mode (step 8) to see Stripe's actual checkout pages.
+Stripe tells GradeBook about payments only through the webhook, so production
+billing doesn't work until this is in place. A school can pay on Stripe's
+page and still stay on **Trial** if the webhook never arrives.
 
-1. Start it (it is in the dev compose file, pinned to `v0.206.0`):
+### Before you start
 
-   ```bash
-   docker compose -f docker-compose.dev.yml up -d stripe-mock   # 127.0.0.1:12111
-   ```
+- **Public HTTPS API.** Stripe must reach
+  `https://<your API host>/api/billing/webhooks/stripe` from the internet, over
+  HTTPS with a valid certificate (Stripe rejects self-signed certificates and
+  plain HTTP in live mode). Use the API's host, the one in `API_URL`, not the
+  web app's.
+- **The API is configured for billing.** `BILLING_ENABLED=true` and
+  `STRIPE_SECRET_KEY` set (the live key, step 2). Without them the route answers
+  404 and every delivery fails.
+- **Nothing rewrites the request.** The signature covers the exact bytes
+  Stripe sends. A proxy, load balancer or WAF in front of the API must pass the
+  body through unchanged: no re-encoding, no JSON reformatting, no body
+  inspection that alters it, and no authentication on this path. A plain
+  `proxy_pass` (as in `infrastructure/nginx/`) passes bodies through as-is.
+- **Correct server clock.** Deliveries older than 5 minutes are refused, so
+  keep NTP running on the API servers.
+- **Firewall (optional).** If you only accept inbound traffic from known
+  addresses, allow Stripe's webhook IPs:
+  https://stripe.com/files/ips/ips_webhooks.json.
 
-2. Point the API at it in `backend/.env` and restart the API:
+### Create the destination (live mode)
 
-   ```bash
-   BILLING_ENABLED=true
-   STRIPE_API_BASE=http://127.0.0.1:12111   # development and tests only
-   STRIPE_SECRET_KEY=sk_test_mock           # any sk_test_ value
-   STRIPE_WEBHOOK_SECRET=whsec_dev_stripe_mock   # any value; tests sign with it
-   ```
+1. In the Stripe dashboard, switch to **live mode** (toggle top right). Test
+   and live destinations are separate, and live payments only send events to
+   live destinations.
+2. **Developers → Webhooks → Add destination**.
+3. **Events from**: Your account. **Payload style**: **Snapshot**.
+   **API version**: leave the account default.
+4. **Events**: select exactly these six:
+   - `checkout.session.completed`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   - `invoice.paid`
+   - `invoice.payment_failed`
+5. **Destination type**: Webhook endpoint.
+6. **Destination name**: e.g. `gradebook-production`. **Endpoint URL**:
+   `https://<your API host>/api/billing/webhooks/stripe`. Add a description
+   such as "GradeBook production billing".
+7. **Create destination**.
 
-   `STRIPE_API_BASE` is refused when `NODE_ENV=production`, so a stray setting
-   can't send real payments to the mock.
-3. What runs against it:
-   - **`bun run smoke`**: when `STRIPE_API_BASE` is set it drives the whole
-     flow: checkout returns a `checkout.stripe.com` URL; signed
-     `checkout.session.completed`, `customer.subscription.updated` and
-     `invoice.paid` webhooks make the school active with its renewal date and a
-     paid invoice; a replayed event is only applied once; a forged signature is
-     refused; then cancel, resume, the portal URL, and
-     `customer.subscription.deleted`. It restores the school's billing state
-     afterwards.
-   - **Adapter integration tests**, `src/billing/providers/stripe.mock.test.ts`:
-     every Stripe call the adapter makes (checkout for both plans, seat and plan
-     changes, cancel, resume, portal) is validated by the mock. They run when
-     `STRIPE_MOCK_URL` is set and are skipped otherwise:
+### Give the API the signing secret
 
-     ```bash
-     STRIPE_MOCK_URL=http://127.0.0.1:12111 bun test src/billing
-     ```
+1. Open the new destination. Under **Signing secret**, click **Reveal** and
+   copy the `whsec_…`.
+2. Store it in production as `STRIPE_WEBHOOK_SECRET`: in your platform's
+   secret store, or in `infrastructure/.env` on a single box. Never commit it
+   or put it in the frontend.
+3. Restart (or redeploy) every API instance so they all pick it up.
 
-     CI (`.github/workflows/ci.yml` and `codecov.yml`) starts stripe-mock as a
-     service and sets `STRIPE_MOCK_URL`, so they always run there.
-4. Clicking **Continue to payment** in the browser goes to a fake Checkout URL
-   that doesn't load; that is expected with the mock. To finish a payment, send
-   the webhooks the way the smoke test does (`stripeMockFlow` in
-   `backend/scripts/smoke.ts`), or switch to real test mode.
+Each destination has its own secret. Staging (sandbox) and production (live)
+need separate destinations and separate secrets; don't copy one into the
+other, and the `stripe listen` secret from local development works nowhere
+else.
 
-How the tests sign webhooks, if you need to do it by hand: the header is
-`Stripe-Signature: t=<unix time>,v1=<hex HMAC-SHA256 of "<t>.<raw body>" with
-STRIPE_WEBHOOK_SECRET>`, and the body is a Stripe event JSON
-(`{ "id": "evt_...", "type": "...", "data": { "object": { ... } } }`).
+### Check it works
 
-## 9. Go live
+1. **Test event (if your dashboard offers it).** On the destination page,
+   **Send test event** (for example `customer.subscription.updated`) should
+   show **200**. A test event doesn't belong to any school, so GradeBook logs
+   it and changes nothing. Don't use `stripe trigger` in live mode: it creates
+   real objects.
+2. **One real purchase.** Subscribe a test school with your own card, then on
+   the destination's **Event deliveries** check that the six events show
+   **200**, and that the school shows **Active** in Settings → Billing and in
+   the developer dashboard (`/platform`). Refund the payment from the Stripe
+   dashboard afterwards.
+
+What a failed delivery means:
+
+| Status in Stripe | Meaning |
+| --- | --- |
+| 404 | Wrong URL or path, or the API has billing off / Stripe keys missing |
+| 400 | Signature check failed: wrong `STRIPE_WEBHOOK_SECRET` for this destination, the body was changed on the way, or the server clock is off |
+| 500 | The API received a valid event but failed to apply it (for example the database was down). Check the API log for the event id. Stripe retries automatically. |
+| Timeout / TLS error | The API isn't reachable at that URL from the internet, or its certificate is invalid |
+
+### Keep it healthy
+
+- **Retries.** Stripe retries failed live deliveries with backoff for up to 3
+  days. Each event is applied once even if delivered several times, so retries
+  and **Resend** are always safe.
+- **Recovering missed events.** After an outage, open the destination, filter
+  **Event deliveries** by failed, and **Resend** them.
+- **Alerts.** Stripe emails the account owner when an endpoint keeps failing,
+  and can disable an endpoint that has failed for several days. Make sure that
+  email reaches someone, and check the destination is still **Enabled** after
+  an incident.
+- **Rotating the secret.** On the destination choose **Roll secret** and pick
+  an expiry for the old one (for example 24 hours). During that window Stripe
+  signs with both, so set the new `whsec_…` and restart all API instances
+  before the old one expires.
+- **Changing the URL** (new API domain): edit the destination's endpoint URL;
+  the signing secret stays the same.
+- **Adding events** later: only add events GradeBook handles. Anything else is
+  answered with 200 and ignored, which is harmless but noisy.
+
+## 10. Go live
 
 1. Activate the Stripe account.
-2. Repeat steps 3-6 in **live mode**: live prices (if you use your own),
-   live webhook endpoint (new `whsec_…`), live portal settings.
-3. Set the live `STRIPE_SECRET_KEY` (or restricted key) and
-   `STRIPE_WEBHOOK_SECRET` in production, and restart.
-4. Make one real purchase with your own card on a test school, check the
-   webhook deliveries show **200** in Developers → Webhooks, then refund it
-   from the dashboard.
+2. Repeat steps 3-6 in **live mode**: live prices (if you use your own) and
+   live Customer Portal settings.
+3. Set the live `STRIPE_SECRET_KEY` (or restricted key) in production.
+4. Create the production webhook and set `STRIPE_WEBHOOK_SECRET` (step 9),
+   then restart the API.
+5. Make one real purchase with your own card on a test school, check the
+   deliveries show **200**, then refund it from the dashboard.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 | --- | --- |
 | "Payments are not configured yet" | `STRIPE_SECRET_KEY` or `STRIPE_WEBHOOK_SECRET` missing, or `BILLING_ENABLED` not `true` |
-| Checkout works but the school stays on Trial | Webhooks not arriving: wrong URL, endpoint in the other mode (test vs live), or event types missing. Check Developers → Webhooks → the endpoint's delivery log. |
+| Checkout works but the school stays on Trial | Webhooks not arriving: wrong URL, endpoint in the other mode (test vs live), or event types missing. Check Developers → Webhooks → your destination's event deliveries (locally: the `stripe listen` output). |
 | Webhook deliveries show 400 | Wrong `STRIPE_WEBHOOK_SECRET` (each endpoint and each `stripe listen` session has its own), a proxy changing the body, or the server clock is off |
 | Webhook deliveries show 500 | The API failed to apply the event; it will retry. Check the API log for the event id. |
 | Per-user quantity not updating | Seat sync runs hourly; subscriptions set to cancel at period end are not updated |
 | "Manage payment method" does nothing | Customer Portal not activated in that mode (test/live) |
 | Wrong currency or price | `BILLING_*` values don't match your `STRIPE_PRICE_*` prices |
-| Startup error "STRIPE_API_BASE is for development and tests only" | Remove `STRIPE_API_BASE` from the production environment |
 
 Refunds, voided invoices and disputes are handled in the Stripe dashboard;
 GradeBook only records paid invoices it receives by webhook.

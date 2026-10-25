@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { DAY_MS, loadBillingConfig } from './billing.config';
-import { BillingRegistry } from './billing.registry';
-import { invoiceDto } from './invoice.service';
-import { SeatService } from './seat.service';
-import { SubscriptionService, type SubscriptionRow } from './subscription.service';
+import { DAY_MS, loadBillingConfig } from '../config/billing.config';
+import { BillingRegistry } from '../providers/billing.registry';
+import { invoiceDto } from '../subscriptions/invoice.service';
+import { SeatService } from '../subscriptions/seat.service';
+import { SubscriptionService, type SubscriptionRow } from '../subscriptions/subscription.service';
 
 /**
  * The operator's view: every school's billing and invoices. Only platform

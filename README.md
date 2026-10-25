@@ -114,7 +114,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 ### 3. Start the local services and create the schema
 
 ```bash
-bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `prisma migrate deploy`
+bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `prisma migrate deploy`, then the Stripe webhook listener (only with billing on and a sk_test_ key)
 ```
 
 `bun run postload` stops them. `bun run db:setup` applies pending migrations on its own. Sign-in emails land in Mailpit at http://127.0.0.1:8025.
@@ -182,7 +182,7 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 
 | Command                                                                    | Description                           |
 | -------------------------------------------------------------------------- | ------------------------------------- |
-| `bun run preload` / `postload`                                         | Start (and migrate) / stop local Postgres, Redis, S3 and Mailpit |
+| `bun run preload` / `postload`                                         | Start (and migrate) / stop local Postgres, Redis, S3, Mailpit and the Stripe webhook listener |
 | `bun run dev`                                                            | Start every workspace in development  |
 | `bun run dev:frontend` / `dev:backend` / `dev:mobile` / `dev:docs` | Start one workspace                   |
 | `bun run build`                                                          | Build all projects (cached)           |

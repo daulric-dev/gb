@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, subRow } from '@/test/billing-fakes';
-import { BillingRegistry } from './billing.registry';
+import { BillingRegistry } from '../providers/billing.registry';
 import { SeatService } from './seat.service';
 
 let prisma: MockPrisma;

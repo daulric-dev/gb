@@ -77,7 +77,7 @@ Put Stripe **test** keys in `backend/.env` and forward webhooks with the
 Stripe CLI:
 
 ```bash
-stripe listen --forward-to localhost:3001/api/billing/webhooks/stripe
+stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to localhost:3001/api/billing/webhooks/stripe
 ```
 
 Copy the printed `whsec_...` into `STRIPE_WEBHOOK_SECRET`, restart the API and

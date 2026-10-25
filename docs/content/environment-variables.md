@@ -72,8 +72,6 @@ SaaS billing for the **hosted platform**: schools pay for GradeBook. **Self-host
 | `APP_URL` | No | first `FRONTEND_URL` | Web app origin for checkout return URLs (`${APP_URL}/dashboard/settings/billing?checkout=success`). |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | With billing | - | Stripe API secret key (`sk_test_...` / `sk_live_...`) and the webhook signing secret (`whsec_...`). Stripe is the only payment provider; it is offered to schools once **both** are set. With billing on and either missing, schools see "payments are not configured yet" and the API logs a warning at startup. Payments are online only (no bank transfer / manual option). |
 | `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` | No | - | Reuse existing recurring monthly Stripe prices. Unset: inline prices built from `BILLING_*_CENTS` on two stable products (`gradebook_per_user`, `gradebook_flat`) created on first use. |
-| `STRIPE_API_BASE` | No (dev/test only) | - | Send Stripe API calls to another host, e.g. [stripe-mock](https://github.com/stripe/stripe-mock) at `http://127.0.0.1:12111` (the `stripe-mock` service in `docker-compose.dev.yml`). Any `sk_test_` key works with the mock. Refused when `NODE_ENV=production`. See `backend/src/billing/STRIPE.md`. |
-| `STRIPE_MOCK_URL` | No (tests only) | - | When set, `bun test` also runs the Stripe adapter's integration tests against stripe-mock at this URL (CI sets it). |
 
 Stripe webhook URL: `${API_URL}/api/billing/webhooks/stripe`. See [Billing providers](./billing-providers.md) for the events to enable and local testing with `stripe listen`.
 

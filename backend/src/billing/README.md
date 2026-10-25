@@ -68,7 +68,7 @@ There is no void action: Stripe owns the invoices and we only record paid ones, 
 
 `BillingModule` exports `BillingRegistry` and `SubscriptionService`. It is not global.
 
-- **`BillingRegistry`** (`billing.registry.ts`) holds every known `PaymentProvider` (today only Stripe).
+- **`BillingRegistry`** (`providers/billing.registry.ts`) holds every known `PaymentProvider` (today only Stripe).
   - `find(id)` looks up a registered provider whether or not it is configured. An unregistered id (such as `manual` on an old row) is `undefined` and treated as "no provider".
   - `enabled()` and `getEnabled(id)` return only configured providers (`isConfigured()` true; a throw counts as false).
   - On startup it logs a warning when billing is on and no provider is configured.
@@ -107,7 +107,7 @@ There is no void action: Stripe owns the invoices and we only record paid ones, 
   - Comp access and the school's own trial always allow writes.
   - A paid period allows writes until it ends, plus `BILLING_GRACE_DAYS` for a missed renewal. A cancellation gets no grace.
   - The file also has `initialTrialEnd()`.
-- `billing.config.ts`:
+- `config/billing.config.ts`:
   - `loadBillingConfig()` reads the environment (see Configuration).
   - `billingEnabled()` is the cheap hot-path check.
   - Plan helpers: `planPrice`, `seatsFor`, `amountFor`, `isPlan`, `PLANS`.
@@ -170,28 +170,34 @@ Stripe's variables (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, optional `STRI
 
 ## Files
 
-| File | Purpose |
+Grouped by role. Each test file sits next to the file it tests.
+
+| Folder / file | Purpose |
 |------|---------|
 | `billing.module.ts` | Wires the controllers, the providers and the global interceptor. Exports `BillingRegistry` and `SubscriptionService`. |
-| `billing.controller.ts` | `BillingStatusController` (`/billing/status`) and `BillingController` (school admin). |
-| `billing-webhook.controller.ts` | Provider webhooks (raw-body JSON POSTs). |
-| `platform.controller.ts` | `PlatformMeController` and `PlatformController` (operator dashboard). |
-| `billing.service.ts` | School-side billing. |
-| `subscription.service.ts` | Subscription rows, entitlement, user to school lookup. |
-| `seat.service.ts` | Billable-user counts and seat sync. |
-| `invoice.service.ts` | Invoice numbering for the paid invoices recorded from Stripe, and the invoice DTO. |
-| `billing-events.service.ts` | Applies normalised webhook events, idempotently. |
-| `platform.service.ts` | Operator dashboard logic and the platform-admin check. |
-| `billing.scheduler.ts` | The hourly background sweep, with an advisory lock. |
-| `billing.registry.ts` | Provider registry (configured = offered). **Register new providers here.** |
-| `billing.config.ts` | Environment config and price, seat and date helpers. |
-| `billing.entitlement.ts` | The pure read-only and writable rule. |
-| `billing.guards.ts` | `BillingEnabledGuard` and `PlatformAdminGuard`. |
-| `billing.interceptor.ts` | The app-wide 402 interceptor. |
-| `raw-body.ts` | Raw body capture for webhook routes. |
-| `dto/` | Request bodies. See [dto/README.md](./dto/README.md). |
-| `providers/` | Payment providers. See [providers/README.md](./providers/README.md). |
-| `*.test.ts` | One test file per service or helper: `billing.service`, `billing-events.service`, `billing-webhook.controller`, `billing.config`, `billing.entitlement`, `billing.interceptor`, `billing.registry`, `billing.scheduler`, `invoice.service`, `platform.service`, `seat.service`, `subscription.service`. |
+| [`STRIPE.md`](./STRIPE.md) | Setting up Stripe: keys, prices, webhook (local and production), Customer Portal, go-live. |
+| **`school/`** | The school admin API. |
+| `school/billing.controller.ts` | `BillingStatusController` (`/billing/status`) and `BillingController` (school admin). |
+| `school/billing.service.ts` | School-side billing: summary, checkout, plan change, cancel/resume, portal, invoices. |
+| **`platform/`** | The operator (developer) dashboard API. |
+| `platform/platform.controller.ts` | `PlatformMeController` and `PlatformController`. |
+| `platform/platform.service.ts` | Operator dashboard logic and the platform-admin check. |
+| **`webhooks/`** | Receiving and applying provider events. |
+| `webhooks/billing-webhook.controller.ts` | Provider webhooks (raw-body JSON POSTs). |
+| `webhooks/billing-events.service.ts` | Applies normalised webhook events, idempotently and out-of-order safe. |
+| `webhooks/raw-body.ts` | Raw body capture for the webhook routes (registered in `createApp.ts`). |
+| **`subscriptions/`** | The billing state of each school. |
+| `subscriptions/subscription.service.ts` | Subscription rows, cached entitlement, user to school lookup. |
+| `subscriptions/billing.entitlement.ts` | The pure read-only / writable rule. |
+| `subscriptions/seat.service.ts` | Billable-user counts and seat sync. |
+| `subscriptions/invoice.service.ts` | Invoice numbering for the paid invoices recorded from Stripe, and the invoice DTO. |
+| **`access/`** | Enforcement. |
+| `access/billing.interceptor.ts` | The app-wide 402 interceptor (read-only schools). |
+| `access/billing.guards.ts` | `BillingEnabledGuard` and `PlatformAdminGuard`. |
+| **`jobs/`** | `billing.scheduler.ts`: the hourly background sweep, under a Postgres advisory lock. |
+| **`config/`** | `billing.config.ts`: environment config and price, seat and date helpers. |
+| **`providers/`** | Payment providers: the `PaymentProvider` interface, the Stripe adapter, and `billing.registry.ts` (**register new providers here**). See [providers/README.md](./providers/README.md). |
+| **`dto/`** | Request bodies. See [dto/README.md](./dto/README.md). |
 
 ## Tests
 

@@ -15,16 +15,16 @@ import {
   loadBillingConfig,
   planPrice,
   seatsFor,
-} from './billing.config';
-import { BillingRegistry, info } from './billing.registry';
-import { invoiceDto } from './invoice.service';
-import { SeatService } from './seat.service';
-import { SubscriptionService, type SubscriptionRow } from './subscription.service';
+} from '../config/billing.config';
+import { BillingRegistry, info } from '../providers/billing.registry';
+import { invoiceDto } from '../subscriptions/invoice.service';
+import { SeatService } from '../subscriptions/seat.service';
+import { SubscriptionService, type SubscriptionRow } from '../subscriptions/subscription.service';
 import type {
   BillingPlan,
   PaymentProvider,
   ProviderSubscriptionRef,
-} from './providers/payment-provider';
+} from '../providers/payment-provider';
 
 export interface Caller {
   id: string;

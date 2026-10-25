@@ -2,10 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { isUniqueViolation } from '@/common/db-values';
 import type { Prisma } from '@/generated/prisma/client';
-import { isPlan } from './billing.config';
-import { InvoiceService } from './invoice.service';
-import { SubscriptionService, type SubscriptionRow } from './subscription.service';
-import type { BillingEvent, PaymentProvider } from './providers/payment-provider';
+import { isPlan } from '../config/billing.config';
+import { InvoiceService } from '../subscriptions/invoice.service';
+import { SubscriptionService, type SubscriptionRow } from '../subscriptions/subscription.service';
+import type { BillingEvent, PaymentProvider } from '../providers/payment-provider';
 
 type Ev<T extends BillingEvent['type']> = Extract<BillingEvent, { type: T }>;
 

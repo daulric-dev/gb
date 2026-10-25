@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { BillingRegistry } from './billing.registry';
+import { BillingRegistry } from '../providers/billing.registry';
 import { SubscriptionService } from './subscription.service';
 
 /** Statuses whose provider subscription is live and billed per seat. */

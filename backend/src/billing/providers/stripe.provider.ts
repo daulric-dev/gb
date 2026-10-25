@@ -345,7 +345,6 @@ export class StripeProvider implements PaymentProvider {
           timeout: HTTP_TIMEOUT_MS,
           maxNetworkRetries: 2,
           appInfo: { name: 'GradeBook' },
-          ...stripeApiBase(),
           ...(this.fetchFn
             ? {
                 httpClient: Stripe.createFetchHttpClient(
@@ -479,33 +478,4 @@ function stringId(
 ): string | null {
   if (!value) return null;
   return typeof value === 'string' ? value : value.id;
-}
-
-/**
- * STRIPE_API_BASE points the SDK at another API host - stripe-mock in
- * development and tests (`http://127.0.0.1:12111`). Refused in production so a
- * stray setting can never send real payments to a mock.
- */
-export function stripeApiBase(
-  env: Record<string, string | undefined> = process.env,
-):
-  | { host: string; port: number; protocol: 'http' | 'https' }
-  | Record<string, never> {
-  const raw = env.STRIPE_API_BASE?.trim();
-  if (!raw) return {};
-  if (env.NODE_ENV === 'production') {
-    throw new Error('STRIPE_API_BASE is for development and tests only');
-  }
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error(`STRIPE_API_BASE "${raw}" is not a URL`);
-  }
-  const protocol = url.protocol === 'http:' ? 'http' : 'https';
-  return {
-    host: url.hostname,
-    port: url.port ? Number(url.port) : protocol === 'http' ? 80 : 443,
-    protocol,
-  };
 }

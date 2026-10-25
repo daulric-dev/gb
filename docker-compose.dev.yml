@@ -50,16 +50,24 @@ services:
       - s3-data:/data
       - ./infrastructure/dev/s3.json:/etc/seaweedfs/s3.json:ro
 
-  # Stripe's official mock of its API, for testing billing without a Stripe
-  # account or network. Point the API at it with
-  # STRIPE_API_BASE=http://127.0.0.1:12111 (any sk_test_ key works). It is
-  # stateless and sends no webhooks: tests sign their own (see
-  # backend/src/billing/STRIPE.md, "Testing with stripe-mock").
-  stripe-mock:
-    image: stripe/stripe-mock:v0.206.0
+  # Forwards Stripe sandbox webhooks to the local API (what `stripe listen`
+  # does), so test payments complete. Started by `bun run preload` /
+  # `bun run stripe:listen` only when backend/.env has BILLING_ENABLED=true and
+  # a sk_test_ key; scripts/dev-stripe.ts also writes its signing secret into
+  # backend/.env (STRIPE_WEBHOOK_SECRET). Logs: docker compose logs -f stripe-listen
+  stripe-listen:
+    image: stripe/stripe-cli:v1.53.1
+    profiles: ["stripe"]
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:12111:12111"
+    env_file: ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        exec stripe listen --api-key "$$STRIPE_SECRET_KEY"
+        --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed
+        --forward-to http://host.docker.internal:3001/api/billing/webhooks/stripe
 
   # Catches outgoing email (sign-in codes). Inbox on http://127.0.0.1:8025.
   mailpit:

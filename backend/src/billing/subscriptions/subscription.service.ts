@@ -3,7 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { isUniqueViolation } from '@/common/db-values';
 import type { subscription } from '@/generated/prisma/client';
-import { loadBillingConfig } from './billing.config';
+import { loadBillingConfig } from '../config/billing.config';
 import {
   computeEntitlement,
   initialTrialEnd,
