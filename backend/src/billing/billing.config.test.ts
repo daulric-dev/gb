@@ -18,7 +18,6 @@ describe('billing config', () => {
     expect(cfg.currency).toBe('USD');
     expect(cfg.trialDays).toBe(30);
     expect(cfg.graceDays).toBe(7);
-    expect([...cfg.allowedProviders]).toEqual([]);
     expect([...cfg.platformAdminEmails]).toEqual([]);
   });
 
@@ -47,14 +46,12 @@ describe('billing config', () => {
     expect(loadBillingConfig({ BILLING_CURRENCY: 'dollars' }).currency).toBe('USD');
   });
 
-  test('provider allowlist and admin emails are trimmed lower-case sets', () => {
+  test('admin emails are a trimmed lower-case set', () => {
     const cfg = loadBillingConfig({
-      PAYMENT_PROVIDERS: ' Stripe, manual,,WIPAY ',
-      PLATFORM_ADMIN_EMAILS: 'Ops@Example.com, dev@x.io',
+      PLATFORM_ADMIN_EMAILS: 'Ops@Example.com,, dev@x.io ',
     });
-    expect([...cfg.allowedProviders].sort()).toEqual(['manual', 'stripe', 'wipay']);
-    expect(cfg.platformAdminEmails.has('ops@example.com')).toBe(true);
-    expect(loadBillingConfig({ PAYMENT_PROVIDERS: '' }).allowedProviders.size).toBe(0);
+    expect([...cfg.platformAdminEmails].sort()).toEqual(['dev@x.io', 'ops@example.com']);
+    expect(loadBillingConfig({ PLATFORM_ADMIN_EMAILS: '' }).platformAdminEmails.size).toBe(0);
   });
 
   test('APP_URL wins, else the first FRONTEND_URL origin', () => {

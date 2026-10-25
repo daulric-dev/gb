@@ -37,7 +37,7 @@ Every route is behind `AuthGuard` and `PermissionGuard`, with the `file:*` key s
 | POST | `/api/files/folders` | `file:create` | Create a folder (`CreateFolderDto`). A duplicate name under the same parent is a 400. |
 | PATCH | `/api/files/folders/:folderId` | `file:update` | Rename a folder (`RenameFolderDto`). System folders cannot be renamed. |
 | PATCH | `/api/files/folders/:folderId/move` | `file:update` | Re-parent a folder (`MoveFolderDto`). It cannot go into itself or one of its own subfolders. |
-| DELETE | `/api/files/folders/:folderId` | `file:delete` | Soft-delete the folder, its whole subtree and the files in it, in one transaction |
+| DELETE | `/api/files/folders/:folderId` | `file:delete` | Soft-delete the folder, its whole subtree and the files in it, in one transaction, with a `folder` erasure-log entry ([src/erasure](../erasure/README.md)) |
 | GET | `/api/files/notifications` | `file:read` | The caller's 50 most recent "file shared with you" notifications |
 | GET | `/api/files/notifications/unread-count` | `file:read` | `{ count }` of unread notifications |
 | POST | `/api/files/notifications/mark-read` | `file:read` | Mark all of them read |
@@ -46,7 +46,7 @@ Every route is behind `AuthGuard` and `PermissionGuard`, with the `file:*` key s
 | GET | `/api/files/:id/download` | `file:read` | Attachment bytes. Needs download access (403 otherwise). |
 | PATCH | `/api/files/:id` | `file:update` | Rename (`RenameFileDto`), owner only |
 | PATCH | `/api/files/:id/move` | `file:update` | Move into one of the caller's folders, or to the root with `null` (`MoveFileDto`) |
-| DELETE | `/api/files/:id` | `file:delete` | Soft delete (`deleted_at`), owner only |
+| DELETE | `/api/files/:id` | `file:delete` | Soft delete (`deleted_at`), owner only, with a `file` erasure-log entry in the same transaction. Rows and stored objects are erased for good after `SOFT_DELETE_RETENTION_DAYS` ([src/retention](../retention/README.md)) |
 | GET | `/api/files/:id/shares` | `file:update` | List shares, owner only |
 | POST | `/api/files/:id/shares` | `file:update` | Add or update shares (`ShareFileDto`), owner only. Re-sharing with the same principal updates the row. Each share queues a notification job, and each direct user share gets a chat message. |
 | PATCH | `/api/files/:id/shares/:shareId` | `file:update` | Toggle `canDownload` (`UpdateShareDto`) |

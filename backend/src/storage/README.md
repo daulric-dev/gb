@@ -16,6 +16,7 @@ Browsers and phones upload and download directly against the store using **presi
   - `getBuffer(key)` - the whole object as a `Buffer`, or null.
   - `exists(key)` - `{ size, contentType }` from a HEAD request, or null.
   - `delete(key | keys[])` - delete one key, or many in batches of 1000.
+  - `listKeys(prefix, { endBefore? })` - every key under a prefix, ascending (paginated `ListObjectsV2`). Used by the erasure log (its storage copy, pruning) and account-deletion clean-up.
   - `downloadUrl(key, { expiresIn = 300, filename?, inline? })` - presigned GET, optionally with a `Content-Disposition` (attachment by default, `inline` on request).
   - `uploadUrl(key, contentType, expiresIn = 900)` - presigned PUT. The content type is part of the signature, so the client must send exactly that `Content-Type`.
 - **Other**
@@ -27,6 +28,7 @@ The S3 client only sends checksums when an operation requires them (`requestChec
 
 ## Used by
 
+- `src/erasure`, `src/retention`, `src/auth/auth.service.ts` - the erasure log's copy under `ERASURE_LOG_S3_PREFIX`, deleting purged files' objects, deleting a deleted account's files and avatar.
 - `src/file-manager/file-manager.service.ts` - uploads, downloads, presigned upload tickets, deletes for the file manager (and, through it, course files and student submissions).
 - `src/images/images.service.ts` - avatar uploads (direct and presigned) and serving.
 - Both use `objectKey()` to build keys. No other module talks to the store.

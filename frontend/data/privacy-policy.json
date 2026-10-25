@@ -1,88 +1,137 @@
 {
   "title": "Privacy Policy",
-  "lastUpdated": "April 2026",
+  "lastUpdated": "October 2026",
   "crossLink": { "href": "/terms", "label": "Terms of Service" },
   "sections": [
     {
       "heading": "Introduction",
       "paragraphs": [
-        "GradeBook (\"we\", \"our\", or \"the Service\") is a school management platform designed to help educators manage academic records, student enrollment, grading, and class administration. GradeBook is not affiliated with or partnered with any specific school. Any educator can create an account and set up a school on the platform. This Privacy Policy explains what information we collect, how we use it, and your rights regarding your data."
+        "GradeBook (\"we\", \"our\", or \"the Service\") is a learning platform that schools use to run courses, set and mark work, take attendance, and communicate with staff and students. This Privacy Policy explains what personal data the hosted GradeBook service processes, why, how long we keep it, who we share it with, and the rights you have.",
+        "It is written to meet the EU and UK General Data Protection Regulation (GDPR) and the data protection laws that apply to schools in the Caribbean and elsewhere. Where local law gives you more protection, that law applies.",
+        "This policy covers the GradeBook service we host. A school that runs its own copy of GradeBook on its own servers is responsible for that installation and its own privacy notice."
       ]
+    },
+    {
+      "heading": "Who Is Responsible for Your Data",
+      "paragraphs": [
+        "GradeBook processes data in two different roles:"
+      ],
+      "list": [
+        { "bold": "Your school is the controller of school data", "text": "the school decides what student, staff, course, grade and attendance records are kept and why. We process that data on the school's behalf and only on its instructions, as its processor. Requests about school records (for example a student asking to see or correct their grades) should go to the school first; we will help the school answer them." },
+        { "bold": "GradeBook is the controller of account and service data", "text": "your sign-in account, sessions, security records and, for schools on a paid plan, billing records. We decide how this data is used, as described in this policy." }
+      ],
+      "footer": "For any privacy question or request, contact privacy@daulric.dev."
     },
     {
       "heading": "Information We Collect",
       "paragraphs": [
-        "We collect the following types of information when you use GradeBook:"
+        "Depending on how you use GradeBook, we process:"
       ],
       "list": [
-        { "bold": "Account Information", "text": "your email address, first name, and last name, collected during registration and onboarding." },
-        { "bold": "School Information", "text": "school name, contact details, and school type, provided when creating or joining a school." },
-        { "bold": "Student Records", "text": "student names, gender, date of birth, enrollment dates, class assignments, and subject profiles entered by teachers." },
-        { "bold": "Academic Data", "text": "assessments, grades, scores, remarks, and calculated results created through the grading system." },
-        { "bold": "Usage Data", "text": "authentication tokens and session information required to operate the Service." }
+        { "bold": "Account information", "text": "your email address, first and last name and optional profile picture. If you sign in with Google, Microsoft or your school's single sign-on, we also receive an identifier for that account, the email address and the basic profile details the provider shares." },
+        { "bold": "School information", "text": "school name, contact details, school type, the email domains a school has verified, and staff roles and permissions." },
+        { "bold": "Student records", "text": "student names, gender, date of birth, enrolment dates and the courses a student takes, entered by the school or created when a student joins with a school code." },
+        { "bold": "Course and academic data", "text": "course content, assignments, quiz answers, submitted files and text, marks, rubric assessments, feedback, grades, discussion posts and announcements." },
+        { "bold": "Attendance", "text": "check-in times and attendance status. If a teacher turns on the location check, your device's location is used at the moment you check in to work out your distance from the room; we store only that distance, not your coordinates." },
+        { "bold": "Messages and files", "text": "chat messages and files you upload or share. Chat messages are encrypted in our database." },
+        { "bold": "Device and security information", "text": "a session cookie that keeps you signed in, the IP address and browser or app details of each signed-in session, one-time sign-in codes, and, if you allow notifications in the mobile app, a push notification token for your device." },
+        { "bold": "Billing information", "text": "for schools on a paid plan: the plan, number of billable users, invoices and payment status. Card and bank details are entered directly with the payment provider and never reach our servers." }
       ]
     },
     {
-      "heading": "How We Use Your Information",
+      "heading": "How and Why We Use Your Information",
       "paragraphs": [
-        "We use the collected information to:"
+        "We use personal data only for the following purposes, each with a lawful basis under the GDPR:"
       ],
       "list": [
-        "Provide and operate the GradeBook service",
-        "Authenticate your identity and manage your account",
-        "Store and process academic records, grades, and reports",
-        "Associate you with your school and assigned classes",
-        "Improve the reliability and performance of the Service",
-        "Generate aggregated, anonymized analytics to understand usage patterns and improve the Service (see our Terms of Service for details)"
+        { "bold": "Providing the Service to your school", "text": "running courses, marking, attendance, messaging and notifications. For school data we act on the school's instructions; the school relies on its own lawful basis, usually its public task or legitimate interests in educating students." },
+        { "bold": "Your account and sign-in", "text": "creating your account, emailing sign-in codes, single sign-on and keeping you signed in (performance of a contract with you)." },
+        { "bold": "Security and abuse prevention", "text": "rate limiting, session records, protecting accounts and investigating misuse (our legitimate interest in keeping the Service and its users safe)." },
+        { "bold": "Billing", "text": "charging schools for paid plans and keeping invoices (performance of a contract, and legal obligations such as tax record keeping)." },
+        { "bold": "Backups and recovery", "text": "keeping encrypted backups so data can be restored after a failure (our legitimate interest, and the GDPR duty to keep data available and secure)." },
+        { "bold": "Improving the Service", "text": "aggregated statistics that do not identify any person, such as how many courses are active (our legitimate interest)." }
+      ],
+      "footer": "We do not sell personal data, use it for advertising, or build marketing profiles of students or staff. We do not use your data to train artificial intelligence models."
+    },
+    {
+      "heading": "Cookies",
+      "paragraphs": [
+        "GradeBook uses only cookies that are strictly necessary for the Service to work: a session cookie that keeps you signed in, and a short-lived cookie that protects the single sign-on process. We do not use advertising, analytics or tracking cookies."
       ]
     },
     {
-      "heading": "Data Storage and Security",
+      "heading": "Who We Share Data With",
       "paragraphs": [
-        "Your data is stored securely using Supabase, a managed PostgreSQL database platform. We implement row-level security policies to ensure that users can only access data they are authorized to view. Authentication is handled via secure one-time passwords (OTP) delivered to your email. We do not store passwords."
+        "We do not share personal data with third parties for their own purposes. Data is shared only:"
+      ],
+      "list": [
+        { "bold": "Within your school", "text": "with the staff and students who have access to the same courses, conversations or files, according to their role." },
+        { "bold": "With our service providers (processors)", "text": "who run parts of the Service for us under written data processing agreements: cloud hosting, database and file storage, encrypted backup storage, email delivery for sign-in codes, and the mobile push notification service. They may use the data only to provide their service to us." },
+        { "bold": "With providers you choose", "text": "if you sign in with Google, Microsoft or your school's single sign-on, that provider confirms who you are; if your school pays for a plan, our payment provider, Stripe, processes the payment under its own privacy policy." },
+        { "bold": "When the law requires it", "text": "to comply with a legal obligation, court order or lawful request from a public authority, or to protect the safety of a person." }
+      ],
+      "footer": "We do not use third-party analytics services."
+    },
+    {
+      "heading": "International Transfers",
+      "paragraphs": [
+        "Our providers may process data outside your country. When personal data from the EU or UK is transferred to a country without an adequacy decision, we use the safeguards the GDPR requires, such as the European Commission's Standard Contractual Clauses. Contact us for a copy of the relevant safeguards."
       ]
     },
     {
-      "heading": "Data Sharing",
+      "heading": "How Long We Keep Data",
       "paragraphs": [
-        "We do not sell, rent, or share your personal information or student data with third parties for marketing or advertising purposes. Data may be shared only in the following circumstances:"
+        "We keep personal data only as long as it is needed:"
       ],
       "list": [
-        "With other users within the same school on the platform who have been granted access to the same classes",
-        "With trusted third-party analytics providers who help us understand usage patterns, improve the Service, and generate aggregated insights - these providers are bound by confidentiality agreements and may only process data on our behalf",
-        "When required by law or to comply with a legal process",
-        "To protect the safety and security of our users or the public"
+        { "bold": "School and course data", "text": "for as long as the school keeps it on GradeBook. Schools decide when records are deleted." },
+        { "bold": "Your account", "text": "until you delete it or your school removes you. Deleting your account immediately removes your profile, sign-in details, the files you own and your chat messages. Discussion posts you wrote stay in the course without your name." },
+        { "bold": "Deleted files, folders, chat messages and discussion posts", "text": "hidden immediately and permanently erased 30 days later. A file that was handed in as coursework is kept while the submission exists, as part of the school's record. A deleted discussion post that others have replied to stays as a \"This post was deleted\" placeholder without its content or author, so the conversation still makes sense." },
+        { "bold": "Sessions and sign-in codes", "text": "sign-in codes expire after 10 minutes and sessions after 30 days without use; both are removed about a day after they expire or are used." },
+        { "bold": "Backups", "text": "we keep encrypted backups of the database for up to 37 days, and then delete them automatically. Erased information can remain inside a backup until it expires: at most 37 days after it was permanently erased, so up to 67 days after you delete a file, folder, message or post. Backups are used only to restore the Service after a failure." },
+        { "bold": "Deletion records", "text": "if we ever restore from a backup, we re-apply every deletion made since that backup was taken, so deleted information does not come back. To do this we keep a record of each deletion (the kind of item, when and why, and the internal identifiers needed to delete it again) for up to 400 days. It never contains the deleted content itself, such as names, email addresses, messages or file names." },
+        { "bold": "Billing records", "text": "invoices are kept for as long as tax and accounting law requires." }
+      ]
+    },
+    {
+      "heading": "How We Protect Data",
+      "paragraphs": [
+        "All connections to GradeBook are encrypted (HTTPS). Access inside a school is limited by role, and every request is checked on our servers. You sign in with one-time codes or single sign-on, so we never store passwords. Chat messages and backups are encrypted, backup encryption keys are kept separately from the servers, and backups are stored separately from the live system. Payment details are handled only by the payment providers.",
+        "If a personal data breach affects you, we will inform your school and, where required, the supervisory authority within 72 hours, and you without undue delay."
       ]
     },
     {
       "heading": "Your Rights",
       "paragraphs": [
-        "You have the right to:"
+        "Under the GDPR and similar laws you have the right to:"
       ],
       "list": [
-        "Access the personal information we hold about you",
-        "Request correction of inaccurate information",
-        "Delete your account and all associated data directly from the Settings page",
-        "Export your data in a standard format"
+        "Access the personal data we hold about you and get a copy of it",
+        "Have inaccurate data corrected",
+        "Have your data erased",
+        "Restrict how your data is processed",
+        "Receive your data in a portable, machine-readable format",
+        "Object to processing based on our legitimate interests",
+        "Lodge a complaint with your data protection supervisory authority"
       ],
-      "footer": "Account deletion is self-service and can be done at any time from your Settings page. For any other requests, please contact the GradeBook team."
+      "footer": "You can delete your account yourself at any time from the Settings page. For any other request, including a copy of your data, email privacy@daulric.dev; we will reply within one month. Requests about school records (grades, attendance, coursework) are handled together with your school, which decides on them as the controller."
     },
     {
-      "heading": "Children's Data",
+      "heading": "Children and Students",
       "paragraphs": [
-        "GradeBook is used by educators to manage student records. Student data is entered and managed by the teachers who use the platform. Students do not create accounts or directly interact with the Service. Users who enter student data are responsible for ensuring they have the necessary authorization and consent to do so."
+        "Students, including children, use GradeBook through their school: they may have their own account to see their courses, hand in work, check their grades and take attendance. Schools are responsible for having a lawful basis and, where needed, parental consent for the student data they put on GradeBook. We use student data only to provide the Service to the school, never for advertising or profiling."
       ]
     },
     {
       "heading": "Changes to This Policy",
       "paragraphs": [
-        "We may update this Privacy Policy from time to time. If we make significant changes, we will notify users through the Service. Continued use of GradeBook after changes constitutes acceptance of the updated policy."
+        "We may update this Privacy Policy as the Service changes. We will show the date of the latest version at the top of this page and tell users through the Service before any significant change takes effect."
       ]
     },
     {
       "heading": "Contact",
       "paragraphs": [
-        "If you have questions about this Privacy Policy or how your data is handled, please contact the GradeBook team."
+        "For questions about this Privacy Policy, how your data is handled, or to exercise your rights, email privacy@daulric.dev."
       ]
     }
   ]

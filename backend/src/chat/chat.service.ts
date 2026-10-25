@@ -10,6 +10,8 @@ import { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { userSchoolId } from '@/common/user-school';
 import { isoDate } from '@/common/db-values';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { MessageCipher } from './message-cipher.service';
 import { ChatEventType, channelsEnabled } from './chat.constants';
@@ -124,6 +126,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly realtime: ChatRealtimeService,
     private readonly cipher: MessageCipher,
+    private readonly erasure: ErasureLogService,
   ) {}
 
   /** The caller's school; a user without one is a server error, as before. */
@@ -314,13 +317,41 @@ export class ChatService {
     return present;
   }
 
-  /** Soft-delete the caller's own message. */
+  /**
+   * Soft-delete the caller's own message (body cleared), logged as an
+   * erasure in the same transaction. The tombstone row is removed by the
+   * retention purge.
+   */
   async deleteMessage(userId: string, messageId: string): Promise<ChatMessage> {
     const message = await this.loadOwnMessage(userId, messageId);
-    const data = await this.updateMessage(messageId, {
-      deleted_at: new Date(),
-      body: null,
-    });
+    let data: MessageRow | null = null;
+    try {
+      data = await this.prisma.$transaction(async (tx) => {
+        const { school_id: schoolId, ...updated } = await tx.message.update({
+          where: { id: messageId },
+          data: { deleted_at: new Date(), body: null },
+          select: { ...MESSAGE_SELECT, school_id: true },
+        });
+        await this.erasure.record(tx, {
+          kind: 'chat_message',
+          subjectTable: 'chat.message',
+          subjectIds: [messageId],
+          schoolId,
+          actor: userId,
+          reason: 'user_request',
+          replay: plan.of(
+            plan.update(
+              'chat.message',
+              { id: [messageId] },
+              { body: null, deleted_at: OCCURRED_AT },
+            ),
+          ),
+        });
+        return toMessageRow(updated);
+      });
+    } catch (err) {
+      this.logger.error(`Failed to delete message: ${(err as Error).message}`);
+    }
     if (!data) {
       throw new BadRequestException('Failed to delete message');
     }

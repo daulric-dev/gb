@@ -17,7 +17,7 @@ No `.env` files are committed to the repository. You must create them manually i
 | Variable                      | Required                 | Default                 | Description                                                                                                                                                                                                                                                           |
 | ----------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | **Yes**                  | -                       | PostgreSQL 15+ connection string, used by Prisma (`src/prisma/prisma.service.ts`, `prisma.config.ts`). Dev: `postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook` (the `db` service in `docker-compose.dev.yml`). Apply the schema with `bun run db:deploy`. Not needed by `prisma generate`. |
-| `AUTH_SECRET`                 | **Prod**                 | -                       | 32+ characters (`openssl rand -base64 32`). Keys the HMAC hashes of sign-in codes and signs short-lived tokens. **Required in production** - the app refuses to boot without it. Unset in dev = an insecure development secret (with a warning). Changing it voids outstanding codes. |
+| `AUTH_SECRET`                 | **Prod**                 | -                       | 32+ characters (`openssl rand -base64 32`). Keys the HMAC hashes of sign-in codes and signs short-lived tokens. **Required in production** - the app refuses to boot without it. Unset in dev = an insecure development secret (with a warning). Changing it voids outstanding codes and makes the erasure-log copy in storage fail its signature check (`erasure:replay --allow-unsigned` reads it anyway). |
 | `ALLOW_DEV_LOGIN`             | No (dev)                 | `false`                 | `true` turns on `POST /auth/dev/code`, which returns a sign-in code instead of mailing it, so `seed:demo` and `smoke` can sign in. Refused (404) when `NODE_ENV=production`. Never set it on a shared deployment. |
 | `ALLOW_UNVERIFIED_EMAIL_DOMAINS` | No (dev)              | `false`                 | Skips the DNS TXT check for school email domains so a local stack can use made-up domains like `demo.test`. Ignored in production. |
 | `API_URL`                     | For SSO / avatars        | request host            | Absolute URL of this API. SSO redirect URIs (`${API_URL}/api/auth/sso/callback`), the SAML entity ID and avatar URLs are built from it. |
@@ -67,17 +67,31 @@ SaaS billing for the **hosted platform**: schools pay for GradeBook. **Self-host
 | `BILLING_FLAT_CENTS` | No | `30000` | Flat plan: price per month, unlimited users. |
 | `BILLING_CURRENCY` | No | `USD` | ISO currency code for every price and invoice. |
 | `BILLING_TRIAL_DAYS` | No | `30` | Free trial for a new school (existing schools get it from the day billing is first turned on). |
-| `BILLING_GRACE_DAYS` | No | `7` | How long a missed payment (past due, overdue invoice) stays writable before the school turns read-only. |
-| `PAYMENT_PROVIDERS` | With billing | none | Comma list of providers that may be offered: `stripe`, `paypal`, `paddle`, `wipay`, `manual`. Unset or empty = none. A provider is offered only when listed here **and** its credentials are set **and** a platform admin has not switched it off. |
+| `BILLING_GRACE_DAYS` | No | `7` | How long a missed payment (past due) stays writable before the school turns read-only. |
 | `PLATFORM_ADMIN_EMAILS` | With billing | - | Comma list of account emails (verified) that get the platform dashboard (`/platform`). Admins can also be rows in `billing.platform_admin`. |
 | `APP_URL` | No | first `FRONTEND_URL` | Web app origin for checkout return URLs (`${APP_URL}/dashboard/settings/billing?checkout=success`). |
-| `BILLING_MANUAL_INSTRUCTIONS` | For `manual` | generic text | Bank details shown to school admins paying a manual invoice; the invoice number to quote is appended. |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | For Stripe | - | API key and webhook signing secret. Optional `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` reuse existing prices. |
-| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | For PayPal | - | REST app credentials and the webhook id used to verify events. `PAYPAL_ENV` = `sandbox` (default) or `live`. Optional `PAYPAL_PLAN_PER_USER`, `PAYPAL_PLAN_FLAT`, `PAYPAL_PRODUCT_ID`. |
-| `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` | For Paddle | - | Paddle Billing API key and notification secret. `PADDLE_ENV` = `sandbox` (default) or `production`. Optional `PADDLE_PRICE_PER_USER`, `PADDLE_PRICE_FLAT`, `PADDLE_PRODUCT_ID`, `PADDLE_CHECKOUT_URL` (default payment link). |
-| `WIPAY_ACCOUNT_NUMBER`, `WIPAY_API_KEY` | For WiPay | - | Merchant account and API key (sandbox: `1234567890` / `123`). `WIPAY_ENV` = `sandbox` (default) or `live`; `WIPAY_COUNTRY_CODE` = `TT` (default), `JM` or `BB`; `WIPAY_CURRENCY` (`USD` default, `TTD`, `JMD`) must equal `BILLING_CURRENCY`; `WIPAY_FEE_STRUCTURE` = `merchant_absorb` (default), `customer_pay` or `split`. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | With billing | - | Stripe API secret key (`sk_test_...` / `sk_live_...`) and the webhook signing secret (`whsec_...`). Stripe is the only payment provider; it is offered to schools once **both** are set. With billing on and either missing, schools see "payments are not configured yet" and the API logs a warning at startup. Payments are online only (no bank transfer / manual option). |
+| `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` | No | - | Reuse existing recurring monthly Stripe prices. Unset: inline prices built from `BILLING_*_CENTS` on two stable products (`gradebook_per_user`, `gradebook_flat`) created on first use. |
+| `STRIPE_API_BASE` | No (dev/test only) | - | Send Stripe API calls to another host, e.g. [stripe-mock](https://github.com/stripe/stripe-mock) at `http://127.0.0.1:12111` (the `stripe-mock` service in `docker-compose.dev.yml`). Any `sk_test_` key works with the mock. Refused when `NODE_ENV=production`. See `backend/src/billing/STRIPE.md`. |
+| `STRIPE_MOCK_URL` | No (tests only) | - | When set, `bun test` also runs the Stripe adapter's integration tests against stripe-mock at this URL (CI sets it). |
 
-Webhook URL for every provider: `${API_URL}/api/billing/webhooks/<provider id>`.
+Stripe webhook URL: `${API_URL}/api/billing/webhooks/stripe`. See [Billing providers](./billing-providers.md) for the events to enable and local testing with `stripe listen`.
+
+### Data retention and erasure log
+
+GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/src/erasure/README.md` and [Backups & GDPR](./backups.md)). A daily job purges rows that were soft-deleted longer ago than the retention period, and every erasure is written to `compliance.erasure_log` (ids only) and copied to object storage so it survives a database restore.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `RETENTION_PURGE_ENABLED` | No | `true` | `false` stops the daily purge (the erasure-log export still runs). `bun run retention:purge` ignores it. |
+| `SOFT_DELETE_RETENTION_DAYS` | No | `30` | Days a soft-deleted file, folder, chat message or discussion reply is kept before it is purged for good. |
+| `SOFT_DELETE_RETENTION_DAYS_FILES`, `_FOLDERS`, `_CHAT_MESSAGES`, `_DISCUSSION_REPLIES` | No | `SOFT_DELETE_RETENTION_DAYS` | Per-kind overrides (full names: `SOFT_DELETE_RETENTION_DAYS_FOLDERS` and so on). |
+| `RETENTION_PURGE_HOUR_UTC` | No | `3` | UTC hour the daily purge starts in (with a whole-day interval). |
+| `RETENTION_PURGE_INTERVAL_HOURS` | No | `24` | Hours between purges per instance. Not a multiple of 24 = run every N hours, any hour. |
+| `RETENTION_PURGE_BATCH_SIZE` | No | `500` | Rows per batch (one transaction and one erasure-log entry per school per batch). |
+| `RETENTION_PURGE_MAX_MINUTES` | No | `10` | Time budget per run; the next run continues where it stopped. |
+| `ERASURE_LOG_S3_PREFIX` | No | `erasure-log` | Prefix in `S3_BUCKET` for the off-database copy of the erasure log (one signed JSON object per entry). `off` disables the copy - then a restore can only replay entries still in the restored database. |
+| `ERASURE_LOG_RETENTION_DAYS` | No | `400` | How long erasure-log entries (rows and storage copies) are kept. Must be longer than any backup you could restore (30-day dumps + 7 days of old versions by default). |
 
 ### Example `backend/.env`
 
@@ -132,6 +146,49 @@ USE_REDIS=false
 | `PORT`                                              | `src/main.ts`                      | Fastify listen port (local dev only; not used in serverless) |
 | `USE_REDIS`                                         | `src/cache/cache.service.ts`       | Selects Redis store when `true`                              |
 | `REDIS_URL`                                         | `src/cache/cache.service.ts`       | Redis connection URL for `ioredis`                           |
+| `RETENTION_PURGE_*`, `SOFT_DELETE_RETENTION_DAYS*` | `src/retention/retention.config.ts` | Daily purge of soft-deleted data                             |
+| `ERASURE_LOG_*`                                     | `src/erasure/erasure.config.ts`    | Erasure-log storage copy and retention                       |
+
+---
+
+## Database backups
+
+**File**: `infrastructure/.env` (read by the `backup`, `db` and `db-backup` services in `infrastructure/docker-compose.yml`, not by the API). See [Backups & GDPR](./backups.md) and `infrastructure/BACKUPS.md`.
+
+Daily encrypted dump (`backup` service, `infrastructure/backup/`):
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `BACKUP_S3_BUCKET` | **Yes** | - | Backup bucket, separate from `S3_BUCKET`. Same jurisdiction as the database (EU region for EU schools); versioning + Object Lock recommended. |
+| `BACKUP_S3_PREFIX` | No | `postgres` | Folder in the bucket; objects are `<prefix>/daily/YYYY/MM/gradebook-<UTC timestamp>.dump.age` and `.sha256`. |
+| `BACKUP_S3_ENDPOINT` | Non-AWS | - | R2/B2/MinIO/SeaweedFS endpoint. Empty for AWS S3. |
+| `BACKUP_S3_REGION` | No | `us-east-1` | Bucket region (`auto` for R2). |
+| `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | **Yes** (or an instance role) | - | Key limited to the backup prefix: put, get, list, delete. `_FILE` variants read a mounted secret. |
+| `BACKUP_S3_FORCE_PATH_STYLE` | No | `true` with an endpoint | Path-style addressing. |
+| `BACKUP_S3_STORAGE_CLASS` | No | provider default | e.g. `STANDARD_IA`. |
+| `BACKUP_AGE_RECIPIENTS` | **Yes** | - | Comma-separated age public keys (`age1...`). The backup is encrypted to them before upload. The private key stays offline; a private key here is refused. |
+| `BACKUP_ALLOW_UNENCRYPTED` | No (dev) | `false` | `true` permits unencrypted dumps when no recipients are set. Development only. |
+| `BACKUP_DATABASE_URL` | No | `DATABASE_URL` | Database to dump; a role with `pg_read_all_data` is enough. |
+| `BACKUP_SCHEDULE` | No | `0 4 * * *` | Cron expression, evaluated in `BACKUP_TZ`. |
+| `BACKUP_TZ` | No | `UTC` | Time zone for the schedules (04:00 UTC by default; `Europe/Berlin` for 04:00 local). |
+| `BACKUP_RETENTION_DAYS` | No | `30` | Dumps older than this are deleted after each successful backup. |
+| `BACKUP_HEALTHCHECK_URL` | No | - | healthchecks.io-style URL: pinged at `/start`, on success and at `/fail`. |
+| `BACKUP_TMPFS_SIZE` | No | `2g` | Size of the tmpfs holding the encrypted dump during upload. |
+| `BACKUP_VERIFY_SCHEDULE`, `BACKUP_VERIFY_DATABASE_URL`, `BACKUP_AGE_IDENTITY_FILE`, `BACKUP_VERIFY_HEALTHCHECK_URL` | No | - | Scheduled restore test (`backup-verify`), for a separate verification host that holds a verification key. |
+
+Continuous archiving / point-in-time recovery (self-hosted `db` + `db-backup`, `infrastructure/postgres/`; managed Postgres uses the provider's PITR instead):
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `WALG_S3_PREFIX` | **Yes** (self-hosted) | - | `s3://<bucket>/<path>` for WAL and base backups, e.g. `s3://gradebook-backups/wal-g`. |
+| `WALG_S3_ENDPOINT`, `WALG_S3_REGION` | Non-AWS / No | -, `us-east-1` | Endpoint and region. |
+| `WALG_S3_ACCESS_KEY_ID`, `WALG_S3_SECRET_ACCESS_KEY` | **Yes** | - | Key limited to the WAL-G prefix. |
+| `WALG_S3_FORCE_PATH_STYLE` | No | `true` with an endpoint | Path-style addressing. |
+| `WALG_LIBSODIUM_KEY` | **Yes** | - | `openssl rand -hex 32`. Encrypts WAL and base backups; keep an offline copy. |
+| `WALG_ARCHIVE_TIMEOUT` | No | `60` | Seconds; a WAL segment is shipped at least this often, bounding data loss. |
+| `WALG_BACKUP_SCHEDULE` | No | `0 4 * * *` | Base backup cron, in `BACKUP_TZ`. |
+| `WALG_RETAIN_FULL` | No | `7` | Base backups kept (= days of point-in-time recovery). |
+| `WALG_HEALTHCHECK_URL` | No | - | Ping URL for base backups. |
 
 ---
 

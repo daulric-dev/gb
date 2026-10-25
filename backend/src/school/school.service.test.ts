@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { SchoolService } from './school.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
@@ -18,7 +19,7 @@ describe('SchoolService', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     mockCache = createMockCacheService();
-    service = new SchoolService(prisma as any, mockCache as any);
+    service = new SchoolService(prisma as any, mockCache as any, createMockErasureLog() as any);
   });
 
   describe('findAll', () => {
@@ -121,6 +122,7 @@ describe('SchoolService', () => {
         service: new SchoolService(
           db as any,
           createMockCacheService() as any,
+          createMockErasureLog() as any,
         ),
         db,
       };

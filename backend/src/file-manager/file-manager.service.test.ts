@@ -7,6 +7,7 @@ import {
 import { FileManagerService } from './file-manager.service';
 import { FileListFilter } from './dto/list-files.filter';
 import { expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
 
 const USER = 'user-1';
@@ -88,6 +89,7 @@ function makeService(
     {} as any,
     chatSystem as any,
     folders as any,
+    createMockErasureLog() as any,
   );
   return { svc, prisma, storage };
 }

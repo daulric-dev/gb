@@ -8,6 +8,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { CourseService } from './course.service';
 import { CourseAccessService } from './access/course-access.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const USER = 'user-1';
@@ -67,6 +68,7 @@ function service(prisma: MockPrisma) {
     cache,
     new CourseAccessService(cache, prisma as any),
     prisma as any,
+    createMockErasureLog() as any,
   );
 }
 

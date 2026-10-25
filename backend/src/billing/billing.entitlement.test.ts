@@ -12,8 +12,6 @@ function input(over: Partial<EntitlementInput> = {}): EntitlementInput {
     currentPeriodEnd: null,
     cancelAtPeriodEnd: false,
     compUntil: null,
-    mode: null,
-    oldestOpenDueAt: null,
     ...over,
   };
 }
@@ -36,8 +34,8 @@ describe('trial', () => {
   });
 });
 
-describe('subscription mode', () => {
-  const sub = { mode: 'subscription' as const, trialEndsAt: days(-40) };
+describe('subscription', () => {
+  const sub = { trialEndsAt: days(-40) };
   test('active within period', () => {
     expect(ent({ ...sub, status: 'active', currentPeriodEnd: days(5) })).toEqual({ status: 'active', readOnly: false });
   });
@@ -63,38 +61,24 @@ describe('subscription mode', () => {
   test('unpaid and incomplete are read-only once the trial is over', () => {
     expect(ent({ ...sub, status: 'unpaid', currentPeriodEnd: days(5) }).readOnly).toBe(true);
     expect(ent({ ...sub, status: 'incomplete' }).readOnly).toBe(true);
-    expect(ent({ mode: 'subscription', status: 'incomplete', trialEndsAt: days(3) }).readOnly).toBe(false);
+    expect(ent({ status: 'incomplete', trialEndsAt: days(3) }).readOnly).toBe(false);
   });
   test('provider-side trial runs to its period end', () => {
     expect(ent({ ...sub, status: 'trialing', currentPeriodEnd: days(4) }).readOnly).toBe(false);
   });
 });
 
-describe('invoice mode', () => {
-  const inv = { mode: 'invoice' as const, trialEndsAt: days(-40) };
-  test('paid through the future: active', () => {
-    expect(ent({ ...inv, status: 'active', currentPeriodEnd: days(20) })).toEqual({ status: 'active', readOnly: false });
-  });
-  test('open invoice not yet due keeps a lapsed school writable', () => {
-    expect(ent({ ...inv, status: 'trialing', oldestOpenDueAt: days(10) })).toEqual({ status: 'trialing', readOnly: false });
-  });
-  test('open invoice past due shows past_due during grace', () => {
-    expect(ent({ ...inv, status: 'active', currentPeriodEnd: days(-2), oldestOpenDueAt: days(-2) })).toEqual({ status: 'past_due', readOnly: false });
-  });
-  test('open invoice past due + grace: read-only', () => {
-    expect(ent({ ...inv, status: 'active', currentPeriodEnd: days(20), oldestOpenDueAt: days(-8) })).toEqual({ status: 'read_only', readOnly: true });
-  });
-  test('an overdue invoice does not cut a running trial short', () => {
-    expect(ent({ mode: 'invoice', status: 'trialing', trialEndsAt: days(2), oldestOpenDueAt: days(-30) }).readOnly).toBe(false);
-  });
-  test('active without a period end (never paid) is read-only', () => {
-    expect(ent({ ...inv, status: 'active', currentPeriodEnd: null }).readOnly).toBe(true);
+describe('legacy rows', () => {
+  test('a row left by a removed provider follows the same rules', () => {
+    // e.g. provider 'manual', plan chosen, trial still running
+    expect(ent({ status: 'trialing', trialEndsAt: days(5), cancelAtPeriodEnd: true }).readOnly).toBe(false);
+    expect(ent({ status: 'trialing', trialEndsAt: days(-1), cancelAtPeriodEnd: true }).readOnly).toBe(true);
   });
 });
 
 describe('complimentary access', () => {
   test('comp_until in the future overrides everything', () => {
-    expect(ent({ status: 'unpaid', trialEndsAt: days(-100), compUntil: days(1), mode: 'invoice', oldestOpenDueAt: days(-50) })).toEqual({ status: 'active', readOnly: false });
+    expect(ent({ status: 'unpaid', trialEndsAt: days(-100), compUntil: days(1) })).toEqual({ status: 'active', readOnly: false });
   });
   test('an expired comp no longer applies', () => {
     expect(ent({ status: 'trialing', trialEndsAt: days(-10), compUntil: days(-1) }).readOnly).toBe(true);

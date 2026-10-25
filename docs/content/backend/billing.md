@@ -8,8 +8,9 @@ sidebar_label: Billing
 
 SaaS billing for the hosted platform: schools pay GradeBook. Two plans, a free
 trial, a grace period, and a read-only mode for schools whose subscription has
-lapsed. Payment providers are pluggable; the operator picks which ones a
-deployment offers. Provider setup is in [Billing providers](../billing-providers.md),
+lapsed. Payments go through **Stripe** only (Stripe Checkout to subscribe,
+the Stripe Customer Portal for cards and invoices); the provider layer stays
+pluggable so another one can be added later. Stripe setup is in [Billing providers](../billing-providers.md),
 every variable in [Environment variables](../environment-variables.md#billing),
 and the pre-launch walkthrough in the [staging checklist](../billing-staging.md).
 
@@ -26,26 +27,26 @@ and the pre-launch walkthrough in the [staging checklist](../billing-staging.md)
 | **Plans** | `per_user`: `BILLING_PER_USER_CENTS` (500) × billable users per month. `flat`: `BILLING_FLAT_CENTS` (30000) per month, unlimited users, quantity 1. |
 | **Billable user** | An active staff member whose active school is this one and who has a membership there, or an active student on the school's roster (with or without an account). At least 1 seat. |
 | **Trial** | `BILLING_TRIAL_DAYS` (30) from `max(school created, now)` when the school's row is first created - so on the first deploy with billing on, existing schools get a full trial from that day. |
-| **Grace** | `BILLING_GRACE_DAYS` (7) after a missed renewal / an overdue invoice before the school turns read-only. A cancellation or a trial end gets no grace. |
+| **Grace** | `BILLING_GRACE_DAYS` (7) after a missed renewal before the school turns read-only. A cancellation or a trial end gets no grace. |
 | **Read-only** | Reads work; mutations answer `402 { statusCode: 402, code: 'SUBSCRIPTION_REQUIRED', message }`. |
 | **Complimentary** | A platform admin can comp a school until a date: active without payment. |
 
 ## Architecture
 
 ```
-billing.config.ts        env -> BillingConfig (prices, trial, allowlist, admins, APP_URL)
-billing.registry.ts      every PaymentProvider; enabled() = allowedByEnv ∧ isConfigured ∧ not switched off
-billing.entitlement.ts   pure: subscription row (+ oldest open invoice) -> { status, readOnly }
+billing.config.ts        env -> BillingConfig (prices, trial, admins, APP_URL)
+billing.registry.ts      every PaymentProvider (today: Stripe); enabled() = isConfigured(); startup warning if none
+billing.entitlement.ts   pure: subscription row -> { status, readOnly }
 subscription.service.ts  lazy rows, cached entitlement (60s, invalidated on every billing write), user -> school
-seat.service.ts          billable counts, seat sync to subscription-mode providers
-invoice.service.ts       numbering, raise, sweep, mark paid / void, applyPaid
+seat.service.ts          billable counts, seat sync to the provider (Stripe quantity)
+invoice.service.ts       invoice numbering for invoices recorded from Stripe webhooks
 billing-events.service.ts  webhook events -> rows (idempotent, out-of-order safe)
 billing.service.ts       school admin API
 platform.service.ts      operator API, platform-admin check
 billing.interceptor.ts   global: 402 for mutations from read-only schools
-billing.scheduler.ts     hourly / daily sweeps under a Postgres advisory lock
+billing.scheduler.ts     hourly sweep under a Postgres advisory lock
 raw-body.ts              keeps the exact webhook bytes for signature checks
-providers/               payment-provider.ts (the interface) + one file per provider
+providers/               payment-provider.ts (the interface) + stripe.provider.ts
 ```
 
 ### Entitlement check
@@ -67,12 +68,8 @@ guard, so by then the route's `AuthGuard` has put the user on the request.
 `computeEntitlement` (pure, unit-tested) in order:
 
 1. `comp_until` in the future -> `active`.
-2. Invoice mode with an open invoice: read-only once `due_at + grace` passes
-   (unless still in trial); `past_due` is shown once it is due. An open invoice
-   not yet that late keeps a lapsed school writable, so a school can pay by
-   transfer after its trial ends.
-3. In the school's trial -> writable.
-4. By stored status: `active` writable until `current_period_end + grace`
+2. In the school's trial -> writable.
+3. By stored status: `active` writable until `current_period_end + grace`
    (no grace with `cancel_at_period_end`); `past_due` until period end + grace;
    `canceled` until period end; provider-side `trialing` until period end;
    `unpaid` / `incomplete` read-only.
@@ -87,9 +84,9 @@ Schema `billing` (`backend/prisma/schema/billing.prisma`, migration
 | Table | Key columns |
 | --- | --- |
 | `subscription` | one per school (`school_id` unique): `plan`, `status` (`trialing`/`active`/`past_due`/`canceled`/`unpaid`/`incomplete`), `provider`, `provider_customer_id`, `provider_subscription_id` (unique per provider), `quantity`, `trial_ends_at`, `current_period_start/end`, `cancel_at_period_end`, `comp_until`, `comp_note` |
-| `invoice` | `number` unique (`GB-YYYYMM-<seq>`), school, `plan`, `seats`, `amount_cents`, `currency`, `status` (`open`/`paid`/`void`/`uncollectible`), `provider`, `provider_invoice_id` (unique per provider), `period_start/end`, `due_at`, `paid_at`, `method`, `reference`, `note`, `marked_by` (account user). Partial unique `(school_id, period_start)` over our own non-void invoices: no double billing even with several API instances. |
+| `invoice` | `number` unique (`GB-YYYYMM-<seq>`), school, `plan`, `seats`, `amount_cents`, `currency`, `status` (`open`/`paid`/`void`/`uncollectible`), `provider`, `provider_invoice_id` (unique per provider), `period_start/end`, `due_at`, `paid_at`, `method`, `reference`, `note`, `marked_by` (account user). Rows are recorded from Stripe's `invoice.paid` webhooks (`status = paid`, `provider_invoice_id` = Stripe's invoice id). Older rows from the removed invoice-mode providers may still be present and are only shown as history. |
 | `payment_event` | `(provider, event_id)` unique - webhook idempotency; `type`, `school_id`, normalised `payload`, `processed_at`, `error` |
-| `provider_setting` | `provider_id` pk, `enabled`, `updated_by`, `updated_at` (no row = on) |
+| `provider_setting` | `provider_id` pk, `enabled`, `updated_by`, `updated_at`. **No longer read** (it held the old per-provider switches); kept so no destructive migration was needed. |
 | `platform_admin` | `user_id` unique (account user); plus `PLATFORM_ADMIN_EMAILS` (verified emails) |
 
 Rows are created lazily: on a school's first billing-relevant request
@@ -98,56 +95,41 @@ without one (`ensureAll`, one `INSERT ... SELECT`).
 
 ## Lifecycles
 
-### Subscription mode (Stripe, PayPal, Paddle)
+### Subscription lifecycle
 
 ```
-trialing ──checkout──> (provider checkout page) ──webhook subscription.updated(active)──> active
-active ──invoice.paid──> active (period moves on)
+trialing ──checkout──> (Stripe Checkout) ──webhook subscription.updated(active)──> active
+active ──invoice.paid──> active (period moves on; a paid invoice is recorded)
 active ──invoice.payment_failed──> past_due ──grace──> read_only
 active ──cancel (at period end)──> active + cancel_at_period_end ──period end──> canceled ──> read_only
 active ──subscription.canceled──> canceled (writable until the paid period ends)
 ```
 
-- Checkout records `plan`, `provider`, `quantity` (and the provider customer);
-  the status changes only when the provider's webhook confirms it.
+- Checkout records `plan`, `provider`, `quantity` (and the Stripe customer);
+  the status changes only when Stripe's webhook confirms it.
 - Seats: the hourly sweep counts billable users and calls
   `provider.updateQuantity` for per-user subscriptions whose count changed
   (skipped while `cancel_at_period_end`). Checkout sends the current count.
-- Cancel-at-period-end is ended by our hourly sweep too: PayPal only
-  suspends billing and never ends the subscription itself.
-- PayPal plan/quantity revisions may need the payer's approval; the adapter
-  logs the approval link and returns (see [Billing providers](../billing-providers.md)).
-
-### Invoice mode (WiPay, manual)
-
-```
-trialing ──checkout(plan, manual|wipay)──> invoice GB-YYYYMM-n open (due +14d) ──paid──> active, paid through period_end
-active ──7 days before period end: sweep raises next invoice──> open ──paid──> period end + 1 month
-open ──past due──> past_due (shown) ──+ grace──> read_only
-```
-
-- Checkout sets plan and provider, raises the first invoice now (voiding an
-  open one on another plan) and returns the provider's pay result: a WiPay
-  hosted-page redirect, or the manual bank-transfer instructions with the
-  invoice number to quote.
-- The sweep (daily, and `POST /platform/invoices/generate`) raises an invoice
-  for each invoice-mode school whose paid-through date (or trial end) is
-  within 7 days, never while one is open, never after `cancel_at_period_end`,
-  and not while comped. Period = paid-through date (or now, if lapsed) + 1
-  month; seats counted at issue time; due 14 days after issue.
-- Paying (WiPay `invoice.paid` with our invoice id, or a platform admin's
-  mark-paid) sets the subscription `active` with `current_period_end` = the
-  invoice's period end (a late payment buys a month from now).
-- Mark-paid: only `open`/`uncollectible` invoices (409 for paid or void).
-  Void: only unpaid ones. A provider payment for a void invoice is logged
-  for manual refund/reissue, not applied.
+- Cancel-at-period-end is also ended by our hourly sweep once the period is
+  over, in case the provider's own event is late.
+- Invoices: Stripe raises and collects every invoice. Each `invoice.paid` is
+  stored as a paid row numbered `GB-YYYYMM-<seq>` for the school's and the
+  operator's history; the invoice PDF and receipt live in Stripe (Customer
+  Portal). There is no void action: Stripe owns the invoices and we only
+  record paid ones. Payments are online only; an operator cannot mark an
+  invoice paid by hand (they can **comp** a school instead).
+- A subscription row whose `provider` is no longer registered (for example
+  `manual`, or any provider removed when billing went Stripe-only) is treated as
+  having no provider: nothing is called on it, it is never a "live"
+  subscription that blocks checkout, and the school can subscribe with
+  Stripe.
 
 ### Webhooks
 
-`POST /api/billing/webhooks/:providerId` (and `GET`, for hosted-page returns).
+`POST /api/billing/webhooks/:providerId` (Stripe: `/api/billing/webhooks/stripe`).
 Public; `raw-body.ts` keeps the exact request bytes for this route only (a
-`preParsing` hook, so JSON and form bodies still parse normally; other
-content types reach this route as a buffer and stay 415 elsewhere).
+`preParsing` hook, so JSON bodies still parse normally) so the signature can
+be checked over them.
 
 1. Unknown or unconfigured provider: 404.
 2. `provider.parseWebhook({ rawBody, headers, query })`: a
@@ -161,9 +143,6 @@ content types reach this route as a buffer and stay 415 elsewhere).
    older update; news about a superseded subscription (the school has a
    newer live one) is ignored; `subscription.canceled` only cancels the
    subscription the school holds.
-6. Browser returns (`GET`, or a POST with `Accept: text/html` or a form body,
-   as WiPay sends) are applied the same way and then redirected to
-   `${APP_URL}/dashboard/settings/billing?checkout=success|cancel`.
 
 ### Scheduling
 
@@ -171,7 +150,7 @@ content types reach this route as a buffer and stay 415 elsewhere).
 `onModuleInit` (not in tests, not with billing off), first tick 30 seconds
 after boot, then hourly. Each tick takes `pg_try_advisory_xact_lock` so only
 one API instance works at a time. Hourly: `ensureAll`, `expireCanceled`,
-seat sync. Daily: the invoice sweep.
+seat sync. There is no invoice sweep: Stripe raises invoices itself.
 
 ## HTTP API
 
@@ -188,58 +167,52 @@ All under `/api`, JSON camelCase.
 
 | Route | Body | Answer |
 | --- | --- | --- |
-| `GET /billing` | | summary: `enabled, plan, status, readOnly, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, provider, billableUsers, estimatedAmountCents, currency, prices { perUserCents, flatCents }, providers [{ id, label, mode }]` |
-| `POST /billing/checkout` | `{ plan, provider }` | `{ redirectUrl, instructions? }`; 400 provider not offered, 409 already subscribed |
+| `GET /billing` | | summary: `enabled, plan, status, readOnly, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, provider, billableUsers, estimatedAmountCents, currency, prices { perUserCents, flatCents }, providers [{ id, label }], paymentsConfigured` (`providers` is empty and `paymentsConfigured` false when Stripe is not configured) |
+| `POST /billing/checkout` | `{ plan, provider? }` (`provider` defaults to `stripe`, the only one) | `{ redirectUrl }` (Stripe Checkout); 503 payments not configured, 400 unknown provider, 409 already subscribed |
 | `POST /billing/change-plan` | `{ plan }` | summary |
 | `POST /billing/cancel` / `resume` | | summary; 409 nothing to cancel |
-| `POST /billing/portal` | | `{ url }` (null when the provider has none) |
+| `POST /billing/portal` | | `{ url }`: a Stripe Customer Portal session (null when the school has no Stripe subscription) |
 | `GET /billing/invoices` | | `[{ id, number, plan, seats, amountCents, currency, status, provider, periodStart, periodEnd, dueAt, paidAt, method }]` |
-| `POST /billing/invoices/:id/pay` | `{ provider }` | `{ redirectUrl, instructions? }`; 404 not this school's, 409 not open |
 
 **Platform admins** (404 for everyone else, and with billing off)
 
 | Route | Body |
 | --- | --- |
-| `GET /platform/overview` | -> `{ schools, trialing, active, pastDue, readOnly, mrrCents, currency, openInvoices }` |
-| `GET /platform/schools?search=&status=` | -> rows `{ schoolId, name, plan, status, readOnly, provider, billableUsers, trialEndsAt, currentPeriodEnd, openInvoices }` |
+| `GET /platform/overview` | -> `{ schools, trialing, active, pastDue, readOnly, mrrCents, currency, paymentsConfigured }` |
+| `GET /platform/schools?search=&status=` | -> rows `{ schoolId, name, plan, status, readOnly, provider, billableUsers, trialEndsAt, currentPeriodEnd }` |
 | `GET /platform/schools/:schoolId` | -> row + `compUntil, compNote, invoices, events [{ provider, type, createdAt }]` |
 | `POST /platform/schools/:schoolId/extend-trial` | `{ days: 1..365 }` (added to the later of now and the trial end) |
 | `POST /platform/schools/:schoolId/comp` | `{ until, note? }` |
 | `GET /platform/invoices?status=` | -> invoices + `schoolId, schoolName` |
-| `POST /platform/invoices/:id/mark-paid` | `{ method: bank_transfer\|cheque\|cash\|other, reference?, note? }` |
-| `POST /platform/invoices/:id/void` | `{ note? }` |
-| `POST /platform/invoices/generate` | -> `{ created }` |
-| `GET /platform/providers` | -> `[{ id, label, mode, allowedByEnv, configured, enabled }]` |
-| `PATCH /platform/providers/:id` | `{ enabled }`; 409 enabling one not allowed by env and configured |
 
 ## Adding a provider
 
+Stripe is the only provider today, but the seam is kept:
+
 1. Write `backend/src/billing/providers/<id>.provider.ts` implementing
-   `PaymentProvider` (`payment-provider.ts`): `id`, `label`, `mode`
-   (`subscription` or `invoice`), `isConfigured()` from its env vars, the
-   operations its mode needs (`createCheckout`, `updateQuantity`, `changePlan`,
-   `cancel`, `resume`, `portalUrl` for subscription mode; `payInvoice` for
-   invoice mode) and `parseWebhook`, which **must** verify the raw body and
-   throw `WebhookVerificationError` when it does not check out, and maps
-   provider events to `BillingEvent`s (unknown types -> `ignored`). Attach our
-   `schoolId` (subscription mode) or `invoiceId` (invoice mode) as metadata so
-   events can be matched.
-2. Register it in `defaultProviders()` in `billing.registry.ts`.
+   `PaymentProvider` (`payment-provider.ts`): `id`, `label`,
+   `isConfigured()` from its env vars, `createCheckout`, `updateQuantity`,
+   `changePlan`, `cancel`, `resume`, `portalUrl`, and `parseWebhook`, which
+   **must** verify the raw body and throw `WebhookVerificationError` when it
+   does not check out, and maps provider events to `BillingEvent`s (unknown
+   types -> `ignored`). Attach our `schoolId` as metadata so events can be
+   matched to a school.
+2. Register it in `defaultProviders()` in `billing.registry.ts`. It is
+   offered as soon as `isConfigured()` is true.
 3. Document its env vars in `backend/.env.example`,
    `infrastructure/env.example`, [Environment variables](../environment-variables.md#billing)
-   and [Billing providers](../billing-providers.md).
-4. Add its id to `PAYMENT_PROVIDERS` where it should be offered and point the
-   provider's webhooks at `${API_URL}/api/billing/webhooks/<id>`.
-
-Nothing else in the app knows which providers exist.
+   and [Billing providers](../billing-providers.md), and point its webhooks
+   at `${API_URL}/api/billing/webhooks/<id>`.
+4. With more than one provider configured, the school billing page needs a
+   provider choice again (checkout already accepts `provider`).
 
 ## Tests
 
-`bun test src/billing` covers config parsing, registry selection (env ×
-configured × switch), entitlement (trial, grace, comp, cancel, invoice
-lateness), the interceptor (off = no-op, reads, allowlist, 402 shape), seat
+`bun test src/billing` covers config parsing, registry selection (configured
+or not), entitlement (trial, grace, comp, cancel), the interceptor (off = no-op, reads, allowlist, 402 shape), seat
 counting and sync, event application (idempotency, retries, out-of-order),
-invoice numbering and sweep idempotency, mark-paid/void transitions, platform
-admin authorisation, the webhook controller and raw-body capture, and the
-manual provider. `bun run smoke` runs an end-to-end billing section when the
-API reports billing on, and checks every billing route is 404 when it is off.
+invoice numbering, platform admin authorisation, the webhook controller and
+raw-body capture, and the Stripe provider. `bun run smoke` runs a billing section when the API reports
+billing on (school and platform routes, read-only mode and its recovery,
+and that checkout answers 503 while Stripe is not configured), and checks every
+billing route is 404 when it is off.

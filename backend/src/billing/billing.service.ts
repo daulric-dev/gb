@@ -3,12 +3,11 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
-import { apiBase } from '@/sso/sso.config';
 import {
   amountFor,
   billingEnabled,
@@ -18,12 +17,11 @@ import {
   seatsFor,
 } from './billing.config';
 import { BillingRegistry, info } from './billing.registry';
-import { InvoiceService, invoiceDto, type InvoiceRow } from './invoice.service';
+import { invoiceDto } from './invoice.service';
 import { SeatService } from './seat.service';
 import { SubscriptionService, type SubscriptionRow } from './subscription.service';
 import type {
   BillingPlan,
-  CheckoutResult,
   PaymentProvider,
   ProviderSubscriptionRef,
 } from './providers/payment-provider';
@@ -35,28 +33,21 @@ export interface Caller {
 
 export interface PayResult {
   redirectUrl: string | null;
-  instructions?: string;
 }
 
 const LIVE = new Set(['active', 'trialing', 'past_due']);
 
-function payResult(r: CheckoutResult): PayResult {
-  return r.instructions !== undefined
-    ? { redirectUrl: r.redirectUrl, instructions: r.instructions }
-    : { redirectUrl: r.redirectUrl };
-}
+export const PAYMENTS_NOT_CONFIGURED =
+  'Payments are not configured yet - please contact support';
 
 /** School-side billing: what a school admin sees and does. */
 @Injectable()
 export class BillingService {
-  private readonly logger = new Logger(BillingService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly registry: BillingRegistry,
     private readonly subscriptions: SubscriptionService,
     private readonly seats: SeatService,
-    private readonly invoices: InvoiceService,
   ) {}
 
   /** GET /billing/status - any signed-in user; answers even when billing is off. */
@@ -102,12 +93,9 @@ export class BillingService {
   async summaryFor(schoolId: string) {
     const cfg = loadBillingConfig();
     const sub = await this.subscriptions.ensure(schoolId);
-    const [billableUsers, oldestDue, enabled] = await Promise.all([
-      this.seats.countBillable(schoolId),
-      this.subscriptions.oldestOpenDue(schoolId),
-      this.registry.enabled(),
-    ]);
-    const ent = this.subscriptions.evaluate(sub, oldestDue);
+    const billableUsers = await this.seats.countBillable(schoolId);
+    const enabled = this.registry.enabled();
+    const ent = this.subscriptions.evaluate(sub);
     const plan = (sub.plan as BillingPlan | null) ?? null;
     return {
       enabled: true,
@@ -123,6 +111,7 @@ export class BillingService {
       currency: cfg.currency,
       prices: { perUserCents: cfg.perUserCents, flatCents: cfg.flatCents },
       providers: enabled.map(info),
+      paymentsConfigured: enabled.length > 0,
     };
   }
 
@@ -135,122 +124,68 @@ export class BillingService {
     };
   }
 
-  private async enabledProvider(id: string): Promise<PaymentProvider> {
-    const provider = await this.registry.getEnabled(id);
+  /**
+   * The provider to check out with: the one asked for, or the only one
+   * configured when none is named. 503 when nothing is configured.
+   */
+  private checkoutProvider(id: string | undefined): PaymentProvider {
+    const enabled = this.registry.enabled();
+    if (enabled.length === 0) throw new ServiceUnavailableException(PAYMENTS_NOT_CONFIGURED);
+    if (!id) return enabled[0];
+    const provider = this.registry.getEnabled(id);
     if (!provider) throw new BadRequestException(`Payment provider "${id}" is not available`);
     return provider;
   }
 
-  async checkout(caller: Caller, plan: BillingPlan, providerId: string): Promise<PayResult> {
+  /**
+   * Start a subscription on the provider's hosted checkout. Plan and provider
+   * are recorded now; the status changes when the provider's webhook
+   * confirms the subscription.
+   */
+  async checkout(caller: Caller, plan: BillingPlan, providerId?: string): Promise<PayResult> {
     const school = await this.adminSchool(caller.id);
-    const provider = await this.enabledProvider(providerId);
+    const provider = this.checkoutProvider(providerId);
     const sub = await this.subscriptions.ensure(school.id);
     const cfg = loadBillingConfig();
 
-    const subscribedElsewhere =
-      sub.provider_subscription_id &&
-      LIVE.has(sub.status) &&
-      this.registry.find(sub.provider)?.mode === 'subscription';
-    if (subscribedElsewhere) {
+    // A live subscription with a provider we still know about must be changed
+    // or canceled, not doubled. A row left by a removed provider is not live.
+    const subscribed =
+      sub.provider_subscription_id && LIVE.has(sub.status) && this.registry.find(sub.provider);
+    if (subscribed) {
       throw new ConflictException(
         'The school already has a live subscription - change plan or cancel it first',
       );
     }
 
-    if (provider.mode === 'subscription') {
-      if (!provider.createCheckout) {
-        throw new BadRequestException(`${provider.label} cannot start a subscription`);
-      }
-      const billable = await this.seats.countBillable(school.id);
-      const quantity = seatsFor(plan, billable);
-      const result = await provider.createCheckout({
-        schoolId: school.id,
-        schoolName: school.name,
-        customerEmail: caller.email ?? '',
-        providerCustomerId: sub.provider === provider.id ? sub.provider_customer_id : null,
-        price: planPrice(cfg, plan),
-        quantity,
-        successUrl: billingReturnUrl(cfg, 'success'),
-        cancelUrl: billingReturnUrl(cfg, 'cancel'),
-        idempotencyKey: randomUUID(),
-      });
-      // Plan and provider are recorded now; the status changes when the
-      // provider's webhook confirms the subscription.
-      await this.prisma.subscription.update({
-        where: { school_id: school.id },
-        data: {
-          plan,
-          provider: provider.id,
-          quantity,
-          ...(result.providerCustomerId
-            ? { provider_customer_id: result.providerCustomerId }
-            : {}),
-          ...(sub.provider !== provider.id ? { provider_subscription_id: null } : {}),
-          updated_at: new Date(),
-        },
-      });
-      await this.subscriptions.invalidate(school.id);
-      return payResult(result);
-    }
-
-    // Invoice mode: choose the plan, raise the first invoice now, pay it.
-    const updated = await this.prisma.subscription.update({
+    const billable = await this.seats.countBillable(school.id);
+    const quantity = seatsFor(plan, billable);
+    const result = await provider.createCheckout({
+      schoolId: school.id,
+      schoolName: school.name,
+      customerEmail: caller.email ?? '',
+      providerCustomerId: sub.provider === provider.id ? sub.provider_customer_id : null,
+      price: planPrice(cfg, plan),
+      quantity,
+      successUrl: billingReturnUrl(cfg, 'success'),
+      cancelUrl: billingReturnUrl(cfg, 'cancel'),
+      idempotencyKey: randomUUID(),
+    });
+    await this.prisma.subscription.update({
       where: { school_id: school.id },
       data: {
         plan,
         provider: provider.id,
-        provider_subscription_id: null,
-        cancel_at_period_end: false,
+        quantity,
+        ...(result.providerCustomerId
+          ? { provider_customer_id: result.providerCustomerId }
+          : {}),
+        ...(sub.provider !== provider.id ? { provider_subscription_id: null } : {}),
         updated_at: new Date(),
       },
     });
-    const open = await this.prisma.invoice.findFirst({
-      where: { school_id: school.id, status: 'open' },
-    });
-    if (open && open.plan !== plan) {
-      // Re-priced: the old one is replaced.
-      await this.invoices.voidInvoice(open.id, `Replaced at checkout (${plan})`);
-    }
-    const { invoice } = await this.invoices.raise(updated);
     await this.subscriptions.invalidate(school.id);
-    return this.payInvoiceWith(provider, invoice, school, caller);
-  }
-
-  private async payInvoiceWith(
-    provider: PaymentProvider,
-    inv: InvoiceRow,
-    school: { id: string; name: string },
-    caller: Caller,
-  ): Promise<PayResult> {
-    if (provider.mode !== 'invoice' || !provider.payInvoice) {
-      throw new BadRequestException(`${provider.label} cannot pay invoices`);
-    }
-    const cfg = loadBillingConfig();
-    const result = await provider.payInvoice({
-      invoiceId: inv.id,
-      invoiceNumber: inv.number,
-      schoolId: school.id,
-      schoolName: school.name,
-      customerEmail: caller.email ?? '',
-      amountCents: inv.amount_cents,
-      currency: inv.currency,
-      description: `GradeBook ${inv.plan === 'flat' ? 'flat' : 'per-user'} plan, invoice ${inv.number}`,
-      successUrl: billingReturnUrl(cfg, 'success'),
-      cancelUrl: billingReturnUrl(cfg, 'cancel'),
-      callbackUrl: `${apiBase()}/api/billing/webhooks/${provider.id}`,
-    });
-    return payResult(result);
-  }
-
-  async payInvoice(caller: Caller, invoiceId: string, providerId: string): Promise<PayResult> {
-    const school = await this.adminSchool(caller.id);
-    const inv = await this.prisma.invoice
-      .findUnique({ where: { id: invoiceId } })
-      .catch(() => null);
-    if (!inv || inv.school_id !== school.id) throw new NotFoundException('Invoice not found');
-    if (inv.status !== 'open') throw new ConflictException(`Invoice is ${inv.status}`);
-    const provider = await this.enabledProvider(providerId);
-    return this.payInvoiceWith(provider, inv, school, caller);
+    return { redirectUrl: result.redirectUrl };
   }
 
   async changePlan(userId: string, plan: BillingPlan) {
@@ -259,14 +194,15 @@ export class BillingService {
     const provider = this.registry.find(sub.provider);
     const ref = this.ref(sub);
     let quantity = sub.quantity;
-    if (provider?.mode === 'subscription' && ref && LIVE.has(sub.status)) {
+    if (provider && ref && LIVE.has(sub.status)) {
       if (!provider.changePlan) {
         throw new BadRequestException(`${provider.label} cannot change plans`);
       }
       quantity = seatsFor(plan, await this.seats.countBillable(school.id));
       await provider.changePlan(ref, planPrice(loadBillingConfig(), plan), quantity);
     }
-    // Invoice mode: the next invoice is raised on the new plan.
+    // Without a live provider subscription the plan is just remembered for
+    // the next checkout.
     await this.prisma.subscription.update({
       where: { school_id: school.id },
       data: { plan, quantity, updated_at: new Date() },
@@ -278,12 +214,14 @@ export class BillingService {
   async setCancel(userId: string, cancel: boolean) {
     const school = await this.adminSchool(userId);
     const sub = await this.subscriptions.ensure(school.id);
-    const provider = this.registry.find(sub.provider);
-    if (!provider || !sub.plan) {
+    if (!sub.provider || !sub.plan) {
       throw new ConflictException('There is no subscription to change');
     }
+    // An unknown provider id (one since removed) has nothing to call; the
+    // flag is still recorded and the hourly sweep ends the row on time.
+    const provider = this.registry.find(sub.provider);
     const ref = this.ref(sub);
-    if (provider.mode === 'subscription' && ref) {
+    if (provider && ref) {
       if (cancel) {
         if (!provider.cancel) throw new BadRequestException(`${provider.label} cannot cancel`);
         await provider.cancel(ref, { atPeriodEnd: true });

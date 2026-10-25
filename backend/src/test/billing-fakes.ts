@@ -23,10 +23,6 @@ export class FakeProvider implements PaymentProvider {
         providerCustomerId: 'cus_1',
       }),
   );
-  payInvoice = mock(
-    (..._args: any[]): Promise<CheckoutResult> =>
-      Promise.resolve({ redirectUrl: 'https://pay.test/invoice', providerRef: null }),
-  );
   updateQuantity = mock((..._args: any[]): Promise<void> => Promise.resolve());
   changePlan = mock((..._args: any[]): Promise<void> => Promise.resolve());
   cancel = mock((..._args: any[]): Promise<void> => Promise.resolve());
@@ -34,10 +30,7 @@ export class FakeProvider implements PaymentProvider {
   portalUrl = mock((..._args: any[]): Promise<string | null> => Promise.resolve('https://pay.test/portal'));
   parseWebhook = mock((..._args: any[]): Promise<BillingEvent[]> => Promise.resolve([]));
 
-  constructor(
-    readonly id = 'fake',
-    readonly mode: 'subscription' | 'invoice' = 'subscription',
-  ) {
+  constructor(readonly id = 'fake') {
     this.label = `Fake ${id}`;
   }
 
@@ -78,14 +71,14 @@ export function invoiceRow(over: Record<string, unknown> = {}) {
     seats: 10,
     amount_cents: 5000,
     currency: 'USD',
-    status: 'open',
-    provider: 'manual' as string | null,
-    provider_invoice_id: null as string | null,
+    status: 'paid',
+    provider: 'fake' as string | null,
+    provider_invoice_id: 'in_1' as string | null,
     period_start: new Date('2026-10-01T00:00:00Z'),
     period_end: new Date('2026-11-01T00:00:00Z'),
-    due_at: new Date('2026-10-15T00:00:00Z'),
-    paid_at: null as Date | null,
-    method: null as string | null,
+    due_at: new Date('2026-10-01T00:00:00Z'),
+    paid_at: new Date('2026-10-01T00:00:00Z') as Date | null,
+    method: 'fake' as string | null,
     reference: null as string | null,
     note: null as string | null,
     marked_by: null as string | null,

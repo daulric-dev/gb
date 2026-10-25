@@ -42,24 +42,21 @@ As soon as a payment goes through, the school is writable again.
 Open **Settings → Billing** (or **Billing** in the Admin section of the sidebar). Only administrators (anyone allowed to manage the school's settings) can see it.
 
 1. Pick **Per user** or **Flat**.
-2. Click a payment method under **Pay with**. Which methods appear depends on the platform:
-   - **Card / PayPal / Paddle** - you are sent to the provider's secure checkout. After paying you come back to the billing page; it refreshes on its own. These renew automatically each month.
-   - **WiPay** - you are sent to WiPay to pay the first invoice. Later months arrive as invoices.
-   - **Manual (bank transfer etc.)** - an invoice is issued and the page shows how to pay it. Your school stays active once the payment is recorded by the platform team.
+2. Click **Continue to payment**. You are sent to **Stripe**'s secure checkout page to enter your card - GradeBook never sees your card details. After paying you come back to the billing page; it refreshes on its own. The subscription renews automatically each month.
+
+If the page says **payments are not configured yet**, the platform has not finished setting up payments: contact support. Your trial and data are not affected.
 
 ### Changing plan, canceling, payment method
 
-- **Switch to the … plan** changes plan for the next billing period.
+- **Switch to the … plan** changes plan; Stripe prorates the difference on your next invoice.
 - **Cancel subscription** cancels at the end of the period you have paid for. Until then everything works, and the page shows when it will end. **Resume subscription** undoes it.
-- **Manage payment method** (card-style providers only) opens the provider's page to update your card or download receipts.
+- **Manage payment method & invoices** opens Stripe's customer portal, where you can update your card and download invoices and receipts.
 
 ## Invoices
 
-Schools paying by invoice (WiPay or manual) get one invoice per month, numbered `GB-YYYYMM-…`, for the plan price at the number of users counted that day. Each is due **14 days** after it is issued.
+Stripe bills you each month for the plan price (per-user plans at the number of users counted at the time; changes during the month are prorated). Each paid invoice is listed in the **Invoices** table on the billing page, numbered `GB-YYYYMM-…`, with period, users, amount and paid date. The invoice PDFs and receipts themselves are in Stripe's portal (**Manage payment method & invoices**).
 
-The **Invoices** table on the billing page lists them with period, seats, amount, status and due or paid date. Open invoices have a **Pay** button; with more than one invoice-based method you choose which. Unpaid invoices past their due date plus a 7-day grace period make the school read-only until paid.
-
-Card-style subscriptions are receipted by the payment provider rather than listed here.
+If a renewal payment fails, the school shows **Past due** and stays writable for 7 days while Stripe retries; update your card in the portal to fix it.
 
 ## In the mobile app
 

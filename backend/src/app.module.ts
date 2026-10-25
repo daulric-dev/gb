@@ -39,6 +39,8 @@ import { DiscussionModule } from '@/discussion/discussion.module';
 import { CalendarModule } from '@/calendar/calendar.module';
 import { CourseNotificationModule } from '@/course-notification/course-notification.module';
 import { BillingModule } from '@/billing/billing.module';
+import { ErasureModule } from '@/erasure/erasure.module';
+import { RetentionModule } from '@/retention/retention.module';
 
 @Module({
   imports: [
@@ -121,6 +123,8 @@ import { BillingModule } from '@/billing/billing.module';
     CalendarModule,
     CourseNotificationModule,
     BillingModule,
+    ErasureModule,
+    RetentionModule,
   ],
   controllers: [AppController],
   providers: [

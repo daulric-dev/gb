@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  BadRequestException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, invoiceRow, subRow } from '@/test/billing-fakes';
 import { BillingRegistry } from './billing.registry';
@@ -8,40 +12,32 @@ import { BillingService } from './billing.service';
 let prisma: MockPrisma;
 let sub: ReturnType<typeof subRow>;
 let subp: FakeProvider;
-let manual: FakeProvider;
-let invoices: { raise: ReturnType<typeof mock>; voidInvoice: ReturnType<typeof mock> };
+let other: FakeProvider;
 let service: BillingService;
 const savedEnv = { ...process.env };
 const caller = { id: 'admin-1', email: 'admin@x.test' };
 
 beforeEach(() => {
   process.env.BILLING_ENABLED = 'true';
-  process.env.PAYMENT_PROVIDERS = 'subp,manual';
   process.env.APP_URL = 'https://app.gb.test';
-  process.env.API_URL = 'https://api.gb.test';
   prisma = createMockPrisma();
   sub = subRow({ trial_ends_at: new Date(Date.now() + 5 * 86_400_000) });
   subp = new FakeProvider('subp');
-  manual = new FakeProvider('manual', 'invoice');
-  manual.payInvoice.mockResolvedValue({ redirectUrl: null, providerRef: null, instructions: 'Pay GB-202610-0001' });
-  const registry = new BillingRegistry(prisma as never, [subp, manual]);
+  other = new FakeProvider('other');
+  other.configured = false;
+  const registry = new BillingRegistry([subp, other]);
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
   prisma.school.findUnique.mockResolvedValue({ id: 'school-1', name: 'Riverside' });
   prisma.subscription.update.mockImplementation(async ({ data }: any) => Object.assign(sub, data));
   const subscriptions = {
     ensure: async () => sub,
     invalidate: async () => undefined,
-    oldestOpenDue: async () => null,
     evaluate: () => ({ status: sub.status, readOnly: false }),
     schoolOfUser: async () => 'school-1',
     entitlement: async () => ({ status: 'trialing', readOnly: false, trialEndsAt: '2026-11-01T00:00:00.000Z' }),
   };
-  invoices = {
-    raise: mock(async () => ({ invoice: invoiceRow(), created: true })),
-    voidInvoice: mock(async () => invoiceRow({ status: 'void' })),
-  };
   const seats = { countBillable: async () => 16 };
-  service = new BillingService(prisma as never, registry, subscriptions as never, seats as never, invoices as never);
+  service = new BillingService(prisma as never, registry, subscriptions as never, seats as never);
 });
 afterEach(() => {
   process.env = { ...savedEnv };
@@ -58,7 +54,7 @@ describe('status', () => {
 });
 
 describe('summary', () => {
-  test('contract shape with estimate and enabled providers', async () => {
+  test('contract shape with estimate and the configured providers', async () => {
     const s = await service.summary('admin-1');
     expect(s).toMatchObject({
       enabled: true,
@@ -70,16 +66,21 @@ describe('summary', () => {
       estimatedAmountCents: 8000,
       currency: 'USD',
       prices: { perUserCents: 500, flatCents: 30000 },
-      providers: [
-        { id: 'subp', label: 'Fake subp', mode: 'subscription' },
-        { id: 'manual', label: 'Fake manual', mode: 'invoice' },
-      ],
+      providers: [{ id: 'subp', label: 'Fake subp' }],
+      paymentsConfigured: true,
     });
+  });
+
+  test('nothing configured: paymentsConfigured false, no providers', async () => {
+    subp.configured = false;
+    const s = await service.summary('admin-1');
+    expect(s.providers).toEqual([]);
+    expect(s.paymentsConfigured).toBe(false);
   });
 });
 
 describe('checkout', () => {
-  test('subscription mode: provider checkout with prices, seats and return URLs', async () => {
+  test('provider checkout with prices, seats and return URLs', async () => {
     const result = await service.checkout(caller, 'per_user', 'subp');
     expect(result).toEqual({ redirectUrl: 'https://pay.test/checkout' });
     const ctx = subp.createCheckout.mock.calls[0][0] as any;
@@ -96,34 +97,35 @@ describe('checkout', () => {
     expect(sub).toMatchObject({ plan: 'per_user', provider: 'subp', provider_customer_id: 'cus_1', quantity: 16, status: 'trialing' });
   });
 
-  test('flat plan checks out one seat', async () => {
-    await service.checkout(caller, 'flat', 'subp');
+  test('no provider named: the configured one is used', async () => {
+    await service.checkout(caller, 'flat');
+    expect(subp.createCheckout).toHaveBeenCalledTimes(1);
     expect((subp.createCheckout.mock.calls[0][0] as any).quantity).toBe(1);
   });
 
-  test('invoice mode: plan set, invoice raised, its pay result returned', async () => {
-    const result = await service.checkout(caller, 'per_user', 'manual');
-    expect(result).toEqual({ redirectUrl: null, instructions: 'Pay GB-202610-0001' });
-    expect(invoices.raise).toHaveBeenCalledTimes(1);
-    expect(sub).toMatchObject({ plan: 'per_user', provider: 'manual', provider_subscription_id: null });
-    expect((manual.payInvoice.mock.calls[0][0] as any).callbackUrl).toBe('https://api.gb.test/api/billing/webhooks/manual');
+  test('nothing configured: 503 with a clear message', async () => {
+    subp.configured = false;
+    const err = await service.checkout(caller, 'flat').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ServiceUnavailableException);
+    expect((err as Error).message).toContain('not configured');
+    expect(subp.createCheckout).not.toHaveBeenCalled();
   });
 
-  test('invoice mode: an open invoice on another plan is replaced', async () => {
-    prisma.invoice.findFirst.mockResolvedValue(invoiceRow({ plan: 'flat' }));
-    await service.checkout(caller, 'per_user', 'manual');
-    expect(invoices.voidInvoice).toHaveBeenCalledTimes(1);
-  });
-
-  test('a provider that is not enabled is refused (400)', async () => {
-    process.env.PAYMENT_PROVIDERS = 'manual';
-    await expect(service.checkout(caller, 'per_user', 'subp')).rejects.toBeInstanceOf(BadRequestException);
+  test('an unconfigured, unknown or removed provider is refused (400)', async () => {
+    await expect(service.checkout(caller, 'per_user', 'other')).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.checkout(caller, 'per_user', 'nope')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.checkout(caller, 'per_user', 'manual')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   test('a live provider subscription must be changed, not re-bought (409)', async () => {
     Object.assign(sub, { provider: 'subp', provider_subscription_id: 'sub_1', status: 'active', plan: 'flat' });
     await expect(service.checkout(caller, 'per_user', 'subp')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  test('a row left by a removed provider can re-subscribe', async () => {
+    Object.assign(sub, { provider: 'manual', plan: 'per_user', status: 'trialing', cancel_at_period_end: true });
+    expect(await service.checkout(caller, 'flat')).toEqual({ redirectUrl: 'https://pay.test/checkout' });
+    expect(sub).toMatchObject({ provider: 'subp', plan: 'flat', provider_subscription_id: null });
   });
 });
 
@@ -156,28 +158,24 @@ describe('plan changes, cancel, resume, portal', () => {
     await expect(service.setCancel('admin-1', true)).rejects.toBeInstanceOf(ConflictException);
   });
 
-  test('portal url from the provider, null otherwise', async () => {
+  test('a removed provider id does not crash: changes are recorded locally', async () => {
+    Object.assign(sub, { provider: 'manual', provider_subscription_id: null, status: 'trialing', plan: 'per_user' });
+    await service.changePlan('admin-1', 'flat');
+    await service.setCancel('admin-1', true);
+    expect(sub).toMatchObject({ plan: 'flat', cancel_at_period_end: true });
+    expect(await service.portal('admin-1')).toEqual({ url: null });
+    expect(subp.changePlan).not.toHaveBeenCalled();
+    expect(subp.cancel).not.toHaveBeenCalled();
+  });
+
+  test('portal url from the provider, null without a subscription', async () => {
     expect(await service.portal('admin-1')).toEqual({ url: 'https://pay.test/portal' });
-    Object.assign(sub, { provider: 'manual', provider_subscription_id: null });
+    Object.assign(sub, { provider_subscription_id: null });
     expect(await service.portal('admin-1')).toEqual({ url: null });
   });
 });
 
 describe('invoices', () => {
-  test('pay: only the school\'s own open invoices', async () => {
-    prisma.invoice.findUnique.mockResolvedValue(invoiceRow({ school_id: 'other' }));
-    await expect(service.payInvoice(caller, 'inv-1', 'manual')).rejects.toBeInstanceOf(NotFoundException);
-    prisma.invoice.findUnique.mockResolvedValue(invoiceRow({ status: 'paid' }));
-    await expect(service.payInvoice(caller, 'inv-1', 'manual')).rejects.toBeInstanceOf(ConflictException);
-    prisma.invoice.findUnique.mockResolvedValue(invoiceRow());
-    expect(await service.payInvoice(caller, 'inv-1', 'manual')).toEqual({ redirectUrl: null, instructions: 'Pay GB-202610-0001' });
-  });
-
-  test('a subscription-mode provider cannot pay invoices (400)', async () => {
-    prisma.invoice.findUnique.mockResolvedValue(invoiceRow());
-    await expect(service.payInvoice(caller, 'inv-1', 'subp')).rejects.toBeInstanceOf(BadRequestException);
-  });
-
   test('list maps to the contract shape', async () => {
     prisma.invoice.findMany.mockResolvedValue([invoiceRow()]);
     expect(await service.listInvoices('admin-1')).toEqual([
@@ -188,13 +186,13 @@ describe('invoices', () => {
         seats: 10,
         amountCents: 5000,
         currency: 'USD',
-        status: 'open',
-        provider: 'manual',
+        status: 'paid',
+        provider: 'fake',
         periodStart: '2026-10-01T00:00:00.000Z',
         periodEnd: '2026-11-01T00:00:00.000Z',
-        dueAt: '2026-10-15T00:00:00.000Z',
-        paidAt: null,
-        method: null,
+        dueAt: '2026-10-01T00:00:00.000Z',
+        paidAt: '2026-10-01T00:00:00.000Z',
+        method: 'fake',
       },
     ]);
   });

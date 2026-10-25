@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Controller,
-  Get,
   HttpCode,
   InternalServerErrorException,
   Logger,
@@ -9,13 +8,11 @@ import {
   Param,
   Post,
   Req,
-  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
-import type { FastifyReply, FastifyRequest } from 'fastify';
-import { billingReturnUrl, loadBillingConfig } from './billing.config';
+import type { FastifyRequest } from 'fastify';
 import { BillingEnabledGuard } from './billing.guards';
 import { BillingEventsService } from './billing-events.service';
 import { BillingRegistry } from './billing.registry';
@@ -45,8 +42,8 @@ function flatten(source: unknown): Record<string, string | undefined> {
 }
 
 /**
- * Provider webhooks (POST) and hosted-page returns (GET). Public: trust comes
- * from each provider verifying its signature over the exact raw body.
+ * Provider webhooks (server-to-server POSTs, e.g. Stripe's). Public: trust
+ * comes from the provider verifying its signature over the exact raw body.
  * Verification failures answer 400; any other failure answers 500 so the
  * provider retries; applied events are idempotent.
  */
@@ -62,9 +59,11 @@ export class BillingWebhookController {
     private readonly events: BillingEventsService,
   ) {}
 
-  private async receive(providerId: string, req: WebhookReq): Promise<BillingEvent[]> {
-    const provider = this.registry.find(providerId);
-    if (!provider || !provider.isConfigured()) throw new NotFoundException();
+  @Post(':providerId')
+  @HttpCode(200)
+  async post(@Param('providerId') providerId: string, @Req() req: WebhookReq) {
+    const provider = this.registry.getEnabled(providerId);
+    if (!provider) throw new NotFoundException();
 
     const request: WebhookRequest = {
       rawBody: req.rawBody ?? Buffer.alloc(0),
@@ -90,57 +89,6 @@ export class BillingWebhookController {
       this.logger.error(`${providerId} webhook apply failed: ${(err as Error).message}`);
       throw new InternalServerErrorException('Webhook processing failed');
     }
-    return events;
-  }
-
-  /**
-   * A browser rather than a provider's server: WiPay sends the payer back to
-   * the callback URL (GET with a query, or a form POST). Those are applied
-   * and then redirected to the billing page; nothing retries them.
-   */
-  private isBrowserReturn(req: WebhookReq): boolean {
-    if (req.method === 'GET') return true;
-    const accept = String(req.headers.accept ?? '');
-    const type = String(req.headers['content-type'] ?? '');
-    return (
-      accept.includes('text/html') ||
-      type.startsWith('application/x-www-form-urlencoded')
-    );
-  }
-
-  private async browserReturn(providerId: string, req: WebhookReq, reply: FastifyReply) {
-    const cfg = loadBillingConfig();
-    let paid = false;
-    try {
-      const events = await this.receive(providerId, req);
-      paid = events.some((e) => e.type === 'invoice.paid');
-    } catch (err) {
-      if (err instanceof NotFoundException) throw err;
-    }
-    return reply.redirect(billingReturnUrl(cfg, paid ? 'success' : 'cancel'), 302);
-  }
-
-  @Post(':providerId')
-  @HttpCode(200)
-  async post(
-    @Param('providerId') providerId: string,
-    @Req() req: WebhookReq,
-    @Res() reply: FastifyReply,
-  ) {
-    if (this.isBrowserReturn(req)) {
-      return this.browserReturn(providerId, req, reply);
-    }
-    await this.receive(providerId, req);
-    return reply.status(200).send({ received: true });
-  }
-
-  /** A browser coming back from a hosted payment page: apply it, then go to the app. */
-  @Get(':providerId')
-  get(
-    @Param('providerId') providerId: string,
-    @Req() req: WebhookReq,
-    @Res() reply: FastifyReply,
-  ) {
-    return this.browserReturn(providerId, req, reply);
+    return { received: true };
   }
 }

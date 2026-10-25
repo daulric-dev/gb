@@ -1,31 +1,37 @@
 {
   "title": "Terms of Service",
-  "lastUpdated": "April 2026",
+  "lastUpdated": "October 2026",
   "crossLink": { "href": "/privacy", "label": "Privacy Policy" },
   "sections": [
     {
       "heading": "Acceptance of Terms",
       "paragraphs": [
-        "By accessing or using GradeBook (\"the Service\"), you agree to be bound by these Terms of Service. If you do not agree to these terms, you may not use the Service. Continued use of GradeBook after any updates to these terms constitutes acceptance of the revised terms."
+        "By accessing or using GradeBook (\"the Service\"), you agree to these Terms of Service and to our Privacy Policy. If you use GradeBook on behalf of a school, you confirm that you are authorised to accept these terms for that school. If you do not agree, you may not use the Service."
       ]
     },
     {
       "heading": "Description of Service",
       "paragraphs": [
-        "GradeBook is a school management platform that enables educators to manage academic years, terms, classes, student enrollment, subject assignments, assessments, and grade calculations. The Service is available to any educator - GradeBook is not affiliated with or partnered with any specific school. Users independently create accounts and set up schools on the platform."
+        "GradeBook is a learning platform for schools. Schools create courses with modules, pages, files, assignments, quizzes and discussions; staff set and mark work, keep gradebooks and take attendance; students hand in work, see their grades and check in to class; and members of a school can message each other. The Service is available on the web and in the GradeBook mobile app.",
+        "GradeBook is not affiliated with any particular school. Schools can also run their own copy of GradeBook on their own servers; these terms cover the service we host."
       ]
     },
     {
-      "heading": "Account Responsibilities",
+      "heading": "Accounts and Sign-in",
       "paragraphs": [
-        "When using GradeBook, you agree to:"
+        "You sign in with a one-time code sent to your email, or with Google, Microsoft or your school's single sign-on where your school has set it up. When using GradeBook, you agree to:"
       ],
       "list": [
-        "Provide accurate and complete information during registration and onboarding",
-        "Keep your email and login credentials secure",
-        "Not share your account or authentication codes with others",
-        "Notify us immediately if you suspect unauthorized access to your account",
-        "Use the Service only for its intended purpose of school administration and grading"
+        "Provide accurate information when you create your account and join a school",
+        "Keep access to your email account and sign-in codes secure and never share them",
+        "Use only the school, courses and roles you have been given",
+        "Tell your school administrator or us immediately if you suspect unauthorised access to your account"
+      ]
+    },
+    {
+      "heading": "Schools, Roles and Access",
+      "paragraphs": [
+        "A school's administrators control who belongs to the school, which staff roles and permissions they have, and whether people may join automatically with their school email address or must be approved. Inside a course, teachers manage the course, teaching assistants can mark and post announcements, and students see the published content and their own work and grades. You agree to respect these boundaries and not attempt to get around them."
       ]
     },
     {
@@ -34,67 +40,70 @@
         "You agree not to:"
       ],
       "list": [
-        "Enter false, misleading, or fabricated student records or grades",
-        "Attempt to access data belonging to other schools or classes you are not assigned to",
-        "Use the Service to harass, discriminate against, or harm any individual",
-        "Reverse-engineer, modify, or create derivative works based on the Service",
-        "Use automated tools to scrape, crawl, or extract data from the Service",
-        "Interfere with or disrupt the operation of the Service"
+        "Enter false, misleading or fabricated student records, marks or attendance",
+        "Hand in work that is not yours, or help others cheat, where your school forbids it",
+        "Access, or try to access, schools, courses, conversations or files you have not been given",
+        "Upload content that is unlawful, infringes someone else's rights, or contains malware",
+        "Use the Service to harass, bully, discriminate against or harm anyone",
+        "Reverse-engineer, scrape or overload the Service, or interfere with its security or operation"
       ]
     },
     {
-      "heading": "Data and Content Ownership",
+      "heading": "Your Content and Data",
       "paragraphs": [
-        "You retain ownership of all academic data, student records, and grades you enter into GradeBook. You are responsible for the accuracy and legality of the data you enter, including ensuring you have the necessary authorization to input student information. We do not claim ownership over your content. By using the Service, you grant us a limited license to store, process, and display your data solely for the purpose of operating GradeBook."
+        "You and your school keep ownership of all content and records you put into GradeBook, including coursework, files, marks and messages. You are responsible for having the right to upload it and, for schools, for having a lawful basis and any consent needed for student data. You give us a limited licence to store, process and display that content only to provide the Service to you and your school.",
+        "For school data, we act as the school's data processor and process it only on the school's instructions, as described in our Privacy Policy. Schools that need a signed data processing agreement can request one at privacy@daulric.dev."
       ]
     },
     {
-      "heading": "Roles and Access Control",
+      "heading": "Plans, Trial and Payment",
       "paragraphs": [
-        "GradeBook implements role-based access control. Class teachers have full control over their assigned classes, including student enrollment and subject assignments. Subject teachers can only access data for the subjects and students they are assigned to. You agree to respect the access boundaries set by the system and not attempt to circumvent them."
-      ]
-    },
-    {
-      "heading": "Service Availability",
-      "paragraphs": [
-        "We strive to keep GradeBook available and reliable, but we do not guarantee uninterrupted access. The Service may be temporarily unavailable due to maintenance, updates, or circumstances beyond our control. We are not liable for any loss or inconvenience caused by downtime."
-      ]
-    },
-    {
-      "heading": "Data Analytics",
-      "paragraphs": [
-        "We may use aggregated and anonymized data derived from your use of GradeBook for analytics purposes, including but not limited to:"
+        "These terms apply to schools using the hosted service on a paid plan:"
       ],
       "list": [
-        "Understanding usage patterns to improve the Service",
-        "Generating statistical insights on academic performance trends across schools",
-        "Measuring the effectiveness of features and identifying areas for improvement",
-        "Producing reports on platform-wide metrics such as active users, grading activity, and system performance"
+        { "bold": "Trial", "text": "a new school gets a free trial with all features. The length of the trial is shown in the school's Billing settings." },
+        { "bold": "Plans", "text": "a school chooses a per-user plan, billed for each active student and staff member, or a flat monthly plan with unlimited users. Current prices are shown in the school's Billing settings before you subscribe." },
+        { "bold": "Payment", "text": "payments are made online and processed by our payment provider, Stripe; we do not accept bank transfers, cheques or cash. Subscriptions renew monthly until cancelled; per-user plans are adjusted as the number of active users changes." },
+        { "bold": "Cancellation", "text": "a school administrator can cancel at any time; the plan stays active until the end of the paid period." },
+        { "bold": "Unpaid or expired plans", "text": "if the trial ends or payment lapses, the school becomes read-only: everyone can still view their data, but changes are paused until the plan is renewed. We do not delete a school's data because a payment is late." }
       ],
-      "footer": "Analytics data is stripped of personally identifiable information and cannot be used to identify individual students, teachers, or schools. We may share anonymized, aggregated data with trusted third-party analytics providers who assist us in processing and interpreting this data. These providers are contractually bound to use the data solely for the purposes described above and are prohibited from re-identifying or selling the data. By using GradeBook, you consent to the collection, use, and third-party processing of anonymized data for these purposes."
+      "footer": "Schools that run GradeBook on their own servers are not billed by us, and these payment terms do not apply to them."
+    },
+    {
+      "heading": "Service Availability and Backups",
+      "paragraphs": [
+        "We work to keep GradeBook available and reliable, and keep encrypted backups so data can be recovered after a failure, but we do not guarantee uninterrupted access. The Service may be temporarily unavailable for maintenance, updates or reasons beyond our control. Schools remain responsible for keeping any copies of records they are legally required to retain."
+      ]
+    },
+    {
+      "heading": "Aggregated Statistics",
+      "paragraphs": [
+        "We may produce aggregated statistics about how the Service is used, such as the number of active courses or how often features are used. These statistics never identify an individual student, staff member or school. We do not share personal data with third-party analytics providers."
+      ]
     },
     {
       "heading": "Limitation of Liability",
       "paragraphs": [
-        "GradeBook is provided \"as is\" without warranties of any kind, express or implied. To the fullest extent permitted by law, we shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of the Service, including but not limited to loss of data, loss of revenue, or any damages resulting from errors in grade calculations."
+        "GradeBook is provided \"as is\" without warranties of any kind, to the extent the law allows. We are not liable for indirect, incidental, special or consequential damages arising from your use of the Service. Teachers remain responsible for checking marks and grades before relying on them. Nothing in these terms limits liability that cannot be limited by law, or your rights as a consumer or a data subject."
       ]
     },
     {
-      "heading": "Termination",
+      "heading": "Ending Your Use",
       "paragraphs": [
-        "You may delete your account at any time from the Settings page. Deleting your account will permanently remove your profile and associated data. We also reserve the right to suspend or terminate your access to GradeBook if you violate these Terms of Service or engage in activity that disrupts the Service. Upon termination, your right to use the Service ceases immediately."
+        "You may delete your account at any time from the Settings page. Deleting your account immediately removes your profile, sign-in details, the files you own and your chat messages; records your school keeps about you (such as grades or attendance) stay under the school's control. Deleted data is removed from our backups as they expire, as described in our Privacy Policy.",
+        "We may suspend or end access for anyone who breaks these terms or puts the Service or its users at risk. A school leaving GradeBook can ask us to export or delete its data at privacy@daulric.dev."
       ]
     },
     {
       "heading": "Changes to These Terms",
       "paragraphs": [
-        "We may modify these Terms of Service at any time. Material changes will be communicated through the Service. Your continued use of GradeBook after such changes constitutes acceptance of the updated terms."
+        "We may update these terms as the Service changes. We will show the date of the latest version at the top of this page and tell users through the Service before any material change takes effect. If you do not accept the changes, you may stop using the Service and delete your account."
       ]
     },
     {
       "heading": "Contact",
       "paragraphs": [
-        "If you have questions about these Terms of Service, please contact the GradeBook team."
+        "For questions about these Terms of Service, email privacy@daulric.dev."
       ]
     }
   ]

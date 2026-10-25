@@ -8,6 +8,7 @@ import { CourseCopyService, relinkIds, shiftDate } from './course-copy.service';
 import { CourseService } from './course.service';
 import { CourseAccessService } from './access/course-access.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const USER = 'user-1';
@@ -158,7 +159,7 @@ function service(prisma: MockPrisma) {
   return new CourseCopyService(
     cache,
     access,
-    new CourseService(cache, access, prisma as any),
+    new CourseService(cache, access, prisma as any, createMockErasureLog() as any),
     prisma as any,
   );
 }

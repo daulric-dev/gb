@@ -16,8 +16,6 @@ export interface BillingConfig {
   currency: string;
   trialDays: number;
   graceDays: number;
-  /** PAYMENT_PROVIDERS, lower-cased. Only these may ever be offered. */
-  allowedProviders: Set<string>;
   /** PLATFORM_ADMIN_EMAILS, lower-cased. */
   platformAdminEmails: Set<string>;
   /** The web app's origin, for checkout return URLs. */
@@ -68,7 +66,6 @@ export function loadBillingConfig(env: Env = process.env): BillingConfig {
     currency: currency(env.BILLING_CURRENCY),
     trialDays: int(env.BILLING_TRIAL_DAYS, 30),
     graceDays: int(env.BILLING_GRACE_DAYS, 7),
-    allowedProviders: csvSet(env.PAYMENT_PROVIDERS),
     platformAdminEmails: csvSet(env.PLATFORM_ADMIN_EMAILS),
     appUrl: appUrl(env),
   };

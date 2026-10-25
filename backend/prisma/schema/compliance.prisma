@@ -1,0 +1,23 @@
+/// One erasure of personal data: what was erased, when, by whom and why, and
+/// how to re-apply it after a backup restore (`replay`). Never the erased data
+/// itself - ids only. Append-only: the app inserts rows, the exporter stamps
+/// `exported_at`, and the retention job deletes rows past
+/// ERASURE_LOG_RETENTION_DAYS. No foreign keys: the log outlives its subjects.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model erasure_log {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurred_at   DateTime  @default(now()) @db.Timestamptz(6)
+  kind          String
+  subject_table String
+  subject_ids   String[]  @db.Uuid
+  school_id     String?   @db.Uuid
+  actor         String
+  reason        String
+  replay        Json
+  exported_at   DateTime? @db.Timestamptz(6)
+
+  @@index([occurred_at], map: "erasure_log_occurred_at_idx")
+  @@index([school_id, occurred_at], map: "erasure_log_school_idx")
+  @@index([occurred_at], map: "erasure_log_unexported_idx", where: raw("(exported_at IS NULL)"))
+  @@schema("compliance")
+}

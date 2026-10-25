@@ -6,15 +6,13 @@ import { SeatService } from './seat.service';
 
 let prisma: MockPrisma;
 let stripe: FakeProvider;
-let invoiceP: FakeProvider;
 let seats: SeatService;
 let invalidated: string[];
 
 beforeEach(() => {
   prisma = createMockPrisma();
   stripe = new FakeProvider('subp');
-  invoiceP = new FakeProvider('invp', 'invoice');
-  const registry = new BillingRegistry(prisma as never, [stripe, invoiceP]);
+  const registry = new BillingRegistry([stripe]);
   invalidated = [];
   const subscriptions = { invalidate: (id: string) => Promise.resolve(void invalidated.push(id)) };
   seats = new SeatService(prisma as never, registry, subscriptions as never);
@@ -73,21 +71,20 @@ describe('seat sync', () => {
     expect(stripe.updateQuantity.mock.calls[0][1]).toBe(1);
   });
 
-  test('flat plans, invoice-mode providers and dead subscriptions are skipped', async () => {
+  test('flat plans, unknown providers and dead subscriptions are skipped', async () => {
     prisma.$queryRaw.mockResolvedValue([{ school_id: 'school-1', n: 15 }]);
     // The query filters these out; syncOne refuses them too in case a row slips through.
     for (const sub of [
       live({ plan: 'flat' }),
-      live({ provider: 'invp' }),
+      live({ provider: 'manual' }), // a removed provider
       live({ status: 'canceled' }),
       live({ provider_subscription_id: null }),
-      live({ cancel_at_period_end: true }), // e.g. a suspended PayPal subscription
+      live({ cancel_at_period_end: true }),
     ]) {
       prisma.subscription.findMany.mockResolvedValue([sub]);
       expect(await seats.syncAll()).toBe(0);
     }
     expect(stripe.updateQuantity).not.toHaveBeenCalled();
-    expect(invoiceP.updateQuantity).not.toHaveBeenCalled();
   });
 
   test('a provider failure leaves the stored quantity alone', async () => {

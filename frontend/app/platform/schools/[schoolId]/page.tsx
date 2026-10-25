@@ -177,7 +177,7 @@ export default function PlatformSchoolPage() {
           <CardDescription>School ID {school.schoolId}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <Field label="Plan">{school.plan ? planLabel(school.plan) : "—"}</Field>
             <Field label="Provider">
               <span className="capitalize">{school.provider ?? "—"}</span>
@@ -185,7 +185,6 @@ export default function PlatformSchoolPage() {
             <Field label="Billable users">{school.billableUsers}</Field>
             <Field label="Trial ends">{formatBillingDate(school.trialEndsAt)}</Field>
             <Field label="Period ends">{formatBillingDate(school.currentPeriodEnd)}</Field>
-            <Field label="Open invoices">{school.openInvoices}</Field>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setExtendOpen(true)}>
@@ -205,7 +204,7 @@ export default function PlatformSchoolPage() {
           <CardTitle>Invoices</CardTitle>
         </CardHeader>
         <CardContent>
-          <PlatformInvoicesTable invoices={school.invoices ?? []} onChanged={load} />
+          <PlatformInvoicesTable invoices={school.invoices ?? []} />
         </CardContent>
       </Card>
 

@@ -46,6 +46,7 @@ There is no row-level security in the database: guards and service code are the 
 | [dashboard](./dashboard/README.md) | Staff dashboard summary (`GET /api/dashboard/summary`). |
 | [discussion](./discussion/README.md) | Course discussion topics, threaded replies and unread tracking, for staff and the portal. |
 | [email-domain](./email-domain/README.md) | School email domains verified by DNS, joining a school by domain, per-domain SSO settings. |
+| [erasure](./erasure/README.md) | GDPR erasure log (global): every erasure path records into `compliance.erasure_log` in the same transaction as the erasure; copy in object storage; replay after a backup restore (`bun run erasure:replay`). |
 | [file-manager](./file-manager/README.md) | Personal files and folders, sharing with users, roles and courses, upload tickets, share notifications. |
 | `generated` | The Prisma client generated from `prisma/schema` (`bun run db:generate`). Gitignored; import it as `@/generated/prisma/client`. |
 | [grade-scale](./grade-scale/README.md) | Grade scales and bands (percentage to letter). |
@@ -58,6 +59,7 @@ There is no row-level security in the database: guards and service code are the 
 | [prisma](./prisma/README.md) | Global `PrismaService`: Prisma 7 with the `pg` driver adapter. |
 | [queue](./queue/README.md) | Background job for file share notifications on BullMQ, or inline without Redis. |
 | [realtime](./realtime/README.md) | Redis (or in-process) pub/sub bus and presence tracking for SSE features. |
+| [retention](./retention/README.md) | Daily purge (advisory-locked) of soft-deleted files, folders, chat messages and discussion replies past `SOFT_DELETE_RETENTION_DAYS`, expired sessions and sign-in codes, and old erasure-log entries; `bun run retention:purge`. |
 | [school](./school/README.md) | Schools, staff membership, join requests, members. |
 | [sso](./sso/README.md) | Single sign-on with our own OpenID Connect (Google, Microsoft) and SAML; adapter registry. |
 | [storage](./storage/README.md) | Global `StorageService` for S3-compatible object storage and presigned URLs. |
@@ -71,7 +73,7 @@ There is no row-level security in the database: guards and service code are the 
 
 ## Global modules
 
-These are `@Global()`, so any module can inject their exports without importing them: `PrismaModule`, `StorageModule`, `MailModule`, `AccountModule`, `CacheModule`, `QueueModule`, `VersioningModule`, `CourseAccessModule`, `SsoCoreModule`, `RealtimeModule`, `ChatModule`, `CourseNotificationModule`.
+These are `@Global()`, so any module can inject their exports without importing them: `PrismaModule`, `StorageModule`, `MailModule`, `AccountModule`, `CacheModule`, `QueueModule`, `VersioningModule`, `CourseAccessModule`, `SsoCoreModule`, `RealtimeModule`, `ChatModule`, `CourseNotificationModule`, `ErasureModule`.
 
 ## See also
 

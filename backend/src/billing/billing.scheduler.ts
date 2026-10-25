@@ -1,13 +1,11 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { billingEnabled } from './billing.config';
-import { InvoiceService } from './invoice.service';
 import { SeatService } from './seat.service';
 import { SubscriptionService } from './subscription.service';
 
 const HOUR_MS = 60 * 60 * 1000;
 const FIRST_RUN_MS = 30 * 1000;
-const INVOICE_EVERY_MS = 24 * HOUR_MS;
 
 /**
  * Background billing work, like the attendance sweep: a timer per API
@@ -16,8 +14,7 @@ const INVOICE_EVERY_MS = 24 * HOUR_MS;
  *
  * Hourly: give schools without a row their trial row, end subscriptions
  * whose cancel-at-period-end date has passed, and push per-seat counts to
- * subscription providers. Daily (and via
- * POST /platform/invoices/generate): raise invoice-mode invoices.
+ * the payment provider.
  */
 @Injectable()
 export class BillingScheduler implements OnModuleInit, OnModuleDestroy {
@@ -25,13 +22,11 @@ export class BillingScheduler implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private firstRun?: ReturnType<typeof setTimeout>;
   private running = false;
-  private lastInvoiceSweep = 0;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionService,
     private readonly seats: SeatService,
-    private readonly invoices: InvoiceService,
   ) {}
 
   onModuleInit() {
@@ -65,7 +60,7 @@ export class BillingScheduler implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async tick(now = Date.now()): Promise<void> {
+  async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
@@ -76,11 +71,6 @@ export class BillingScheduler implements OnModuleInit, OnModuleDestroy {
         if (ended > 0) this.logger.log(`Ended ${ended} canceled subscription(s)`);
         const synced = await this.seats.syncAll();
         if (synced > 0) this.logger.log(`Synced seats for ${synced} subscription(s)`);
-        if (now - this.lastInvoiceSweep >= INVOICE_EVERY_MS) {
-          const created = await this.invoices.sweep();
-          this.lastInvoiceSweep = now;
-          if (created > 0) this.logger.log(`Raised ${created} invoice(s)`);
-        }
       });
     } catch (err) {
       this.logger.error(`Billing sweep failed: ${(err as Error).message}`);

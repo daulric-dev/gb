@@ -9,6 +9,8 @@ import { createHmac, randomInt } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate, pgCode, raisedMessage } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { plan } from '@/erasure/erasure-plan';
 
 /**
  * Ambiguous glyphs are omitted: these codes get read off paper and typed by
@@ -45,6 +47,7 @@ export class StudentMembershipService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly erasure: ErasureLogService,
   ) {
     const configured = process.env.STUDENT_CLAIM_CODE_PEPPER?.trim();
 
@@ -333,13 +336,40 @@ export class StudentMembershipService {
 
     let rows: { student_id: string | null }[];
     try {
-      rows = await this.prisma.$queryRaw`
-        SELECT student_id
-        FROM public.merge_student_records(
-          ${actorUserId}::uuid,
-          ${joinedId}::uuid,
-          ${existingId}::uuid
-        )`;
+      // The merge and its erasure-log entry commit together. Replaying it
+      // moves the login across and drops the join-time record again.
+      const loginId = joined?.user_profile_id ?? null;
+      rows = await this.prisma.$transaction(async (tx) => {
+        const merged = await tx.$queryRaw<{ student_id: string | null }[]>`
+          SELECT student_id
+          FROM public.merge_student_records(
+            ${actorUserId}::uuid,
+            ${joinedId}::uuid,
+            ${existingId}::uuid
+          )`;
+        await this.erasure.record(tx, {
+          kind: 'student',
+          subjectTable: 'student.student',
+          subjectIds: [joinedId],
+          schoolId,
+          actor: actorUserId,
+          reason: 'merge',
+          replay: plan.of(
+            plan.update('student.student', { id: [joinedId] }, { user_profile_id: null }),
+            ...(loginId
+              ? [
+                  plan.update(
+                    'student.student',
+                    { id: [existingId], user_profile_id: null },
+                    { user_profile_id: loginId },
+                  ),
+                ]
+              : []),
+            plan.del('student.student', { id: [joinedId] }),
+          ),
+        });
+        return merged;
+      });
     } catch (error) {
       const detail = raisedMessage(error);
 

@@ -281,12 +281,17 @@ export function invoiceStatusVariant(status: InvoiceStatus): BadgeVariant {
   }
 }
 
-export const MARK_PAID_METHODS = [
-  { value: "bank_transfer", label: "Bank transfer" },
-  { value: "cheque", label: "Cheque" },
-  { value: "cash", label: "Cash" },
-  { value: "other", label: "Other" },
-] as const;
+/** Only follow provider redirects to http(s) URLs. */
+export function safeRedirect(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    window.location.assign(parsed.toString());
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** An ApiError's message, or a fallback. */
 export function errorMessage(err: unknown, fallback: string): string {

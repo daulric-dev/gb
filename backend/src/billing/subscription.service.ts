@@ -9,7 +9,6 @@ import {
   initialTrialEnd,
   type Entitlement,
 } from './billing.entitlement';
-import { BillingRegistry } from './billing.registry';
 
 export type SubscriptionRow = subscription;
 
@@ -38,7 +37,6 @@ export class SubscriptionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly registry: BillingRegistry,
   ) {}
 
   async ensure(schoolId: string, now = new Date()): Promise<SubscriptionRow> {
@@ -83,8 +81,9 @@ export class SubscriptionService {
 
   /**
    * End subscriptions set to cancel at period end once that period is over.
-   * Not every provider ends them itself - PayPal only suspends billing - so
-   * the hourly sweep does it for all of them. Returns how many ended.
+   * Stripe ends them itself (customer.subscription.deleted); the hourly sweep
+   * is a backstop for a missed webhook and for rows whose provider is gone.
+   * Returns how many ended.
    */
   async expireCanceled(now = new Date()): Promise<number> {
     const due = await this.prisma.subscription.findMany({
@@ -105,22 +104,7 @@ export class SubscriptionService {
     return ids.length;
   }
 
-  /** The due date of each school's oldest open invoice. */
-  async oldestOpenDue(schoolId: string): Promise<Date | null> {
-    const open = await this.prisma.invoice.findFirst({
-      where: { school_id: schoolId, status: 'open' },
-      orderBy: { due_at: 'asc' },
-      select: { due_at: true },
-    });
-    return open?.due_at ?? null;
-  }
-
-  evaluate(
-    row: SubscriptionRow,
-    oldestOpenDueAt: Date | null,
-    now = new Date(),
-  ): Entitlement {
-    const mode = this.registry.find(row.provider)?.mode ?? null;
+  evaluate(row: SubscriptionRow, now = new Date()): Entitlement {
     return computeEntitlement(
       {
         status: row.status,
@@ -128,8 +112,6 @@ export class SubscriptionService {
         currentPeriodEnd: row.current_period_end,
         cancelAtPeriodEnd: row.cancel_at_period_end,
         compUntil: row.comp_until,
-        mode,
-        oldestOpenDueAt,
       },
       now,
       loadBillingConfig().graceDays,
@@ -144,7 +126,7 @@ export class SubscriptionService {
 
     const row = await this.ensure(schoolId);
     const result: SchoolEntitlement = {
-      ...this.evaluate(row, await this.oldestOpenDue(schoolId)),
+      ...this.evaluate(row),
       trialEndsAt: row.trial_ends_at?.toISOString() ?? null,
     };
     await this.cache.set(key, result, ENTITLEMENT_TTL);

@@ -14,7 +14,8 @@ as a single schema (`prisma.config.ts` points here).
 | `student.prisma` | `student` | Student roster, school join codes |
 | `files.prisma` | `file_manager` | Files, folders, shares, notifications |
 | `chat.prisma` | `chat` | Conversations, members, messages |
-| `billing.prisma` | `billing` | Hosted-platform billing: subscriptions, invoices, webhook events, provider switches, platform admins (unused unless `BILLING_ENABLED=true`) |
+| `compliance.prisma` | `compliance` | The GDPR erasure log (`erasure_log`): ids-only record of every erasure, replayed after a backup restore (see `src/erasure`) |
+| `billing.prisma` | `billing` | Hosted-platform billing: subscriptions, invoices recorded from Stripe, webhook events, platform admins (`provider_setting`, the old per-provider switch, is kept but no longer read) (unused unless `BILLING_ENABLED=true`) |
 
 ## Changing the schema
 

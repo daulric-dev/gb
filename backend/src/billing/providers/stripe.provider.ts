@@ -72,7 +72,6 @@ const STATUS: Record<string, SubscriptionStatus> = {
 export class StripeProvider implements PaymentProvider {
   readonly id = 'stripe';
   readonly label = 'Stripe';
-  readonly mode = 'subscription' as const;
 
   private readonly fetchFn: FetchLike | undefined;
   private client: { key: string; stripe: Stripe } | null = null;
@@ -245,7 +244,11 @@ export class StripeProvider implements PaymentProvider {
         const session = event.data.object;
         const subscriptionId = stringId(session.subscription);
         if (session.mode !== 'subscription' || !subscriptionId) {
-          return { type: 'ignored', eventId, reason: 'not a subscription checkout' };
+          return {
+            type: 'ignored',
+            eventId,
+            reason: 'not a subscription checkout',
+          };
         }
         const paid =
           session.payment_status === 'paid' ||
@@ -255,7 +258,8 @@ export class StripeProvider implements PaymentProvider {
           eventId,
           providerSubscriptionId: subscriptionId,
           providerCustomerId: stringId(session.customer),
-          schoolId: session.metadata?.schoolId ?? session.client_reference_id ?? null,
+          schoolId:
+            session.metadata?.schoolId ?? session.client_reference_id ?? null,
           status: paid ? 'active' : 'incomplete',
           plan: this.planOf(session.metadata?.plan),
         };
@@ -273,12 +277,12 @@ export class StripeProvider implements PaymentProvider {
           schoolId: sub.metadata?.schoolId ?? null,
           status: STATUS[sub.status] ?? 'incomplete',
           plan:
-            this.planOf(sub.metadata?.plan) ??
-            this.planOfPrice(item?.price),
+            this.planOf(sub.metadata?.plan) ?? this.planOfPrice(item?.price),
           quantity: item?.quantity ?? null,
           currentPeriodStart: fromUnix(item?.current_period_start),
           currentPeriodEnd: fromUnix(item?.current_period_end),
-          cancelAtPeriodEnd: !!sub.cancel_at_period_end || sub.cancel_at != null,
+          cancelAtPeriodEnd:
+            !!sub.cancel_at_period_end || sub.cancel_at != null,
         };
       }
 
@@ -341,6 +345,7 @@ export class StripeProvider implements PaymentProvider {
           timeout: HTTP_TIMEOUT_MS,
           maxNetworkRetries: 2,
           appInfo: { name: 'GradeBook' },
+          ...stripeApiBase(),
           ...(this.fetchFn
             ? {
                 httpClient: Stripe.createFetchHttpClient(
@@ -356,9 +361,7 @@ export class StripeProvider implements PaymentProvider {
   }
 
   /** Line item / subscription item price: the operator's price id or inline price_data. */
-  private async priceParam(
-    price: PlanPrice,
-  ): Promise<
+  private async priceParam(price: PlanPrice): Promise<
     | { price: string }
     | {
         price_data: {
@@ -389,7 +392,10 @@ export class StripeProvider implements PaymentProvider {
     try {
       await stripe.products.retrieve(id);
     } catch (err) {
-      if (!(err instanceof Stripe.errors.StripeError) || err.statusCode !== 404) {
+      if (
+        !(err instanceof Stripe.errors.StripeError) ||
+        err.statusCode !== 404
+      ) {
         throw this.wrap('retrieve product', err);
       }
       try {
@@ -473,4 +479,33 @@ function stringId(
 ): string | null {
   if (!value) return null;
   return typeof value === 'string' ? value : value.id;
+}
+
+/**
+ * STRIPE_API_BASE points the SDK at another API host - stripe-mock in
+ * development and tests (`http://127.0.0.1:12111`). Refused in production so a
+ * stray setting can never send real payments to a mock.
+ */
+export function stripeApiBase(
+  env: Record<string, string | undefined> = process.env,
+):
+  | { host: string; port: number; protocol: 'http' | 'https' }
+  | Record<string, never> {
+  const raw = env.STRIPE_API_BASE?.trim();
+  if (!raw) return {};
+  if (env.NODE_ENV === 'production') {
+    throw new Error('STRIPE_API_BASE is for development and tests only');
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`STRIPE_API_BASE "${raw}" is not a URL`);
+  }
+  const protocol = url.protocol === 'http:' ? 'http' : 'https';
+  return {
+    host: url.hostname,
+    port: url.port ? Number(url.port) : protocol === 'http' ? 80 : 443,
+    protocol,
+  };
 }

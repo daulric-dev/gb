@@ -9,7 +9,6 @@ import {
   ArrowLeft,
   FileText,
   LayoutDashboard,
-  PlugZap,
   School,
 } from "lucide-react";
 import { useProfile } from "@/providers/AuthProvider";
@@ -24,7 +23,6 @@ const NAV = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/platform/schools", label: "Schools", icon: School },
   { href: "/platform/invoices", label: "Invoices", icon: FileText },
-  { href: "/platform/providers", label: "Providers", icon: PlugZap },
 ];
 
 /**

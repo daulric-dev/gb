@@ -1,19 +1,14 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { DAY_MS, loadBillingConfig } from './billing.config';
 import { BillingRegistry } from './billing.registry';
-import { InvoiceService, invoiceDto, type MarkPaidMethod } from './invoice.service';
+import { invoiceDto } from './invoice.service';
 import { SeatService } from './seat.service';
 import { SubscriptionService, type SubscriptionRow } from './subscription.service';
 
 /**
- * The operator's view: every school's billing, invoices and the provider
- * switches. Only platform admins reach it (PlatformAdminGuard).
+ * The operator's view: every school's billing and invoices. Only platform
+ * admins reach it (PlatformAdminGuard).
  */
 @Injectable()
 export class PlatformService {
@@ -22,7 +17,6 @@ export class PlatformService {
     private readonly registry: BillingRegistry,
     private readonly subscriptions: SubscriptionService,
     private readonly seats: SeatService,
-    private readonly invoices: InvoiceService,
   ) {}
 
   /**
@@ -54,33 +48,21 @@ export class PlatformService {
   /** Every school with its subscription row (rows made for any school without one). */
   private async rows() {
     await this.subscriptions.ensureAll();
-    const [schools, subs, counts, open] = await Promise.all([
+    const [schools, subs, counts] = await Promise.all([
       this.prisma.school.findMany({
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       }),
       this.prisma.subscription.findMany(),
       this.seats.countAll(),
-      this.prisma.invoice.findMany({
-        where: { status: 'open' },
-        select: { school_id: true, due_at: true },
-        orderBy: { due_at: 'asc' },
-      }),
     ]);
     const bySchool = new Map(subs.map((s) => [s.school_id, s]));
-    const openBySchool = new Map<string, { count: number; oldest: Date }>();
-    for (const inv of open) {
-      const cur = openBySchool.get(inv.school_id);
-      if (cur) cur.count++;
-      else openBySchool.set(inv.school_id, { count: 1, oldest: inv.due_at });
-    }
     const now = new Date();
     return schools
       .map((school) => {
         const sub = bySchool.get(school.id);
         if (!sub) return null;
-        const openInfo = openBySchool.get(school.id);
-        const ent = this.subscriptions.evaluate(sub, openInfo?.oldest ?? null, now);
+        const ent = this.subscriptions.evaluate(sub, now);
         const row: SchoolRow = {
             schoolId: school.id,
             name: school.name ?? '',
@@ -91,7 +73,6 @@ export class PlatformService {
             billableUsers: counts.get(school.id) ?? 0,
             trialEndsAt: sub.trial_ends_at?.toISOString() ?? null,
             currentPeriodEnd: sub.current_period_end?.toISOString() ?? null,
-            openInvoices: openInfo?.count ?? 0,
         };
         return { sub, row };
       })
@@ -118,7 +99,8 @@ export class PlatformService {
       readOnly: all.filter((r) => r.row.readOnly).length,
       mrrCents,
       currency: cfg.currency,
-      openInvoices: all.reduce((n, r) => n + r.row.openInvoices, 0),
+      /** False while billing is on but no provider (Stripe) has credentials. */
+      paymentsConfigured: this.registry.enabled().length > 0,
     };
   }
 
@@ -203,43 +185,6 @@ export class PlatformService {
       schoolName: r.school?.name ?? '',
     }));
   }
-
-  async markPaid(
-    id: string,
-    input: { method: MarkPaidMethod; reference?: string; note?: string },
-    adminUserId: string,
-  ) {
-    return invoiceDto(await this.invoices.markPaid(id, input, adminUserId));
-  }
-
-  async voidInvoice(id: string, note?: string) {
-    return invoiceDto(await this.invoices.voidInvoice(id, note));
-  }
-
-  async generateInvoices() {
-    await this.subscriptions.ensureAll();
-    return { created: await this.invoices.sweep() };
-  }
-
-  providers() {
-    return this.registry.statuses();
-  }
-
-  async setProvider(id: string, enabled: boolean, adminUserId: string) {
-    if (!this.registry.known(id)) throw new NotFoundException('Unknown provider');
-    const status = (await this.registry.statuses()).find((s) => s.id === id)!;
-    if (enabled && !(status.allowedByEnv && status.configured)) {
-      throw new ConflictException(
-        `${status.label} is not allowed by PAYMENT_PROVIDERS or has no credentials`,
-      );
-    }
-    await this.prisma.provider_setting.upsert({
-      where: { provider_id: id },
-      create: { provider_id: id, enabled, updated_by: adminUserId },
-      update: { enabled, updated_by: adminUserId, updated_at: new Date() },
-    });
-    return (await this.registry.statuses()).find((s) => s.id === id)!;
-  }
 }
 
 export interface SchoolRow {
@@ -252,5 +197,4 @@ export interface SchoolRow {
   billableUsers: number;
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
-  openInvoices: number;
 }

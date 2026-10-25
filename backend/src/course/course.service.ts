@@ -21,6 +21,8 @@ import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { plan } from '@/erasure/erasure-plan';
 
 // No 0/O, 1/I/L: join codes get read off a board and typed on a phone.
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -34,6 +36,7 @@ export class CourseService {
     private readonly cache: CacheService,
     private readonly access: CourseAccessService,
     private readonly prisma: PrismaService,
+    private readonly erasure: ErasureLogService,
   ) {}
 
   private async requireSchool(userId: string): Promise<string> {
@@ -355,8 +358,21 @@ export class CourseService {
       }
     }
 
+    // Enrolments, attendance, submissions and discussions cascade with the
+    // course, so this is an erasure of students' data: log it with it.
     try {
-      await this.prisma.course.deleteMany({ where: { id: courseId } });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.course.deleteMany({ where: { id: courseId } });
+        await this.erasure.record(tx, {
+          kind: 'course',
+          subjectTable: 'course.course',
+          subjectIds: [courseId],
+          schoolId: course.school_id,
+          actor: userId,
+          reason: 'admin',
+          replay: plan.of(plan.del('course.course', { id: [courseId] })),
+        });
+      });
     } catch (error) {
       this.logger.error(`Failed to delete course: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete course');

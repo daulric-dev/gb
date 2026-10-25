@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   CircleDollarSign,
   Clock,
-  FileText,
   Lock,
   School,
   ShieldCheck,
@@ -18,7 +17,6 @@ import { errorMessage, formatMoney } from "@/lib/billing";
 import type { PlatformOverview } from "@/lib/billing-types";
 import { StatCard } from "@/app/dashboard/_components/StatCard";
 import { PlatformHeader } from "./_components/platform-header";
-import { GenerateInvoicesButton } from "./_components/generate-invoices-button";
 
 type Tile = {
   icon: LucideIcon;
@@ -34,7 +32,6 @@ const TILES: Tile[] = [
   { icon: AlertTriangle, label: "Past due", value: (o) => o.pastDue, href: "/platform/schools?status=past_due" },
   { icon: Lock, label: "Read-only", value: (o) => o.readOnly, href: "/platform/schools?status=read_only" },
   { icon: CircleDollarSign, label: "MRR", value: (o) => formatMoney(o.mrrCents, o.currency) },
-  { icon: FileText, label: "Open invoices", value: (o) => o.openInvoices, href: "/platform/invoices?status=open" },
 ];
 
 export default function PlatformOverviewPage() {
@@ -55,8 +52,23 @@ export default function PlatformOverviewPage() {
       <PlatformHeader
         title="Overview"
         description="Subscriptions and revenue across every school on the platform"
-        action={<GenerateInvoicesButton onDone={load} />}
       />
+      {overview && !overview.paymentsConfigured && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <div>
+            <p className="font-medium">Stripe is not configured</p>
+            <p className="text-muted-foreground">
+              Schools cannot subscribe until the API has{" "}
+              <code>STRIPE_SECRET_KEY</code> and{" "}
+              <code>STRIPE_WEBHOOK_SECRET</code> set.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {TILES.map((t) => {
           const card = (

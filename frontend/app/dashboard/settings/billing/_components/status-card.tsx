@@ -31,9 +31,28 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-/** Whether the school has a live paid subscription (vs. trial / lapsed). */
+/** Whether the school's stored provider is one this deployment offers (Stripe). */
+export function hasKnownProvider(s: BillingSummary): boolean {
+  return !!s.provider && s.providers.some((p) => p.id === s.provider);
+}
+
+/**
+ * Whether the school has a live paid subscription (vs. trial / lapsed). A
+ * provider id this deployment no longer offers (a legacy one) does not count:
+ * the school subscribes again with Stripe.
+ */
 export function isSubscribed(s: BillingSummary): boolean {
-  return !!s.provider && !!s.plan && !s.readOnly && s.status !== "canceled";
+  return (
+    hasKnownProvider(s) &&
+    !!s.plan &&
+    !s.readOnly &&
+    (s.status === "active" || s.status === "past_due")
+  );
+}
+
+/** Whether "Manage payment method & invoices" (the Stripe Customer Portal) applies. */
+export function canOpenPortal(s: BillingSummary): boolean {
+  return hasKnownProvider(s) && !!s.plan && s.status !== "canceled";
 }
 
 function Stat({
@@ -77,8 +96,7 @@ export function StatusCard({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const subscribed = isSubscribed(s);
   const trialDays = daysUntil(s.trialEndsAt);
-  const providerLabel =
-    s.providers.find((p) => p.id === s.provider)?.label ?? s.provider;
+  const providerLabel = s.providers.find((p) => p.id === s.provider)?.label;
 
   let dateLabel = "Renews";
   let dateValue = formatBillingDate(s.currentPeriodEnd);
@@ -106,8 +124,8 @@ export function StatusCard({
       <CardContent className="space-y-4">
         {s.readOnly && (
           <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
-            The platform is read-only for your school. Choose a plan below (or
-            pay an open invoice) to make changes again.
+            The platform is read-only for your school. Choose a plan below and
+            subscribe to make changes again.
           </p>
         )}
         {s.status === "trialing" && !s.readOnly && trialDays !== null && (
@@ -151,7 +169,7 @@ export function StatusCard({
                 disabled={busy !== null}
               >
                 {busy === "portal" && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Manage payment method
+                Manage payment method &amp; invoices
               </Button>
             )}
             {subscribed &&

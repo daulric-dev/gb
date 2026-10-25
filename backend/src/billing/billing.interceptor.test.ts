@@ -57,7 +57,7 @@ describe('BillingEntitlementInterceptor', () => {
       '/api/auth/profile',
       '/api/billing/checkout',
       '/api/billing/webhooks/stripe',
-      '/api/platform/invoices/x/mark-paid',
+      '/api/platform/invoices/x/void',
       '/api/notifications/devices',
       '/api/portal/me/notifications/read-all',
       '/api/announcements/mark-read',

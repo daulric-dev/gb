@@ -214,22 +214,7 @@ export class BillingEventsService {
     provider: PaymentProvider,
     e: Ev<'invoice.paid'>,
   ): Promise<string | null> {
-    // Invoice mode: one of ours.
-    if (e.invoiceId) {
-      const inv = await this.prisma.invoice
-        .findUnique({ where: { id: e.invoiceId } })
-        .catch(() => null);
-      if (!inv) return this.unknown(provider, e);
-      await this.invoices.markPaidByProvider(
-        inv,
-        provider.id,
-        e.paidAt,
-        e.providerInvoiceId ?? null,
-      );
-      return inv.school_id;
-    }
-
-    // Subscription mode: the provider billed a period; keep it as history.
+    // The provider billed a period; keep it as history.
     const sub = await this.locate(provider, e.providerSubscriptionId, e.schoolId);
     if (!sub) return this.unknown(provider, e);
 
@@ -291,13 +276,6 @@ export class BillingEventsService {
     provider: PaymentProvider,
     e: Ev<'invoice.payment_failed'>,
   ): Promise<string | null> {
-    if (e.invoiceId) {
-      // Our invoice stays open; the school can try again. Nothing to change.
-      const inv = await this.prisma.invoice
-        .findUnique({ where: { id: e.invoiceId }, select: { school_id: true } })
-        .catch(() => null);
-      return inv?.school_id ?? this.unknown(provider, e);
-    }
     const sub = await this.locate(provider, e.providerSubscriptionId, e.schoolId);
     if (!sub) return this.unknown(provider, e);
     const sameSub =

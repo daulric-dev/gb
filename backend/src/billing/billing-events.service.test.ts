@@ -13,10 +13,9 @@ let sub: ReturnType<typeof subRow>;
 let events: Map<string, any>;
 let invoices: ReturnType<typeof invoiceRow>[];
 let service: BillingEventsService;
-let invoiceSvc: { markPaidByProvider: ReturnType<typeof mock>; createNumbered: ReturnType<typeof mock> };
+let invoiceSvc: { createNumbered: ReturnType<typeof mock> };
 let invalidated: (string | null | undefined)[];
 const stripe = new FakeProvider('subp');
-const wipay = new FakeProvider('wipay', 'invoice');
 
 beforeEach(() => {
   prisma = createMockPrisma();
@@ -54,7 +53,6 @@ beforeEach(() => {
   );
 
   invoiceSvc = {
-    markPaidByProvider: mock(async () => true),
     createNumbered: mock(async (data: any) => {
       const row = invoiceRow({ ...data, id: `inv-${invoices.length + 1}` });
       invoices.push(row);
@@ -192,20 +190,7 @@ describe('subscription.canceled', () => {
 });
 
 describe('invoice.paid', () => {
-  test('invoice mode: our invoice is marked paid through the invoice service', async () => {
-    invoices.push(invoiceRow({ id: 'inv-ours' }));
-    await service.handle(wipay, [{ type: 'invoice.paid', eventId: 'w1', invoiceId: 'inv-ours', providerInvoiceId: 'TXN', amountCents: 5000, currency: 'USD', paidAt: at(3) }]);
-    expect(invoiceSvc.markPaidByProvider).toHaveBeenCalledTimes(1);
-    expect(invoiceSvc.markPaidByProvider.mock.calls[0].slice(1)).toEqual(['wipay', at(3), 'TXN']);
-    expect(events.get('wipay:w1').school_id).toBe('school-1');
-  });
-
-  test('invoice mode: unknown invoice id is ignored', async () => {
-    expect(await service.handle(wipay, [{ type: 'invoice.paid', eventId: 'w2', invoiceId: 'nope', amountCents: 1, currency: 'USD', paidAt: at(1) }])).toBe(1);
-    expect(invoiceSvc.markPaidByProvider).not.toHaveBeenCalled();
-  });
-
-  test('subscription mode: records a paid history invoice once and extends the period', async () => {
+  test('records a paid history invoice once and extends the period', async () => {
     await service.handle(stripe, [updated({ eventId: 'a' })]);
     const paid: BillingEvent = { type: 'invoice.paid', eventId: 'p1', providerInvoiceId: 'in_1', providerSubscriptionId: 'sub_A', amountCents: 8000, currency: 'usd', paidAt: at(31), periodStart: at(31), periodEnd: at(61) };
     await service.handle(stripe, [paid]);
@@ -216,7 +201,7 @@ describe('invoice.paid', () => {
     expect(sub.current_period_end).toEqual(at(61));
   });
 
-  test('subscription mode: an older payment does not move the period back', async () => {
+  test('an older payment does not move the period back', async () => {
     await service.handle(stripe, [updated({ eventId: 'a', currentPeriodEnd: at(61) })]);
     await service.handle(stripe, [{ type: 'invoice.paid', eventId: 'p0', providerInvoiceId: 'in_0', providerSubscriptionId: 'sub_A', amountCents: 8000, currency: 'USD', paidAt: at(0), periodStart: at(0), periodEnd: at(31) }]);
     expect(sub.current_period_end).toEqual(at(61));
@@ -224,15 +209,9 @@ describe('invoice.paid', () => {
 });
 
 describe('invoice.payment_failed', () => {
-  test('subscription mode: active becomes past_due', async () => {
+  test('active becomes past_due', async () => {
     await service.handle(stripe, [updated({ eventId: 'a' })]);
     await service.handle(stripe, [{ type: 'invoice.payment_failed', eventId: 'f', providerSubscriptionId: 'sub_A' }]);
     expect(sub.status).toBe('past_due');
-  });
-
-  test('invoice mode: our invoice stays open, nothing changes', async () => {
-    invoices.push(invoiceRow({ id: 'inv-ours' }));
-    await service.handle(wipay, [{ type: 'invoice.payment_failed', eventId: 'f2', invoiceId: 'inv-ours' }]);
-    expect(prisma.subscription.update).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { BillingEnabledGuard } from './billing.guards';
 import { BillingService, type Caller } from './billing.service';
-import { ChangePlanDto, CheckoutDto, PayInvoiceDto } from './dto/billing.dto';
+import { ChangePlanDto, CheckoutDto } from './dto/billing.dto';
 
 type Req = { user: Caller };
 
@@ -72,13 +72,4 @@ export class BillingController {
     return this.billing.listInvoices(req.user.id);
   }
 
-  @Post('invoices/:id/pay')
-  @HttpCode(200)
-  pay(
-    @Req() req: Req,
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Body() dto: PayInvoiceDto,
-  ) {
-    return this.billing.payInvoice(req.user, id, dto.provider);
-  }
 }

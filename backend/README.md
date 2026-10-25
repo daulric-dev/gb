@@ -10,13 +10,13 @@ All routes are under `/api` (e.g. `GET /api/students`), except `GET /health`, `G
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Framework              | NestJS 12 on Fastify 5 (`@nestjs/platform-fastify`), validation with `class-validator`, OpenAPI with `@nestjs/swagger`                                                                |
 | Runtime                | Bun (dev server, tests, scripts, production container)                                                                                                                                      |
-| Database               | Postgres through Prisma 7 with the `pg` driver adapter; several Postgres schemas (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `billing`) |
+| Database               | Postgres through Prisma 7 with the `pg` driver adapter; several Postgres schemas (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `billing`, `compliance`) |
 | Cache, queue, realtime | Redis (optional): cache store, BullMQ jobs, pub/sub for SSE chat and attendance. Without it everything runs in-process, which is right for one instance only.                               |
 | Files                  | Any S3-compatible object store (AWS S3, R2, B2; SeaweedFS locally), with presigned upload and download URLs                                                                                 |
 | Email                  | SMTP via nodemailer (Mailpit locally)                                                                                                                                                       |
 | Auth                   | Our own: email sign-in codes and `gb_session` cookie sessions; SSO with our own OpenID Connect (Google, Microsoft) and SAML 2.0                                                           |
 | Push                   | Expo push service                                                                                                                                                                           |
-| Payments (hosted only) | Stripe, PayPal, Paddle, WiPay or manual invoices                                                                                                                                            |
+| Payments (hosted only) | Stripe (Checkout + Customer Portal)                                                                                                                                                         |
 
 ## Running it locally
 
@@ -58,6 +58,8 @@ Local services from `docker-compose.dev.yml`:
 | `bun run seed:demo [--fresh]`                      | Create the demo school (API must be running with `ALLOW_DEV_LOGIN=true`).                                |
 | `bun run smoke`                                    | End-to-end API check against the demo school.                                                              |
 | `bun run student:check`                            | Student onboarding check: join code, link to roster record, portal; cleans up (see [scripts/README.md](./scripts/README.md)). |
+| `bun run retention:purge [--dry-run]`              | Run the soft-delete purge now (the API also runs it daily; see [src/retention](./src/retention/README.md)). |
+| `bun run erasure:replay --since <ISO time>`        | After a backup restore: re-apply every logged erasure since the backup (see [src/erasure](./src/erasure/README.md), [BACKUPS.md](../infrastructure/BACKUPS.md)). |
 
 Demo accounts, prerequisites and what each script checks: [scripts/README.md](./scripts/README.md).
 
@@ -78,7 +80,7 @@ A request goes through these layers (details in [src/README.md](./src/README.md#
 
 There is no row-level security in Postgres: the API connects as the schema owner, so guards and service code are the only access rules.
 
-Entry points: `src/main.ts` (the server; used by `start:dev`, `start:prod` and the container in `infrastructure/Dockerfile`, which runs `prisma migrate deploy` on start). The container is the supported deployment: it runs the built server with `bun dist/src/main`.
+Entry points: `src/main.ts` (the server; used by `start:dev`, `start:prod` and the container in `infrastructure/Dockerfile`, which runs `prisma migrate deploy` on start). The container is the supported deployment: it runs the built server with `bun dist/src/main`. What each infrastructure service (Postgres, Redis, S3, SMTP) is used for: [`infrastructure/SERVICES.md`](../infrastructure/SERVICES.md).
 
 ## Folder index
 
@@ -86,7 +88,7 @@ Entry points: `src/main.ts` (the server; used by `start:dev`, `start:prod` and t
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | [src/](./src/README.md)                                        | The application: root module, bootstrap, and one folder per module, each with its own README.                         |
 | [prisma/](./prisma/README.md)                                  | Prisma schema ([schema/](./prisma/schema/README.md)) and SQL migrations ([migrations/](./prisma/migrations/README.md)). |
-| [scripts/](./scripts/README.md)                                | `seed-demo`, `smoke`, `student-flow-check`.                                                                     |
+| [scripts/](./scripts/README.md)                                | `seed-demo`, `smoke`, `student-flow-check`, `retention-purge`, `erasure-replay`.                                 |
 | `prisma.config.ts`                                          | Prisma CLI config (schema and migrations paths, `DATABASE_URL`).                                                    |
 | `nest-cli.json`, `tsconfig.json`, `tsconfig.build.json` | Nest build with the Swagger plugin; `@/*` path alias; tests excluded from the build.                                |
 | `eslint.config.mjs`                                         | Lint config.                                                                                                          |

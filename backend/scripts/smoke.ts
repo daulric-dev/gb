@@ -15,6 +15,8 @@
  */
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { StorageService } from '../src/storage/storage.service';
+import { createHmac } from 'node:crypto';
 
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -447,10 +449,10 @@ async function main() {
   if (!billingStatus.data?.enabled) {
     check('billing off: status reports nothing', billingStatus.data?.readOnly === false && billingStatus.data?.status === null, billingStatus.data);
     check('billing off: /billing is 404', (await admin('GET', '/billing')).status === 404);
-    check('billing off: /billing/checkout is 404', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'manual' })).status === 404);
+    check('billing off: /billing/checkout is 404', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'stripe' })).status === 404);
     check('billing off: /platform/me is 404', (await admin('GET', '/platform/me')).status === 404);
     check('billing off: /platform/overview is 404', (await admin('GET', '/platform/overview')).status === 404);
-    check('billing off: webhooks are 404', (await webhookPost('manual')).status === 404);
+    check('billing off: webhooks are 404', (await webhookPost('stripe')).status === 404);
   } else {
     const schoolId: string = me.data.school.id;
     const snapshot = await db.subscription.findUnique({ where: { school_id: schoolId } });
@@ -462,18 +464,31 @@ async function main() {
       check('student sees billing status', studentStatus.status === 200 && studentStatus.data.enabled === true && studentStatus.data.readOnly === false, studentStatus.data);
       check('teacher cannot open school billing (403)', (await teacher('GET', '/billing')).status === 403);
       const summary = await admin('GET', '/billing');
-      check('admin billing summary', summary.status === 200 && summary.data.billableUsers > 0 && summary.data.prices?.perUserCents > 0 && summary.data.providers?.some?.((p: any) => p.id === 'manual' && p.mode === 'invoice'), summary.data);
-      check('unknown provider at checkout (400)', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'nope' })).status === 400);
-
-      const checkout = await admin('POST', '/billing/checkout', { plan: 'per_user', provider: 'manual' });
-      check('manual checkout returns instructions with the invoice number', checkout.status === 200 && checkout.data.redirectUrl === null && /GB-\d{6}-\d{4}/.test(checkout.data.instructions ?? ''), checkout.data);
+      check('admin billing summary', summary.status === 200 && summary.data.billableUsers > 0 && summary.data.prices?.perUserCents > 0 && Array.isArray(summary.data.providers) && typeof summary.data.paymentsConfigured === 'boolean', summary.data);
+      // Stripe is the only provider: nothing else is ever offered.
+      check('only Stripe can be offered', summary.data.providers.every((p: any) => p.id === 'stripe') && summary.data.paymentsConfigured === summary.data.providers.length > 0, summary.data.providers);
+      if (!summary.data.paymentsConfigured) {
+        // No Stripe keys on this deployment: checkout says so clearly instead of failing obscurely.
+        const notConfigured = await admin('POST', '/billing/checkout', { plan: 'flat' });
+        check('checkout without Stripe configured is 503 with a clear message', notConfigured.status === 503 && /not configured/i.test(String(notConfigured.data?.message ?? '')), notConfigured.data);
+        check('Stripe webhook without Stripe configured (404)', (await webhookPost('stripe')).status === 404);
+      } else {
+        check('unsigned Stripe webhook is rejected (400)', (await webhookPost('stripe')).status === 400);
+        check('unknown provider at checkout (400)', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'nope' })).status === 400);
+        if (process.env.STRIPE_API_BASE) await stripeMockFlow(admin, teacher, schoolId);
+        else console.log('  (STRIPE_API_BASE unset: skipping the Stripe checkout flow; run stripe-mock to cover it)');
+      }
+      for (const removed of ['manual', 'wipay', 'paypal', 'paddle']) {
+        const res = await admin('POST', '/billing/checkout', { plan: 'per_user', provider: removed });
+        check(`removed provider "${removed}" is refused at checkout`, res.status === 400 || res.status === 503, res.data);
+      }
+      check('pay-invoice route is gone (404)', (await admin('POST', `/billing/invoices/${crypto.randomUUID()}/pay`, { provider: 'stripe' })).status === 404);
       const schoolInvoices = await admin('GET', '/billing/invoices');
-      const open = schoolInvoices.data?.find?.((i: any) => i.status === 'open');
-      check('an open invoice priced per seat', !!open && open.amountCents === summary.data.prices.perUserCents * Math.max(1, summary.data.billableUsers) && open.provider === 'manual', schoolInvoices.data);
-      const payAgain = open && await admin('POST', `/billing/invoices/${open.id}/pay`, { provider: 'manual' });
-      check('pay an open invoice again gives instructions', payAgain?.status === 200 && payAgain.data.instructions?.includes(open.number), payAgain?.data);
+      check('school invoices list', schoolInvoices.status === 200 && Array.isArray(schoolInvoices.data), schoolInvoices.data);
 
-      check('manual webhooks are rejected (400)', (await webhookPost('manual')).status === 400);
+      check('the removed manual provider has no webhook (404)', (await webhookPost('manual')).status === 404);
+      check('the removed WiPay provider has no webhook (404)', (await webhookPost('wipay')).status === 404);
+      check('webhook browser-return GET is gone (404)', (await fetch(`${API}/billing/webhooks/stripe`)).status === 404);
       check('unknown provider webhook (404)', (await webhookPost('nope')).status === 404);
 
       const teacherMe = await teacher('GET', '/platform/me');
@@ -483,25 +498,20 @@ async function main() {
       const adminMe = await admin('GET', '/platform/me');
       check('admin@demo.test is a platform admin', adminMe.data?.isPlatformAdmin === true, adminMe.data);
       const overview = await admin('GET', '/platform/overview');
-      check('platform overview', overview.status === 200 && overview.data.schools > 0 && overview.data.openInvoices > 0, overview.data);
+      check('platform overview', overview.status === 200 && overview.data.schools > 0 && overview.data.paymentsConfigured === summary.data.paymentsConfigured && !('openInvoices' in overview.data), overview.data);
       const platformSchools = await admin('GET', `/platform/schools?search=${encodeURIComponent((me.data.school.name ?? '').slice(0, 4))}`);
-      check('platform schools search finds the demo school', platformSchools.status === 200 && platformSchools.data.some?.((s: any) => s.schoolId === schoolId && s.openInvoices >= 1), platformSchools.data);
+      check('platform schools search finds the demo school', platformSchools.status === 200 && platformSchools.data.some?.((s: any) => s.schoolId === schoolId && typeof s.billableUsers === 'number'), platformSchools.data);
       const openList = await admin('GET', '/platform/invoices?status=open');
-      check('platform lists the open invoice', openList.status === 200 && openList.data.some?.((i: any) => i.id === open?.id && i.schoolId === schoolId && !!i.schoolName), openList.data?.length);
-      const generated = await admin('POST', '/platform/invoices/generate');
-      check('invoice sweep does not double-bill (created 0)', generated.status === 200 && generated.data.created === 0, generated.data);
-      const providers = await admin('GET', '/platform/providers');
-      check('platform providers', providers.status === 200 && providers.data.some?.((p: any) => p.id === 'manual' && p.enabled && p.allowedByEnv && p.configured), providers.data);
-      check('cannot enable a provider not allowed/configured (409)', (await admin('PATCH', '/platform/providers/stripe', { enabled: true })).status === 409);
+      check('platform lists open invoices', openList.status === 200 && Array.isArray(openList.data) && openList.data.every((i: any) => i.status === 'open' && !!i.schoolId), openList.data?.length);
+      // Invoice-mode machinery and the provider switches are gone.
+      check('invoice sweep route is gone (404)', (await admin('POST', '/platform/invoices/generate')).status === 404);
+      check('void route is gone (404)', (await admin('POST', `/platform/invoices/${crypto.randomUUID()}/void`, {})).status === 404);
+      check('platform providers page is gone (404)', (await admin('GET', '/platform/providers')).status === 404);
+      check('provider switch is gone (404)', (await admin('PATCH', '/platform/providers/stripe', { enabled: true })).status === 404);
 
-      const paid = open && await admin('POST', `/platform/invoices/${open.id}/mark-paid`, { method: 'bank_transfer', reference: 'SMOKE-REF' });
-      check('platform admin marks the invoice paid', paid?.status === 200 && paid.data.status === 'paid' && paid.data.method === 'bank_transfer', paid?.data);
-      check('a paid invoice cannot be voided (409)', !!open && (await admin('POST', `/platform/invoices/${open.id}/void`, {})).status === 409);
-      check('a paid invoice cannot be paid again (409)', !!open && (await admin('POST', `/platform/invoices/${open.id}/mark-paid`, { method: 'cash' })).status === 409);
-      const afterPay = await admin('GET', '/billing');
-      check('school is active after payment', afterPay.data?.status === 'active' && afterPay.data.plan === 'per_user' && !!afterPay.data.currentPeriodEnd && new Date(afterPay.data.currentPeriodEnd) > new Date(), afterPay.data);
+      check('offline mark-paid is gone (404)', (await admin('POST', `/platform/invoices/${crypto.randomUUID()}/mark-paid`, { method: 'bank_transfer' })).status === 404);
       const detail = await admin('GET', `/platform/schools/${schoolId}`);
-      check('platform school detail has invoices', detail.status === 200 && detail.data.invoices?.some?.((i: any) => i.id === open?.id && i.status === 'paid'), detail.data?.invoices?.length);
+      check('platform school detail has invoices', detail.status === 200 && Array.isArray(detail.data.invoices), detail.data?.invoices?.length);
 
       // Lapse the school: trial over, nothing paid. The comp call with a past
       // date changes nothing but flushes the cached entitlement.
@@ -522,6 +532,14 @@ async function main() {
       const allowed = await teacher('POST', '/courses', { name: 'Smoke unblocked course' });
       if (allowed.data?.id) smokeCourses.push(allowed.data.id);
       check('teacher can write again', allowed.status === 201, allowed.status);
+
+      // Lapse again, then recover with a comp instead.
+      await db.subscription.update({ where: { school_id: schoolId }, data: { trial_ends_at: new Date(Date.now() - 86_400_000) } });
+      await admin('POST', `/platform/schools/${schoolId}/comp`, { until: '2000-01-01', note: 'smoke' });
+      check('lapsed again is read-only', (await teacher('GET', '/billing/status')).data?.readOnly === true);
+      const comped = await admin('POST', `/platform/schools/${schoolId}/comp`, { until: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10), note: 'smoke' });
+      check('platform admin comps the school', comped.status === 200 && comped.data.readOnly === false, comped.data);
+      check('comped school is writable', (await teacher('GET', '/billing/status')).data?.readOnly === false);
     } finally {
       for (const id of smokeCourses) await admin('DELETE', `/courses/${id}`);
       await db.invoice.deleteMany({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } });
@@ -540,9 +558,143 @@ async function main() {
     check('billing state restored', (await db.invoice.count({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } })) === 0 && (await teacher('GET', '/billing/status')).data?.readOnly === false);
   }
 
+  await db.payment_event.deleteMany({ where: { provider: 'stripe', event_id: { startsWith: 'evt_smoke_' } } });
+
+  // ── GDPR erasure log, retention purge and replay ──────────────────────────
+  await erasureChecks(teacher, ta);
+
   await db.$disconnect();
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/** Run a backend CLI script; returns its exit code and output. */
+async function cli(script: string, args: string[]) {
+  const proc = Bun.spawn(['bun', 'run', `scripts/${script}`, ...args], { cwd: `${__dirname}/..`, stdout: 'pipe', stderr: 'pipe' });
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  return { code: await proc.exited, out: out + err };
+}
+
+/**
+ * Deleting a file and a chat message writes erasure-log entries; the purge
+ * CLI (0-day retention, limited to these two rows) removes them for good;
+ * then a simulated restore (rows and log entries put back as they were
+ * before) is undone by `erasure:replay --since`, reading the log from its
+ * object-storage copy, and a second replay changes nothing. Leaves the
+ * erasure-log entries in place - the log is append-only.
+ */
+async function erasureChecks(teacher: Call, ta: Call) {
+  const [{ now: since }] = await db.$queryRaw<{ now: Date }[]>`SELECT now() AS now`;
+  const teacherId = (await teacher('GET', '/auth/me')).data.id as string;
+  const taId = (await ta('GET', '/auth/me')).data.id as string;
+  const form = new FormData();
+  form.append('file', new Blob(['erase me'], { type: 'text/plain' }), 'smoke-erasure.txt');
+  const up = await teacher('POST', '/files?name=smoke-erasure.txt', form);
+  const conv = await teacher('POST', '/chat/conversations', { userId: taId });
+  const msg = conv.data?.id ? await teacher('POST', `/chat/conversations/${conv.data.id}/messages`, { body: 'smoke erasure message' }) : conv;
+  check('erasure: fixtures (file, chat message)', up.status === 201 && msg.status === 201, [up.data, msg.data]);
+  const fileId: string | undefined = up.data?.id;
+  const msgId: string | undefined = msg.data?.id;
+  if (!fileId || !msgId) return;
+  const fileBefore = await db.file.findUniqueOrThrow({ where: { id: fileId } });
+  const msgBefore = await db.message.findUniqueOrThrow({ where: { id: msgId } });
+
+  check('erasure: delete the file', (await teacher('DELETE', `/files/${fileId}`)).status === 200);
+  check('erasure: delete the chat message', (await teacher('DELETE', `/chat/messages/${msgId}`)).status === 200);
+  const logged = await db.erasure_log.findMany({ where: { occurred_at: { gte: since }, subject_ids: { hasSome: [fileId, msgId] } }, orderBy: { occurred_at: 'asc' } });
+  const fileEntry = logged.find((e) => e.kind === 'file' && e.subject_ids.includes(fileId));
+  const msgEntry = logged.find((e) => e.kind === 'chat_message' && e.subject_ids.includes(msgId));
+  check('erasure: file delete logged (user_request, by the teacher)', fileEntry?.reason === 'user_request' && fileEntry.actor === teacherId && fileEntry.school_id === fileBefore.school_id, fileEntry);
+  check('erasure: chat delete logged', msgEntry?.reason === 'user_request' && msgEntry.actor === teacherId, msgEntry);
+  check('erasure: log holds no personal data', !JSON.stringify(logged).includes('smoke-erasure') && !JSON.stringify(logged).includes('smoke erasure message'), logged);
+
+  const dry = await cli('retention-purge.ts', ['--dry-run', '--retention-days', '0', '--only', `${fileId},${msgId}`]);
+  check('purge --dry-run counts and changes nothing', dry.code === 0 && /files\s+1\b/.test(dry.out) && (await db.file.count({ where: { id: fileId } })) === 1, dry.out);
+  const purged = await cli('retention-purge.ts', ['--retention-days', '0', '--only', `${fileId},${msgId}`]);
+  check('purge (0-day retention, these rows only) succeeds', purged.code === 0, purged.out);
+  check('purge removed the file row and the chat message row', (await db.file.count({ where: { id: fileId } })) === 0 && (await db.message.count({ where: { id: msgId } })) === 0);
+  const storage = new StorageService();
+  const key = `${fileBefore.bucket}/${fileBefore.storage_path}`;
+  check('purge removed the stored object', (await storage.exists(key)) === null, key);
+  const purgeEntries = await db.erasure_log.findMany({ where: { reason: 'retention_purge', occurred_at: { gte: since }, subject_ids: { hasSome: [fileId, msgId] } } });
+  check('purge logged as retention_purge', purgeEntries.length === 2 && purgeEntries.every((e) => e.actor === 'system'), purgeEntries);
+
+  // Simulated restore of a backup taken before the deletes: the rows come
+  // back as they were, and the log loses the entries written since.
+  const ours = [...logged, ...purgeEntries].map((e) => e.id);
+  for (let i = 0; i < 20 && (await db.erasure_log.count({ where: { id: { in: ours }, exported_at: null } })) > 0; i++) await Bun.sleep(500);
+  check('erasure log copied to object storage', (await db.erasure_log.count({ where: { id: { in: ours }, exported_at: null } })) === 0);
+  await db.erasure_log.deleteMany({ where: { id: { in: ours } } });
+  await db.file.create({ data: { ...fileBefore, deleted_at: null } });
+  await db.message.create({ data: { ...msgBefore, metadata: msgBefore.metadata ?? {} } as any });
+
+  const replayed = await cli('erasure-replay.ts', ['--since', since.toISOString()]);
+  check('erasure:replay re-applies the erasures from the storage copy', replayed.code === 0 && /Summary: .* 0 failed/.test(replayed.out), replayed.out);
+  check('replay removed the restored rows again', (await db.file.count({ where: { id: fileId } })) === 0 && (await db.message.count({ where: { id: msgId } })) === 0);
+  check('replay put the entries back in the log', (await db.erasure_log.count({ where: { id: { in: ours } } })) === ours.length);
+  const again = await cli('erasure-replay.ts', ['--since', since.toISOString()]);
+  check('a second replay changes nothing', again.code === 0 && /Summary: \d+ unique entr\w+, 0 applied, \d+ unchanged, 0 failed/.test(again.out), again.out);
+}
+
+/**
+ * The Stripe flow against stripe-mock (STRIPE_API_BASE): the API talks to the
+ * mock for checkout, cancel, resume and the portal, and this test plays
+ * Stripe's part by sending webhooks signed with STRIPE_WEBHOOK_SECRET, the way
+ * Stripe signs them (`t=<ts>,v1=HMAC-SHA256(<ts>.<body>)`).
+ */
+async function stripeMockFlow(admin: Call, teacher: Call, schoolId: string) {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    check('STRIPE_WEBHOOK_SECRET is set for the stripe-mock flow', false);
+    return;
+  }
+  const run = Date.now().toString(36);
+  const subId = `sub_smoke_${run}`;
+  const customerId = `cus_smoke_${run}`;
+  const now = Math.floor(Date.now() / 1000);
+  const periodEnd = now + 30 * 86_400;
+  const sendEvent = async (type: string, object: Record<string, unknown>, id = `evt_smoke_${run}_${type}`) => {
+    const body = JSON.stringify({ id, object: 'event', type, created: now, livemode: false, api_version: '2026-09-30', data: { object } });
+    const t = Math.floor(Date.now() / 1000);
+    const v1 = createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
+    return fetch(`${API}/billing/webhooks/stripe`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${t},v1=${v1}` }, body });
+  };
+  const metadata = { schoolId, plan: 'per_user' };
+
+  const checkout = await admin('POST', '/billing/checkout', { plan: 'per_user' });
+  check('stripe-mock: checkout returns a Stripe Checkout URL', [200, 201].includes(checkout.status) && /^https:\/\/checkout\.stripe\.com\//.test(String(checkout.data?.redirectUrl ?? '')), checkout.data);
+
+  const badSig = await fetch(`${API}/billing/webhooks/stripe`, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${now},v1=deadbeef` }, body: '{}' });
+  check('stripe-mock: a forged signature is refused (400)', badSig.status === 400);
+
+  const completed = await sendEvent('checkout.session.completed', { id: `cs_smoke_${run}`, object: 'checkout.session', mode: 'subscription', payment_status: 'paid', subscription: subId, customer: customerId, client_reference_id: schoolId, metadata });
+  check('stripe-mock: checkout.session.completed accepted', completed.status === 200, completed.status);
+  const afterCheckout = await admin('GET', '/billing');
+  check('stripe-mock: school is active on per_user', afterCheckout.data?.status === 'active' && afterCheckout.data?.plan === 'per_user' && afterCheckout.data?.provider === 'stripe' && afterCheckout.data?.readOnly === false, afterCheckout.data);
+
+  const subObject = (status: string, cancelAtPeriodEnd = false) => ({ id: subId, object: 'subscription', status, customer: customerId, metadata, cancel_at_period_end: cancelAtPeriodEnd, cancel_at: null, items: { object: 'list', data: [{ id: `si_smoke_${run}`, object: 'subscription_item', quantity: 12, current_period_start: now, current_period_end: periodEnd, price: { id: 'price_smoke', object: 'price', product: 'gradebook_per_user' } }] } });
+  check('stripe-mock: subscription.updated accepted', (await sendEvent('customer.subscription.updated', subObject('active'))).status === 200);
+  const afterUpdate = await admin('GET', '/billing');
+  check('stripe-mock: renewal date comes from Stripe', !!afterUpdate.data?.currentPeriodEnd && Math.abs(new Date(afterUpdate.data.currentPeriodEnd).getTime() / 1000 - periodEnd) < 5, afterUpdate.data?.currentPeriodEnd);
+
+  const invoice = { id: `in_smoke_${run}`, object: 'invoice', amount_paid: 6000, currency: 'usd', status: 'paid', status_transitions: { paid_at: now }, period_start: now, period_end: periodEnd, parent: { type: 'subscription_details', subscription_details: { subscription: subId, metadata } }, lines: { object: 'list', data: [{ period: { start: now, end: periodEnd } }] } };
+  check('stripe-mock: invoice.paid accepted', (await sendEvent('invoice.paid', invoice)).status === 200);
+  check('stripe-mock: a replayed event is accepted once', (await sendEvent('invoice.paid', invoice)).status === 200);
+  const invoices = await admin('GET', '/billing/invoices');
+  const paid = invoices.data?.filter?.((i: any) => i.amountCents === 6000 && i.status === 'paid') ?? [];
+  check('stripe-mock: the paid invoice is listed exactly once', paid.length === 1, invoices.data);
+
+  const cancel = await admin('POST', '/billing/cancel');
+  check('stripe-mock: cancel at period end', [200, 201].includes(cancel.status) && cancel.data?.cancelAtPeriodEnd === true, cancel.data);
+  const resume = await admin('POST', '/billing/resume');
+  check('stripe-mock: resume', [200, 201].includes(resume.status) && resume.data?.cancelAtPeriodEnd === false, resume.data);
+  const portal = await admin('POST', '/billing/portal');
+  check('stripe-mock: customer portal URL', [200, 201].includes(portal.status) && /^https:\/\//.test(String(portal.data?.url ?? '')), portal.data);
+  check('stripe-mock: teacher cannot cancel (403)', (await teacher('POST', '/billing/cancel')).status === 403);
+
+  check('stripe-mock: subscription.deleted accepted', (await sendEvent('customer.subscription.deleted', subObject('canceled'))).status === 200);
+  const afterDelete = await admin('GET', '/billing');
+  check('stripe-mock: deleted subscription shows canceled', afterDelete.data?.status === 'canceled' || afterDelete.data?.status === 'read_only', afterDelete.data?.status);
 }
 
 main().catch((err) => {

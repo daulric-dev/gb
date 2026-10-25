@@ -5,7 +5,6 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
-  Patch,
   Post,
   Query,
   Req,
@@ -15,14 +14,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { BillingEnabledGuard, PlatformAdminGuard } from './billing.guards';
 import { PlatformService } from './platform.service';
-import {
-  CompDto,
-  ExtendTrialDto,
-  INVOICE_STATUSES,
-  MarkPaidDto,
-  SetProviderDto,
-  VoidInvoiceDto,
-} from './dto/billing.dto';
+import { CompDto, ExtendTrialDto, INVOICE_STATUSES } from './dto/billing.dto';
 
 type Req = { user: { id: string } };
 
@@ -85,35 +77,4 @@ export class PlatformController {
     );
   }
 
-  @Post('invoices/generate')
-  @HttpCode(200)
-  generate() {
-    return this.platform.generateInvoices();
-  }
-
-  @Post('invoices/:id/mark-paid')
-  @HttpCode(200)
-  markPaid(
-    @Req() req: Req,
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Body() dto: MarkPaidDto,
-  ) {
-    return this.platform.markPaid(id, dto, req.user.id);
-  }
-
-  @Post('invoices/:id/void')
-  @HttpCode(200)
-  voidInvoice(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: VoidInvoiceDto) {
-    return this.platform.voidInvoice(id, dto.note);
-  }
-
-  @Get('providers')
-  providers() {
-    return this.platform.providers();
-  }
-
-  @Patch('providers/:id')
-  setProvider(@Req() req: Req, @Param('id') id: string, @Body() dto: SetProviderDto) {
-    return this.platform.setProvider(id, dto.enabled, req.user.id);
-  }
 }

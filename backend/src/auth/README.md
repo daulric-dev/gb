@@ -17,7 +17,7 @@ All paths start with `/api/auth`. "Public" means no guard, though the routes are
 | PATCH | `/api/auth/onboard` | `AuthGuard` | Saves the name and either onboards as a student, joins the single school (on a dedicated deployment), or files a `school_join_request` when `schoolId` is given. If the user ends up with no school, it also tries `EmailDomainService.tryAutoJoin()` on the email domain. |
 | POST | `/api/auth/join-school` | `AuthGuard`. Throttled: `claim-code` 10 per 15 min. | Joins a school with a school-issued code (`StudentMembershipService.joinByCode`). |
 | PATCH | `/api/auth/profile` | `AuthGuard` | Updates the first and last name. |
-| DELETE | `/api/auth/account` | `AuthGuard`. Throttled: `default` 3/hour. | Deletes `user_profile`, revokes every session, then deletes `app_user`, which cascades to sessions and identities. |
+| DELETE | `/api/auth/account` | `AuthGuard`. Throttled: `default` 3/hour. | Revokes every session, then deletes `user_profile` and `app_user` (cascading to sessions, identities, memberships, files, messages, ...) and writes an `account` entry to the [erasure log](../erasure/README.md), all in one transaction. After commit the user's stored files and avatar are deleted (best effort; the retention job retries). |
 | POST | `/api/auth/logout` | `AuthGuard` | Revokes this device's session and clears the cookie. |
 | GET | `/api/auth/avatar` | `AuthGuard` | Streams the caller's avatar image (`ImagesService.getImageFromUserProfile`), cached privately for an hour. |
 | POST | `/api/auth/avatar` | `AuthGuard` | Multipart avatar upload (`ImagesService.setImageToUserProfile`). |

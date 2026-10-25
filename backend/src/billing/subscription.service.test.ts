@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { createMockCacheService } from '@/test/mocks';
-import { FakeProvider, subRow } from '@/test/billing-fakes';
-import { BillingRegistry } from './billing.registry';
+import { subRow } from '@/test/billing-fakes';
 import { SubscriptionService } from './subscription.service';
 
 let prisma: MockPrisma;
@@ -12,8 +11,7 @@ let service: SubscriptionService;
 beforeEach(() => {
   prisma = createMockPrisma();
   cache = createMockCacheService();
-  const registry = new BillingRegistry(prisma as never, [new FakeProvider('inv', 'invoice')]);
-  service = new SubscriptionService(prisma as never, cache as never, registry);
+  service = new SubscriptionService(prisma as never, cache as never);
 });
 
 describe('SubscriptionService', () => {
@@ -50,12 +48,13 @@ describe('SubscriptionService', () => {
     expect((await service.entitlement('school-1')).readOnly).toBe(true);
   });
 
-  test('invoice mode uses the oldest open invoice', async () => {
+  test('a row with a removed provider id evaluates without error; open invoices are ignored', async () => {
     prisma.subscription.findUnique.mockResolvedValue(
-      subRow({ provider: 'inv', plan: 'flat', trial_ends_at: new Date(Date.now() - 50 * 86_400_000) }),
+      subRow({ provider: 'manual', plan: 'flat', trial_ends_at: new Date(Date.now() - 50 * 86_400_000) }),
     );
     prisma.invoice.findFirst.mockResolvedValue({ due_at: new Date(Date.now() + 86_400_000) });
-    expect((await service.entitlement('school-1')).readOnly).toBe(false);
+    expect((await service.entitlement('school-1')).readOnly).toBe(true);
+    expect(prisma.invoice.findFirst).not.toHaveBeenCalled();
   });
 
   test('schoolOfUser: students resolve through their student record', async () => {

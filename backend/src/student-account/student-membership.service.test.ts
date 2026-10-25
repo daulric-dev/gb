@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { StudentMembershipService } from './student-membership.service';
 import { expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const ACTOR = 'staff-1';
@@ -31,7 +32,7 @@ function recordingCache() {
 }
 
 function service(prisma: MockPrisma, cache: any = recordingCache().cache) {
-  return new StudentMembershipService(prisma as any, cache);
+  return new StudentMembershipService(prisma as any, cache, createMockErasureLog() as any);
 }
 
 /** A database where the actor (and anyone) is in SCHOOL. */

@@ -22,7 +22,7 @@ All routes use `AuthGuard`. `CourseController` and `CourseCopyController` also u
 | POST | `/api/courses` | `course:create` | Create a course; the creator becomes its teacher in the same transaction. Year, term and grade scale must belong to the school, and a term must be in the chosen year (a term alone implies its year). |
 | GET | `/api/courses/:courseId` | Staff role | One course with `role` and `studentCount`. |
 | PATCH | `/api/courses/:courseId` | Manage role | Update name, code, description, status, year, term, grade scale, `isTemplate`. Turning a course into a template is refused while it has non-dropped students and clears its join code. |
-| DELETE | `/api/courses/:courseId` | Manage role | Delete (`204`). A course that is not archived and has any submissions must be archived first (`409`). |
+| DELETE | `/api/courses/:courseId` | Manage role | Delete (`204`). A course that is not archived and has any submissions must be archived first (`409`). The delete and a `course` entry in the [erasure log](../erasure/README.md) commit together (students' work and attendance cascade with the course). |
 | POST | `/api/courses/:courseId/join-code` | Manage role | Issue a new 6-character join code (alphabet without 0/O/1/I/L; retried on a clash, unique across schools). Refused for templates. |
 | DELETE | `/api/courses/:courseId/join-code` | Manage role | Turn the join code off (`204`). |
 

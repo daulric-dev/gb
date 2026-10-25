@@ -74,7 +74,7 @@ export function PlanPicker({
 }: {
   summary: BillingSummary;
   busy: string | null;
-  onCheckout: (plan: BillingPlan, provider: string) => Promise<void>;
+  onCheckout: (plan: BillingPlan) => Promise<void>;
   onChangePlan: (plan: BillingPlan) => Promise<void>;
 }) {
   const subscribed = isSubscribed(s);
@@ -121,31 +121,32 @@ export function PlanPicker({
               Switch to the {PLAN_LABELS[selected]} plan
             </Button>
           )
-        ) : s.providers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No payment methods are available right now. Please contact support.
-          </p>
+        ) : !s.paymentsConfigured || s.providers.length === 0 ? (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+          >
+            <p className="font-medium">Payments are not configured yet</p>
+            <p className="text-muted-foreground">
+              Online payment isn&rsquo;t available on this platform right now.
+              Please contact support to subscribe.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm font-medium">Pay with</p>
-            <div className="flex flex-wrap gap-2">
-              {s.providers.map((p) => (
-                <Button
-                  key={p.id}
-                  variant={p.mode === "subscription" ? "default" : "outline"}
-                  onClick={() => onCheckout(selected, p.id)}
-                  disabled={busy !== null}
-                >
-                  {busy === `checkout:${p.id}` && (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  )}
-                  {p.label}
-                </Button>
-              ))}
-            </div>
+            <Button
+              onClick={() => onCheckout(selected)}
+              disabled={busy !== null}
+            >
+              {busy === "checkout" && (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              )}
+              Continue to payment
+            </Button>
             <p className="text-xs text-muted-foreground">
-              Card and PayPal-style providers bill monthly automatically.
-              Invoice-based options send a monthly invoice due in 14 days.
+              You&rsquo;ll enter your card on {s.providers[0].label}&rsquo;s
+              secure checkout page. The {PLAN_LABELS[selected]} plan renews
+              monthly until you cancel.
             </p>
           </div>
         )}

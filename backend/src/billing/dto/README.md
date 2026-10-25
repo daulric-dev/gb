@@ -6,18 +6,13 @@ All the billing and platform request bodies are in `billing.dto.ts`. They are va
 
 | Class | Used by | Validation |
 |-------|---------|------------|
-| `CheckoutDto` | `POST /api/billing/checkout` | `plan`: `'per_user'` or `'flat'`. `provider`: a string of at most 40 characters, a provider id such as `manual`. Whether that provider is enabled is checked in `BillingService`, which answers 400 when it is not. |
+| `CheckoutDto` | `POST /api/billing/checkout` | `plan`: `'per_user'` or `'flat'`. `provider`: optional, a string of at most 40 characters such as `stripe`; omitted means the configured provider (Stripe). `BillingService` answers 400 for an unknown or unconfigured id, and 503 when no provider is configured at all. |
 | `ChangePlanDto` | `POST /api/billing/change-plan` | `plan`: `'per_user'` or `'flat'`. |
-| `PayInvoiceDto` | `POST /api/billing/invoices/:id/pay` | `provider`: a string of at most 40 characters, for example `wipay`. |
 | `ExtendTrialDto` | `POST /api/platform/schools/:schoolId/extend-trial` | `days`: an integer from 1 to 365. `@Type(() => Number)` coerces numeric strings. |
 | `CompDto` | `POST /api/platform/schools/:schoolId/comp` | `until`: an ISO date string. `note`: optional, at most 1000 characters. |
-| `MarkPaidDto` | `POST /api/platform/invoices/:id/mark-paid` | `method`: one of `MARK_PAID_METHODS` (`bank_transfer`, `cheque`, `cash`, `other`). `reference`: optional, at most 200 characters. `note`: optional, at most 1000 characters. |
-| `VoidInvoiceDto` | `POST /api/platform/invoices/:id/void` | `note`: optional, at most 1000 characters. |
-| `SetProviderDto` | `PATCH /api/platform/providers/:id` | `enabled`: boolean. |
 
 | Constant | Used by |
 |----------|---------|
-| `MARK_PAID_METHODS` | `MarkPaidDto`. It mirrors `MarkPaidMethod` in `../invoice.service.ts`. |
 | `INVOICE_STATUSES` (`open`, `paid`, `void`, `uncollectible`) | `PlatformController.invoices()` uses it to accept only a known `?status=` filter. |
 
 The plan list here (`['per_user', 'flat']`) duplicates `PLANS` in `../billing.config.ts`. If you add a plan, update both, along with `BillingPlan` in `../providers/payment-provider.ts`.

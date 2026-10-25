@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DiscussionService, type DiscussionCtx } from './discussion.service';
 import { expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const COURSE = { id: 'course-1', school_id: 'school-1', status: 'published' } as any;
@@ -53,7 +54,7 @@ const ctx = (
 ): DiscussionCtx => ({ course, userId, role });
 
 function service(prisma: MockPrisma) {
-  return new DiscussionService(prisma as any, {} as any);
+  return new DiscussionService(prisma as any, {} as any, createMockErasureLog() as any);
 }
 
 function seed(prisma: MockPrisma, topic = TOPIC) {
@@ -286,7 +287,7 @@ describe('DiscussionService notices', () => {
         calls.reply.push(args);
       },
     };
-    const svc = new DiscussionService(prisma as any, {} as any, notices as any);
+    const svc = new DiscussionService(prisma as any, {} as any, createMockErasureLog() as any, notices as any);
     return { svc, calls };
   }
 

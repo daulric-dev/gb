@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, subRow } from '@/test/billing-fakes';
 import { BillingRegistry } from './billing.registry';
@@ -10,8 +10,11 @@ let prisma: MockPrisma;
 let platform: PlatformService;
 const savedEnv = { ...process.env };
 
+let stripe: FakeProvider;
+
 function make() {
-  const registry = new BillingRegistry(prisma as never, [new FakeProvider('subp'), new FakeProvider('manual', 'invoice')]);
+  stripe = new FakeProvider('subp');
+  const registry = new BillingRegistry([stripe]);
   const subscriptions = {
     ensureAll: async () => 0,
     ensure: async () => subRow(),
@@ -19,13 +22,12 @@ function make() {
     evaluate: (row: any) => ({ status: row.status, readOnly: row.status === 'unpaid' }),
   };
   const seats = { countAll: async () => new Map([['s1', 16]]) };
-  return new PlatformService(prisma as never, registry, subscriptions as never, seats as never, {} as never);
+  return new PlatformService(prisma as never, registry, subscriptions as never, seats as never);
 }
 
 beforeEach(() => {
   process.env.BILLING_ENABLED = 'true';
   process.env.PLATFORM_ADMIN_EMAILS = 'ops@gb.test';
-  process.env.PAYMENT_PROVIDERS = 'manual';
   prisma = createMockPrisma();
   platform = make();
 });
@@ -79,31 +81,6 @@ describe('platform admin authorisation', () => {
   });
 });
 
-describe('providers', () => {
-  test('lists every registered provider with its switches', async () => {
-    const list = await platform.providers();
-    expect(list.map((p) => [p.id, p.allowedByEnv, p.enabled])).toEqual([
-      ['subp', false, false],
-      ['manual', true, true],
-    ]);
-  });
-
-  test('cannot enable one that is not allowed and configured (409)', async () => {
-    await expect(platform.setProvider('subp', true, 'admin')).rejects.toBeInstanceOf(ConflictException);
-    await expect(platform.setProvider('nope', false, 'admin')).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  test('switching off and on is stored per provider', async () => {
-    await platform.setProvider('manual', false, 'admin');
-    expect(prisma.provider_setting.upsert.mock.calls[0][0]).toMatchObject({
-      where: { provider_id: 'manual' },
-      create: { provider_id: 'manual', enabled: false, updated_by: 'admin' },
-    });
-    // Switching off is always allowed, even for an unconfigured provider.
-    await platform.setProvider('subp', false, 'admin');
-  });
-});
-
 describe('overview and schools', () => {
   beforeEach(() => {
     prisma.school.findMany.mockResolvedValue([
@@ -116,9 +93,6 @@ describe('overview and schools', () => {
       subRow({ school_id: 's2', status: 'unpaid', plan: 'flat' }),
       subRow({ school_id: 's3', status: 'active', plan: 'flat', comp_until: new Date(Date.now() + 86_400_000) }),
     ]);
-    prisma.invoice.findMany.mockImplementation(async ({ where }: any) =>
-      where?.status === 'open' ? [{ school_id: 's2', due_at: new Date() }] : [],
-    );
   });
 
   test('overview counts and MRR (excluding read-only and comped schools)', async () => {
@@ -130,15 +104,21 @@ describe('overview and schools', () => {
       readOnly: 1,
       mrrCents: 8000,
       currency: 'USD',
-      openInvoices: 1,
+      paymentsConfigured: true,
     });
+  });
+
+  test('overview flags a deployment with no payment provider configured', async () => {
+    stripe.configured = false;
+    expect((await platform.overview()).paymentsConfigured).toBe(false);
   });
 
   test('schools: search and status filter', async () => {
     expect((await platform.schools('river')).map((s) => s.schoolId)).toEqual(['s1']);
     expect((await platform.schools(undefined, 'unpaid')).map((s) => s.schoolId)).toEqual(['s2']);
     const [row] = await platform.schools('river');
-    expect(row).toMatchObject({ billableUsers: 16, openInvoices: 0, plan: 'per_user' });
+    expect(row).toMatchObject({ billableUsers: 16, plan: 'per_user' });
+    expect(row).not.toHaveProperty('openInvoices');
   });
 
   test('extend trial adds days to the later of now and the current trial end', async () => {

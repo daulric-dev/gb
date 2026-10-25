@@ -66,7 +66,7 @@ export class SeatService {
 
   /**
    * Push the billable count to each per-seat subscription whose provider bills
-   * it (subscription mode) when it differs from what was last sent. Returns
+   * it when it differs from what was last sent. Returns
    * how many were updated.
    */
   async syncAll(): Promise<number> {
@@ -111,7 +111,7 @@ export class SeatService {
       return false;
     }
     const provider = this.registry.find(sub.provider);
-    if (!provider || provider.mode !== 'subscription' || !provider.updateQuantity) {
+    if (!provider?.updateQuantity) {
       return false;
     }
     try {

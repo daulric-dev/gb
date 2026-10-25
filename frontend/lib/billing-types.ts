@@ -16,11 +16,7 @@ export type SubscriptionStatus =
   | "incomplete"
   | "read_only";
 
-export type ProviderMode = "subscription" | "invoice";
-
 export type InvoiceStatus = "open" | "paid" | "void" | "uncollectible";
-
-export type MarkPaidMethod = "bank_transfer" | "cheque" | "cash" | "other";
 
 /** GET /billing/status - any signed-in user. */
 export interface BillingStatus {
@@ -35,10 +31,10 @@ export interface BillingPrices {
   flatCents: number;
 }
 
+/** A payment provider the school can subscribe with (Stripe). */
 export interface BillingProviderOption {
   id: string;
   label: string;
-  mode: ProviderMode;
 }
 
 /** GET /billing and the result of change-plan / cancel / resume. */
@@ -56,12 +52,13 @@ export interface BillingSummary {
   currency: string;
   prices: BillingPrices;
   providers: BillingProviderOption[];
+  /** False when billing is on but no payment provider (Stripe) is configured. */
+  paymentsConfigured: boolean;
 }
 
-/** POST /billing/checkout and POST /billing/invoices/:id/pay. */
+/** POST /billing/checkout: where to send the browser (Stripe Checkout). */
 export interface PayResult {
   redirectUrl: string | null;
-  instructions?: string;
 }
 
 export interface Invoice {
@@ -94,7 +91,8 @@ export interface PlatformOverview {
   readOnly: number;
   mrrCents: number;
   currency: string;
-  openInvoices: number;
+  /** False when billing is on but Stripe is not configured. */
+  paymentsConfigured: boolean;
 }
 
 export interface PlatformSchoolRow {
@@ -107,7 +105,6 @@ export interface PlatformSchoolRow {
   billableUsers: number;
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
-  openInvoices: number;
 }
 
 export interface PlatformEvent {
@@ -124,13 +121,4 @@ export interface PlatformSchoolDetail extends PlatformSchoolRow {
 export interface PlatformInvoice extends Invoice {
   schoolId: string;
   schoolName: string;
-}
-
-export interface PlatformProvider {
-  id: string;
-  label: string;
-  mode: ProviderMode;
-  allowedByEnv: boolean;
-  configured: boolean;
-  enabled: boolean;
 }
