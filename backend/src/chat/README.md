@@ -21,7 +21,7 @@ All routes use `AuthGuard` and `PermissionGuard`. The permission keys are on the
 | POST | `/api/chat/conversations/:id/messages` | `chat:create` | Send a text message. Body: `SendMessageDto`. |
 | POST | `/api/chat/conversations/:id/read` | `chat:update` | Move the caller's read marker to now; publishes a `read` event to the caller's other tabs/devices. |
 | PATCH | `/api/chat/messages/:id` | `chat:update` | Edit the caller's own message. Body: `SendMessageDto`. |
-| DELETE | `/api/chat/messages/:id` | `chat:delete` | Soft-delete the caller's own message (body cleared, `deleted_at` set). |
+| DELETE | `/api/chat/messages/:id` | `chat:delete` | Soft-delete the caller's own message (body cleared, `deleted_at` set). Logged in the [erasure log](../erasure/README.md) in the same transaction; the retention purge removes the tombstone after `SOFT_DELETE_RETENTION_DAYS`. |
 | POST | `/api/chat/messages/:id/action` | `chat:update` | Accept or dismiss a system message's inline action. Only a recipient may act, never the sender. Body: `MessageActionDto`. |
 
 ### Services / exports

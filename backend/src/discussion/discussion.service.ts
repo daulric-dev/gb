@@ -10,6 +10,8 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isoDate } from '@/common/db-values';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
 import {
   CourseAccessService,
@@ -114,6 +116,7 @@ export class DiscussionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    private readonly erasure: ErasureLogService,
     @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
@@ -387,7 +390,20 @@ export class DiscussionService {
       }
     }
 
-    await this.prisma.discussion_topic.deleteMany({ where: { id: topic.id } });
+    // Replies (everyone's) cascade with the topic; the log entry commits
+    // with the delete.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.discussion_topic.deleteMany({ where: { id: topic.id } });
+      await this.erasure.record(tx, {
+        kind: 'discussion_topic',
+        subjectTable: 'course.discussion_topic',
+        subjectIds: [topic.id],
+        schoolId: ctx.course.school_id,
+        actor: ctx.userId,
+        reason: isAuthor ? 'user_request' : 'admin',
+        replay: plan.of(plan.del('course.discussion_topic', { id: [topic.id] })),
+      });
+    });
   }
 
   // ── replies ───────────────────────────────────────────────────────────────
@@ -502,32 +518,65 @@ export class DiscussionService {
     }
     if (!this.isStaff(ctx)) this.assertOpen(ctx);
 
-    const children = await this.prisma.discussion_reply.count({
-      where: { parent_id: reply.id },
-    });
+    const entry = {
+      kind: 'discussion_reply' as const,
+      subjectTable: 'course.discussion_reply',
+      schoolId: ctx.course.school_id,
+      actor: ctx.userId,
+      reason:
+        reply.author_user_profile_id === ctx.userId
+          ? ('user_request' as const)
+          : ('admin' as const),
+    };
 
-    if (children > 0) {
-      await this.prisma.discussion_reply.update({
-        where: { id: reply.id },
-        data: { body: '', deleted_at: new Date() },
-        select: { id: true },
+    // Each branch writes its erasure-log entry in the same transaction.
+    await this.prisma.$transaction(async (tx) => {
+      const children = await tx.discussion_reply.count({
+        where: { parent_id: reply.id },
       });
-      return;
-    }
 
-    await this.prisma.discussion_reply.deleteMany({ where: { id: reply.id } });
-
-    if (reply.parent_id) {
-      const parent = await this.prisma.discussion_reply.findUnique({
-        where: { id: reply.parent_id },
-        select: { deleted_at: true, _count: { select: { children: true } } },
-      });
-      if (parent?.deleted_at && parent._count.children === 0) {
-        await this.prisma.discussion_reply.deleteMany({
-          where: { id: reply.parent_id },
+      if (children > 0) {
+        await tx.discussion_reply.update({
+          where: { id: reply.id },
+          data: { body: '', deleted_at: new Date() },
+          select: { id: true },
         });
+        await this.erasure.record(tx, {
+          ...entry,
+          subjectIds: [reply.id],
+          replay: plan.of(
+            plan.update(
+              'course.discussion_reply',
+              { id: [reply.id] },
+              { body: '', deleted_at: OCCURRED_AT },
+            ),
+          ),
+        });
+        return;
       }
-    }
+
+      await tx.discussion_reply.deleteMany({ where: { id: reply.id } });
+      const removed = [reply.id];
+
+      if (reply.parent_id) {
+        const parent = await tx.discussion_reply.findUnique({
+          where: { id: reply.parent_id },
+          select: { deleted_at: true, _count: { select: { children: true } } },
+        });
+        if (parent?.deleted_at && parent._count.children === 0) {
+          await tx.discussion_reply.deleteMany({
+            where: { id: reply.parent_id },
+          });
+          removed.push(reply.parent_id);
+        }
+      }
+
+      await this.erasure.record(tx, {
+        ...entry,
+        subjectIds: removed,
+        replay: plan.of(plan.del('course.discussion_reply', { id: removed })),
+      });
+    });
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────

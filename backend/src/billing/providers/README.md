@@ -1,11 +1,10 @@
 # Payment providers (`src/billing/providers`)
 
-Each payment provider implements one interface, `PaymentProvider` (in `payment-provider.ts`). The rest of billing only talks to that interface: it reaches providers through `BillingRegistry` in `../billing.registry.ts` and never imports a concrete provider class. To add a provider, you write one class here and register it in that one list.
+GradeBook takes payment through **one provider: Stripe**. Payment is Stripe-hosted: schools subscribe on Stripe Checkout and manage their card and invoices in the Stripe Customer Portal, so no card form is ever shown on our pages. There is no manual / bank-transfer option, and invoices cannot be marked paid by hand.
 
-There are two kinds of provider (`mode`):
+The rest of billing still only talks to the `PaymentProvider` interface (in `payment-provider.ts`) through `BillingRegistry` in `./billing.registry.ts`, and never imports `StripeProvider` directly. That keeps the door open to adding another provider later (see below) without touching the controllers, the DTOs or the database.
 
-- **`subscription`**: the provider runs the recurring billing itself. Billing starts a subscription with `createCheckout`, keeps the seat count in step with `updateQuantity`, and learns about payments and status changes from webhooks (`parseWebhook`). Stripe, PayPal and Paddle work this way.
-- **`invoice`**: GradeBook raises an invoice every month (`InvoiceService`) and the provider only collects that one payment (`payInvoice`), or collects nothing at all. WiPay (a hosted card page) and manual (bank transfer, marked paid by a platform admin) work this way.
+The provider runs the recurring billing itself: billing starts a subscription with `createCheckout`, keeps the seat count in step with `updateQuantity`, and learns about payments and status changes from signed webhooks (`parseWebhook`).
 
 Money is always an integer number of minor units (cents) plus an ISO currency code.
 
@@ -13,73 +12,45 @@ Money is always an integer number of minor units (cents) plus an ISO currency co
 
 | File | Defines |
 |------|---------|
-| `payment-provider.ts` | The `PaymentProvider` interface. The context and result types: `CheckoutContext`, `InvoicePaymentContext`, `CheckoutResult`, `ProviderSubscriptionRef`, `WebhookRequest`, `PlanPrice`. The `BillingPlan` and `SubscriptionStatus` unions. The normalised `BillingEvent` union (`subscription.updated`, `subscription.canceled`, `invoice.paid`, `invoice.payment_failed`, `ignored`). And `WebhookVerificationError`, which the webhook controller answers with a 400. |
-| `http.ts` | Helpers shared by the providers. `FetchLike` and `ProviderOptions` (tests inject a `fetch` stub). `send()` is fetch with a 15-second timeout (`HTTP_TIMEOUT_MS`) that throws `ProviderApiError`. `readJson()`. `env()` and `requireEnv()` read trimmed environment variables. `centsToDecimal()` and `decimalToCents()` convert money without floats and know which currencies have no minor unit. Plus `safeEqual()` (constant-time comparison), `fromUnix()`, `fromIso()` and `header()`. |
-| `stripe.provider.ts` | `StripeProvider` (`id: 'stripe'`, subscription mode) on the official `stripe` SDK: Checkout Sessions, subscription item updates, the Billing customer portal, and `Stripe-Signature` verification with a 300-second tolerance. It uses your own prices (`STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT`) or inline prices on two stable products (`gradebook_per_user`, `gradebook_flat`) that it creates on first use. |
-| `paypal.provider.ts` | `PayPalProvider` (`id: 'paypal'`, subscription mode) over the REST API. It caches the OAuth token and finds or creates a catalog product and plans. Webhooks are verified through PayPal's `verify-webhook-signature` endpoint. PayPal cannot cancel at the end of a period, so `cancel({ atPeriodEnd: true })` **suspends** the subscription (see `PAYPAL_CANCEL_AT_PERIOD_END_NOTE`). Plan and quantity changes may need the payer's approval. `portalUrl` always returns `null`, because PayPal has no customer portal. |
-| `paddle.provider.ts` | `PaddleProvider` (`id: 'paddle'`, subscription mode) for Paddle Billing over REST. Checkout is a transaction whose `checkout.url` is the account's default payment link. Webhooks are verified with `Paddle-Signature` (`ts` plus `h1` = HMAC-SHA256 of `ts:rawBody`, any `h1` may match, 300-second tolerance). It uses catalog prices or inline non-catalog prices. |
-| `wipay.provider.ts` | `WiPayProvider` (`id: 'wipay'`, invoice mode), the WiPay hosted payment page for the Caribbean (TT, JM, BB). `payInvoice` creates a payment request. WiPay then sends the **browser** back to `callbackUrl` (the GET webhook route). `parseWebhook` checks our own HMAC (`gb_sig`) over the invoice, amount, currency and order id, checks that the transaction id embeds the order id, and checks WiPay's md5 `hash` on success. In live mode it refuses sandbox transactions. |
-| `manual.provider.ts` | `ManualProvider` (`id: 'manual'`, label "Bank transfer", invoice mode). It is always configured. `payInvoice` returns no redirect, only `instructions` (`BILLING_MANUAL_INSTRUCTIONS`, followed by the amount and the invoice number to quote). `parseWebhook` always rejects. A platform admin marks these invoices paid. Also exports `formatMoney()`. |
-| `*.test.ts` | `stripe`, `paypal`, `paddle`, `wipay` and `manual` provider tests (`isConfigured`, checkout or `payInvoice`, subscription changes, webhook verification, event mapping), plus `http.test.ts` (money conversion, `safeEqual`, `send` timeouts). |
+| `payment-provider.ts` | The `PaymentProvider` interface. The context and result types: `CheckoutContext`, `CheckoutResult`, `ProviderSubscriptionRef`, `WebhookRequest`, `PlanPrice`. The `BillingPlan` and `SubscriptionStatus` unions. The normalised `BillingEvent` union (`subscription.updated`, `subscription.canceled`, `invoice.paid`, `invoice.payment_failed`, `ignored`). And `WebhookVerificationError`, which the webhook controller answers with a 400. |
+| `http.ts` | Small shared helpers: `FetchLike` and `ProviderOptions` (tests inject a `fetch` stub), `HTTP_TIMEOUT_MS` (15 seconds), `ProviderApiError`, `env()` / `requireEnv()` (trimmed environment variables) and `fromUnix()`. |
+| `stripe.provider.ts` | `StripeProvider` (`id: 'stripe'`) on the official `stripe` SDK: Checkout Sessions in subscription mode, subscription item updates (seats, plan changes, cancel / resume at period end), Customer Portal sessions, and `Stripe-Signature` verification with a 300-second tolerance. It uses your own prices (`STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT`) or inline prices on two stable products (`gradebook_per_user`, `gradebook_flat`) that it creates on first use. |
+| `*.test.ts` | `stripe.provider.test.ts` (`isConfigured`, checkout, subscription changes, portal, webhook verification, event mapping against a stubbed `fetch`) and `http.test.ts`. |
 
-## Environment variables per provider
+## Configuration
 
-A provider is offered to schools only when all three of these hold:
-
-1. its id is listed in `PAYMENT_PROVIDERS`;
-2. its `isConfigured()` returns true;
-3. a platform admin has not switched it off (`billing.provider_setting`).
+Stripe is offered to schools when billing is on (`BILLING_ENABLED=true`) and its `isConfigured()` is true:
 
 | Provider | Required | Optional |
 |----------|----------|----------|
-| `stripe` | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` |
-| `paypal` | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | `PAYPAL_ENV` (`sandbox` by default, or `live`), `PAYPAL_PLAN_PER_USER`, `PAYPAL_PLAN_FLAT`, `PAYPAL_PRODUCT_ID` |
-| `paddle` | `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` | `PADDLE_ENV` (`sandbox` by default, or `production`), `PADDLE_PRICE_PER_USER`, `PADDLE_PRICE_FLAT`, `PADDLE_PRODUCT_ID`, `PADDLE_CHECKOUT_URL` |
-| `wipay` | `WIPAY_ACCOUNT_NUMBER`, `WIPAY_API_KEY` | `WIPAY_ENV` (`sandbox`/`live`), `WIPAY_COUNTRY_CODE` (`TT`/`JM`/`BB`), `WIPAY_CURRENCY` (`USD`/`TTD`/`JMD`; it must match the invoice currency), `WIPAY_FEE_STRUCTURE` (`merchant_absorb`/`customer_pay`/`split`) |
-| `manual` | none | `BILLING_MANUAL_INSTRUCTIONS` |
+| `stripe` | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` (recurring monthly prices) |
 
-The dashboard setup for each provider is described in [docs/content/billing-providers.md](../../../../docs/content/billing-providers.md).
+There is no allowlist variable and no on/off switch in the platform dashboard: credentials present means offered. When billing is on and Stripe is not configured, the API logs a warning at startup, checkout answers 503 ("Payments are not configured yet"), and the billing page shows school admins a "contact support" notice instead of payment buttons.
+
+The Stripe dashboard setup (webhook endpoint and events, Customer Portal, test mode, `stripe listen` for local development) is in [docs/content/billing-providers.md](../../../../docs/content/billing-providers.md).
 
 ## How the parent module uses providers
 
-- `BillingRegistry` (`../billing.registry.ts`) builds the list with `defaultProviders()` and decides which providers are enabled.
-- `BillingService` calls `createCheckout`, `payInvoice`, `changePlan`, `cancel`, `resume` and `portalUrl`.
+- `BillingRegistry` (`./billing.registry.ts`) builds the list with `defaultProviders()`. `enabled()` / `getEnabled(id)` return the configured ones; `find(id)` returns any registered one. An id that is not registered (such as `manual` on a row left from an older release) is simply unknown: the school is treated as having no provider and can subscribe again.
+- `BillingService` calls `createCheckout`, `changePlan`, `cancel`, `resume` and `portalUrl`.
 - `SeatService` calls `updateQuantity` from the hourly sync.
-- `BillingWebhookController` hands `POST` and `GET /api/billing/webhooks/<id>` requests to `parseWebhook`, with `rawBody` (the exact bytes, kept by `../raw-body.ts`), lower-cased `headers` and `query`. It then passes the returned events to `BillingEventsService`.
-- `BillingEventsService` matches events to schools by `(provider, providerSubscriptionId)`, by the `schoolId` taken from the metadata you attached at checkout, or by our `invoiceId` for invoice-mode providers. It makes every event idempotent on `(provider, eventId)`.
+- `BillingWebhookController` hands `POST /api/billing/webhooks/<id>` requests to `parseWebhook`, with `rawBody` (the exact bytes, kept by `../webhooks/raw-body.ts`), lower-cased `headers` and `query`, then passes the returned events to `BillingEventsService`.
+- `BillingEventsService` matches events to schools by `(provider, providerSubscriptionId)` or by the `schoolId` taken from the metadata attached at checkout, and makes every event idempotent on `(provider, eventId)`. `invoice.paid` is stored as a paid invoice for the school's history.
 
-## How to add a new payment provider
+## How to add another payment provider later
 
 1. **Create `providers/<name>.provider.ts`** with a class that implements `PaymentProvider` from `./payment-provider`:
-   - `readonly id`: a stable, lower-case id such as `'acme'`. It is stored on `billing.subscription.provider` and `billing.invoice.provider`, it appears in the webhook URL `/api/billing/webhooks/<id>`, and operators list it in `PAYMENT_PROVIDERS`. Never change it once you have shipped it.
-   - `readonly label`: shown to school admins as "Pay with <label>".
-   - `readonly mode`: `'subscription'` or `'invoice'`.
+   - `readonly id`: a stable, lower-case id such as `'acme'`. It is stored on `billing.subscription.provider` and `billing.invoice.provider`, and appears in the webhook URL `/api/billing/webhooks/<id>`. Never change it once you have shipped it.
+   - `readonly label`: shown to school admins.
    - `isConfigured()`: return true only when every required environment variable is present. Read them with `env()` from `./http`. The registry treats a throw as "not configured".
-   - Take `options: ProviderOptions = {}` in the constructor and use `options.fetch ?? fetch` for every HTTP call, made through `send()` from `./http`, so tests can stub the network. Throw `ProviderApiError` for API failures and never put secrets in error messages.
-2. **Implement the methods your mode needs.** All of them are optional on the interface, and billing answers 400 ("cannot …") when one it needs is missing.
-   - Subscription mode:
-     - `createCheckout(ctx)`: put `ctx.schoolId` and `ctx.price.plan` into the provider's metadata so webhooks can be matched back to the school. Return `{ redirectUrl, providerRef, providerCustomerId }`. Use `ctx.idempotencyKey` if the provider supports one.
-     - `updateQuantity`, `changePlan`, `cancel({ atPeriodEnd })`, `resume`, and optionally `portalUrl`.
-   - Invoice mode:
-     - `payInvoice(ctx)`: return `{ redirectUrl }` to a hosted page, or `{ redirectUrl: null, instructions }`.
-     - If the provider calls back per payment, send `ctx.callbackUrl` (`API_URL/api/billing/webhooks/<id>`) and include `ctx.invoiceId` in what comes back.
-   - Convert money with `centsToDecimal()` and `decimalToCents()`, never with floats.
+   - Take `options: ProviderOptions = {}` in the constructor and use `options.fetch ?? fetch` (or pass it to the provider's SDK) so tests can stub the network. Throw `ProviderApiError` for API failures and never put secrets in error messages.
+2. **Implement the methods.** `createCheckout(ctx)` is required: send the browser to the provider's hosted page, put `ctx.schoolId` and `ctx.price.plan` into the provider's metadata so webhooks can be matched back to the school, and return `{ redirectUrl, providerRef, providerCustomerId }`. Use `ctx.idempotencyKey` if the provider supports one. Then `updateQuantity`, `changePlan`, `cancel({ atPeriodEnd })`, `resume`, and optionally `portalUrl`; billing answers 400 ("cannot …") when one it needs is missing.
 3. **Implement `parseWebhook(req)`.**
-   - Verify the signature or hash over `req.rawBody` (the exact bytes) using the provider's secret, and compare with `safeEqual()`.
+   - Verify the signature over `req.rawBody` (the exact bytes) with the provider's secret, using a constant-time comparison.
    - On any failure, **throw `WebhookVerificationError`**. Never trust an unverified body.
-   - Translate each provider event into a `BillingEvent`. Map the provider's statuses to `SubscriptionStatus`. Fill `eventId` with the provider's own event id, which is used for idempotency. Return `{ type: 'ignored', eventId, reason }` for event types you do not handle.
-   - It helps to expose a `mapEvent()` method for tests, as the existing providers do.
-   - If the provider sends the browser back (as WiPay does), the controller already routes `GET` requests and HTML or form `POST`s there and redirects to the billing page afterwards.
-4. **Register it** in `defaultProviders()` in `../billing.registry.ts`: import the class and add `new <Name>Provider()` to the array. That is the only place in the app that lists providers.
-5. **Update the registry test.** `../billing.registry.test.ts` asserts the exact list of ids returned by `defaultProviders()` (`['stripe', 'paypal', 'paddle', 'wipay', 'manual']`), so add your id there.
-6. **Write `providers/<name>.provider.test.ts`**, modelled on `stripe.provider.test.ts` or `wipay.provider.test.ts`. Cover `isConfigured`, checkout or `payInvoice` against a stubbed `fetch`, webhook verification (valid, tampered, missing headers) and event mapping. Then run `cd backend && bun test src/billing`.
-7. **Document the configuration**:
-   - add the variables, commented out, to `backend/.env.example`;
-   - add them to `docs/content/environment-variables.md`, and add the id to the `PAYMENT_PROVIDERS` row there;
-   - add a section to `docs/content/billing-providers.md` and to the table above.
-8. **Turn it on** for a deployment:
-   - add the id to `PAYMENT_PROVIDERS` and set the credentials;
-   - point the provider's webhook at `https://<API_URL>/api/billing/webhooks/<id>`;
-   - check that `GET /api/platform/providers` shows the provider as `configured`, then switch it on in the platform dashboard (`PATCH /api/platform/providers/<id>`).
-
-You do not need to change the database, the controllers or the DTOs. `CheckoutDto.provider` and `PayInvoiceDto.provider` accept any id of at most 40 characters, and `BillingRegistry.getEnabled()` rejects ids that are unknown or disabled.
+   - Translate each provider event into a `BillingEvent`. Map the provider's statuses to `SubscriptionStatus`. Fill `eventId` with the provider's own event id, which is used for idempotency. Return `{ type: 'ignored', eventId, reason }` for event types you do not handle. Exposing a `mapEvent()` method helps tests, as `StripeProvider` does.
+4. **Register it** in `defaultProviders()` in `./billing.registry.ts`. That is the only place in the app that lists providers.
+5. **Update the registry test.** `./billing.registry.test.ts` asserts the exact list of ids returned by `defaultProviders()` (`['stripe']`).
+6. **Write `providers/<name>.provider.test.ts`**, modelled on `stripe.provider.test.ts`. Then run `cd backend && bun test src/billing`.
+7. **Choose how schools pick it.** With more than one provider configured, `GET /api/billing` lists them all in `providers` and `CheckoutDto.provider` selects one (it defaults to the first configured provider when omitted); the web billing page currently shows a single "Continue to payment" button, so it would need a provider choice. If you need per-deployment on/off control, the `billing.provider_setting` table is still in the schema (unused).
+8. **Document the configuration**: add the variables, commented out, to `backend/.env.example` and `infrastructure/env.example`, to `docs/content/environment-variables.md`, and a section to `docs/content/billing-providers.md` and the table above. Point the provider's webhook at `https://<API_URL>/api/billing/webhooks/<id>`.

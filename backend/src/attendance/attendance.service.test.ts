@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AttendanceService, MAX_WRONG_CODES, tally } from './attendance.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
 import { Prisma } from '@/generated/prisma/client';
 
@@ -201,6 +202,7 @@ function setup(opts: { status?: string; role?: string } = {}) {
     access as any,
     push as any,
     realtime as any,
+    createMockErasureLog() as any,
   );
   return { service, sb, cache, pushes, events };
 }

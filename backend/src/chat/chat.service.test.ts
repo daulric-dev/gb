@@ -8,6 +8,7 @@ import {
 import { ChatService } from './chat.service';
 import { ChatEventType } from './chat.constants';
 import { expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const ME = '00000000-0000-4000-8000-000000000001';
@@ -110,7 +111,7 @@ describe('ChatService', () => {
         action_state: data.action_state,
       }),
     );
-    service = new ChatService(prisma as any, realtime as any, cipher as any);
+    service = new ChatService(prisma as any, realtime as any, cipher as any, createMockErasureLog() as any);
   });
 
   describe('directKey', () => {

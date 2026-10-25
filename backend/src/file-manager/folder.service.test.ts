@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@/generated/prisma/client';
 import { FolderService } from './folder.service';
 import { expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const USER = 'u1';
@@ -37,7 +38,7 @@ function service(setup: (prisma: MockPrisma) => void = () => {}) {
   const prisma = createMockPrisma();
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's1' });
   setup(prisma);
-  return { svc: new FolderService(prisma as any), prisma };
+  return { svc: new FolderService(prisma as any, createMockErasureLog() as any), prisma };
 }
 
 describe('FolderService.create', () => {

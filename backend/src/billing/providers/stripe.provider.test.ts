@@ -103,7 +103,6 @@ describe('StripeProvider.isConfigured', () => {
   test('identity', () => {
     const p = new StripeProvider();
     expect(p.id).toBe('stripe');
-    expect(p.mode).toBe('subscription');
   });
 });
 

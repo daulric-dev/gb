@@ -12,7 +12,7 @@ Configuration is in [`../prisma.config.ts`](../prisma.config.ts): schema folder 
 
 ## Schema files
 
-Prisma reads every `.prisma` file in [`schema/`](./schema/README.md) as one schema. `main.prisma` holds the generator and datasource; each other file holds the models of one Postgres schema (`account`, `billing`, `chat`, `course`, `file_manager`, `grading`, `public`, `student`; course discussions are in `discussion.prisma`). The table of files and the conventions for re-introspection are in [schema/README.md](./schema/README.md).
+Prisma reads every `.prisma` file in [`schema/`](./schema/README.md) as one schema. `main.prisma` holds the generator and datasource; each other file holds the models of one Postgres schema (`account`, `billing`, `chat`, `compliance`, `course`, `file_manager`, `grading`, `public`, `student`; course discussions are in `discussion.prisma`). The table of files and the conventions for re-introspection are in [schema/README.md](./schema/README.md).
 
 The generator writes the client to `src/generated/prisma` (gitignored, CommonJS, `partialIndexes` preview feature on). Import it as `@/generated/prisma/client`; application code uses it through `PrismaService` ([`src/prisma`](../src/prisma/README.md)).
 

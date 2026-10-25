@@ -18,7 +18,7 @@ Both controllers use `@UseGuards(AuthGuard, PermissionGuard)`. Issuing is gated 
 | POST | `/api/schools/join-code` | `student:create` | Issue (or reissue) the code; body `IssueClaimCodeDto` (`ttlDays`, default 14, max 90). Deletes any live code and inserts the new one in one transaction. Returns `{ code, expiresAt }` - the only time the code is visible. |
 | DELETE | `/api/schools/join-code` | `student:create` | Revoke the live code; 204. |
 | GET | `/api/students/duplicates` | `student:read` | `[{ joinedId, existingId, name }]` from `public.student_duplicate_candidates(school)`. Returns `[]` if that function is missing. |
-| POST | `/api/students/duplicates/:joinedId/merge/:existingId` | `student:update` | Move the login onto the existing record and drop the record created at join time, via `public.merge_student_records(actor, joined, existing)`. Refused if the joined record already has results (400) or the target already has an account (409). |
+| POST | `/api/students/duplicates/:joinedId/merge/:existingId` | `student:update` | Move the login onto the existing record and drop the record created at join time, via `public.merge_student_records(actor, joined, existing)`. Refused if the joined record already has results (400) or the target already has an account (409). The function call and a `student` / `merge` entry in the [erasure log](../erasure/README.md) run in one transaction. |
 
 Redeeming the code is **not** a route here: it is `POST /api/auth/join-school` in `src/auth/auth.controller.ts` (throttled by the `claim-code` throttler, 10 per 15 min), which calls `StudentMembershipService.joinByCode()`.
 

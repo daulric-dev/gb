@@ -12,7 +12,6 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { PlatformHeader } from "../_components/platform-header";
-import { GenerateInvoicesButton } from "../_components/generate-invoices-button";
 import { PlatformInvoicesTable } from "../_components/invoices-table";
 import { useInitialStatusParam } from "../_components/status-filter";
 
@@ -41,8 +40,7 @@ export default function PlatformInvoicesPage() {
     <div className="space-y-6">
       <PlatformHeader
         title="Invoices"
-        description="Invoices raised for schools paying by invoice (WiPay, manual)"
-        action={<GenerateInvoicesButton onDone={load} />}
+        description="Invoices paid through Stripe, across every school"
       />
       <NativeSelect
         value={status}
@@ -66,7 +64,7 @@ export default function PlatformInvoicesPage() {
               ))}
             </div>
           ) : (
-            <PlatformInvoicesTable invoices={rows} showSchool onChanged={load} />
+            <PlatformInvoicesTable invoices={rows} showSchool />
           )}
         </CardContent>
       </Card>

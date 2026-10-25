@@ -11,6 +11,8 @@
     "student:check": "bun run scripts/student-flow-check.ts",
     "seed:demo": "bun run scripts/seed-demo.ts",
     "smoke": "bun run scripts/smoke.ts",
+    "erasure:replay": "bun run scripts/erasure-replay.ts",
+    "retention:purge": "bun run scripts/retention-purge.ts",
     "db:pull": "prisma db pull && prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

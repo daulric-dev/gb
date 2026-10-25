@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { plan } from '@/erasure/erasure-plan';
 import { CreateSchoolDto } from './dto/create-school.dto';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
@@ -19,6 +21,7 @@ export class SchoolService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly erasure: ErasureLogService,
   ) {}
 
   async findAll() {
@@ -434,13 +437,34 @@ export class SchoolService {
       }
     }
 
-    // As before, each clean-up step is best effort.
+    // As before, each clean-up step is best effort; removing the membership
+    // and its erasure-log entry commit together.
     const steps: [string, () => Promise<unknown>][] = [
       [
         'remove membership',
         () =>
-          this.prisma.school_management.deleteMany({
-            where: { user_id: userId, school_id: schoolId },
+          this.prisma.$transaction(async (tx) => {
+            const gone = await tx.school_management.findMany({
+              where: { user_id: userId, school_id: schoolId },
+              select: { id: true },
+            });
+            if (gone.length === 0) return;
+            await tx.school_management.deleteMany({
+              where: { id: { in: gone.map((m) => m.id) } },
+            });
+            await this.erasure.record(tx, {
+              kind: 'school_membership',
+              subjectTable: 'public.school_management',
+              subjectIds: gone.map((m) => m.id),
+              schoolId,
+              actor: userId,
+              reason: 'user_request',
+              replay: this.membershipReplay(
+                gone.map((m) => m.id),
+                userId,
+                schoolId,
+              ),
+            });
           }),
       ],
       [
@@ -504,9 +528,30 @@ export class SchoolService {
       throw new BadRequestException('You cannot remove yourself');
     }
 
+    // The membership, detaching the user (only if this was their active
+    // school) and the erasure-log entry commit together.
     try {
-      await this.prisma.school_management.deleteMany({
-        where: { id: membershipId },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.school_management.deleteMany({
+          where: { id: membershipId },
+        });
+        await tx.user_profile.updateMany({
+          where: { id: membership.user_id, school_id: membership.school_id },
+          data: { school_id: null, role: null },
+        });
+        await this.erasure.record(tx, {
+          kind: 'school_membership',
+          subjectTable: 'public.school_management',
+          subjectIds: [membershipId],
+          schoolId: membership.school_id,
+          actor: adminUserId,
+          reason: 'admin',
+          replay: this.membershipReplay(
+            [membershipId],
+            membership.user_id,
+            membership.school_id,
+          ),
+        });
       });
     } catch (err) {
       this.logger.error(
@@ -515,20 +560,24 @@ export class SchoolService {
       throw new BadRequestException('Failed to remove member');
     }
 
-    // Only detach the user if this was their active school.
-    try {
-      await this.prisma.user_profile.updateMany({
-        where: { id: membership.user_id, school_id: membership.school_id },
-        data: { school_id: null, role: null },
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to detach removed member ${membership.user_id}: ${(err as Error).message}`,
-      );
-    }
-
     await this.cache.delete(`profile:${membership.user_id}`);
     return { removed: true };
+  }
+
+  /** Replaying a removal: drop the membership, detach the user from that school. */
+  private membershipReplay(
+    membershipIds: string[],
+    userId: string,
+    schoolId: string,
+  ) {
+    return plan.of(
+      plan.del('public.school_management', { id: membershipIds }),
+      plan.update(
+        'public.user_profile',
+        { id: [userId], school_id: [schoolId] },
+        { school_id: null, role: null },
+      ),
+    );
   }
 
   async rejectRequest(adminUserId: string, requestId: string) {

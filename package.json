@@ -10,8 +10,10 @@
         "gb": "./command/index.ts"
     },
     "scripts": {
-        "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup",
-        "postload": "docker compose -f ./docker-compose.dev.yml down",
+        "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup && bun run stripe:listen",
+        "stripe:listen": "bun scripts/dev-stripe.ts",
+        "stripe:stop": "docker compose -f ./docker-compose.dev.yml --profile stripe stop stripe-listen",
+        "postload": "docker compose -f ./docker-compose.dev.yml --profile stripe down",
         "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",

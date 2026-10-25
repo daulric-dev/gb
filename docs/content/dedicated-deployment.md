@@ -29,6 +29,7 @@ The schema, RLS policies, and all API behaviour remain identical to the multi-te
 - **PostgreSQL 15+** - any managed Postgres, or the commented-out `db` service in `infrastructure/docker-compose.yml` for a single box
 - **S3-compatible storage** - AWS S3, Cloudflare R2, Backblaze B2, MinIO, SeaweedFS... one bucket, with the CORS rule from [Platform migration](./platform-migration.md#bucket-cors-production)
 - **SMTP** - any provider, for sign-in codes
+- **Backups** - a separate S3 bucket and an age key pair for the `backup` service in `infrastructure/docker-compose.yml` (daily encrypted dump at 04:00), plus point-in-time recovery at your Postgres provider or the WAL-G `db` image. Required in production; see [Backups & GDPR](./backups.md)
 
 ### 2. Run Migrations
 

@@ -16,7 +16,7 @@ Staff side, `DiscussionController`, `AuthGuard` plus a course-role check (`Cours
 | POST | `/api/courses/:courseId/discussions` | Course staff | Start a topic; staff may set pinned, locked, published (default true) and require-initial-post. |
 | GET | `/api/courses/:courseId/discussions/:topicId` | Course staff | The topic with its threaded replies; marks it read for the caller. |
 | PATCH | `/api/courses/:courseId/discussions/:topicId` | Author or teacher / admin | Edit title/body and (staff only) the topic flags. Publishing a draft announces it to students. |
-| DELETE | `/api/courses/:courseId/discussions/:topicId` | Author or teacher / admin | Delete the topic and its replies (`204`). |
+| DELETE | `/api/courses/:courseId/discussions/:topicId` | Author or teacher / admin | Delete the topic and its replies (`204`). Every topic and reply delete (staff and portal) writes an entry to the [erasure log](../erasure/README.md) in the same transaction; blanked placeholders lose their author after `SOFT_DELETE_RETENTION_DAYS` ([src/retention](../retention/README.md)). |
 | POST | `/api/courses/:courseId/discussions/:topicId/replies` | Course staff | Reply (optionally to `parentId`). Locked topics accept replies only from moderators. |
 | PATCH | `/api/courses/:courseId/discussions/:topicId/replies/:replyId` | Author or teacher / admin | Edit a reply. |
 | DELETE | `/api/courses/:courseId/discussions/:topicId/replies/:replyId` | Author or teacher / admin | Delete a reply (`204`); see deletion rules below. |

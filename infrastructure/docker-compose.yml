@@ -37,6 +37,17 @@ x-app-env: &app-env
   # Multi-participant channels are gated off until the channel UI ships.
   CHAT_CHANNELS_ENABLED: "false"
 
+# WAL-G settings for the self-hosted `db` and `db-backup` services (used once
+# they are uncommented). WAL-G reads the AWS_* names itself.
+x-walg-env: &walg-env
+  WALG_S3_PREFIX: "${WALG_S3_PREFIX:-}"
+  AWS_ACCESS_KEY_ID: "${WALG_S3_ACCESS_KEY_ID:-}"
+  AWS_SECRET_ACCESS_KEY: "${WALG_S3_SECRET_ACCESS_KEY:-}"
+  AWS_REGION: "${WALG_S3_REGION:-us-east-1}"
+  AWS_ENDPOINT: "${WALG_S3_ENDPOINT:-}"
+  AWS_S3_FORCE_PATH_STYLE: "${WALG_S3_FORCE_PATH_STYLE:-}"
+  WALG_LIBSODIUM_KEY: "${WALG_LIBSODIUM_KEY:-}"
+
 services:
   # One-off release step when the app runs with MIGRATE_ON_START=false:
   #   docker compose --profile release run --rm migrate
@@ -48,17 +59,71 @@ services:
       disable: true
     command: ["bunx", "prisma", "migrate", "deploy"]
 
+  # Daily encrypted logical backup of the database (managed or self-hosted):
+  # pg_dump | age -> BACKUP_S3_BUCKET at 04:00 (BACKUP_SCHEDULE, in BACKUP_TZ),
+  # kept BACKUP_RETENTION_DAYS. Runs by default because backups are required:
+  # until BACKUP_* is configured it exits with the reason and keeps
+  # restarting. See infrastructure/BACKUPS.md.
+  #   docker compose exec backup backup-now     # on-demand backup
+  #   docker compose exec backup backup-list
+  #   docker compose logs -f backup
+  backup:
+    build:
+      context: ./backup
+    image: gradebook-backup:local
+    restart: unless-stopped
+    # Only what the backup needs; the app's .env secrets are not passed in.
+    environment:
+      BACKUP_DATABASE_URL: "${BACKUP_DATABASE_URL:-${DATABASE_URL:-}}"
+      BACKUP_S3_BUCKET: "${BACKUP_S3_BUCKET:-}"
+      BACKUP_S3_PREFIX: "${BACKUP_S3_PREFIX:-postgres}"
+      BACKUP_S3_ENDPOINT: "${BACKUP_S3_ENDPOINT:-}"
+      BACKUP_S3_REGION: "${BACKUP_S3_REGION:-us-east-1}"
+      BACKUP_S3_ACCESS_KEY_ID: "${BACKUP_S3_ACCESS_KEY_ID:-}"
+      BACKUP_S3_SECRET_ACCESS_KEY: "${BACKUP_S3_SECRET_ACCESS_KEY:-}"
+      BACKUP_S3_FORCE_PATH_STYLE: "${BACKUP_S3_FORCE_PATH_STYLE:-}"
+      BACKUP_S3_STORAGE_CLASS: "${BACKUP_S3_STORAGE_CLASS:-}"
+      BACKUP_AGE_RECIPIENTS: "${BACKUP_AGE_RECIPIENTS:-}"
+      BACKUP_SCHEDULE: "${BACKUP_SCHEDULE:-0 4 * * *}"
+      BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-30}"
+      BACKUP_HEALTHCHECK_URL: "${BACKUP_HEALTHCHECK_URL:-}"
+      TZ: "${BACKUP_TZ:-UTC}"
+    read_only: true
+    tmpfs:
+      # Only ciphertext is written here (pg_dump streams into age). Size it
+      # above the compressed dump, or mount a volume at /work for big databases.
+      - /work:size=${BACKUP_TMPFS_SIZE:-2g},uid=70,gid=70,mode=0700
+      - /run/backup:size=8m,uid=70,gid=70,mode=0700
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - appnet
+    # With the self-hosted db below, also add:
+    # depends_on:
+    #   db: { condition: service_healthy }
+
   # Single-box deployments can run Postgres here instead of a managed database.
-  # Uncomment, add `db: { condition: service_healthy }` to the app's
-  # depends_on, the `db-data` volume below, and set
+  # The image (infrastructure/postgres) is postgres:18.6-alpine plus WAL-G:
+  # every WAL segment is archived, encrypted, to WALG_S3_PREFIX (continuous
+  # backup / point-in-time recovery) and `db-backup` takes a base backup at
+  # 04:00, keeping WALG_RETAIN_FULL of them. It is a drop-in replacement for
+  # postgres:18.6-alpine on an existing volume (same musl libc and collation).
+  # Uncomment `db`, `db-backup` and the `db-data` volume below, add
+  # `db: { condition: service_healthy }` to the app's depends_on, set
+  # POSTGRES_PASSWORD and the WALG_* variables, and
   # DATABASE_URL=postgresql://gradebook:${POSTGRES_PASSWORD}@db:5432/gradebook
   # db:
-  #   image: postgres:18.6-alpine
+  #   build:
+  #     context: ./postgres
+  #   image: gradebook-postgres-walg:local
   #   restart: unless-stopped
   #   environment:
+  #     <<: *walg-env
   #     POSTGRES_USER: gradebook
   #     POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infrastructure/.env}"
   #     POSTGRES_DB: gradebook
+  #     # Seconds; at most about this much committed data is lost (BACKUPS.md).
+  #     WALG_ARCHIVE_TIMEOUT: "${WALG_ARCHIVE_TIMEOUT:-60}"
   #   volumes:
   #     - db-data:/var/lib/postgresql   # Postgres 18+: mount the parent folder
   #   networks:
@@ -68,6 +133,41 @@ services:
   #     interval: 5s
   #     timeout: 3s
   #     retries: 10
+  #
+  # # Base backups of `db`: same image, same volume mounted read-only.
+  # #   docker compose exec db-backup walg-basebackup          # one now
+  # #   docker compose exec db-backup walg backup-list --detail
+  # db-backup:
+  #   image: gradebook-postgres-walg:local
+  #   restart: unless-stopped
+  #   user: postgres
+  #   command: ["walg-cron"]
+  #   depends_on:
+  #     db: { condition: service_healthy }
+  #   environment:
+  #     <<: *walg-env
+  #     PGHOST: db
+  #     PGUSER: gradebook
+  #     PGDATABASE: gradebook
+  #     PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infrastructure/.env}"
+  #     WALG_BACKUP_SCHEDULE: "${WALG_BACKUP_SCHEDULE:-0 4 * * *}"
+  #     WALG_RETAIN_FULL: "${WALG_RETAIN_FULL:-7}"
+  #     WALG_HEALTHCHECK_URL: "${WALG_HEALTHCHECK_URL:-}"
+  #     TZ: "${BACKUP_TZ:-UTC}"
+  #   volumes:
+  #     - db-data:/var/lib/postgresql:ro
+  #   read_only: true
+  #   tmpfs:
+  #     - /run/walg:size=8m,uid=70,gid=70,mode=0700
+  #     - /tmp:size=64m,uid=70,gid=70,mode=0700
+  #   networks:
+  #     - appnet
+  #   healthcheck:
+  #     test: ["CMD", "walg-health"]
+  #     interval: 5m
+  #     timeout: 10s
+  #     retries: 1
+  #     start_period: 5m
 
   redis:
     image: redis:7.4-alpine

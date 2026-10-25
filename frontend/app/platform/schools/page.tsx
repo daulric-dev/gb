@@ -127,7 +127,6 @@ export default function PlatformSchoolsPage() {
                   <TableHead className="text-right">Users</TableHead>
                   <TableHead>Trial ends / renews</TableHead>
                   <TableHead>Provider</TableHead>
-                  <TableHead className="text-right">Open invoices</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -155,7 +154,6 @@ export default function PlatformSchoolsPage() {
                       )}
                     </TableCell>
                     <TableCell className="capitalize">{r.provider ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.openInvoices}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

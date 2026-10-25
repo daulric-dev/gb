@@ -1,8 +1,8 @@
 # Backend scripts (`backend/scripts`)
 
-Developer scripts that run against a **local** stack. Each one talks to the running API over HTTP (as real users, through the cookie session) and also opens its own Prisma client on `DATABASE_URL` for fixtures and clean-up. None of them is part of the build or the test suite, and none should be pointed at a shared or production database.
+Two kinds of script. `seed-demo`, `smoke` and `student-flow-check` are developer scripts that run against a **local** stack: each talks to the running API over HTTP (as real users, through the cookie session) and also opens its own Prisma client on `DATABASE_URL` for fixtures and clean-up; never point them at a shared or production database. `retention-purge` and `erasure-replay` are operational tools that work on the database and object storage directly (no API needed) and are meant for any deployment. None of them is part of the build or the test suite.
 
-## Prerequisites (all three)
+## Prerequisites (seed-demo, smoke, student-flow-check)
 
 1. The dev services are up and migrated: `bun run preload` from the repo root (Postgres, Redis, S3, Mailpit, then `prisma migrate deploy`).
 2. `backend/.env` exists (copy `backend/.env.example`) with `DATABASE_URL` and **`ALLOW_DEV_LOGIN=true`**. The scripts sign in through the dev-only `POST /api/auth/dev/code`, which returns a sign-in code instead of mailing it; it answers 404 when `ALLOW_DEV_LOGIN` is off or `NODE_ENV=production`.
@@ -48,6 +48,8 @@ bun run smoke
 
 Signs in as `teacher`, `ta`, `admin`, `student` and `student2` from the demo school and walks the main flows, printing `PASS` / `FAIL` per check and exiting non-zero on any failure: profile and school structure (date formats, permissions), courses and course files through the portal, the gradebook, grading extras (CSV import, drop lowest, rubrics), the student portal, the calendar and new-work notices, attendance (code and QR), email domains and SSO discovery, announcements and chat, discussions, course copy and templates, and billing. With `BILLING_ENABLED=true` it runs the billing flow and then restores the school's subscription and removes the invoices it created (and, with `USE_REDIS=true`, drops the cached `billing:ent:<schoolId>` entitlement); with billing off it checks that every `/billing` and `/platform` route is 404.
 
+The last section checks GDPR erasure: the teacher deletes a new file and a chat message, the erasure-log entries are checked (ids only, right actor and reason), `retention-purge.ts --retention-days 0 --only <those two ids>` is run (dry run first) and must remove both rows and the stored object with `retention_purge` entries, then a restore is simulated - the two rows put back and their log entries deleted, after waiting for them to reach object storage - and `erasure-replay.ts --since <start of the section>` must remove the rows again from the storage copy and restore the log entries; a second replay must report `0 applied`. Its erasure-log entries stay (the log is append-only).
+
 It cleans up what it creates. Work that has been marked cannot be deleted through the API by design, so that part of the clean-up uses `DATABASE_URL` directly. It needs the demo school from `seed:demo`.
 
 ## `student-flow-check.ts` - student account journey
@@ -69,6 +71,25 @@ Needs the API running with `ALLOW_DEV_LOGIN=true`; it does **not** need the demo
 Billing: the fixture school has no subscription, which the API treats as writable, so the script passes with `BILLING_ENABLED` on or off.
 
 **Clean-up** runs in a `finally`, so it happens even when a check fails or the script throws: it deletes the school (cascading to its years, terms, courses and their content, students, join codes, memberships and billing rows), the three accounts by email (cascading to profiles, sessions and identities) and their sign-in codes. The last check compares the `school`, `app_user` and `student` row counts with those taken before the run. Emails carry a timestamp, so runs never collide.
+
+## `retention-purge.ts` - soft-delete purge, now
+
+```bash
+bun run retention:purge --dry-run          # counts only
+bun run retention:purge                    # what the API runs daily
+bun run retention:purge --retention-days 0 --only <id,id>   # tests: just these rows
+```
+
+Builds `RetentionService` without Nest, takes the same advisory lock as the API's scheduler and runs one purge: expired soft-deleted files (objects first), folders, chat messages and discussion replies, old sessions and sign-in codes, erasure-log pruning and export. Needs `DATABASE_URL` and the `S3_*` variables; not the API. Exits 1 if any part failed. See [src/retention](../src/retention/README.md).
+
+## `erasure-replay.ts` - after a backup restore
+
+```bash
+bun run erasure:replay --since 2026-10-24T04:00:00Z --dry-run
+bun run erasure:replay --since 2026-10-24T04:00:00Z [--source both|db|storage] [--from-file log.jsonl] [--allow-unsigned] [--json]
+```
+
+Re-applies every erasure logged since the given time to the current database: entries from `compliance.erasure_log` and its copy in object storage, de-duplicated and applied oldest first, one transaction each. Idempotent. Exits 1 if an entry failed, 2 on bad arguments. Needs `DATABASE_URL`, `S3_*` and the same `AUTH_SECRET` as the API (signatures). This one **is** meant for production, as part of the restore runbook in [infrastructure/BACKUPS.md](../../infrastructure/BACKUPS.md). See [src/erasure](../src/erasure/README.md).
 
 ## See also
 

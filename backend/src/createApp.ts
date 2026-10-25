@@ -6,7 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
 import { isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
-import { registerWebhookRawBody } from './billing/raw-body';
+import { registerWebhookRawBody } from './billing/webhooks/raw-body';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);

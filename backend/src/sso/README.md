@@ -45,7 +45,7 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 
 - `src/app.module.ts` imports `SsoCoreModule` and `SsoModule`.
 - `src/email-domain/email-domain.service.ts` injects `SsoRegistry` (validates a domain's `sso_provider`, decides what discovery offers) and imports `normalizeCertificate` for SAML certificates entered by admins.
-- `src/billing/billing.service.ts` imports `apiBase()` to build webhook callback URLs.
+- `src/billing/school/billing.service.ts` imports `apiBase()` to build webhook callback URLs.
 - Web: `frontend/lib/sso.ts` builds start, metadata and ACS URLs; `frontend/app/login/page.tsx` calls `providers` and `discover`; `frontend/app/onboard/page.tsx` calls `suggested-profile`; `frontend/app/dashboard/email-domains/page.tsx` lists `providers` for the admin picker.
 - Mobile: `mobile/src/lib/sso.ts` calls `providers`, `discover`, `suggested-profile`, `start` (with `platform=mobile`) and `handoff`.
 - Scripts: `scripts/smoke.ts` checks `discover` for the demo domain.

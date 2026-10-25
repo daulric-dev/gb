@@ -11,6 +11,7 @@ import {
   billingStatus,
   errorMessage,
   refreshBillingStatus,
+  safeRedirect,
 } from "@/lib/billing";
 import type {
   BillingPlan,
@@ -23,11 +24,7 @@ import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-heade
 import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  InstructionsDialog,
-  safeRedirect,
-} from "@/components/billing/instructions-dialog";
-import { StatusCard } from "./_components/status-card";
+import { canOpenPortal, StatusCard } from "./_components/status-card";
 import { PlanPicker } from "./_components/plan-picker";
 import { InvoicesTable } from "./_components/invoices-table";
 
@@ -45,7 +42,6 @@ export default function BillingPage() {
   const loading = useSignal(true);
   const missing = useSignal(false);
   const busy = useSignal<string | null>(null);
-  const instructions = useSignal<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -72,7 +68,7 @@ export default function BillingPage() {
     void load();
   }, [allowed, load]);
 
-  // Back from a provider's hosted checkout.
+  // Back from Stripe Checkout.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get("checkout");
@@ -93,15 +89,6 @@ export default function BillingPage() {
     await Promise.all([load(), refreshBillingStatus()]);
   }
 
-  function handlePayResult(result: PayResult) {
-    if (result?.redirectUrl) {
-      if (safeRedirect(result.redirectUrl)) return;
-      toast.error("The payment provider returned an invalid link");
-      return;
-    }
-    if (result?.instructions) instructions.value = result.instructions;
-    else toast.success("Done");
-  }
 
   async function run<T>(key: string, fn: () => Promise<T>): Promise<T | null> {
     busy.value = key;
@@ -118,16 +105,18 @@ export default function BillingPage() {
     }
   }
 
-  async function checkout(plan: BillingPlan, provider: string) {
-    const result = await run(`checkout:${provider}`, () =>
+  /** Stripe Checkout: the school enters its card on Stripe's hosted page. */
+  async function checkout(plan: BillingPlan) {
+    const result = await run("checkout", () =>
       api<PayResult>("/billing/checkout", {
         method: "POST",
-        body: { plan, provider },
+        body: { plan },
       }),
     );
     if (!result) return;
-    handlePayResult(result);
-    if (!result.redirectUrl) await afterChange();
+    if (result.redirectUrl && safeRedirect(result.redirectUrl)) return;
+    toast.error("The payment page could not be opened. Please try again.");
+    await afterChange();
   }
 
   async function changePlan(plan: BillingPlan) {
@@ -168,18 +157,7 @@ export default function BillingPage() {
     if (!res) return;
     if (res.url && safeRedirect(res.url)) return;
     portalUnavailable.value = true;
-    toast("Your payment provider has no self-service page for this subscription.");
-  }
-
-  async function payInvoice(invoice: Invoice, provider: string) {
-    const result = await run(`pay:${invoice.id}`, () =>
-      api<PayResult>(`/billing/invoices/${invoice.id}/pay`, {
-        method: "POST",
-        body: { provider },
-      }),
-    );
-    if (!result) return;
-    handlePayResult(result);
+    toast("There is no payment portal for this subscription yet.");
   }
 
   // Self-hosted (billing off) has no billing page at all.
@@ -215,8 +193,6 @@ export default function BillingPage() {
     );
   }
 
-  const currentMode = s.providers.find((p) => p.id === s.provider)?.mode;
-
   return (
     <div className="space-y-6">
       <DashboardPageHeader title={TITLE} description={DESCRIPTION} />
@@ -224,7 +200,7 @@ export default function BillingPage() {
       <StatusCard
         summary={s}
         busy={busy.value}
-        showPortal={currentMode === "subscription" && !portalUnavailable.value}
+        showPortal={canOpenPortal(s) && !portalUnavailable.value}
         onCancel={cancel}
         onResume={resume}
         onPortal={openPortal}
@@ -237,17 +213,7 @@ export default function BillingPage() {
         onChangePlan={changePlan}
       />
 
-      <InvoicesTable
-        invoices={invoices.value}
-        providers={s.providers.filter((p) => p.mode === "invoice")}
-        busy={busy.value}
-        onPay={payInvoice}
-      />
-
-      <InstructionsDialog
-        instructions={instructions.value}
-        onClose={() => (instructions.value = null)}
-      />
+      <InvoicesTable invoices={invoices.value} />
     </div>
   );
 }

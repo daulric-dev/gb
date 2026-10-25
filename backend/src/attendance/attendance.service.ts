@@ -14,6 +14,8 @@ import { randomInt } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { plan } from '@/erasure/erasure-plan';
 import {
   CourseAccessService,
   CourseRow,
@@ -213,6 +215,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     private readonly access: CourseAccessService,
     private readonly push: PushService,
     private readonly realtime: AttendanceRealtime,
+    private readonly erasure: ErasureLogService,
   ) {}
 
   onModuleInit() {
@@ -698,12 +701,31 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   }
 
   async remove(userId: string, courseId: string, sessionId: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
     const session = await this.loadSession(courseId, sessionId);
 
+    // The students' attendance records cascade with the session: an
+    // erasure, logged in the same transaction.
     try {
-      await this.prisma.attendance_session.deleteMany({
-        where: { id: sessionId, course_id: courseId },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.attendance_session.deleteMany({
+          where: { id: sessionId, course_id: courseId },
+        });
+        await this.erasure.record(tx, {
+          kind: 'attendance_session',
+          subjectTable: 'course.attendance_session',
+          subjectIds: [sessionId],
+          schoolId: course.school_id,
+          actor: userId,
+          reason: 'admin',
+          replay: plan.of(
+            plan.del('course.attendance_session', { id: [sessionId] }),
+          ),
+        });
       });
     } catch (err) {
       this.logger.error(

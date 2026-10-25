@@ -1,14 +1,12 @@
 "use client";
 
-import { ChevronDown, Loader2 } from "lucide-react";
-import type { BillingProviderOption, Invoice } from "@/lib/billing-types";
+import type { Invoice } from "@/lib/billing-types";
 import {
   formatBillingDate,
   formatMoney,
   invoiceStatusVariant,
 } from "@/lib/billing";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -16,12 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -31,70 +23,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-function PayButton({
-  invoice,
-  providers,
-  busy,
-  onPay,
-}: {
-  invoice: Invoice;
-  providers: BillingProviderOption[];
-  busy: string | null;
-  onPay: (invoice: Invoice, provider: string) => Promise<void>;
-}) {
-  const working = busy === `pay:${invoice.id}`;
-  if (providers.length === 0) return null;
-  if (providers.length === 1) {
-    return (
-      <Button
-        size="sm"
-        disabled={busy !== null}
-        onClick={() => onPay(invoice, providers[0].id)}
-      >
-        {working && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-        Pay
-      </Button>
-    );
-  }
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button size="sm" disabled={busy !== null} />}
-      >
-        {working && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-        Pay
-        <ChevronDown className="ml-1 size-3.5" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {providers.map((p) => (
-          <DropdownMenuItem key={p.id} onClick={() => onPay(invoice, p.id)}>
-            {p.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-export function InvoicesTable({
-  invoices,
-  providers,
-  busy,
-  onPay,
-}: {
-  invoices: Invoice[];
-  /** Invoice-mode providers the school may pay an open invoice with. */
-  providers: BillingProviderOption[];
-  busy: string | null;
-  onPay: (invoice: Invoice, provider: string) => Promise<void>;
-}) {
+/** Payments Stripe reported for this school. Receipts and PDFs live in the Stripe portal. */
+export function InvoicesTable({ invoices }: { invoices: Invoice[] }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Invoices</CardTitle>
         <CardDescription>
-          Monthly invoices for invoice-based payment methods. Card
-          subscriptions are receipted by the payment provider.
+          Monthly payments for your subscription. To download receipts and
+          invoice PDFs, use &ldquo;Manage payment method &amp; invoices&rdquo;
+          above.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -112,7 +50,6 @@ export function InvoicesTable({
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Due / paid</TableHead>
-                <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -140,16 +77,6 @@ export function InvoicesTable({
                       : inv.dueAt
                         ? `Due ${formatBillingDate(inv.dueAt)}`
                         : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {inv.status === "open" && (
-                      <PayButton
-                        invoice={inv}
-                        providers={providers}
-                        busy={busy}
-                        onPay={onPay}
-                      />
-                    )}
                   </TableCell>
                 </TableRow>
               ))}

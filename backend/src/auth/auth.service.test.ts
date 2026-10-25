@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 /** No school in these tests requires single sign-on. */
@@ -63,6 +64,7 @@ describe('AuthService', () => {
   let emailCodes: ReturnType<typeof emailCodeStub>;
   let sessions: ReturnType<typeof sessionStub>;
   let accounts: { userForVerifiedEmail: ReturnType<typeof mock> };
+  let erasure: ReturnType<typeof createMockErasureLog>;
 
   function build() {
     service = new AuthService(
@@ -72,6 +74,7 @@ describe('AuthService', () => {
       emailCodes as any,
       accounts as any,
       sessions as any,
+      erasure as any,
     );
   }
 
@@ -80,6 +83,7 @@ describe('AuthService', () => {
     mockCache = createMockCacheService();
     emailCodes = emailCodeStub();
     sessions = sessionStub();
+    erasure = createMockErasureLog();
     accounts = {
       userForVerifiedEmail: mock(async (email: string) => ({ id: 'user-otp', email })),
     };
@@ -116,6 +120,7 @@ describe('AuthService', () => {
         emailCodes as any,
         accounts as any,
         sessions as any,
+        erasure as any,
       );
       const err = await expectRejection(service.sendOtp('a@school.edu'));
       expect((err as Error).message).toContain('Continue with Google');

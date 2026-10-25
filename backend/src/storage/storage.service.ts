@@ -6,6 +6,7 @@ import {
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutBucketCorsCommand,
   PutObjectCommand,
   S3Client,
@@ -128,6 +129,34 @@ export class StorageService implements OnModuleInit {
         }),
       );
     }
+  }
+
+  /**
+   * Keys under `prefix`, in ascending key order; listing stops before the
+   * first key >= `endBefore`.
+   */
+  async listKeys(
+    prefix: string,
+    opts: { endBefore?: string } = {},
+  ): Promise<string[]> {
+    const keys: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+      for (const obj of res.Contents ?? []) {
+        if (!obj.Key) continue;
+        if (opts.endBefore && obj.Key >= opts.endBefore) return keys;
+        keys.push(obj.Key);
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
   }
 
   /** A URL the browser can GET the object from, for `expiresIn` seconds. */

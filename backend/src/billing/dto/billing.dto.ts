@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -20,23 +19,18 @@ export class CheckoutDto {
   @IsIn(PLANS)
   plan!: BillingPlan;
 
-  @ApiProperty({ example: 'manual' })
+  /** Defaults to the configured provider (Stripe). */
+  @ApiPropertyOptional({ example: 'stripe' })
+  @IsOptional()
   @IsString()
   @MaxLength(40)
-  provider!: string;
+  provider?: string;
 }
 
 export class ChangePlanDto {
   @ApiProperty({ enum: PLANS })
   @IsIn(PLANS)
   plan!: BillingPlan;
-}
-
-export class PayInvoiceDto {
-  @ApiProperty({ example: 'wipay' })
-  @IsString()
-  @MaxLength(40)
-  provider!: string;
 }
 
 export class ExtendTrialDto {
@@ -58,40 +52,6 @@ export class CompDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
-}
-
-export const MARK_PAID_METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
-
-export class MarkPaidDto {
-  @ApiProperty({ enum: MARK_PAID_METHODS })
-  @IsIn(MARK_PAID_METHODS)
-  method!: (typeof MARK_PAID_METHODS)[number];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  reference?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  note?: string;
-}
-
-export class VoidInvoiceDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  note?: string;
-}
-
-export class SetProviderDto {
-  @ApiProperty()
-  @IsBoolean()
-  enabled!: boolean;
 }
 
 export const INVOICE_STATUSES = ['open', 'paid', 'void', 'uncollectible'];

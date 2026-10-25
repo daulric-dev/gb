@@ -50,6 +50,25 @@ services:
       - s3-data:/data
       - ./infrastructure/dev/s3.json:/etc/seaweedfs/s3.json:ro
 
+  # Forwards Stripe sandbox webhooks to the local API (what `stripe listen`
+  # does), so test payments complete. Started by `bun run preload` /
+  # `bun run stripe:listen` only when backend/.env has BILLING_ENABLED=true and
+  # a sk_test_ key; scripts/dev-stripe.ts also writes its signing secret into
+  # backend/.env (STRIPE_WEBHOOK_SECRET). Logs: docker compose logs -f stripe-listen
+  stripe-listen:
+    image: stripe/stripe-cli:v1.53.1
+    profiles: ["stripe"]
+    restart: unless-stopped
+    env_file: ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        exec stripe listen --api-key "$$STRIPE_SECRET_KEY"
+        --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed
+        --forward-to http://host.docker.internal:3001/api/billing/webhooks/stripe
+
   # Catches outgoing email (sign-in codes). Inbox on http://127.0.0.1:8025.
   mailpit:
     image: axllent/mailpit:v1.27
@@ -58,9 +77,107 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
 
+  # --- Optional: backups (infrastructure/BACKUPS.md) -------------------------
+  # Not started by default. Create the bucket once, then run a backup:
+  #   docker compose -f docker-compose.dev.yml --profile backup run --rm \
+  #     -e BACKUP_S3_NO_CHECK_BUCKET=false backup backup-rclone mkdir backup:gradebook-backups
+  #   docker compose -f docker-compose.dev.yml --profile backup run --rm backup backup-now
+  # Encryption is required: put an age public key in BACKUP_AGE_RECIPIENTS
+  # (shell or a root .env), or BACKUP_ALLOW_UNENCRYPTED=true for a local test.
+  backup:
+    profiles: ["backup"]
+    build: ./infrastructure/backup
+    image: gradebook-backup:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      s3:
+        condition: service_started
+    environment:
+      BACKUP_DATABASE_URL: postgresql://gradebook:gradebook@db:5432/gradebook
+      BACKUP_S3_ENDPOINT: http://s3:8333
+      BACKUP_S3_BUCKET: gradebook-backups
+      BACKUP_S3_PREFIX: postgres
+      BACKUP_S3_ACCESS_KEY_ID: gradebook
+      BACKUP_S3_SECRET_ACCESS_KEY: gradebook-secret
+      BACKUP_AGE_RECIPIENTS: "${BACKUP_AGE_RECIPIENTS:-}"
+      BACKUP_ALLOW_UNENCRYPTED: "${BACKUP_ALLOW_UNENCRYPTED:-false}"
+      BACKUP_SCHEDULE: "${BACKUP_SCHEDULE:-0 4 * * *}"
+      BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-30}"
+      # backup-verify restores into a throwaway database on the dev server.
+      BACKUP_VERIFY_DATABASE_URL: postgresql://gradebook:gradebook@db:5432/postgres
+      TZ: "${BACKUP_TZ:-UTC}"
+    read_only: true
+    tmpfs:
+      - /work:size=1g,uid=70,gid=70,mode=0700
+      - /run/backup:size=8m,uid=70,gid=70,mode=0700
+
+  # A second, separate Postgres with WAL-G continuous archiving (port 5433,
+  # own volume) for trying point-in-time recovery. The default `db` above is
+  # not changed. Needs a key: WALG_LIBSODIUM_KEY=$(openssl rand -hex 32).
+  #   WALG_LIBSODIUM_KEY=... docker compose -f docker-compose.dev.yml --profile walg up -d --build
+  db-walg:
+    profiles: ["walg"]
+    build: ./infrastructure/postgres
+    image: gradebook-postgres-walg:local
+    restart: unless-stopped
+    depends_on:
+      s3:
+        condition: service_started
+    environment: &dev-walg-env
+      POSTGRES_USER: gradebook
+      POSTGRES_PASSWORD: gradebook
+      POSTGRES_DB: gradebook
+      WALG_S3_PREFIX: s3://gradebook-backups/wal-g
+      AWS_ACCESS_KEY_ID: gradebook
+      AWS_SECRET_ACCESS_KEY: gradebook-secret
+      AWS_ENDPOINT: http://s3:8333
+      AWS_REGION: us-east-1
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      WALG_LIBSODIUM_KEY: "${WALG_LIBSODIUM_KEY:-}"
+      WALG_ARCHIVE_TIMEOUT: "60"
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - db-walg-data-18:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gradebook"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  db-walg-backup:
+    profiles: ["walg"]
+    image: gradebook-postgres-walg:local
+    restart: unless-stopped
+    user: postgres
+    command: ["walg-cron"]
+    depends_on:
+      db-walg:
+        condition: service_healthy
+    environment:
+      <<: *dev-walg-env
+      PGHOST: db-walg
+      PGUSER: gradebook
+      PGPASSWORD: gradebook
+      PGDATABASE: gradebook
+      WALG_BACKUP_SCHEDULE: "0 4 * * *"
+      WALG_RETAIN_FULL: "7"
+    volumes:
+      - db-walg-data-18:/var/lib/postgresql:ro
+    healthcheck:
+      test: ["CMD", "walg-health"]
+      interval: 1m
+      timeout: 10s
+      retries: 1
+      start_period: 2m
+
 volumes:
   # Postgres 18. The old 17 volume (`gb_db-data`) is left untouched; remove it
   # with `docker volume rm gb_db-data` once you no longer need it.
   db-data-18:
   redis-data:
   s3-data:
+  # Only used by the optional `walg` profile.
+  db-walg-data-18:

@@ -8,6 +8,8 @@ import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isUniqueViolation } from '@/common/db-values';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 
 const FOLDER_COLUMNS = {
   id: true,
@@ -39,7 +41,10 @@ const isUuid = (id: string) => UUID_RE.test(id);
 export class FolderService {
   private readonly logger = new Logger(FolderService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly erasure: ErasureLogService,
+  ) {}
 
   /** Live child folders of `parentId` (or the roots when null), by name. */
   async listChildren(userId: string, parentId: string | null) {
@@ -198,7 +203,7 @@ export class FolderService {
    * does, rather than relying on the FK cascade (which would hard-delete rows).
    */
   async remove(userId: string, folderId: string) {
-    await this.getOwned(userId, folderId);
+    const folder = await this.getOwned(userId, folderId);
     const now = new Date();
 
     const ids = await this.collectSubtree(userId, folderId);
@@ -216,6 +221,27 @@ export class FolderService {
         await tx.folder.updateMany({
           where: { owner_id: userId, id: { in: ids } },
           data: { deleted_at: now },
+        });
+        step = 'Failed to delete folder';
+        await this.erasure.record(tx, {
+          kind: 'folder',
+          subjectTable: 'file_manager.folder',
+          subjectIds: ids,
+          schoolId: folder.school_id,
+          actor: userId,
+          reason: 'user_request',
+          replay: plan.of(
+            plan.update(
+              'file_manager.file',
+              { owner_id: [userId], folder_id: ids },
+              { deleted_at: OCCURRED_AT },
+            ),
+            plan.update(
+              'file_manager.folder',
+              { owner_id: [userId], id: ids },
+              { deleted_at: OCCURRED_AT },
+            ),
+          ),
         });
       });
     } catch {

@@ -20,6 +20,8 @@ import type { ShareTargetDto } from './dto/share-file.dto';
 import { verifyContent, ALLOWED_CONTENT_TYPES } from './file-content';
 import { StorageService } from '@/storage/storage.service';
 import { objectKey } from '@/storage/keys';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 
 const BUCKET = 'file-manager';
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -66,6 +68,7 @@ export class FileManagerService {
     private readonly shares: FileShareService,
     private readonly chatSystem: ChatSystemService,
     private readonly folders: FolderService,
+    private readonly erasure: ErasureLogService,
   ) {}
 
   // ── Listing ──────────────────────────────────────────────────────────────
@@ -519,11 +522,28 @@ export class FileManagerService {
   }
 
   async softDelete(userId: string, fileId: string) {
-    await this.loadOwned(userId, fileId);
+    const file = await this.loadOwned(userId, fileId);
     try {
-      await this.prisma.file.updateMany({
-        where: { id: fileId },
-        data: { deleted_at: new Date() },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.file.updateMany({
+          where: { id: fileId },
+          data: { deleted_at: new Date() },
+        });
+        await this.erasure.record(tx, {
+          kind: 'file',
+          subjectTable: 'file_manager.file',
+          subjectIds: [fileId],
+          schoolId: file.school_id,
+          actor: userId,
+          reason: 'user_request',
+          replay: plan.of(
+            plan.update(
+              'file_manager.file',
+              { id: [fileId] },
+              { deleted_at: OCCURRED_AT },
+            ),
+          ),
+        });
       });
     } catch {
       throw new BadRequestException('Failed to delete file');

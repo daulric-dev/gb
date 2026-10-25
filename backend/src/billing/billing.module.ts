@@ -2,19 +2,19 @@ import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuthModule } from '@/auth/auth.module';
 import { PermissionModule } from '@/permission/permission.module';
-import { BillingRegistry } from './billing.registry';
-import { SubscriptionService } from './subscription.service';
-import { SeatService } from './seat.service';
-import { InvoiceService } from './invoice.service';
-import { BillingEventsService } from './billing-events.service';
-import { BillingService } from './billing.service';
-import { PlatformService } from './platform.service';
-import { BillingScheduler } from './billing.scheduler';
-import { BillingEnabledGuard, PlatformAdminGuard } from './billing.guards';
-import { BillingEntitlementInterceptor } from './billing.interceptor';
-import { BillingController, BillingStatusController } from './billing.controller';
-import { BillingWebhookController } from './billing-webhook.controller';
-import { PlatformController, PlatformMeController } from './platform.controller';
+import { BillingRegistry } from './providers/billing.registry';
+import { SubscriptionService } from './subscriptions/subscription.service';
+import { SeatService } from './subscriptions/seat.service';
+import { InvoiceService } from './subscriptions/invoice.service';
+import { BillingEventsService } from './webhooks/billing-events.service';
+import { BillingService } from './school/billing.service';
+import { PlatformService } from './platform/platform.service';
+import { BillingScheduler } from './jobs/billing.scheduler';
+import { BillingEnabledGuard, PlatformAdminGuard } from './access/billing.guards';
+import { BillingEntitlementInterceptor } from './access/billing.interceptor';
+import { BillingController, BillingStatusController } from './school/billing.controller';
+import { BillingWebhookController } from './webhooks/billing-webhook.controller';
+import { PlatformController, PlatformMeController } from './platform/platform.controller';
 
 /**
  * SaaS billing for the hosted platform. Inert unless BILLING_ENABLED=true:

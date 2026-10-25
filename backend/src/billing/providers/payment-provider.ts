@@ -1,21 +1,15 @@
 /**
- * One payment provider (Stripe, PayPal, Paddle, WiPay, manual invoices...).
+ * A payment provider. Stripe is the only one today (see stripe.provider.ts).
  *
  * Adding a provider means writing one of these and registering it in
  * ../billing.registry.ts - nothing else in the app knows which providers
- * exist. The platform operator picks which registered providers a deployment
- * offers (PAYMENT_PROVIDERS, then the on/off switches in the platform
- * dashboard); a school chooses among those at checkout.
+ * exist. A registered provider is offered to schools when billing is on and
+ * its `isConfigured()` is true.
  *
- * Two shapes of provider:
- *
- * - `subscription`: the provider runs the recurring billing itself (Stripe,
- *   PayPal, Paddle). We start a subscription with `createCheckout`, keep its
- *   seat count in step with `updateQuantity`, and learn about payments and
- *   status changes from webhooks.
- * - `invoice`: we raise an invoice each month and the provider only collects
- *   that one payment (WiPay's hosted page) or nothing at all (manual: bank
- *   transfer, marked paid by a platform admin).
+ * The provider runs the recurring billing itself: we start a subscription
+ * with `createCheckout` (a provider-hosted page; no card form on our pages),
+ * keep its seat count in step with `updateQuantity`, and learn about payments
+ * and status changes from signed webhooks.
  *
  * Money is always integer minor units (cents) with an ISO currency code.
  */
@@ -24,14 +18,12 @@ export interface PaymentProvider {
   readonly id: string;
   /** Shown to school admins: "Pay with <label>". */
   readonly label: string;
-  readonly mode: 'subscription' | 'invoice';
 
   /** Whether this deployment has the provider's credentials. */
   isConfigured(): boolean;
 
-  createCheckout?(ctx: CheckoutContext): Promise<CheckoutResult>;
-
-  payInvoice?(ctx: InvoicePaymentContext): Promise<CheckoutResult>;
+  /** Start a subscription on the provider's hosted checkout page. */
+  createCheckout(ctx: CheckoutContext): Promise<CheckoutResult>;
 
   /** Change the billed seat count (per-user plan). Prorates as the provider does. */
   updateQuantity?(sub: ProviderSubscriptionRef, quantity: number): Promise<void>;
@@ -49,7 +41,7 @@ export interface PaymentProvider {
   portalUrl?(sub: ProviderSubscriptionRef, returnUrl: string): Promise<string | null>;
 
   /**
-   * Verify a webhook (or a hosted-page callback) and translate it. MUST throw
+   * Verify a webhook and translate it. MUST throw
    * WebhookVerificationError when the signature or hash does not check out;
    * never trust an unverified body. Unknown event types become `ignored`.
    */
@@ -83,30 +75,13 @@ export interface CheckoutContext {
   idempotencyKey: string;
 }
 
-export interface InvoicePaymentContext {
-  invoiceId: string;
-  invoiceNumber: string;
-  schoolId: string;
-  schoolName: string;
-  customerEmail: string;
-  amountCents: number;
-  currency: string;
-  description: string;
-  successUrl: string;
-  cancelUrl: string;
-  /** Where the provider should call back for this payment, when it needs one per request. */
-  callbackUrl: string;
-}
-
 export interface CheckoutResult {
-  /** Send the browser here; null when there is nothing to redirect to (manual). */
+  /** Send the browser here; null when there is nothing to redirect to. */
   redirectUrl: string | null;
   /** The provider's id for what was created (checkout session, subscription, order). */
   providerRef: string | null;
   /** Customer created or reused, when the provider has customers. */
   providerCustomerId?: string | null;
-  /** Shown to the admin instead of a redirect (bank details, reference to quote). */
-  instructions?: string;
 }
 
 export interface ProviderSubscriptionRef {
@@ -156,8 +131,6 @@ export type BillingEvent =
   | {
       type: 'invoice.paid';
       eventId: string;
-      /** Our invoice id, for invoice-mode providers (from the metadata we sent). */
-      invoiceId?: string | null;
       providerInvoiceId?: string | null;
       providerSubscriptionId?: string | null;
       schoolId?: string | null;
@@ -170,7 +143,6 @@ export type BillingEvent =
   | {
       type: 'invoice.payment_failed';
       eventId: string;
-      invoiceId?: string | null;
       providerInvoiceId?: string | null;
       providerSubscriptionId?: string | null;
       schoolId?: string | null;

@@ -15,6 +15,9 @@ import { CacheService } from '@/cache/cache.service';
 import { EmailDomainService } from '@/email-domain/email-domain.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { plan, userStoragePrefixes } from '@/erasure/erasure-plan';
+import { objectKey } from '@/storage/keys';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -51,6 +54,7 @@ export class AuthService {
     private readonly emailCodes: EmailCodeService,
     private readonly accounts: AccountService,
     private readonly sessions: SessionService,
+    private readonly erasure: ErasureLogService,
   ) {}
 
   /**
@@ -412,26 +416,62 @@ export class AuthService {
   }
 
   async deleteAccount(userId: string) {
-    try {
-      await this.prisma.user_profile.deleteMany({ where: { id: userId } });
-    } catch (profileError) {
-      this.logger.error(
-        `Failed to delete user_profile for ${userId}: ${(profileError as Error).message}`,
-      );
-      throw new BadRequestException('Failed to delete account');
-    }
+    const [files, profile] = await Promise.all([
+      this.prisma.file
+        .findMany({
+          where: { owner_id: userId },
+          select: { school_id: true, bucket: true, storage_path: true },
+        })
+        .catch(() => []),
+      this.prisma.user_profile
+        .findUnique({ where: { id: userId }, select: { school_id: true } })
+        .catch(() => null),
+    ]);
+    const prefixes = userStoragePrefixes(
+      userId,
+      files.map((f) => f.school_id),
+    );
 
     try {
       await this.sessions.revokeAll(userId);
-      // Cascades to sessions and linked sign-in identities.
-      await this.prisma.app_user.deleteMany({ where: { id: userId } });
-    } catch (authError) {
+    } catch (err) {
       this.logger.error(
-        `Failed to delete account ${userId}: ${(authError as Error).message}`,
+        `Failed to revoke sessions for ${userId}: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to delete account');
     }
 
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user_profile.deleteMany({ where: { id: userId } });
+        // Cascades to sessions and linked sign-in identities.
+        await tx.app_user.deleteMany({ where: { id: userId } });
+        await this.erasure.record(tx, {
+          kind: 'account',
+          subjectTable: 'account.app_user',
+          subjectIds: [userId],
+          schoolId: profile?.school_id ?? null,
+          actor: userId,
+          reason: 'user_request',
+          replay: plan.of(
+            plan.prefixes(prefixes),
+            plan.del('file_manager.file', { owner_id: [userId] }, true),
+            plan.del('public.user_profile', { id: [userId] }),
+            plan.del('account.app_user', { id: [userId] }),
+          ),
+        });
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to delete account ${userId}: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('Failed to delete account');
+    }
+
+    await this.erasure.removeObjects(
+      files.map((f) => objectKey(f.bucket as string, f.storage_path as string)),
+      prefixes,
+    );
     await this.cache.delete(`profile:${userId}`);
     this.logger.log(`Account deleted for user ${userId}`);
     return 'Account deleted successfully';
