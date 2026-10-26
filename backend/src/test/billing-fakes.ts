@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
- 
 import { mock } from 'bun:test';
 import type {
   BillingEvent,

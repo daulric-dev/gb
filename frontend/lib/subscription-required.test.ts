@@ -47,15 +47,23 @@ describe("api() on 402", () => {
   beforeEach(() => {
     resetSubscriptionNotice();
     globalThis.fetch = mock(
-      async () =>
-        new Response(
+      async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : "url" in input ? input.url : input.toString();
+        if (url.includes("/billing/status")) {
+          return new Response(JSON.stringify({ enabled: true, readOnly: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
           JSON.stringify({
             statusCode: 402,
             code: "SUBSCRIPTION_REQUIRED",
             message: "Subscription required",
           }),
           { status: 402, headers: { "Content-Type": "application/json" } },
-        ),
+        );
+      },
     ) as unknown as typeof fetch;
   });
 
