@@ -60,6 +60,7 @@ Self-hosted deployments leave it off.
 | GET | `/api/platform/schools/:schoolId` | One school, with its comp details, invoices and the last 100 payment events. |
 | POST | `/api/platform/schools/:schoolId/extend-trial` | `ExtendTrialDto { days }`. Extends from the later of the trial end and now. |
 | POST | `/api/platform/schools/:schoolId/comp` | `CompDto { until, note? }`. Gives the school free access until a date. |
+| POST | `/api/platform/users/:userId/sessions/revoke` | Signs any user out of every device (support for a compromised account); `{ revoked }`, 404 for an unknown user. Logged at info level. |
 | GET | `/api/platform/invoices?status=` | Up to 500 invoices with school names. `status` is one of `open`, `paid`, `void`, `uncollectible`. |
 
 There is no void action: Stripe owns the invoices and we only record paid ones, so there is nothing of ours to void (refunds and voids are done in the Stripe dashboard).

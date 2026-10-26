@@ -6,7 +6,7 @@ sidebar_label: Authentication
 
 **Location**: `backend/src/auth/`
 
-The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. Sign-in codes and sessions are handled by the backend's own account module (`backend/src/account/`): codes are stored hashed with `AUTH_SECRET`, and a signed-in user holds an **opaque session token in the HTTP-only `gb_session` cookie**, whose hash is stored in the `account.session` table.
+The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. Sign-in codes and sessions are handled by the backend's own account module (`backend/src/account/`): codes are stored hashed with `AUTH_SECRET`, and a signed-in user holds an **opaque session token in the HTTP-only `gb_session` cookie**, whose hash is stored in the `account.session` table. The mobile app uses the same token as a **bearer token**: it signs in with `X-GradeBook-Client: native`, receives the token in the `X-Session-Token` response header, stores it in the device keychain and sends `Authorization: Bearer <token>` on every request.
 
 ## Files
 
@@ -15,7 +15,7 @@ The authentication module handles user login via email OTP (one-time password), 
 | `auth.module.ts` | Module definition; exports `AuthGuard`, imports `ImagesModule` for avatar endpoints |
 | `auth.controller.ts` | API endpoints for auth operations and avatar management |
 | `auth.service.ts` | Business logic for OTP, profiles, onboarding |
-| `auth.guard.ts` | Resolves the `gb_session` cookie to a live session and rejects deactivated accounts |
+| `auth.guard.ts` | Resolves the `gb_session` cookie (or the mobile app's bearer token) to a live session and rejects deactivated accounts |
 | `transformer.ts` | Response shaping for API versioning (includes `avatar_url`) |
 | `dto/send-otp.dto.ts` | Validation for OTP send request |
 | `dto/verify-otp.dto.ts` | Validation for OTP verification |
@@ -27,7 +27,7 @@ The authentication module handles user login via email OTP (one-time password), 
 ```
 1. User enters email
    └── POST /auth/otp/send { email }
-       └── EmailCodeService stores a hashed 8-digit code (valid 10 minutes)
+       └── EmailCodeService stores a hashed 8-digit code (valid 5 minutes)
            and MailService emails it (Mailpit in development)
 
 2. User enters OTP code
@@ -44,23 +44,32 @@ The authentication module handles user login via email OTP (one-time password), 
        │  the profile with a `joinRequest` field - frontend redirects to /onboard/pending
        └─ If no schoolId provided: saves name, leaves school empty
 
-4. Session renewal (sessions last 30 days, sliding)
+4. Session renewal (30 days sliding, 90 days at most)
    └── Each authenticated request runs AuthGuard → SessionService.resolve()
        └── Looks up the token hash (cached for 60 s)
        └── If more than a day has passed since the session was last renewed,
-           extends expires_at by 30 days and re-sets the cookie
+           extends expires_at by 30 days (never past absolute_expires_at,
+           SESSION_MAX_AGE_DAYS after sign-in) and ROTATES the token: the
+           response carries a new cookie (web) or X-Session-Token (app)
+       └── The replaced token still works for SESSION_ROTATION_GRACE_SECONDS;
+           after that it is treated as copied and the whole session is revoked
        └── No refresh token and no client-side refresh - the frontend never
-           sees a 401 while the session is live
+           sees a 401 while the session is live; after 90 days the user
+           signs in again
 
 5. User logs out
    └── POST /auth/logout
        └── SessionService.revoke() marks the session revoked, drops its
            cache entry and clears the cookie
+
+6. Signed-in devices
+   └── GET /auth/sessions lists the user's live sessions; DELETE /auth/sessions/:id,
+       POST /auth/sessions/revoke-others and /revoke-all sign devices out at once
 ```
 
 ## Session Cookies
 
-The session is a single HTTP-only cookie named `gb_session`. Its value is an opaque token - 256 random bits plus an HMAC tag keyed with `AUTH_SECRET` - and only its SHA-256 hash is stored, in `account.session`, so a database leak hands out no usable sessions. Sessions can be revoked individually (logout) or all at once (account deleted or disabled).
+The session is a single HTTP-only cookie named `gb_session`. Its value is an opaque token - 256 random bits plus an HMAC tag keyed with `AUTH_SECRET` - and only its SHA-256 hash is stored, in `account.session`, so a database leak hands out no usable sessions. Sessions can be revoked individually (logout, Signed-in devices), all but the current one, or all at once (account deleted or disabled, an admin signing a member out). Every revocation records a `revoked_reason` and deletes the session's cache entries, so it takes effect on the next request.
 
 Cookie attributes (set in `SessionService.setCookie`):
 
@@ -71,7 +80,7 @@ Cookie attributes (set in `SessionService.setCookie`):
 | `sameSite` | `lax` (works for same-origin and most cross-origin GETs; switch to `none` if frontend is on a different domain) |
 | `path` | `/` |
 | `domain` | Production only: derived from the app origin, or `AUTH_COOKIE_DOMAIN` (see `config/origins.ts`) |
-| `expires` | 30 days from creation or last renewal |
+| `expires` | 30 days from creation or last renewal, never past the absolute lifetime (90 days from sign-in) |
 
 There is no separate frontend access-token storage. The frontend never reads or writes auth tokens - it only sends `credentials: "include"` on every request, and the browser handles the cookies automatically.
 
@@ -79,10 +88,25 @@ There is no separate frontend access-token storage. The frontend never reads or 
 
 `SessionService` (`backend/src/account/session.service.ts`) owns the session lifecycle:
 
-- `create(reply, req, userId, method)`: issues a token, stores its hash with the user agent and IP, and sets the cookie
-- `resolve(req, reply?)`: returns `{ sessionId, userId, email }` for a live session, or `null` (clearing the cookie) if it is missing, revoked, expired, or the user is disabled. Lookups are cached for 60 seconds, so a revoked session stops working within a minute
+- `create(reply, req, userId, method)`: issues a token, stores its hash with the user agent, a device label ("Chrome on macOS", "GradeBook app on iPhone 15 (iOS 19.0)" from the app's `X-GradeBook-Device` header), the IP and `absolute_expires_at`, sets the cookie, and emails a **new sign-in alert** when the device label + sign-in method was not seen for the user in 90 days (never on a new account's first sign-in)
+- `resolve(req, reply?)`: returns `{ sessionId, userId, email }` for a live session, or `null` (clearing the cookie) if it is missing, revoked, expired (sliding or absolute), or the user is disabled. Lookups are cached for 60 seconds; revocation deletes the cache entries, so it is immediate
+- `list(userId, currentSessionId)`, `revokeOwn()`, `revokeOthers()`: Signed-in devices
 - `revoke(req, reply)`: signs this device out
-- `revokeAll(userId)`: signs a user out everywhere
+- `revokeAll(userId, reason)`: signs a user out everywhere
+
+### Session lifetime and token rotation
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| Sliding expiry | 30 days | A session unused for 30 days ends. |
+| `SESSION_MAX_AGE_DAYS` | 90 | A session ends this long after sign-in, however active. |
+| Renewal | once a day | The first request more than a day after the last renewal extends the expiry and rotates the token. |
+| `SESSION_ROTATION_GRACE_SECONDS` | 120 | The replaced token keeps working this long, for requests already in flight. |
+| `SESSION_ALERTS_ENABLED` | true | New sign-in and suspicious-activity emails. |
+
+At rotation the session row keeps the replaced token's hash in `previous_token_hash` (with `rotated_at`); the switch is one conditional update on the current hash, so concurrent requests cannot rotate twice. The new token is derived from the old one with `AUTH_SECRET`, so every request that rotates, or presents the old token during the grace period, gets the same new token. It is sent as the cookie (web) or the `X-Session-Token` header (bearer token or `X-GradeBook-Client: native`) on that response, whatever its status; the app stores the header from every response.
+
+Presenting the replaced token **after** the grace period means it was copied: the whole session is revoked with `revoked_reason = 'token_reuse'`, the cookie is cleared, the request gets a 401 and the user is emailed ("Suspicious activity: a GradeBook device was signed out"). Tokens older than that match no session and are a plain 401. The emails link to Signed-in devices (`/dashboard/settings#devices`, or `/portal/settings#devices` for students); sending never blocks or fails a request, and is skipped (logged) when SMTP is not configured.
 
 There is no database-level row security: services query Postgres through `PrismaService` and enforce access in the API.
 
@@ -94,7 +118,7 @@ The `AuthGuard` is a NestJS `CanActivate` guard that protects endpoints requirin
 
 1. Calls `SessionService.resolve(req, reply)` to turn the `gb_session` cookie into a live session (renewing it if due)
 2. Checks `user_profile.is_active`; a deactivated account has its session revoked and gets a 401
-3. If valid, attaches `{ id, email }` to `request.user`
+3. If valid, attaches `{ id, email, sessionId }` to `request.user`
 4. If invalid or missing, throws `UnauthorizedException` (the frontend then redirects to `/login`)
 
 **Usage:** Applied to controllers/endpoints with `@UseGuards(AuthGuard)`.
@@ -205,6 +229,54 @@ When the response includes `joinRequest`, the frontend redirects to `/onboard/pe
 **Requires:** `AuthGuard`
 
 Signs out the user via `SessionService.revoke()`, which marks the session revoked in `account.session` and clears the `gb_session` cookie on the response.
+
+---
+
+### `GET /api/auth/sessions`
+
+**Requires:** `AuthGuard`
+
+The caller's live sessions, the current one first. No tokens or hashes.
+
+```json
+[
+  {
+    "id": "6f1c...",
+    "current": true,
+    "method": "email-code",
+    "device": "Chrome on macOS",
+    "ip": "203.0.113.7",
+    "createdAt": "2026-10-20T09:12:00.000Z",
+    "lastSeenAt": "2026-10-26T08:01:00.000Z",
+    "expiresAt": "2026-11-25T08:01:00.000Z"
+  }
+]
+```
+
+### `DELETE /api/auth/sessions/:id`
+
+**Requires:** `AuthGuard`
+
+Signs out one of the caller's sessions: `{ revoked: 1, current }`. Another user's session (or one already ended) is a 404. Revoking the current session is a logout and clears the cookie.
+
+### `POST /api/auth/sessions/revoke-others`
+
+**Requires:** `AuthGuard`
+
+Signs out every other session: `{ revoked }`.
+
+### `POST /api/auth/sessions/revoke-all`
+
+**Requires:** `AuthGuard`
+
+Signs out every session, this one included, and clears the cookie: `{ revoked }`.
+
+### Admin sign-out
+
+- `POST /api/schools/members/:membershipId/sessions/revoke` (`AdminGuard`): a school admin signs a staff member of their school out of every device. Another school's membership is a 404; only the owner can sign the owner out. The staff page has a **Sign out of all devices** button for it.
+- `POST /api/platform/users/:userId/sessions/revoke` (platform admins, `BILLING_ENABLED=true`): the same for any user.
+
+Both log at info level; neither touches the erasure log.
 
 ## Avatar Endpoints
 

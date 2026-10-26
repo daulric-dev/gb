@@ -4,6 +4,9 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
@@ -162,6 +165,61 @@ export class AuthController {
     return this.versioning.resolve(req, 'auth.message')('Logged out');
   }
 
+  // ── Signed-in devices ────────────────────────────────────────────────
+
+  /** The caller's live sessions; the one making this request has `current: true`. */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Get('sessions')
+  async listSessions(@Req() req: SessionRequest) {
+    return this.sessions.list(req.user.id, req.user.sessionId);
+  }
+
+  /** Sign out one of your sessions (404 if it is not yours). Your own = log out. */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Delete('sessions/:id')
+  async revokeSession(
+    @Req() req: SessionRequest,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const { current } = await this.sessions.revokeOwn(
+      req.user.id,
+      id,
+      req.user.sessionId,
+    );
+    if (current) this.sessions.clearCookie(res);
+    return { revoked: 1, current };
+  }
+
+  /** Sign out every other device. */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Post('sessions/revoke-others')
+  @HttpCode(200)
+  async revokeOtherSessions(@Req() req: SessionRequest) {
+    const revoked = await this.sessions.revokeOthers(
+      req.user.id,
+      req.user.sessionId ?? '',
+    );
+    return { revoked };
+  }
+
+  /** Sign out everywhere, this device included. */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Post('sessions/revoke-all')
+  @HttpCode(200)
+  async revokeAllSessions(
+    @Req() req: SessionRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const revoked = await this.sessions.revokeAll(req.user.id, 'signed_out_all');
+    this.sessions.clearCookie(res);
+    return { revoked };
+  }
+
   // ── Avatar ───────────────────────────────────────────────────────────
 
   @ApiBearerAuth()
@@ -235,6 +293,9 @@ export class AuthController {
     return this.versioning.resolve(req, 'images.uploaded')(result);
   }
 }
+
+/** A guarded request: AuthGuard sets the user and the session making it. */
+type SessionRequest = { user: { id: string; sessionId?: string } };
 
 /** This API's origin as the caller reached it, for links back to it. */
 function requestOrigin(req: FastifyRequest): string | undefined {

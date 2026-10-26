@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { ApiError, buildUrl } from "@/lib/api";
+import { authHeaders, rememberSessionToken } from "@/lib/session-token";
 
 /**
  * Download a file the API serves behind the session (a course file, a handed-in
@@ -19,21 +20,24 @@ export async function downloadAndOpen(
   let res: Response;
   try {
     res = await fetch(buildUrl(path), {
-      headers: { "X-API-Version": "1" },
+      headers: { "X-API-Version": "1", ...(await authHeaders()) },
       credentials: "include",
     });
   } catch {
     throw new ApiError(0, "Can't reach the server. Check your connection.");
   }
+  await rememberSessionToken(res);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(
       res.status,
-      (body as { message?: string } | null)?.message ?? "Could not open this file",
+      (body as { message?: string } | null)?.message ??
+        "Could not open this file",
     );
   }
 
-  const name = fileNameFrom(res.headers.get("content-disposition")) ?? fallbackName;
+  const name =
+    fileNameFrom(res.headers.get("content-disposition")) ?? fallbackName;
   const mimeType =
     res.headers.get("content-type")?.split(";")[0]?.trim() ||
     "application/octet-stream";

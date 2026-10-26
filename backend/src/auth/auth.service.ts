@@ -433,7 +433,7 @@ export class AuthService {
     );
 
     try {
-      await this.sessions.revokeAll(userId);
+      await this.sessions.revokeAll(userId, 'account_deleted');
     } catch (err) {
       this.logger.error(
         `Failed to revoke sessions for ${userId}: ${(err as Error).message}`,

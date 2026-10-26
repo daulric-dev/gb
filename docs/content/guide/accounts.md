@@ -13,9 +13,9 @@ Type your email address and press **Continue**. What happens next depends on you
 - **Your school offers single sign-on** - you see **Continue with Google** (or Microsoft, or your school), and **Email me a code instead** underneath.
 - **Otherwise** - GradeBook emails you an 8-digit code. Type it in and you are signed in.
 
-A code lasts ten minutes and works once. Asking for a new one cancels the old one. After five wrong tries the code stops working - ask for a fresh one.
+A code lasts five minutes and works once. Asking for a new one cancels the old one. After five wrong tries the code stops working - ask for a fresh one.
 
-You stay signed in for 30 days on each device, renewed each time you use it. Signing out ends the session on that device only.
+You stay signed in on each device for 30 days after you last used it, but never for more than **90 days** in a row: after 90 days GradeBook asks you to sign in again, however often you use it. Signing out ends the session on that device only (see [Signed-in devices](#signed-in-devices) to sign out elsewhere).
 
 > **Not receiving the code?** Check spam first. If your school requires single sign-on, codes are switched off for your school's addresses - use the sign-in button instead.
 
@@ -48,7 +48,23 @@ Once you are in a school, you join **courses** either because a teacher adds you
 
 ## Your profile and settings
 
-**Settings** holds your name and profile picture. Your email address is your identity and cannot be changed here.
+**Settings** holds your name and profile picture. Your email address is your identity and cannot be changed here. Students find **Settings** in the menu under their picture in the portal; in the app it is the **Settings** tab.
+
+## Signed-in devices
+
+**Settings → Signed-in devices** lists every device your account is signed in on: the browser or phone (for example *Chrome on macOS* or *GradeBook app on iPhone 15*), when it was last used, its IP address and when you signed in. The one you are using is marked **This device**.
+
+- **Sign out** next to a device signs it out straight away. Signing out **This device** is the same as logging out.
+- **Sign out of all other devices** keeps only the one you are using. Use it if you signed in on a shared or lost computer or phone.
+
+School administrators can also sign a staff member out of all devices from the **Staff** page (the sign-out icon on their card), for example when a laptop is lost.
+
+## Security emails
+
+GradeBook emails you when:
+
+- **Your account signs in on a new device** - "New sign-in to GradeBook", with the device, time and IP address. If it was you, there is nothing to do. If it wasn't, open **Review signed-in devices** in the email, sign that device out, and sign out of all other devices. A device counts as new if you have not signed in on it in the last 90 days. You don't get one for the very first sign-in of a new account.
+- **We signed a device out for you** - "Suspicious activity". Your sign-in on each device is quietly renewed about once a day; if an old copy of it is used later, someone may have copied it, so that device is signed out. Sign in again on it and check your other devices.
 
 ## Signing out
 

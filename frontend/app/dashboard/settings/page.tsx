@@ -27,6 +27,7 @@ import {
 import { Camera, Loader2, Trash2 } from "lucide-react";
 import type { Profile } from "./_components/types";
 import { BillingSettingsLink } from "./_components/billing-link";
+import { SignedInDevices } from "@/components/account/signed-in-devices";
 
 export default function SettingsPage() {
   useSignals();
@@ -347,6 +348,8 @@ export default function SettingsPage() {
           </div>
         </form>
       </Card>
+
+      <SignedInDevices />
 
       <Separator />
 

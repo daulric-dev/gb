@@ -532,7 +532,7 @@ describe('AuthService', () => {
     test('deletes the profile, signs out everywhere and deletes the account', async () => {
       const userId = 'user-del';
       await service.deleteAccount(userId);
-      expect(sessions.revokeAll).toHaveBeenCalledWith(userId);
+      expect(sessions.revokeAll).toHaveBeenCalledWith(userId, 'account_deleted');
       expect(prisma.app_user.deleteMany.mock.calls[0][0]).toEqual({ where: { id: userId } });
     });
 

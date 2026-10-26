@@ -1,6 +1,6 @@
-import { Linking, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Download, ExternalLink } from "lucide-react-native";
-import { buildUrl } from "@/lib/api";
+import { downloadAndOpen } from "@/lib/open-file";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { formatDate } from "@/lib/utils";
@@ -38,11 +38,10 @@ export function FileDetailsSheet({
 
   const open = async (mode: "content" | "download") => {
     if (!file) return;
-    const url = buildUrl(`/files/${file.id}/${mode}`);
+    // Fetched with the app's session (the phone's browser has none), then
+    // handed to the share sheet / Quick Look.
     try {
-      const ok = await Linking.canOpenURL(url);
-      if (!ok) throw new Error("cannot open");
-      await Linking.openURL(url);
+      await downloadAndOpen(`/files/${file.id}/${mode}`, file.name);
     } catch {
       toast.error("Could not open this file");
     }

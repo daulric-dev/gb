@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -12,7 +11,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Send } from "lucide-react-native";
-import { api, buildUrl } from "@/lib/api";
+import { api } from "@/lib/api";
+import { downloadAndOpen } from "@/lib/open-file";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -95,9 +95,7 @@ export default function ChatThreadScreen() {
           const gotForeign =
             merged.length > prev.length &&
             ordered.some(
-              (m) =>
-                m.senderId !== selfId &&
-                !prev.some((p) => p.id === m.id),
+              (m) => m.senderId !== selfId && !prev.some((p) => p.id === m.id),
             );
           if (gotForeign) markRead();
           return merged;
@@ -194,8 +192,8 @@ export default function ChatThreadScreen() {
     if (message.type === "file_share") {
       const fileId = message.metadata.fileId;
       if (fileId) {
-        Linking.openURL(buildUrl(`/files/${String(fileId)}/content`)).catch(
-          () => toast.error("Could not open file"),
+        downloadAndOpen(`/files/${String(fileId)}/content`).catch(() =>
+          toast.error("Could not open file"),
         );
       }
     }

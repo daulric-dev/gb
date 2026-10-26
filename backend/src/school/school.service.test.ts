@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import {
   BadRequestException,
   ForbiddenException,
@@ -19,7 +19,7 @@ describe('SchoolService', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     mockCache = createMockCacheService();
-    service = new SchoolService(prisma as any, mockCache as any, createMockErasureLog() as any);
+    service = new SchoolService(prisma as any, mockCache as any, createMockErasureLog() as any, {} as any);
   });
 
   describe('findAll', () => {
@@ -123,6 +123,7 @@ describe('SchoolService', () => {
           db as any,
           createMockCacheService() as any,
           createMockErasureLog() as any,
+          {} as any,
         ),
         db,
       };
@@ -251,6 +252,61 @@ describe('SchoolService', () => {
         where: { id: 'u2' },
         data: { school_id: 's1', role: 'teacher', is_active: true },
       });
+    });
+  });
+
+  describe('revokeMemberSessions', () => {
+    function setup(membership: Record<string, unknown> | null) {
+      const db = createMockPrisma();
+      db.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
+      db.school_management.findUnique.mockResolvedValue(membership);
+      const sessions = { revokeAll: mock(async () => 3) };
+      const svc = new SchoolService(
+        db as any,
+        createMockCacheService() as any,
+        createMockErasureLog() as any,
+        sessions as any,
+      );
+      return { svc, sessions };
+    }
+
+    test('signs a member of the admin\'s school out everywhere', async () => {
+      const { svc, sessions } = setup({
+        user_id: 'teacher-1',
+        school_id: 'school-1',
+        school: { owner_id: 'owner-1' },
+      });
+      expect(await svc.revokeMemberSessions('admin-1', 'm1')).toEqual({ revoked: 3 });
+      expect(sessions.revokeAll).toHaveBeenCalledWith('teacher-1', 'admin');
+    });
+
+    test('a member of another school is a 404 and nothing is revoked', async () => {
+      const { svc, sessions } = setup({
+        user_id: 'teacher-2',
+        school_id: 'school-2',
+        school: { owner_id: 'owner-2' },
+      });
+      expect(await expectRejection(svc.revokeMemberSessions('admin-1', 'm2'))).toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(sessions.revokeAll).not.toHaveBeenCalled();
+    });
+
+    test('an unknown membership is a 404', async () => {
+      const { svc } = setup(null);
+      expect(await expectRejection(svc.revokeMemberSessions('admin-1', 'm3'))).toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    test('only the owner can sign the owner out', async () => {
+      const owner = { user_id: 'owner-1', school_id: 'school-1', school: { owner_id: 'owner-1' } };
+      const { svc, sessions } = setup(owner);
+      expect(await expectRejection(svc.revokeMemberSessions('admin-1', 'm4'))).toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(await svc.revokeMemberSessions('owner-1', 'm4')).toEqual({ revoked: 3 });
+      expect(sessions.revokeAll).toHaveBeenCalledTimes(1);
     });
   });
 });

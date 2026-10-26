@@ -66,8 +66,18 @@ export default function VerifyScreen() {
     }, 1000);
   }
 
+  // One request per code. `loading` alone can't guard this: it is state, so
+  // it flips back after the request and the auto-submit effect below then
+  // re-ran with the same eight digits still in the boxes, sending an
+  // already-used code (401) a moment after signing in.
+  const submitting = useRef(false);
+  const submittedCode = useRef<string | null>(null);
+
   const verify = useCallback(async () => {
-    if (code.length !== CODE_LENGTH || loading) return;
+    if (code.length !== CODE_LENGTH || submitting.current) return;
+    if (submittedCode.current === code) return;
+    submitting.current = true;
+    submittedCode.current = code;
 
     setLoading(true);
     setError(null);
@@ -99,14 +109,15 @@ export default function VerifyScreen() {
     } catch (err) {
       // Shown against the boxes rather than only as a toast: a toast slides
       // away, and the next thing they do is retype the code right here.
-      setError(
-        err instanceof ApiError ? err.message : "Verification failed",
-      );
+      setError(err instanceof ApiError ? err.message : "Verification failed");
       setCode("");
+      // A wrong code may be typed again after a resend; allow it.
+      submittedCode.current = null;
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
-  }, [code, email, loading, refresh, router]);
+  }, [code, email, refresh, router]);
 
   // Submitting is the obvious next step once the last digit lands, so do it
   // rather than making them reach for the button.
@@ -157,7 +168,11 @@ export default function VerifyScreen() {
                 lands mid-typing. */}
             <View style={{ minHeight: 18, justifyContent: "center" }}>
               {error ? (
-                <Text tone="destructive" size="sm" style={{ textAlign: "center" }}>
+                <Text
+                  tone="destructive"
+                  size="sm"
+                  style={{ textAlign: "center" }}
+                >
                   {error}
                 </Text>
               ) : null}
@@ -173,7 +188,9 @@ export default function VerifyScreen() {
           </Button>
 
           <View style={{ alignItems: "center", gap: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+            >
               <Text tone="muted" size="sm">
                 Didn&apos;t get it?
               </Text>

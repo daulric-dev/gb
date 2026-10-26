@@ -24,6 +24,7 @@ export function RoleSection({
   currentUserId,
   onRemove,
   onManageRoles,
+  onSignOut,
 }: {
   role: StaffSectionRole;
   members: SchoolMember[];
@@ -31,6 +32,7 @@ export function RoleSection({
   currentUserId?: string;
   onRemove?: (member: SchoolMember) => void;
   onManageRoles?: (member: SchoolMember) => void;
+  onSignOut?: (member: SchoolMember) => void;
 }) {
   const meta = ROLE_META[role];
   const Icon = meta.icon;
@@ -56,6 +58,7 @@ export function RoleSection({
               removing={removingId === m.id}
               onRemove={!isSelf ? onRemove : undefined}
               onManageRoles={onManageRoles}
+              onSignOut={!isSelf ? onSignOut : undefined}
             />
           );
         })}

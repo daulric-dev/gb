@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { SessionService } from '@/account/session.service';
 import { plan } from '@/erasure/erasure-plan';
 import { CreateSchoolDto } from './dto/create-school.dto';
 
@@ -22,6 +23,7 @@ export class SchoolService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly erasure: ErasureLogService,
+    private readonly sessions: SessionService,
   ) {}
 
   async findAll() {
@@ -622,6 +624,36 @@ export class SchoolService {
   }
 
   // --- helpers -------------------------------------------------------------
+
+  /**
+   * Sign a staff member of the admin's school out of every device (a lost
+   * laptop, a member leaving). Revocation is immediate. Memberships of other
+   * schools are a 404; only the owner can sign the owner out.
+   */
+  async revokeMemberSessions(adminUserId: string, membershipId: string) {
+    const adminSchoolId = await this.adminSchoolId(adminUserId);
+    const membership = await this.prisma.school_management
+      .findUnique({
+        where: { id: membershipId },
+        select: { user_id: true, school_id: true, school: { select: { owner_id: true } } },
+      })
+      .catch(() => null);
+    if (!membership || membership.school_id !== adminSchoolId) {
+      throw new NotFoundException('Membership not found');
+    }
+    if (
+      membership.school?.owner_id === membership.user_id &&
+      membership.user_id !== adminUserId
+    ) {
+      throw new ForbiddenException('Only the school owner can sign the owner out');
+    }
+
+    const revoked = await this.sessions.revokeAll(membership.user_id, 'admin');
+    this.logger.log(
+      `Admin ${adminUserId} signed member ${membership.user_id} out of ${revoked} session(s) in school ${adminSchoolId}`,
+    );
+    return { revoked };
+  }
 
   private async activeSchoolId(userId: string): Promise<string | null> {
     const profile = await this.prisma.user_profile

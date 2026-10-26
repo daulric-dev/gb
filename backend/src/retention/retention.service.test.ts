@@ -183,17 +183,25 @@ describe('other kinds', () => {
     expect(kinds).toEqual(['delete', 'update']);
   });
 
-  test('expired sessions and old sign-in codes are cleared (not logged)', async () => {
+  test('expired sessions, old sign-in codes and unused remembered devices are cleared (not logged)', async () => {
     const { prisma, service } = setup();
     prisma.session.findMany.mockResolvedValueOnce([{ id: U(1) }]).mockResolvedValue([]);
     prisma.session.deleteMany.mockResolvedValue({ count: 1 });
     prisma.email_code.findMany.mockResolvedValueOnce([{ id: U(2) }, { id: U(3) }]).mockResolvedValue([]);
     prisma.email_code.deleteMany.mockResolvedValue({ count: 2 });
+    prisma.known_device.deleteMany.mockResolvedValue({ count: 3 });
     const report = await service.purge({ now: NOW });
-    expect(report).toMatchObject({ sessions: 1, emailCodes: 2 });
+    expect(report).toMatchObject({ sessions: 1, emailCodes: 2, knownDevices: 3 });
     const before = new Date(NOW.getTime() - DAY);
     expect(prisma.session.findMany.mock.calls[0][0].where).toEqual({
-      OR: [{ expires_at: { lt: before } }, { revoked_at: { lt: before } }],
+      OR: [
+        { expires_at: { lt: before } },
+        { absolute_expires_at: { lt: before } },
+        { revoked_at: { lt: before } },
+      ],
+    });
+    expect(prisma.known_device.deleteMany.mock.calls[0][0].where).toEqual({
+      last_seen_at: { lt: new Date(NOW.getTime() - 90 * DAY) },
     });
   });
 

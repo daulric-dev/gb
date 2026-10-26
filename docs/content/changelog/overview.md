@@ -9,6 +9,10 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-10-26
+
+- [Session security](./2026-10-26/session-security.md) - sessions end at most `SESSION_MAX_AGE_DAYS` (90) after sign-in; **Signed-in devices** (`GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id`, `revoke-others`, `revoke-all`) on the web settings pages (new student `/portal/settings`) and in the app; admins can sign a member out (`POST /api/schools/members/:membershipId/sessions/revoke`, platform `POST /api/platform/users/:userId/sessions/revoke`); revocation is immediate (cache entries deleted). The token rotates at each daily renewal (cookie or `X-Session-Token`, on any status), the replaced one works for `SESSION_ROTATION_GRACE_SECONDS` (120), and after that its reuse revokes the session. "New sign-in" and "Suspicious activity" emails (`SESSION_ALERTS_ENABLED`). The app sends `X-GradeBook-Device`. Migration `20261026100000_session_hardening` (`account.session` columns, `account.known_device`).
+
 ## 2026-10-25
 
 - [Billing: Stripe only](./2026-10-25/billing-stripe-only.md) - one payment provider: **Stripe** (Checkout to subscribe, Customer Portal for card and invoices). The PayPal, Paddle and WiPay adapters, `PAYMENT_PROVIDERS`, the platform providers page and switches, and the invoice-mode machinery (invoice sweep and **Generate invoices**, **Pay** invoice, **Void**, WiPay browser returns) are removed; the `PaymentProvider` interface and registry stay for a future provider. Stripe is offered when `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` are set; otherwise checkout is a 503 and admins see "payments are not configured yet". Rows on a removed provider keep working and can re-subscribe with Stripe. No migration.

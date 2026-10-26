@@ -5,7 +5,7 @@
 export function signInCodeEmail(code: string): { subject: string; text: string; html: string } {
   return {
     subject: 'Your GradeBook sign-in code',
-    text: `Your GradeBook sign-in code is ${code}. It expires in 10 minutes and can only be used once. If you did not ask for it, ignore this email.`,
+    text: `Your GradeBook sign-in code is ${code}. It expires in 5 minutes and can only be used once. If you did not ask for it, ignore this email.`,
     html: `<!doctype html>
 <html lang="en">
   <head>

@@ -164,6 +164,28 @@ export default function StaffPage() {
     }
   }, [members, removingId]);
 
+  const handleSignOut = useCallback(async (member: SchoolMember) => {
+    const name = member.user
+      ? [member.user.first_name, member.user.last_name]
+          .filter(Boolean)
+          .join(" ") || "this member"
+      : "this member";
+    if (!window.confirm(`Sign ${name} out of every device? They can sign in again.`)) return;
+    try {
+      const { revoked } = await api<{ revoked: number }>(
+        `/schools/members/${member.id}/sessions/revoke`,
+        { method: "POST" },
+      );
+      toast.success(
+        revoked === 0
+          ? `${name} was not signed in anywhere.`
+          : `Signed ${name} out of ${revoked} device${revoked === 1 ? "" : "s"}.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to sign out");
+    }
+  }, []);
+
   const staffPanel = loading.value ? (
     <StaffSkeleton />
   ) : members.value.length === 0 ? (
@@ -179,6 +201,7 @@ export default function StaffPage() {
           currentUserId={profile.value?.id}
           onRemove={isAdmin ? handleRemove : undefined}
           onManageRoles={isAdmin ? handleManageRoles : undefined}
+          onSignOut={isAdmin ? handleSignOut : undefined}
         />
       ))}
     </div>

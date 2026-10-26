@@ -129,7 +129,7 @@ describe('removing someone from a school', () => {
     s.prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
     s.prisma.school_management.findUnique.mockResolvedValue({ id: SUBJECT, user_id: OTHER, school_id: SCHOOL, role: 'teacher' });
     s.prisma.school.findUnique.mockResolvedValue({ owner_id: USER });
-    const svc = new SchoolService(s.prisma as any, createMockCacheService() as any, s.erasure);
+    const svc = new SchoolService(s.prisma as any, createMockCacheService() as any, s.erasure, {} as any);
     return { ...s, svc };
   }
 
@@ -152,7 +152,7 @@ describe('removing someone from a school', () => {
     s.prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL, role: 'teacher' });
     s.prisma.school.findUnique.mockResolvedValue({ owner_id: OTHER });
     s.tx.school_management.findMany.mockResolvedValue([{ id: SUBJECT }]);
-    const svc = new SchoolService(s.prisma as any, createMockCacheService() as any, s.erasure);
+    const svc = new SchoolService(s.prisma as any, createMockCacheService() as any, s.erasure, {} as any);
     await svc.leaveSchool(USER);
     expect(loggedEntry(s.prisma, s.tx)).toMatchObject({ kind: 'school_membership', reason: 'user_request', subject_ids: [SUBJECT] });
   });

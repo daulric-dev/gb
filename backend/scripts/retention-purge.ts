@@ -76,6 +76,7 @@ async function main(): Promise<number> {
       ['discussion replies scrubbed', r.discussionRepliesScrubbed],
       ['expired sessions', r.sessions],
       ['old sign-in codes', r.emailCodes],
+      ['unused remembered devices', r.knownDevices],
       ['erasure log rows pruned', r.erasureLogRows],
       ['erasure log objects pruned', r.erasureLogObjects],
       ['leftover account objects', r.leftoverObjects],

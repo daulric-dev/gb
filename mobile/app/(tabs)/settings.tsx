@@ -18,15 +18,18 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Sheet } from "@/components/ui/Sheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { getInitials, capitalize } from "@/lib/utils";
+import { SignedInDevices } from "@/features/account/SignedInDevices";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const toast = useToast();
   const { profile, logout, refresh } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setRefreshKey((k) => k + 1);
     void Promise.resolve(refresh()).finally(() => setRefreshing(false));
   }, [refresh]);
   const { colors, mode, setMode } = useTheme();
@@ -236,6 +239,8 @@ export default function SettingsScreen() {
           ]}
         />
       </View>
+
+      <SignedInDevices refreshKey={refreshKey} />
 
       <Button
         variant="outline"

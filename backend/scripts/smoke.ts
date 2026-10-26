@@ -560,9 +560,135 @@ async function main() {
   // ── GDPR erasure log, retention purge and replay ──────────────────────────
   await erasureChecks(teacher, ta);
 
+  // ── Signed-in devices, token rotation, reuse detection (signs the TA out) ─
+  await sessionChecks(teacher, admin);
+
   await db.$disconnect();
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILED`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/** Sign in without the cookie-jar helper: returns the raw token (cookie or X-Session-Token). */
+async function rawSignIn(email: string, extra: Record<string, string> = {}) {
+  const headers = { 'content-type': 'application/json', 'X-API-Version': '1', ...extra };
+  const { code } = (await (await fetch(`${API}/auth/dev/code`, { method: 'POST', headers, body: JSON.stringify({ email }) })).json()) as { code: string };
+  const res = await fetch(`${API}/auth/otp/verify`, { method: 'POST', headers, body: JSON.stringify({ email, token: code }) });
+  const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).find((c) => c.startsWith('gb_session='));
+  return { status: res.status, cookieToken: cookie?.slice('gb_session='.length), headerToken: res.headers.get('x-session-token') };
+}
+
+/** One request with a session token, as the web (cookie) or the app (bearer). */
+async function withToken(token: string, via: 'cookie' | 'bearer', method: string, path: string) {
+  const r = await fetch(`${API}${path}`, {
+    method,
+    headers: {
+      'X-API-Version': '1',
+      ...(via === 'cookie' ? { cookie: `gb_session=${token}` } : { authorization: `Bearer ${token}`, 'X-GradeBook-Client': 'native' }),
+    },
+  });
+  const text = await r.text();
+  let data: any = text;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    /* not JSON */
+  }
+  return { status: r.status, data, newToken: r.headers.get('x-session-token'), setCookie: r.headers.getSetCookie().join('; ') };
+}
+
+/** Mailpit (local SMTP catcher): messages to `to` whose subject contains `subject`, if Mailpit is running. */
+async function mailpit(to: string, subject: string, since: Date): Promise<any[] | null> {
+  const base = process.env.MAILPIT_URL ?? 'http://127.0.0.1:8025';
+  try {
+    const res = await fetch(`${base}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}&limit=50`);
+    if (!res.ok) return null;
+    const { messages } = (await res.json()) as { messages: any[] };
+    return messages.filter((m) => String(m.Subject).includes(subject) && new Date(m.Created) >= since);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Signed-in devices and session hardening, as the TA (whose sessions all end
+ * here, so it runs last): listing and revoking sessions, the native token
+ * header, the daily token rotation with its grace period, reuse detection
+ * (session revoked, email sent), and an admin signing a member out.
+ */
+async function sessionChecks(teacher: Call, admin: Call) {
+  const email = 'ta@demo.test';
+  const [{ now: since }] = await db.$queryRaw<{ now: Date }[]>`SELECT now() - interval '2 seconds' AS now`;
+  const created: string[] = [];
+  const a = await rawSignIn(email);
+  const b = await rawSignIn(email);
+  check('sessions: two web sign-ins', !!a.cookieToken && !!b.cookieToken && a.cookieToken !== b.cookieToken, [a.status, b.status]);
+  if (!a.cookieToken || !b.cookieToken) return;
+  const list = await withToken(a.cookieToken, 'cookie', 'GET', '/auth/sessions');
+  const current = list.data?.find?.((s: any) => s.current);
+  created.push(...(list.data ?? []).map((s: any) => s.id));
+  check('sessions: list marks this device, has device/IP/times, no hashes', list.status === 200 && list.data.length >= 2 && !!current?.device && 'ip' in current && !!current.lastSeenAt && !!current.expiresAt && !JSON.stringify(list.data).includes('token'), list.data);
+
+  // The app: a token in a header, a device label from X-GradeBook-Device.
+  const device = `Smoke Phone ${Date.now()} · TestOS 1`;
+  // A user agent of its own too: sessions from before device labels match on it.
+  const n = await rawSignIn(email, { 'X-GradeBook-Client': 'native', 'X-GradeBook-Device': device, 'User-Agent': `SmokeApp/${Date.now()}` });
+  check('sessions: native client receives X-Session-Token', n.status === 201 && !!n.headerToken, n.status);
+  if (!n.headerToken) return;
+  const row = await db.session.findFirst({ where: { user_id: (await withToken(a.cookieToken, 'cookie', 'GET', '/auth/me')).data.id, device: { contains: 'Smoke Phone' } }, orderBy: { created_at: 'desc' } });
+  check('sessions: app labelled from X-GradeBook-Device', row?.device === `GradeBook app on ${device.replace(' · ', ' (')})`, row?.device);
+  if (!row) return;
+  created.push(row.id);
+
+  // Rotation: a day since the last renewal, then one request.
+  await db.session.update({ where: { id: row.id }, data: { last_seen_at: new Date(Date.now() - 25 * 3_600_000) } });
+  const rotated = await withToken(n.headerToken, 'bearer', 'GET', '/auth/me');
+  const t1 = rotated.newToken;
+  check('rotation: the renewing response carries a new token', rotated.status === 200 && !!t1 && t1 !== n.headerToken, rotated.status);
+  if (!t1) return;
+  const grace = await withToken(n.headerToken, 'bearer', 'GET', '/auth/me');
+  check('rotation: the old token works within the grace period (and gets the new one again)', grace.status === 200 && grace.newToken === t1, [grace.status, grace.newToken === t1]);
+  check('rotation: the new token works', (await withToken(t1, 'bearer', 'GET', '/auth/me')).status === 200);
+  await db.session.update({ where: { id: row.id }, data: { rotated_at: new Date(Date.now() - 10 * 60_000) } });
+  const reused = await withToken(n.headerToken, 'bearer', 'GET', '/auth/me');
+  const after = await db.session.findUnique({ where: { id: row.id } });
+  check('reuse: the old token after the grace period is 401 and revokes the session', reused.status === 401 && !!after?.revoked_at && after.revoked_reason === 'token_reuse', [reused.status, after?.revoked_reason]);
+  check('reuse: the current token dies with it (no cache delay)', (await withToken(t1, 'bearer', 'GET', '/auth/me')).status === 401);
+
+  // revoke-others, someone else's session, revoking the current one.
+  const others = await withToken(a.cookieToken, 'cookie', 'POST', '/auth/sessions/revoke-others');
+  check('sessions: revoke-others', others.status === 200 && others.data.revoked >= 1, others.data);
+  check('sessions: the other device is signed out at once', (await withToken(b.cookieToken, 'cookie', 'GET', '/auth/me')).status === 401);
+  check('sessions: this device still works', (await withToken(a.cookieToken, 'cookie', 'GET', '/auth/me')).status === 200);
+  const teacherSession = (await teacher('GET', '/auth/sessions')).data?.find?.((s: any) => s.current)?.id;
+  check("sessions: someone else's session is 404", !!teacherSession && (await withToken(a.cookieToken, 'cookie', 'DELETE', `/auth/sessions/${teacherSession}`)).status === 404, teacherSession);
+  const own = await withToken(a.cookieToken, 'cookie', 'DELETE', `/auth/sessions/${current.id}`);
+  check('sessions: revoking this device clears the cookie', own.status === 200 && own.data.current === true && /gb_session=;/.test(own.setCookie), [own.status, own.setCookie]);
+  check('sessions: revoked current session is 401 afterwards', (await withToken(a.cookieToken, 'cookie', 'GET', '/auth/me')).status === 401);
+
+  // An admin signs a member out of every device.
+  const c = await rawSignIn(email);
+  const members = await admin('GET', '/schools/members');
+  const taId = row.user_id;
+  const membership = members.data?.find?.((m: any) => m.user?.id === taId)?.id;
+  const byAdmin = membership ? await admin('POST', `/schools/members/${membership}/sessions/revoke`) : null;
+  check('admin: sign a member out everywhere', byAdmin?.status === 200 && byAdmin.data.revoked >= 1, byAdmin?.data);
+  check("admin: the member's session is 401 at once", !!c.cookieToken && (await withToken(c.cookieToken, 'cookie', 'GET', '/auth/me')).status === 401);
+  check('admin: a teacher (not an admin) cannot (403)', !!membership && (await teacher('POST', `/schools/members/${membership}/sessions/revoke`)).status === 403);
+
+  // Security emails, when Mailpit is running.
+  await Bun.sleep(500);
+  const newSignIn = await mailpit(email, 'New sign-in to GradeBook', since);
+  const reuseMail = await mailpit(email, 'Suspicious activity', since);
+  if (newSignIn === null) console.log('SKIP  security emails (Mailpit not reachable)');
+  else {
+    check('email: new sign-in alert for the new app device', newSignIn.length >= 1, newSignIn.map((m) => m.Subject));
+    check('email: token reuse alert', (reuseMail?.length ?? 0) >= 1, reuseMail?.map((m) => m.Subject));
+  }
+
+  // Clean up: the sessions made here are all ended; drop them.
+  const ended = await db.session.deleteMany({ where: { user_id: taId, created_at: { gte: since }, revoked_at: { not: null } } });
+  await db.known_device.deleteMany({ where: { user_id: taId, first_seen_at: { gte: since } } });
+  check('sessions: cleaned up', ended.count >= created.length, ended.count);
 }
 
 /** Run a backend CLI script; returns its exit code and output. */
