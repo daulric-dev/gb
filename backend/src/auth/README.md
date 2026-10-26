@@ -42,7 +42,7 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 
 - A student account can never onboard again as staff.
 - `accountType: 'student'` saves the profile with `account_type = 'student'` and `role = null`.
-- With `DEDICATED_DEPLOYMENT=true`, the user joins the one active school. An existing membership role is kept (so the school creator stays admin), and new members get `teacher` and a `school_management` row.
+- With `DEDICATED_DEPLOYMENT=true`, new staff submit a join request for the single active school (requiring admin approval), while an existing member's role (e.g. the school creator's admin role) is preserved.
 - A user who already has a `school_id` (because they created a school) only has their name updated.
 - A `schoolId` in the request files a `school_join_request` for an admin to approve. Admin rights are never granted from a client-supplied id.
 
@@ -101,7 +101,7 @@ Schemas: [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma) and 
 |----------|---------|----------|
 | `ALLOW_DEV_LOGIN` | unset (off) | Set to `true` outside production to enable `POST /api/auth/dev/code`. |
 | `NODE_ENV` | | `production` always disables the dev code route. |
-| `DEDICATED_DEPLOYMENT` | unset | Set to `true` to auto-join staff to the single active school on onboarding. |
+| `DEDICATED_DEPLOYMENT` | unset | Set to `true` to limit school creation to one and automatically target the single school on staff join requests. |
 
 `AUTH_SECRET` and the cookie settings are read in `src/account`.
 

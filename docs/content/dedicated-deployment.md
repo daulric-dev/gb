@@ -15,7 +15,7 @@ This is distinct from the default multi-tenant setup where multiple schools shar
 When `DEDICATED_DEPLOYMENT=true` is set on the backend:
 
 - **School creation is limited to one.** The first school can be created during onboarding. Any subsequent attempt to create a school returns `403 Forbidden`.
-- **Onboarding skips school selection.** New users are automatically assigned to the single existing school - no dropdown, no school picker.
+- **Onboarding targets the single existing school.** New staff submit a join request requiring administrator approval, and students join using the school join code - no dropdown or manual school picker needed.
 - **School switching is hidden** in the frontend sidebar.
 
 The schema, RLS policies, and all API behaviour remain identical to the multi-tenant setup. The only difference is the enforcement of the one-school limit and the simplified onboarding flow.
@@ -73,7 +73,7 @@ NEXT_PUBLIC_DEDICATED_DEPLOYMENT=true
 
 On the very first login, the onboarding form will include a **Create school** option (since no school exists yet). Create the school during this step - this is the only time school creation is permitted.
 
-All subsequent users who log in will be automatically assigned to this school, with no school selection shown.
+All subsequent staff who register will automatically submit a join request to this school (requiring admin approval), while students join using the school join code.
 
 ---
 
