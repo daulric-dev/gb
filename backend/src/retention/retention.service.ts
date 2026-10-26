@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { KNOWN_DEVICE_WINDOW_MS } from '@/account/session.config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
 import { objectKey } from '@/storage/keys';
@@ -38,6 +39,8 @@ export interface PurgeReport {
   discussionRepliesScrubbed: number;
   sessions: number;
   emailCodes: number;
+  /** Remembered devices (new sign-in alerts) unused for 90 days. */
+  knownDevices: number;
   erasureLogRows: number;
   erasureLogObjects: number;
   leftoverObjects: number;
@@ -88,6 +91,7 @@ export class RetentionService {
       discussionRepliesScrubbed: 0,
       sessions: 0,
       emailCodes: 0,
+      knownDevices: 0,
       erasureLogRows: 0,
       erasureLogObjects: 0,
       leftoverObjects: 0,
@@ -369,20 +373,30 @@ export class RetentionService {
   }
 
   /**
-   * Sessions that expired or were revoked, and sign-in codes, more than a
-   * day ago. Not written to the erasure log: they are not something a person
+   * Sessions that expired (sliding or absolute) or were revoked, and sign-in
+   * codes, more than a day ago; remembered devices unused for 90 days. Not written to the erasure log: they are not something a person
    * asked to erase, and a restore signs everyone out anyway (BACKUPS.md).
    * SSO state and handoff codes live in the cache with a TTL.
    */
   private async purgeAuthLeftovers(now: Date, { opts, deadline, report }: Ctx) {
     const before = new Date(now.getTime() - AUTH_LEFTOVER_MS);
-    const sessionWhere = { OR: [{ expires_at: { lt: before } }, { revoked_at: { lt: before } }] };
+    const sessionWhere = {
+      OR: [
+        { expires_at: { lt: before } },
+        { absolute_expires_at: { lt: before } },
+        { revoked_at: { lt: before } },
+      ],
+    };
     const codeWhere = { created_at: { lt: before } };
+    const deviceWhere = { last_seen_at: { lt: new Date(now.getTime() - KNOWN_DEVICE_WINDOW_MS) } };
     if (opts.dryRun) {
       report.sessions = await this.prisma.session.count({ where: sessionWhere });
       report.emailCodes = await this.prisma.email_code.count({ where: codeWhere });
+      report.knownDevices = await this.prisma.known_device.count({ where: deviceWhere });
       return;
     }
+    // Small rows with their own index; one statement is fine.
+    report.knownDevices = (await this.prisma.known_device.deleteMany({ where: deviceWhere })).count;
     for (;;) {
       this.checkTime(deadline);
       const ids = (await this.prisma.session.findMany({ where: sessionWhere, select: { id: true }, take: batchSize() })).map((r) => r.id);

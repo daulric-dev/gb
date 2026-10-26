@@ -1,10 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import multipart from '@fastify/multipart';
-import { isOriginAllowed } from './config/origins';
+import { insecureCookieWarning, isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 import { registerWebhookRawBody } from './billing/webhooks/raw-body';
 
@@ -68,10 +68,19 @@ export async function createApp(): Promise<NestFastifyApplication> {
     origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Version'],
-    exposedHeaders: ['Content-Disposition'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-API-Version',
+      'X-GradeBook-Client',
+      'X-GradeBook-Device',
+    ],
+    exposedHeaders: ['Content-Disposition', 'X-Session-Token'],
   });
 
   await app.init();
+  const cookieWarning = insecureCookieWarning();
+  if (cookieWarning) new Logger('Auth').warn(cookieWarning);
+
   return app;
 }

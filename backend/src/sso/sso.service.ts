@@ -10,7 +10,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CacheService } from '@/cache/cache.service';
 import { PrismaService } from '@/prisma/prisma.service';
-import { primaryOrigin } from '@/config/origins';
+import { authCookieSecure, primaryOrigin } from '@/config/origins';
 import { AccountService } from '@/account/account.service';
 import { SessionService } from '@/account/session.service';
 import {
@@ -190,7 +190,7 @@ export class SsoService {
 
     reply.setCookie(FLOW_COOKIE, flow, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: authCookieSecure(),
       sameSite: 'lax',
       path: FLOW_COOKIE_PATH,
       maxAge: STATE_TTL_S,

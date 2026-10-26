@@ -45,6 +45,15 @@ export class MailService implements OnModuleInit {
     return this.transporter;
   }
 
+  /** Whether SMTP is set up at all, for optional mail (security alerts). */
+  configured(): boolean {
+    try {
+      return smtpOptions() !== null;
+    } catch {
+      return false;
+    }
+  }
+
   async send(message: MailMessage): Promise<void> {
     await this.transport().sendMail({ from: this.from, ...message });
     this.logger.log(`Sent "${message.subject}" to ${redact(message.to)}`);

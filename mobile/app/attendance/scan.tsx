@@ -31,16 +31,17 @@ import {
   type PortalOpenAttendance,
 } from "@/lib/attendance";
 import { CheckedInCard } from "@/features/attendance/CheckedInCard";
+import { parseJoinQr } from "@/lib/course-join";
 
 const HINT_MS = 2_500;
 const VIEWFINDER = 240;
 
 type Phase =
   | { kind: "scanning" }
-  | { kind: "submitting" }
+  | { kind: "submitting"; label?: string }
   | { kind: "done"; session: PortalOpenAttendance }
   | { kind: "closed" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; title?: string };
 
 /**
  * Student QR check-in. Reads the rotating code on the teacher's screen, which
@@ -163,6 +164,41 @@ export default function ScanAttendanceScreen() {
     [checkIn],
   );
 
+  // A course join QR scanned here: enrol and open the course.
+  const joinCourse = useCallback(
+    async (joinCode: string) => {
+      setPhase({ kind: "submitting", label: "Joining the course…" });
+      try {
+        const course = await api<{ id: string; name: string }>(
+          "/portal/me/courses/join",
+          { method: "POST", body: { joinCode } },
+        );
+        router.replace(`/course/${course.id}`);
+      } catch (err) {
+        setPhase({
+          kind: "error",
+          title: "Couldn't join the course",
+          message:
+            err instanceof ApiError && err.status === 404
+              ? "This join code doesn't work any more. Your teacher may have turned self-enrolment off or issued a new code."
+              : err instanceof Error
+                ? err.message
+                : "Couldn't join the course",
+        });
+      }
+    },
+    [router],
+  );
+
+  const onJoin = useCallback(
+    (joinCode: string) => {
+      if (handled.current) return;
+      handled.current = true;
+      void joinCourse(joinCode);
+    },
+    [joinCourse],
+  );
+
   const scanAgain = () => {
     handled.current = false;
     if (params.s || params.t) router.setParams({ s: undefined, t: undefined });
@@ -170,12 +206,12 @@ export default function ScanAttendanceScreen() {
   };
 
   if (phase.kind === "scanning") {
-    return <Scanner onCode={onCode} onBack={back} />;
+    return <Scanner onCode={onCode} onJoin={onJoin} onBack={back} />;
   }
 
   if (phase.kind === "submitting") {
     return (
-      <Screen title="Checking you in…" onBack={back}>
+      <Screen title={phase.label ?? "Checking you in…"} onBack={back}>
         <Skeleton style={{ height: 220 }} />
       </Screen>
     );
@@ -206,12 +242,17 @@ export default function ScanAttendanceScreen() {
   }
 
   return (
-    <Screen title="Couldn't check you in" onBack={back}>
+    <Screen
+      title={
+        phase.kind === "error" && phase.title
+          ? phase.title
+          : "Couldn't check you in"
+      }
+      onBack={back}
+    >
       <Message
         icon="qr"
-        text={
-          phase.kind === "error" ? phase.message : "Couldn't check you in"
-        }
+        text={phase.kind === "error" ? phase.message : "Couldn't check you in"}
         destructive
         onRetry={scanAgain}
         onBack={back}
@@ -261,9 +302,11 @@ function Message({
 
 function Scanner({
   onCode,
+  onJoin,
   onBack,
 }: {
   onCode: (code: { sessionId: string; token: string }) => void;
+  onJoin: (joinCode: string) => void;
   onBack: () => void;
 }) {
   const { colors } = useTheme();
@@ -289,18 +332,23 @@ function Scanner({
         onCode(code);
         return;
       }
+      const joinCode = parseJoinQr(data);
+      if (joinCode) {
+        onJoin(joinCode);
+        return;
+      }
       // The camera reports the same code many times a second; only react
       // once per foreign code, and let the hint fade.
       if (lastIgnored.current === data) return;
       lastIgnored.current = data;
-      setHint("Not a GradeBook attendance code");
+      setHint("Not a GradeBook attendance or join code");
       if (hintTimer.current) clearTimeout(hintTimer.current);
       hintTimer.current = setTimeout(() => {
         setHint(null);
         lastIgnored.current = null;
       }, HINT_MS);
     },
-    [onCode],
+    [onCode, onJoin],
   );
 
   if (!permission) {
@@ -385,7 +433,10 @@ function Scanner({
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Back"
-          style={({ pressed }) => [styles.round, { opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [
+            styles.round,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
         >
           <ArrowLeft color="#fff" size={22} />
         </Pressable>

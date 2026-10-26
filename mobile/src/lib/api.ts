@@ -3,6 +3,12 @@ import {
   isSubscriptionRequired,
   notifySubscriptionRequired,
 } from "@/lib/subscription-required";
+import {
+  authHeaders,
+  getSessionToken,
+  rememberSessionToken,
+  setSessionToken,
+} from "@/lib/session-token";
 
 const API_PORT = 3001;
 
@@ -56,8 +62,43 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
 }
 
-function handleUnauthorized(skipAuthRedirect: boolean): never {
-  if (!skipAuthRedirect) unauthorizedHandler?.();
+/**
+ * A 401: the token this request carried is dead (expired, revoked, signed out
+ * elsewhere) - or the request carried none.
+ *
+ * Only that token is forgotten. Requests overlap: a background call sent
+ * before sign-in (no token) can come back 401 after the sign-in response has
+ * stored a fresh token, and clearing on every 401 used to throw that fresh
+ * token away - the next request ("Complete profile") then went out without
+ * one and failed with "Session expired".
+ */
+/**
+ * Sign-in endpoints answer 401 for a wrong or used code / a failed SSO step.
+ * That is about the code, not the session, so it must never clear the token
+ * (a double-submitted, already-used code used to sign the app straight out).
+ */
+const SIGN_IN_PATHS = /^\/auth\/(otp\/|dev\/code|sso\/)/;
+
+async function handleUnauthorized(
+  path: string,
+  skipAuthRedirect: boolean,
+  sentToken: string | null,
+): Promise<never> {
+  const current = await getSessionToken();
+  const stillCurrent = sentToken !== null && current === sentToken;
+  if (__DEV__) {
+    // Shows in the Metro terminal: which request was refused and with what.
+    console.warn(
+      `[auth] 401 ${path} sentToken=${sentToken ? "yes" : "no"} ` +
+        `storedNow=${current ? (current === sentToken ? "same" : "different") : "none"}`,
+    );
+  }
+  if (stillCurrent) await setSessionToken(null);
+  // A request that went out signed-out says nothing about the session we
+  // have now, so it doesn't sign the app out either.
+  if (!skipAuthRedirect && (stillCurrent || current === null)) {
+    unauthorizedHandler?.();
+  }
   throw new ApiError(401, "Session expired");
 }
 
@@ -102,8 +143,10 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const { body, headers: customHeaders, skipAuthRedirect, ...rest } = options;
 
+  const sentToken = await getSessionToken();
   const headers: Record<string, string> = {
     "X-API-Version": "1",
+    ...(await authHeaders()),
     ...((customHeaders as Record<string, string>) || {}),
   };
 
@@ -118,7 +161,13 @@ export async function api<T = unknown>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
+  // Before anything else: a rotated token can come on any status.
+  await rememberSessionToken(res);
+  if (res.status === 401) {
+    // A wrong/used code: show the server's message, keep the session.
+    if (SIGN_IN_PATHS.test(path)) throw await errorFrom(res);
+    await handleUnauthorized(path, skipAuthRedirect ?? false, sentToken);
+  }
 
   if (!res.ok) throw await errorFrom(res);
 
@@ -140,14 +189,22 @@ export async function apiUpload<T = unknown>(
   formData: FormData,
   options: { skipAuthRedirect?: boolean } = {},
 ): Promise<T> {
+  const sentToken = await getSessionToken();
   const res = await fetchOrThrow(buildUrl(path), {
     method: "POST",
-    headers: { "X-API-Version": "1" },
+    headers: { "X-API-Version": "1", ...(await authHeaders()) },
     credentials: "include",
     body: formData,
   });
 
-  if (res.status === 401) handleUnauthorized(options.skipAuthRedirect ?? false);
+  await rememberSessionToken(res);
+  if (res.status === 401) {
+    await handleUnauthorized(
+      path,
+      options.skipAuthRedirect ?? false,
+      sentToken,
+    );
+  }
 
   if (!res.ok) throw await errorFrom(res);
 

@@ -6,7 +6,11 @@ import { getClientIp, getSessionTracker, fingerprint } from './tracker';
 
 /** A session token as SessionService issues it. */
 async function issuedToken(): Promise<string> {
-  const service = new SessionService(createMockPrisma() as any, createMockCacheService() as any);
+  const service = new SessionService(
+    createMockPrisma() as any,
+    createMockCacheService() as any,
+    { newSignIn: async () => {}, tokenReuse: async () => {} } as any,
+  );
   const reply = { setCookie: () => {}, clearCookie: () => {} };
   return service.create(reply as any, { headers: {} } as any, 'u1', 'email-code');
 }
@@ -56,9 +60,16 @@ describe('getSessionTracker', () => {
     expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: t } })).not.toContain(t);
   });
 
-  test('ignores bearer headers and other cookies', async () => {
+  test('a mobile bearer token gets the same bucket as its cookie', async () => {
     const t = await issuedToken();
-    expect(getSessionTracker({ headers: { authorization: `Bearer ${t}` } })).toBeUndefined();
+    expect(getSessionTracker({ headers: { authorization: `Bearer ${t}` } })).toBe(
+      getSessionTracker({ cookies: { gb_session: t } }),
+    );
+    expect(getSessionTracker({ headers: { authorization: 'Bearer made.up' } })).toBeUndefined();
+  });
+
+  test('ignores other cookies and empty requests', async () => {
+    const t = await issuedToken();
     expect(getSessionTracker({ cookies: { 'sb-ref-auth-token': t } })).toBeUndefined();
     expect(getSessionTracker({ headers: {} })).toBeUndefined();
     expect(getSessionTracker({})).toBeUndefined();

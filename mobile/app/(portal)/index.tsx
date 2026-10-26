@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronRight,
   NotebookPen,
+  Plus,
   ScanLine,
 } from "lucide-react-native";
 import { api } from "@/lib/api";
@@ -28,6 +29,7 @@ import { LetterBadge } from "@/features/grades/GradeBits";
 import { isOutstanding, type PortalWorkItem } from "@/lib/work";
 import { OpenAttendanceCards } from "@/features/attendance/OpenAttendanceCards";
 import { studentCourseHref } from "@/lib/course";
+import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
@@ -43,6 +45,7 @@ export default function PortalHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [meData, courseData, workData] = await Promise.all([
@@ -93,7 +96,10 @@ export default function PortalHomeScreen() {
           label="Courses"
           loading={loading}
         />
-        <Pressable style={{ flex: 1 }} onPress={() => router.push("/(portal)/work")}>
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={() => router.push("/(portal)/work")}
+        >
           <StatCard
             icon={NotebookPen}
             value={todo}
@@ -109,7 +115,15 @@ export default function PortalHomeScreen() {
         <EmptyState
           icon={BookOpen}
           title="No courses yet"
-          description="When a teacher adds you to a course it shows up here."
+          description="Join one with the code or QR your teacher shares, or wait for them to add you."
+          action={
+            <Button
+              onPress={() => setJoinOpen(true)}
+              icon={<Plus color={colors.primaryForeground} size={18} />}
+            >
+              Join a course
+            </Button>
+          }
         />
       ) : (
         <Card>
@@ -152,9 +166,22 @@ export default function PortalHomeScreen() {
             <Text variant="muted" size="xs" style={{ marginTop: 4 }}>
               Tap a course for its modules, work, grades and discussions.
             </Text>
+            <Button
+              variant="outline"
+              onPress={() => setJoinOpen(true)}
+              icon={<Plus color={colors.foreground} size={18} />}
+            >
+              Join a course
+            </Button>
           </CardContent>
         </Card>
       )}
+
+      <JoinCourseSheet
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        onJoined={() => void load()}
+      />
     </Screen>
   );
 }

@@ -17,8 +17,12 @@ All paths start with `/api/auth`. "Public" means no guard, though the routes are
 | PATCH | `/api/auth/onboard` | `AuthGuard` | Saves the name and either onboards as a student, joins the single school (on a dedicated deployment), or files a `school_join_request` when `schoolId` is given. If the user ends up with no school, it also tries `EmailDomainService.tryAutoJoin()` on the email domain. |
 | POST | `/api/auth/join-school` | `AuthGuard`. Throttled: `claim-code` 10 per 15 min. | Joins a school with a school-issued code (`StudentMembershipService.joinByCode`). |
 | PATCH | `/api/auth/profile` | `AuthGuard` | Updates the first and last name. |
-| DELETE | `/api/auth/account` | `AuthGuard`. Throttled: `default` 3/hour. | Revokes every session, then deletes `user_profile` and `app_user` (cascading to sessions, identities, memberships, files, messages, ...) and writes an `account` entry to the [erasure log](../erasure/README.md), all in one transaction. After commit the user's stored files and avatar are deleted (best effort; the retention job retries). |
+| DELETE | `/api/auth/account` | `AuthGuard`. Throttled: `default` 3/hour. | Revokes every session (`revoked_reason = 'account_deleted'`), then deletes `user_profile` and `app_user` (cascading to sessions, identities, memberships, files, messages, ...) and writes an `account` entry to the [erasure log](../erasure/README.md), all in one transaction. After commit the user's stored files and avatar are deleted (best effort; the retention job retries). |
 | POST | `/api/auth/logout` | `AuthGuard` | Revokes this device's session and clears the cookie. |
+| GET | `/api/auth/sessions` | `AuthGuard` | Signed-in devices: the caller's live sessions, `[{ id, current, method, device, ip, createdAt, lastSeenAt, expiresAt }]`, the one making the request first with `current: true`. `device` is a label such as "Chrome on macOS" or "GradeBook app on iPhone 15 (iOS 19.0)". Never returns tokens or their hashes. |
+| DELETE | `/api/auth/sessions/:id` | `AuthGuard` | Signs out one of the caller's sessions (`{ revoked: 1, current }`). Another user's session, or one already ended, is a 404. Revoking the current session is a logout (the cookie is cleared). |
+| POST | `/api/auth/sessions/revoke-others` | `AuthGuard` | Signs out every other session of the caller (`{ revoked }`). |
+| POST | `/api/auth/sessions/revoke-all` | `AuthGuard` | Signs out every session including this one and clears the cookie (`{ revoked }`). |
 | GET | `/api/auth/avatar` | `AuthGuard` | Streams the caller's avatar image (`ImagesService.getImageFromUserProfile`), cached privately for an hour. |
 | POST | `/api/auth/avatar` | `AuthGuard` | Multipart avatar upload (`ImagesService.setImageToUserProfile`). |
 | POST | `/api/auth/avatar/resumable` | `AuthGuard` | Starts a resumable avatar upload (`CreateResumableUploadDto` from `src/images/dto`). |
@@ -30,7 +34,7 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 
 ### Services / exports
 
-- **`AuthGuard`** (exported). It resolves the session with `SessionService.resolve(req, reply)`, so a dead session clears its cookie. It then checks `user_profile.is_active`: only an explicit `false` blocks, and in that case the session is revoked and the guard answers 401. A user with no profile yet is let through, because they are still onboarding. On success it sets `req.user = { id, email }`. Any unexpected error becomes a 401.
+- **`AuthGuard`** (exported). It resolves the session with `SessionService.resolve(req, reply)`, so a dead session clears its cookie. It then checks `user_profile.is_active`: only an explicit `false` blocks, and in that case the session is revoked and the guard answers 401. A user with no profile yet is let through, because they are still onboarding. On success it sets `req.user = { id, email, sessionId }` (`sessionId` marks "This device" in Signed-in devices). Any unexpected error becomes a 401.
 - **`AdminGuard`** (not provided by the module; controllers list it in `@UseGuards` after `AuthGuard`). It allows the caller only when `user_profile.role === 'admin'`, the profile is active, it has a `school_id`, **and** there is a `school_management` row with role `admin` for that school. That membership row is the source of truth.
 - **`AuthService`** (internal). Methods: `sendOtp`, `devCode`, `verifyOtp`, `getProfile`, `onboard`, `updateProfile`, `deleteAccount`. It also exports the helper `devLoginAllowed()`.
 

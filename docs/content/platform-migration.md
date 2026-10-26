@@ -94,7 +94,7 @@ Browsers PUT uploads straight to the store, so the bucket needs this CORS rule. 
 Built so far (`backend/src/account/`, migration `20261021170000_account_schema.sql`, Prisma `account.prisma`):
 
 - Tables `account.app_user` (same ids as the old auth users), `account.session`, `account.email_code`, `account.identity`; SAML columns on `school_email_domain` (`saml_entry_point`, `saml_issuer`, `saml_certificate`).
-- `EmailCodeService` - 8-digit codes, HMAC-hashed with `AUTH_SECRET`, 10-minute expiry, 5 attempts, single use, one live code per address, 5 sends per 15 minutes, sent through `MailService`.
+- `EmailCodeService` - 8-digit codes, HMAC-hashed with `AUTH_SECRET`, 5-minute expiry, 5 attempts, single use, one live code per address, 5 sends per 15 minutes, sent through `MailService`.
 - `SessionService` - `gb_session` HttpOnly cookie carrying a random 256-bit token; only its SHA-256 is stored; 30-day sliding expiry; revoke one / all; lookups cached 60 s.
 - `AccountService` - user for a proven email; user for an SSO identity, matched by (provider, subject), linking by email only when the provider vouches for it.
 

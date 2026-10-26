@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { SESSION_COOKIE, isIssuedSessionToken } from '@/account/session.service';
+import {
+  isIssuedSessionToken,
+  sessionTokenFrom,
+} from '@/account/session.service';
 
 export type ThrottlerReq = {
   body?: { email?: string };
@@ -26,7 +29,8 @@ export function fingerprint(value: string): string {
 }
 
 /**
- * One bucket per signed-in session, keyed on the `gb_session` cookie.
+ * One bucket per signed-in session, keyed on the `gb_session` cookie (or the
+ * mobile app's bearer token).
  *
  * The throttler runs before AuthGuard, so only tokens this server issued
  * count (checked by their tag, without a database lookup); otherwise a client
@@ -34,6 +38,6 @@ export function fingerprint(value: string): string {
  * key is a fingerprint, never the token itself.
  */
 export function getSessionTracker(req: ThrottlerReq): string | undefined {
-  const token = req.cookies?.[SESSION_COOKIE];
+  const token = sessionTokenFrom(req);
   return isIssuedSessionToken(token) ? `s:${fingerprint(token)}` : undefined;
 }

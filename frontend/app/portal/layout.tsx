@@ -34,6 +34,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   LogOut,
+  Settings,
 } from "lucide-react";
 
 const NAV = [
@@ -147,6 +148,10 @@ export default function PortalLayout({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled>{name}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/portal/settings")}>
+                  <Settings className="mr-2 size-4" />
+                  Settings
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 size-4" />
                   Log out

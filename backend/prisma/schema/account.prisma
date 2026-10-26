@@ -10,6 +10,7 @@ model app_user {
   updated_at        DateTime      @default(now()) @db.Timestamptz(6)
   identity          identity[]
   session           session[]
+  known_device      known_device[]
   user_profile      user_profile?
   invoice           invoice[]
   platform_admin    platform_admin?
@@ -53,17 +54,38 @@ model identity {
 model session {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id      String    @db.Uuid
-  token_hash   String    @unique
-  expires_at   DateTime  @db.Timestamptz(6)
-  last_seen_at DateTime  @default(now()) @db.Timestamptz(6)
-  revoked_at   DateTime? @db.Timestamptz(6)
-  user_agent   String?
-  ip           String?
-  method       String
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  app_user     app_user  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  token_hash          String    @unique
+  expires_at          DateTime  @db.Timestamptz(6)
+  last_seen_at        DateTime  @default(now()) @db.Timestamptz(6)
+  revoked_at          DateTime? @db.Timestamptz(6)
+  user_agent          String?
+  ip                  String?
+  method              String
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  /// Never extended: SESSION_MAX_AGE_DAYS after sign-in.
+  absolute_expires_at DateTime  @default(dbgenerated("(CURRENT_TIMESTAMP + '90 days'::interval)")) @db.Timestamptz(6)
+  /// The token replaced at the last rotation; accepted only during the grace period.
+  previous_token_hash String?   @unique
+  rotated_at          DateTime? @db.Timestamptz(6)
+  revoked_reason      String?
+  device              String?
+  app_user            app_user  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([expires_at])
   @@index([user_id])
+  @@index([user_id, created_at(sort: Desc)], map: "session_user_id_live_idx", where: raw("(revoked_at IS NULL)"))
+  @@schema("account")
+}
+
+/// Devices a user signed in on (hashed method + device label), for new sign-in alerts.
+model known_device {
+  user_id       String   @db.Uuid
+  fingerprint   String
+  first_seen_at DateTime @default(now()) @db.Timestamptz(6)
+  last_seen_at  DateTime @default(now()) @db.Timestamptz(6)
+  app_user      app_user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, fingerprint])
+  @@index([last_seen_at])
   @@schema("account")
 }

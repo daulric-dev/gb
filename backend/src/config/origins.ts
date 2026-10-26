@@ -107,6 +107,34 @@ export function authCookieDomain(): string | undefined {
   }
 }
 
+/**
+ * Whether auth cookies carry the `Secure` flag (HTTPS only). On in production,
+ * off otherwise. `AUTH_COOKIE_SECURE=true|false` overrides it - e.g. `false`
+ * to run a production build locally over plain http, where native apps drop
+ * Secure cookies and would never stay signed in. Never turn it off for a real
+ * deployment.
+ */
+export function authCookieSecure(): boolean {
+  const override = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
+  if (override === 'true') return true;
+  if (override === 'false') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
+ * A warning to log at startup when Secure cookies are on but the API is served
+ * over plain http (a production build run locally): browsers make an exception
+ * for localhost, native apps don't, so mobile sign-in silently fails.
+ */
+export function insecureCookieWarning(): string | null {
+  const api = process.env.API_URL?.trim() ?? '';
+  if (!authCookieSecure() || !api.toLowerCase().startsWith('http://')) return null;
+  return (
+    `Auth cookies are Secure (HTTPS only) but API_URL is ${api}. The mobile app will not stay signed in ` +
+    '("Session expired"). Run locally with start:dev, serve the API over https, or set AUTH_COOKIE_SECURE=false for local testing only.'
+  );
+}
+
 export function isOriginAllowed(origin?: string | null): boolean {
   // No Origin header: same-origin, curl, or a native app. Nothing to check.
   if (!origin) return true;

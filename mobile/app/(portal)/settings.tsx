@@ -7,18 +7,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { SignedInDevices } from "@/features/account/SignedInDevices";
 
 /**
- * Student settings: identity, appearance and sign-out. Deliberately narrower
+ * Student settings: identity, appearance, signed-in devices and sign-out. Deliberately narrower
  * than the staff screen - a student cannot leave a school or change their own
  * record, since the link to it is what the school issued a claim code for.
  */
 export default function PortalSettingsScreen() {
   const { profile, logout, refresh } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setRefreshKey((k) => k + 1);
     void Promise.resolve(refresh()).finally(() => setRefreshing(false));
   }, [refresh]);
   const { mode, setMode } = useTheme();
@@ -60,6 +63,8 @@ export default function PortalSettingsScreen() {
           />
         </CardContent>
       </Card>
+
+      <SignedInDevices refreshKey={refreshKey} />
 
       <Button variant="outline" onPress={logout}>
         Log out

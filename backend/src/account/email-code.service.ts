@@ -13,7 +13,7 @@ import { signInCodeEmail } from './templates/sign-in-code';
 import { authSecret } from './secret';
 
 export const CODE_LENGTH = 8;
-const CODE_TTL_MS = 10 * 60_000;
+const CODE_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 5;
 /** Codes one address may be sent in the window, before it must wait. */
 const MAX_SENDS = 5;
@@ -39,7 +39,7 @@ export function hashCode(email: string, code: string): string {
  * not require single sign-on.
  *
  * One live code per address - asking again replaces it. A code expires after
- * ten minutes, is used once, and survives five wrong guesses; then the
+ * five minutes, is used once, and survives five wrong guesses; then the
  * address has to ask for a new one.
  */
 @Injectable()

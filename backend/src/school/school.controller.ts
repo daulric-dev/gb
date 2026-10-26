@@ -3,7 +3,9 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
@@ -66,6 +68,18 @@ export class SchoolController {
   ) {
     const userId: string = req.user.id;
     return this.schoolService.removeMember(userId, membershipId);
+  }
+
+  /** Sign a staff member of your school out of every device. */
+  @Post('members/:membershipId/sessions/revoke')
+  @HttpCode(200)
+  @UseGuards(AdminGuard)
+  async revokeMemberSessions(
+    @Req() req: any,
+    @Param('membershipId', new ParseUUIDPipe()) membershipId: string,
+  ) {
+    const userId: string = req.user.id;
+    return this.schoolService.revokeMemberSessions(userId, membershipId);
   }
 
   // Must be defined before /:schoolId to avoid route conflicts

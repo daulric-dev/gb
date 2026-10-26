@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Crown, KeyRound, Loader2, X } from "lucide-react";
+import { Crown, KeyRound, Loader2, LogOut, X } from "lucide-react";
 import type { SchoolMember } from "./types";
 
 function getInitials(user: SchoolMember["user"]) {
@@ -21,11 +21,14 @@ export function MemberCard({
   removing,
   onRemove,
   onManageRoles,
+  onSignOut,
 }: {
   member: SchoolMember;
   removing?: boolean;
   onRemove?: (member: SchoolMember) => void;
   onManageRoles?: (member: SchoolMember) => void;
+  /** Admins: sign this member out of every device. */
+  onSignOut?: (member: SchoolMember) => void;
 }) {
   const joined = new Date(member.created_at).toLocaleDateString(undefined, {
     year: "numeric",
@@ -76,6 +79,18 @@ export function MemberCard({
           onClick={() => onManageRoles(member)}
         >
           <KeyRound className="size-3.5" />
+        </Button>
+      )}
+      {onSignOut && !member.is_owner && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label="Sign out of all devices"
+          title="Sign out of all devices"
+          onClick={() => onSignOut(member)}
+        >
+          <LogOut className="size-3.5" />
         </Button>
       )}
       {onRemove && !member.is_owner && (

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   allowedOrigins,
+  authCookieSecure,
+  insecureCookieWarning,
   authCookieDomain,
   corsOriginFor,
   isOriginAllowed,
@@ -237,5 +239,41 @@ describe('authCookieDomain', () => {
         expect(authCookieDomain()).toBeUndefined();
       }
     });
+  });
+});
+
+describe('authCookieSecure / insecureCookieWarning', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  test('Secure in production, off otherwise', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.AUTH_COOKIE_SECURE;
+    expect(authCookieSecure()).toBe(true);
+    process.env.NODE_ENV = 'development';
+    expect(authCookieSecure()).toBe(false);
+  });
+
+  test('AUTH_COOKIE_SECURE overrides either way', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.AUTH_COOKIE_SECURE = 'false';
+    expect(authCookieSecure()).toBe(false);
+    process.env.NODE_ENV = 'development';
+    process.env.AUTH_COOKIE_SECURE = 'TRUE';
+    expect(authCookieSecure()).toBe(true);
+  });
+
+  test('warns only when cookies are Secure but the API is plain http', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.AUTH_COOKIE_SECURE;
+    process.env.API_URL = 'http://localhost:3001';
+    expect(insecureCookieWarning()).toMatch(/AUTH_COOKIE_SECURE=false/);
+    process.env.API_URL = 'https://api.example.com';
+    expect(insecureCookieWarning()).toBeNull();
+    process.env.API_URL = 'http://localhost:3001';
+    process.env.AUTH_COOKIE_SECURE = 'false';
+    expect(insecureCookieWarning()).toBeNull();
   });
 });

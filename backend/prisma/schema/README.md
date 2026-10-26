@@ -7,7 +7,7 @@ as a single schema (`prisma.config.ts` points here).
 | --- | --- | --- |
 | `main.prisma` | - | Generator and datasource only |
 | `school.prisma` | `public` | Schools, user profiles, membership, roles and permissions, academic years and terms, announcements, email domains, push devices |
-| `account.prisma` | `account` | Our own auth: users, sessions, email sign-in codes, linked SSO identities |
+| `account.prisma` | `account` | Our own auth: users, sessions, known devices (new sign-in alerts), email sign-in codes, linked SSO identities |
 | `course.prisma` | `course` | Courses, staff and students, modules and items, pages, assignment groups, attendance, course notifications |
 | `discussion.prisma` | `course` | Discussion topics, replies, read markers, per-course discussion settings |
 | `grading.prisma` | `grading` | Activities, quizzes, submissions, rubrics and rubric assessments, grade scales |
