@@ -74,8 +74,13 @@ export async function createApp(): Promise<NestFastifyApplication> {
       'X-API-Version',
       'X-GradeBook-Client',
       'X-GradeBook-Device',
+      'X-GradeBook-App-Version',
     ],
-    exposedHeaders: ['Content-Disposition', 'X-Session-Token'],
+    // Not X-Session-Token: that is for the mobile app, which CORS does not
+    // apply to. Page script must never read a session token (the web session
+    // lives in an HttpOnly cookie); the API only sends it to bearer-token
+    // requests and to native sign-ins without an Origin.
+    exposedHeaders: ['Content-Disposition'],
   });
 
   await app.init();

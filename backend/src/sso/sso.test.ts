@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { BadRequestException } from '@nestjs/common';
 import { createMockCacheService } from '@/test/mocks';
@@ -9,7 +10,7 @@ import { SamlAdapter, normalizeCertificate } from './adapters/saml.adapter';
 import { standardProfile } from './adapters/profile';
 import { SsoRegistry } from './sso.registry';
 import { samlAcsUrl, samlEntityId } from './sso.config';
-import { FLOW_COOKIE, safeNext, SsoService } from './sso.service';
+import { FLOW_COOKIE, OUTDATED_APP_MESSAGE, safeNext, SsoService } from './sso.service';
 import type { SsoAdapter, SsoDomainConfig, SsoIdentity } from './sso.types';
 
 const TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47';
@@ -507,9 +508,17 @@ describe('SsoService flow', () => {
     enabled: () => [],
   });
 
+  const VERIFIER = 'v'.repeat(20) + '-._~' + 'A1b2C3d4E5f6G7h8I9j0K';
+  const challengeOf = (verifier: string) =>
+    createHash('sha256').update(verifier).digest('base64url');
+
   async function begin(service: SsoService, platform: 'web' | 'mobile' = 'web', next?: string) {
     const { req, reply } = http('/api/auth/sso/google/start');
-    const url = await service.start(req, reply, 'google', { platform, next });
+    const url = await service.start(req, reply, 'google', {
+      platform,
+      next,
+      ...(platform === 'mobile' ? { code_challenge: challengeOf(VERIFIER) } : {}),
+    });
     const state = new URL(url).searchParams.get('state')!;
     return { state, flow: reply.cookies[FLOW_COOKIE] };
   }
@@ -551,7 +560,7 @@ describe('SsoService flow', () => {
     const cancelled = http('/cb', { [FLOW_COOKIE]: second.flow });
     expect(
       await service.callback(cancelled.req, cancelled.reply, { error: 'access_denied', state: second.state }),
-    ).toBe('gradebook://sso?error=access_denied');
+    ).toBe('gradebook://sso?error=cancelled');
   });
 
   test('mobile: no browser session, a one-time handoff code instead', async () => {
@@ -564,11 +573,72 @@ describe('SsoService flow', () => {
 
     const code = new URL(to.replace('gradebook://sso', 'https://x')).searchParams.get('code')!;
     const app = http('/api/auth/sso/handoff');
-    await service.handoff(app.req, app.reply, code);
+    await service.handoff(app.req, app.reply, code, VERIFIER);
     expect(sessions.create).toHaveBeenCalledTimes(1);
     expect((sessions.create.mock.calls[0] as any[])[2]).toBe('user-1');
     // Single use.
-    await expect(service.handoff(app.req, app.reply, code)).rejects.toThrow('expired');
+    await expect(service.handoff(app.req, app.reply, code, VERIFIER)).rejects.toThrow('expired');
+  });
+
+  test('mobile: a build without a code_challenge is sent home to update', async () => {
+    const { service } = build({ domain: studentDomain, registry: registryOf(fakeAdapter()) });
+    const { req, reply } = http('/api/auth/sso/google/start');
+    const url = await service.start(req, reply, 'google', { platform: 'mobile' });
+    expect(url).toBe(`gradebook://sso?error=${encodeURIComponent(OUTDATED_APP_MESSAGE)}`);
+    expect(new URL(url.replace('gradebook://sso', 'https://x')).searchParams.get('error')).toBe(
+      'This version of GradeBook is out of date. Update the app from the App Store or Google Play to sign in.',
+    );
+    // Nothing started: no flow cookie.
+    expect(reply.cookies[FLOW_COOKIE]).toBeUndefined();
+  });
+
+  test('mobile: start needs a well-formed code_challenge', async () => {
+    const { service, cache } = build({ domain: studentDomain, registry: registryOf(fakeAdapter()) });
+    for (const code_challenge of ['', 'short', challengeOf(VERIFIER) + 'x', 'a'.repeat(42) + '=']) {
+      const { req, reply } = http('/api/auth/sso/google/start');
+      await expect(
+        service.start(req, reply, 'google', { platform: 'mobile', code_challenge }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(reply.cookies[FLOW_COOKIE]).toBeUndefined();
+    }
+    // Web ignores it, and does not store one.
+    const { state } = await begin(service, 'web');
+    expect((await cache.get(`sso-state:${state}`)).codeChallenge).toBeUndefined();
+  });
+
+  test('mobile: a handoff code is useless without the starting app\'s verifier', async () => {
+    const { service, sessions } = build({ domain: studentDomain, registry: registryOf(fakeAdapter()) });
+    const finish = async () => {
+      const { state, flow } = await begin(service, 'mobile');
+      const { req, reply } = http('/cb', { [FLOW_COOKIE]: flow });
+      const to = await service.callback(req, reply, { code: 'c', state });
+      return new URL(to.replace('gradebook://sso', 'https://x')).searchParams.get('code')!;
+    };
+    const app = http('/api/auth/sso/handoff');
+
+    // Another app (or an attacker's link) has the code but not the verifier.
+    const stolen = await finish();
+    await expect(
+      service.handoff(app.req, app.reply, stolen, 'w'.repeat(43)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    // The miss burned the code: the real verifier no longer works either.
+    await expect(service.handoff(app.req, app.reply, stolen, VERIFIER)).rejects.toThrow('expired');
+
+    // Missing or malformed verifiers are refused (and burn the code too).
+    for (const bad of [undefined, '', 'short', VERIFIER + '!']) {
+      const code = await finish();
+      await expect(service.handoff(app.req, app.reply, code, bad as any)).rejects.toThrow('expired');
+      await expect(service.handoff(app.req, app.reply, code, VERIFIER)).rejects.toThrow('expired');
+    }
+    expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  test('mobile: a handoff minted without a challenge is never redeemed', async () => {
+    const { service, sessions, cache } = build({ domain: studentDomain, registry: registryOf(fakeAdapter()) });
+    await cache.set('sso-handoff:legacy', { userId: 'user-1', provider: 'google' }, 120);
+    const app = http('/api/auth/sso/handoff');
+    await expect(service.handoff(app.req, app.reply, 'legacy', VERIFIER)).rejects.toThrow('expired');
+    expect(sessions.create).not.toHaveBeenCalled();
   });
 
   test('SAML: ACS checks the assertion, the callback signs in', async () => {

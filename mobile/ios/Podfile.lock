@@ -6,7 +6,7 @@ PODS:
   - EXJSONUtils (57.0.2)
   - EXManifests (57.0.2):
     - ExpoModulesCore
-  - Expo (57.0.30):
+  - Expo (57.0.31):
     - ExpoModulesCore
     - ExpoModulesJSI
     - hermes-engine
@@ -186,6 +186,8 @@ PODS:
     - ExpoModulesCore
   - ExpoCameraBarcodeScanning (57.0.6):
     - ExpoCamera
+  - ExpoCrypto (57.0.4):
+    - ExpoModulesCore
   - ExpoDevice (57.0.2):
     - ExpoModulesCore
   - ExpoDocumentPicker (57.0.3):
@@ -204,11 +206,11 @@ PODS:
     - ExpoModulesCore
   - ExpoLinking (57.0.13):
     - ExpoModulesCore
-  - ExpoLocation (57.0.21):
+  - ExpoLocation (57.0.22):
     - ExpoModulesCore
   - ExpoLogBox (57.0.4):
     - React-Core
-  - ExpoModulesCore (57.0.23):
+  - ExpoModulesCore (57.0.24):
     - ExpoModulesJSI
     - hermes-engine
     - RCTRequired
@@ -232,20 +234,20 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoModulesJSI (57.1.2):
+  - ExpoModulesJSI (57.1.3):
     - React-Core
     - ReactCommon
-  - ExpoModulesWorklets (57.0.23):
+  - ExpoModulesWorklets (57.0.24):
     - ExpoModulesCore
     - ExpoModulesJSI
-  - ExpoModulesWorkletsAdapter (57.0.23):
+  - ExpoModulesWorkletsAdapter (57.0.24):
     - ExpoModulesCore
     - ExpoModulesJSI
     - ExpoModulesWorklets
     - RNWorklets
-  - ExpoNotifications (57.0.23):
+  - ExpoNotifications (57.0.24):
     - ExpoModulesCore
-  - ExpoRouter (57.0.28):
+  - ExpoRouter (57.0.29):
     - ExpoModulesCore
     - RNScreens
   - ExpoSecureStore (57.0.4):
@@ -258,7 +260,7 @@ PODS:
     - ExpoModulesCore
   - ExpoSystemUI (57.0.4):
     - ExpoModulesCore
-  - ExpoUI (57.0.25):
+  - ExpoUI (57.0.26):
     - ExpoModulesCore
     - ExpoModulesWorklets
     - React-RCTFabric
@@ -2490,43 +2492,44 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
-  - "EXApplication (from `../../node_modules/.bun/expo-application@57.0.3+1a7e88ba7f941a07/node_modules/expo-application/ios`)"
-  - "EXConstants (from `../../node_modules/.bun/expo-constants@57.0.22+5a07ddb88d53b621/node_modules/expo-constants/ios`)"
+  - "EXApplication (from `../../node_modules/.bun/expo-application@57.0.3+70d11a0076977412/node_modules/expo-application/ios`)"
+  - "EXConstants (from `../../node_modules/.bun/expo-constants@57.0.22+8fce1577092c2edf/node_modules/expo-constants/ios`)"
   - "EXJSONUtils (from `../../node_modules/.bun/expo-json-utils@57.0.2/node_modules/expo-json-utils/ios`)"
-  - "EXManifests (from `../../node_modules/.bun/expo-manifests@57.0.2+1a7e88ba7f941a07/node_modules/expo-manifests/ios`)"
-  - "Expo (from `../../node_modules/.bun/expo@57.0.30+fcf65f865203177f/node_modules/expo`)"
-  - "expo-dev-client (from `../../node_modules/.bun/expo-dev-client@57.0.20+1a7e88ba7f941a07/node_modules/expo-dev-client/ios`)"
-  - "expo-dev-launcher (from `../../node_modules/.bun/expo-dev-launcher@57.0.21+1a7e88ba7f941a07/node_modules/expo-dev-launcher`)"
-  - "expo-dev-menu (from `../../node_modules/.bun/expo-dev-menu@57.0.20+1a7e88ba7f941a07/node_modules/expo-dev-menu`)"
-  - "expo-dev-menu-interface (from `../../node_modules/.bun/expo-dev-menu-interface@57.0.0+1a7e88ba7f941a07/node_modules/expo-dev-menu-interface/ios`)"
-  - "ExpoAsset (from `../../node_modules/.bun/expo-asset@57.0.20+090e5b24e14110ae/node_modules/expo-asset/ios`)"
-  - "ExpoCamera (from `../../node_modules/.bun/expo-camera@57.0.6+1a7e88ba7f941a07/node_modules/expo-camera/ios/ExpoCamera.podspec`)"
-  - "ExpoCameraBarcodeScanning (from `../../node_modules/.bun/expo-camera@57.0.6+1a7e88ba7f941a07/node_modules/expo-camera/ios/ExpoCameraBarcodeScanning.podspec`)"
-  - "ExpoDevice (from `../../node_modules/.bun/expo-device@57.0.2+1a7e88ba7f941a07/node_modules/expo-device/ios`)"
-  - "ExpoDocumentPicker (from `../../node_modules/.bun/expo-document-picker@57.0.3+1a7e88ba7f941a07/node_modules/expo-document-picker/ios`)"
-  - "ExpoDomWebView (from `../../node_modules/.bun/@expo+dom-webview@57.0.1+5a07ddb88d53b621/node_modules/@expo/dom-webview/ios`)"
-  - "ExpoFileSystem (from `../../node_modules/.bun/expo-file-system@57.0.7+5a07ddb88d53b621/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)"
-  - "ExpoFont (from `../../node_modules/.bun/expo-font@57.0.4+5a07ddb88d53b621/node_modules/expo-font/ios/ExpoFont.podspec`)"
-  - "ExpoGlassEffect (from `../../node_modules/.bun/expo-glass-effect@57.0.4+5a07ddb88d53b621/node_modules/expo-glass-effect/ios`)"
-  - "ExpoImagePicker (from `../../node_modules/.bun/expo-image-picker@57.0.20+1a7e88ba7f941a07/node_modules/expo-image-picker/ios`)"
-  - "ExpoKeepAwake (from `../../node_modules/.bun/expo-keep-awake@57.0.2+abc0cb94a9d36571/node_modules/expo-keep-awake/ios`)"
-  - "ExpoLinking (from `../../node_modules/.bun/expo-linking@57.0.13+5a07ddb88d53b621/node_modules/expo-linking/ios`)"
-  - "ExpoLocation (from `../../node_modules/.bun/expo-location@57.0.21+1a7e88ba7f941a07/node_modules/expo-location/ios/ExpoLocation.podspec`)"
-  - "ExpoLogBox (from `../../node_modules/.bun/@expo+log-box@57.0.4+5a07ddb88d53b621/node_modules/@expo/log-box`)"
-  - "ExpoModulesCore (from `../../node_modules/.bun/expo-modules-core@57.0.23+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesCore.podspec`)"
-  - "ExpoModulesJSI (from `../../node_modules/.bun/expo-modules-jsi@57.1.2+32c3a50388e9f420/node_modules/expo-modules-jsi/apple`)"
-  - "ExpoModulesWorklets (from `../../node_modules/.bun/expo-modules-core@57.0.23+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)"
-  - "ExpoModulesWorkletsAdapter (from `../../node_modules/.bun/expo-modules-core@57.0.23+b77d6bd58cc4480a/node_modules/expo-modules-core`)"
-  - "ExpoNotifications (from `../../node_modules/.bun/expo-notifications@57.0.23+1a7e88ba7f941a07/node_modules/expo-notifications/ios`)"
-  - "ExpoRouter (from `../../node_modules/.bun/expo-router@57.0.28+72cd1eb65045ecb5/node_modules/expo-router/ios`)"
-  - "ExpoSecureStore (from `../../node_modules/.bun/expo-secure-store@57.0.4+1a7e88ba7f941a07/node_modules/expo-secure-store/ios`)"
-  - "ExpoSharing (from `../../node_modules/.bun/expo-sharing@57.0.24+1a7e88ba7f941a07/node_modules/expo-sharing/ios`)"
-  - "ExpoSplashScreen (from `../../node_modules/.bun/expo-splash-screen@57.0.10+1a7e88ba7f941a07/node_modules/expo-splash-screen/ios`)"
-  - "ExpoSymbols (from `../../node_modules/.bun/expo-symbols@57.0.3+832dbbce58f5a917/node_modules/expo-symbols/ios`)"
-  - "ExpoSystemUI (from `../../node_modules/.bun/expo-system-ui@57.0.4+1a7e88ba7f941a07/node_modules/expo-system-ui/ios`)"
-  - "ExpoUI (from `../../node_modules/.bun/@expo+ui@57.0.25+0d3a68ae25f57508/node_modules/@expo/ui/ios`)"
-  - "ExpoWebBrowser (from `../../node_modules/.bun/expo-web-browser@57.0.3+1a7e88ba7f941a07/node_modules/expo-web-browser/ios`)"
-  - "EXUpdatesInterface (from `../../node_modules/.bun/expo-updates-interface@57.0.2+1a7e88ba7f941a07/node_modules/expo-updates-interface/ios`)"
+  - "EXManifests (from `../../node_modules/.bun/expo-manifests@57.0.2+70d11a0076977412/node_modules/expo-manifests/ios`)"
+  - "Expo (from `../../node_modules/.bun/expo@57.0.31+5de73f45afa73352/node_modules/expo`)"
+  - "expo-dev-client (from `../../node_modules/.bun/expo-dev-client@57.0.20+70d11a0076977412/node_modules/expo-dev-client/ios`)"
+  - "expo-dev-launcher (from `../../node_modules/.bun/expo-dev-launcher@57.0.21+70d11a0076977412/node_modules/expo-dev-launcher`)"
+  - "expo-dev-menu (from `../../node_modules/.bun/expo-dev-menu@57.0.20+70d11a0076977412/node_modules/expo-dev-menu`)"
+  - "expo-dev-menu-interface (from `../../node_modules/.bun/expo-dev-menu-interface@57.0.0+70d11a0076977412/node_modules/expo-dev-menu-interface/ios`)"
+  - "ExpoAsset (from `../../node_modules/.bun/expo-asset@57.0.20+7a61993e0f269b34/node_modules/expo-asset/ios`)"
+  - "ExpoCamera (from `../../node_modules/.bun/expo-camera@57.0.6+70d11a0076977412/node_modules/expo-camera/ios/ExpoCamera.podspec`)"
+  - "ExpoCameraBarcodeScanning (from `../../node_modules/.bun/expo-camera@57.0.6+70d11a0076977412/node_modules/expo-camera/ios/ExpoCameraBarcodeScanning.podspec`)"
+  - "ExpoCrypto (from `../../node_modules/.bun/expo-crypto@57.0.4+70d11a0076977412/node_modules/expo-crypto/ios`)"
+  - "ExpoDevice (from `../../node_modules/.bun/expo-device@57.0.2+70d11a0076977412/node_modules/expo-device/ios`)"
+  - "ExpoDocumentPicker (from `../../node_modules/.bun/expo-document-picker@57.0.3+70d11a0076977412/node_modules/expo-document-picker/ios`)"
+  - "ExpoDomWebView (from `../../node_modules/.bun/@expo+dom-webview@57.0.1+8fce1577092c2edf/node_modules/@expo/dom-webview/ios`)"
+  - "ExpoFileSystem (from `../../node_modules/.bun/expo-file-system@57.0.7+8fce1577092c2edf/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)"
+  - "ExpoFont (from `../../node_modules/.bun/expo-font@57.0.4+8fce1577092c2edf/node_modules/expo-font/ios/ExpoFont.podspec`)"
+  - "ExpoGlassEffect (from `../../node_modules/.bun/expo-glass-effect@57.0.4+8fce1577092c2edf/node_modules/expo-glass-effect/ios`)"
+  - "ExpoImagePicker (from `../../node_modules/.bun/expo-image-picker@57.0.20+70d11a0076977412/node_modules/expo-image-picker/ios`)"
+  - "ExpoKeepAwake (from `../../node_modules/.bun/expo-keep-awake@57.0.2+ee836f5e28da62ec/node_modules/expo-keep-awake/ios`)"
+  - "ExpoLinking (from `../../node_modules/.bun/expo-linking@57.0.13+8fce1577092c2edf/node_modules/expo-linking/ios`)"
+  - "ExpoLocation (from `../../node_modules/.bun/expo-location@57.0.22+70d11a0076977412/node_modules/expo-location/ios/ExpoLocation.podspec`)"
+  - "ExpoLogBox (from `../../node_modules/.bun/@expo+log-box@57.0.4+8fce1577092c2edf/node_modules/@expo/log-box`)"
+  - "ExpoModulesCore (from `../../node_modules/.bun/expo-modules-core@57.0.24+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesCore.podspec`)"
+  - "ExpoModulesJSI (from `../../node_modules/.bun/expo-modules-jsi@57.1.3+32c3a50388e9f420/node_modules/expo-modules-jsi/apple`)"
+  - "ExpoModulesWorklets (from `../../node_modules/.bun/expo-modules-core@57.0.24+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)"
+  - "ExpoModulesWorkletsAdapter (from `../../node_modules/.bun/expo-modules-core@57.0.24+b77d6bd58cc4480a/node_modules/expo-modules-core`)"
+  - "ExpoNotifications (from `../../node_modules/.bun/expo-notifications@57.0.24+70d11a0076977412/node_modules/expo-notifications/ios`)"
+  - "ExpoRouter (from `../../node_modules/.bun/expo-router@57.0.29+4c924a8777f0b7c2/node_modules/expo-router/ios`)"
+  - "ExpoSecureStore (from `../../node_modules/.bun/expo-secure-store@57.0.4+70d11a0076977412/node_modules/expo-secure-store/ios`)"
+  - "ExpoSharing (from `../../node_modules/.bun/expo-sharing@57.0.24+70d11a0076977412/node_modules/expo-sharing/ios`)"
+  - "ExpoSplashScreen (from `../../node_modules/.bun/expo-splash-screen@57.0.10+70d11a0076977412/node_modules/expo-splash-screen/ios`)"
+  - "ExpoSymbols (from `../../node_modules/.bun/expo-symbols@57.0.3+727c99119e958d20/node_modules/expo-symbols/ios`)"
+  - "ExpoSystemUI (from `../../node_modules/.bun/expo-system-ui@57.0.4+70d11a0076977412/node_modules/expo-system-ui/ios`)"
+  - "ExpoUI (from `../../node_modules/.bun/@expo+ui@57.0.26+2287cd6d72a30f26/node_modules/@expo/ui/ios`)"
+  - "ExpoWebBrowser (from `../../node_modules/.bun/expo-web-browser@57.0.3+70d11a0076977412/node_modules/expo-web-browser/ios`)"
+  - "EXUpdatesInterface (from `../../node_modules/.bun/expo-updates-interface@57.0.2+70d11a0076977412/node_modules/expo-updates-interface/ios`)"
   - "FBLazyVector (from `../../node_modules/.bun/react-native@0.86.3+73a55d342facdfa5/node_modules/react-native/Libraries/FBLazyVector`)"
   - "hermes-engine (from `../../node_modules/.bun/react-native@0.86.3+73a55d342facdfa5/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)"
   - "RCTDeprecation (from `../../node_modules/.bun/react-native@0.86.3+73a55d342facdfa5/node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)"
@@ -2604,7 +2607,7 @@ DEPENDENCIES:
   - "ReactCommon/turbomodule/core (from `../../node_modules/.bun/react-native@0.86.3+73a55d342facdfa5/node_modules/react-native/ReactCommon`)"
   - "ReactNativeDependencies (from `../../node_modules/.bun/react-native@0.86.3+73a55d342facdfa5/node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)"
   - "RNCMaskedView (from `../../node_modules/.bun/@react-native-masked-view+masked-view@0.3.2+32c3a50388e9f420/node_modules/@react-native-masked-view/masked-view`)"
-  - "RNDateTimePicker (from `../../node_modules/.bun/@react-native-community+datetimepicker@9.1.0+1a7e88ba7f941a07/node_modules/@react-native-community/datetimepicker`)"
+  - "RNDateTimePicker (from `../../node_modules/.bun/@react-native-community+datetimepicker@9.1.0+70d11a0076977412/node_modules/@react-native-community/datetimepicker`)"
   - "RNGestureHandler (from `../../node_modules/.bun/react-native-gesture-handler@2.32.0+32c3a50388e9f420/node_modules/react-native-gesture-handler`)"
   - "RNReanimated (from `../../node_modules/.bun/react-native-reanimated@4.5.1+b77d6bd58cc4480a/node_modules/react-native-reanimated`)"
   - "RNScreens (from `../../node_modules/.bun/react-native-screens@4.26.2+32c3a50388e9f420/node_modules/react-native-screens`)"
@@ -2614,79 +2617,81 @@ DEPENDENCIES:
 
 EXTERNAL SOURCES:
   EXApplication:
-    :path: "../../node_modules/.bun/expo-application@57.0.3+1a7e88ba7f941a07/node_modules/expo-application/ios"
+    :path: "../../node_modules/.bun/expo-application@57.0.3+70d11a0076977412/node_modules/expo-application/ios"
   EXConstants:
-    :path: "../../node_modules/.bun/expo-constants@57.0.22+5a07ddb88d53b621/node_modules/expo-constants/ios"
+    :path: "../../node_modules/.bun/expo-constants@57.0.22+8fce1577092c2edf/node_modules/expo-constants/ios"
   EXJSONUtils:
     :path: "../../node_modules/.bun/expo-json-utils@57.0.2/node_modules/expo-json-utils/ios"
   EXManifests:
-    :path: "../../node_modules/.bun/expo-manifests@57.0.2+1a7e88ba7f941a07/node_modules/expo-manifests/ios"
+    :path: "../../node_modules/.bun/expo-manifests@57.0.2+70d11a0076977412/node_modules/expo-manifests/ios"
   Expo:
-    :path: "../../node_modules/.bun/expo@57.0.30+fcf65f865203177f/node_modules/expo"
+    :path: "../../node_modules/.bun/expo@57.0.31+5de73f45afa73352/node_modules/expo"
   expo-dev-client:
-    :path: "../../node_modules/.bun/expo-dev-client@57.0.20+1a7e88ba7f941a07/node_modules/expo-dev-client/ios"
+    :path: "../../node_modules/.bun/expo-dev-client@57.0.20+70d11a0076977412/node_modules/expo-dev-client/ios"
   expo-dev-launcher:
-    :path: "../../node_modules/.bun/expo-dev-launcher@57.0.21+1a7e88ba7f941a07/node_modules/expo-dev-launcher"
+    :path: "../../node_modules/.bun/expo-dev-launcher@57.0.21+70d11a0076977412/node_modules/expo-dev-launcher"
   expo-dev-menu:
-    :path: "../../node_modules/.bun/expo-dev-menu@57.0.20+1a7e88ba7f941a07/node_modules/expo-dev-menu"
+    :path: "../../node_modules/.bun/expo-dev-menu@57.0.20+70d11a0076977412/node_modules/expo-dev-menu"
   expo-dev-menu-interface:
-    :path: "../../node_modules/.bun/expo-dev-menu-interface@57.0.0+1a7e88ba7f941a07/node_modules/expo-dev-menu-interface/ios"
+    :path: "../../node_modules/.bun/expo-dev-menu-interface@57.0.0+70d11a0076977412/node_modules/expo-dev-menu-interface/ios"
   ExpoAsset:
-    :path: "../../node_modules/.bun/expo-asset@57.0.20+090e5b24e14110ae/node_modules/expo-asset/ios"
+    :path: "../../node_modules/.bun/expo-asset@57.0.20+7a61993e0f269b34/node_modules/expo-asset/ios"
   ExpoCamera:
-    :podspec: "../../node_modules/.bun/expo-camera@57.0.6+1a7e88ba7f941a07/node_modules/expo-camera/ios/ExpoCamera.podspec"
+    :podspec: "../../node_modules/.bun/expo-camera@57.0.6+70d11a0076977412/node_modules/expo-camera/ios/ExpoCamera.podspec"
   ExpoCameraBarcodeScanning:
-    :podspec: "../../node_modules/.bun/expo-camera@57.0.6+1a7e88ba7f941a07/node_modules/expo-camera/ios/ExpoCameraBarcodeScanning.podspec"
+    :podspec: "../../node_modules/.bun/expo-camera@57.0.6+70d11a0076977412/node_modules/expo-camera/ios/ExpoCameraBarcodeScanning.podspec"
+  ExpoCrypto:
+    :path: "../../node_modules/.bun/expo-crypto@57.0.4+70d11a0076977412/node_modules/expo-crypto/ios"
   ExpoDevice:
-    :path: "../../node_modules/.bun/expo-device@57.0.2+1a7e88ba7f941a07/node_modules/expo-device/ios"
+    :path: "../../node_modules/.bun/expo-device@57.0.2+70d11a0076977412/node_modules/expo-device/ios"
   ExpoDocumentPicker:
-    :path: "../../node_modules/.bun/expo-document-picker@57.0.3+1a7e88ba7f941a07/node_modules/expo-document-picker/ios"
+    :path: "../../node_modules/.bun/expo-document-picker@57.0.3+70d11a0076977412/node_modules/expo-document-picker/ios"
   ExpoDomWebView:
-    :path: "../../node_modules/.bun/@expo+dom-webview@57.0.1+5a07ddb88d53b621/node_modules/@expo/dom-webview/ios"
+    :path: "../../node_modules/.bun/@expo+dom-webview@57.0.1+8fce1577092c2edf/node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
-    :podspec: "../../node_modules/.bun/expo-file-system@57.0.7+5a07ddb88d53b621/node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
+    :podspec: "../../node_modules/.bun/expo-file-system@57.0.7+8fce1577092c2edf/node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
   ExpoFont:
-    :podspec: "../../node_modules/.bun/expo-font@57.0.4+5a07ddb88d53b621/node_modules/expo-font/ios/ExpoFont.podspec"
+    :podspec: "../../node_modules/.bun/expo-font@57.0.4+8fce1577092c2edf/node_modules/expo-font/ios/ExpoFont.podspec"
   ExpoGlassEffect:
-    :path: "../../node_modules/.bun/expo-glass-effect@57.0.4+5a07ddb88d53b621/node_modules/expo-glass-effect/ios"
+    :path: "../../node_modules/.bun/expo-glass-effect@57.0.4+8fce1577092c2edf/node_modules/expo-glass-effect/ios"
   ExpoImagePicker:
-    :path: "../../node_modules/.bun/expo-image-picker@57.0.20+1a7e88ba7f941a07/node_modules/expo-image-picker/ios"
+    :path: "../../node_modules/.bun/expo-image-picker@57.0.20+70d11a0076977412/node_modules/expo-image-picker/ios"
   ExpoKeepAwake:
-    :path: "../../node_modules/.bun/expo-keep-awake@57.0.2+abc0cb94a9d36571/node_modules/expo-keep-awake/ios"
+    :path: "../../node_modules/.bun/expo-keep-awake@57.0.2+ee836f5e28da62ec/node_modules/expo-keep-awake/ios"
   ExpoLinking:
-    :path: "../../node_modules/.bun/expo-linking@57.0.13+5a07ddb88d53b621/node_modules/expo-linking/ios"
+    :path: "../../node_modules/.bun/expo-linking@57.0.13+8fce1577092c2edf/node_modules/expo-linking/ios"
   ExpoLocation:
-    :podspec: "../../node_modules/.bun/expo-location@57.0.21+1a7e88ba7f941a07/node_modules/expo-location/ios/ExpoLocation.podspec"
+    :podspec: "../../node_modules/.bun/expo-location@57.0.22+70d11a0076977412/node_modules/expo-location/ios/ExpoLocation.podspec"
   ExpoLogBox:
-    :path: "../../node_modules/.bun/@expo+log-box@57.0.4+5a07ddb88d53b621/node_modules/@expo/log-box"
+    :path: "../../node_modules/.bun/@expo+log-box@57.0.4+8fce1577092c2edf/node_modules/@expo/log-box"
   ExpoModulesCore:
-    :podspec: "../../node_modules/.bun/expo-modules-core@57.0.23+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesCore.podspec"
+    :podspec: "../../node_modules/.bun/expo-modules-core@57.0.24+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesCore.podspec"
   ExpoModulesJSI:
-    :path: "../../node_modules/.bun/expo-modules-jsi@57.1.2+32c3a50388e9f420/node_modules/expo-modules-jsi/apple"
+    :path: "../../node_modules/.bun/expo-modules-jsi@57.1.3+32c3a50388e9f420/node_modules/expo-modules-jsi/apple"
   ExpoModulesWorklets:
-    :podspec: "../../node_modules/.bun/expo-modules-core@57.0.23+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
+    :podspec: "../../node_modules/.bun/expo-modules-core@57.0.24+b77d6bd58cc4480a/node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoModulesWorkletsAdapter:
-    :path: "../../node_modules/.bun/expo-modules-core@57.0.23+b77d6bd58cc4480a/node_modules/expo-modules-core"
+    :path: "../../node_modules/.bun/expo-modules-core@57.0.24+b77d6bd58cc4480a/node_modules/expo-modules-core"
   ExpoNotifications:
-    :path: "../../node_modules/.bun/expo-notifications@57.0.23+1a7e88ba7f941a07/node_modules/expo-notifications/ios"
+    :path: "../../node_modules/.bun/expo-notifications@57.0.24+70d11a0076977412/node_modules/expo-notifications/ios"
   ExpoRouter:
-    :path: "../../node_modules/.bun/expo-router@57.0.28+72cd1eb65045ecb5/node_modules/expo-router/ios"
+    :path: "../../node_modules/.bun/expo-router@57.0.29+4c924a8777f0b7c2/node_modules/expo-router/ios"
   ExpoSecureStore:
-    :path: "../../node_modules/.bun/expo-secure-store@57.0.4+1a7e88ba7f941a07/node_modules/expo-secure-store/ios"
+    :path: "../../node_modules/.bun/expo-secure-store@57.0.4+70d11a0076977412/node_modules/expo-secure-store/ios"
   ExpoSharing:
-    :path: "../../node_modules/.bun/expo-sharing@57.0.24+1a7e88ba7f941a07/node_modules/expo-sharing/ios"
+    :path: "../../node_modules/.bun/expo-sharing@57.0.24+70d11a0076977412/node_modules/expo-sharing/ios"
   ExpoSplashScreen:
-    :path: "../../node_modules/.bun/expo-splash-screen@57.0.10+1a7e88ba7f941a07/node_modules/expo-splash-screen/ios"
+    :path: "../../node_modules/.bun/expo-splash-screen@57.0.10+70d11a0076977412/node_modules/expo-splash-screen/ios"
   ExpoSymbols:
-    :path: "../../node_modules/.bun/expo-symbols@57.0.3+832dbbce58f5a917/node_modules/expo-symbols/ios"
+    :path: "../../node_modules/.bun/expo-symbols@57.0.3+727c99119e958d20/node_modules/expo-symbols/ios"
   ExpoSystemUI:
-    :path: "../../node_modules/.bun/expo-system-ui@57.0.4+1a7e88ba7f941a07/node_modules/expo-system-ui/ios"
+    :path: "../../node_modules/.bun/expo-system-ui@57.0.4+70d11a0076977412/node_modules/expo-system-ui/ios"
   ExpoUI:
-    :path: "../../node_modules/.bun/@expo+ui@57.0.25+0d3a68ae25f57508/node_modules/@expo/ui/ios"
+    :path: "../../node_modules/.bun/@expo+ui@57.0.26+2287cd6d72a30f26/node_modules/@expo/ui/ios"
   ExpoWebBrowser:
-    :path: "../../node_modules/.bun/expo-web-browser@57.0.3+1a7e88ba7f941a07/node_modules/expo-web-browser/ios"
+    :path: "../../node_modules/.bun/expo-web-browser@57.0.3+70d11a0076977412/node_modules/expo-web-browser/ios"
   EXUpdatesInterface:
-    :path: "../../node_modules/.bun/expo-updates-interface@57.0.2+1a7e88ba7f941a07/node_modules/expo-updates-interface/ios"
+    :path: "../../node_modules/.bun/expo-updates-interface@57.0.2+70d11a0076977412/node_modules/expo-updates-interface/ios"
   FBLazyVector:
     :path: "../../node_modules/.bun/react-native@0.86.3+73a55d342facdfa5/node_modules/react-native/Libraries/FBLazyVector"
   hermes-engine:
@@ -2841,7 +2846,7 @@ EXTERNAL SOURCES:
   RNCMaskedView:
     :path: "../../node_modules/.bun/@react-native-masked-view+masked-view@0.3.2+32c3a50388e9f420/node_modules/@react-native-masked-view/masked-view"
   RNDateTimePicker:
-    :path: "../../node_modules/.bun/@react-native-community+datetimepicker@9.1.0+1a7e88ba7f941a07/node_modules/@react-native-community/datetimepicker"
+    :path: "../../node_modules/.bun/@react-native-community+datetimepicker@9.1.0+70d11a0076977412/node_modules/@react-native-community/datetimepicker"
   RNGestureHandler:
     :path: "../../node_modules/.bun/react-native-gesture-handler@2.32.0+32c3a50388e9f420/node_modules/react-native-gesture-handler"
   RNReanimated:
@@ -2860,7 +2865,7 @@ SPEC CHECKSUMS:
   EXConstants: 8a0eb5e2553569c0e6710b73a8d90d1ce358c153
   EXJSONUtils: a49e3ef80dff762108e5690c7b2f360675dcf7f6
   EXManifests: 4c53b2602e03ccf44d0b4ff9c5d655b2c5acba3f
-  Expo: 83ceec8498d39a83bfcdf6ad56118bc6c5c81c72
+  Expo: caadf07d26cefa96b9840e7295c29493ea399cf3
   expo-dev-client: 2a2fe5cdd576b29c097356cb922d2403abe6df8d
   expo-dev-launcher: cd9d8fcf89622f23e21ffb6940fadbe07465785d
   expo-dev-menu: 7fb359361a69f0b5280f530e4f770878cea456f2
@@ -2868,6 +2873,7 @@ SPEC CHECKSUMS:
   ExpoAsset: 2581425f9b581b4fce3c83ffc9f28528d1c4ee68
   ExpoCamera: d3d3c6c6ddca5088d4eed2df010c0f33e78bebd1
   ExpoCameraBarcodeScanning: e20737140da28cfd614abccd86ef50b47f0f94b5
+  ExpoCrypto: 20c5dfad9f2c0b7831591fb75397d0c248cf7f8b
   ExpoDevice: 5c638e530304a51992263ab5c1cab726f992b9dc
   ExpoDocumentPicker: 3cb0c283969538c03ced2b405e519c91abf39f8e
   ExpoDomWebView: beaec034e51bd028428b98bb1f2633ab79c6d095
@@ -2877,20 +2883,20 @@ SPEC CHECKSUMS:
   ExpoImagePicker: 661e13a7616fbcea630cfb9409b7483094978e02
   ExpoKeepAwake: 72af0b3be3615e59bc819d26061ff4e06b155ee0
   ExpoLinking: b2f2952392549ef78f9c4b37fad836e4180de4e4
-  ExpoLocation: 7b878272a650957859fb04770b30db78a8e5bf79
+  ExpoLocation: 8bb4a4f4ed4f74ef16933b1fe9461a6c91e365a2
   ExpoLogBox: 80957303325cd4439137765c90a87d7f22aaf2ff
-  ExpoModulesCore: 97a49e38206621fb5d8ac1431d4072cf15a5fdfe
-  ExpoModulesJSI: b767422763350d2b248fb218f71bbb286fd2ee77
-  ExpoModulesWorklets: 22d1898cfa60b815ffc7421c775e2e6a1bd8dc82
-  ExpoModulesWorkletsAdapter: 0f4b7452d734fa673dd6b3bf4272f6724bc32d24
-  ExpoNotifications: c1cc56be0a720b0c8d658d547a6538c7770e7bd4
-  ExpoRouter: 8d2714ac97464bae530003b06b780cd1d01d9c6c
+  ExpoModulesCore: ba2f8831a65a58a945d3ac04f0b445d5c338b5aa
+  ExpoModulesJSI: ded9f4c72f35fc9400ad85506a94acdd87b2b23b
+  ExpoModulesWorklets: 44a66395ccb9c5683d06fcbfb6b1cc01df62d423
+  ExpoModulesWorkletsAdapter: 59560ae73eeafb6123dd0a6d3e05ee08a43ac4d9
+  ExpoNotifications: 27d5bd4b94ed7776a6e73636ef673488500c0a5b
+  ExpoRouter: 7e81d46cec8d324f07fb13c764d89f1664cc2fef
   ExpoSecureStore: ff1fd5e073957417ba8f9dec0bebcbd55a60e747
   ExpoSharing: 4f0529a876e307b0dc5463f80dd318e4c1457c77
   ExpoSplashScreen: 856060f5724dc4fca4d69a2d18a161e3baa37019
   ExpoSymbols: 37a3a6e5847edb08b83a5ee04d3b46525e205f00
   ExpoSystemUI: 05ee8d4aaba1b6af330f3621e19b39ff9f21e718
-  ExpoUI: a206a1ca6970e538af0f6969d113a0f38718b95c
+  ExpoUI: 162ba2d970e9fba2d53d819945c41ed6b529a73f
   ExpoWebBrowser: a4d7c382116fbe33c1ec7f60293f02b7e97042e4
   EXUpdatesInterface: 4c96533f11c8cefe879bd506564cc2d537f56804
   FBLazyVector: 2138c6c2ab66c31bf5754dc18097fbc498a49c7f

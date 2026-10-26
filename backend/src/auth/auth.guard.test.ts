@@ -23,7 +23,12 @@ function makeContext() {
 let lastSessions: { revoke: ReturnType<typeof mock> };
 
 /** The session lookup and the profile row (Prisma). */
-function makeGuard(opts: { user?: any; getUserThrows?: Error; profile?: any }) {
+function makeGuard(opts: {
+  user?: any;
+  getUserThrows?: Error;
+  profile?: any;
+  profileThrows?: Error;
+}) {
   const sessions = {
     resolve: () => {
       if (opts.getUserThrows) return Promise.reject(opts.getUserThrows);
@@ -35,7 +40,11 @@ function makeGuard(opts: { user?: any; getUserThrows?: Error; profile?: any }) {
     revoke: mock(async () => {}),
   };
   const prisma = createMockPrisma();
-  prisma.user_profile.findUnique.mockResolvedValue(opts.profile ?? null);
+  if (opts.profileThrows) {
+    prisma.user_profile.findUnique.mockRejectedValue(opts.profileThrows);
+  } else {
+    prisma.user_profile.findUnique.mockResolvedValue(opts.profile ?? null);
+  }
   lastSessions = sessions;
   return new AuthGuard(sessions as any, prisma as any);
 }
@@ -110,6 +119,18 @@ describe('AuthGuard', () => {
     const err = await expectRejection(guard.canActivate(context));
     expect(err).toBeInstanceOf(ServiceUnavailableException);
     expect(err).not.toBeInstanceOf(UnauthorizedException);
+  });
+
+  test('a failed profile lookup fails closed with a 503', async () => {
+    const guard = makeGuard({
+      user: activeUser,
+      profileThrows: new Error('connection refused'),
+    });
+    const { context, request } = makeContext();
+
+    const err = await expectRejection(guard.canActivate(context));
+    expect(err).toBeInstanceOf(ServiceUnavailableException);
+    expect(request.user).toBeUndefined();
   });
 
   test('re-throws an UnauthorizedException from the session lookup as-is', async () => {

@@ -24,3 +24,10 @@ export const maxRunMs = () => Math.max(1, envInt('RETENTION_PURGE_MAX_MINUTES', 
 export const intervalHours = () => Math.max(1, envInt('RETENTION_PURGE_INTERVAL_HOURS', 24));
 /** UTC hour of day (0-23) the daily run starts at. */
 export const runHourUtc = () => Math.min(23, envInt('RETENTION_PURGE_HOUR_UTC', 3));
+
+/**
+ * Upload tickets still `pending`, and uploads that `failed`, are removed (row
+ * and object) once this old. Upload URLs live 5 minutes, so an hour leaves a
+ * wide margin for a slow finalise.
+ */
+export const ABANDONED_UPLOAD_MS = 60 * 60 * 1000;

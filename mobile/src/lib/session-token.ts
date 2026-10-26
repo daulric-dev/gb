@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
+import { APP_VERSION_HEADER } from "@/lib/update-required";
 
 /**
  * The app's session token, kept in the device keychain / keystore.
@@ -36,11 +37,15 @@ function deviceDescription(): string {
 
 const DEVICE = deviceDescription();
 
-const NATIVE_HEADERS = {
+const NATIVE_HEADERS: Record<string, string> = {
   "X-GradeBook-Client": "native",
   // Percent-encoded: header values must be ASCII, model names may not be.
   "X-GradeBook-Device": encodeURIComponent(DEVICE),
-} as const;
+  // "ios/1.4.0": the API answers 426 to builds below its minimum.
+  ...(APP_VERSION_HEADER
+    ? { "X-GradeBook-App-Version": APP_VERSION_HEADER }
+    : {}),
+};
 
 let cached: string | null | undefined;
 

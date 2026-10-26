@@ -3,11 +3,14 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, ApiError, isNetworkError } from "@/lib/api";
 import { homeRouteFor } from "@/lib/routing";
+import { checkForUpdate, lastKnownStoreUrl, openStore } from "@/lib/app-update";
 import {
   discoverSso,
   fetchSsoProviders,
   isSsoRequiredError,
   signInWithSso,
+  ssoErrorMessage,
+  OUTDATED_APP_MESSAGE,
   type SsoDiscovery,
   type SsoProvider,
 } from "@/lib/sso";
@@ -47,13 +50,15 @@ export default function LoginScreen() {
   /** The school's provider, when it offers one without requiring it. */
   const [offered, setOffered] = useState<SsoProvider | null>(null);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
-  // A sign-in that came back through the /sso deep link with an error.
+  // A sign-in that came back through the /sso deep link with an error. The
+  // param is a reason code (deep links can set it), mapped to fixed text.
   const [error, setError] = useState<string | null>(
-    typeof params.ssoError === "string" ? params.ssoError : null,
+    typeof params.ssoError === "string" ? ssoErrorMessage(params.ssoError) : null,
   );
 
   useEffect(() => {
-    if (typeof params.ssoError === "string") setError(params.ssoError);
+    if (typeof params.ssoError === "string")
+      setError(ssoErrorMessage(params.ssoError));
   }, [params.ssoError]);
 
   useEffect(() => {
@@ -71,6 +76,13 @@ export default function LoginScreen() {
   }, []);
 
   const trimmed = email.trim();
+
+  /** For OUTDATED_APP_MESSAGE: the store page, if the API knows it. */
+  async function updateApp() {
+    if (!lastKnownStoreUrl()) await checkForUpdate();
+    if (!(await openStore(lastKnownStoreUrl())))
+      toast.error("Open the App Store or Google Play and update GradeBook.");
+  }
 
   async function startSso(provider: SsoProvider, address?: string) {
     setBusy(provider.id);
@@ -234,6 +246,11 @@ export default function LoginScreen() {
             <Text tone="destructive" size="sm" style={{ textAlign: "center" }}>
               {error}
             </Text>
+          ) : null}
+          {error === OUTDATED_APP_MESSAGE ? (
+            <Button variant="outline" onPress={() => void updateApp()}>
+              Update GradeBook
+            </Button>
           ) : null}
 
           {others.length > 0 ? (

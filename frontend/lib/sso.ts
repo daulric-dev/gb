@@ -56,10 +56,21 @@ const CALLBACK_ERRORS: Record<string, string> = {
 
 const GENERIC_ERROR = "We couldn't sign you in. Please try again.";
 
+/** The API's own refusals, shown as written. Anything else is generic. */
+const SERVER_ERRORS = new Set([
+  "This account is disabled",
+  "Your sign-in provider did not share an email address",
+  "An account with this email already exists. Sign in with an email code to link it.",
+  "Your sign-in provider did not confirm this email address. Sign in with an email code instead.",
+]);
+
+const SSO_REQUIRED_ERROR =
+  "Your school requires its own sign-in option. Use your school's button.";
+
 /**
  * A friendly message for the `?error=` the SSO callback redirects back with:
- * one of a few reason codes, or a sentence from the API ("Your school signs
- * in with Google...") or the provider, which is shown as is.
+ * one of a few reason codes, or one of the API's known refusals. Anyone can
+ * link to /login?error=..., so free text is never shown as is.
  */
 export function ssoErrorMessage(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -67,9 +78,9 @@ export function ssoErrorMessage(raw: string | null | undefined): string | null {
   if (!value) return null;
   const known = CALLBACK_ERRORS[value.toLowerCase()];
   if (known) return known;
-  // Bare codes from the provider (server_error, invalid_request, ...).
-  if (!/\s/.test(value)) return GENERIC_ERROR;
-  return value.length > 300 ? `${value.slice(0, 297)}...` : value;
+  if (SERVER_ERRORS.has(value)) return value;
+  if (isSsoRequiredMessage(value)) return SSO_REQUIRED_ERROR;
+  return GENERIC_ERROR;
 }
 
 /** How the admin screens name a provider ("your school (SSO)" reads oddly there). */

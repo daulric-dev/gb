@@ -37,19 +37,18 @@ Which providers appear depends on how your GradeBook is set up; see [Single sign
 
 ## 5. Students
 
-**Students** is the roster. Students get onto it by:
+**Students** is the roster. Staff do not add students: each student signs up, chooses "Student" during onboarding and joins, which puts them on the roster. They join by:
 
 - **Signing up with a school email address** on a verified student domain;
-- **Staff adding them** - you control the spelling, and the record exists before they sign in;
 - **The school join code** - issue one under **School join code**, valid for the days you choose. It is shown once; copy it then. Revoke it when intake is over.
 
-If a student joins by code and the roster already had a record under their name, the Students page offers to **merge** the two, keeping the original record.
+You can still correct a student's details and mark them inactive from the Students page.
 
 ## A setup checklist
 
 1. A default grade scale.
 2. Staff approved and given roles.
 3. Your email domains added and verified (and single sign-on, if you use it).
-4. Students on the roster - or able to join with a school address or code.
+4. Students able to join with a school address or the join code.
 
 Then teachers create courses: see [Running a course](./courses.md).

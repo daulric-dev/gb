@@ -9,6 +9,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -39,7 +40,7 @@ export class CreateCourseDto {
 
 export class UpdateCourseDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
@@ -58,7 +59,7 @@ export class UpdateCourseDto {
   description?: string | null;
 
   @ApiPropertyOptional({ enum: COURSE_STATUSES })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsIn(COURSE_STATUSES)
   status?: CourseStatus;
 
@@ -66,8 +67,10 @@ export class UpdateCourseDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() termId?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsUUID() gradeScaleId?: string | null;
 
-  @ApiPropertyOptional({ description: 'Offer this course as a school template' })
-  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'Offer this course as a school template',
+  })
+  @ValidateIf((_, v) => v !== undefined)
   @IsBoolean()
   isTemplate?: boolean;
 }

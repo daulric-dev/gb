@@ -13,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -34,13 +35,16 @@ export class CreateModuleDto {
 
 export class UpdateModuleDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   title?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() isPublished?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  isPublished?: boolean;
 }
 
 export class ReorderModulesDto {
@@ -97,16 +101,22 @@ export class UpdateModuleItemDto {
   title?: string | null;
 
   @ApiPropertyOptional({ minimum: 0, maximum: 3 })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsInt()
   @Min(0)
   @Max(3)
   indent?: number;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() isPublished?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  isPublished?: boolean;
 
   /** Move the item to another module of the same course (appended last). */
-  @ApiPropertyOptional() @IsOptional() @IsUUID() moduleId?: string;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsUUID()
+  moduleId?: string;
 }
 
 export class ReorderModuleItemsDto {
@@ -134,17 +144,20 @@ export class CreatePageDto {
 
 export class UpdatePageDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   title?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @MaxLength(100_000)
   body?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() isPublished?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  isPublished?: boolean;
 }

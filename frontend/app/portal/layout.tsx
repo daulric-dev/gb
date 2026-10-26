@@ -68,7 +68,7 @@ export default function PortalLayout({
     }
     // Staff belong in /dashboard, except on the scan page, which tells them
     // only students check in. A student with no school has not redeemed a
-    // claim code yet, so there is nothing to show them here.
+    // school join code yet, so there is nothing to show them here.
     if (!isStudentProfile(profile.value)) {
       if (isScan) return;
       router.replace("/dashboard");

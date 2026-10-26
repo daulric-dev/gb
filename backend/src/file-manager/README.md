@@ -16,7 +16,7 @@ Uploads are limited to 10 MB and to PDF, PNG, JPEG, WebP, plain text, CSV, DOCX 
 Uploads come in two forms:
 
 - **Multipart through the API**: stored as `ready` straight away.
-- **Presigned direct upload**: a `pending` row is reserved, the client PUTs the bytes to storage, and "complete" checks them before marking the file `ready`. A rejected upload is deleted and the row marked `failed`.
+- **Presigned direct upload**: a `pending` row is reserved (at most 20 unexpired tickets per user, else `429`), the client PUTs the bytes to a staging key under `file-manager/uploads/`, and "complete" checks them, writes the verified bytes to the served key, points the row at it and deletes the staged object before marking the file `ready`. A rejected upload is deleted and the row marked `failed`. The retention job removes `pending` and `failed` rows (and their objects) after an hour.
 
 Other modules reuse the service to store student hand-ins and to read file bytes for callers they have already authorised.
 
@@ -30,7 +30,7 @@ Every route is behind `AuthGuard` and `PermissionGuard`, with the `file:*` key s
 | --- | --- | --- | --- |
 | GET | `/api/files?filter=own\|shared\|all&page=&pageSize=` | `file:read` | Files the caller owns and/or that are shared with them, newest first. Returns a bare array without `page`, and a `{ data, meta }` envelope with it (`pageSize` at most 100). |
 | POST | `/api/files?name=&folderId=` | `file:create` | Multipart upload. Validated, stored and recorded as `ready`. |
-| POST | `/api/files/upload-ticket` | `file:create` | Reserve a `pending` row and return a presigned PUT (`CreateUploadTicketDto`). The URL is valid for 15 minutes. |
+| POST | `/api/files/upload-ticket` | `file:create` | Reserve a `pending` row and return a presigned PUT (`CreateUploadTicketDto`). The URL is valid for 5 minutes and signs the declared size and type. |
 | POST | `/api/files/upload-ticket/:fileId/complete` | `file:create` | Check the uploaded object (exists, size, declared size, signature, structure), then mark it `ready` |
 | GET | `/api/files/folders/contents?folderId=` | `file:read` | One folder of the caller's tree: subfolders, files, breadcrumb. Omit `folderId` for the root. |
 | GET | `/api/files/folders` | `file:read` | Every live folder the caller owns (for a move picker) |
@@ -65,7 +65,7 @@ Both content routes send `Cache-Control: private, no-store`, `X-Content-Type-Opt
 - Changes: `move()`, `rename()`, `softDelete()`.
 - Content: `getViewContent()`, `getDownloadContent()`.
 - Shares: `listShares()`, `share()`, `updateShare()`, `revokeShare()`.
-- `readContentForAuthorisedCaller(fileId)` returns the bytes of any `ready` file with no access check. The caller must already have authorised the read; it exists for teachers reading hand-ins and for course files.
+- `readContentForAuthorisedCaller(fileId)` returns the bytes of any `ready`, not deleted file with no access check. The caller must already have authorised the read; it exists for teachers reading hand-ins and for course files.
 - Object keys are `file-manager/<schoolId>/<userId>/<fileId>-<slug>`.
 
 **`FolderService`**

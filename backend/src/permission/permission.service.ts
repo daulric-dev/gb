@@ -275,7 +275,7 @@ export class PermissionService {
       throw new BadRequestException(
         role === null && notNull
           ? 'The database must allow members without a default role. Apply the nullable membership role migration first.'
-          : `Failed to change member role: ${message}`,
+          : 'Failed to change member role',
       );
     }
 

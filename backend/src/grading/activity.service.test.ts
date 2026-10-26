@@ -196,6 +196,26 @@ describe('ActivityService.update', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
+  test('refuses to lower points below a mark already given', async () => {
+    const { service, prisma } = build((p) =>
+      p.submission.findFirst.mockResolvedValue({ id: 'sub-1' }),
+    );
+    await expect(
+      service.update('user-1', 'act-1', { points: 10 }),
+    ).rejects.toThrow(BadRequestException);
+    const where = prisma.submission.findFirst.mock.calls[0][0].where;
+    expect(where).toEqual({ activity_id: 'act-1', score: { gt: 10 } });
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+  });
+
+  test('lowers points when every mark still fits', async () => {
+    const { service, prisma } = build((p) =>
+      p.submission.findFirst.mockResolvedValue(null),
+    );
+    await service.update('user-1', 'act-1', { points: 15 });
+    expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(15);
+  });
+
   test('an activity with no course is not found', async () => {
     const { service } = build((p) =>
       p.activity.findUnique.mockResolvedValue({ ...ACTIVITY, course_id: null }),

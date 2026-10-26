@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { createFakeStorage } from '@/test/erasure-mocks';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
-import { RetentionService } from './retention.service';
+import { RetentionService, stagedFileId } from './retention.service';
 import { softDeleteRetentionDays } from './retention.config';
 
 const U = (n: number) => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
@@ -39,7 +39,10 @@ function setup(files: { id: string }[] = []) {
   prisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
   tx.erasure_log.create.mockResolvedValue({ id: 'log' });
   let live = files.map((f) => ({ school_id: SCHOOL, bucket: 'file-manager', storage_path: `${SCHOOL}/u/${f.id}`, ...f }));
-  prisma.file.findMany.mockImplementation(async (args: any) => live.slice(0, args?.take ?? live.length));
+  // `live` are soft-deleted rows; status queries (upload clean-up) see none.
+  prisma.file.findMany.mockImplementation(async (args: any) =>
+    args?.where?.status ? [] : live.slice(0, args?.take ?? live.length),
+  );
   tx.file.deleteMany.mockImplementation(async ({ where }: any) => {
     const before = live.length;
     live = live.filter((f) => !where.id.in.includes(f.id));
@@ -241,7 +244,7 @@ describe('bounded and safe', () => {
     prisma.file.findMany.mockRejectedValue(new Error('db hiccup'));
     prisma.message.findMany.mockResolvedValueOnce([{ id: U(1), school_id: SCHOOL }]).mockResolvedValue([]);
     const report = await service.purge({ now: NOW });
-    expect(report.errors).toEqual(['files: db hiccup']);
+    expect(report.errors[0]).toBe('files: db hiccup');
     expect(prisma.message.findMany).toHaveBeenCalled();
   });
 
@@ -258,5 +261,65 @@ describe('bounded and safe', () => {
     } finally {
       Date.now = realNow;
     }
+  });
+});
+
+describe('abandoned uploads', () => {
+  test('pending and failed rows older than an hour go, object first', async () => {
+    const { prisma, tx, storage, service } = setup();
+    const staged = `file-manager/uploads/${SCHOOL}/u/${U(5)}-a.pdf`;
+    storage.objects.set(staged, Buffer.from('x'));
+    let rows = [{ id: U(5), school_id: SCHOOL, bucket: 'file-manager', storage_path: `uploads/${SCHOOL}/u/${U(5)}-a.pdf` }];
+    prisma.file.findMany.mockImplementation(async (args: any) => {
+      if (args?.where?.status?.in) return rows;
+      return [];
+    });
+    tx.file.deleteMany.mockImplementation(async ({ where }: any) => {
+      const before = rows.length;
+      rows = rows.filter((r) => !where.id.in.includes(r.id));
+      return { count: before - rows.length };
+    });
+
+    const report = await service.purge({ now: NOW });
+
+    const call = prisma.file.findMany.mock.calls.find((c: any) => c[0]?.where?.status?.in)![0];
+    expect(call.where.status).toEqual({ in: ['pending', 'failed'] });
+    expect(call.where.created_at.lt.getTime()).toBe(NOW.getTime() - 60 * 60 * 1000);
+    expect(call.where.submission).toEqual({ none: {} });
+    expect(storage.objects.has(staged)).toBe(false);
+    expect(report.abandonedUploads).toBe(1);
+    const del = tx.file.deleteMany.mock.calls.find((c: any) => c[0].where.status)![0];
+    expect(del.where.status).toEqual({ in: ['pending', 'failed'] });
+  });
+
+  test('a dry run only counts', async () => {
+    const { prisma, service } = setup();
+    prisma.file.count.mockResolvedValue(3);
+    const report = await service.purge({ now: NOW, dryRun: true });
+    expect(report.abandonedUploads).toBe(3);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  test('staged objects no pending row owns are removed', async () => {
+    const { prisma, storage, service } = setup();
+    const owned = `file-manager/uploads/${SCHOOL}/u/${U(6)}-a.pdf`;
+    const orphan = `file-manager/uploads/${SCHOOL}/u/${U(7)}-b.pdf`;
+    const junk = `file-manager/uploads/whatever`;
+    for (const k of [owned, orphan, junk]) storage.objects.set(k, Buffer.from('x'));
+    prisma.file.findMany.mockImplementation(async (args: any) =>
+      args?.where?.status === 'pending'
+        ? [{ id: U(6), bucket: 'file-manager', storage_path: owned.slice('file-manager/'.length) }]
+        : [],
+    );
+    const report = await service.purge({ now: NOW });
+    expect(storage.objects.has(owned)).toBe(true);
+    expect(storage.objects.has(orphan)).toBe(false);
+    expect(storage.objects.has(junk)).toBe(false);
+    expect(report.stagedObjects).toBe(2);
+  });
+
+  test('stagedFileId reads the id out of a staged key', () => {
+    expect(stagedFileId(`file-manager/uploads/s/u/${U(8)}-notes.pdf`)).toBe(U(8));
+    expect(stagedFileId('file-manager/uploads/nope')).toBeNull();
   });
 });

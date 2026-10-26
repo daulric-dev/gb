@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -438,8 +439,8 @@ export class CourseService {
 
   /**
    * A student enrols themselves with a code. Only a published course in the
-   * student's own school accepts one, and a student who had been dropped is
-   * brought back rather than refused.
+   * student's own school accepts one. A student their teacher removed
+   * (dropped) cannot use the code to undo that; the teacher re-adds them.
    */
   async joinByCode(studentId: string, schoolId: string, joinCode: string) {
     const code = joinCode.trim().toUpperCase();
@@ -459,21 +460,30 @@ export class CourseService {
     }
     const course = toCourseRow(found);
 
+    const key = { course_id: course.id, student_id: studentId };
     try {
+      // The status filter leaves a dropped row unmatched, so the upsert falls
+      // through to create and hits the unique key instead of reactivating it.
       await this.prisma.course_student.upsert({
-        where: {
-          course_id_student_id: { course_id: course.id, student_id: studentId },
-        },
-        create: {
-          course_id: course.id,
-          student_id: studentId,
-          status: 'active',
-        },
+        where: { course_id_student_id: key, status: { not: 'dropped' } },
+        create: { ...key, status: 'active' },
         update: { status: 'active' },
       });
     } catch (error) {
-      this.logger.error(`Failed to join course: ${(error as Error).message}`);
-      throw new BadRequestException('Failed to join the course');
+      if (!isUniqueViolation(error)) {
+        this.logger.error(`Failed to join course: ${(error as Error).message}`);
+        throw new BadRequestException('Failed to join the course');
+      }
+      const existing = await this.prisma.course_student.findUnique({
+        where: { course_id_student_id: key },
+        select: { status: true },
+      });
+      if (existing?.status === 'dropped') {
+        throw new ForbiddenException(
+          'You were removed from this course. Ask your teacher to re-add you.',
+        );
+      }
+      // Otherwise a double tap raced us to the same enrolment; it stands.
     }
 
     return this.toCourse(course);

@@ -5,6 +5,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -37,24 +38,33 @@ export class CreateTopicDto {
 
 export class UpdateTopicDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   title?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @MaxLength(20000)
   body?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() isPinned?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() isLocked?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() isPublished?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  isPinned?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  isLocked?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  isPublished?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsBoolean()
   requireInitialPost?: boolean;
 }

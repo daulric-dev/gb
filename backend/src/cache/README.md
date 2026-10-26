@@ -23,6 +23,8 @@ None.
 | `set(key, value, ttl)` | Stores a value. **`ttl` is in seconds.** |
 | `update<T>(key, fn, ttl)` | Read-modify-write: when the key exists, stores `await fn(value)` and returns `true`. A missing key returns `false` and nothing is written, so a cold cache is never seeded with partial data. This is not atomic across replicas. |
 | `delete(key)` | Removes one key. |
+| `setIfAbsent(key, value, ttl)` | Atomic set-if-absent; true when this call wrote the key. A store error returns false (fails closed). |
+| `incr(key, ttl)` | Atomic counter: adds one (missing is 0), sets the TTL only on creation, returns the new value. Store errors propagate. |
 | `deleteByPrefix(prefix)` | Removes every key that starts with `prefix`. In Redis this is a `SCAN MATCH prefix*` loop, 100 keys per batch. |
 | `clear()` | Removes everything. In Redis this is `FLUSHALL ASYNC`, which empties the **whole** Redis database. |
 

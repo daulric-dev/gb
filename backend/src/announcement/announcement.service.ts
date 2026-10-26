@@ -18,6 +18,12 @@ import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
 
+/**
+ * Newest-first lists return at most this many. The clients take the whole
+ * list in one response, so this is a hard cap rather than pagination.
+ */
+export const MAX_ANNOUNCEMENTS = 1000;
+
 const AUTHOR_SELECT = {
   select: { first_name: true, last_name: true, avatar_url: true },
 } as const;
@@ -162,6 +168,7 @@ export class AnnouncementService {
           // Course announcements belong to their course's stream only.
           where: { school_id, course_id: null },
           orderBy: { created_at: { sort: 'desc', nulls: 'first' } },
+        take: MAX_ANNOUNCEMENTS,
           select: CONTENT_SELECT,
         });
         content = rows.map(toContent);
@@ -338,6 +345,7 @@ export class AnnouncementService {
       const rows = await this.prisma.announcement.findMany({
         where: { course_id: courseId },
         orderBy: { created_at: { sort: 'desc', nulls: 'first' } },
+        take: MAX_ANNOUNCEMENTS,
         select: CONTENT_SELECT,
       });
       data = rows.map(toContent);
@@ -447,6 +455,7 @@ export class AnnouncementService {
       const rows = await this.prisma.announcement.findMany({
         where: { course_id: courseId },
         orderBy: { created_at: { sort: 'desc', nulls: 'first' } },
+        take: MAX_ANNOUNCEMENTS,
         select: STUDENT_SELECT,
       });
       return rows.map((r) => ({

@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import {
   BadRequestException,
-  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@/generated/prisma/client';
@@ -29,15 +28,6 @@ function makeStudent(overrides: Record<string, any> = {}) {
   };
 }
 
-function makeDto(overrides: Record<string, any> = {}) {
-  return {
-    firstName: 'John',
-    lastName: 'Doe',
-    gender: 'male',
-    ...overrides,
-  };
-}
-
 describe('StudentService', () => {
   let service: StudentService;
   let prisma: MockPrisma;
@@ -48,49 +38,6 @@ describe('StudentService', () => {
     prisma = createMockPrisma();
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL_ID });
     service = new StudentService(prisma as any, mockCache as any);
-  });
-
-  describe('create', () => {
-    test('throws ConflictException if student with same name exists', () => {
-      prisma.student.findFirst.mockResolvedValue({ id: 'existing-1' });
-
-      expect(service.create(USER_ID, makeDto() as any)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-    });
-
-    test('400 when the caller has no school', () => {
-      prisma.user_profile.findUnique.mockResolvedValue({ school_id: null });
-      expect(service.create(USER_ID, makeDto() as any)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-    });
-
-    test('uses cache.update to append and sort', async () => {
-      prisma.student.create.mockResolvedValue(
-        makeStudent({ date_of_birth: new Date('2012-03-04T00:00:00Z') }),
-      );
-
-      const existing = [
-        makeStudent({
-          id: 'student-0',
-          first_name: 'Alice',
-          last_name: 'Adams',
-        }),
-      ];
-      await mockCache.set(`students:${SCHOOL_ID}`, existing, STUDENT_TTL);
-
-      const created = await service.create(
-        USER_ID,
-        makeDto({ dateOfBirth: '2012-03-04' }) as any,
-      );
-      expect(created.date_of_birth).toBe('2012-03-04');
-
-      const cached = await mockCache.get(`students:${SCHOOL_ID}`);
-      expect(cached).toHaveLength(2);
-      expect(cached[0].last_name).toBe('Adams');
-      expect(cached[1].last_name).toBe('Doe');
-    });
   });
 
   describe('findAll', () => {

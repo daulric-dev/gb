@@ -40,6 +40,15 @@ export interface DiscussionCtx {
 
 // Names and avatars only: posts are read by every student in the course, so
 // no email or internal id of another author goes out.
+/**
+ * Hard cap on the replies one topic read returns (oldest first). The page
+ * renders the whole thread at once, so this is a guard against a runaway
+ * topic, not pagination.
+ */
+export const MAX_TOPIC_REPLIES = 2000;
+/** Hard cap on topics in one course list. */
+export const MAX_TOPICS = 1000;
+
 const AUTHOR_SELECT = {
   select: { first_name: true, last_name: true, avatar_url: true, account_type: true },
 } as const;
@@ -174,6 +183,8 @@ export class DiscussionService {
           ...(this.isStaff(ctx) ? {} : { is_published: true }),
         },
         select: TOPIC_SELECT,
+        orderBy: { created_at: 'desc' },
+        take: MAX_TOPICS,
       });
     } catch (err) {
       this.logger.error(`Failed to list topics: ${(err as Error).message}`);
@@ -225,11 +236,23 @@ export class DiscussionService {
       where: { topic_id: topic.id },
       select: REPLY_SELECT,
       orderBy: { created_at: 'asc' },
+      take: MAX_TOPIC_REPLIES,
     });
 
-    const hasPosted = replies.some(
-      (r) => r.author_user_profile_id === ctx.userId && !r.deleted_at,
-    );
+    // Past the cap the caller's own post may not be in the page we read.
+    const hasPosted =
+      replies.some(
+        (r) => r.author_user_profile_id === ctx.userId && !r.deleted_at,
+      ) ||
+      (replies.length >= MAX_TOPIC_REPLIES &&
+        !!(await this.prisma.discussion_reply.findFirst({
+          where: {
+            topic_id: topic.id,
+            author_user_profile_id: ctx.userId,
+            deleted_at: null,
+          },
+          select: { id: true },
+        })));
     const mustPostFirst =
       !this.isStaff(ctx) && topic.require_initial_post && !hasPosted;
 

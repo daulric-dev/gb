@@ -4,7 +4,6 @@ import {
   Get,
   Param,
   Patch,
-  Post,
   Query,
   Req,
   UseGuards,
@@ -16,7 +15,6 @@ import { RequirePermission } from '@/permission/require-permission.decorator';
 import { ListStudentsQueryDto } from './dto/list-students.query.dto';
 import { VersioningService } from '@/versioning/versioning.service';
 import { StudentService } from './student.service';
-import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 
 @ApiTags('Students')
@@ -68,14 +66,6 @@ export class StudentController {
   async profile(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
     return this.studentService.profile(userId, id);
-  }
-
-  @RequirePermission('student', 'create')
-  @Post()
-  async create(@Req() req: any, @Body() dto: CreateStudentDto) {
-    const userId: string = req.user.id;
-    const raw = await this.studentService.create(userId, dto);
-    return this.versioning.resolve(req, 'student.created')(raw);
   }
 
   @RequirePermission('student', 'update')

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Search, Plus } from "lucide-react-native";
+import { Search } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -16,6 +16,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { StudentForm } from "@/features/students/StudentForm";
+import { SchoolJoinCodeSheet } from "@/features/students/SchoolJoinCodeSheet";
 import { getInitials, capitalize } from "@/lib/utils";
 
 function StudentRow({
@@ -63,12 +64,13 @@ export default function StudentsScreen() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
+  const [joinCodeOpen, setJoinCodeOpen] = useState(false);
   const initial = useRef(true);
 
-  const canCreate = can("student", "create");
   const canUpdate = can("student", "update");
+  const canJoinCode = can("join-code", "read") || can("join-code", "update");
+  const canIssueJoinCode = can("join-code", "update");
 
   const fetchStudents = useCallback(
     async (query?: string) => {
@@ -106,32 +108,31 @@ export default function StudentsScreen() {
     fetchStudents(search).finally(() => setRefreshing(false));
   }, [fetchStudents, search]);
 
-  const closeForm = () => {
-    setFormOpen(false);
-    setEditing(null);
-  };
+  const closeForm = () => setEditing(null);
 
   return (
     <Screen
       title="Students"
       description="Students in your school"
-      refreshing={refreshing}
-      onRefresh={onRefresh}
       action={
-        canCreate ? (
+        canJoinCode ? (
           <Button
             size="sm"
-            onPress={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            icon={<Plus size={16} color={colors.primaryForeground} />}
+            variant="outline"
+            onPress={() => setJoinCodeOpen(true)}
           >
-            New
+            Join code
           </Button>
         ) : undefined
       }
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
+      <Text variant="muted">
+        Students join with your school code. They sign up, enter the code, and
+        appear here once they have joined.
+      </Text>
+
       <View style={styles.searchWrap}>
         <Search
           size={18}
@@ -166,10 +167,7 @@ export default function StudentsScreen() {
               student={s}
               onPress={
                 canUpdate
-                  ? () => {
-                      setEditing(s);
-                      setFormOpen(true);
-                    }
+                  ? () => setEditing(s)
                   : undefined
               }
             />
@@ -177,19 +175,23 @@ export default function StudentsScreen() {
         </View>
       )}
 
-      <Sheet
-        open={formOpen}
-        onClose={closeForm}
-        title={editing ? "Edit Student" : "Add Student"}
-      >
-        <StudentForm
-          student={editing ?? undefined}
-          onSuccess={() => {
-            closeForm();
-            fetchStudents(search);
-          }}
-        />
+      <Sheet open={editing !== null} onClose={closeForm} title="Edit Student">
+        {editing ? (
+          <StudentForm
+            student={editing}
+            onSuccess={() => {
+              closeForm();
+              fetchStudents(search);
+            }}
+          />
+        ) : null}
       </Sheet>
+
+      <SchoolJoinCodeSheet
+        open={joinCodeOpen}
+        onClose={() => setJoinCodeOpen(false)}
+        canIssue={canIssueJoinCode}
+      />
     </Screen>
   );
 }

@@ -45,6 +45,26 @@ export class CacheService implements CacheStore, OnModuleDestroy {
     }
   }
 
+  /**
+   * Atomic set-if-absent. Fails closed: a store error reports the key as
+   * already taken, so a one-time token is never redeemed twice.
+   */
+  async setIfAbsent(key: string, value: any, ttl: number): Promise<boolean> {
+    this.logger.debug(`Setting cache key if absent: ${key}`);
+    try {
+      return await this.store.setIfAbsent(key, value, ttl);
+    } catch (err) {
+      this.logger.error(`Cache setIfAbsent failed for ${key}: ${String(err)}`);
+      return false;
+    }
+  }
+
+  /** Atomic counter. Errors propagate: callers decide how to fail. */
+  async incr(key: string, ttl: number): Promise<number> {
+    this.logger.debug(`Incrementing cache key: ${key}`);
+    return this.store.incr(key, ttl);
+  }
+
   async update<T>(
     key: string,
     func: (value: T) => T | Promise<T>,

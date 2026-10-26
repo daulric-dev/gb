@@ -60,6 +60,8 @@ const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
  * repointed at the copy, so the two courses never share a row. Files are the
  * exception: a file item keeps the same file, which the source course already
  * offered, and the portal serves it through the new course's module item.
+ * Content only moves within one school, and a file item is only carried over
+ * while its file is live and belongs to the target's school.
  */
 @Injectable()
 export class CourseCopyService {
@@ -188,6 +190,12 @@ export class CourseCopyService {
     },
   ) {
     const source = await this.requireSource(userId, sourceId);
+    // The copy is created in the source's school, so that must be the school
+    // the caller works in (a stale staff row elsewhere does not count).
+    const callerSchool = await userSchoolId(this.prisma, userId);
+    if (callerSchool !== source.school_id) {
+      throw new NotFoundException('Course not found');
+    }
     const shift = this.shiftOf(input);
 
     const name = input.name.trim();
@@ -242,6 +250,7 @@ export class CourseCopyService {
           row.id,
           userId,
           shift,
+          source.school_id,
         );
         return [toCourseRow(row), written] as const;
       }, TX_OPTIONS);
@@ -268,16 +277,33 @@ export class CourseCopyService {
     targetId: string,
     input: CopyDates & { sourceCourseId: string },
   ) {
-    await this.access.require(userId, targetId, MANAGE_ROLES);
+    const { course: target } = await this.access.require(
+      userId,
+      targetId,
+      MANAGE_ROLES,
+    );
     if (input.sourceCourseId === targetId) {
       throw new BadRequestException('A course cannot import from itself');
     }
     const source = await this.requireSource(userId, input.sourceCourseId);
+    if (source.school_id !== target.school_id) {
+      throw new BadRequestException(
+        'Content can only be imported from a course in the same school',
+      );
+    }
     const shift = this.shiftOf(input);
 
     try {
       const copied = await this.prisma.$transaction(
-        (tx) => this.copyContent(tx, source.id, targetId, userId, shift),
+        (tx) =>
+          this.copyContent(
+            tx,
+            source.id,
+            targetId,
+            userId,
+            shift,
+            target.school_id,
+          ),
         TX_OPTIONS,
       );
       return { copied };
@@ -300,6 +326,7 @@ export class CourseCopyService {
     targetId: string,
     userId: string,
     shift: number | null,
+    targetSchoolId: string,
   ): Promise<CopyCounts> {
     const [groups, rubrics, activities, pages, modules, items, topics] =
       await Promise.all([
@@ -509,8 +536,29 @@ export class CourseCopyService {
         require_initial_post: t.require_initial_post,
       }));
 
+    // A file item may only keep pointing at a live file of the target's
+    // school; anything else (deleted, or another school's) is left behind.
+    const fileIds = [
+      ...new Set(items.map((i) => i.file_id).filter((id): id is string => !!id)),
+    ];
+    const usableFiles = new Set(
+      fileIds.length === 0
+        ? []
+        : (
+            await tx.file.findMany({
+              where: {
+                id: { in: fileIds },
+                school_id: targetSchoolId,
+                deleted_at: null,
+              },
+              select: { id: true },
+            })
+          ).map((f) => f.id),
+    );
+
     const newItems: Prisma.module_itemCreateManyInput[] = [];
     for (const i of items) {
+      if (i.file_id && !usableFiles.has(i.file_id)) continue;
       const moduleId = ids.get(i.module_id);
       const pageId = i.page_id ? ids.get(i.page_id) : null;
       const activityId = i.activity_id ? ids.get(i.activity_id) : null;

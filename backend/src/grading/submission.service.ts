@@ -43,6 +43,7 @@ const DRAFT_SELECT = {
   status: true,
   file_id: true,
   attempt_count: true,
+  graded_by: true,
 } satisfies Prisma.submissionSelect;
 
 const MARKED_SELECT = {
@@ -486,6 +487,9 @@ export class SubmissionService {
     if (activity.kind !== 'assignment' || !activity.allow_file) {
       throw new BadRequestException('This assignment does not accept files');
     }
+    if (activity.status !== 'published') {
+      throw new ConflictException('This assignment is closed');
+    }
 
     const draft = await this.ensureDraft(studentId, activityId);
     if (draft.status !== 'draft') {
@@ -634,6 +638,14 @@ export class SubmissionService {
 
     const draft = await this.ensureDraft(studentId, activityId);
 
+    // A mark a teacher entered or imported is final; a retake would replace it
+    // with the automatic score. submit_quiz checks this again under its lock.
+    if (draft.graded_by) {
+      throw new BadRequestException(
+        'Your teacher has marked this quiz, so it cannot be retaken',
+      );
+    }
+
     // A retake is allowed while attempts remain, so a graded submission is not
     // automatically the end of it. The limit is enforced again inside
     // submit_quiz, which holds the row lock while it counts.
@@ -735,6 +747,11 @@ export class SubmissionService {
       const detail = `${pgCode(error) ?? ''} ${raisedMessage(error)}`;
       if (detail.includes('no_attempts_left')) {
         throw new ConflictException('You have no attempts left');
+      }
+      if (detail.includes('already_marked')) {
+        throw new BadRequestException(
+          'Your teacher has marked this quiz, so it cannot be retaken',
+        );
       }
       if (detail.includes('activity_not_open')) {
         throw new ConflictException('This quiz is closed');

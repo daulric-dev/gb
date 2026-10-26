@@ -1,5 +1,4 @@
 import {
-  IsOptional,
   IsDateString,
   IsInt,
   IsNotEmpty,
@@ -7,24 +6,25 @@ import {
   MaxLength,
   Min,
   Max,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateTermDto {
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(60)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsDateString()
   startDate?: string;
 
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsDateString()
   endDate?: string;
 
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsInt()
   @Min(0)
   @Max(50)

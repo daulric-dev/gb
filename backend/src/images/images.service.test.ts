@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Readable } from 'node:stream';
 import { BadRequestException } from '@nestjs/common';
 import { ImagesService } from './images.service';
+import { ObjectTooLargeError } from '@/storage/storage.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
 
@@ -107,7 +108,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
   test('accepts the caller-owned canonical path', async () => {
     const res = await svc().completeResumableUpload(
       'user-1',
-      'avatars/user-1.png',
+      'uploads/avatars/user-1.png',
     );
     expect(res.avatar_url).toContain('avatars/user-1.png');
   });
@@ -115,7 +116,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
   test('accepts the caller-owned path with a different allowed extension', async () => {
     const res = await svc().completeResumableUpload(
       'user-1',
-      'avatars/user-1.webp',
+      'uploads/avatars/user-1.webp',
     );
     expect(res.avatar_url).toContain('avatars/user-1.webp');
   });
@@ -123,7 +124,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
   test("rejects another user's object", async () => {
     expect(
       await expectRejection(
-        svc().completeResumableUpload('user-1', 'avatars/victim.png'),
+        svc().completeResumableUpload('user-1', 'uploads/avatars/victim.png'),
       ),
     ).toBeInstanceOf(BadRequestException);
   });
@@ -147,7 +148,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
   test('rejects a smuggled query string on the path', async () => {
     expect(
       await expectRejection(
-        svc().completeResumableUpload('user-1', 'avatars/user-1.png?x=1'),
+        svc().completeResumableUpload('user-1', 'uploads/avatars/user-1.png?x=1'),
       ),
     ).toBeInstanceOf(BadRequestException);
   });
@@ -163,7 +164,7 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
     const s = makeService({ exists: true }, cache);
     expect(
       await expectRejection(
-        s.completeResumableUpload('attacker', 'avatars/owner.png'),
+        s.completeResumableUpload('attacker', 'uploads/avatars/owner.png'),
       ),
     ).toBeInstanceOf(BadRequestException);
   });
@@ -363,24 +364,93 @@ describe('ImagesService avatar URLs and direct uploads', () => {
       1000,
     );
     expect(res).toMatchObject({
-      path: 'avatars/u.png',
+      path: 'uploads/avatars/u.png',
       method: 'PUT',
       headers: { 'Content-Type': 'image/png' },
     });
-    expect(res.uploadUrl).toContain('images/avatars/u.png');
+    expect(res.uploadUrl).toContain('images/uploads/avatars/u.png');
+  });
+
+  test('the ticket is short-lived and bound to the declared size', async () => {
+    const storage = makeStorage();
+    const svc = new ImagesService(
+      storage as any,
+      createMockPrisma() as any,
+      cache as any,
+    );
+    await svc.createResumableUpload('u', 'me.png', 'image/png', 1000);
+    expect(storage.uploadUrl.mock.calls[0]).toEqual([
+      'images/uploads/avatars/u.png',
+      'image/png',
+      300,
+      1000,
+    ] as any);
+  });
+
+  test('a fractional size is refused', async () => {
+    expect(
+      await expectRejection(
+        makeService({}, cache).createResumableUpload('u', 'a.png', 'image/png', 1.5),
+      ),
+    ).toBeInstanceOf(BadRequestException);
+  });
+
+  test('completion serves the verified bytes from avatars/ and drops the staged object', async () => {
+    const storage = makeStorage();
+    const prisma = createMockPrisma();
+    prisma.user_profile.update.mockResolvedValue({ id: 'u', avatar_url: 'x' });
+    const svc = new ImagesService(storage as any, prisma as any, cache as any);
+    const res = await svc.completeResumableUpload('u', 'uploads/avatars/u.png');
+
+    expect(storage.getBuffer.mock.calls[0]).toEqual([
+      'images/uploads/avatars/u.png',
+      5 * 1024 * 1024,
+    ] as any);
+    const [putKey, putBody] = storage.put.mock.calls[0] as unknown as [string, Buffer];
+    expect(putKey).toBe('images/avatars/u.png');
+    expect(putBody.equals(pngBytes())).toBe(true);
+    expect(storage.delete).toHaveBeenCalledWith('images/uploads/avatars/u.png');
+    expect(res.avatar_url).toContain('/images/avatars/u.png');
+    expect(res.avatar_url).not.toContain('uploads/');
+  });
+
+  test('the served avatar key itself is not accepted as an upload path', async () => {
+    expect(
+      await expectRejection(
+        makeService({}, cache).completeResumableUpload('u', 'avatars/u.png'),
+      ),
+    ).toBeInstanceOf(BadRequestException);
+  });
+
+  test('an object that grew past the cap after HEAD is rejected and deleted', async () => {
+    const storage = makeStorage();
+    storage.getBuffer.mockImplementation(() =>
+      Promise.reject(new ObjectTooLargeError('k', 1)),
+    );
+    const svc = new ImagesService(
+      storage as any,
+      createMockPrisma() as any,
+      cache as any,
+    );
+    const err = await expectRejection(
+      svc.completeResumableUpload('u', 'uploads/avatars/u.png'),
+    );
+    expect((err as Error).message).toContain('too large');
+    expect(storage.delete).toHaveBeenCalledWith('images/uploads/avatars/u.png');
+    expect(storage.put).not.toHaveBeenCalled();
   });
 
   test('completion rejects an object that is not the image it claims', async () => {
     const svc = makeService({ stored: Buffer.from('<svg>nope</svg>....') }, cache);
     expect(
-      await expectRejection(svc.completeResumableUpload('u', 'avatars/u.png')),
+      await expectRejection(svc.completeResumableUpload('u', 'uploads/avatars/u.png')),
     ).toBeInstanceOf(BadRequestException);
   });
 
   test('completion fails when nothing was uploaded', async () => {
     const svc = makeService({ exists: false }, cache);
     expect(
-      await expectRejection(svc.completeResumableUpload('u', 'avatars/u.png')),
+      await expectRejection(svc.completeResumableUpload('u', 'uploads/avatars/u.png')),
     ).toBeInstanceOf(BadRequestException);
   });
 });

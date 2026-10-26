@@ -253,6 +253,7 @@ describe('StudentPortalService.getCourseFile', () => {
       file_id: 'file-1',
       is_published: true,
       module: { is_published: true },
+      file: { deleted_at: null },
     });
   });
 
@@ -266,6 +267,7 @@ describe('StudentPortalService.getCourseFile', () => {
     expect(prisma.file_share.findFirst.mock.calls[0][0].where).toMatchObject({
       principal_type: 'course',
       principal_id: 'course-1',
+      file: { deleted_at: null },
     });
   });
 

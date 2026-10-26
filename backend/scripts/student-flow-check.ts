@@ -145,19 +145,15 @@ async function main() {
       select: { id: true },
     });
 
-    // `me` is the roster record staff made before the student had an account;
-    // it already carries a mark. The student's login ends up attached to it.
-    const me = await db.student.create({
-      data: { school_id: schoolId, first_name: 'Sam', last_name: 'Self' },
-      select: { id: true },
-    });
+    // The classmate is a fixture; the student under test gets their record
+    // only by redeeming the school join code over HTTP below.
     const other = await db.student.create({
       data: { school_id: schoolId, first_name: 'Class', last_name: 'Mate' },
       select: { id: true },
     });
 
-    // A published course with a join code. `other` is enrolled; `me` joins
-    // over HTTP below.
+    // A published course with a join code. `other` is enrolled; the student
+    // joins over HTTP below.
     const joinCode = `J${String(stamp).slice(-5)}`;
     const course = await db.course.create({
       data: {
@@ -190,11 +186,8 @@ async function main() {
       },
       select: { id: true },
     });
-    await db.submission.createMany({
-      data: [
-        { activity_id: activity.id, student_id: me.id, status: 'graded', score: 77 },
-        { activity_id: activity.id, student_id: other.id, status: 'graded', score: 12 },
-      ],
+    await db.submission.create({
+      data: { activity_id: activity.id, student_id: other.id, status: 'graded', score: 12 },
     });
 
     // Content: one published module with a published page, and a draft page
@@ -295,7 +288,16 @@ async function main() {
       joinSchool.status === 201 && joinSchool.body?.schoolId === schoolId && typeof joinedId === 'string',
       `status ${joinSchool.status} ${short(joinSchool.body)}`,
     );
-    check('redeeming creates a new record, not the roster one', !!joinedId && joinedId !== me.id, short(joinedId));
+    const record = joinedId
+      ? await db.student.findUnique({
+          where: { id: joinedId },
+          select: { first_name: true, last_name: true, user_profile_id: true },
+        })
+      : null;
+    check('redeeming creates the record from the profile, linked to the login',
+      record?.first_name === 'Sam' && record?.last_name === 'Self' && record?.user_profile_id === verify.body?.user?.id,
+      short(record),
+    );
 
     const fresh = await student.fetch('/portal/me');
     check('portal opens on the new record', fresh.status === 200 && fresh.body?.id === joinedId && fresh.body?.school?.id === schoolId, `status ${fresh.status} ${short(fresh.body)}`);
@@ -319,37 +321,28 @@ async function main() {
     });
     check('the code stays valid for the next student', join2.status === 201 && join2.body?.schoolId === schoolId, `status ${join2.status} ${short(join2.body)}`);
 
-    // ---- staff links the login to the roster record -----------------------
-    const dupes = await staff.fetch('/students/duplicates');
-    const pair = Array.isArray(dupes.body)
-      ? dupes.body.filter((d: any) => d.joinedId === joinedId)
-      : [];
-    check('the join shows up as a duplicate of the roster record',
-      dupes.status === 200 && pair.length === 1 && pair[0].existingId === me.id && pair[0].name === 'Sam Self',
-      `status ${dupes.status} ${short(dupes.body, 200)}`,
-    );
-    check('a student with no roster twin is not a duplicate',
-      Array.isArray(dupes.body) && !dupes.body.some((d: any) => d.joinedId === join2.body?.studentId),
-      short(dupes.body, 200),
+    // ---- staff see the student; nobody creates one ------------------------
+    const roster = await staff.fetch('/students');
+    check('the joined student is on the roster',
+      roster.status === 200 && Array.isArray(roster.body) && roster.body.some((r: any) => r.id === joinedId),
+      `status ${roster.status} ${short(roster.body, 200)}`,
     );
 
-    const studentDenied = await student.fetch(`/students/duplicates/${joinedId}/merge/${me.id}`, { method: 'POST' });
-    check('a student cannot merge records', studentDenied.status === 403, `status ${studentDenied.status}`);
+    const create = await staff.fetch('/students', {
+      method: 'POST',
+      body: JSON.stringify({ firstName: 'Made', lastName: 'Up', gender: 'male' }),
+    });
+    check('staff cannot create a student record (no such route)', create.status === 404, `status ${create.status}`);
 
-    const merge = await staff.fetch(`/students/duplicates/${joinedId}/merge/${me.id}`, { method: 'POST' });
-    check('staff merges the new record into the roster record', merge.status === 201 && merge.body?.studentId === me.id, `status ${merge.status} ${short(merge.body)}`);
-
-    const linked = await db.student.findUnique({ where: { id: me.id }, select: { user_profile_id: true } });
-    const gone = await db.student.findUnique({ where: { id: joinedId ?? me.id }, select: { id: true } }).catch(() => null);
-    check('the roster record now carries the login', linked?.user_profile_id === verify.body?.user?.id, short(linked));
-    check('the join-time record is gone', joinedId !== undefined && gone === null, short(gone));
-
-    const mergeAgain = await staff.fetch(`/students/duplicates/${join2.body?.studentId}/merge/${me.id}`, { method: 'POST' });
-    check('merging into a record that has an account is refused', mergeAgain.status === 409, `status ${mergeAgain.status}`);
+    // A mark recorded against the joined record, as a teacher would after the
+    // student is in the course; the portal must show it to them alone.
+    await db.submission.create({
+      data: { activity_id: activity.id, student_id: joinedId!, status: 'graded', score: 77 },
+    });
 
     // ---- portal reads -----------------------------------------------------
     const portalMe = await student.fetch('/portal/me');
-    check('GET /portal/me returns the roster record', portalMe.status === 200 && portalMe.body?.id === me.id && portalMe.body?.firstName === 'Sam', `status ${portalMe.status} ${short(portalMe.body)}`);
+    check('GET /portal/me returns the joined record', portalMe.status === 200 && portalMe.body?.id === joinedId && portalMe.body?.firstName === 'Sam', `status ${portalMe.status} ${short(portalMe.body)}`);
 
     const none = await student.fetch('/portal/me/courses');
     check('no courses before joining', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, short(none.body));

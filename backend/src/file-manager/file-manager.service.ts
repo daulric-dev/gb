@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -18,8 +20,11 @@ import { FolderService } from './folder.service';
 import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
 import { verifyContent, ALLOWED_CONTENT_TYPES } from './file-content';
-import { StorageService } from '@/storage/storage.service';
-import { objectKey } from '@/storage/keys';
+import {
+  ObjectTooLargeError,
+  StorageService,
+} from '@/storage/storage.service';
+import { objectKey, UPLOAD_STAGING_PREFIX } from '@/storage/keys';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 
@@ -27,7 +32,17 @@ const BUCKET = 'file-manager';
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
 /** Long enough to send a 10MB file, short enough to be worth little. */
-const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+export const UPLOAD_URL_TTL_SECONDS = 5 * 60;
+
+/** Live (unexpired) upload tickets one user may hold at once. */
+export const MAX_PENDING_UPLOADS = 20;
+
+/** Where a staged upload is served from once it has been verified. */
+export function finalStoragePath(stagedPath: string): string {
+  return stagedPath.startsWith(UPLOAD_STAGING_PREFIX)
+    ? stagedPath.slice(UPLOAD_STAGING_PREFIX.length)
+    : stagedPath;
+}
 
 const FILE_COLUMNS = {
   id: true,
@@ -259,9 +274,29 @@ export class FileManagerService {
     }
 
     const schoolId = await this.schoolIdOf(userId);
+
+    // Every ticket reserves a row (and, until it is purged, an object), so cap
+    // how many unexpired ones a user can hold.
+    const live = await this.prisma.file.count({
+      where: {
+        owner_id: userId,
+        status: 'pending',
+        deleted_at: null,
+        created_at: {
+          gte: new Date(Date.now() - UPLOAD_URL_TTL_SECONDS * 1000),
+        },
+      },
+    });
+    if (live >= MAX_PENDING_UPLOADS) {
+      throw new HttpException(
+        'Too many uploads in progress. Finish or wait for some before starting more.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const id = crypto.randomUUID();
     const name = (input.name?.trim() || 'untitled').slice(0, 255);
-    const storagePath = `${schoolId}/${userId}/${id}-${this.slug(name)}`;
+    const storagePath = `${UPLOAD_STAGING_PREFIX}${schoolId}/${userId}/${id}-${this.slug(name)}`;
 
     try {
       await this.prisma.file.create({
@@ -290,10 +325,13 @@ export class FileManagerService {
     const expiresAt = new Date(
       Date.now() + UPLOAD_URL_TTL_SECONDS * 1000,
     ).toISOString();
+    // The declared size is signed too: the PUT must carry exactly that many
+    // bytes.
     const uploadUrl = await this.storage.uploadUrl(
       objectKey(BUCKET, storagePath),
       contentType,
       UPLOAD_URL_TTL_SECONDS,
+      input.sizeBytes,
     );
 
     return {
@@ -312,7 +350,7 @@ export class FileManagerService {
     const file = !isUuid(fileId)
       ? null
       : await this.prisma.file.findFirst({
-          where: { id: fileId, owner_id: userId },
+          where: { id: fileId, owner_id: userId, deleted_at: null },
           select: FILE_COLUMNS,
         });
 
@@ -349,7 +387,16 @@ export class FileManagerService {
       );
     }
 
-    const buffer = await this.storage.getBuffer(key);
+    // The object can change between the HEAD and this read, so the read is
+    // capped on its own.
+    let buffer: Buffer | null;
+    try {
+      buffer = await this.storage.getBuffer(key, MAX_UPLOAD_SIZE);
+    } catch (error) {
+      if (!(error instanceof ObjectTooLargeError)) throw error;
+      await this.discardUpload(record, 'failed', 'Uploaded file was too large');
+      throw new BadRequestException('File too large. Maximum is 10MB.');
+    }
     if (!buffer) {
       await this.failUpload(fileId, 'failed', 'Upload did not complete');
       throw new BadRequestException('The upload did not complete');
@@ -370,12 +417,32 @@ export class FileManagerService {
       throw new BadRequestException(check.reason);
     }
 
+    // Serve the bytes that were verified, from a key no upload URL was ever
+    // signed for. Writing the checked buffer (rather than copying the staged
+    // object) leaves no window for the staged object to be swapped.
+    const finalPath = finalStoragePath(record.storage_path);
+    if (finalPath !== record.storage_path) {
+      try {
+        await this.storage.put(
+          objectKey(record.bucket, finalPath),
+          buffer,
+          record.content_type,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to store verified upload ${fileId}: ${(error as Error).message}`,
+        );
+        throw new BadRequestException('Failed to record file');
+      }
+    }
+
     let updated: FileRecord;
     try {
       updated = await this.prisma.file.update({
         where: { id: fileId },
         data: {
           status: 'ready',
+          storage_path: finalPath,
           size_bytes: buffer.byteLength,
           scan_detail: null,
           updated_at: new Date(),
@@ -387,6 +454,14 @@ export class FileManagerService {
         `Failed to release upload: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to record file');
+    }
+
+    if (finalPath !== record.storage_path) {
+      await this.storage.delete(key).catch((error: Error) =>
+        this.logger.error(
+          `Staged upload ${key} could not be removed: ${error.message}`,
+        ),
+      );
     }
 
     return this.present(updated, true);
@@ -657,9 +732,14 @@ export class FileManagerService {
    * check; this deliberately does none.
    */
   async readContentForAuthorisedCaller(fileId: string) {
-    const data = await this.prisma.file
-      .findUnique({ where: { id: fileId }, select: FILE_COLUMNS })
-      .catch(() => null);
+    const data = !isUuid(fileId)
+      ? null
+      : await this.prisma.file
+          .findFirst({
+            where: { id: fileId, deleted_at: null },
+            select: FILE_COLUMNS,
+          })
+          .catch(() => null);
 
     if (!data) {
       throw new NotFoundException('File not found');

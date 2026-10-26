@@ -86,7 +86,7 @@ All `:courseId`, `:moduleId`, `:itemId`, `:pageId`, `:fileId`, `:userProfileId` 
 - `CourseService` - `list`, `get`, `create`, `update`, `remove`, `regenerateJoinCode`, `disableJoinCode`, `joinByCode(studentId, schoolId, code)` (a student self-enrols: published, non-template course in their school; code upper-cased; a dropped student is reactivated), `people`, `addStaff`, `updateStaff`, `removeStaff`, `enrollStudents`, `removeStudent`, plus `validateLinks(schoolId, links)` and `toCourse(row)` which `CourseCopyService` reuses.
 - `ModuleService` - `list` (staff), `listForStudent(courseId)` (published modules and items only, hiding items whose page is unpublished, activity is a draft, file is deleted or topic is unpublished; the caller must already have checked enrolment), `create`, `update`, `remove`, `reorder`, `createItem`, `updateItem`, `removeItem`, `reorderItems`.
 - `PageService` - `list`, `get`, `getPublished(courseId, pageId)` (for students; an unpublished page is `404`), `create`, `update`, `remove`.
-- `CourseCopyService` (not exported) - `listTemplates`, `copy`, `importInto`, `copyContent(tx, sourceId, targetId, userId, shift)`, `shiftOf(dates)`. Also exports the pure helpers `shiftDate` and `relinkIds`, and the `CopyDates` / `CopyCounts` types.
+- `CourseCopyService` (not exported) - `listTemplates`, `copy`, `importInto`, `copyContent(tx, sourceId, targetId, userId, shift, targetSchoolId)`, `shiftOf(dates)`. Also exports the pure helpers `shiftDate` and `relinkIds`, and the `CopyDates` / `CopyCounts` types.
 - `CourseFileService` (not exported) - `read(userId, courseId, fileId)`.
 
 ### Other

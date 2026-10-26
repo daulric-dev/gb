@@ -45,7 +45,7 @@ backend/
 │   ├── pagination/            # Shared pagination DTO + result type (offset + cursor)
 │   ├── versioning/            # Header-based response versioning service
 │   ├── student/               # Student records (the school roster)
-│   ├── student-account/       # School join codes, duplicate-record merging
+│   ├── student-account/       # School join codes (the student joins themselves)
 │   ├── email-domain/          # School email domains (verified by DNS), join by domain
 │   ├── course/                # Courses, people, join codes, modules, pages, copy/templates; CourseAccessService (course roles)
 │   ├── grading/               # Activities (quiz/assignment/offline), submissions, assignment groups, gradebook

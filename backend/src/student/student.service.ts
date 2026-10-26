@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,7 +14,6 @@ import {
   PaginationQueryDto,
   PaginatedResult,
 } from '@/pagination/pagination.dto';
-import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 
 import { serializeStudent, type StudentRow } from './student.rows';
@@ -59,62 +57,6 @@ export class StudentService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}
-
-  async create(userId: string, dto: CreateStudentDto) {
-    const schoolId = await this.schoolForUser(userId);
-
-    const existing = await this.prisma.student
-      .findFirst({
-        where: {
-          school_id: schoolId,
-          first_name: { equals: dto.firstName, mode: 'insensitive' },
-          last_name: { equals: dto.lastName, mode: 'insensitive' },
-        },
-        select: { id: true },
-      })
-      .catch(() => null);
-
-    if (existing) {
-      throw new ConflictException(
-        'A student with the same first and last name already exists in this school',
-      );
-    }
-
-    let student: StudentRow;
-    try {
-      student = serializeStudent(
-        await this.prisma.student.create({
-          data: {
-            school_id: schoolId,
-            first_name: dto.firstName,
-            last_name: dto.lastName,
-            gender: dto.gender,
-            date_of_birth: dto.dateOfBirth
-              ? parseDateOnly(dto.dateOfBirth)
-              : null,
-            enrollment_date: dto.enrollementDate
-              ? parseDateOnly(dto.enrollementDate)
-              : null,
-          },
-        }),
-      );
-    } catch (err) {
-      this.logger.error(`Failed to create student: ${(err as Error).message}`);
-      throw new BadRequestException('Failed to create student');
-    }
-
-    await this.cache.update<any[]>(
-      `students:${schoolId}`,
-      (list) =>
-        [...list, student].sort(
-          (a, b) =>
-            a.last_name.localeCompare(b.last_name) ||
-            a.first_name.localeCompare(b.first_name),
-        ),
-      STUDENT_TTL,
-    );
-    return student;
-  }
 
   async findAll(userId: string, search?: string) {
     const schoolId = await this.schoolForUser(userId);

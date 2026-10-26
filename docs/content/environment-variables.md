@@ -57,7 +57,10 @@ No `.env` files are committed to the repository. You must create them manually i
 | `CHAT_ENCRYPTION_KEY`         | **Prod**                 | -                       | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning).                                  |
 | `CHAT_ENCRYPTION_KEYS`        | No                       | -                       | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version.                                                                                                                        |
 | `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with: a bare number from the ring (`2`, not `v2`). Ignored if it is not in the ring.                                                                                                                                                                                                                       |
-| `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes student claim codes (`openssl rand -base64 32`). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
+| `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes school join codes (`openssl rand -base64 32`; the name is historical). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
+| `MOBILE_MIN_VERSION`          | No                       | -                       | Oldest mobile app version (semver, e.g. `1.4.0`) the API still serves. The app sends its version on every request; older builds get `426 Upgrade Required` and show a blocking "Update required" screen. Raise it only once the new build is live in both stores. `MOBILE_MIN_VERSION_IOS` / `MOBILE_MIN_VERSION_ANDROID` override it per platform. Malformed values stop the boot in production. |
+| `MOBILE_LATEST_VERSION`       | No                       | -                       | Newest released app version. Older installs get a dismissible "Update available" prompt. Per-platform overrides `MOBILE_LATEST_VERSION_IOS` / `MOBILE_LATEST_VERSION_ANDROID`. Served at `GET /api/app/version`. |
+| `MOBILE_IOS_STORE_URL`, `MOBILE_ANDROID_STORE_URL` | No  | -                       | App Store / Google Play links the app opens from its update screens. Must be `https://` in production. |
 | `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
 ### Billing
@@ -126,8 +129,8 @@ USE_REDIS=false
 # CHAT_ENCRYPTION_KEY=base64-of-32-bytes
 
 
-# Student claim codes: keyed hash for codes students redeem to link their
-# account to a student record. Required in production.
+# School join codes: keyed hash for the code students redeem to join a
+# school as a student. Required in production.
 #   openssl rand -base64 32
 # STUDENT_CLAIM_CODE_PEPPER=base64-of-32-bytes
 
@@ -205,6 +208,7 @@ Continuous archiving / point-in-time recovery (self-hosted `db` + `db-backup`, `
 | `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No       | `false`                 | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
 | `NEXT_PUBLIC_SAML_SP_ENTITY_ID`    | No       | API metadata URL        | The SAML entity ID the email-domain admin shows schools. Set it only when the backend's `SAML_SP_ENTITY_ID` is overridden, to the same value. |
 | `NEXT_PUBLIC_STORAGE_URL`          | **Prod** | -                       | Origin browsers upload to with presigned URLs: the origin of the backend's `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT`), e.g. `http://127.0.0.1:8333` in dev, `https://<account-id>.r2.cloudflarestorage.com` in production. Added to the production CSP (`connect-src`, `img-src`); without it uploads are blocked. |
+| `NEXT_PUBLIC_IMAGES_URL`           | When `S3_PUBLIC_URL` is set | -                | Origin avatars are served from when the backend's `S3_PUBLIC_URL` points at a CDN/bucket host. Added to the production CSP `img-src` and to the hosts Markdown images may load from; images from any other host render as a link instead of loading. Without it, avatars on that host do not load. |
 
 ### Example `frontend/.env.local`
 

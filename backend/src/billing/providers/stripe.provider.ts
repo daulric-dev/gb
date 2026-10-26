@@ -16,6 +16,8 @@ import {
   type PaymentProvider,
   type PlanPrice,
   type ProviderSubscriptionRef,
+  type ProviderSubscriptionState,
+  type RefundResult,
   type SubscriptionStatus,
   type WebhookRequest,
 } from './payment-provider';
@@ -118,6 +120,90 @@ export class StripeProvider implements PaymentProvider {
       providerCustomerId:
         stringId(session.customer) ?? ctx.providerCustomerId ?? null,
     };
+  }
+
+  async expireCheckoutSession(providerRef: string): Promise<boolean> {
+    const stripe = this.stripe();
+    const session = await this.call('retrieve checkout session', () =>
+      stripe.checkout.sessions.retrieve(providerRef),
+    );
+    if (session.status === 'complete') return false;
+    if (session.status === 'expired') return true;
+    try {
+      await stripe.checkout.sessions.expire(providerRef);
+      return true;
+    } catch (err) {
+      // Completed or expired between the retrieve and the expire: look again.
+      const again = await this.call('retrieve checkout session', () =>
+        stripe.checkout.sessions.retrieve(providerRef),
+      );
+      if (again.status === 'complete') return false;
+      if (again.status === 'expired') return true;
+      throw this.wrap('expire checkout session', err);
+    }
+  }
+
+  async getSubscription(
+    providerSubscriptionId: string,
+  ): Promise<ProviderSubscriptionState | null> {
+    const stripe = this.stripe();
+    try {
+      const sub = await stripe.subscriptions.retrieve(providerSubscriptionId);
+      return this.subscriptionState(sub);
+    } catch (err) {
+      if (err instanceof Stripe.errors.StripeError && err.statusCode === 404) {
+        return null;
+      }
+      throw this.wrap('retrieve subscription', err);
+    }
+  }
+
+  /**
+   * Refund every paid payment of the subscription's latest invoice. Since
+   * API 2025-03-31 an invoice no longer carries payment_intent / charge;
+   * its payments are listed through invoice payments. Each refund uses an
+   * idempotency key per payment, and an already refunded charge counts as
+   * done, so calling this again never refunds twice.
+   */
+  async refundLatestPayment(
+    providerSubscriptionId: string,
+  ): Promise<RefundResult | null> {
+    const stripe = this.stripe();
+    const subscription = await this.call('retrieve subscription', () =>
+      stripe.subscriptions.retrieve(providerSubscriptionId),
+    );
+    const invoiceId = stringId(subscription.latest_invoice);
+    if (!invoiceId) return null;
+    const payments = await this.call('list invoice payments', () =>
+      stripe.invoicePayments.list({ invoice: invoiceId, status: 'paid', limit: 10 }),
+    );
+
+    const refundIds: string[] = [];
+    let amountCents = 0;
+    let currency = '';
+    for (const payment of payments.data) {
+      const target = refundTarget(payment.payment);
+      if (!target) continue;
+      const amount = payment.amount_paid ?? 0;
+      try {
+        const refund = await stripe.refunds.create(
+          { ...target, metadata: { reason: 'duplicate_subscription', subscription: providerSubscriptionId } },
+          { idempotencyKey: `gradebook-refund-${payment.id}` },
+        );
+        refundIds.push(refund.id);
+      } catch (err) {
+        if (
+          !(err instanceof Stripe.errors.StripeError) ||
+          err.code !== 'charge_already_refunded'
+        ) {
+          throw this.wrap('refund payment', err);
+        }
+      }
+      amountCents += amount;
+      currency = payment.currency.toUpperCase();
+    }
+    if (!currency) return null;
+    return { providerInvoiceId: invoiceId, refundIds, amountCents, currency };
   }
 
   async updateQuantity(
@@ -239,6 +325,7 @@ export class StripeProvider implements PaymentProvider {
   /** Stripe event -> normalised billing event. Exposed for tests. */
   mapEvent(event: Stripe.Event): BillingEvent {
     const eventId = event.id;
+    const occurredAt = new Date(event.created * 1000);
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
@@ -256,6 +343,7 @@ export class StripeProvider implements PaymentProvider {
         return {
           type: 'subscription.updated',
           eventId,
+          occurredAt,
           providerSubscriptionId: subscriptionId,
           providerCustomerId: stringId(session.customer),
           schoolId:
@@ -267,22 +355,11 @@ export class StripeProvider implements PaymentProvider {
 
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
-        const sub = event.data.object;
-        const item = sub.items?.data?.[0];
         return {
           type: 'subscription.updated',
           eventId,
-          providerSubscriptionId: sub.id,
-          providerCustomerId: stringId(sub.customer),
-          schoolId: sub.metadata?.schoolId ?? null,
-          status: STATUS[sub.status] ?? 'incomplete',
-          plan:
-            this.planOf(sub.metadata?.plan) ?? this.planOfPrice(item?.price),
-          quantity: item?.quantity ?? null,
-          currentPeriodStart: fromUnix(item?.current_period_start),
-          currentPeriodEnd: fromUnix(item?.current_period_end),
-          cancelAtPeriodEnd:
-            !!sub.cancel_at_period_end || sub.cancel_at != null,
+          occurredAt,
+          ...this.subscriptionState(event.data.object),
         };
       }
 
@@ -291,6 +368,7 @@ export class StripeProvider implements PaymentProvider {
         return {
           type: 'subscription.canceled',
           eventId,
+          occurredAt,
           providerSubscriptionId: sub.id,
           schoolId: sub.metadata?.schoolId ?? null,
         };
@@ -303,6 +381,7 @@ export class StripeProvider implements PaymentProvider {
         return {
           type: 'invoice.paid',
           eventId,
+          occurredAt,
           providerInvoiceId: invoice.id ?? null,
           providerSubscriptionId: stringId(details?.subscription),
           schoolId: details?.metadata?.schoolId ?? null,
@@ -322,6 +401,7 @@ export class StripeProvider implements PaymentProvider {
         return {
           type: 'invoice.payment_failed',
           eventId,
+          occurredAt,
           providerInvoiceId: invoice.id ?? null,
           providerSubscriptionId: stringId(details?.subscription),
           schoolId: details?.metadata?.schoolId ?? null,
@@ -334,6 +414,22 @@ export class StripeProvider implements PaymentProvider {
   }
 
   // ---------------------------------------------------------------------
+
+  /** Stripe subscription -> normalised state. */
+  private subscriptionState(sub: Stripe.Subscription): ProviderSubscriptionState {
+    const item = sub.items?.data?.[0];
+    return {
+      providerSubscriptionId: sub.id,
+      providerCustomerId: stringId(sub.customer),
+      schoolId: sub.metadata?.schoolId ?? null,
+      status: STATUS[sub.status] ?? 'incomplete',
+      plan: this.planOf(sub.metadata?.plan) ?? this.planOfPrice(item?.price),
+      quantity: item?.quantity ?? null,
+      currentPeriodStart: fromUnix(item?.current_period_start),
+      currentPeriodEnd: fromUnix(item?.current_period_end),
+      cancelAtPeriodEnd: !!sub.cancel_at_period_end || sub.cancel_at != null,
+    };
+  }
 
   /** The SDK client, rebuilt if the secret key changes (tests, rotation). */
   protected stripe(): Stripe {
@@ -478,4 +574,14 @@ function stringId(
 ): string | null {
   if (!value) return null;
   return typeof value === 'string' ? value : value.id;
+}
+
+/** What to refund for one invoice payment: its PaymentIntent or charge. */
+function refundTarget(
+  payment: Stripe.InvoicePayment.Payment,
+): { payment_intent: string } | { charge: string } | null {
+  const intent = stringId(payment.payment_intent);
+  if (intent) return { payment_intent: intent };
+  const charge = stringId(payment.charge);
+  return charge ? { charge } : null;
 }

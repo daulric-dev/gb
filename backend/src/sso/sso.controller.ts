@@ -14,7 +14,14 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { AuthGuard } from '@/auth/auth.guard';
 import { SsoService } from './sso.service';
 
@@ -26,10 +33,18 @@ class StartQueryDto {
   @IsOptional() @IsString() @MaxLength(2048) next?: string;
   @IsOptional() @IsIn(['web', 'mobile']) platform?: 'web' | 'mobile';
   @IsOptional() @IsEmail() @MaxLength(320) email?: string;
+  /**
+   * Mobile: base64url(SHA-256(code_verifier)). Required there; a mobile start
+   * without one (a build from before PKCE) is sent back to the app with an
+   * "update the app" error, a malformed one is a 400.
+   */
+  @IsOptional() @Matches(/^[A-Za-z0-9_-]{43}$/) code_challenge?: string;
 }
 
 class HandoffDto {
   @IsString() @MaxLength(128) code!: string;
+  /** The verifier for the code_challenge the app sent to /start. */
+  @IsString() @Matches(/^[A-Za-z0-9._~-]{43,128}$/) code_verifier!: string;
 }
 
 /**
@@ -103,7 +118,10 @@ export class SsoController {
     return reply.redirect(url, 302);
   }
 
-  /** The mobile app trades its one-time code for a session cookie. */
+  /**
+   * The mobile app trades its one-time code, plus the verifier for the
+   * challenge it started with, for a session.
+   */
   @Throttle({ 'auth-ip': { limit: 60, ttl: 60 * 60 * 1000 } })
   @Post('handoff')
   @HttpCode(204)
@@ -112,7 +130,7 @@ export class SsoController {
     @Res({ passthrough: true }) reply: FastifyReply,
     @Body() dto: HandoffDto,
   ) {
-    await this.sso.handoff(req, reply, dto.code);
+    await this.sso.handoff(req, reply, dto.code, dto.code_verifier);
   }
 
   /** Names from the provider, to prefill onboarding. */
