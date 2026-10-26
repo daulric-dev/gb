@@ -56,7 +56,7 @@ export class AuthController {
     'auth-ip': { limit: 300, ttl: 60 * 60 * 1000 },
   })
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
-    const message = await this.authService.sendOtp(dto.email, req.ip);
+    const message = await this.authService.sendOtp(dto.email, req.ip as string);
     return this.versioning.resolve(req, 'auth.message')(message);
   }
 
