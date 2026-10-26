@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isNotFound } from '@/common/db-values';
@@ -41,6 +46,8 @@ export class FileShareService {
     targets: ShareTargetDto[],
   ) {
     await this.assertCoursesInSchool(schoolId, targets);
+    await this.assertUsersInSchool(schoolId, targets);
+    await this.assertRolesInSchool(schoolId, targets);
 
     let data: Prisma.file_shareGetPayload<{ select: typeof SHARE_COLUMNS }>[];
     try {
@@ -93,13 +100,7 @@ export class FileShareService {
     schoolId: string,
     targets: ShareTargetDto[],
   ) {
-    const courseIds = [
-      ...new Set(
-        targets
-          .filter((t) => t.principalType === SharePrincipalType.Course)
-          .map((t) => t.principalId),
-      ),
-    ];
+    const courseIds = idsOf(targets, SharePrincipalType.Course);
     if (courseIds.length === 0) return;
 
     const data = await this.prisma.course.findMany({
@@ -109,6 +110,52 @@ export class FileShareService {
 
     if ((data ?? []).length !== courseIds.length) {
       throw new NotFoundException('Course not found');
+    }
+  }
+
+  /**
+   * A user share must name a member of the file's school: someone whose
+   * current school it is, or who holds a membership in it. Anything else would
+   * leak the file (and a chat DM) across schools.
+   */
+  private async assertUsersInSchool(
+    schoolId: string,
+    targets: ShareTargetDto[],
+  ) {
+    const userIds = idsOf(targets, SharePrincipalType.User);
+    if (userIds.length === 0) return;
+
+    const data = await this.prisma.user_profile.findMany({
+      where: {
+        id: { in: userIds },
+        OR: [
+          { school_id: schoolId },
+          { school_management: { some: { school_id: schoolId } } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if ((data ?? []).length !== userIds.length) {
+      throw new BadRequestException('User is not a member of this school');
+    }
+  }
+
+  /** A role share must name one of the file's school's own roles. */
+  private async assertRolesInSchool(
+    schoolId: string,
+    targets: ShareTargetDto[],
+  ) {
+    const roleIds = idsOf(targets, SharePrincipalType.Role);
+    if (roleIds.length === 0) return;
+
+    const data = await this.prisma.school_role.findMany({
+      where: { school_id: schoolId, id: { in: roleIds } },
+      select: { id: true },
+    });
+
+    if ((data ?? []).length !== roleIds.length) {
+      throw new BadRequestException('Role does not belong to this school');
     }
   }
 
@@ -131,4 +178,13 @@ export class FileShareService {
     });
     return { id: shareId, revoked: true };
   }
+}
+
+/** Distinct principal ids of one type. */
+function idsOf(targets: ShareTargetDto[], type: SharePrincipalType): string[] {
+  return [
+    ...new Set(
+      targets.filter((t) => t.principalType === type).map((t) => t.principalId),
+    ),
+  ];
 }

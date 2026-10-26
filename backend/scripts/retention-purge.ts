@@ -80,6 +80,8 @@ async function main(): Promise<number> {
       ['erasure log rows pruned', r.erasureLogRows],
       ['erasure log objects pruned', r.erasureLogObjects],
       ['leftover account objects', r.leftoverObjects],
+      ['abandoned uploads', r.abandonedUploads],
+      ['stray staged upload objects', r.stagedObjects],
       ['erasure log entries exported', r.exported],
     ];
     for (const [label, n] of rows) console.log(`  ${label.padEnd(30)} ${n}`);

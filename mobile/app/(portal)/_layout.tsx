@@ -13,7 +13,7 @@ import { isStudentProfile } from "@/lib/routing";
 
 /**
  * The student area. Staff are sent to the tabs; a student with no school has
- * not redeemed a claim code yet, so there is nothing to show them here.
+ * not joined with a school code yet, so there is nothing to show them here.
  */
 export default function PortalLayout() {
   const { profile, loading } = useAuth();

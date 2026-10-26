@@ -19,6 +19,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { getInitials, capitalize } from "@/lib/utils";
 import { SignedInDevices } from "@/features/account/SignedInDevices";
+import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -241,6 +242,8 @@ export default function SettingsScreen() {
       </View>
 
       <SignedInDevices refreshKey={refreshKey} />
+
+      <CheckForUpdates />
 
       <Button
         variant="outline"

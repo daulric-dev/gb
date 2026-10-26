@@ -35,8 +35,8 @@ The signed-in avatar routes are declared in `src/auth/auth.controller.ts` and ca
 - `getImageFromUserProfile(userId)`: looks up `avatar_url` (cached under `avatar:<userId>` for 1 hour), works out the object path, and streams it. The path can come from the old hosted-storage public URL or from the current URL shapes. It must match `avatars/<file>` with no traversal.
 - `readAvatar(path)`: reads `images/<path>` from storage, or returns null if the path is not a valid avatar path or nothing is there. Used by the public route.
 - `setImageToUserProfile(userId, file, requestOrigin?)`: checks size, MIME type and byte signature, stores the image, then updates the profile.
-- `createResumableUpload(userId, filename, contentType, totalSize)`: checks size and type, then returns `{ path, method: 'PUT', uploadUrl, headers, expiresAt }`. The URL is valid for 15 minutes.
-- `completeResumableUpload(userId, path, requestOrigin?)`: the path must be exactly `avatars/<callerId>.<ext>`, so nobody can claim another user's object. It then checks size, type and byte signature, deletes the object on rejection, and updates the profile.
+- `createResumableUpload(userId, filename, contentType, totalSize)`: checks size and type, then returns `{ path, method: 'PUT', uploadUrl, headers, expiresAt }`. `path` is the staging key `uploads/avatars/<callerId>.<ext>`, which is never served. The URL is valid for 5 minutes and signs the Content-Type and the declared size (the PUT must be exactly `totalSize` bytes).
+- `completeResumableUpload(userId, path, requestOrigin?)`: the path must be exactly `uploads/avatars/<callerId>.<ext>`, so nobody can claim another user's object. It then checks size, type and byte signature (reading at most 5 MB), deletes the object on rejection, writes the verified bytes to `avatars/<callerId>.<ext>`, deletes the staged object and updates the profile. A still-valid upload URL therefore cannot change an avatar after it was checked.
 
 After a successful upload the stored URL gets a `?t=<timestamp>` cache-buster. The `avatar:<userId>` cache entry is refreshed, and `avatar_url` is patched into the cached `profile:<userId>`.
 

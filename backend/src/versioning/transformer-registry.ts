@@ -30,7 +30,6 @@ export class TransformerRegistry implements OnModuleInit {
     this.versioning.registerAll('student', {
       list: { 1: student.v1StudentList },
       detail: { 1: student.v1StudentDetail },
-      created: { 1: student.v1StudentCreated },
       updated: { 1: student.v1StudentUpdated },
       paginated: { 1: student.v1StudentPaginated },
     });

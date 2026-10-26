@@ -125,7 +125,20 @@ export class TermService {
   async update(userId: string, termId: string, dto: UpdateTermDto) {
     // findOne enforces school scope; if the term isn't in the caller's school,
     // this throws NotFoundException before any write happens.
-    await this.findOne(userId, termId);
+    const current = await this.findOne(userId, termId);
+
+    // Check the dates as they will be after the update, so moving only one
+    // end cannot cross the other.
+    const start = dto.startDate ?? current.start_date;
+    const end = dto.endDate ?? current.end_date;
+    if (
+      (dto.startDate !== undefined || dto.endDate !== undefined) &&
+      start &&
+      end &&
+      parseDateOnly(start) >= parseDateOnly(end)
+    ) {
+      throw new BadRequestException('Start date must be before end date');
+    }
 
     const updateData: Prisma.termUpdateManyMutationInput = {};
     if (dto.name !== undefined) {

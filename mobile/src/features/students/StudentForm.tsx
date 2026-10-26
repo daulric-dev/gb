@@ -13,25 +13,27 @@ import { Text } from "@/components/ui/Text";
 
 type Gender = "male" | "female";
 
-/** Create or edit a student. Pass `student` to edit. Mirrors the web forms. */
+/**
+ * Edit a student record. Students create their own records by joining with
+ * the school code, so there is no create mode. Mirrors the web form.
+ */
 export function StudentForm({
   student,
   onSuccess,
 }: {
-  student?: Student;
+  student: Student;
   onSuccess: () => void;
 }) {
   const toast = useToast();
-  const editing = !!student;
 
-  const [firstName, setFirstName] = useState(student?.first_name ?? "");
-  const [lastName, setLastName] = useState(student?.last_name ?? "");
+  const [firstName, setFirstName] = useState(student.first_name);
+  const [lastName, setLastName] = useState(student.last_name);
   const [gender, setGender] = useState<Gender>(
-    (student?.gender as Gender) ?? "male",
+    (student.gender as Gender) ?? "male",
   );
-  const [dob, setDob] = useState(student?.date_of_birth ?? "");
-  const [enrolled, setEnrolled] = useState(student?.enrollement_date ?? "");
-  const [isActive, setIsActive] = useState(student?.is_active ?? true);
+  const [dob, setDob] = useState(student.date_of_birth ?? "");
+  const [enrolled, setEnrolled] = useState(student.enrollement_date ?? "");
+  const [isActive, setIsActive] = useState(student.is_active);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -45,18 +47,13 @@ export function StudentForm({
       gender,
       dateOfBirth: dob || undefined,
       enrollementDate: enrolled || undefined,
+      isActive,
     };
-    if (editing) body.isActive = isActive;
 
     setLoading(true);
     try {
-      if (editing) {
-        await api(`/students/${student.id}`, { method: "PATCH", body });
-        toast.success("Student updated");
-      } else {
-        await api("/students", { method: "POST", body });
-        toast.success("Student created");
-      }
+      await api(`/students/${student.id}`, { method: "PATCH", body });
+      toast.success("Student updated");
       onSuccess();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to save");
@@ -107,14 +104,12 @@ export function StudentForm({
           placeholder="Optional"
         />
       </View>
-      {editing ? (
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <Text weight="500">Active</Text>
-          <Switch value={isActive} onValueChange={setIsActive} />
-        </View>
-      ) : null}
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Text weight="500">Active</Text>
+        <Switch value={isActive} onValueChange={setIsActive} />
+      </View>
       <Button onPress={submit} loading={loading}>
-        {editing ? "Save Changes" : "Add Student"}
+        Save Changes
       </Button>
     </View>
   );

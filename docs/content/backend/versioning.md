@@ -159,7 +159,7 @@ All modules have v1 transformers registered:
 |--------|------------|
 | auth | `profile`, `session`, `verifyOtp`, `message` |
 | school | `list`, `detail` |
-| student | `list`, `detail`, `created`, `updated`, `paginated` |
+| student | `list`, `detail`, `updated`, `paginated` |
 | class | `list`, `detail`, `created`, `updated`, `deleted`, `teachers`, `teacherAdded`, `teacherRemoved`, `subjects` |
 | academicYear | `list`, `detail`, `created`, `updated` |
 | term | `list`, `detail`, `created`, `updated`, `deleted` |

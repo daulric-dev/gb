@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 2
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.4"
 
@@ -41,7 +41,7 @@ jobs:
         run: bunx turbo run lint test
 
       - name: Notify Vercel
-        uses: vercel/repository-dispatch/actions/status@v1
+        uses: vercel/repository-dispatch/actions/status@30f760c6640485cd92f8c785ef361382555fb712 # v1
         with:
           name: "Vercel - gbv2-frontend: lint"
 

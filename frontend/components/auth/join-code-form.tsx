@@ -55,7 +55,7 @@ export function JoinCodeForm() {
         method: "POST",
         body: { code: code.value },
       });
-      // The claim sets school and account type server-side, so the cached
+      // Joining sets school and account type server-side, so the cached
       // profile is stale until this resolves.
       await refresh();
       toast.success("You have joined the school");

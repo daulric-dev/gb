@@ -237,7 +237,7 @@ export class ActivityService {
       omitFromFinalGrade?: boolean;
       allowFile?: boolean;
       allowText?: boolean;
-      maxAttempts?: number;
+      maxAttempts?: number | null;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -250,7 +250,19 @@ export class ActivityService {
     }
     if (patch.instructions !== undefined)
       changes.instructions = patch.instructions;
-    if (patch.points !== undefined) changes.points = patch.points;
+    if (patch.points !== undefined) {
+      // A mark above the new total would read as over 100% everywhere.
+      const over = await this.prisma.submission.findFirst({
+        where: { activity_id: activityId, score: { gt: patch.points } },
+        select: { id: true },
+      });
+      if (over) {
+        throw new BadRequestException(
+          `Some marks are above ${patch.points} points; change them before lowering the points`,
+        );
+      }
+      changes.points = patch.points;
+    }
     if (patch.dueAt !== undefined) changes.due_at = toTimestamp(patch.dueAt);
     if (patch.assignmentGroupId !== undefined) {
       if (patch.assignmentGroupId) {
@@ -269,7 +281,7 @@ export class ActivityService {
       if (patch.allowText !== undefined) changes.allow_text = patch.allowText;
     }
     if (patch.maxAttempts !== undefined) {
-      changes.max_attempts = patch.maxAttempts === 0 ? null : patch.maxAttempts;
+      changes.max_attempts = patch.maxAttempts || null;
     }
 
     if (Object.keys(changes).length === 0) {

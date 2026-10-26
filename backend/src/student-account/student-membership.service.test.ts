@@ -2,18 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   BadRequestException,
   ConflictException,
-  NotFoundException,
 } from '@nestjs/common';
 import { StudentMembershipService } from './student-membership.service';
 import { expectRejection } from '@/test/mocks';
-import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const ACTOR = 'staff-1';
 const SCHOOL = 'school-1';
 const USER = 'user-1';
 const JOINED = 'student-new';
-const EXISTING = 'student-old';
 
 /** Records the keys dropped, which is the whole point of finalise(). */
 function recordingCache() {
@@ -32,7 +29,7 @@ function recordingCache() {
 }
 
 function service(prisma: MockPrisma, cache: any = recordingCache().cache) {
-  return new StudentMembershipService(prisma as any, cache, createMockErasureLog() as any);
+  return new StudentMembershipService(prisma as any, cache);
 }
 
 /** A database where the actor (and anyone) is in SCHOOL. */
@@ -205,72 +202,5 @@ describe('StudentMembershipService.joinByCode', () => {
     );
     const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
     expect(String((err as Error).message)).toContain('pending migrations');
-  });
-});
-
-describe('StudentMembershipService duplicates', () => {
-  test('lists candidate pairs for the actor school', async () => {
-    const prisma = db();
-    prisma.$queryRaw.mockResolvedValue([
-      { joined_id: JOINED, existing_id: EXISTING, full_name: 'Sam Self' },
-    ]);
-
-    const out = await service(prisma).listDuplicates(ACTOR);
-    expect(out).toEqual([
-      { joinedId: JOINED, existingId: EXISTING, name: 'Sam Self' },
-    ]);
-    const { sql, values } = rawCall(prisma);
-    expect(sql).toContain('student_duplicate_candidates');
-    expect(values).toEqual([SCHOOL]);
-  });
-
-  test('a missing function lists nothing', async () => {
-    const prisma = db();
-    prisma.$queryRaw.mockRejectedValue(raised('does not exist', '42883'));
-    expect(await service(prisma).listDuplicates(ACTOR)).toEqual([]);
-  });
-
-  function merger(result: unknown[] | Error) {
-    const { deleted, cache } = recordingCache();
-    const prisma = db();
-    prisma.student.findUnique.mockResolvedValue({ user_profile_id: USER });
-    if (result instanceof Error) prisma.$queryRaw.mockRejectedValue(result);
-    else prisma.$queryRaw.mockResolvedValue(result);
-    return { svc: service(prisma, cache), prisma, deleted };
-  }
-
-  test('merging drops the caches of the account that moved', async () => {
-    const { svc, prisma, deleted } = merger([{ student_id: EXISTING }]);
-
-    const out = await svc.mergeDuplicate(ACTOR, JOINED, EXISTING);
-
-    expect(out.studentId).toBe(EXISTING);
-    expect(rawCall(prisma).values).toEqual([ACTOR, JOINED, EXISTING]);
-    expect(deleted).toContain(`profile:${USER}`);
-    expect(deleted).toContain(`students:${SCHOOL}`);
-  });
-
-  test('refuses to discard a record that carries results', async () => {
-    const { svc } = merger(raised('joined_record_has_data', 'P0017'));
-
-    const err = await expectRejection(
-      svc.mergeDuplicate(ACTOR, JOINED, EXISTING),
-    );
-    expect(err).toBeInstanceOf(BadRequestException);
-    expect(String((err as Error).message)).toContain('results recorded');
-  });
-
-  test('refuses a target that already has an account', async () => {
-    const { svc } = merger(raised('existing_record_already_claimed', 'P0016'));
-    expect(
-      await expectRejection(svc.mergeDuplicate(ACTOR, JOINED, EXISTING)),
-    ).toBeInstanceOf(ConflictException);
-  });
-
-  test('a record from another school is not found', async () => {
-    const { svc } = merger(raised('student_other_school', 'P0014'));
-    expect(
-      await expectRejection(svc.mergeDuplicate(ACTOR, JOINED, EXISTING)),
-    ).toBeInstanceOf(NotFoundException);
   });
 });

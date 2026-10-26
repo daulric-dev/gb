@@ -7,7 +7,7 @@ import {
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { FakeProvider, invoiceRow, subRow } from '@/test/billing-fakes';
 import { BillingRegistry } from '../providers/billing.registry';
-import { BillingService } from './billing.service';
+import { BillingService, checkoutKey } from './billing.service';
 
 let prisma: MockPrisma;
 let sub: ReturnType<typeof subRow>;
@@ -29,6 +29,7 @@ beforeEach(() => {
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
   prisma.school.findUnique.mockResolvedValue({ id: 'school-1', name: 'Riverside' });
   prisma.subscription.update.mockImplementation(async ({ data }: any) => Object.assign(sub, data));
+  prisma.subscription.findUnique.mockImplementation(async () => ({ ...sub }));
   const subscriptions = {
     ensure: async () => sub,
     invalidate: async () => undefined,
@@ -122,10 +123,113 @@ describe('checkout', () => {
     await expect(service.checkout(caller, 'per_user', 'subp')).rejects.toBeInstanceOf(ConflictException);
   });
 
+  test('the checkout session is remembered, and the previous open one expired first', async () => {
+    const calls: string[] = [];
+    (subp as any).expireCheckoutSession = async (ref: string) => {
+      calls.push(ref);
+      return true;
+    };
+    await service.checkout(caller, 'flat', 'subp');
+    expect((sub as any).pending_checkout_id).toBe('cs_1');
+    expect(calls).toEqual([]);
+
+    subp.createCheckout.mockResolvedValueOnce({ redirectUrl: 'https://pay.test/2', providerRef: 'cs_2', providerCustomerId: 'cus_1' });
+    expect(await service.checkout(caller, 'flat', 'subp')).toEqual({ redirectUrl: 'https://pay.test/2' });
+    expect(calls).toEqual(['cs_1']);
+    expect((sub as any).pending_checkout_id).toBe('cs_2');
+  });
+
+  test('a previous checkout that already completed: 409, no second session', async () => {
+    Object.assign(sub, { provider: 'subp', pending_checkout_id: 'cs_1' });
+    (subp as any).expireCheckoutSession = async () => false;
+    await expect(service.checkout(caller, 'flat', 'subp')).rejects.toBeInstanceOf(ConflictException);
+    expect(subp.createCheckout).not.toHaveBeenCalled();
+  });
+
   test('a row left by a removed provider can re-subscribe', async () => {
     Object.assign(sub, { provider: 'manual', plan: 'per_user', status: 'trialing', cancel_at_period_end: true });
     expect(await service.checkout(caller, 'flat')).toEqual({ redirectUrl: 'https://pay.test/checkout' });
     expect(sub).toMatchObject({ provider: 'subp', plan: 'flat', provider_subscription_id: null });
+  });
+});
+
+describe('checkout races', () => {
+  /** $transaction as Postgres runs it here: one school-row lock at a time. */
+  function serializeTransactions() {
+    let tail: Promise<unknown> = Promise.resolve();
+    prisma.$transaction.mockImplementation((fn: any) => {
+      const run = tail.then(() => fn(prisma));
+      tail = run.catch(() => undefined);
+      return run;
+    });
+  }
+
+  test('the school row is locked and read inside the transaction', async () => {
+    await service.checkout(caller, 'flat', 'subp');
+    const sql = (prisma.$queryRaw.mock.calls[0][0] as TemplateStringsArray).join('?');
+    expect(sql).toContain('FROM billing.subscription WHERE school_id = ?::uuid FOR UPDATE');
+    expect(prisma.$queryRaw.mock.calls[0][1]).toBe('school-1');
+    expect((prisma.$executeRaw.mock.calls[0][0] as TemplateStringsArray).join('')).toContain('lock_timeout');
+    expect(prisma.$transaction.mock.calls[0][1]).toEqual({ maxWait: 5_000, timeout: 30_000 });
+  });
+
+  test('two checkouts at once: the second waits, expires the first session, one stays open', async () => {
+    serializeTransactions();
+    const expired: string[] = [];
+    (subp as any).expireCheckoutSession = async (ref: string) => {
+      expired.push(ref);
+      return true;
+    };
+    let n = 0;
+    subp.createCheckout.mockImplementation(async () => {
+      const ref = `cs_${++n}`;
+      await new Promise((r) => setTimeout(r, 20));
+      return { redirectUrl: `https://pay.test/${ref}`, providerRef: ref, providerCustomerId: 'cus_1' };
+    });
+
+    const [a, b] = await Promise.all([
+      service.checkout(caller, 'flat', 'subp'),
+      service.checkout({ id: 'admin-2', email: 'other@x.test' }, 'flat', 'subp'),
+    ]);
+    expect(a.redirectUrl).toBe('https://pay.test/cs_1');
+    expect(b.redirectUrl).toBe('https://pay.test/cs_2');
+    expect(expired).toEqual(['cs_1']);
+    expect((sub as any).pending_checkout_id).toBe('cs_2');
+    // Each attempt started from a different row state: different keys.
+    const keys = subp.createCheckout.mock.calls.map((c: any) => c[0].idempotencyKey);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  test('the idempotency key is derived from the row state the checkout started from', async () => {
+    Object.assign(sub, { provider: 'subp', pending_checkout_id: 'cs_0' });
+    (subp as any).expireCheckoutSession = async () => true;
+    const expected = checkoutKey({ ...sub }, 'subp', 'flat', 1);
+    await service.checkout(caller, 'flat', 'subp');
+    const key = (subp.createCheckout.mock.calls[0][0] as any).idempotencyKey;
+    expect(key).toBe(expected);
+    expect(key).toStartWith('gradebook-checkout-');
+    // Same state: same key, so a race past the lock still yields one session.
+    expect(checkoutKey({ school_id: 'school-1', pending_checkout_id: 'cs_0', updated_at: new Date('2026-01-01T00:00:00Z') }, 'subp', 'flat', 1))
+      .toBe(checkoutKey({ school_id: 'school-1', pending_checkout_id: 'cs_0', updated_at: new Date('2026-01-01T00:00:00Z') }, 'subp', 'flat', 1));
+    expect(checkoutKey({ school_id: 'school-1', pending_checkout_id: 'cs_0', updated_at: new Date('2026-01-01T00:00:00Z') }, 'subp', 'per_user', 1))
+      .not.toBe(checkoutKey({ school_id: 'school-1', pending_checkout_id: 'cs_0', updated_at: new Date('2026-01-01T00:00:00Z') }, 'subp', 'flat', 1));
+  });
+
+  test('a session whose id could not be stored is expired again', async () => {
+    const expired: string[] = [];
+    (subp as any).expireCheckoutSession = async (ref: string) => {
+      expired.push(ref);
+      return true;
+    };
+    prisma.subscription.update.mockRejectedValueOnce(new Error('Transaction already closed'));
+    await expect(service.checkout(caller, 'flat', 'subp')).rejects.toThrow('Transaction already closed');
+    expect(expired).toEqual(['cs_1']);
+  });
+
+  test('the lock wait running out answers 409', async () => {
+    prisma.$queryRaw.mockRejectedValueOnce(Object.assign(new Error('canceling statement due to lock timeout'), { meta: { code: '55P03' } }));
+    await expect(service.checkout(caller, 'flat', 'subp')).rejects.toBeInstanceOf(ConflictException);
+    expect(subp.createCheckout).not.toHaveBeenCalled();
   });
 });
 

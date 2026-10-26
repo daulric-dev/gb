@@ -25,6 +25,7 @@ import {
   UpdateActivityDto,
   UpdateQuestionDto,
 } from './dto/activity.dto';
+import { contentDisposition } from './content-disposition';
 
 /**
  * Teacher-facing quizzes, assignments and offline work.
@@ -76,8 +77,10 @@ export class ActivityController {
 
     return res
       .header('Content-Type', contentType ?? 'application/octet-stream')
-      .header('Content-Disposition', `inline; filename="${filename ?? 'file'}"`)
+      .header('Content-Disposition', contentDisposition('inline', filename))
       .header('Cache-Control', 'private, max-age=60')
+      // Student-uploaded content on the API origin: never sniff it into HTML.
+      .header('X-Content-Type-Options', 'nosniff')
       .send(buffer);
   }
 

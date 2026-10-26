@@ -27,6 +27,7 @@ model file {
   @@index([owner_id, created_at(sort: Desc)], map: "idx_file_owner_active", where: raw("(deleted_at IS NULL)"))
   @@index([owner_id, folder_id], map: "idx_file_owner_folder", where: raw("(deleted_at IS NULL)"))
   @@index([school_id], map: "idx_file_school")
+  @@index([created_at], map: "idx_file_upload_leftovers", where: raw("(status = ANY (ARRAY['pending'::file_manager.file_status, 'failed'::file_manager.file_status]))"))
   @@schema("file_manager")
 }
 

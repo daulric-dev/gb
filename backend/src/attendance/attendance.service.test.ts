@@ -161,7 +161,7 @@ function setup(opts: { status?: string; role?: string } = {}) {
     'course.attendance_session': [],
     'course.attendance_record': [],
   });
-  const cache = createMockCacheService();
+  const cache = withAtomicOps(createMockCacheService());
   const access = {
     require: async (_u: string, courseId: string, allowed: string[]) => {
       if (courseId !== COURSE) throw new NotFoundException('Course not found');
@@ -208,6 +208,24 @@ function setup(opts: { status?: string; role?: string } = {}) {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/** The shared cache mock plus the atomic ops attendance relies on. */
+function withAtomicOps(cache: ReturnType<typeof createMockCacheService>) {
+  const store = cache._store;
+  return Object.assign(cache, {
+    setIfAbsent: (key: string, value: any, ttl: number) => {
+      if (store.has(key)) return Promise.resolve(false);
+      store.set(key, { value, ttl });
+      return Promise.resolve(true);
+    },
+    incr: (key: string, ttl: number) => {
+      const entry = store.get(key);
+      const value = (Number(entry?.value) || 0) + 1;
+      store.set(key, { value, ttl: entry?.ttl ?? ttl });
+      return Promise.resolve(value);
+    },
+  });
+}
 
 /** Move a session's window into the past, as if minutes had gone by. */
 function age(sb: ReturnType<typeof fakeDb>, sessionId: string, minutes: number) {
@@ -361,6 +379,56 @@ describe('AttendanceService.checkIn', () => {
     await tick();
     const rec = events.find((e) => e.event.type === 'attendance.record');
     expect(rec?.event.data).toMatchObject({ studentId: 'st-1', method: 'qr' });
+  });
+
+  test('a scan claim checks in once and is bound to the first student', async () => {
+    const { service } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    const frame = await service.qr(TEACHER, COURSE, s.id);
+    const { claim } = await service.scanClaim(s.id, frame.token);
+
+    const res = await service.checkIn('st-1', s.id, { qrClaim: claim });
+    expect(res.myStatus).toBe('present');
+
+    // Shared with a friend: refused, not a second check-in.
+    await expect(
+      service.checkIn('st-2', s.id, { qrClaim: claim }),
+    ).rejects.toThrow('expired');
+  });
+
+  test('the same student may retry a claim after a location error', async () => {
+    const { service } = setup();
+    const s = await service.open(TEACHER, COURSE, {
+      location: { latitude: 51.5, longitude: -0.12, radiusM: 100 },
+    });
+    const frame = await service.qr(TEACHER, COURSE, s.id);
+    const { claim } = await service.scanClaim(s.id, frame.token);
+    await expect(
+      service.checkIn('st-1', s.id, { qrClaim: claim }),
+    ).rejects.toThrow('location');
+    const res = await service.checkIn('st-1', s.id, {
+      qrClaim: claim,
+      location: { latitude: 51.5, longitude: -0.12, accuracy: 10 },
+    });
+    expect(res.myStatus).toBe('present');
+  });
+
+  test('parallel wrong codes cannot exceed the limit', async () => {
+    const { service } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    const wrong = s.checkInCode === '0000' ? '1111' : '0000';
+    const results = await Promise.allSettled(
+      Array.from({ length: MAX_WRONG_CODES + 5 }, () =>
+        service.checkIn('st-1', s.id, { code: wrong }),
+      ),
+    );
+    const limited = results.filter(
+      (r) =>
+        r.status === 'rejected' &&
+        r.reason instanceof HttpException &&
+        r.reason.getStatus() === 429,
+    );
+    expect(limited).toHaveLength(5);
   });
 
   test('a forged QR token is refused and not counted as a wrong code', async () => {

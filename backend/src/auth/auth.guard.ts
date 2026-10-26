@@ -51,10 +51,12 @@ export class AuthGuard implements CanActivate {
       }
       const user = { id: session.userId, email: session.email };
 
-      // A lookup failure is not a deactivation, as before.
-      const profile = await this.prisma.user_profile
-        .findUnique({ where: { id: user.id }, select: { is_active: true } })
-        .catch(() => null);
+      // A lookup failure fails closed: it falls through to the 503 below,
+      // never letting a possibly deactivated account through.
+      const profile = await this.prisma.user_profile.findUnique({
+        where: { id: user.id },
+        select: { is_active: true },
+      });
 
       if (profile && profile.is_active === false) {
         // End the session too, so the cookie goes with the 401 and clients

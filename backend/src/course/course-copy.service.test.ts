@@ -150,6 +150,12 @@ function db(opts: {
       { id: 'tp2', title: 'Help?', body: '', is_pinned: false, is_locked: false, require_initial_post: false, is_published: true, user_profile: { account_type: 'student' } },
     ]),
   );
+  // f1 is a live file of school-1.
+  prisma.file.findMany.mockImplementation(async ({ where }: any) =>
+    where.school_id === 'school-1' && where.deleted_at === null
+      ? where.id.in.filter((id: string) => id === 'f1').map((id: string) => ({ id }))
+      : [],
+  );
   return prisma;
 }
 
@@ -299,6 +305,16 @@ describe('CourseCopyService.copy', () => {
     expect(err).toBeInstanceOf(ForbiddenException);
   });
 
+  test('a course outside the caller\'s current school cannot be copied', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-2' });
+    const err = await expectRejection(
+      service(prisma).copy(USER, SOURCE, { name: 'Copy' }),
+    );
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(prisma.course.create).not.toHaveBeenCalled();
+  });
+
   test('a course the caller has no part in is not found', async () => {
     const prisma = db({ courseRole: null });
     const err = await expectRejection(
@@ -345,6 +361,41 @@ describe('CourseCopyService.importInto', () => {
     expect(rows(prisma, 'activity')[0].assignment_group_id).toBe('existing');
     expect(rows(prisma, 'module')[0].position).toBe(5);
     expect(prisma.course.create).not.toHaveBeenCalled();
+  });
+
+  test('a course of another school cannot be imported from', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.course.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === SOURCE
+        ? courseRow({ school_id: 'school-2' })
+        : courseRow({ id: where.id }),
+    );
+    const err = await expectRejection(
+      service(prisma).importInto(USER, TARGET, { sourceCourseId: SOURCE }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  test('file items whose file is deleted or in another school are left behind', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.module_item.findMany.mockImplementation(async ({ where }: any) =>
+      where.course_id === SOURCE
+        ? [
+            { module_id: 'm1', position: 0, item_type: 'file', title: 'Live', page_id: null, activity_id: null, file_id: 'f1', url: null, indent: 0, is_published: true },
+            { module_id: 'm1', position: 1, item_type: 'file', title: 'Gone', page_id: null, activity_id: null, file_id: 'f-deleted', url: null, indent: 0, is_published: true },
+          ]
+        : [],
+    );
+    await service(prisma).importInto(USER, TARGET, { sourceCourseId: SOURCE });
+
+    const lookup = prisma.file.findMany.mock.calls[0][0].where;
+    expect(lookup).toEqual({
+      id: { in: ['f1', 'f-deleted'] },
+      school_id: 'school-1',
+      deleted_at: null,
+    });
+    expect(rows(prisma, 'module_item').map((i: any) => i.file_id)).toEqual(['f1']);
   });
 
   test('a course cannot import from itself', async () => {

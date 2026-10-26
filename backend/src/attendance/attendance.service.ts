@@ -8,6 +8,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleDestroy,
+  ServiceUnavailableException,
   OnModuleInit,
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
@@ -32,7 +33,7 @@ import {
   qrClaim,
   qrToken,
   qrWindow,
-  verifyQrClaim,
+  readQrClaim,
   verifyQrToken,
 } from './qr';
 import { primaryOrigin } from '@/config/origins';
@@ -1087,26 +1088,6 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     });
     if (existing) throw new ConflictException('You have already checked in');
 
-    // A valid QR frame proves the student is looking at the screen in the
-    // room, which is all the code proves, so it stands in for the code.
-    let viaQr = false;
-    if (input.qrToken || input.qrClaim) {
-      const secret = await this.qrSecretOf(session.id);
-      const valid =
-        !!secret &&
-        (input.qrToken
-          ? verifyQrToken(secret, input.qrToken, now)
-          : verifyQrClaim(secret, session.id, input.qrClaim!, now));
-      if (!valid) {
-        throw new ConflictException(
-          'That QR code has expired. Scan the one on screen again',
-        );
-      }
-      viaQr = true;
-    } else if (session.check_in_code !== null) {
-      await this.checkCode(session, studentId, input.code);
-    }
-
     let distanceM: number | null = null;
     if (
       session.latitude !== null &&
@@ -1127,6 +1108,33 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
           'You are too far from the classroom to check in',
         );
       }
+    }
+
+    // A valid QR frame proves the student is looking at the screen in the
+    // room, which is all the code proves, so it stands in for the code.
+    // Checked after the geofence so a location retry costs no code attempt.
+    let viaQr = false;
+    if (input.qrToken || input.qrClaim) {
+      const secret = await this.qrSecretOf(session.id);
+      const valid =
+        !!secret &&
+        (input.qrToken
+          ? verifyQrToken(secret, input.qrToken, now)
+          : await this.redeemClaim(
+              secret,
+              session.id,
+              studentId,
+              input.qrClaim!,
+              now,
+            ));
+      if (!valid) {
+        throw new ConflictException(
+          'That QR code has expired. Scan the one on screen again',
+        );
+      }
+      viaQr = true;
+    } else if (session.check_in_code !== null) {
+      await this.checkCode(session, studentId, input.code);
     }
 
     const lateAt =
@@ -1181,30 +1189,62 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     return this.toPortalOpen(session, course.name, status);
   }
 
+  /**
+   * Redeem a scan claim. Its nonce is recorded atomically on first use and
+   * bound to the student who used it: the same student may retry (say after
+   * a location error), anyone else holding the same claim is refused.
+   */
+  private async redeemClaim(
+    secret: string,
+    sessionId: string,
+    studentId: string,
+    claim: string,
+    now: number,
+  ): Promise<boolean> {
+    const read = readQrClaim(secret, sessionId, claim, now);
+    if (!read) return false;
+    const key = `attendance:qr-claim:${sessionId}:${read.nonce}`;
+    // Outlive the claim itself so an expired claim can never be re-won.
+    const ttlS = Math.ceil((read.expiresAt - now) / 1000) + 60;
+    if (await this.cache.setIfAbsent(key, studentId, ttlS)) return true;
+    return (await this.cache.get(key)) === studentId;
+  }
+
   private async checkCode(
     session: SessionRow,
     studentId: string,
     code: string | undefined,
   ) {
+    const given = code?.trim();
+    if (!given) {
+      throw new BadRequestException('Enter the code shown in the room');
+    }
+
+    // Reserve the attempt before comparing, atomically, so a burst of
+    // parallel guesses cannot all slip under the limit.
     const key = `attendance:wrong-code:${session.id}:${studentId}`;
-    const wrong = Number((await this.cache.get(key)) ?? 0) || 0;
-    if (wrong >= MAX_WRONG_CODES) {
+    const lengthS = Math.ceil(
+      (Date.parse(session.closes_at) - Date.parse(session.opened_at)) / 1000,
+    );
+    let attempts: number;
+    try {
+      attempts = await this.cache.incr(key, lengthS + WRONG_CODE_TTL_MARGIN_S);
+    } catch (err) {
+      this.logger.error(`Wrong-code counter failed: ${(err as Error).message}`);
+      throw new ServiceUnavailableException(
+        'Check-in is unavailable right now. Try again in a moment',
+      );
+    }
+    // Every attempt counts, but a right one checks the student in, so in
+    // practice only wrong ones repeat: MAX_WRONG_CODES wrong, then refused.
+    if (attempts > MAX_WRONG_CODES) {
       throw new HttpException(
         'Too many wrong codes. Ask your teacher to mark you in',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    const given = code?.trim();
-    if (!given) {
-      throw new BadRequestException('Enter the code shown in the room');
-    }
-
     if (given !== session.check_in_code) {
-      const lengthS = Math.ceil(
-        (Date.parse(session.closes_at) - Date.parse(session.opened_at)) / 1000,
-      );
-      await this.cache.set(key, wrong + 1, lengthS + WRONG_CODE_TTL_MARGIN_S);
       throw new ConflictException('That code is not right');
     }
   }

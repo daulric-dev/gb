@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Search, Plus } from "lucide-react-native";
+import { Search } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -10,7 +10,6 @@ import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -63,11 +62,9 @@ export default function StudentsScreen() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const initial = useRef(true);
 
-  const canCreate = can("student", "create");
   const canUpdate = can("student", "update");
 
   const fetchStudents = useCallback(
@@ -106,10 +103,7 @@ export default function StudentsScreen() {
     fetchStudents(search).finally(() => setRefreshing(false));
   }, [fetchStudents, search]);
 
-  const closeForm = () => {
-    setFormOpen(false);
-    setEditing(null);
-  };
+  const closeForm = () => setEditing(null);
 
   return (
     <Screen
@@ -117,21 +111,12 @@ export default function StudentsScreen() {
       description="Students in your school"
       refreshing={refreshing}
       onRefresh={onRefresh}
-      action={
-        canCreate ? (
-          <Button
-            size="sm"
-            onPress={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            icon={<Plus size={16} color={colors.primaryForeground} />}
-          >
-            New
-          </Button>
-        ) : undefined
-      }
     >
+      <Text variant="muted">
+        Students join with your school code. They sign up, enter the code, and
+        appear here once they have joined.
+      </Text>
+
       <View style={styles.searchWrap}>
         <Search
           size={18}
@@ -166,10 +151,7 @@ export default function StudentsScreen() {
               student={s}
               onPress={
                 canUpdate
-                  ? () => {
-                      setEditing(s);
-                      setFormOpen(true);
-                    }
+                  ? () => setEditing(s)
                   : undefined
               }
             />
@@ -177,18 +159,16 @@ export default function StudentsScreen() {
         </View>
       )}
 
-      <Sheet
-        open={formOpen}
-        onClose={closeForm}
-        title={editing ? "Edit Student" : "Add Student"}
-      >
-        <StudentForm
-          student={editing ?? undefined}
-          onSuccess={() => {
-            closeForm();
-            fetchStudents(search);
-          }}
-        />
+      <Sheet open={editing !== null} onClose={closeForm} title="Edit Student">
+        {editing ? (
+          <StudentForm
+            student={editing}
+            onSuccess={() => {
+              closeForm();
+              fetchStudents(search);
+            }}
+          />
+        ) : null}
       </Sheet>
     </Screen>
   );

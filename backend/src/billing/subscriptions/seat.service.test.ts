@@ -79,12 +79,19 @@ describe('seat sync', () => {
       live({ provider: 'manual' }), // a removed provider
       live({ status: 'canceled' }),
       live({ provider_subscription_id: null }),
-      live({ cancel_at_period_end: true }),
     ]) {
       prisma.subscription.findMany.mockResolvedValue([sub]);
       expect(await seats.syncAll()).toBe(0);
     }
     expect(stripe.updateQuantity).not.toHaveBeenCalled();
+  });
+
+  test('a subscription set to cancel at period end is still synced', async () => {
+    prisma.subscription.findMany.mockResolvedValue([live({ cancel_at_period_end: true })]);
+    prisma.$queryRaw.mockResolvedValueOnce([{ school_id: 'school-1', n: 4 }]).mockResolvedValueOnce([]);
+    expect(await seats.syncAll()).toBe(1);
+    expect(stripe.updateQuantity.mock.calls[0][1]).toBe(4);
+    expect(prisma.subscription.findMany.mock.calls[0][0].where.cancel_at_period_end).toBeUndefined();
   });
 
   test('a provider failure leaves the stored quantity alone', async () => {

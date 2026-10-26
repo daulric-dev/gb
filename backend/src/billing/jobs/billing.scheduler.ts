@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { billingEnabled } from '../config/billing.config';
 import { SeatService } from '../subscriptions/seat.service';
@@ -6,11 +7,14 @@ import { SubscriptionService } from '../subscriptions/subscription.service';
 
 const HOUR_MS = 60 * 60 * 1000;
 const FIRST_RUN_MS = 30 * 1000;
+/** How long a lease holds if its holder dies without releasing it. */
+const LEASE_SECONDS = 30 * 60;
 
 /**
  * Background billing work, like the attendance sweep: a timer per API
- * instance, with a Postgres advisory lock so only one instance runs a tick
- * when several are up.
+ * instance, with a lease row in billing.job_lease so only one instance runs a
+ * tick when several are up. The lease is a single short statement, so no
+ * transaction or connection stays open while the sweep calls the provider.
  *
  * Hourly: give schools without a row their trial row, end subscriptions
  * whose cancel-at-period-end date has passed, and push per-seat counts to
@@ -43,21 +47,30 @@ export class BillingScheduler implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Run `work` while holding a transaction-scoped advisory lock; returns false
-   * when another instance holds it. The work itself uses ordinary
-   * connections - the transaction only pins the lock.
+   * Run `work` while holding the named lease; returns false when another
+   * instance holds it. The lease is taken with one atomic upsert that only
+   * succeeds when the row is absent or expired, and released in `finally`.
+   * An instance that dies mid-sweep loses the lease after LEASE_SECONDS.
    */
   async withLock(name: string, work: () => Promise<void>): Promise<boolean> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-          SELECT pg_try_advisory_xact_lock(hashtext(${name})) AS locked`;
-        if (!rows?.[0]?.locked) return false;
-        await work();
-        return true;
-      },
-      { maxWait: 10_000, timeout: 30 * 60_000 },
-    );
+    const holder = randomUUID();
+    const rows = await this.prisma.$queryRaw<Array<{ locked: boolean }>>`
+      INSERT INTO billing.job_lease (name, holder, expires_at)
+      VALUES (${name}, ${holder}, now() + make_interval(secs => ${LEASE_SECONDS}::int))
+      ON CONFLICT (name) DO UPDATE
+         SET holder = EXCLUDED.holder, expires_at = EXCLUDED.expires_at
+       WHERE billing.job_lease.expires_at < now()
+      RETURNING true AS locked`;
+    if (!rows?.[0]?.locked) return false;
+    try {
+      await work();
+    } finally {
+      await this.prisma.$executeRaw`
+        DELETE FROM billing.job_lease WHERE name = ${name} AND holder = ${holder}`.catch(
+        (err: Error) => this.logger.warn(`Releasing lease ${name} failed: ${err.message}`),
+      );
+    }
+    return true;
   }
 
   async tick(): Promise<void> {

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Controller,
   HttpCode,
   InternalServerErrorException,
@@ -14,7 +15,7 @@ import { ApiExcludeController } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { FastifyRequest } from 'fastify';
 import { BillingEnabledGuard } from '../access/billing.guards';
-import { BillingEventsService } from './billing-events.service';
+import { BillingEventsService, EventInProgressError } from './billing-events.service';
 import { BillingRegistry } from '../providers/billing.registry';
 import type { RawBodyRequest } from './raw-body';
 import {
@@ -44,8 +45,9 @@ function flatten(source: unknown): Record<string, string | undefined> {
 /**
  * Provider webhooks (server-to-server POSTs, e.g. Stripe's). Public: trust
  * comes from the provider verifying its signature over the exact raw body.
- * Verification failures answer 400; any other failure answers 500 so the
- * provider retries; applied events are idempotent.
+ * Verification failures answer 400; an event another worker is applying
+ * right now answers 409, and any other failure 500, so the provider retries;
+ * applied events are idempotent.
  */
 @ApiExcludeController()
 @SkipThrottle()
@@ -86,6 +88,10 @@ export class BillingWebhookController {
     try {
       await this.events.handle(provider, events);
     } catch (err) {
+      if (err instanceof EventInProgressError) {
+        this.logger.warn(`${providerId} webhook: ${err.message} - asking for a retry`);
+        throw new ConflictException('Event is being processed');
+      }
       this.logger.error(`${providerId} webhook apply failed: ${(err as Error).message}`);
       throw new InternalServerErrorException('Webhook processing failed');
     }

@@ -56,6 +56,8 @@ export function subRow(over: Record<string, unknown> = {}) {
     cancel_at_period_end: false,
     comp_until: null as Date | null,
     comp_note: null as string | null,
+    pending_checkout_id: null as string | null,
+    last_event_at: null as Date | null,
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
     ...over,

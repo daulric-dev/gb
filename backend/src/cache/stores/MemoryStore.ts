@@ -42,6 +42,27 @@ export class MemoryStore implements CacheInterface {
     return Promise.resolve();
   }
 
+  // Both run synchronously on the event loop, so no other caller can
+  // interleave between the read and the write.
+  setIfAbsent(key: string, value: any, ttl: number): Promise<boolean> {
+    if (this.live(key)) return Promise.resolve(false);
+    this.store.set(key, { value, expires: Date.now() + ttl * 1000 });
+    this.evictIfNeeded();
+    return Promise.resolve(true);
+  }
+
+  incr(key: string, ttl: number): Promise<number> {
+    const entry = this.live(key);
+    if (entry) {
+      const next = (Number(entry.value) || 0) + 1;
+      entry.value = next;
+      return Promise.resolve(next);
+    }
+    this.store.set(key, { value: 1, expires: Date.now() + ttl * 1000 });
+    this.evictIfNeeded();
+    return Promise.resolve(1);
+  }
+
   delete(key: string): Promise<void> {
     this.store.delete(key);
     return Promise.resolve();
@@ -57,6 +78,16 @@ export class MemoryStore implements CacheInterface {
   clear(): Promise<void> {
     this.store.clear();
     return Promise.resolve();
+  }
+
+  private live(key: string): Entry | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expires) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry;
   }
 
   private purgeExpired(): void {

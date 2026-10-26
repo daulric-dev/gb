@@ -478,6 +478,15 @@ export class ChatService {
     userA: string,
     userB: string,
   ): Promise<ConversationRow> {
+    // Same rule as getOrCreateDirect: both ends must be in this school.
+    const [schoolA, schoolB] = await Promise.all([
+      this.resolveSchool(userA),
+      this.resolveSchool(userB),
+    ]);
+    if (schoolA !== schoolId || schoolB !== schoolId) {
+      throw new ForbiddenException('That user is not in your school');
+    }
+
     const directKey = ChatService.directKey(userA, userB);
     const existing = await this.findDirect(schoolId, directKey);
     if (existing) return existing;

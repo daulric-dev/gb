@@ -24,7 +24,7 @@ Why it exists: restoring a backup brings back everything deleted since the backu
 | `subject_table`, `subject_ids` | e.g. `file_manager.file` and the uuids erased (non-empty) |
 | `school_id` | the school it happened in, or null |
 | `actor` | the user who asked (uuid) or `system` (CHECK) |
-| `reason` | `user_request`, `admin`, `retention_purge`, `merge` (CHECK) |
+| `reason` | `user_request`, `admin`, `retention_purge`, `merge` (CHECK; nothing writes `merge` any more, it stays so older entries still replay) |
 | `replay` | the plan below (`jsonb` object) |
 | `exported_at` | when the storage copy was written; null = still to do |
 
@@ -51,7 +51,7 @@ What each path writes:
 | Path | Kind / reason | Replay |
 | --- | --- | --- |
 | `DELETE /api/auth/account` (`AuthService.deleteAccount`) | `account` / `user_request` | delete storage prefixes of the user's files and avatar, file rows (with objects), `user_profile`, `app_user` (cascades sessions, identities, memberships, messages, ...) |
-| Merge duplicate student (`StudentMembershipService.mergeDuplicate`) | `student` / `merge` | clear the join-time record's login, move it to the roster record (only if that one has none), delete the join-time record |
+| Merge duplicate student (removed by `20261027140000_drop_student_merge`; older entries only) | `student` / `merge` | clear the join-time record's login, move it to the roster record (only if that one has none), delete the join-time record |
 | Remove a member / leave a school (`SchoolService`) | `school_membership` / `admin`, `user_request` | delete the `school_management` row(s), detach the profile from that school |
 | Delete a file (`FileManagerService.softDelete`) | `file` / `user_request` | set `deleted_at` |
 | Delete a folder (`FolderService.remove`) | `folder` / `user_request` | set `deleted_at` on the subtree's folders and their files |

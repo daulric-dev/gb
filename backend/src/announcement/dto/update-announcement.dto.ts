@@ -1,7 +1,13 @@
-import { IsOptional, IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNotEmpty,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpdateAnnouncementDto {
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
@@ -10,5 +16,5 @@ export class UpdateAnnouncementDto {
   @IsOptional()
   @IsString()
   @MaxLength(5000)
-  body?: string;
+  body?: string | null;
 }

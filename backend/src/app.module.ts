@@ -2,7 +2,13 @@ import { Module, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { getClientIp, getSessionTracker, type ThrottlerReq } from '@/throttle/tracker';
+import {
+  getClientIp,
+  getEmailIpTracker,
+  getSessionTracker,
+  skipUnlessDeclared,
+  type ThrottlerReq,
+} from '@/throttle/tracker';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
@@ -41,6 +47,7 @@ import { CourseNotificationModule } from '@/course-notification/course-notificat
 import { BillingModule } from '@/billing/billing.module';
 import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
+import { AppVersionModule } from '@/app-version/app-version.module';
 
 @Module({
   imports: [
@@ -55,11 +62,12 @@ import { RetentionModule } from '@/retention/retention.module';
             getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
         },
         {
+          // Sign-in routes only (see skipUnlessDeclared), per address + IP.
           name: 'auth-strict',
           ttl: 60 * 60 * 1000,
           limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
-          getTracker: (req: ThrottlerReq) =>
-            req.body?.email?.toLowerCase() ?? getClientIp(req) ?? 'unknown',
+          getTracker: getEmailIpTracker,
+          skipIf: skipUnlessDeclared('auth-strict'),
         },
         {
           name: 'auth-ip',
@@ -67,6 +75,7 @@ import { RetentionModule } from '@/retention/retention.module';
           limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
           getTracker: (req: ThrottlerReq) =>
             `ip:${getClientIp(req) ?? 'unknown'}`,
+          skipIf: skipUnlessDeclared('auth-ip'),
         },
         {
           name: 'claim-code',
@@ -125,6 +134,7 @@ import { RetentionModule } from '@/retention/retention.module';
     BillingModule,
     ErasureModule,
     RetentionModule,
+    AppVersionModule,
   ],
   controllers: [AppController],
   providers: [

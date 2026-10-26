@@ -2,11 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { KNOWN_DEVICE_WINDOW_MS } from '@/account/session.config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
-import { objectKey } from '@/storage/keys';
+import { objectKey, UPLOAD_STAGING_PREFIX } from '@/storage/keys';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { ErasureReplayService } from '@/erasure/erasure-replay.service';
 import { plan } from '@/erasure/erasure-plan';
 import {
+  ABANDONED_UPLOAD_MS,
   batchSize,
   maxRunMs,
   softDeleteRetentionDays,
@@ -44,11 +45,23 @@ export interface PurgeReport {
   erasureLogRows: number;
   erasureLogObjects: number;
   leftoverObjects: number;
+  /** Upload rows left `pending` or `failed` (row and object removed). */
+  abandonedUploads: number;
+  /** Staged upload objects no pending upload owns any more. */
+  stagedObjects: number;
   exported: number;
   errors: string[];
 }
 
 class Deadline extends Error {}
+
+const STAGED_ID_RE =
+  /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-[^/]*$/i;
+
+/** The file id a staged key `.../<schoolId>/<userId>/<fileId>-<slug>` was made for. */
+export function stagedFileId(key: string): string | null {
+  return STAGED_ID_RE.exec(key)?.[1]?.toLowerCase() ?? null;
+}
 
 const groupBy = <T>(rows: T[], key: (r: T) => string | null) => {
   const out = new Map<string | null, T[]>();
@@ -95,6 +108,8 @@ export class RetentionService {
       erasureLogRows: 0,
       erasureLogObjects: 0,
       leftoverObjects: 0,
+      abandonedUploads: 0,
+      stagedObjects: 0,
       exported: 0,
       errors: [],
     };
@@ -111,6 +126,8 @@ export class RetentionService {
     if (!opts.only) {
       jobs.push(
         ['sign-in leftovers', () => this.purgeAuthLeftovers(now, ctx)],
+        ['abandoned uploads', () => this.purgeAbandonedUploads(now, ctx)],
+        ['staged upload objects', () => this.purgeStagedObjects(ctx)],
         ['erasure log', async () => {
           const pruned = await this.erasure.prune(now, opts.dryRun);
           report.erasureLogRows = pruned.rows;
@@ -204,6 +221,89 @@ export class RetentionService {
       });
       report.files += deleted;
       if (deleted === 0) return;
+    }
+  }
+
+  /**
+   * Upload tickets nobody finalised, and uploads that failed their checks:
+   * object first, then the row, as for files. Not personal data kept for a
+   * reason - the user never got a file - so no retention period applies
+   * beyond giving a slow upload time to finish. Rows something points at
+   * (a submission or module item) are left for a person to sort out.
+   */
+  private async purgeAbandonedUploads(now: Date, { opts, deadline, report }: Ctx) {
+    const before = new Date(now.getTime() - ABANDONED_UPLOAD_MS);
+    const where = {
+      status: { in: ['pending' as const, 'failed' as const] },
+      created_at: { lt: before },
+      submission: { none: {} },
+      module_item: { none: {} },
+    };
+    if (opts.dryRun) {
+      report.abandonedUploads = await this.prisma.file.count({ where });
+      return;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const rows = await this.prisma.file.findMany({
+        where,
+        select: { id: true, school_id: true, bucket: true, storage_path: true },
+        orderBy: { created_at: 'asc' },
+        take: batchSize(),
+      });
+      if (rows.length === 0) return;
+      await this.storage.delete(rows.map((r) => objectKey(r.bucket, r.storage_path)));
+      const deleted = await this.prisma.$transaction(async (tx) => {
+        const ids = rows.map((r) => r.id);
+        // Re-check the status: a finalise may have won the race.
+        const { count } = await tx.file.deleteMany({
+          where: { id: { in: ids }, status: { in: ['pending', 'failed'] } },
+        });
+        for (const [schoolId, group] of groupBy(rows, (r) => r.school_id)) {
+          const groupIds = group.map((r) => r.id);
+          await this.erasure.record(tx, {
+            kind: 'file',
+            subjectTable: 'file_manager.file',
+            subjectIds: groupIds,
+            schoolId,
+            actor: 'system',
+            reason: 'retention_purge',
+            replay: plan.of(plan.del('file_manager.file', { id: groupIds }, true)),
+          });
+        }
+        return count;
+      });
+      report.abandonedUploads += deleted;
+      if (deleted === 0) return;
+    }
+  }
+
+  /**
+   * Staged upload objects (`file-manager/uploads/...`) whose file row is gone
+   * or no longer pending: a PUT replayed with a still-valid URL after the
+   * upload was finalised, or an object whose row was purged first.
+   */
+  private async purgeStagedObjects({ opts, deadline, report }: Ctx) {
+    if (opts.dryRun) return;
+    this.checkTime(deadline);
+    const prefix = objectKey('file-manager', UPLOAD_STAGING_PREFIX);
+    const keys = await this.storage.listKeys(prefix);
+    for (let i = 0; i < keys.length; i += batchSize()) {
+      this.checkTime(deadline);
+      const batch = keys.slice(i, i + batchSize());
+      const idOf = new Map(batch.map((k) => [k, stagedFileId(k)]));
+      const ids = [...new Set([...idOf.values()].filter((id): id is string => !!id))];
+      const pending = ids.length
+        ? await this.prisma.file.findMany({
+            where: { id: { in: ids }, status: 'pending' },
+            select: { id: true, bucket: true, storage_path: true },
+          })
+        : [];
+      const live = new Set(pending.map((r) => objectKey(r.bucket, r.storage_path)));
+      const stale = batch.filter((k) => !live.has(k));
+      if (stale.length === 0) continue;
+      await this.storage.delete(stale);
+      report.stagedObjects += stale.length;
     }
   }
 

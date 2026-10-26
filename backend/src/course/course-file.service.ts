@@ -27,7 +27,11 @@ export class CourseFileService {
 
     const [linked, shared, owned] = await Promise.all([
       this.prisma.module_item.findFirst({
-        where: { course_id: courseId, file_id: fileId },
+        where: {
+          course_id: courseId,
+          file_id: fileId,
+          file: { deleted_at: null },
+        },
         select: { id: true },
       }),
       this.prisma.file_share.findFirst({
@@ -35,6 +39,7 @@ export class CourseFileService {
           file_id: fileId,
           principal_type: 'course',
           principal_id: courseId,
+          file: { deleted_at: null },
         },
         select: { id: true },
       }),

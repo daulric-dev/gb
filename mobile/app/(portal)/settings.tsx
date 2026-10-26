@@ -8,11 +8,12 @@ import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SignedInDevices } from "@/features/account/SignedInDevices";
+import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
 
 /**
  * Student settings: identity, appearance, signed-in devices and sign-out. Deliberately narrower
  * than the staff screen - a student cannot leave a school or change their own
- * record, since the link to it is what the school issued a claim code for.
+ * record, since it was created when they joined with the school code.
  */
 export default function PortalSettingsScreen() {
   const { profile, logout, refresh } = useAuth();
@@ -65,6 +66,8 @@ export default function PortalSettingsScreen() {
       </Card>
 
       <SignedInDevices refreshKey={refreshKey} />
+
+      <CheckForUpdates />
 
       <Button variant="outline" onPress={logout}>
         Log out

@@ -44,6 +44,24 @@ const FLOW_COOKIE_PATH = '/api/auth/sso';
 const stateKey = (state: string) => `sso-state:${state}`;
 const handoffKey = (code: string) => `sso-handoff:${code}`;
 const sha256 = (value: string) => createHash('sha256').update(value).digest();
+/**
+ * Sent to mobile builds that start a sign-in without a code_challenge (built
+ * before PKCE). Old builds display it verbatim; newer ones match on it.
+ */
+export const OUTDATED_APP_MESSAGE =
+  'This version of GradeBook is out of date. Update the app from the App Store or Google Play to sign in.';
+/** A PKCE (RFC 7636) S256 challenge: base64url SHA-256, 43 characters. */
+const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{43}$/;
+/** A PKCE verifier: 43-128 unreserved characters. */
+const CODE_VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/;
+
+/** A finished mobile sign-in, waiting for the app that started it. */
+interface PendingHandoff {
+  userId: string;
+  provider: string;
+  /** The app's code_challenge from /start; the code needs its verifier. */
+  codeChallenge: string;
+}
 
 /** A sign-in between /start and the callback, kept server side. */
 export interface PendingSignIn {
@@ -56,6 +74,13 @@ export interface PendingSignIn {
   secrets: Record<string, string>;
   /** SHA-256 (hex) of the flow cookie set on the starting browser. */
   binding: string;
+  /**
+   * Mobile: the app's PKCE-style code_challenge. The handoff code only works
+   * with its verifier, which never leaves the app that started the sign-in -
+   * so another app catching the return URL, or a link planted on a victim,
+   * cannot redeem it.
+   */
+  codeChallenge?: string;
   /** SAML: the checked identity, between the ACS and the callback. */
   identity?: SsoIdentity;
 }
@@ -149,11 +174,35 @@ export class SsoService {
     req: FastifyRequest,
     reply: FastifyReply,
     providerId: string,
-    input: { next?: string; platform?: SsoPlatform; email?: string },
+    input: {
+      next?: string;
+      platform?: SsoPlatform;
+      email?: string;
+      code_challenge?: string;
+    },
   ): Promise<string> {
     const adapter = this.registry.get(providerId);
     if (!adapter)
       throw new NotFoundException('That sign-in option is not available');
+
+    const platform: SsoPlatform = input.platform === 'mobile' ? 'mobile' : 'web';
+    const codeChallenge =
+      platform === 'mobile' ? input.code_challenge : undefined;
+    if (platform === 'mobile' && codeChallenge === undefined) {
+      // A build from before PKCE. It cannot sign in safely, and a JSON 400 in
+      // its browser is a dead end, so send it home with a sentence: those
+      // builds show the `error` text as is on their login screen.
+      return this.failUrl(platform, OUTDATED_APP_MESSAGE);
+    }
+    if (
+      platform === 'mobile' &&
+      (typeof codeChallenge !== 'string' || !CODE_CHALLENGE_RE.test(codeChallenge))
+    ) {
+      // The handoff code is only safe bound to the app that asked for it.
+      throw new BadRequestException(
+        'Update the app to sign in with this option',
+      );
+    }
 
     const email = input.email?.trim().toLowerCase() || undefined;
     const domain = email ? await this.domains.verifiedDomainFor(email) : null;
@@ -180,11 +229,12 @@ export class SsoService {
 
     const pending: PendingSignIn = {
       provider: adapter.id,
-      platform: input.platform === 'mobile' ? 'mobile' : 'web',
+      platform,
       next: safeNext(input.next),
       domainId: domain?.id ?? null,
       secrets: started.secrets,
       binding: sha256(flow).toString('hex'),
+      ...(codeChallenge ? { codeChallenge } : {}),
     };
     await this.cache.set(stateKey(state), pending, STATE_TTL_S);
 
@@ -275,7 +325,9 @@ export class SsoService {
       return fail('expired');
     }
     if (query.error) {
-      return fail(query.error_description || query.error || 'cancelled');
+      // Only a reason code goes back: the provider's own text would reach the
+      // login screen, and anyone can craft a callback that carries it.
+      return fail(query.error === 'access_denied' ? 'cancelled' : 'failed');
     }
 
     const adapter = this.registry.get(pending.provider);
@@ -313,13 +365,16 @@ export class SsoService {
 
     if (pending.platform === 'mobile') {
       // The app has its own cookie jar; the browser's cookies cannot reach
-      // it. Hand the sign-in over once, briefly, by an unguessable code.
+      // it. Hand the sign-in over once, briefly, by an unguessable code that
+      // only the app holding the challenge's verifier can redeem.
+      if (!pending.codeChallenge) return fail('expired');
       const code = randomBytes(24).toString('base64url');
-      await this.cache.set(
-        handoffKey(code),
-        { userId: user.id, provider: adapter.id },
-        HANDOFF_TTL_S,
-      );
+      const handoff: PendingHandoff = {
+        userId: user.id,
+        provider: adapter.id,
+        codeChallenge: pending.codeChallenge,
+      };
+      await this.cache.set(handoffKey(code), handoff, HANDOFF_TTL_S);
       return `${MOBILE_RETURN}?code=${code}`;
     }
 
@@ -335,19 +390,30 @@ export class SsoService {
     return url;
   }
 
-  /** The app redeems a handoff code; the session lands in its cookie jar. */
-  async handoff(req: FastifyRequest, reply: FastifyReply, code: string) {
+  /**
+   * The app redeems a handoff code with the verifier for the challenge it
+   * sent to /start; the session lands in its cookie jar.
+   */
+  async handoff(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    code: string,
+    codeVerifier: string,
+  ) {
     const key = handoffKey(code);
-    const handoff = (await this.cache.get(key)) as {
-      userId: string;
-      provider: string;
-    } | null;
+    const handoff = (await this.cache.get(key)) as PendingHandoff | null;
     // Single use, whether or not the rest works.
     await this.cache.delete(key);
-    if (!handoff)
-      throw new BadRequestException(
-        'This sign-in link has expired. Try again.',
-      );
+    const expired = new BadRequestException(
+      'This sign-in link has expired. Try again.',
+    );
+    if (!handoff?.codeChallenge) throw expired;
+    if (typeof codeVerifier !== 'string' || !CODE_VERIFIER_RE.test(codeVerifier))
+      throw expired;
+    const expected = Buffer.from(handoff.codeChallenge, 'base64url');
+    const actual = sha256(codeVerifier);
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual))
+      throw expired;
     await this.sessions.create(reply, req, handoff.userId, handoff.provider);
   }
 

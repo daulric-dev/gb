@@ -87,13 +87,16 @@ There is no void action: Stripe owns the invoices and we only record paid ones, 
   - `syncAll()`, called hourly, pushes changed seat counts to live `per_user` subscriptions via `provider.updateQuantity()`. There is no per-school sync: a change in a school's count reaches its provider on the next hourly tick.
 - **`InvoiceService`**: `createNumbered()` stores a copy of a Stripe invoice reported paid, numbered `GB-YYYYMM-<seq>` under a Postgres advisory lock. It also exports `invoiceDto()`, `numberPrefix()` and `formatNumber()`. Stripe's own invoice and PDF are in the Customer Portal; no hosted-invoice URL is stored (those links can expire, and the portal lists them all).
 - **`BillingEventsService`**: `handle(provider, events)` applies normalised `BillingEvent`s to the subscription and invoice rows.
-  - Each event is first recorded in `billing.payment_event`, keyed by `(provider, event_id)`, so retries and duplicate deliveries are skipped.
-  - Stale out-of-order `subscription.updated` events are ignored, and an older event never revives a canceled subscription.
-  - `invoice.paid` is stored as a paid invoice for the school's history; `invoice.payment_failed` moves an active subscription to `past_due`.
+  - Each event is first recorded in `billing.payment_event`, keyed by `(provider, event_id)`, so retries and duplicate deliveries are skipped. A worker then claims the row (`processing_at`) with one conditional `UPDATE`; a concurrent delivery of the same event gets a 409 so Stripe retries it later. A claim older than 5 minutes may be taken over.
+  - An event created before the newest one applied to the subscription (`subscription.last_event_at`) is ignored. For subscription events, `invoice.paid` and `invoice.payment_failed`, the current subscription is fetched from Stripe (`getSubscription`) and that state is applied, so a late event never forces an outdated status. An older event never revives a canceled subscription.
+  - `invoice.paid` is stored as a paid invoice for the school's history.
+  - A second live subscription for a school that already has one (two checkouts that raced) is canceled at Stripe and its latest paid invoice refunded (`refundLatestPayment`); it never replaces the first. The refusal is recorded as a processed `payment_event` row (`duplicate:<subscription id>`), so an `invoice.paid` for it that arrives later (its first invoice may not be paid yet) is refunded too and not recorded as history. A refund that fails is logged as an error to refund by hand; it does not fail the event.
+  - Checkout is serialized per school: `BillingService.checkout` locks the school's `billing.subscription` row (`SELECT ... FOR UPDATE` in an interactive transaction, 30s timeout, 10s `lock_timeout` then 409) across read `pending_checkout_id` → expire that session → create the new one → store its id. A second checkout started at the same moment waits, then expires the first one's session; it answers 409 if that session already completed. A session whose id could not be stored is expired again. The Stripe idempotency key is a hash of the school, provider, plan, seats, the pending session and the row's `updated_at` (`checkoutKey`), so two attempts from the same row state get one session.
+  - A subscription canceled while past_due/unpaid has its `current_period_end` pulled back to the start of the unpaid period, so the cancellation does not leave it writable to the end of a period nobody paid for.
 - **`PlatformService`**: the operator dashboard.
   - `isPlatformAdmin()` is true for users with a row in `billing.platform_admin`, or for a verified, non-disabled account whose email is listed in `PLATFORM_ADMIN_EMAILS`.
   - `overview`, `schools`, `school`, `extendTrial`, `comp`, `listInvoices`.
-- **`BillingScheduler`**: runs once 30 seconds after boot, then every hour, in each instance. Only one instance runs a given tick, thanks to `pg_try_advisory_xact_lock('gradebook:billing:sweep')`. Each tick runs `ensureAll`, then `expireCanceled`, then `syncAll`. It does not run when `NODE_ENV=test` or when billing is off.
+- **`BillingScheduler`**: runs once 30 seconds after boot, then every hour, in each instance. Only one instance runs a given tick: it takes a 30-minute lease row in `billing.job_lease` (`gradebook:billing:sweep`) with one atomic upsert and deletes it when the tick ends, so no transaction stays open during Stripe calls. Each tick runs `ensureAll`, then `expireCanceled`, then `syncAll`. It does not run when `NODE_ENV=test` or when billing is off.
 
 ### Guards, interceptor and helpers
 
@@ -106,7 +109,7 @@ There is no void action: Stripe owns the invoices and we only record paid ones, 
   - It also exports `isExempt()`, `subscriptionRequired()` and `SUBSCRIPTION_REQUIRED`.
 - `billing.entitlement.ts`: `computeEntitlement()` is the pure rule for "may this school write?".
   - Comp access and the school's own trial always allow writes.
-  - A paid period allows writes until it ends, plus `BILLING_GRACE_DAYS` for a missed renewal. A cancellation gets no grace.
+  - A paid period allows writes until it ends, plus `BILLING_GRACE_DAYS` for a missed renewal. For past_due and unpaid the grace runs from the start of the unpaid period (Stripe advances the period even when the renewal fails). A cancellation gets no grace.
   - The file also has `initialTrialEnd()`.
 - `config/billing.config.ts`:
   - `loadBillingConfig()` reads the environment (see Configuration).
@@ -147,7 +150,8 @@ In the `billing` schema, defined in [`prisma/schema/billing.prisma`](../../prism
 
 - `billing.subscription`: one row per school.
 - `billing.invoice`
-- `billing.payment_event`: the webhook idempotency log.
+- `billing.payment_event`: the webhook idempotency log, with each event's processing claim, plus a `duplicate:<subscription id>` row per refused duplicate subscription.
+- `billing.job_lease`: leases that keep the hourly sweep to one instance.
 - `billing.provider_setting`: no longer read (the provider switches were removed); kept in place, no destructive migration.
 - `billing.platform_admin`
 
@@ -195,7 +199,7 @@ Grouped by role. Each test file sits next to the file it tests.
 | **`access/`** | Enforcement. |
 | `access/billing.interceptor.ts` | The app-wide 402 interceptor (read-only schools). |
 | `access/billing.guards.ts` | `BillingEnabledGuard` and `PlatformAdminGuard`. |
-| **`jobs/`** | `billing.scheduler.ts`: the hourly background sweep, under a Postgres advisory lock. |
+| **`jobs/`** | `billing.scheduler.ts`: the hourly background sweep, under a lease in `billing.job_lease`. |
 | **`config/`** | `billing.config.ts`: environment config and price, seat and date helpers. |
 | **`providers/`** | Payment providers: the `PaymentProvider` interface, the Stripe adapter, and `billing.registry.ts` (**register new providers here**). See [providers/README.md](./providers/README.md). |
 | **`dto/`** | Request bodies. See [dto/README.md](./dto/README.md). |
@@ -216,7 +220,7 @@ The tests use `createMockPrisma()` from `src/test/prisma-mock`, and `FakeProvide
 - webhook idempotency and event ordering;
 - the webhook controller's 400, 500 and 404 answers and raw-body capture;
 - seat counting and sync;
-- the scheduler lock;
+- the scheduler lease;
 - platform-admin authorisation and the overview.
 
 Stripe has its own tests in `providers/`.

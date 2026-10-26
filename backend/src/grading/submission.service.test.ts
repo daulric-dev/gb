@@ -343,6 +343,59 @@ describe('SubmissionService student access', () => {
     }
   });
 
+  test('a quiz a teacher has marked cannot be retaken', async () => {
+    const { service, prisma } = build(
+      studentTables({
+        activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
+        submission: {
+          id: 'sub-1',
+          status: 'graded',
+          attempt_count: 1,
+          graded_by: 'teacher-1',
+        },
+      }),
+    );
+    const err = await service.submitQuiz('stu-1', 'act-1', []).catch((e) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  test('submit_quiz already_marked (marked mid-retake) maps to a 400', async () => {
+    const { service } = build((p) => {
+      studentTables({
+        activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
+        submission: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+      })(p);
+      p.quiz_question.findMany.mockResolvedValue([]);
+      p.$queryRaw.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError(
+          'Raw query failed: already_marked',
+          {
+            code: 'P2010',
+            clientVersion: 'test',
+            meta: { code: 'P0025', message: 'already_marked' },
+          },
+        ),
+      );
+    });
+    const err = await service.submitQuiz('stu-1', 'act-1', []).catch((e) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+  });
+
+  test('finaliseUploadedFile refuses a closed assignment', async () => {
+    const finaliseUpload = () =>
+      Promise.resolve({ id: 'file-1', name: 'essay.pdf' });
+    const { service, prisma } = build(
+      studentTables({ activity: { ...ACTIVITY, status: 'closed' } }),
+      { finaliseUpload },
+    );
+    await expect(
+      service.finaliseUploadedFile('stu-1', 'act-1', 'file-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.submission.updateMany).not.toHaveBeenCalled();
+  });
+
   test('the course list maps to the PortalCourseActivity contract', async () => {
     const { service } = build((p) => {
       p.activity.findMany.mockResolvedValue([

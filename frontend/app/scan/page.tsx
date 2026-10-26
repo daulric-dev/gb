@@ -20,7 +20,7 @@ type State =
  *
  * The phone camera opens this before we know whether anyone is signed in.
  * The QR token lives for seconds and signing in takes longer, so the token
- * is swapped for a ten-minute claim straight away, kept for this tab, and the
+ * is swapped for a five-minute, single-use claim straight away, kept for this tab, and the
  * student is sent on to the portal scan page - through sign-in if needed -
  * which checks them in with it.
  */

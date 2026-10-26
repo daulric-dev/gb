@@ -4,7 +4,11 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { FileManagerService } from './file-manager.service';
+import {
+  FileManagerService,
+  MAX_PENDING_UPLOADS,
+} from './file-manager.service';
+import { ObjectTooLargeError } from '@/storage/storage.service';
 import { FileListFilter } from './dto/list-files.filter';
 import { expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
@@ -258,5 +262,118 @@ describe('direct uploads', () => {
     const out = await svc.getDownloadContent(USER, FILE_ID);
     expect(out.buffer.equals(PDF)).toBe(true);
     expect(storage.getBuffer).toHaveBeenCalledWith('file-manager/s/p');
+  });
+
+  test('a ticket stages the upload away from the served key and signs its size', async () => {
+    const { svc, prisma, storage } = makeService({ rows: null });
+    await svc.createUploadTicket(USER, {
+      name: 'Essay.pdf',
+      sizeBytes: 100,
+      contentType: 'application/pdf',
+    });
+    const row = prisma.file.create.mock.calls[0][0].data;
+    expect(row.storage_path.startsWith('uploads/school-1/user-1/')).toBe(true);
+    const [, , ttl, length] = storage.uploadUrl.mock.calls[0] as unknown as [
+      string,
+      string,
+      number,
+      number,
+    ];
+    expect(ttl).toBe(5 * 60);
+    expect(length).toBe(100);
+  });
+
+  test('too many live tickets is a 429 and reserves nothing', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    prisma.file.count.mockResolvedValue(MAX_PENDING_UPLOADS);
+    const err = await expectRejection(
+      svc.createUploadTicket(USER, {
+        name: 'a.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
+    );
+    expect((err as any).getStatus()).toBe(429);
+    expect(prisma.file.create).not.toHaveBeenCalled();
+    const where = prisma.file.count.mock.calls[0][0].where;
+    expect(where).toMatchObject({ owner_id: USER, status: 'pending' });
+  });
+
+  test('finalising serves the verified bytes from a new key and drops the staged one', async () => {
+    const storage = storageStub(PDF);
+    const { svc, prisma } = makeService(
+      {
+        rows: fileRow({
+          status: 'pending',
+          storage_path: 'uploads/school-1/user-1/f1-doc.pdf',
+          size_bytes: BigInt(PDF.byteLength),
+        }),
+      },
+      accessStub(),
+      storage,
+    );
+    prisma.file.update.mockImplementation(async ({ data }) =>
+      fileRow({ ...data }),
+    );
+    await svc.finaliseUpload(USER, FILE_ID);
+
+    expect(storage.getBuffer).toHaveBeenCalledWith(
+      'file-manager/uploads/school-1/user-1/f1-doc.pdf',
+      10 * 1024 * 1024,
+    );
+    const [putKey, putBody] = storage.put.mock.calls[0] as unknown as [
+      string,
+      Buffer,
+    ];
+    expect(putKey).toBe('file-manager/school-1/user-1/f1-doc.pdf');
+    expect(putBody.equals(PDF)).toBe(true);
+    expect(prisma.file.update.mock.calls[0][0].data.storage_path).toBe(
+      'school-1/user-1/f1-doc.pdf',
+    );
+    expect(storage.delete).toHaveBeenCalledWith(
+      'file-manager/uploads/school-1/user-1/f1-doc.pdf',
+    );
+  });
+
+  test('an object that grows past the cap after HEAD is rejected and deleted', async () => {
+    const storage = storageStub(PDF);
+    storage.getBuffer.mockImplementation(() =>
+      Promise.reject(new ObjectTooLargeError('k', 1)),
+    );
+    const { svc, prisma } = makeService(
+      { rows: fileRow({ status: 'pending', size_bytes: null }) },
+      accessStub(),
+      storage,
+    );
+    const err = await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+    expect((err as Error).message).toBe('File too large. Maximum is 10MB.');
+    expect(storage.delete).toHaveBeenCalled();
+    expect(prisma.file.updateMany.mock.calls[0][0].data.status).toBe('failed');
+  });
+
+  test('finalise ignores deleted rows', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+    expect(prisma.file.findFirst.mock.calls[0][0].where.deleted_at).toBeNull();
+  });
+});
+
+describe('readContentForAuthorisedCaller', () => {
+  test('a deleted file is not found', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    const err = await expectRejection(
+      svc.readContentForAuthorisedCaller(FILE_ID),
+    );
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(prisma.file.findFirst.mock.calls[0][0].where).toEqual({
+      id: FILE_ID,
+      deleted_at: null,
+    });
+  });
+
+  test('a malformed id is not found without a query', async () => {
+    const { svc, prisma } = makeService({ rows: fileRow() });
+    await expectRejection(svc.readContentForAuthorisedCaller('nope'));
+    expect(prisma.file.findFirst).not.toHaveBeenCalled();
   });
 });

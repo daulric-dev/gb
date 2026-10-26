@@ -92,9 +92,10 @@ describe('AuthService', () => {
 
   describe('sendOtp', () => {
     test('sends a code and returns the success message', async () => {
-      const result = await service.sendOtp('test@example.com');
+      const result = await service.sendOtp('test@example.com', '1.2.3.4');
       expect(result).toBe('OTP sent to email');
-      expect(emailCodes.send).toHaveBeenCalledWith('test@example.com');
+      // The client address goes along: sends are capped per (address, client).
+      expect(emailCodes.send).toHaveBeenCalledWith('test@example.com', '1.2.3.4');
     });
 
     test('a mail failure is a BadRequestException with the usual message', async () => {
@@ -168,10 +169,13 @@ describe('AuthService', () => {
       prisma.user_profile.findUnique.mockResolvedValue(
         dbProfile({ id: userId, email }),
       );
-      const req = {} as any;
+      const req = { ip: '1.2.3.4' } as any;
       const reply = {} as any;
 
       const result: any = await service.verifyOtp(email, '12345678', req, reply);
+
+      // Wrong guesses are counted per (code, client address).
+      expect(emailCodes.verify).toHaveBeenCalledWith(email, '12345678', '1.2.3.4');
 
       expect(accounts.userForVerifiedEmail).toHaveBeenCalledWith(email);
       expect(sessions.create).toHaveBeenCalledWith(reply, req, userId, 'email-code');

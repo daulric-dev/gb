@@ -18,9 +18,9 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 | GET | `/api/auth/sso/discover?email=` | Public, throttled (300/h per IP) | Whether the address's verified school domain has its own provider (`provider`) and requires it (`required`). |
 | GET | `/api/auth/sso/saml/metadata` | Public | Our SAML service-provider metadata XML; 404 when SAML is off. |
 | POST | `/api/auth/sso/saml/acs` | Public, throttled (120/h) | The IdP's form POST (`SAMLResponse`, `RelayState`). Checks the assertion, parks the identity under the state and 303-redirects to the callback. |
-| GET | `/api/auth/sso/:provider/start` | Public, throttled (120/h) | Query `next`, `platform` (`web`/`mobile`), `email`. Stores the pending sign-in, sets `gb_sso_flow`, 302-redirects to the provider. |
+| GET | `/api/auth/sso/:provider/start` | Public, throttled (120/h) | Query `next`, `platform` (`web`/`mobile`), `email`, `code_challenge` (required for `mobile`: base64url SHA-256 of an app-held verifier, 43 chars; a malformed one is a 400, a missing one - an app build from before PKCE - redirects to `gradebook://sso?error=` with `OUTDATED_APP_MESSAGE`, "This version of GradeBook is out of date...", which old builds show as is). Stores the pending sign-in, sets `gb_sso_flow`, 302-redirects to the provider. |
 | GET | `/api/auth/sso/callback` | Public | Finishes the sign-in and redirects: web gets a session cookie and goes to `next` (or `/`, or `/onboard`); mobile goes to `MOBILE_SSO_RETURN_URL?code=...`. Failures redirect to `/login?error=<reason>` (or the mobile URL with `error`); this route never returns an error page. |
-| POST | `/api/auth/sso/handoff` | Public, throttled (60/h) | Body `{ code }`. The mobile app trades its one-time code (valid 120 s) for a session cookie; 204. |
+| POST | `/api/auth/sso/handoff` | Public, throttled (60/h) | Body `{ code, code_verifier }`. The mobile app trades its one-time code (valid 120 s) plus the verifier for its `/start` challenge for a session; a missing or wrong verifier is refused and still burns the code (stops other apps catching `gradebook://` and planted-link login CSRF); 204. |
 | GET | `/api/auth/sso/suggested-profile` | `AuthGuard` | Names (and picture) from the provider the user last signed in with, to prefill onboarding; `{ profile: null }` for email-code accounts. |
 
 ### Services / exports
@@ -38,7 +38,7 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 
 1. Looks up the verified school domain for the identity's email. If that domain requires a different provider, the sign-in is refused (redirect with the reason).
 2. Asks the adapter `vouchesForDomain(identity, domain)` - the security boundary - and `verifiesEmail?(identity)`.
-3. `AccountService.userForIdentity()` finds the user by linked identity, or links/creates by email only when the email is trusted.
+3. `AccountService.userForIdentity()` finds the user by linked identity, or links/creates by email only when the email is trusted. An untrusted email with no linked identity is refused (403), whether or not an account has that address.
 4. `provision()` creates a `user_profile` if missing (with names and account type only when a vouched domain says `student` or `staff`), and calls `EmailDomainService.tryAutoJoin()` when the domain is vouched for, the address is the account's own, and the user has no school yet. Users without a name go to `/onboard`.
 
 ## Used by

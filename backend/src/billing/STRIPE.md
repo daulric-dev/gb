@@ -343,12 +343,18 @@ What a failed delivery means:
 | Checkout works but the school stays on Trial | Webhooks not arriving: wrong URL, endpoint in the other mode (test vs live), or event types missing. Check Developers → Webhooks → your destination's event deliveries (locally: the `stripe listen` output). |
 | Webhook deliveries show 400 | Wrong `STRIPE_WEBHOOK_SECRET` (each endpoint and each `stripe listen` session has its own), a proxy changing the body, or the server clock is off |
 | Webhook deliveries show 500 | The API failed to apply the event; it will retry. Check the API log for the event id. |
-| Per-user quantity not updating | Seat sync runs hourly; subscriptions set to cancel at period end are not updated |
+| Per-user quantity not updating | Seat sync runs hourly (subscriptions set to cancel at period end are still updated until they end) |
 | "Manage payment method" does nothing | Customer Portal not activated in that mode (test/live) |
 | Wrong currency or price | `BILLING_*` values don't match your `STRIPE_PRICE_*` prices |
 
 Refunds, voided invoices and disputes are handled in the Stripe dashboard;
-GradeBook only records paid invoices it receives by webhook.
+GradeBook only records paid invoices it receives by webhook. One exception:
+if two checkouts for the same school both complete (they are serialized, so
+this should not happen), GradeBook cancels the second subscription and
+refunds its payment automatically, logging a warning with the subscription,
+invoice and refund ids. If that refund fails, the API log has an error
+(`Refund of duplicate subscription ... failed`): refund that subscription's
+payment from the dashboard.
 
 ## See also
 

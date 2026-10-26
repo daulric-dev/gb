@@ -52,10 +52,11 @@ export class AuthController {
   @Post('otp/send')
   @Throttle({
     'auth-strict': { limit: 5, ttl: 60 * 60 * 1000 },
-    'auth-ip': { limit: 30, ttl: 60 * 60 * 1000 },
+    // Per IP: a whole school can sit behind one NAT address.
+    'auth-ip': { limit: 300, ttl: 60 * 60 * 1000 },
   })
   async sendOtp(@Body() dto: SendOtpDto, @Req() req: any) {
-    const message = await this.authService.sendOtp(dto.email);
+    const message = await this.authService.sendOtp(dto.email, req.ip);
     return this.versioning.resolve(req, 'auth.message')(message);
   }
 
@@ -73,7 +74,7 @@ export class AuthController {
   @Post('otp/verify')
   @Throttle({
     'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 },
-    'auth-ip': { limit: 100, ttl: 15 * 60 * 1000 },
+    'auth-ip': { limit: 600, ttl: 15 * 60 * 1000 },
   })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,

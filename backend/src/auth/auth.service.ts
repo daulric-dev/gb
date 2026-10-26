@@ -71,10 +71,11 @@ export class AuthService {
     }
   }
 
-  async sendOtp(email: string) {
+  /** `ip` is the client asking: codes are capped per (address, client). */
+  async sendOtp(email: string, ip?: string) {
     await this.refuseIfSsoRequired(email);
     try {
-      await this.emailCodes.send(email);
+      await this.emailCodes.send(email, ip);
       return 'OTP sent to email';
     } catch (err) {
       // A rate limit (429) keeps its own message; any other failure reads as
@@ -105,7 +106,7 @@ export class AuthService {
     try {
       let verifiedEmail: string;
       try {
-        verifiedEmail = await this.emailCodes.verify(email, token);
+        verifiedEmail = await this.emailCodes.verify(email, token, req.ip);
       } catch (err) {
         this.logger.warn(`OTP verification failed for ${email}: ${(err as Error).message}`);
         throw new UnauthorizedException('Invalid or expired OTP');

@@ -109,6 +109,7 @@ export class SubscriptionService {
       {
         status: row.status,
         trialEndsAt: row.trial_ends_at,
+        currentPeriodStart: row.current_period_start,
         currentPeriodEnd: row.current_period_end,
         cancelAtPeriodEnd: row.cancel_at_period_end,
         compUntil: row.comp_until,

@@ -25,6 +25,28 @@ export interface PaymentProvider {
   /** Start a subscription on the provider's hosted checkout page. */
   createCheckout(ctx: CheckoutContext): Promise<CheckoutResult>;
 
+  /**
+   * Expire a hosted checkout session we started earlier, so it can no longer
+   * turn into a subscription. Returns false when it already completed (a
+   * subscription is on its way); true when it is expired now or already was.
+   */
+  expireCheckoutSession?(providerRef: string): Promise<boolean>;
+
+  /**
+   * The subscription as the provider holds it right now, or null when it does
+   * not exist. Webhooks apply this rather than the event's own snapshot, so a
+   * late or out-of-order event can never set an outdated state.
+   */
+  getSubscription?(providerSubscriptionId: string): Promise<ProviderSubscriptionState | null>;
+
+  /**
+   * Refund what the subscription's latest invoice collected, in full. Used
+   * for a duplicate subscription billing refuses (two checkouts that raced).
+   * Returns null when that invoice has no paid payment yet. Must be safe to
+   * call again for the same invoice (no second refund).
+   */
+  refundLatestPayment?(providerSubscriptionId: string): Promise<RefundResult | null>;
+
   /** Change the billed seat count (per-user plan). Prorates as the provider does. */
   updateQuantity?(sub: ProviderSubscriptionRef, quantity: number): Promise<void>;
 
@@ -71,7 +93,11 @@ export interface CheckoutContext {
   /** Absolute URLs to return the browser to. */
   successUrl: string;
   cancelUrl: string;
-  /** Idempotency key for this checkout attempt. */
+  /**
+   * Idempotency key for this checkout attempt. Derived from the school's
+   * subscription row, so two attempts that read the same row get the same
+   * key (and so the same session, or an error if their parameters differ).
+   */
   idempotencyKey: string;
 }
 
@@ -84,10 +110,34 @@ export interface CheckoutResult {
   providerCustomerId?: string | null;
 }
 
+export interface RefundResult {
+  /** The invoice whose payment was refunded. */
+  providerInvoiceId: string;
+  /** The provider's refund ids (one per payment on the invoice). */
+  refundIds: string[];
+  /** Total refunded, minor units. */
+  amountCents: number;
+  currency: string;
+}
+
 export interface ProviderSubscriptionRef {
   providerSubscriptionId: string;
   providerCustomerId: string | null;
   plan: BillingPlan;
+}
+
+/** A provider subscription's current state, normalised. */
+export interface ProviderSubscriptionState {
+  providerSubscriptionId: string;
+  providerCustomerId: string | null;
+  /** From the metadata we attached at checkout. */
+  schoolId: string | null;
+  status: SubscriptionStatus;
+  plan: BillingPlan | null;
+  quantity: number | null;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
 }
 
 export interface WebhookRequest {
@@ -106,11 +156,16 @@ export type SubscriptionStatus =
   | 'unpaid'
   | 'incomplete';
 
-/** Provider events, normalised. `eventId` is the provider's, used for idempotency. */
+/**
+ * Provider events, normalised. `eventId` is the provider's, used for
+ * idempotency; `occurredAt` is when the provider created the event, used to
+ * ignore events older than the newest one already applied.
+ */
 export type BillingEvent =
   | {
       type: 'subscription.updated';
       eventId: string;
+      occurredAt?: Date | null;
       providerSubscriptionId: string;
       providerCustomerId?: string | null;
       /** From the metadata we attached at checkout; may be absent on later events. */
@@ -125,12 +180,14 @@ export type BillingEvent =
   | {
       type: 'subscription.canceled';
       eventId: string;
+      occurredAt?: Date | null;
       providerSubscriptionId: string;
       schoolId?: string | null;
     }
   | {
       type: 'invoice.paid';
       eventId: string;
+      occurredAt?: Date | null;
       providerInvoiceId?: string | null;
       providerSubscriptionId?: string | null;
       schoolId?: string | null;
@@ -143,6 +200,7 @@ export type BillingEvent =
   | {
       type: 'invoice.payment_failed';
       eventId: string;
+      occurredAt?: Date | null;
       providerInvoiceId?: string | null;
       providerSubscriptionId?: string | null;
       schoolId?: string | null;

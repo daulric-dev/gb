@@ -110,7 +110,7 @@ Full reference with every variable and its failure mode: **[Environment variable
 
 ### Who holds what
 
-**Backend** (`backend/.env`) - all the secrets. `DATABASE_URL`, the `S3_*` values and `SMTP_URL` connect it to its services. `AUTH_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` are optional in development and **required in production**: the app refuses to start without them rather than silently storing plaintext messages or unhashed claim codes. Generate each with `openssl rand -base64 32`.
+**Backend** (`backend/.env`) - all the secrets. `DATABASE_URL`, the `S3_*` values and `SMTP_URL` connect it to its services. `AUTH_SECRET`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` are optional in development and **required in production**: the app refuses to start without them rather than silently storing plaintext messages or unhashed school join codes. Generate each with `openssl rand -base64 32`.
 
 **Frontend** (`frontend/.env.local`) - `NEXT_PUBLIC_API_URL`, and nothing else that matters. Anything `NEXT_PUBLIC_*` is **baked into the browser bundle at build time** and is public. Never put a secret behind that prefix.
 

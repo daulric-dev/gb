@@ -7,6 +7,8 @@ export type DisplayStatus = SubscriptionStatus | 'read_only';
 export interface EntitlementInput {
   status: string;
   trialEndsAt: Date | null;
+  /** Start of the current period: the renewal date, for a renewal that failed. */
+  currentPeriodStart?: Date | null;
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   compUntil: Date | null;
@@ -27,6 +29,13 @@ const after = (d: Date | null, now: Date) => !!d && d.getTime() > now.getTime();
  * - A paid period allows writes until it ends; a missed renewal gets
  *   `graceDays` more (past_due, or an active row whose renewal never arrived),
  *   a cancellation does not.
+ * - past_due / unpaid: the provider advances the period even when the renewal
+ *   payment fails, so the grace runs from the start of that (unpaid) period,
+ *   not from its end.
+ * - canceled: writable until current_period_end, which for a canceled row is
+ *   the paid-through date - the webhook pulls it back to the period start when
+ *   a subscription is canceled while its current period is unpaid (see
+ *   BillingEventsService).
  */
 export function computeEntitlement(
   input: EntitlementInput,
@@ -56,7 +65,11 @@ export function computeEntitlement(
             );
       break;
     case 'past_due':
-      writable = after(plus(input.currentPeriodEnd, grace), now);
+    case 'unpaid':
+      writable = after(
+        plus(input.currentPeriodStart ?? input.currentPeriodEnd, grace),
+        now,
+      );
       break;
     case 'canceled':
       writable = after(input.currentPeriodEnd, now);
@@ -66,7 +79,6 @@ export function computeEntitlement(
       // period end.
       writable = after(input.currentPeriodEnd, now);
       break;
-    case 'unpaid':
     case 'incomplete':
     default:
       writable = false;

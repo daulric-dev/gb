@@ -169,6 +169,31 @@ describe('TermService', () => {
       expect(cached[0].name).toBe('Autumn');
     });
 
+    test('rejects an end date before the existing start date', async () => {
+      prisma.term.findFirst.mockResolvedValue(dbTerm());
+      await expect(
+        service.update(USER_ID, 'term-1', { endDate: '2025-08-01' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.term.update).not.toHaveBeenCalled();
+    });
+
+    test('rejects a start date on or after the existing end date', async () => {
+      prisma.term.findFirst.mockResolvedValue(dbTerm());
+      await expect(
+        service.update(USER_ID, 'term-1', { startDate: '2025-12-15' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    test('accepts moving both dates together', async () => {
+      prisma.term.findFirst.mockResolvedValue(dbTerm());
+      prisma.term.update.mockResolvedValue(dbTerm());
+      await service.update(USER_ID, 'term-1', {
+        startDate: '2026-01-05',
+        endDate: '2026-03-30',
+      });
+      expect(prisma.term.update).toHaveBeenCalled();
+    });
+
     test('rejects a blank name', async () => {
       prisma.term.findFirst.mockResolvedValue(dbTerm());
       expect(
