@@ -16,6 +16,7 @@ export function buildUrl(path: string): string {
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   skipAuthRedirect?: boolean;
+  skipSubscriptionNotice?: boolean;
 };
 
 let unauthorizedHandler: (() => void) | null = null;
@@ -61,9 +62,14 @@ async function fetchOrThrow(
  * is read-only) also raises the app-wide notice; it is still thrown so the
  * caller stops what it was doing.
  */
-async function errorFrom(res: Response): Promise<ApiError> {
+async function errorFrom(
+  res: Response,
+  options?: RequestOptions,
+): Promise<ApiError> {
   const error = await res.json().catch(() => ({ message: res.statusText }));
-  if (isSubscriptionRequired(res.status, error)) notifySubscriptionRequired();
+  if (!options?.skipSubscriptionNotice && isSubscriptionRequired(res.status, error)) {
+    notifySubscriptionRequired();
+  }
   return new ApiError(res.status, error?.message || res.statusText, error);
 }
 
@@ -91,7 +97,7 @@ export async function api<T = unknown>(
 
   if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
 
-  if (!res.ok) throw await errorFrom(res);
+  if (!res.ok) throw await errorFrom(res, options);
 
   const text = await res.text();
   try {

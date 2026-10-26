@@ -10,13 +10,13 @@ Codes are stored only as an HMAC-SHA256 keyed with `STUDENT_CLAIM_CODE_PEPPER`, 
 
 ### HTTP routes
 
-`SchoolJoinCodeController` uses `@UseGuards(AuthGuard, PermissionGuard)`. Issuing is gated on `student:create` because redeeming a code creates a student.
+`SchoolJoinCodeController` uses `@UseGuards(AuthGuard, PermissionGuard)`. Viewing status is gated on `join-code:read`; issuing and revoking are gated on `join-code:update`.
 
 | Method | Path | Guard / who may call | What it does |
 | --- | --- | --- | --- |
-| GET | `/api/schools/join-code` | `student:read` | `{ activeCode: { expiresAt, issuedAt } \| null, expired }`. Never returns the code. |
-| POST | `/api/schools/join-code` | `student:create` | Issue (or reissue) the code; body `IssueClaimCodeDto` (`ttlDays`, default 14, max 90). Deletes any live code and inserts the new one in one transaction. Returns `{ code, expiresAt }` - the only time the code is visible. |
-| DELETE | `/api/schools/join-code` | `student:create` | Revoke the live code; 204. |
+| GET | `/api/schools/join-code` | `join-code:read` | `{ activeCode: { expiresAt, issuedAt } \| null, expired }`. Never returns the code. |
+| POST | `/api/schools/join-code` | `join-code:update` | Issue (or reissue) the code; body `IssueClaimCodeDto` (`ttlDays`, default 14, max 90). Deletes any live code and inserts the new one in one transaction. Returns `{ code, expiresAt }` - the only time the code is visible. |
+| DELETE | `/api/schools/join-code` | `join-code:update` | Revoke the live code; 204. |
 
 Redeeming the code is **not** a route here: it is `POST /api/auth/join-school` in `src/auth/auth.controller.ts` (throttled by the `claim-code` throttler, 10 per 15 min), which calls `StudentMembershipService.joinByCode()`.
 

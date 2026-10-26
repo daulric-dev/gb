@@ -10,11 +10,13 @@ import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { Avatar } from "@/components/ui/Avatar";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sheet } from "@/components/ui/Sheet";
 import { StudentForm } from "@/features/students/StudentForm";
+import { SchoolJoinCodeSheet } from "@/features/students/SchoolJoinCodeSheet";
 import { getInitials, capitalize } from "@/lib/utils";
 
 function StudentRow({
@@ -63,9 +65,12 @@ export default function StudentsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
+  const [joinCodeOpen, setJoinCodeOpen] = useState(false);
   const initial = useRef(true);
 
   const canUpdate = can("student", "update");
+  const canJoinCode = can("join-code", "read") || can("join-code", "update");
+  const canIssueJoinCode = can("join-code", "update");
 
   const fetchStudents = useCallback(
     async (query?: string) => {
@@ -109,6 +114,17 @@ export default function StudentsScreen() {
     <Screen
       title="Students"
       description="Students in your school"
+      action={
+        canJoinCode ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => setJoinCodeOpen(true)}
+          >
+            Join code
+          </Button>
+        ) : undefined
+      }
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
@@ -170,6 +186,12 @@ export default function StudentsScreen() {
           />
         ) : null}
       </Sheet>
+
+      <SchoolJoinCodeSheet
+        open={joinCodeOpen}
+        onClose={() => setJoinCodeOpen(false)}
+        canIssue={canIssueJoinCode}
+      />
     </Screen>
   );
 }

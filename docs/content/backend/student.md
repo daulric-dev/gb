@@ -77,8 +77,8 @@ onboarding, and joins with the school's join code. There is exactly one way in.
 - **Issue the code.** Staff open **Students -> School join code**. One live
   code per school; reissuing supersedes it, and it lapses on its expiry
   (14 days by default) or when revoked. Only a keyed hash is stored, so a lost
-  code is reissued rather than recovered. Gated on `student:create`, because
-  redeeming one creates a student.
+  code is reissued rather than recovered. Gated on `join-code:update`
+  (`join-code:read` to view status).
 - **Redeem it.** The student enters it on `/schools`, which shows them the code
   field alone. Redemption creates their `student.student` row, links it to
   their login and binds their profile to the school. There is no staff route

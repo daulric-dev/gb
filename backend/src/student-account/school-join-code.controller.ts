@@ -18,8 +18,8 @@ import { IssueClaimCodeDto } from './dto/issue-claim-code.dto';
 /**
  * The school's join code.
  *
- * Issuing is gated on student:create - redeeming a code creates a student, so
- * handing the code out hands out that ability.
+ * Viewing status is gated on join-code:read.
+ * Issuing and revoking are gated on join-code:update.
  */
 @ApiTags('Schools')
 @ApiBearerAuth()
@@ -29,20 +29,20 @@ export class SchoolJoinCodeController {
   constructor(private readonly membership: StudentMembershipService) {}
 
   /** Whether a live code exists and when it lapses; never the code itself. */
-  @RequirePermission('student', 'read')
+  @RequirePermission('join-code', 'read')
   @Get()
   async status(@Req() req: any) {
     return this.membership.getCodeStatus(req.user.id as string);
   }
 
   /** Returns the plaintext once; only its hash is stored. */
-  @RequirePermission('student', 'create')
+  @RequirePermission('join-code', 'update')
   @Post()
   async issue(@Req() req: any, @Body() dto: IssueClaimCodeDto) {
     return this.membership.issueCode(req.user.id as string, dto.ttlDays);
   }
 
-  @RequirePermission('student', 'create')
+  @RequirePermission('join-code', 'update')
   @Delete()
   @HttpCode(204)
   async revoke(@Req() req: any) {

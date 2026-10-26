@@ -16,7 +16,9 @@ export const RESOURCES = [
   'announcement',
   'file',
   'chat',
+  'join-code',
 ] as const;
+
 export type Resource = (typeof RESOURCES)[number];
 
 export type PermissionKey = `${Resource}:${Action}`;
@@ -27,11 +29,14 @@ export type PermissionKey = `${Resource}:${Action}`;
 //   their own - billing (plan, payment, invoices). Admins hold it by default.
 // - course: reading and deleting a course are decided by the course role
 //   (CourseAccessService), so only create and update are school-wide powers.
-// - student and academic-year have no delete route.
+// - student and join-code have read and update only (students self-register and
+//   join via code; join codes are issued/revoked via update and inspected via read).
+// - academic-year has no delete route.
 const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
   school: ['read', 'update'],
   course: ['create', 'update'],
-  student: ['create', 'read', 'update'],
+  student: ['read', 'update'],
+  'join-code': ['read', 'update'],
   'academic-year': ['create', 'read', 'update'],
 };
 
@@ -62,6 +67,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   announcement: 'announcements',
   file: 'files',
   chat: 'chat messages',
+  'join-code': 'school join code',
 };
 
 const ACTION_VERBS: Record<Action, string> = {
@@ -71,15 +77,25 @@ const ACTION_VERBS: Record<Action, string> = {
   delete: 'Delete',
 };
 
+const CUSTOM_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
+  'join-code:read': 'View school join code status',
+  'join-code:update': 'Issue and revoke the school join code',
+};
+
 /** The full catalog: every resource x each action it supports. */
 export const PERMISSION_CATALOG: CatalogEntry[] = RESOURCES.flatMap(
   (resource) =>
-    actionsFor(resource).map((action) => ({
-      resource,
-      action,
-      key: permKey(resource, action),
-      description: `${ACTION_VERBS[action]} ${RESOURCE_LABELS[resource]}`,
-    })),
+    actionsFor(resource).map((action) => {
+      const key = permKey(resource, action);
+      return {
+        resource,
+        action,
+        key,
+        description:
+          CUSTOM_DESCRIPTIONS[key] ??
+          `${ACTION_VERBS[action]} ${RESOURCE_LABELS[resource]}`,
+      };
+    }),
 );
 
 /** Fast membership lookup for validating incoming keys. */
@@ -109,6 +125,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
       'academic-year',
       'grade-scale',
       'school',
+      'join-code',
     ),
   ],
 
@@ -123,6 +140,7 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
       'announcement',
       'file',
       'school',
+      'join-code',
     ),
     // Own-file management: ownership is enforced per-file in the service.
     permKey('file', 'create'),

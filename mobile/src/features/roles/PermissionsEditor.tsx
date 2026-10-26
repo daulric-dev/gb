@@ -18,12 +18,19 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   delete: "Delete",
 };
 
+const RESOURCE_PRETTY: Record<string, string> = {
+  "join-code": "School Join Code",
+};
+
 /** Turn a resource slug ("grade-scales") into a header ("Grade Scales"). */
 function prettyResource(resource: string): string {
-  return resource
-    .split(/[-_]/)
-    .map((word) => capitalize(word))
-    .join(" ");
+  return (
+    RESOURCE_PRETTY[resource] ??
+    resource
+      .split(/[-_]/)
+      .map((word) => capitalize(word))
+      .join(" ")
+  );
 }
 
 /**

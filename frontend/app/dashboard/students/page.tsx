@@ -62,10 +62,12 @@ export default function StudentsPage() {
         title="Students"
         description="Manage Students in Your School"
         action={
-          <Button onClick={() => (joinCodeOpen.value = true)}>
-            <KeyRound className="mr-2 size-4" />
-            School join code
-          </Button>
+          can("join-code", "read") || can("join-code", "update") ? (
+            <Button onClick={() => (joinCodeOpen.value = true)}>
+              <KeyRound className="mr-2 size-4" />
+              School join code
+            </Button>
+          ) : undefined
         }
       />
 
@@ -127,7 +129,7 @@ export default function StudentsPage() {
       <SchoolJoinCodeDialog
         open={joinCodeOpen.value}
         onOpenChangeAction={(v) => (joinCodeOpen.value = v)}
-        canIssue={can("student", "create")}
+        canIssue={can("join-code", "update")}
       />
     </div>
   );
