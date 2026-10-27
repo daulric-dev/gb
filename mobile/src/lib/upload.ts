@@ -1,4 +1,6 @@
 import { api, buildUrl } from "@/lib/api";
+import { Blob as ExpoBlob } from "expo-blob"
+import { File } from "expo-file-system"
 
 /**
  * Direct uploads from the app to object storage with a presigned URL.
@@ -44,16 +46,18 @@ export class UploadError extends Error {
   }
 }
 
-async function readBlob(file: PickedFile): Promise<Blob> {
-  const response = await fetch(file.uri);
-  return response.blob();
+async function readBlob(file: PickedFile): Promise<ExpoBlob> {
+  console.log("File URI", file.uri);
+  const response = new File(file.uri);
+  const raw_blob = await response.arrayBuffer();
+  
+  return new ExpoBlob(
+    [raw_blob], 
+    { type: file.mimeType || "application/octet-stream" }
+  );
 }
 
-function putOnce(
-  blob: Blob,
-  ticket: UploadTicket,
-  onProgress?: (fraction: number) => void,
-): Promise<void> {
+function putOnce(blob: ExpoBlob, ticket: UploadTicket, onProgress?: (fraction: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(ticket.method ?? "PUT", ticket.uploadUrl);
@@ -77,9 +81,10 @@ function putOnce(
       }
     };
     const networkError = () =>
-      reject(
-        new UploadError("Upload failed. Check your connection and try again.", 0),
+       reject(
+        new UploadError(`Upload failed. Check your connection and try again.`, 0),
       );
+    
     xhr.onerror = networkError;
     xhr.ontimeout = networkError;
     xhr.onabort = () => reject(new UploadError("Upload cancelled", 0));
@@ -89,17 +94,24 @@ function putOnce(
 }
 
 /** PUT the bytes, retrying once if the connection drops. */
-async function sendToStorage(
-  blob: Blob,
-  ticket: UploadTicket,
-  onProgress?: (fraction: number) => void,
-): Promise<void> {
+async function sendToStorage(blob: ExpoBlob, ticket: UploadTicket, onProgress?: (fraction: number) => void): Promise<void> {
+  const array_buffer = await blob.arrayBuffer();
+  const mime_type = blob.type;
+  
   try {
-    await putOnce(blob, ticket, onProgress);
+    await putOnce(
+      new ExpoBlob([array_buffer], { type: mime_type }), 
+        ticket, 
+        onProgress
+      );
   } catch (err) {
     if (!(err instanceof UploadError) || err.status !== 0) throw err;
     onProgress?.(0);
-    await putOnce(blob, ticket, onProgress);
+    await putOnce(
+      new ExpoBlob([array_buffer], { type: mime_type }), 
+      ticket, 
+      onProgress
+    );
   }
 }
 
@@ -109,11 +121,7 @@ async function sendToStorage(
  * Students hold no file permissions of their own, so the ticket is issued
  * against the activity rather than the file manager.
  */
-export async function uploadSubmissionFile(
-  activityId: string,
-  file: PickedFile,
-  onProgress?: (fraction: number) => void,
-): Promise<{ fileId: string; name: string }> {
+export async function uploadSubmissionFile(activityId: string, file: PickedFile, onProgress?: (fraction: number) => void): Promise<{ fileId: string; name: string }> {
   const blob = await readBlob(file);
 
   const ticket = await api<UploadTicket>(
