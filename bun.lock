@@ -161,6 +161,7 @@
         "@react-native-community/datetimepicker": "9.2.1",
         "expo": "^58.0.13",
         "expo-application": "~58.1.2",
+        "expo-blob": "^58.0.3",
         "expo-camera": "~58.0.13",
         "expo-constants": "~58.0.13",
         "expo-crypto": "~58.0.7",
@@ -2290,6 +2291,8 @@
     "expo-application": ["expo-application@58.1.2", "", { "peerDependencies": { "expo": "*" } }, "sha512-WYFdNHGaxe/j69oYREhK0cKsKYszuIuz399WXYCP+M1grfO+FCWB/RbuMgaXJsLWlzqhNjA/zLgfJ+33FwrQvw=="],
 
     "expo-asset": ["expo-asset@58.0.18", "", { "dependencies": { "@expo/image-utils": "^0.12.5", "expo-constants": "~58.0.13" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-Cc49mpDd81hIIKw1DVDkL52a/S6MJlHLA+LirUHNR7qJJfopoHrSypg9rRuqvCUVW7/JKvXKqbFX43NynpVzmg=="],
+
+    "expo-blob": ["expo-blob@58.0.3", "", { "peerDependencies": { "expo": "*" } }, "sha512-CMLFRpaw+YKu5fRY1FpawiLYcp2iClzNw40mowswEBVPZvYIHzQkE3rI1B5NQlxpyDPL9kEJlbnnVlbRC9Nmsw=="],
 
     "expo-camera": ["expo-camera@58.0.13", "", { "dependencies": { "barcode-detector": "^3.0.0" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*", "react-native-web": "*" }, "optionalPeers": ["react-native-web"] }, "sha512-VPt6sKAiUF4QQxbQZjPsNk+JfUnRCqz37KYqNcTcwE5AVNuAVNKbm7Gp1wv1giY/Qa32+0lrcsAkKLe2rHxASQ=="],
 

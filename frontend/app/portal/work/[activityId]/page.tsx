@@ -427,7 +427,7 @@ export default function PortalWorkDetailPage() {
                           : "Attach a file"}
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Up to 10MB, and an interrupted upload picks up where it
+                      Up to 100MB, and an interrupted upload picks up where it
                       stopped. Attaching a file does not hand it in.
                     </p>
                   </>

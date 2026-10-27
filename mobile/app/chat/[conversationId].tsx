@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, ComponentRef } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -57,7 +57,7 @@ export default function ChatThreadScreen() {
   const [sending, setSending] = useState(false);
   const [actingId, setActingId] = useState<string | null>(null);
 
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<ScrollView>>(null);
 
   const markRead = useCallback(() => {
     if (!conversationId) return;

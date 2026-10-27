@@ -9,7 +9,7 @@ import { api, buildUrl } from "@/lib/api";
  * releases the file. Nothing is readable until it does.
  *
  * The picked document arrives as a `file://` URI rather than a File, so it is
- * read into a Blob first. Uploads are capped at 10MB server-side, which keeps
+ * read into a Blob first. Uploads are capped at 100MB server-side, which keeps
  * that affordable. XMLHttpRequest rather than fetch, because only XHR reports
  * upload progress in React Native.
  */

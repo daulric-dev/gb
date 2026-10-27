@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Clock, MapPin, ScanLine } from "lucide-react-native";
@@ -33,7 +33,7 @@ export default function CheckInScreen() {
   /** Too many wrong codes, or closed under us: no more attempts. */
   const [locked, setLocked] = useState(false);
   const [closed, setClosed] = useState(false);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<ComponentRef<TextInput>>(null);
   /** A location reading started as soon as we know one is needed. */
   const fix = useRef<Promise<Fix> | null>(null);
 

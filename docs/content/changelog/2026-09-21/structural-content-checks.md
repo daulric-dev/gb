@@ -32,7 +32,7 @@ The ZIP's **central directory** is walked to list the parts inside:
 
 Only the index is read - **nothing is decompressed** - so a crafted archive cannot make this expensive, and a zip bomb has nothing to inflate. An archive whose directory cannot be parsed is rejected rather than passed.
 
-ZIP64 is not handled and does not need to be: uploads are capped at 10MB, far below the 4GB / 65535-entry threshold where it applies.
+ZIP64 is not handled and does not need to be: uploads are capped at 100MB, far below the 4GB / 65535-entry threshold where it applies.
 
 ### PDFs
 

@@ -27,7 +27,7 @@ export class CreateUploadTicketDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10 * 1024 * 1024)
+  @Max(100 * 1024 * 1024)
   sizeBytes!: number;
 
   @ApiProperty({ example: 'application/pdf' })

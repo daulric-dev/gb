@@ -31,7 +31,7 @@ Scanning was one layer of several, and the others are untouched:
 
 - **Type allow-list.** Only PDF, PNG, JPEG, WebP, plain text, CSV, XLSX and DOCX are accepted. Executables and scripts are refused outright.
 - **Magic-byte verification.** `verifyContent` checks the declared type against the leading bytes, so a renamed file does not pass on its extension. This is what catches the cheap attack - an `.exe` called `coursework.pdf`.
-- **Size cap.** 10MB per file.
+- **Size cap.** 100MB per file.
 - **No execution path.** Files are stored as opaque objects and served back as downloads; nothing in the stack opens, renders or interprets them.
 - **Scoped access.** A file is reachable by its owner, the people it is explicitly shared with, and - for a submission - the teacher who owns the class. `downloadBytes` additionally refuses anything not `ready`.
 

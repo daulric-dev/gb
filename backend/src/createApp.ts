@@ -28,7 +28,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
   registerWebhookRawBody(app.getHttpAdapter().getInstance());
 
   await app.register(multipart, {
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 100 * 1024 * 1024 },
   });
 
   console.log(`Running in ${process.env.NODE_ENV} mode`);

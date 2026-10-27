@@ -388,7 +388,7 @@ export default function WorkDetailScreen() {
                           : "Attach a file"}
                       </Button>
                       <Text variant="muted" size="xs">
-                        Up to 10MB, and an interrupted upload picks up where it
+                        Up to 100MB, and an interrupted upload picks up where it
                         stopped. Attaching a file does not hand it in.
                       </Text>
                     </>

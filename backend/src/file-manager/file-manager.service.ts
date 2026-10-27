@@ -29,9 +29,10 @@ import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 
 const BUCKET = 'file-manager';
-const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_IN_MB = 100; // 100MB
+const MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_IN_MB * 1024 * 1024;
 
-/** Long enough to send a 10MB file, short enough to be worth little. */
+/** Long enough to send a 100MB file, short enough to be worth little. */
 export const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 
 /** Live (unexpired) upload tickets one user may hold at once. */
@@ -264,7 +265,7 @@ export class FileManagerService {
     }
     if (input.sizeBytes > MAX_UPLOAD_SIZE) {
       throw new BadRequestException(
-        `File too large (${(input.sizeBytes / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`,
+        `File too large (${(input.sizeBytes / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`,
       );
     }
 
@@ -373,7 +374,7 @@ export class FileManagerService {
     // before anything is read back.
     if (head.size > MAX_UPLOAD_SIZE) {
       await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 10MB.');
+      throw new BadRequestException('File too large. Maximum is 100MB.');
     }
     const declared = num(record.size_bytes);
     if (declared && head.size > 0 && head.size !== declared) {
@@ -395,7 +396,7 @@ export class FileManagerService {
     } catch (error) {
       if (!(error instanceof ObjectTooLargeError)) throw error;
       await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 10MB.');
+      throw new BadRequestException('File too large. Maximum is 100MB.');
     }
     if (!buffer) {
       await this.failUpload(fileId, 'failed', 'Upload did not complete');
@@ -408,7 +409,7 @@ export class FileManagerService {
     }
     if (buffer.byteLength > MAX_UPLOAD_SIZE) {
       await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 10MB.');
+      throw new BadRequestException('File too large. Maximum is 100MB.');
     }
 
     const check = verifyContent(buffer, record.content_type);
@@ -519,7 +520,7 @@ export class FileManagerService {
     }
     if (buffer.byteLength > MAX_UPLOAD_SIZE) {
       throw new BadRequestException(
-        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`,
+        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`,
       );
     }
 

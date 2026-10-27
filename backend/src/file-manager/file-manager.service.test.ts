@@ -186,7 +186,7 @@ describe('direct uploads', () => {
       method: 'PUT',
       headers: { 'Content-Type': 'application/pdf' },
       contentType: 'application/pdf',
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: 100 * 1024 * 1024,
     });
     expect(t.uploadUrl).toContain(`file-manager/${row.storage_path}`);
     expect(typeof t.expiresAt).toBe('string');
@@ -319,7 +319,7 @@ describe('direct uploads', () => {
 
     expect(storage.getBuffer).toHaveBeenCalledWith(
       'file-manager/uploads/school-1/user-1/f1-doc.pdf',
-      10 * 1024 * 1024,
+      100 * 1024 * 1024,
     );
     const [putKey, putBody] = storage.put.mock.calls[0] as unknown as [
       string,
@@ -346,7 +346,7 @@ describe('direct uploads', () => {
       storage,
     );
     const err = await expectRejection(svc.finaliseUpload(USER, FILE_ID));
-    expect((err as Error).message).toBe('File too large. Maximum is 10MB.');
+    expect((err as Error).message).toBe('File too large. Maximum is 100MB.');
     expect(storage.delete).toHaveBeenCalled();
     expect(prisma.file.updateMany.mock.calls[0][0].data.status).toBe('failed');
   });

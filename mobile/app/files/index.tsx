@@ -27,7 +27,8 @@ import type {
   FolderItem,
 } from "@/features/files/types";
 
-const MAX_SIZE = 10 * 1024 * 1024;
+const MAX_SIZE_IN_MB = 100
+const MAX_SIZE = MAX_SIZE_IN_MB * 1024 * 1024;
 
 const TABS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
@@ -142,7 +143,7 @@ export default function FilesScreen() {
     const asset = result.assets[0];
     if (!asset) return;
     if (asset.size && asset.size > MAX_SIZE) {
-      toast.error("File must be under 10MB");
+      toast.error("File must be under 100MB");
       return;
     }
 

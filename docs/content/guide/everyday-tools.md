@@ -13,7 +13,7 @@ The parts of GradeBook that are not about marks.
 
 Upload by choosing a file. Large files on a weak connection resume rather than restarting, so a dropped connection is not a lost upload.
 
-**What you can upload:** PDFs, Word documents, spreadsheets, plain text, CSV, and images (PNG, JPEG, WebP). Up to 10MB each.
+**What you can upload:** PDFs, Word documents, spreadsheets, plain text, CSV, and images (PNG, JPEG, WebP). Up to 100MB each.
 
 Anything else is refused. So is a file whose contents do not match its name — renaming a program to `.pdf` does not get it in. Documents carrying macros and PDFs with embedded actions are refused too. If an upload is rejected and you believe the file is fine, re-save it from the application that made it; that usually clears whatever the original was carrying.
 

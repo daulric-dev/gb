@@ -32,7 +32,7 @@ It leads with the things people actually get stuck on:
 - **The join code cannot know who someone is**, so duplicate student records are expected rather than a fault, and merging keeps the record that holds the history.
 - **Deleting your account** removes a login, not the school's records - and if you are the only administrator, that needs handling first.
 
-Two claims were corrected by checking rather than assuming. A draft said a student could be in one class per year and that enrolling elsewhere moved them; the constraint is on `(student_id, student_group_id)`, so a student **can** be in several classes and only the same class twice is refused. The 10MB cap, the accepted file types, the three attendance statuses, and that students only ever see `published` and `sent_to_ministry` reports were all verified against the code before being written down.
+Two claims were corrected by checking rather than assuming. A draft said a student could be in one class per year and that enrolling elsewhere moved them; the constraint is on `(student_id, student_group_id)`, so a student **can** be in several classes and only the same class twice is refused. The 100MB cap, the accepted file types, the three attendance statuses, and that students only ever see `published` and `sent_to_ministry` reports were all verified against the code before being written down.
 
 ## Developer guide
 
