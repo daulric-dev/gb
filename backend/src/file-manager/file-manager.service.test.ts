@@ -196,7 +196,7 @@ describe('direct uploads', () => {
     const { svc } = makeService({ rows: null });
     for (const input of [
       { name: 'a.exe', sizeBytes: 10, contentType: 'application/x-msdownload' },
-      { name: 'a.pdf', sizeBytes: 11 * 1024 * 1024, contentType: 'application/pdf' },
+      { name: 'a.pdf', sizeBytes: 101 * 1024 * 1024, contentType: 'application/pdf' },
     ]) {
       expect(await expectRejection(svc.createUploadTicket(USER, input))).toBeInstanceOf(
         BadRequestException,
