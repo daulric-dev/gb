@@ -40,6 +40,7 @@ describe('CourseFileService', () => {
     expect(prisma.module_item.findFirst.mock.calls[0][0].where).toEqual({
       course_id: COURSE,
       file_id: 'file-1',
+      file: { deleted_at: null },
     });
     expect(reads).toEqual(['file-1']);
   });
@@ -52,6 +53,7 @@ describe('CourseFileService', () => {
       file_id: 'file-1',
       principal_type: 'course',
       principal_id: COURSE,
+      file: { deleted_at: null },
     });
     expect(reads).toEqual(['file-1']);
   });

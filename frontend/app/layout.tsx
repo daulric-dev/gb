@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { headers } from "next/headers";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/layout/theme-provider";
@@ -16,7 +17,11 @@ export const metadata: Metadata = {
   creator: "daulric.dev",
 };
 
-export default function RootLayout({children}: {children: React.ReactNode}) {
+export default async function RootLayout({children}: {children: React.ReactNode}) {
+  // The per-request CSP nonce from proxy.ts (production only). Reading headers
+  // renders every page per request, which a nonce requires: a prerendered page
+  // would carry no nonce and its scripts would be blocked.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
@@ -25,6 +30,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
+          nonce={nonce}
         >
           <TooltipProvider delay={0}>
             <HapticsProvider />

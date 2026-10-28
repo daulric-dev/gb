@@ -74,8 +74,9 @@ export class SeatService {
       where: {
         plan: 'per_user',
         provider_subscription_id: { not: null },
+        // A subscription set to cancel at period end is still billed until
+        // then (and may be resumed), so it keeps getting seat updates.
         status: { in: SYNCED_STATUSES },
-        cancel_at_period_end: false,
       },
     });
     if (subs.length === 0) return 0;
@@ -97,7 +98,6 @@ export class SeatService {
       provider_customer_id: string | null;
       status: string;
       quantity: number;
-      cancel_at_period_end?: boolean;
     },
     seats: number,
   ): Promise<boolean> {
@@ -105,7 +105,6 @@ export class SeatService {
       sub.plan !== 'per_user' ||
       !sub.provider_subscription_id ||
       !SYNCED_STATUSES.includes(sub.status) ||
-      sub.cancel_at_period_end ||
       sub.quantity === seats
     ) {
       return false;

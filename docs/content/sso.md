@@ -60,7 +60,9 @@ to the account with the same address only when the provider vouches for that
 address (or, for Google, when Google verified it - Gmail or a Workspace's own
 domain). Otherwise a sign-in whose address already belongs to someone is
 refused with "Sign in with an email code to link it", so an unverified
-address can never take over an account.
+address can never take over an account. An unverified address that belongs
+to no one does not create an account either: the sign-in is refused with
+"Sign in with an email code instead", and the email code creates it.
 
 ## Turning on a provider
 

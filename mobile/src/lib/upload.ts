@@ -1,23 +1,9 @@
 import { api, buildUrl } from "@/lib/api";
-
-/**
- * Direct uploads from the app to object storage with a presigned URL.
- *
- * Same three steps as the web client, because it is the same API: the backend
- * issues a ticket (a reserved file row and a short-lived signed URL), the
- * bytes are PUT straight to storage, then the backend checks what landed and
- * releases the file. Nothing is readable until it does.
- *
- * The picked document arrives as a `file://` URI rather than a File, so it is
- * read into a Blob first. Uploads are capped at 10MB server-side, which keeps
- * that affordable. XMLHttpRequest rather than fetch, because only XHR reports
- * upload progress in React Native.
- */
+import { File } from "expo-file-system";
 
 export interface PickedFile {
   uri: string;
   name: string;
-  size: number;
   mimeType: string;
 }
 
@@ -44,19 +30,18 @@ export class UploadError extends Error {
   }
 }
 
-async function readBlob(file: PickedFile): Promise<Blob> {
-  const response = await fetch(file.uri);
-  return response.blob();
+async function readFile(file: PickedFile): Promise<ArrayBuffer> {
+  return new File(file.uri).arrayBuffer();
 }
 
 function putOnce(
-  blob: Blob,
+  bytes: ArrayBuffer,
   ticket: UploadTicket,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(ticket.method ?? "PUT", ticket.uploadUrl);
+    xhr.open(ticket.method, ticket.uploadUrl);
     // A presigned URL on another host: no cookies, only the signed headers.
     xhr.withCredentials = false;
     for (const [name, value] of Object.entries(ticket.headers ?? {})) {
@@ -80,26 +65,27 @@ function putOnce(
       reject(
         new UploadError("Upload failed. Check your connection and try again.", 0),
       );
+
     xhr.onerror = networkError;
     xhr.ontimeout = networkError;
     xhr.onabort = () => reject(new UploadError("Upload cancelled", 0));
 
-    xhr.send(blob);
+    xhr.send(bytes);
   });
 }
 
 /** PUT the bytes, retrying once if the connection drops. */
 async function sendToStorage(
-  blob: Blob,
+  bytes: ArrayBuffer,
   ticket: UploadTicket,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   try {
-    await putOnce(blob, ticket, onProgress);
+    await putOnce(bytes, ticket, onProgress);
   } catch (err) {
     if (!(err instanceof UploadError) || err.status !== 0) throw err;
     onProgress?.(0);
-    await putOnce(blob, ticket, onProgress);
+    await putOnce(bytes, ticket, onProgress);
   }
 }
 
@@ -109,12 +95,8 @@ async function sendToStorage(
  * Students hold no file permissions of their own, so the ticket is issued
  * against the activity rather than the file manager.
  */
-export async function uploadSubmissionFile(
-  activityId: string,
-  file: PickedFile,
-  onProgress?: (fraction: number) => void,
-): Promise<{ fileId: string; name: string }> {
-  const blob = await readBlob(file);
+export async function uploadSubmissionFile(activityId: string, file: PickedFile, onProgress?: (fraction: number) => void): Promise<{ fileId: string; name: string }> {
+  const bytes = await readFile(file);
 
   const ticket = await api<UploadTicket>(
     `/portal/me/activities/${activityId}/upload-ticket`,
@@ -122,13 +104,13 @@ export async function uploadSubmissionFile(
       method: "POST",
       body: {
         name: file.name,
-        sizeBytes: blob.size || file.size,
-        contentType: file.mimeType,
+        sizeBytes: bytes.byteLength,
+        contentType: file.mimeType || "application/octet-stream",
       },
     },
   );
 
-  await sendToStorage(blob, ticket, onProgress);
+  await sendToStorage(bytes, ticket, onProgress);
 
   // The check runs here, so a rejected file throws with the reason.
   return api<{ fileId: string; name: string }>(

@@ -7,6 +7,7 @@ export const ALLOWED_CONTENT_TYPES = new Set<string>([
   'text/csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+  'application/msword', // legacy doc; delivered only inside a ZIP
 ]);
 
 /** Content types with no reliable byte signature — accepted on declaration. */
@@ -39,12 +40,39 @@ export function matchesSignature(buffer: Buffer, contentType: string): boolean {
     case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       return startsWith(buffer, [0x50, 0x4b, 0x03, 0x04]);
+    case 'application/msword':
+      return startsWith(buffer, [
+        0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1,
+      ]); // OLE compound document
     default:
       return false;
   }
 }
 
 export type ContentCheck = { ok: true } | { ok: false; reason: string };
+
+export function normalizeSubmissionContentType(value: string): string {
+  const mediaType = value.split(';', 1)[0]?.trim().toLowerCase();
+  return mediaType && /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mediaType)
+    ? mediaType
+    : 'application/octet-stream';
+}
+
+/**
+ * Submissions may contain programming-language and other course-specific
+ * files; types outside the preview allowlist are stored as inert downloads.
+ */
+export function verifySubmissionContent(
+  buffer: Buffer,
+  contentType: string,
+): ContentCheck {
+  if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(contentType)) {
+    return { ok: false, reason: 'Invalid content type' };
+  }
+  return ALLOWED_CONTENT_TYPES.has(contentType)
+    ? verifyContent(buffer, contentType)
+    : { ok: true };
+}
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

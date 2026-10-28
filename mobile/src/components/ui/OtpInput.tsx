@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, ComponentRef } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -29,12 +29,9 @@ export function OtpInput({
   disabled?: boolean;
 }) {
   const { colors, clay } = useTheme();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<ComponentRef<TextInput>>(null);
   const [focused, setFocused] = useState(false);
-  // Eight boxes plus their gaps are wider than a phone's card, so they are
-  // sized to whatever room the row actually gets rather than a fixed width.
   const [available, setAvailable] = useState(0);
-
   const digits = value.split("");
   const groupSize = Math.ceil(length / 2);
 

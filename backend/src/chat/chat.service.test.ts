@@ -825,6 +825,22 @@ describe('ChatService', () => {
       expect((err as Error).message).toBe('Failed to open conversation');
     });
 
+    test('ensureDirect refuses a user from another school, without a query', async () => {
+      const err = await expectRejection(
+        service.ensureDirectConversationRow('school-1', ME, THEM),
+      );
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(prisma.conversation.findFirst).not.toHaveBeenCalled();
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
+    });
+
+    test('ensureDirect refuses when neither user is in the named school', async () => {
+      const err = await expectRejection(
+        service.ensureDirectConversationRow('school-2', ME, YOU),
+      );
+      expect(err).toBeInstanceOf(ForbiddenException);
+    });
+
     test('ensureDirect swallows a member insert failure', async () => {
       prisma.conversation.create.mockResolvedValue(convRow());
       prisma.conversation_member.createMany.mockRejectedValue(new Error('db'));

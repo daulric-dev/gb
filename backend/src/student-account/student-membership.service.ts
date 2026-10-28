@@ -3,14 +3,11 @@ import {
   ConflictException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { createHmac, randomInt } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate, pgCode, raisedMessage } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
-import { ErasureLogService } from '@/erasure/erasure-log.service';
-import { plan } from '@/erasure/erasure-plan';
 
 /**
  * Ambiguous glyphs are omitted: these codes get read off paper and typed by
@@ -47,7 +44,6 @@ export class StudentMembershipService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly erasure: ErasureLogService,
   ) {
     const configured = process.env.STUDENT_CLAIM_CODE_PEPPER?.trim();
 
@@ -273,141 +269,5 @@ export class StudentMembershipService {
     );
 
     return { studentId: row.student_id, schoolId: row.school_id };
-  }
-
-  // ── duplicates ────────────────────────────────────────────────────────────
-
-  /**
-   * Students who joined by code while the roster already held a record under
-   * the same name. The code cannot know who someone is, so this is the cost of
-   * letting them in without staff creating the record first.
-   */
-  async listDuplicates(actorUserId: string) {
-    const schoolId = await this.requireActorSchool(actorUserId);
-
-    let data: {
-      joined_id: string;
-      existing_id: string;
-      full_name: string | null;
-    }[];
-    try {
-      data = await this.prisma.$queryRaw`
-        SELECT joined_id, existing_id, full_name
-        FROM public.student_duplicate_candidates(${schoolId}::uuid)`;
-    } catch (error) {
-      if (pgCode(error) === MISSING_FUNCTION) {
-        this.logger.error(
-          `student_duplicate_candidates is missing from the database. Apply the pending migrations.`,
-        );
-        return [];
-      }
-      this.logger.error(
-        `Failed to list duplicates: ${(error as Error).message}`,
-      );
-      throw new BadRequestException('Failed to load possible duplicates');
-    }
-
-    return data.map((row) => ({
-      joinedId: row.joined_id,
-      existingId: row.existing_id,
-      name: row.full_name,
-    }));
-  }
-
-  /**
-   * Adopt the roster record: move the login onto the record holding the
-   * history and drop the empty one created at join time.
-   */
-  async mergeDuplicate(
-    actorUserId: string,
-    joinedId: string,
-    existingId: string,
-  ): Promise<{ studentId: string }> {
-    const schoolId = await this.requireActorSchool(actorUserId);
-
-    // Captured before the merge: the row disappears, and the account whose
-    // caches need dropping is the one attached to it.
-    const joined = await this.prisma.student
-      .findUnique({
-        where: { id: joinedId },
-        select: { user_profile_id: true },
-      })
-      .catch(() => null);
-
-    let rows: { student_id: string | null }[];
-    try {
-      // The merge and its erasure-log entry commit together. Replaying it
-      // moves the login across and drops the join-time record again.
-      const loginId = joined?.user_profile_id ?? null;
-      rows = await this.prisma.$transaction(async (tx) => {
-        const merged = await tx.$queryRaw<{ student_id: string | null }[]>`
-          SELECT student_id
-          FROM public.merge_student_records(
-            ${actorUserId}::uuid,
-            ${joinedId}::uuid,
-            ${existingId}::uuid
-          )`;
-        await this.erasure.record(tx, {
-          kind: 'student',
-          subjectTable: 'student.student',
-          subjectIds: [joinedId],
-          schoolId,
-          actor: actorUserId,
-          reason: 'merge',
-          replay: plan.of(
-            plan.update('student.student', { id: [joinedId] }, { user_profile_id: null }),
-            ...(loginId
-              ? [
-                  plan.update(
-                    'student.student',
-                    { id: [existingId], user_profile_id: null },
-                    { user_profile_id: loginId },
-                  ),
-                ]
-              : []),
-            plan.del('student.student', { id: [joinedId] }),
-          ),
-        });
-        return merged;
-      });
-    } catch (error) {
-      const detail = raisedMessage(error);
-
-      if (detail.includes('joined_record_has_data')) {
-        throw new BadRequestException(
-          'That record already has results recorded against it, so it is not a duplicate',
-        );
-      }
-      if (detail.includes('existing_record_already_claimed')) {
-        throw new ConflictException(
-          'The record you are merging into already has an account',
-        );
-      }
-      if (detail.includes('student_other_school')) {
-        throw new NotFoundException('Student not found');
-      }
-      if (detail.includes('student_not_found')) {
-        throw new NotFoundException('Student not found');
-      }
-
-      this.logger.error(
-        `Merge failed for ${joinedId}: ${(error as Error).message}`,
-      );
-      throw new BadRequestException('Failed to merge student records');
-    }
-
-    const row = rows[0];
-
-    if (joined?.user_profile_id) {
-      await this.finalise(joined.user_profile_id, schoolId);
-    } else {
-      await this.cache.delete(`students:${schoolId}`);
-    }
-
-    this.logger.log(
-      `Merged student ${joinedId} into ${existingId} for school ${schoolId}`,
-    );
-
-    return { studentId: row?.student_id ?? existingId };
   }
 }

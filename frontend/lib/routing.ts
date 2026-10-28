@@ -14,7 +14,7 @@ export function homePathFor(profile: UserProfile | null): string {
   // Named at onboarding; without it we do not yet know which flow they chose.
   if (!profile.first_name) return "/onboard";
   // Staff await approval of a join request, students await approval or a
-  // claim code. Both wait on the school list.
+  // school join code. Both wait on the school list.
   if (!profile.school) return "/schools";
   return profile.account_type === "student" ? "/portal" : "/dashboard";
 }

@@ -1,7 +1,15 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { createMockPrisma } from '@/test/prisma-mock';
 import { createMockCacheService } from '@/test/mocks';
-import { EmailCodeService, hashCode } from './email-code.service';
+import {
+  EmailCodeService,
+  MAX_ATTEMPTS_PER_CLIENT,
+  MAX_SENDS_PER_CLIENT,
+  MAX_SENDS_PER_EMAIL,
+  MAX_TOTAL_ATTEMPTS,
+  hashClient,
+  hashCode,
+} from './email-code.service';
 import {
   RENEW_AFTER_MS,
   SESSION_COOKIE,
@@ -11,80 +19,196 @@ import {
   sessionTokenFrom,
 } from './session.service';
 import { SessionAlertService } from './session-alert.service';
+import { AccountService } from './account.service';
 import { deviceLabel } from './device-label';
 import { createHash } from 'node:crypto';
 
+/**
+ * EmailCodeService over in-memory account.email_code and email_code_attempt
+ * tables, so caps and conditional attempt updates run for real.
+ */
 function emailCodes() {
   const prisma = createMockPrisma();
   const sent: { to: string; text: string }[] = [];
   const mail = { send: mock(async (m: any) => void sent.push(m)) };
   const service = new EmailCodeService(prisma as any, mail as any);
-  return { prisma, sent, service };
+  const codes: Record<string, any>[] = [];
+  const attempts: Record<string, any>[] = [];
+
+  const hit = (row: Record<string, any>, where: Record<string, any>) =>
+    Object.entries(where).every(([key, cond]) => {
+      const value = row[key];
+      if (cond === null) return value == null;
+      if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
+        if ('in' in cond) return cond.in.includes(value);
+        if ('lt' in cond) return value < cond.lt;
+        if ('gt' in cond) return value > cond.gt;
+      }
+      return value === cond;
+    });
+  const apply = (row: Record<string, any>, data: Record<string, any>) => {
+    for (const [key, v] of Object.entries(data)) {
+      row[key] = v && typeof v === 'object' && 'increment' in v ? row[key] + v.increment : v;
+    }
+  };
+
+  prisma.email_code.create.mockImplementation(async ({ data }: any) => {
+    const row = { id: `code-${codes.length + 1}`, attempts: 0, consumed_at: null, created_at: new Date(), ...data };
+    codes.push(row);
+    return row;
+  });
+  prisma.email_code.count.mockImplementation(async ({ where }: any) => codes.filter((r) => hit(r, where)).length);
+  prisma.email_code.findMany.mockImplementation(async ({ where, take }: any) =>
+    codes.filter((r) => hit(r, where)).reverse().slice(0, take),
+  );
+  prisma.email_code.updateMany.mockImplementation(async ({ where, data }: any) => {
+    const rows = codes.filter((r) => hit(r, where));
+    rows.forEach((r) => apply(r, data));
+    return { count: rows.length };
+  });
+  prisma.email_code.updateManyAndReturn.mockImplementation(async ({ where, data }: any) => {
+    const rows = codes.filter((r) => hit(r, where));
+    rows.forEach((r) => apply(r, data));
+    return rows.map((r) => ({ ...r }));
+  });
+  prisma.email_code_attempt.createMany.mockImplementation(async ({ data }: any) => {
+    for (const row of data) {
+      if (!attempts.some((a) => a.code_id === row.code_id && a.ip_hash === row.ip_hash)) {
+        attempts.push({ attempts: 0, ...row });
+      }
+    }
+    return { count: data.length };
+  });
+  prisma.email_code_attempt.updateManyAndReturn.mockImplementation(async ({ where, data }: any) => {
+    const rows = attempts.filter((r) => hit(r, where));
+    rows.forEach((r) => apply(r, data));
+    return rows.map((r) => ({ ...r }));
+  });
+
+  /** A code for the address, as if it had been mailed from `ip`. */
+  const issue = (email: string, ip = '9.9.9.9') => service.issue(email, ip);
+  return { prisma, sent, service, codes, issue };
 }
 
-const liveRow = (email: string, code: string, extra: Record<string, unknown> = {}) => ({
-  id: 'code-1',
-  email,
-  code_hash: hashCode(email, code),
-  expires_at: new Date(Date.now() + 60_000),
-  attempts: 0,
-  consumed_at: null,
-  ...extra,
-});
+const VICTIM = '1.1.1.1';
+const ATTACKER = '6.6.6.6';
+const wrong = (code: string) => (code === '00000000' ? '00000001' : '00000000');
 
 describe('EmailCodeService', () => {
-  test('sends an 8-digit code and retires the previous one', async () => {
-    const { prisma, sent, service } = emailCodes();
-    await service.send('  Jo@School.EDU ');
+  test('sends an 8-digit code, stored only as a hash with the client hashed too', async () => {
+    const { codes, sent, service } = emailCodes();
+    await service.send('  Jo@School.EDU ', VICTIM);
     expect(sent[0].to).toBe('jo@school.edu');
     const code = /(\d{8})/.exec(sent[0].text)![1];
-    const created = prisma.email_code.create.mock.calls[0][0].data;
-    expect(created.code_hash).toBe(hashCode('jo@school.edu', code));
-    expect(prisma.email_code.updateMany.mock.calls[0][0].where).toEqual({
-      email: 'jo@school.edu',
-      consumed_at: null,
-    });
+    expect(codes[0].code_hash).toBe(hashCode('jo@school.edu', code));
+    expect(codes[0].ip_hash).toBe(hashClient(VICTIM));
+    expect(codes[0].ip_hash).not.toContain(VICTIM);
   });
 
   test('a code expires five minutes after it is sent', async () => {
-    const { prisma, sent, service } = emailCodes();
+    const { codes, sent, service } = emailCodes();
     const before = Date.now();
-    await service.send('jo@school.edu');
-    const expires = prisma.email_code.create.mock.calls[0][0].data.expires_at.getTime();
+    await service.send('jo@school.edu', VICTIM);
+    const expires = codes[0].expires_at.getTime();
     expect(expires - before).toBeGreaterThanOrEqual(5 * 60_000 - 1000);
     expect(expires - before).toBeLessThanOrEqual(5 * 60_000 + 1000);
     expect(sent[0].text).toContain('expires in 5 minutes');
   });
 
-  test('refuses after five sends in the window', async () => {
-    const { prisma, service } = emailCodes();
-    prisma.email_code.count.mockResolvedValue(5);
-    await expect(service.send('jo@school.edu')).rejects.toThrow('Too many codes');
+  test('a client is refused after five sends to one address; the owner elsewhere is not', async () => {
+    const { service } = emailCodes();
+    for (let i = 0; i < MAX_SENDS_PER_CLIENT; i++) await service.send('jo@school.edu', ATTACKER);
+    await expect(service.send('jo@school.edu', ATTACKER)).rejects.toThrow('Wait a few minutes');
+    await service.send('jo@school.edu', VICTIM);
   });
 
-  test('a right code is used once', async () => {
-    const { prisma, service } = emailCodes();
-    prisma.email_code.findFirst.mockResolvedValue(liveRow('jo@school.edu', '12345678'));
-    prisma.email_code.updateMany.mockResolvedValue({ count: 1 });
-    expect(await service.verify('JO@school.edu', '12345678')).toBe('jo@school.edu');
-    prisma.email_code.updateMany.mockResolvedValue({ count: 0 });
-    await expect(service.verify('jo@school.edu', '12345678')).rejects.toThrow('Invalid');
-  });
-
-  test('a wrong code counts an attempt', async () => {
-    const { prisma, service } = emailCodes();
-    prisma.email_code.findFirst.mockResolvedValue(liveRow('jo@school.edu', '12345678'));
-    await expect(service.verify('jo@school.edu', '00000000')).rejects.toThrow('Invalid');
-    expect(prisma.email_code.update.mock.calls[0][0].data).toEqual({ attempts: { increment: 1 } });
-  });
-
-  test('expired codes and exhausted attempts are refused without checking', async () => {
-    for (const extra of [{ expires_at: new Date(Date.now() - 1) }, { attempts: 5 }]) {
-      const { prisma, service } = emailCodes();
-      prisma.email_code.findFirst.mockResolvedValue(liveRow('jo@school.edu', '12345678', extra));
-      await expect(service.verify('jo@school.edu', '12345678')).rejects.toThrow('Invalid');
-      expect(prisma.email_code.updateMany).not.toHaveBeenCalled();
+  test('an address is sent at most twenty codes an hour from anywhere, and says so honestly', async () => {
+    const { service } = emailCodes();
+    for (let i = 0; i < MAX_SENDS_PER_EMAIL; i++) {
+      await service.send('jo@school.edu', `10.0.0.${Math.floor(i / MAX_SENDS_PER_CLIENT)}`);
     }
+    const err = await service.send('jo@school.edu', VICTIM).catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(err.message).toContain('sent to this address in the last hour');
+    // Another address is unaffected.
+    await service.send('al@school.edu', VICTIM);
+  });
+
+  test('a right code signs in once, and uses up every other live code for the address', async () => {
+    const { service, codes, issue } = emailCodes();
+    const first = await issue('jo@school.edu');
+    const second = await issue('jo@school.edu');
+    await issue('al@school.edu');
+    expect(await service.verify('JO@school.edu', first, VICTIM)).toBe('jo@school.edu');
+    expect(codes.filter((c) => c.email === 'jo@school.edu').every((c) => c.consumed_at)).toBe(true);
+    expect(codes.find((c) => c.email === 'al@school.edu')!.consumed_at).toBeNull();
+    await expect(service.verify('jo@school.edu', first, VICTIM)).rejects.toThrow('Invalid');
+    await expect(service.verify('jo@school.edu', second, VICTIM)).rejects.toThrow('Invalid');
+  });
+
+  test("sends by someone else do not invalidate the owner's earlier code", async () => {
+    const { service, sent, issue } = emailCodes();
+    const mine = await issue('jo@school.edu', VICTIM);
+    for (let i = 0; i < MAX_SENDS_PER_CLIENT; i++) await service.send('jo@school.edu', ATTACKER);
+    expect(sent).toHaveLength(MAX_SENDS_PER_CLIENT);
+    expect(await service.verify('jo@school.edu', mine, VICTIM)).toBe('jo@school.edu');
+  });
+
+  test("a client that runs out of guesses leaves the owner's code usable from elsewhere", async () => {
+    const { service, issue } = emailCodes();
+    const mine = await issue('jo@school.edu', VICTIM);
+    for (let i = 0; i < MAX_ATTEMPTS_PER_CLIENT; i++) {
+      await expect(service.verify('jo@school.edu', wrong(mine), ATTACKER)).rejects.toThrow('Invalid');
+    }
+    // Out of guesses: even the right code is refused from that client...
+    await expect(service.verify('jo@school.edu', mine, ATTACKER)).rejects.toThrow('Invalid');
+    // ...but not from the owner's.
+    expect(await service.verify('jo@school.edu', mine, VICTIM)).toBe('jo@school.edu');
+  });
+
+  test('an attempt is taken before comparing, conditional on one being left', async () => {
+    const { prisma, service, issue } = emailCodes();
+    const mine = await issue('jo@school.edu');
+    await expect(service.verify('jo@school.edu', wrong(mine), ATTACKER)).rejects.toThrow('Invalid');
+    expect(prisma.email_code_attempt.updateManyAndReturn.mock.calls[0][0].where).toMatchObject({
+      ip_hash: hashClient(ATTACKER),
+      attempts: { lt: MAX_ATTEMPTS_PER_CLIENT },
+    });
+    expect(prisma.email_code.updateManyAndReturn.mock.calls[0][0].where).toMatchObject({
+      consumed_at: null,
+      attempts: { lt: MAX_TOTAL_ATTEMPTS },
+    });
+    // Nothing was used up on a wrong guess.
+    expect(prisma.email_code.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('the total cap across clients ends a code for everyone', async () => {
+    const { service, codes, issue } = emailCodes();
+    const mine = await issue('jo@school.edu', VICTIM);
+    for (let i = 0; i < MAX_TOTAL_ATTEMPTS; i++) {
+      const ip = `10.0.${Math.floor(i / MAX_ATTEMPTS_PER_CLIENT)}.1`;
+      await expect(service.verify('jo@school.edu', wrong(mine), ip)).rejects.toThrow('Invalid');
+    }
+    expect(codes[0].attempts).toBe(MAX_TOTAL_ATTEMPTS);
+    await expect(service.verify('jo@school.edu', mine, VICTIM)).rejects.toThrow('Invalid');
+  });
+
+  test('parallel right guesses sign in once', async () => {
+    const { service, issue } = emailCodes();
+    const mine = await issue('jo@school.edu');
+    const results = await Promise.allSettled([
+      service.verify('jo@school.edu', mine, VICTIM),
+      service.verify('jo@school.edu', mine, VICTIM),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+  });
+
+  test('expired and used codes are refused without taking an attempt', async () => {
+    const { prisma, service, codes, issue } = emailCodes();
+    const mine = await issue('jo@school.edu');
+    codes[0].expires_at = new Date(Date.now() - 1);
+    await expect(service.verify('jo@school.edu', mine, VICTIM)).rejects.toThrow('Invalid');
+    expect(prisma.email_code_attempt.updateManyAndReturn).not.toHaveBeenCalled();
   });
 });
 
@@ -265,6 +389,19 @@ describe('SessionService: sign-in', () => {
     expect(t.headers['x-session-token']).toBe(token);
     expect(t.rows[0].device).toBe('GradeBook app on iPhone 15 (iOS 19.0)');
   });
+
+  test('a browser claiming to be the app gets no token header', async () => {
+    const t = sessions();
+    const r = t.reply();
+    await t.service.create(
+      r,
+      { headers: { 'user-agent': 'Mozilla/5.0', 'x-gradebook-client': 'native', origin: 'https://app.example' } } as any,
+      'u1',
+      'email-code',
+    );
+    expect(t.headers['x-session-token']).toBeUndefined();
+    expect(r.setCookie).toHaveBeenCalled();
+  });
 });
 
 describe('SessionService: resolve', () => {
@@ -392,6 +529,78 @@ describe('SessionService: rotation', () => {
     expect(t.alerts.tokenReuse.mock.calls[0][0]).toMatchObject({ userId: 'u1', device: 'Chrome on macOS', ip: '5.6.7.8' });
     // The current token dies with it, cache or not.
     expect(await t.service.resolve(t.viaCookie(next))).toBeNull();
+  });
+
+  test('a cookie session never gets the token in a header, even claiming to be the app', async () => {
+    const t = sessions();
+    const token = await t.signIn();
+    t.ageSession(t.rows[0]);
+    const req = { cookies: { [SESSION_COOKIE]: token }, headers: { 'x-gradebook-client': 'native' }, ip: '5.6.7.8' } as any;
+    await t.service.resolve(req, t.reply());
+    expect(t.cookies[SESSION_COOKIE]).toBe(rotatedToken(token));
+    expect(t.headers['x-session-token']).toBeUndefined();
+  });
+
+  test('a rotated token is cached only once presented, which confirms the rotation', async () => {
+    const t = sessions();
+    const token = await t.signIn();
+    const row = t.rows[0];
+    t.ageSession(row);
+    await t.service.resolve(t.viaCookie(token), t.reply());
+    const next = rotatedToken(token);
+    expect(await t.cache.get(`session:${sha(next)}`)).toBeFalsy();
+    expect(row.rotation_confirmed_at).toBeNull();
+    await t.service.resolve(t.viaCookie(next));
+    expect(row.rotation_confirmed_at).toBeInstanceOf(Date);
+    expect(await t.cache.get(`session:${sha(next)}`)).toBeTruthy();
+  });
+
+  describe('a lost rotation (the client never got the new token)', () => {
+    const UA = 'GradeBook/1 CFNetwork Darwin';
+    const app = (token: string, ua = UA) =>
+      ({ headers: { authorization: `Bearer ${token}`, 'x-gradebook-client': 'native', 'user-agent': ua }, ip: '5.6.7.8' }) as any;
+    async function lost(t: ReturnType<typeof sessions>) {
+      const token = await t.signIn('u1', { headers: { 'user-agent': UA, 'x-gradebook-client': 'native' } });
+      const row = t.rows[0];
+      t.ageSession(row);
+      await t.service.resolve(app(token), t.reply()); // response lost
+      return { token, row };
+    }
+
+    test('the old token recovers the session from the same client and gets the current one again', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      row.rotated_at = new Date(Date.now() - 2 * 60 * 60_000);
+      expect(await t.service.resolve(app(token), t.reply())).toMatchObject({ userId: 'u1' });
+      expect(t.headers['x-session-token']).toBe(rotatedToken(token));
+      expect(row.revoked_at).toBeNull();
+      expect(t.alerts.tokenReuse).not.toHaveBeenCalled();
+    });
+
+    test('is still theft from another user agent', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      row.rotated_at = new Date(Date.now() - 121_000);
+      expect(await t.service.resolve(app(token, 'curl/8'), t.reply())).toBeNull();
+      expect(row.revoked_reason).toBe('token_reuse');
+    });
+
+    test('is still theft once the new token was used', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      await t.service.resolve(app(rotatedToken(token)), t.reply());
+      row.rotated_at = new Date(Date.now() - 121_000);
+      expect(await t.service.resolve(app(token), t.reply())).toBeNull();
+      expect(row.revoked_reason).toBe('token_reuse');
+    });
+
+    test('is still theft after a day', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      row.rotated_at = new Date(Date.now() - DAY - 1000);
+      expect(await t.service.resolve(app(token), t.reply())).toBeNull();
+      expect(row.revoked_reason).toBe('token_reuse');
+    });
   });
 
   test('a token older than the previous one is a plain 401', async () => {
@@ -653,5 +862,110 @@ describe('sessionTokenFrom', () => {
     expect(sessionTokenFrom({ headers: { authorization: 'bearer   b.t ' } })).toBe('b.t');
     expect(sessionTokenFrom({ headers: { authorization: 'Basic xyz' } })).toBeUndefined();
     expect(sessionTokenFrom({ headers: {} })).toBeUndefined();
+  });
+});
+
+// ── Accounts ─────────────────────────────────────────────────────────────
+
+describe('AccountService: SSO and unverified accounts', () => {
+  function accounts(existing: Row | null) {
+    const prisma = createMockPrisma();
+    const sessions = { purgeCached: mock(async (_rows: unknown) => {}) };
+    const service = new AccountService(prisma as any, sessions as any);
+    prisma.app_user.findUnique.mockResolvedValue(existing);
+    prisma.app_user.updateMany.mockResolvedValue({ count: 1 });
+    prisma.session.findMany.mockResolvedValue([
+      { token_hash: 'h1', previous_token_hash: 'p1' },
+    ]);
+    return { prisma, sessions, service };
+  }
+  /** Only users created before untrusted SSO stopped creating them. */
+  const legacy = { id: 'u1', email: 'jo@school.edu', disabled_at: null, email_verified_at: null };
+
+  test('proving the address of a legacy unverified user ends its sessions and unlinks its identities', async () => {
+    const { prisma, sessions, service } = accounts(legacy);
+    expect(await service.userForVerifiedEmail('Jo@School.edu')).toEqual({ id: 'u1', email: 'jo@school.edu' });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.identity.deleteMany.mock.calls[0][0]).toEqual({ where: { user_id: 'u1' } });
+    const revoke = prisma.session.updateMany.mock.calls[0][0];
+    expect(revoke.where).toEqual({ user_id: 'u1', revoked_at: null });
+    expect(revoke.data.revoked_reason).toBe('email_verified');
+    expect(prisma.app_user.updateMany.mock.calls[0][0].where).toEqual({ id: 'u1', email_verified_at: null });
+    expect(prisma.app_user.updateMany.mock.calls[0][0].data.email_verified_at).toBeInstanceOf(Date);
+    expect(sessions.purgeCached.mock.calls[0][0]).toEqual([{ token_hash: 'h1', previous_token_hash: 'p1' }]);
+    // The profile and everything hanging off it are left as they are.
+    expect(prisma.user_profile.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.user_profile.delete).not.toHaveBeenCalled();
+    expect(prisma.student.updateMany).not.toHaveBeenCalled();
+    expect(prisma.school.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('an adoption that lost the race to another does nothing more', async () => {
+    const { prisma, sessions, service } = accounts(legacy);
+    prisma.app_user.updateMany.mockResolvedValue({ count: 0 });
+    await service.userForVerifiedEmail('jo@school.edu');
+    expect(prisma.session.updateMany).not.toHaveBeenCalled();
+    expect(prisma.identity.deleteMany).not.toHaveBeenCalled();
+    expect(sessions.purgeCached.mock.calls[0][0]).toEqual([]);
+  });
+
+  test('a verified user is left alone', async () => {
+    const { prisma, sessions, service } = accounts({ ...legacy, email_verified_at: new Date() });
+    await service.userForVerifiedEmail('jo@school.edu');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.identity.deleteMany).not.toHaveBeenCalled();
+    expect(sessions.purgeCached).not.toHaveBeenCalled();
+  });
+
+  test('a vouched-for SSO sign-in creates a verified user and links the identity', async () => {
+    const { prisma, service } = accounts(null);
+    prisma.identity.findUnique.mockResolvedValue(null);
+    prisma.app_user.create.mockResolvedValue({ id: 'u9', email: 'new@school.edu' });
+    await service.userForIdentity(
+      { provider: 'google', subject: 'real', email: 'new@school.edu', claims: {} },
+      true,
+    );
+    expect(prisma.app_user.create.mock.calls[0][0].data.email_verified_at).toBeInstanceOf(Date);
+    expect(prisma.identity.create.mock.calls[0][0].data).toMatchObject({ user_id: 'u9', subject: 'real' });
+  });
+
+  test('an unvouched-for address never creates a user, nor takes an existing one', async () => {
+    const fresh = accounts(null);
+    fresh.prisma.identity.findUnique.mockResolvedValue(null);
+    await expect(
+      fresh.service.userForIdentity(
+        { provider: 'oidc', subject: 's', email: 'new@school.edu', claims: {} },
+        false,
+      ),
+    ).rejects.toThrow(
+      'Your sign-in provider did not confirm this email address. Sign in with an email code instead.',
+    );
+    expect(fresh.prisma.app_user.create).not.toHaveBeenCalled();
+    expect(fresh.prisma.identity.create).not.toHaveBeenCalled();
+
+    const taken = accounts({ id: 'u1' });
+    taken.prisma.identity.findUnique.mockResolvedValue(null);
+    await expect(
+      taken.service.userForIdentity(
+        { provider: 'oidc', subject: 's', email: 'jo@school.edu', claims: {} },
+        false,
+      ),
+    ).rejects.toThrow('already exists');
+    expect(taken.prisma.identity.create).not.toHaveBeenCalled();
+  });
+
+  test('an identity already linked signs in even when the provider does not vouch', async () => {
+    const { prisma, service } = accounts(null);
+    prisma.identity.findUnique.mockResolvedValue({
+      id: 'i1',
+      app_user: { id: 'u1', email: 'jo@school.edu', disabled_at: null },
+    });
+    expect(
+      await service.userForIdentity(
+        { provider: 'oidc', subject: 's', email: 'jo@school.edu', claims: {} },
+        false,
+      ),
+    ).toEqual({ id: 'u1', email: 'jo@school.edu' });
+    expect(prisma.app_user.create).not.toHaveBeenCalled();
   });
 });

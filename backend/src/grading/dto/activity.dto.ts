@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -12,9 +13,16 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+/** Generous caps: far above real use, low enough to refuse abuse. */
+const MAX_INSTRUCTIONS = 50_000;
+const MAX_TEXT_BODY = 50_000;
+const MAX_OPTIONS = 50;
+const MAX_ANSWERS = 500;
 
 export class CreateActivityDto {
   /**
@@ -27,7 +35,11 @@ export class CreateActivityDto {
 
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(200) title!: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsString() instructions?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_INSTRUCTIONS)
+  instructions?: string;
 
   @ApiProperty({ example: 100 })
   @Type(() => Number)
@@ -41,6 +53,7 @@ export class CreateActivityDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() assignmentGroupId?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowFile?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() allowMultipleFiles?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowText?: boolean;
 
   /**
@@ -70,19 +83,23 @@ export class ExcuseSubmissionDto {
 
 export class UpdateActivityDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   title?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() instructions?: string;
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  @MaxLength(MAX_INSTRUCTIONS)
+  instructions?: string | null;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @Type(() => Number)
   @IsNumber()
   @Min(1)
   points?: number;
-  @ApiPropertyOptional() @IsOptional() @IsDateString() dueAt?: string;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() dueAt?: string | null;
 
   /** null moves the activity to Ungrouped. */
   @ApiPropertyOptional({ nullable: true })
@@ -92,12 +109,22 @@ export class UpdateActivityDto {
 
   /** Keep the marks but leave them out of the course total. */
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsBoolean()
   omitFromFinalGrade?: boolean;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() allowFile?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() allowText?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  allowFile?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  allowMultipleFiles?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  allowText?: boolean;
 
   /**
    * How many times a student may sit a quiz. Omit for a single attempt; 0
@@ -108,7 +135,7 @@ export class UpdateActivityDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  maxAttempts?: number;
+  maxAttempts?: number | null;
 }
 
 export class QuestionOptionDto {
@@ -118,14 +145,14 @@ export class QuestionOptionDto {
 
 export class UpdateQuestionDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(500)
   prompt?: string;
 
   @ApiPropertyOptional({ example: 1 })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @Type(() => Number)
   @IsNumber()
   @Min(0.01)
@@ -133,8 +160,9 @@ export class UpdateQuestionDto {
 
   /** The whole list, in order. Omit to leave the options alone. */
   @ApiPropertyOptional({ type: [QuestionOptionDto] })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsArray()
+  @ArrayMaxSize(MAX_OPTIONS)
   @ValidateNested({ each: true })
   @Type(() => QuestionOptionDto)
   options?: QuestionOptionDto[];
@@ -156,13 +184,18 @@ export class AddQuestionDto {
 
   @ApiProperty({ type: [QuestionOptionDto] })
   @IsArray()
+  @ArrayMaxSize(MAX_OPTIONS)
   @ValidateNested({ each: true })
   @Type(() => QuestionOptionDto)
   options!: QuestionOptionDto[];
 }
 
 export class SubmitAssignmentDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() textBody?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_TEXT_BODY)
+  textBody?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() fileId?: string;
 }
 
@@ -186,6 +219,7 @@ export class QuizAnswerDto {
 export class SubmitQuizDto {
   @ApiProperty({ type: [QuizAnswerDto] })
   @IsArray()
+  @ArrayMaxSize(MAX_ANSWERS)
   @ValidateNested({ each: true })
   @Type(() => QuizAnswerDto)
   answers!: QuizAnswerDto[];

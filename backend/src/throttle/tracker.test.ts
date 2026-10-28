@@ -2,7 +2,15 @@ import { describe, test, expect } from 'bun:test';
 import { createMockPrisma } from '@/test/prisma-mock';
 import { createMockCacheService } from '@/test/mocks';
 import { SESSION_COOKIE, SessionService } from '@/account/session.service';
-import { getClientIp, getSessionTracker, fingerprint } from './tracker';
+import { Throttle } from '@nestjs/throttler';
+import type { ExecutionContext } from '@nestjs/common';
+import {
+  getClientIp,
+  getEmailIpTracker,
+  getSessionTracker,
+  fingerprint,
+  skipUnlessDeclared,
+} from './tracker';
 
 /** A session token as SessionService issues it. */
 async function issuedToken(): Promise<string> {
@@ -73,5 +81,44 @@ describe('getSessionTracker', () => {
     expect(getSessionTracker({ cookies: { 'sb-ref-auth-token': t } })).toBeUndefined();
     expect(getSessionTracker({ headers: {} })).toBeUndefined();
     expect(getSessionTracker({})).toBeUndefined();
+  });
+});
+
+describe('getEmailIpTracker', () => {
+  test('keys by address and client IP, so one client cannot use up another\'s budget', () => {
+    const victim = getEmailIpTracker({ body: { email: 'Jo@School.edu' }, ip: '1.1.1.1' });
+    const attacker = getEmailIpTracker({ body: { email: 'jo@school.edu ' }, ip: '6.6.6.6' });
+    expect(victim).not.toBe(attacker);
+    expect(getEmailIpTracker({ body: { email: 'jo@school.edu' }, ip: '1.1.1.1' })).toBe(victim);
+    expect(victim).not.toContain('jo@school.edu');
+  });
+
+  test('a missing or non-string email falls back to the IP instead of throwing', () => {
+    for (const body of [undefined, null, {}, { email: 123 }, { email: { a: 1 } }, { email: ['x'] }, { email: ' ' }]) {
+      expect(getEmailIpTracker({ body: body as any, ip: '1.1.1.1' })).toBe('ip:1.1.1.1');
+    }
+    expect(getEmailIpTracker({})).toBe('ip:unknown');
+  });
+});
+
+describe('skipUnlessDeclared', () => {
+  class Routes {
+    @Throttle({ 'auth-ip': { limit: 1, ttl: 1000 } })
+    signIn() {}
+    other() {}
+  }
+  @Throttle({ 'auth-ip': { limit: 1, ttl: 1000 } })
+  class AllRoutes {
+    any() {}
+  }
+  const ctx = (cls: any, handler: string) =>
+    ({ getHandler: () => cls.prototype[handler], getClass: () => cls }) as unknown as ExecutionContext;
+
+  test('applies the throttler only where a route or its controller names it', () => {
+    const skip = skipUnlessDeclared('auth-ip');
+    expect(skip(ctx(Routes, 'signIn'))).toBe(false);
+    expect(skip(ctx(Routes, 'other'))).toBe(true);
+    expect(skip(ctx(AllRoutes, 'any'))).toBe(false);
+    expect(skipUnlessDeclared('auth-strict')(ctx(Routes, 'signIn'))).toBe(true);
   });
 });

@@ -116,8 +116,9 @@ const STAFF = [
   { key: 'ta', first: 'Ana', last: 'Ruiz', role: 'teacher' },
 ] as const;
 
-// The first three have logins; the rest are roster-only, as most students are
-// before they claim an account.
+// The first three have logins; the rest are written straight to the roster
+// without one, only to fill the class lists. In the app a student record comes
+// only from a signed-up user joining as a student.
 const STUDENTS = [
   { first: 'Jordan', last: 'Lee', email: `student@${DOMAIN}` },
   { first: 'Priya', last: 'Shah', email: `student2@${DOMAIN}` },
@@ -142,13 +143,24 @@ async function createUser(email: string) {
 }
 
 async function wipe() {
-  // owner_id is ON DELETE RESTRICT, so the school goes before its owner.
-  await db.school.deleteMany({ where: { name: SCHOOL_NAME } });
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Refusing to run --fresh with NODE_ENV=production.');
+  }
   const users = await db.app_user.findMany({
     where: { email: { endsWith: `@${DOMAIN}` } },
     select: { id: true },
   });
   const ids = users.map((u) => u.id);
+  // Only the school this script made: its name AND owned by the seeded admin
+  // account. A real school that happens to share the name is never touched.
+  // owner_id is ON DELETE RESTRICT, so the school goes before its owner.
+  const admin = await db.app_user.findUnique({
+    where: { email: `admin@${DOMAIN}` },
+    select: { id: true },
+  });
+  if (admin) {
+    await db.school.deleteMany({ where: { name: SCHOOL_NAME, owner_id: admin.id } });
+  }
   await db.user_profile.deleteMany({ where: { id: { in: ids } } });
   // Cascades to their sessions and linked identities.
   await db.app_user.deleteMany({ where: { id: { in: ids } } });
@@ -159,6 +171,9 @@ async function wipe() {
 // ── main ────────────────────────────────────────────────────────────────────
 
 async function seed() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Refusing to seed demo data with NODE_ENV=production.');
+  }
   const existing = await db.school.findFirst({ where: { name: SCHOOL_NAME }, select: { id: true } });
   if (existing) {
     throw new Error(`"${SCHOOL_NAME}" already exists. Re-run with --fresh to replace it.`);

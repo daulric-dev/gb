@@ -152,9 +152,12 @@ export class RubricService {
   ) {}
 
   /** Rubric ids in `ids` that have marked someone. */
-  private async assessedIds(ids: string[]): Promise<Set<string>> {
+  private async assessedIds(
+    ids: string[],
+    db: Pick<Prisma.TransactionClient, 'rubric_criterion'> = this.prisma,
+  ): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
-    const rows = await this.prisma.rubric_criterion.findMany({
+    const rows = await db.rubric_criterion.findMany({
       where: { rubric_id: { in: ids }, rubric_assessment: { some: {} } },
       select: { rubric_id: true },
     });
@@ -273,17 +276,24 @@ export class RubricService {
       throw new BadRequestException('Nothing to update');
     }
 
-    if (patch.criteria) {
-      this.validate(patch.criteria);
-      if ((await this.assessedIds([rubricId])).size > 0) {
-        throw new ConflictException(
-          'This rubric has been used for marking. Copy it to make changes.',
-        );
-      }
-    }
+    if (patch.criteria) this.validate(patch.criteria);
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        // The row lock orders this against assess(), which takes a share lock
+        // on the same row: either its marks are visible to the check below,
+        // or it waits and then finds these criteria gone.
+        await tx.$queryRaw`
+          select 1 from grading.rubric where id = ${rubricId}::uuid for update
+        `;
+        if (
+          patch.criteria &&
+          (await this.assessedIds([rubricId], tx)).size > 0
+        ) {
+          throw new ConflictException(
+            'This rubric has been used for marking. Copy it to make changes.',
+          );
+        }
         await tx.rubric.update({
           where: { id: rubricId },
           data: { ...(title ? { title } : {}), updated_at: new Date() },
@@ -296,6 +306,7 @@ export class RubricService {
         }
       });
     } catch (error) {
+      if (error instanceof ConflictException) throw error;
       this.logger.error(`Failed to update rubric: ${(error as Error).message}`);
       throw new BadRequestException('Failed to save the rubric');
     }
@@ -496,6 +507,11 @@ export class RubricService {
     let marked;
     try {
       marked = await this.prisma.$transaction(async (tx) => {
+        // Pairs with the lock in update(): the rubric's criteria cannot be
+        // replaced while these marks are being written against them.
+        await tx.$queryRaw`
+          select 1 from grading.rubric where id = ${rubric.id}::uuid for share
+        `;
         const fields = {
           status: 'graded' as const,
           score,

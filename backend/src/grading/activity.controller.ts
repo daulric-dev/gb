@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +26,17 @@ import {
   UpdateActivityDto,
   UpdateQuestionDto,
 } from './dto/activity.dto';
+import { contentDisposition } from './content-disposition';
+
+const INLINE_SUBMISSION_CONTENT_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'text/plain',
+]);
 
 /**
  * Teacher-facing quizzes, assignments and offline work.
@@ -66,19 +78,50 @@ export class ActivityController {
   async submissionFile(
     @Req() req: any,
     @Param('submissionId', ParseUUIDPipe) submissionId: string,
+    @Query('fileId', new ParseUUIDPipe({ optional: true })) fileId: string | undefined,
     @Res() res: FastifyReply,
   ) {
     const { buffer, contentType, filename } =
       await this.submissions.readSubmissionFile(
         req.user.id as string,
         submissionId,
+        fileId,
       );
 
     return res
-      .header('Content-Type', contentType ?? 'application/octet-stream')
-      .header('Content-Disposition', `inline; filename="${filename ?? 'file'}"`)
+      .header(
+        'Content-Type',
+        contentType && INLINE_SUBMISSION_CONTENT_TYPES.has(contentType)
+          ? contentType
+          : 'application/octet-stream',
+      )
+      .header('Content-Disposition', contentDisposition('inline', filename))
       .header('Cache-Control', 'private, max-age=60')
+      // Student-uploaded content on the API origin: never sniff it into HTML.
+      .header('X-Content-Type-Options', 'nosniff')
       .send(buffer);
+  }
+
+  /** Download every file attached to a submission in one named archive. */
+  @Get('activities/submissions/:submissionId/files.zip')
+  @ApiProduces('application/zip')
+  async submissionFilesZip(
+    @Req() req: any,
+    @Param('submissionId', ParseUUIDPipe) submissionId: string,
+    @Res() res: FastifyReply,
+  ) {
+    const { archive, archiveName } =
+      await this.submissions.readSubmissionArchive(
+        req.user.id as string,
+        submissionId,
+      );
+
+    return res
+      .header('Content-Type', 'application/zip')
+      .header('Content-Disposition', contentDisposition('attachment', archiveName))
+      .header('Cache-Control', 'private, no-store')
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(archive);
   }
 
   /** Marking by submission id, for a screen that already holds one. */

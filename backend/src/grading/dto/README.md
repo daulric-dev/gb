@@ -8,7 +8,7 @@ Marks and rubric points may have at most **two decimal places** (`IsNumber({ max
 
 | Class | Used by | Key rules |
 | --- | --- | --- |
-| `CreateActivityDto` | `POST /api/courses/:courseId/activities` | `kind`: `quiz`, `assignment` or `offline`. `title`: non-empty, at most 200. `instructions`: optional. `points`: number, at least 1. `dueAt`: optional ISO date. `assignmentGroupId`: optional UUID. `allowFile` and `allowText`: optional booleans. `maxAttempts`: optional int, at least 0 (0 means unlimited; omitted means 1). |
+| `CreateActivityDto` | `POST /api/courses/:courseId/activities` | `kind`: `quiz`, `assignment` or `offline`. `title`: non-empty, at most 200. `instructions`: optional. `points`: number, at least 1. `dueAt`: optional ISO date. `assignmentGroupId`: optional UUID. `allowFile`, `allowMultipleFiles`, and `allowText`: optional booleans; `allowMultipleFiles` requires `allowFile`. `maxAttempts`: optional int, at least 0 (0 means unlimited; omitted means 1). |
 | `UpdateActivityDto` | `PATCH /api/activities/:activityId` | The same fields, all optional. `assignmentGroupId` may be `null` (Ungrouped). Adds `omitFromFinalGrade` (boolean). |
 | `AddQuestionDto` | `POST /api/activities/:activityId/questions` | `prompt`: non-empty, at most 500. `kind`: `multiple_choice`, `true_false` or `short_answer`. `points`: optional, at least 0.01. `options`: array of `QuestionOptionDto`. |
 | `UpdateQuestionDto` | `PATCH /api/activities/:activityId/questions/:questionId` | `prompt`, `points` and `options` are all optional. `options` replaces the whole list. |

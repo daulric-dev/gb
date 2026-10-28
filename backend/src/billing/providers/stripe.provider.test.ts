@@ -289,6 +289,101 @@ describe('StripeProvider subscription changes', () => {
   });
 });
 
+describe('StripeProvider subscription state and checkout expiry', () => {
+  test('getSubscription returns the current state, null when gone', async () => {
+    const { fetchFn } = stubFetch([
+      (c) => (c.path === '/v1/subscriptions/sub_1'
+        ? { body: subscription({ status: 'past_due', cancel_at_period_end: false, cancel_at: null,
+            items: { object: 'list', data: [{ id: 'si_1', object: 'subscription_item', quantity: 7, current_period_start: 1_760_000_000, current_period_end: 1_762_592_000 }] } }) }
+        : undefined),
+    ]);
+    const p = new StripeProvider({ fetch: fetchFn });
+    expect(await p.getSubscription('sub_1')).toEqual({
+      providerSubscriptionId: 'sub_1',
+      providerCustomerId: 'cus_1',
+      schoolId: 'school-1',
+      status: 'past_due',
+      plan: 'per_user',
+      quantity: 7,
+      currentPeriodStart: new Date(1_760_000_000_000),
+      currentPeriodEnd: new Date(1_762_592_000_000),
+      cancelAtPeriodEnd: false,
+    });
+    expect(await p.getSubscription('sub_missing')).toBeNull();
+  });
+
+  test('expireCheckoutSession expires an open session, reports a completed one', async () => {
+    const status: Record<string, string> = { cs_open: 'open', cs_done: 'complete', cs_old: 'expired' };
+    const { calls, fetchFn } = stubFetch([
+      (c) => {
+        const m = /^\/v1\/checkout\/sessions\/(\w+)(\/expire)?$/.exec(c.path);
+        if (!m) return undefined;
+        return { body: { id: m[1], object: 'checkout.session', status: m[2] ? 'expired' : status[m[1]] } };
+      },
+    ]);
+    const p = new StripeProvider({ fetch: fetchFn });
+    expect(await p.expireCheckoutSession('cs_open')).toBe(true);
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/v1/checkout/sessions/cs_open/expire')).toBe(true);
+    calls.length = 0;
+    expect(await p.expireCheckoutSession('cs_done')).toBe(false);
+    expect(await p.expireCheckoutSession('cs_old')).toBe(true);
+    expect(calls.some((c) => c.path.endsWith('/expire'))).toBe(false);
+  });
+});
+
+describe('StripeProvider.refundLatestPayment', () => {
+  const routes = (payments: unknown[], refund?: (c: Call) => { status?: number; body: unknown }): Route[] => [
+    (c) => (c.path === '/v1/subscriptions/sub_dup' ? { body: subscription({ id: 'sub_dup', latest_invoice: 'in_9' }) } : undefined),
+    (c) => (c.path === '/v1/subscriptions/sub_new' ? { body: subscription({ id: 'sub_new', latest_invoice: null }) } : undefined),
+    (c) => (c.path === '/v1/invoice_payments' ? { body: { object: 'list', data: payments, has_more: false } } : undefined),
+    (c) => (c.path === '/v1/refunds' ? (refund?.(c) ?? { body: { id: 're_1', object: 'refund' } }) : undefined),
+  ];
+  const paid = (over: Record<string, unknown> = {}) => ({
+    id: 'inpay_1', object: 'invoice_payment', amount_paid: 30000, currency: 'usd', status: 'paid',
+    payment: { type: 'payment_intent', payment_intent: 'pi_1' }, ...over,
+  });
+
+  test("refunds the latest invoice's paid payment by PaymentIntent, idempotently", async () => {
+    const { calls, fetchFn } = stubFetch(routes([paid()]));
+    const p = new StripeProvider({ fetch: fetchFn });
+    expect(await p.refundLatestPayment('sub_dup')).toEqual({
+      providerInvoiceId: 'in_9', refundIds: ['re_1'], amountCents: 30000, currency: 'USD',
+    });
+    const list = calls.find((c) => c.path === '/v1/invoice_payments')!;
+    expect(list.body.get('invoice')).toBe('in_9');
+    expect(list.body.get('status')).toBe('paid');
+    const refund = calls.find((c) => c.path === '/v1/refunds')!;
+    expect(refund.body.get('payment_intent')).toBe('pi_1');
+    expect(refund.headers.get('idempotency-key')).toBe('gradebook-refund-inpay_1');
+  });
+
+  test('nothing paid yet (or no invoice): null, no refund', async () => {
+    const { calls, fetchFn } = stubFetch(routes([]));
+    const p = new StripeProvider({ fetch: fetchFn });
+    expect(await p.refundLatestPayment('sub_dup')).toBeNull();
+    expect(await p.refundLatestPayment('sub_new')).toBeNull();
+    expect(calls.some((c) => c.path === '/v1/refunds')).toBe(false);
+  });
+
+  test('an already refunded charge counts as done', async () => {
+    const { fetchFn } = stubFetch(routes([paid()], () => ({
+      status: 400,
+      body: { error: { type: 'invalid_request_error', code: 'charge_already_refunded', message: 'already refunded' } },
+    })));
+    const p = new StripeProvider({ fetch: fetchFn });
+    expect(await p.refundLatestPayment('sub_dup')).toMatchObject({ refundIds: [], amountCents: 30000 });
+  });
+
+  test('another refund error is a ProviderApiError', async () => {
+    const { fetchFn } = stubFetch(routes([paid()], () => ({
+      status: 400,
+      body: { error: { type: 'invalid_request_error', code: 'charge_disputed', message: 'disputed' } },
+    })));
+    const p = new StripeProvider({ fetch: fetchFn });
+    await expect(p.refundLatestPayment('sub_dup')).rejects.toBeInstanceOf(ProviderApiError);
+  });
+});
+
 describe('StripeProvider.parseWebhook', () => {
   async function signed(event: object, secret = SECRET, timestamp?: number): Promise<WebhookRequest> {
     const payload = JSON.stringify(event);
@@ -339,6 +434,7 @@ describe('StripeProvider.parseWebhook', () => {
       {
         type: 'subscription.updated',
         eventId: 'evt_1',
+        occurredAt: new Date(1_760_000_000_000),
         providerSubscriptionId: 'sub_1',
         providerCustomerId: 'cus_1',
         schoolId: 'school-1',
@@ -395,6 +491,7 @@ describe('StripeProvider.mapEvent', () => {
     ).toEqual({
       type: 'subscription.updated',
       eventId: 'evt_x',
+      occurredAt: new Date(1_760_000_000_000),
       providerSubscriptionId: 'sub_1',
       providerCustomerId: 'cus_1',
       schoolId: 'school-1',
@@ -442,6 +539,7 @@ describe('StripeProvider.mapEvent', () => {
     expect(p.mapEvent(ev('customer.subscription.deleted', { id: 'sub_1', metadata: { schoolId: 'school-1' } }))).toEqual({
       type: 'subscription.canceled',
       eventId: 'evt_x',
+      occurredAt: new Date(1_760_000_000_000),
       providerSubscriptionId: 'sub_1',
       schoolId: 'school-1',
     });
@@ -461,6 +559,7 @@ describe('StripeProvider.mapEvent', () => {
     ).toEqual({
       type: 'invoice.paid',
       eventId: 'evt_x',
+      occurredAt: new Date(1_760_000_000_000),
       providerInvoiceId: 'in_1',
       providerSubscriptionId: 'sub_1',
       schoolId: 'school-1',
@@ -481,6 +580,7 @@ describe('StripeProvider.mapEvent', () => {
     ).toEqual({
       type: 'invoice.payment_failed',
       eventId: 'evt_x',
+      occurredAt: new Date(1_760_000_000_000),
       providerInvoiceId: 'in_2',
       providerSubscriptionId: 'sub_1',
       schoolId: null,

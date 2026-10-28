@@ -46,7 +46,7 @@ A teacher is neither the file's owner nor a share recipient, so `getViewContent`
 
 ## Mobile
 
-The app uses the same three steps. A picked document arrives as a `file://` URI rather than a `File`, so it is read into a Blob first - which means the upload runs the identical code path the browser takes rather than a React-Native-specific one. The 10MB server cap keeps holding it in memory affordable.
+The app uses the same three steps. A picked document arrives as a `file://` URI rather than a `File`, so it is read into a Blob first - which means the upload runs the identical code path the browser takes rather than a React-Native-specific one. The 100MB server cap keeps holding it in memory affordable.
 
 ## Not moved
 

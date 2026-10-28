@@ -29,6 +29,7 @@ const ACTIVITY = {
   status: 'draft',
   published_at: null,
   allow_file: true,
+  allow_multiple_files: false,
   allow_text: true,
   max_attempts: 1,
   omit_from_final_grade: false,
@@ -98,6 +99,7 @@ describe('ActivityService.create', () => {
         'status',
         'publishedAt',
         'allowFile',
+        'allowMultipleFiles',
         'allowText',
         'maxAttempts',
         'omitFromFinalGrade',
@@ -158,7 +160,39 @@ describe('ActivityService.create', () => {
     const insert = prisma.activity.create.mock.calls[0][0].data;
     expect(insert.kind).toBe('offline');
     expect(insert.allow_file).toBe(false);
+    expect(insert.allow_multiple_files).toBe(false);
     expect(insert.allow_text).toBe(false);
+  });
+
+  test('multiple files are opt-in and saved for file assignments', async () => {
+    const { service, prisma } = build();
+    const result = await service.create('user-1', 'course-1', {
+      kind: 'assignment',
+      title: 'Portfolio',
+      points: 20,
+      allowFile: true,
+      allowText: false,
+      allowMultipleFiles: true,
+    });
+
+    expect(prisma.activity.create.mock.calls[0][0].data.allow_multiple_files).toBe(
+      true,
+    );
+    expect(result.allowMultipleFiles).toBe(true);
+  });
+
+  test('multiple files cannot be enabled without file uploads', async () => {
+    const { service } = build();
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'assignment',
+        title: 'Essay',
+        points: 20,
+        allowFile: false,
+        allowText: true,
+        allowMultipleFiles: true,
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 
   test('an assignment must accept something', async () => {
@@ -174,6 +208,39 @@ describe('ActivityService.create', () => {
 });
 
 describe('ActivityService.update', () => {
+  test('saves the multiple-file setting', async () => {
+    const { service, prisma } = build();
+    const result = await service.update('user-1', 'act-1', {
+      allowMultipleFiles: true,
+    });
+
+    expect(
+      prisma.activity.update.mock.calls[0][0].data.allow_multiple_files,
+    ).toBe(true);
+    expect(result.allowMultipleFiles).toBe(true);
+  });
+
+  test('cannot enable multiple files when file uploads are disabled', async () => {
+    const { service } = build((p) =>
+      p.activity.findUnique.mockResolvedValue({
+        ...ACTIVITY,
+        allow_file: false,
+      }),
+    );
+    await expect(
+      service.update('user-1', 'act-1', { allowMultipleFiles: true }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  test('disabling file uploads also disables multiple files', async () => {
+    const { service, prisma } = build();
+    await service.update('user-1', 'act-1', { allowFile: false });
+
+    const update = prisma.activity.update.mock.calls[0][0].data;
+    expect(update.allow_file).toBe(false);
+    expect(update.allow_multiple_files).toBe(false);
+  });
+
   test('moves to Ungrouped and omits from the final grade', async () => {
     const { service, prisma } = build();
     const result = await service.update('user-1', 'act-1', {
@@ -194,6 +261,26 @@ describe('ActivityService.update', () => {
     await expect(
       service.update('user-1', 'act-1', { assignmentGroupId: 'group-x' }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  test('refuses to lower points below a mark already given', async () => {
+    const { service, prisma } = build((p) =>
+      p.submission.findFirst.mockResolvedValue({ id: 'sub-1' }),
+    );
+    await expect(
+      service.update('user-1', 'act-1', { points: 10 }),
+    ).rejects.toThrow(BadRequestException);
+    const where = prisma.submission.findFirst.mock.calls[0][0].where;
+    expect(where).toEqual({ activity_id: 'act-1', score: { gt: 10 } });
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+  });
+
+  test('lowers points when every mark still fits', async () => {
+    const { service, prisma } = build((p) =>
+      p.submission.findFirst.mockResolvedValue(null),
+    );
+    await service.update('user-1', 'act-1', { points: 15 });
+    expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(15);
   });
 
   test('an activity with no course is not found', async () => {

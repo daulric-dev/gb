@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import Fastify from 'fastify';
-import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { FakeProvider } from '@/test/billing-fakes';
 import { BillingRegistry } from '../providers/billing.registry';
+import { Readable } from 'node:stream';
 import { BillingWebhookController } from './billing-webhook.controller';
-import { registerWebhookRawBody } from './raw-body';
+import { EventInProgressError } from './billing-events.service';
+import { registerWebhookRawBody, WEBHOOK_MAX_BYTES } from './raw-body';
 import { WebhookVerificationError } from '../providers/payment-provider';
 
 const savedEnv = { ...process.env };
@@ -49,6 +51,12 @@ describe('BillingWebhookController', () => {
     expect(handle).not.toHaveBeenCalled();
   });
 
+  test('an event another worker is applying: 409 so the provider retries later', async () => {
+    provider.parseWebhook.mockResolvedValue([]);
+    handle.mockRejectedValue(new EventInProgressError('evt_1'));
+    await expect(controller.post('subp', req())).rejects.toBeInstanceOf(ConflictException);
+  });
+
   test('any other failure: 500 so the provider retries', async () => {
     provider.parseWebhook.mockRejectedValue(new Error('boom'));
     await expect(controller.post('subp', req())).rejects.toBeInstanceOf(InternalServerErrorException);
@@ -90,6 +98,31 @@ describe('raw body capture', () => {
     expect(res.statusCode).toBe(200);
     expect(Buffer.from(res.json().raw, 'base64').toString()).toBe('<x/>');
     expect(res.json().body).toBe('buffer');
+    await f.close();
+  });
+
+  test('webhook route: a declared body over 1MB is refused before it is read', async () => {
+    const f = await app();
+    const res = await f.inject({
+      method: 'POST',
+      url: '/api/billing/webhooks/stripe',
+      headers: { 'content-type': 'application/json', 'content-length': String(WEBHOOK_MAX_BYTES + 1) },
+      payload: '{}',
+    });
+    expect(res.statusCode).toBe(413);
+    await f.close();
+  });
+
+  test('webhook route: a streamed body is cut off once it passes 1MB', async () => {
+    const f = await app();
+    const chunk = Buffer.alloc(256 * 1024, 0x61);
+    const res = await f.inject({
+      method: 'POST',
+      url: '/api/billing/webhooks/stripe',
+      headers: { 'content-type': 'application/octet-stream' },
+      payload: Readable.from([chunk, chunk, chunk, chunk, chunk]),
+    });
+    expect(res.statusCode).toBe(413);
     await f.close();
   });
 

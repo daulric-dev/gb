@@ -14,7 +14,12 @@ import { TextArea } from "@/components/ui/TextArea";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
-import { attemptsLeft, dueLabel, type PortalWorkDetail } from "@/lib/work";
+import {
+  attemptsLeft,
+  dueLabel,
+  lateDays,
+  type PortalWorkDetail,
+} from "@/lib/work";
 import { uploadSubmissionFile } from "@/lib/upload";
 import { formatScore } from "@/lib/format-number";
 import { Markdown } from "@/components/ui/Markdown";
@@ -96,7 +101,9 @@ export default function WorkDetailScreen() {
   }
 
   async function submitAssignment() {
-    const attached = !!work?.submission?.fileId;
+    const attached = !!(
+      work?.submission?.files?.length || work?.submission?.fileId
+    );
     if (!text.trim() && !attached) {
       toast.error("Add your work before handing in");
       return;
@@ -120,19 +127,22 @@ export default function WorkDetailScreen() {
   async function attachFile() {
     const picked = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
+      multiple: work?.allowMultipleFiles ?? false,
     });
-    if (picked.canceled || !picked.assets?.[0]) return;
+    if (picked.canceled || picked.assets.length === 0) return;
 
-    const asset = picked.assets[0];
     setUploading(true);
     try {
-      await uploadSubmissionFile(activityId!, {
-        uri: asset.uri,
-        name: asset.name,
-        size: asset.size ?? 0,
-        mimeType: asset.mimeType ?? "application/octet-stream",
-      });
-      toast.success("File attached — hand in when you are ready");
+      for (const asset of picked.assets) {
+        await uploadSubmissionFile(activityId!, {
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: asset.mimeType ?? "application/octet-stream",
+        });
+      }
+      toast.success(
+        `${picked.assets.length} file${picked.assets.length === 1 ? "" : "s"} attached — hand in when you are ready`,
+      );
       await load();
     } catch (err) {
       toast.error(
@@ -174,6 +184,20 @@ export default function WorkDetailScreen() {
   const offline = work.kind === "offline";
   const open =
     !offline && work.status === "published" && (!submitted || canRetake);
+  const submissionFiles = work.submission?.files?.length
+    ? work.submission.files
+    : work.submission?.fileId
+      ? [
+          {
+            id: work.submission.fileId,
+            name: work.submission.fileName ?? "Attached file",
+          },
+        ]
+      : [];
+  const submittedLateBy =
+    work.kind === "assignment"
+      ? lateDays(work.dueAt, work.submission?.submittedAt ?? null)
+      : null;
 
   return (
     <Screen
@@ -202,6 +226,16 @@ export default function WorkDetailScreen() {
                       ? `Marked: ${formatScore(work.submission.score)}/${formatScore(work.points)}`
                       : "Handed in"}
                 </Text>
+                {submittedLateBy !== null && (
+                  <Text
+                    variant="muted"
+                    size="xs"
+                    style={{ color: colors.mutedForeground }}
+                  >
+                    Submitted {submittedLateBy}{" "}
+                    {submittedLateBy === 1 ? "day" : "days"} late
+                  </Text>
+                )}
                 {canRetake && (
                   <Text variant="muted" size="xs">
                     {left === Infinity
@@ -364,35 +398,47 @@ export default function WorkDetailScreen() {
 
               {work.allowFile && (
                 <View style={{ gap: 8 }}>
-                  {work.submission?.fileId ? (
+                  {submissionFiles.map((file) => (
                     <View
+                      key={file.id}
                       style={[styles.attached, { borderColor: colors.border }]}
                     >
                       <Paperclip color={colors.mutedForeground} size={16} />
                       <Text size="sm" numberOfLines={1} style={{ flex: 1 }}>
-                        {work.submission.fileName ?? "Attached file"}
+                        {file.name}
                       </Text>
                     </View>
-                  ) : null}
+                  ))}
 
-                  {open && (
-                    <>
-                      <Button
-                        variant="outline"
-                        onPress={attachFile}
-                        loading={uploading}
-                        icon={<Upload color={colors.foreground} size={16} />}
-                      >
-                        {work.submission?.fileId
-                          ? "Replace file"
-                          : "Attach a file"}
-                      </Button>
+                  {open &&
+                    (work.allowMultipleFiles || submissionFiles.length === 0) && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onPress={attachFile}
+                          loading={uploading}
+                          icon={<Upload color={colors.foreground} size={16} />}
+                        >
+                          {submissionFiles.length > 0
+                            ? "Add files"
+                            : "Attach files"}
+                        </Button>
+                        <Text variant="muted" size="xs">
+                          {work.allowMultipleFiles
+                            ? "Select up to 20 files (100MB each)."
+                            : "Select one file (up to 100MB)."}{" "}
+                          Attaching files does not hand them in.
+                        </Text>
+                      </>
+                    )}
+                  {open &&
+                    !work.allowMultipleFiles &&
+                    submissionFiles.length > 0 && (
                       <Text variant="muted" size="xs">
-                        Up to 10MB, and an interrupted upload picks up where it
-                        stopped. Attaching a file does not hand it in.
+                          This assignment allows one file. Hand in when you are
+                          ready.
                       </Text>
-                    </>
-                  )}
+                    )}
                 </View>
               )}
 

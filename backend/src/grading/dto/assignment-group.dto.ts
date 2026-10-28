@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsInt,
   IsArray,
@@ -10,6 +11,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -51,7 +53,7 @@ export class CreateAssignmentGroupDto {
 
 export class UpdateAssignmentGroupDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -68,7 +70,7 @@ export class UpdateAssignmentGroupDto {
 
   /** Leave out each student's N marks that hurt the group most. */
   @ApiPropertyOptional({ example: 1, minimum: 0, maximum: 50 })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -77,7 +79,7 @@ export class UpdateAssignmentGroupDto {
 
   /** Leave out each student's N best marks (after the lowest are dropped). */
   @ApiPropertyOptional({ example: 0, minimum: 0, maximum: 50 })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -90,6 +92,7 @@ export class ReorderAssignmentGroupsDto {
   @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(500)
   @IsUUID('all', { each: true })
   groupIds!: string[];
 }

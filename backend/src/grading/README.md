@@ -26,11 +26,11 @@ Every route is behind `AuthGuard`. Ids in the path are checked with `ParseUUIDPi
 | Method | Path | Who | What it does |
 | --- | --- | --- | --- |
 | GET | `/api/courses/:courseId/activities` | Staff | Every activity in the course, drafts included. Soonest due first; undated work last. |
-| POST | `/api/courses/:courseId/activities` | Manage | Create (`CreateActivityDto`). An assignment must accept a file, text or both. Offline work accepts nothing. `maxAttempts` 0 means unlimited (stored as null); the default is 1. |
+| POST | `/api/courses/:courseId/activities` | Manage | Create (`CreateActivityDto`). An assignment must accept a file, text or both. `allowMultipleFiles` is opt-in and only applies when `allowFile` is enabled. Offline work accepts nothing. `maxAttempts` 0 means unlimited (stored as null); the default is 1. |
 | GET | `/api/activities/:activityId` | Staff | One activity, with its quiz questions and options, correct answers included |
-| PATCH | `/api/activities/:activityId` | Manage | Update (`UpdateActivityDto`): title, instructions, points, due date, group (`null` means Ungrouped), `omitFromFinalGrade`, accepted inputs, attempts |
+| PATCH | `/api/activities/:activityId` | Manage | Update (`UpdateActivityDto`): title, instructions, points, due date, group (`null` means Ungrouped), `omitFromFinalGrade`, accepted inputs (including `allowMultipleFiles`), attempts |
 | POST | `/api/activities/:activityId/publish` | Manage | Set status `published`. A quiz needs at least one question. `published_at` keeps the first publish date when reopening. Fires `CourseNotificationService.activityPublished()` without waiting for it. |
-| POST | `/api/activities/:activityId/close` | Manage | Set status `closed`. No more submissions, but the activity stays visible and keeps counting. |
+| POST | `/api/activities/:activityId/close` | Manage | Set status `closed`. No more submissions, but the activity stays visible and can still be graded. A due date alone does not close an activity; assignments may be handed in after it and are marked late in the clients. |
 | DELETE | `/api/activities/:activityId` | Manage | Delete. Refused (409) once any submission exists; close it or omit it from the final grade instead. |
 | POST | `/api/activities/:activityId/questions` | Manage, draft quiz only | Add a question (`AddQuestionDto`) |
 | PATCH | `/api/activities/:activityId/questions/:questionId` | Manage, draft quiz only | Edit a question. Options are replaced as a whole list (`UpdateQuestionDto`). |

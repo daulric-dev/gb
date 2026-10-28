@@ -12,7 +12,6 @@ import { createFakeStorage } from '@/test/erasure-mocks';
 import { ErasureLogService } from './erasure-log.service';
 import { validatePlan } from './erasure-plan';
 import { AuthService } from '@/auth/auth.service';
-import { StudentMembershipService } from '@/student-account/student-membership.service';
 import { SchoolService } from '@/school/school.service';
 import { FileManagerService } from '@/file-manager/file-manager.service';
 import { FolderService } from '@/file-manager/folder.service';
@@ -93,33 +92,6 @@ describe('DELETE /api/auth/account', () => {
     await expectRejection(svc.deleteAccount(USER));
     expect(storage.objects.size).toBe(2);
     expect(await cache.get(`profile:${USER}`)).not.toBeNull();
-  });
-});
-
-describe('student merge', () => {
-  function build() {
-    const s = setup();
-    s.prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
-    s.prisma.student.findUnique.mockResolvedValue({ user_profile_id: OTHER });
-    s.tx.$queryRaw.mockResolvedValue([{ student_id: U(9) }]);
-    const svc = new StudentMembershipService(s.prisma as any, createMockCacheService() as any, s.erasure);
-    return { ...s, svc };
-  }
-
-  test('the merge function and the log entry share a transaction', async () => {
-    const { prisma, tx, svc } = build();
-    await svc.mergeDuplicate(USER, SUBJECT, U(9));
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
-    const data = loggedEntry(prisma, tx);
-    expect(data).toMatchObject({ kind: 'student', reason: 'merge', subject_ids: [SUBJECT] });
-    expect(data.replay.steps.map((s: any) => s.op)).toEqual(['update', 'update', 'delete']);
-  });
-
-  test('rolls back with a failed log write', async () => {
-    const { tx, svc } = build();
-    failLog(tx);
-    await expectRejection(svc.mergeDuplicate(USER, SUBJECT, U(9)));
   });
 });
 

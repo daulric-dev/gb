@@ -4,6 +4,12 @@ import { CacheInterface } from './cache.interface';
 
 const KEEPALIVE_INTERVAL_MS = 60_000;
 
+// INCR and the first EXPIRE in one script, so a crash between them cannot
+// leave a counter that never expires.
+const INCR_WITH_TTL = `local v = redis.call('INCR', KEYS[1])
+if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return v`;
+
 export class RedisStore implements CacheInterface {
   private readonly logger = new Logger(RedisStore.name);
   private readonly keepalive: ReturnType<typeof setInterval>;
@@ -30,6 +36,27 @@ export class RedisStore implements CacheInterface {
 
   async set(key: string, value: any, ttl: number): Promise<void> {
     await this.redis.set(key, JSON.stringify(value), 'EX', ttl);
+  }
+
+  async setIfAbsent(key: string, value: any, ttl: number): Promise<boolean> {
+    const res = await this.redis.send('SET', [
+      key,
+      JSON.stringify(value),
+      'NX',
+      'EX',
+      String(Math.max(1, Math.ceil(ttl))),
+    ]);
+    return res === 'OK';
+  }
+
+  async incr(key: string, ttl: number): Promise<number> {
+    const res = await this.redis.send('EVAL', [
+      INCR_WITH_TTL,
+      '1',
+      key,
+      String(Math.max(1, Math.ceil(ttl))),
+    ]);
+    return Number(res);
   }
 
   async delete(key: string): Promise<void> {

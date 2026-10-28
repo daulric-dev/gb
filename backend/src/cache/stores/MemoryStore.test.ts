@@ -49,4 +49,36 @@ describe('MemoryStore', () => {
     expect(await store.get('a')).toBeNull();
     expect(await store.get('b')).toBeNull();
   });
+
+  test('setIfAbsent writes only the first time', async () => {
+    expect(await store.setIfAbsent('once', 'a', 60)).toBe(true);
+    expect(await store.setIfAbsent('once', 'b', 60)).toBe(false);
+    expect(await store.get('once')).toBe('a');
+  });
+
+  test('setIfAbsent succeeds again after the key expires', async () => {
+    expect(await store.setIfAbsent('short', 'a', 0.01)).toBe(true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await store.setIfAbsent('short', 'b', 60)).toBe(true);
+    expect(await store.get('short')).toBe('b');
+  });
+
+  test('concurrent setIfAbsent lets exactly one caller win', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => store.setIfAbsent('race', i, 60)),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  test('incr counts from 1 and never loses concurrent increments', async () => {
+    expect(await store.incr('n', 60)).toBe(1);
+    await Promise.all(Array.from({ length: 9 }, () => store.incr('n', 60)));
+    expect(await store.get('n')).toBe(10);
+  });
+
+  test('incr keeps the TTL from creation and restarts after expiry', async () => {
+    await store.incr('t', 0.01);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await store.incr('t', 60)).toBe(1);
+  });
 });

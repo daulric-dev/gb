@@ -45,7 +45,7 @@ backend/
 │   ├── pagination/            # Shared pagination DTO + result type (offset + cursor)
 │   ├── versioning/            # Header-based response versioning service
 │   ├── student/               # Student records (the school roster)
-│   ├── student-account/       # School join codes, duplicate-record merging
+│   ├── student-account/       # School join codes (the student joins themselves)
 │   ├── email-domain/          # School email domains (verified by DNS), join by domain
 │   ├── course/                # Courses, people, join codes, modules, pages, copy/templates; CourseAccessService (course roles)
 │   ├── grading/               # Activities (quiz/assignment/offline), submissions, assignment groups, gradebook
@@ -77,7 +77,7 @@ The app bootstrap logic lives in `src/createApp.ts`; `src/main.ts` is its only c
 - **Swagger**: Available at `/docs`
 - **Validation**: Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform` enabled
 - **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
-- **Multipart**: `@fastify/multipart` with 10MB file size limit
+- **Multipart**: `@fastify/multipart` with 100MB file size limit
 
 `createApp()` calls `app.init()` but does **not** call `app.listen()`. `src/main.ts` calls `createApp()` then `app.listen()` on `PORT` (default 3001), bound to `0.0.0.0`.
 

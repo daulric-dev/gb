@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -17,17 +19,36 @@ import { FileShareService } from './file-share.service';
 import { FolderService } from './folder.service';
 import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
-import { verifyContent, ALLOWED_CONTENT_TYPES } from './file-content';
-import { StorageService } from '@/storage/storage.service';
-import { objectKey } from '@/storage/keys';
+import {
+  normalizeSubmissionContentType,
+  verifyContent,
+  verifySubmissionContent,
+  ALLOWED_CONTENT_TYPES,
+} from './file-content';
+import {
+  ObjectTooLargeError,
+  StorageService,
+} from '@/storage/storage.service';
+import { objectKey, UPLOAD_STAGING_PREFIX } from '@/storage/keys';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 
 const BUCKET = 'file-manager';
-const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_IN_MB = 100; // 100MB
+const MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_IN_MB * 1024 * 1024;
 
-/** Long enough to send a 10MB file, short enough to be worth little. */
-const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+/** Long enough to send a 100MB file, short enough to be worth little. */
+export const UPLOAD_URL_TTL_SECONDS = 5 * 60;
+
+/** Live (unexpired) upload tickets one user may hold at once. */
+export const MAX_PENDING_UPLOADS = 20;
+
+/** Where a staged upload is served from once it has been verified. */
+export function finalStoragePath(stagedPath: string): string {
+  return stagedPath.startsWith(UPLOAD_STAGING_PREFIX)
+    ? stagedPath.slice(UPLOAD_STAGING_PREFIX.length)
+    : stagedPath;
+}
 
 const FILE_COLUMNS = {
   id: true,
@@ -242,6 +263,26 @@ export class FileManagerService {
       folderId?: string;
     },
   ) {
+    return this.createUploadTicketInternal(userId, input, false);
+  }
+
+  async createSubmissionUploadTicket(
+    userId: string,
+    input: { name: string; sizeBytes: number; contentType: string },
+  ) {
+    return this.createUploadTicketInternal(userId, input, true);
+  }
+
+  private async createUploadTicketInternal(
+    userId: string,
+    input: {
+      name: string;
+      sizeBytes: number;
+      contentType: string;
+      folderId?: string;
+    },
+    allowAnyContentType: boolean,
+  ) {
     if (input.folderId) await this.folders.getOwned(userId, input.folderId);
 
     if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
@@ -249,19 +290,41 @@ export class FileManagerService {
     }
     if (input.sizeBytes > MAX_UPLOAD_SIZE) {
       throw new BadRequestException(
-        `File too large (${(input.sizeBytes / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`,
+        `File too large (${(input.sizeBytes / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`,
       );
     }
 
-    const contentType = input.contentType || 'application/octet-stream';
-    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+    const contentType = allowAnyContentType
+      ? normalizeSubmissionContentType(input.contentType)
+      : input.contentType || 'application/octet-stream';
+    if (!allowAnyContentType && !ALLOWED_CONTENT_TYPES.has(contentType)) {
       throw new BadRequestException(`${contentType} files are not accepted`);
     }
 
     const schoolId = await this.schoolIdOf(userId);
+
+    // Every ticket reserves a row (and, until it is purged, an object), so cap
+    // how many unexpired ones a user can hold.
+    const live = await this.prisma.file.count({
+      where: {
+        owner_id: userId,
+        status: 'pending',
+        deleted_at: null,
+        created_at: {
+          gte: new Date(Date.now() - UPLOAD_URL_TTL_SECONDS * 1000),
+        },
+      },
+    });
+    if (live >= MAX_PENDING_UPLOADS) {
+      throw new HttpException(
+        'Too many uploads in progress. Finish or wait for some before starting more.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const id = crypto.randomUUID();
     const name = (input.name?.trim() || 'untitled').slice(0, 255);
-    const storagePath = `${schoolId}/${userId}/${id}-${this.slug(name)}`;
+    const storagePath = `${UPLOAD_STAGING_PREFIX}${schoolId}/${userId}/${id}-${this.slug(name)}`;
 
     try {
       await this.prisma.file.create({
@@ -290,10 +353,13 @@ export class FileManagerService {
     const expiresAt = new Date(
       Date.now() + UPLOAD_URL_TTL_SECONDS * 1000,
     ).toISOString();
+    // The declared size is signed too: the PUT must carry exactly that many
+    // bytes.
     const uploadUrl = await this.storage.uploadUrl(
       objectKey(BUCKET, storagePath),
       contentType,
       UPLOAD_URL_TTL_SECONDS,
+      input.sizeBytes,
     );
 
     return {
@@ -309,10 +375,22 @@ export class FileManagerService {
   }
 
   async finaliseUpload(userId: string, fileId: string) {
+    return this.finaliseUploadInternal(userId, fileId, false);
+  }
+
+  async finaliseSubmissionUpload(userId: string, fileId: string) {
+    return this.finaliseUploadInternal(userId, fileId, true);
+  }
+
+  private async finaliseUploadInternal(
+    userId: string,
+    fileId: string,
+    allowAnyContentType: boolean,
+  ) {
     const file = !isUuid(fileId)
       ? null
       : await this.prisma.file.findFirst({
-          where: { id: fileId, owner_id: userId },
+          where: { id: fileId, owner_id: userId, deleted_at: null },
           select: FILE_COLUMNS,
         });
 
@@ -335,7 +413,7 @@ export class FileManagerService {
     // before anything is read back.
     if (head.size > MAX_UPLOAD_SIZE) {
       await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 10MB.');
+      throw new BadRequestException('File too large. Maximum is 100MB.');
     }
     const declared = num(record.size_bytes);
     if (declared && head.size > 0 && head.size !== declared) {
@@ -349,7 +427,16 @@ export class FileManagerService {
       );
     }
 
-    const buffer = await this.storage.getBuffer(key);
+    // The object can change between the HEAD and this read, so the read is
+    // capped on its own.
+    let buffer: Buffer | null;
+    try {
+      buffer = await this.storage.getBuffer(key, MAX_UPLOAD_SIZE);
+    } catch (error) {
+      if (!(error instanceof ObjectTooLargeError)) throw error;
+      await this.discardUpload(record, 'failed', 'Uploaded file was too large');
+      throw new BadRequestException('File too large. Maximum is 100MB.');
+    }
     if (!buffer) {
       await this.failUpload(fileId, 'failed', 'Upload did not complete');
       throw new BadRequestException('The upload did not complete');
@@ -361,13 +448,34 @@ export class FileManagerService {
     }
     if (buffer.byteLength > MAX_UPLOAD_SIZE) {
       await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 10MB.');
+      throw new BadRequestException('File too large. Maximum is 100MB.');
     }
 
-    const check = verifyContent(buffer, record.content_type);
+    const check = allowAnyContentType
+      ? verifySubmissionContent(buffer, record.content_type)
+      : verifyContent(buffer, record.content_type);
     if (!check.ok) {
       await this.discardUpload(record, 'failed', check.reason);
       throw new BadRequestException(check.reason);
+    }
+
+    // Serve the bytes that were verified, from a key no upload URL was ever
+    // signed for. Writing the checked buffer (rather than copying the staged
+    // object) leaves no window for the staged object to be swapped.
+    const finalPath = finalStoragePath(record.storage_path);
+    if (finalPath !== record.storage_path) {
+      try {
+        await this.storage.put(
+          objectKey(record.bucket, finalPath),
+          buffer,
+          record.content_type,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to store verified upload ${fileId}: ${(error as Error).message}`,
+        );
+        throw new BadRequestException('Failed to record file');
+      }
     }
 
     let updated: FileRecord;
@@ -376,6 +484,7 @@ export class FileManagerService {
         where: { id: fileId },
         data: {
           status: 'ready',
+          storage_path: finalPath,
           size_bytes: buffer.byteLength,
           scan_detail: null,
           updated_at: new Date(),
@@ -387,6 +496,14 @@ export class FileManagerService {
         `Failed to release upload: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to record file');
+    }
+
+    if (finalPath !== record.storage_path) {
+      await this.storage.delete(key).catch((error: Error) =>
+        this.logger.error(
+          `Staged upload ${key} could not be removed: ${error.message}`,
+        ),
+      );
     }
 
     return this.present(updated, true);
@@ -433,6 +550,20 @@ export class FileManagerService {
     displayName?: string,
     folderId?: string,
   ) {
+    return this.uploadManualInternal(userId, file, displayName, folderId, false);
+  }
+
+  async uploadSubmissionManual(userId: string, file: MultipartFile) {
+    return this.uploadManualInternal(userId, file, undefined, undefined, true);
+  }
+
+  private async uploadManualInternal(
+    userId: string,
+    file: MultipartFile,
+    displayName: string | undefined,
+    folderId: string | undefined,
+    allowAnyContentType: boolean,
+  ) {
     if (!file) throw new BadRequestException('No file provided');
 
     // A target folder must be one of the caller's own folders.
@@ -444,15 +575,19 @@ export class FileManagerService {
     }
     if (buffer.byteLength > MAX_UPLOAD_SIZE) {
       throw new BadRequestException(
-        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`,
+        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`,
       );
     }
 
     // Reject unsupported or mislabelled files up front (the async scan repeats
     // this as defence in depth). The declared MIME type is not trusted alone:
     // for fingerprintable formats the leading bytes must match.
-    const contentType = file.mimetype || 'application/octet-stream';
-    const check = verifyContent(buffer, contentType);
+    const contentType = allowAnyContentType
+      ? normalizeSubmissionContentType(file.mimetype || '')
+      : file.mimetype || 'application/octet-stream';
+    const check = allowAnyContentType
+      ? verifySubmissionContent(buffer, contentType)
+      : verifyContent(buffer, contentType);
     if (!check.ok) {
       throw new BadRequestException(check.reason);
     }
@@ -657,15 +792,46 @@ export class FileManagerService {
    * check; this deliberately does none.
    */
   async readContentForAuthorisedCaller(fileId: string) {
-    const data = await this.prisma.file
-      .findUnique({ where: { id: fileId }, select: FILE_COLUMNS })
-      .catch(() => null);
+    const data = !isUuid(fileId)
+      ? null
+      : await this.prisma.file
+          .findFirst({
+            where: { id: fileId, deleted_at: null },
+            select: FILE_COLUMNS,
+          })
+          .catch(() => null);
 
     if (!data) {
       throw new NotFoundException('File not found');
     }
 
     return this.downloadBytes(data);
+  }
+
+  /** Stream a file after its caller has already checked authorization. */
+  async readStreamForAuthorisedCaller(fileId: string) {
+    const data = !isUuid(fileId)
+      ? null
+      : await this.prisma.file.findFirst({
+          where: { id: fileId, deleted_at: null },
+          select: FILE_COLUMNS,
+        });
+
+    if (!data || data.status !== 'ready') {
+      throw new NotFoundException('File content unavailable');
+    }
+
+    const object = await this.storage.get(
+      objectKey(data.bucket, data.storage_path),
+    );
+    if (!object) {
+      throw new NotFoundException('File content unavailable');
+    }
+    return {
+      body: object.body,
+      contentType: data.content_type,
+      filename: data.name,
+    };
   }
 
   private async downloadBytes(file: FileRecord) {

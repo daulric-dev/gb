@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
-  Download,
+  Archive,
+  Eye,
   Loader2,
   MessageSquareText,
   Search,
@@ -12,15 +13,15 @@ import {
   Table2,
   Users,
 } from "lucide-react";
-import { api, ApiError, buildUrl } from "@/lib/api";
-import { downloadBlob } from "@/lib/download";
+import { api, ApiError } from "@/lib/api";
+import { downloadFromUrl } from "@/lib/download";
 import type {
   ActivityKind,
   Rubric,
   RubricAssessment,
   SubmissionStatus,
 } from "@/lib/courses/types";
-import { formatDue } from "@/lib/courses/format";
+import { formatDue, lateDays } from "@/lib/courses/format";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ import {
 } from "@/components/ui/empty";
 import type { SubmissionRow } from "./types";
 import { RubricMarkDialog } from "./RubricMarkDialog";
+import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
 
 /** What the grade and excuse endpoints answer with. */
 interface MarkResult {
@@ -63,20 +65,6 @@ interface MarkResult {
   excused: boolean;
   excusedReason: string | null;
   gradedAt: string | null;
-}
-
-/**
- * The handed-in file is streamed through the backend rather than linked
- * directly: the student owns it, and the teacher's access comes from the
- * course, which only the API can decide.
- */
-async function downloadSubmissionFile(submissionId: string, name: string) {
-  const res = await fetch(
-    buildUrl(`/activities/submissions/${submissionId}/file`),
-    { headers: { "X-API-Version": "1" }, credentials: "include" },
-  );
-  if (!res.ok) throw new Error(`Failed to download (${res.status})`);
-  downloadBlob(await res.blob(), name);
 }
 
 function merge(row: SubmissionRow, result: MarkResult): SubmissionRow {
@@ -117,6 +105,7 @@ function merge(row: SubmissionRow, result: MarkResult): SubmissionRow {
 export function MarksTable({
   activityId,
   kind,
+  dueAt,
   points,
   rows,
   canGrade,
@@ -128,6 +117,7 @@ export function MarksTable({
 }: {
   activityId: string;
   kind: ActivityKind;
+  dueAt: string | null;
   points: number;
   rows: SubmissionRow[];
   canGrade: boolean;
@@ -147,6 +137,12 @@ export function MarksTable({
   const excusing = useSignal<SubmissionRow | null>(null);
   const excuseReason = useSignal("");
   const rubricFor = useSignal<SubmissionRow | null>(null);
+  const fileFor = useSignal<{
+    row: SubmissionRow;
+    id: string;
+    name: string;
+    contentType: string;
+  } | null>(null);
   const working = useSignal(false);
 
   const editable = canGrade && !isDraft;
@@ -282,6 +278,10 @@ export function MarksTable({
               const sub = row.submission;
               const handedIn = !!sub && sub.status !== "draft" && !!sub.submittedAt;
               const excused = !!sub?.excused;
+              const lateBy =
+                kind === "assignment"
+                  ? lateDays(dueAt, sub?.submittedAt ?? null)
+                  : null;
               return (
                 <TableRow
                   key={row.studentId}
@@ -322,69 +322,147 @@ export function MarksTable({
                             {sub!.attemptCount > 1 &&
                               ` · attempt ${sub!.attemptCount}`}
                           </p>
+                          {lateBy !== null && (
+                              <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                                {lateBy} {lateBy === 1 ? "day" : "days"} late
+                              </p>
+                            )}
                           {sub!.textBody && (
                             <p className="line-clamp-2 whitespace-pre-wrap text-sm">
                               {sub!.textBody}
                             </p>
                           )}
                           {sub!.fileId && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                downloadSubmissionFile(
-                                  sub!.id,
-                                  sub!.fileName ?? "submission",
-                                ).catch(() => toast.error("Failed to download"))
-                              }
-                            >
-                              <Download className="mr-1.5 size-3.5" />
-                              <span className="max-w-32 truncate">
-                                {sub!.fileName ?? "File"}
-                              </span>
-                            </Button>
+                            <div className="flex flex-wrap gap-1">
+                              {(sub!.files?.length
+                                ? sub!.files
+                                : [
+                                    {
+                                      id: sub!.fileId,
+                                      name: sub!.fileName ?? "Submission file",
+                                      contentType: "application/octet-stream",
+                                    },
+                                  ]
+                              ).map((file) => (
+                                <Button
+                                  key={file.id}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  aria-label={`View ${file.name}`}
+                                  onClick={() =>
+                                    (fileFor.value = {
+                                      row,
+                                      id: file.id,
+                                      name: file.name,
+                                      contentType: file.contentType,
+                                    })
+                                  }
+                                >
+                                  <Eye className="mr-1.5 size-3.5" />
+                                  <span className="max-w-32 truncate">
+                                    {file.name}
+                                  </span>
+                                </Button>
+                              ))}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                aria-label="Download all submission files as ZIP"
+                                title="Download all files as ZIP"
+                                onClick={() =>
+                                  downloadFromUrl(
+                                    `/activities/submissions/${sub!.id}/files.zip`,
+                                    `${row.name} - submission.zip`,
+                                  ).catch(() =>
+                                    toast.error("Failed to download submission"),
+                                  )
+                                }
+                              >
+                                <Archive className="mr-1.5 size-3.5" />
+                                ZIP
+                              </Button>
+                            </div>
                           )}
                         </div>
                       )}
                     </TableCell>
                   )}
                   <TableCell className="align-top">
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        key={`${row.studentId}-${sub?.score ?? ""}`}
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        aria-label={`Score for ${row.name}`}
-                        defaultValue={sub?.score ?? ""}
-                        disabled={!editable || savingId.value === row.studentId}
-                        className={cn(
-                          "h-8 w-20",
-                          excused && "line-through opacity-60",
+                    {sub?.fileId ? (
+                      <div className="flex items-center gap-2">
+                        <span className={cn(excused && "line-through opacity-60")}>
+                          {sub.score ?? "—"}/{points}
+                        </span>
+                        {editable && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            aria-label={`${sub.score === null ? "Enter" : "Edit"} grade for ${row.name}`}
+                            onClick={() => {
+                              const file = sub.files?.[0];
+                              if (file) {
+                                fileFor.value = {
+                                  row,
+                                  id: file.id,
+                                  name: file.name,
+                                  contentType: file.contentType,
+                                };
+                              } else if (sub.fileId) {
+                                fileFor.value = {
+                                  row,
+                                  id: sub.fileId,
+                                  name: sub.fileName ?? "Submission file",
+                                  contentType: "application/octet-stream",
+                                };
+                              }
+                            }}
+                          >
+                            {sub.score === null ? "Enter grade" : "Edit grade"}
+                          </Button>
                         )}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.currentTarget.blur();
-                        }}
-                        onBlur={(e) => {
-                          const raw = e.target.value.trim();
-                          if (raw === "") return;
-                          const score = Number(raw);
-                          if (!Number.isFinite(score) || score < 0) {
-                            toast.error("Enter a score of 0 or more");
-                            e.target.value = String(sub?.score ?? "");
-                            return;
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          key={`${row.studentId}-${sub?.score ?? ""}`}
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          aria-label={`Score for ${row.name}`}
+                          defaultValue={sub?.score ?? ""}
+                          disabled={
+                            !editable || savingId.value === row.studentId
                           }
-                          if (score !== sub?.score) void saveGrade(row, score);
-                        }}
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        /{points}
-                      </span>
-                      {savingId.value === row.studentId && (
-                        <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-                      )}
-                    </div>
+                          className={cn(
+                            "h-8 w-20",
+                            excused && "line-through opacity-60",
+                          )}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") e.currentTarget.blur();
+                          }}
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim();
+                            if (raw === "") return;
+                            const score = Number(raw);
+                            if (!Number.isFinite(score) || score < 0) {
+                              toast.error("Enter a score of 0 or more");
+                              e.target.value = String(sub?.score ?? "");
+                              return;
+                            }
+                            if (score !== sub?.score) void saveGrade(row, score);
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          /{points}
+                        </span>
+                        {savingId.value === row.studentId && (
+                          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-right align-top">
                     {editable && (
@@ -492,6 +570,24 @@ export function MarksTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {fileFor.value && (
+        <SubmissionFileViewerDialog
+          key={fileFor.value.id}
+          file={{
+            id: fileFor.value.id,
+            name: fileFor.value.name,
+            contentType: fileFor.value.contentType,
+            submissionId: fileFor.value.row.submission!.id,
+          }}
+          score={fileFor.value.row.submission!.score}
+          points={points}
+          canGrade={editable}
+          saving={savingId.value === fileFor.value.row.studentId}
+          onSaveGrade={(score) => saveGrade(fileFor.value!.row, score)}
+          onClose={() => (fileFor.value = null)}
+        />
+      )}
 
       <Dialog
         open={!!excusing.value}

@@ -9,7 +9,8 @@ import { Upload } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 
-const MAX_SIZE = 10 * 1024 * 1024;
+const MAX_SIZE_IN_MB = 100
+const MAX_SIZE = MAX_SIZE_IN_MB * 1024 * 1024;
 
 export function UploadButton({
   onUploaded,
@@ -30,7 +31,7 @@ export function UploadButton({
     if (!file) return;
 
     if (file.size > MAX_SIZE) {
-      toast.error("File must be under 10MB");
+      toast.error("File must be under 100MB");
       return;
     }
 

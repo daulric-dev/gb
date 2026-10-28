@@ -33,9 +33,17 @@ describe("ssoErrorMessage", () => {
     expect(ssoErrorMessage("failed")).toContain("went wrong");
   });
 
-  test("passes sentences through", () => {
-    const msg = 'Your school signs in with Google. Use "Continue with Google".';
-    expect(ssoErrorMessage(msg)).toBe(msg);
+  test("shows the API's known refusals", () => {
+    expect(ssoErrorMessage("This account is disabled")).toBe("This account is disabled");
+    expect(
+      ssoErrorMessage('Your school signs in with Google. Use "Continue with Google".'),
+    ).toContain("requires its own sign-in");
+  });
+
+  test("never shows crafted free text", () => {
+    expect(ssoErrorMessage("Your account is locked. Call 555-0100 to verify.")).toBe(
+      "We couldn't sign you in. Please try again.",
+    );
   });
 
   test("hides unknown bare codes and ignores empty", () => {

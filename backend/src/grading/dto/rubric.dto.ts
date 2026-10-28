@@ -91,7 +91,7 @@ export class CreateRubricDto {
 
 export class UpdateRubricDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
@@ -102,7 +102,7 @@ export class UpdateRubricDto {
    * anyone - copy it instead.
    */
   @ApiPropertyOptional({ type: [RubricCriterionDto] })
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(30)

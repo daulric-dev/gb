@@ -100,7 +100,7 @@ export default function VerifyScreen() {
       if (data.user.school) {
         router.replace(isStudent ? "/(portal)" : "/(tabs)");
       } else if (data.user.first_name) {
-        // Named but school-less: students still owe a claim code, staff still
+        // Named but school-less: students still owe a school code, staff still
         // owe a school. Sending either back to onboard would just loop.
         router.replace("/(auth)/schools");
       } else {

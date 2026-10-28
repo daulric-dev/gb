@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { loginPath, NEXT_PARAM, safeNextPath } from "@/lib/routing";
+import { contentSecurityPolicy, createNonce } from "@/lib/csp";
 
 const GUEST_ONLY = ["/login", "/login/verify"];
 // /scan is where the attendance QR lands; it works signed out (see app/scan).
@@ -55,9 +56,29 @@ export function proxy(request: NextRequest) {
     );
 
   if (!hasSession(request)) {
-    return isPublic(pathname) ? NextResponse.next() : toLogin();
+    return isPublic(pathname) ? next(request) : toLogin();
   }
-  return isGuestOnly(pathname) ? toDashboard() : NextResponse.next();
+  return isGuestOnly(pathname) ? toDashboard() : next(request);
+}
+
+/**
+ * Pass the request on, with a per-request nonce CSP in production. Next reads
+ * the nonce back from the request's CSP header and stamps it on its scripts;
+ * the root layout reads `x-nonce` (which also makes every page render per
+ * request, as a nonce requires).
+ */
+function next(request: NextRequest): NextResponse {
+  if (process.env.NODE_ENV !== "production") return NextResponse.next();
+
+  const nonce = createNonce();
+  const csp = contentSecurityPolicy(nonce);
+  const headers = new Headers(request.headers);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", csp);
+
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
 }
 
 export const config = {

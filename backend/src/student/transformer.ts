@@ -11,10 +11,6 @@ export function v1StudentDetail(raw: Student): Student {
   return raw;
 }
 
-export function v1StudentCreated(raw: Student): Student {
-  return raw;
-}
-
 export function v1StudentUpdated(raw: Student): Student {
   return raw;
 }

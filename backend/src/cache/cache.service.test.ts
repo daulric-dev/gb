@@ -62,4 +62,12 @@ describe('CacheService', () => {
     expect(await cache.get('session:2')).toBeNull();
     expect(await cache.get('config:theme')).toBe('dark');
   });
+
+  test('setIfAbsent and incr pass through to the store', async () => {
+    expect(await cache.setIfAbsent('nonce', 'st-1', 60)).toBe(true);
+    expect(await cache.setIfAbsent('nonce', 'st-2', 60)).toBe(false);
+    expect(await cache.get('nonce')).toBe('st-1');
+    expect(await cache.incr('count', 60)).toBe(1);
+    expect(await cache.incr('count', 60)).toBe(2);
+  });
 });

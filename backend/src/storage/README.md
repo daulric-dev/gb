@@ -13,12 +13,12 @@ Browsers and phones upload and download directly against the store using **presi
   - `bucket` - the configured bucket name.
   - `put(key, body, contentType?)` - upload bytes.
   - `get(key)` - `{ body: Readable, contentType, size }`, or null if the key does not exist.
-  - `getBuffer(key)` - the whole object as a `Buffer`, or null.
+  - `getBuffer(key, maxBytes = 64 MB)` - the whole object as a `Buffer`, or null. The body is counted as it streams and abandoned past `maxBytes` (`ObjectTooLargeError`); the HEAD size is never trusted.
   - `exists(key)` - `{ size, contentType }` from a HEAD request, or null.
   - `delete(key | keys[])` - delete one key, or many in batches of 1000.
   - `listKeys(prefix, { endBefore? })` - every key under a prefix, ascending (paginated `ListObjectsV2`). Used by the erasure log (its storage copy, pruning) and account-deletion clean-up.
   - `downloadUrl(key, { expiresIn = 300, filename?, inline? })` - presigned GET, optionally with a `Content-Disposition` (attachment by default, `inline` on request).
-  - `uploadUrl(key, contentType, expiresIn = 900)` - presigned PUT. The content type is part of the signature, so the client must send exactly that `Content-Type`.
+  - `uploadUrl(key, contentType, expiresIn = 300, contentLength?)` - presigned PUT. The content type (and the length, when given) is signed, so the client must send exactly that `Content-Type` and that many bytes. Upload keys live under `<area>/uploads/` (`UPLOAD_STAGING_PREFIX` in `keys.ts`); callers copy verified bytes to the served key on completion.
 - **Other**
   - `keys.ts` - `objectKey(bucket, path)`.
   - `corsRule()` (exported from `storage.service.ts`) - the CORS rule browsers need: origins from `allowedOrigins()` plus `http://localhost:3000`, methods PUT/GET/HEAD, header `Content-Type`, exposes `ETag`.

@@ -4,6 +4,11 @@ import {
   notifySubscriptionRequired,
 } from "@/lib/subscription-required";
 import {
+  isUpdateRequiredResponse,
+  setUpdateRequired,
+  storeUrlFrom,
+} from "@/lib/update-required";
+import {
   authHeaders,
   getSessionToken,
   rememberSessionToken,
@@ -128,12 +133,15 @@ async function fetchOrThrow(
 
 /**
  * The ApiError for a failed response. A 402 SUBSCRIPTION_REQUIRED (the school
- * is read-only) also raises a single notice; it is still thrown so the caller
- * stops.
+ * is read-only) also raises a single notice, and a 426 `update_required` (this
+ * build is below the API's minimum) switches to the blocking update screen;
+ * both are still thrown so the caller stops.
  */
 async function errorFrom(res: Response): Promise<ApiError> {
   const error = await res.json().catch(() => ({ message: res.statusText }));
   if (isSubscriptionRequired(res.status, error)) notifySubscriptionRequired();
+  if (isUpdateRequiredResponse(res.status, error))
+    setUpdateRequired(storeUrlFrom(error));
   return new ApiError(res.status, error?.message || res.statusText, error);
 }
 

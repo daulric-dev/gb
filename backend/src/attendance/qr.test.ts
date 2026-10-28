@@ -6,6 +6,7 @@ import {
   qrClaim,
   qrToken,
   qrWindow,
+  readQrClaim,
   verifyQrClaim,
   verifyQrToken,
 } from './qr';
@@ -65,9 +66,36 @@ describe('attendance QR claims', () => {
 
   test('a tampered expiry or malformed claim is refused', () => {
     const { claim } = qrClaim(secret, 'session-1', now);
-    const [, mac] = claim.split('.');
-    expect(verifyQrClaim(secret, 'session-1', `${now + 5 * 60_000}.${mac}`, now)).toBe(false);
+    const [, nonce, mac] = claim.split('.');
+    expect(
+      verifyQrClaim(secret, 'session-1', `${now + 60_000}.${nonce}.${mac}`, now),
+    ).toBe(false);
+    expect(verifyQrClaim(secret, 'session-1', `${claim.split('.')[0]}.x.${mac}`, now)).toBe(false);
     expect(verifyQrClaim(secret, 'session-1', 'garbage', now)).toBe(false);
     expect(verifyQrClaim(secret, 'session-1', `${claim}.x`, now)).toBe(false);
+  });
+});
+
+describe('attendance QR claim nonces', () => {
+  const secret = newQrSecret();
+  const now = 1_800_000_000_000;
+
+  test('each claim carries a distinct nonce that verification returns', () => {
+    const a = qrClaim(secret, 'session-1', now);
+    const b = qrClaim(secret, 'session-1', now);
+    expect(a.claim).not.toBe(b.claim);
+    const read = readQrClaim(secret, 'session-1', a.claim, now);
+    expect(read?.nonce).toBe(a.claim.split('.')[1]);
+    expect(read?.expiresAt).toBe(a.expiresAt);
+  });
+
+  test('a claim lasts at most five minutes', () => {
+    expect(QR_CLAIM_TTL_MS).toBeLessThanOrEqual(5 * 60_000);
+  });
+
+  test('a claim in the old two-part format is refused', () => {
+    const { claim } = qrClaim(secret, 'session-1', now);
+    const [exp, , mac] = claim.split('.');
+    expect(readQrClaim(secret, 'session-1', `${exp}.${mac}`, now)).toBeNull();
   });
 });

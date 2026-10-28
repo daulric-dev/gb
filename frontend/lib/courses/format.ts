@@ -83,6 +83,19 @@ export function formatDue(value: string | null): string {
   });
 }
 
+export function lateDays(
+  dueAt: string | null,
+  submittedAt: string | null,
+): number | null {
+  if (!dueAt || !submittedAt) return null;
+  const due = new Date(dueAt).getTime();
+  const submitted = new Date(submittedAt).getTime();
+  if (!Number.isFinite(due) || !Number.isFinite(submitted) || submitted <= due) {
+    return null;
+  }
+  return Math.ceil((submitted - due) / 86_400_000);
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "-";
   const date = new Date(value);

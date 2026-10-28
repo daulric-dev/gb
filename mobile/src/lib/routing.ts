@@ -12,7 +12,7 @@ export function homeRouteFor(profile: UserProfile | null) {
   // Named at onboarding; without it we do not know which flow they chose.
   if (!profile.first_name) return "/(auth)/onboard" as const;
   // Staff await approval of a join request, students await approval or a
-  // claim code. Both wait on the school list.
+  // school join code. Both wait on the school list.
   if (!profile.school) return "/(auth)/schools" as const;
   return profile.account_type === "student"
     ? ("/(portal)" as const)

@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -89,6 +90,7 @@ export default function CourseActivityPage() {
   const draftDueAt = useSignal("");
   const draftAttempts = useSignal("");
   const draftGroup = useSignal("");
+  const draftAllowMultipleFiles = useSignal(false);
 
   const load = useCallback(() => {
     if (!activityId) return;
@@ -132,6 +134,7 @@ export default function CourseActivityPage() {
     draftDueAt.value = toLocalInput(a.dueAt);
     draftAttempts.value = String(a.maxAttempts ?? 1);
     draftGroup.value = a.assignmentGroupId ?? "";
+    draftAllowMultipleFiles.value = a.allowMultipleFiles;
     editing.value = true;
   }
 
@@ -175,6 +178,9 @@ export default function CourseActivityPage() {
           ? new Date(draftDueAt.value).toISOString()
           : null,
         assignmentGroupId: draftGroup.value || null,
+        ...(activity.value?.kind === "assignment"
+          ? { allowMultipleFiles: draftAllowMultipleFiles.value }
+          : {}),
         ...(activity.value?.kind === "quiz" ? { maxAttempts: attempts } : {}),
       },
       "Saved",
@@ -419,6 +425,25 @@ export default function CourseActivityPage() {
                   onChange={(e) => (draftDueAt.value = e.target.value)}
                 />
               </div>
+              {a.kind === "assignment" && a.allowFile && (
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="allowMultipleFiles">
+                      Allow multiple files
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Students can attach up to 20 files to one submission.
+                    </p>
+                  </div>
+                  <Switch
+                    id="allowMultipleFiles"
+                    checked={draftAllowMultipleFiles.value}
+                    onCheckedChange={(value) =>
+                      (draftAllowMultipleFiles.value = value)
+                    }
+                  />
+                </div>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="activityPoints" className="text-xs">
                   Points
@@ -552,6 +577,7 @@ export default function CourseActivityPage() {
           <MarksTable
             activityId={activityId}
             kind={a.kind}
+            dueAt={a.dueAt}
             points={a.points}
             rows={submissions.value}
             canGrade

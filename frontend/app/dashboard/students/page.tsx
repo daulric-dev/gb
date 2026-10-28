@@ -7,18 +7,16 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { PermissionDenied } from "@/components/dashboard/permission-denied";
-import { KeyRound, Plus } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import type { Student } from "./_components/types";
 import { StudentsSearchField } from "./_components/StudentsSearchField";
 import { StudentsRosterTable } from "./_components/StudentsRosterTable";
-import { CreateStudentForm } from "./_components/CreateStudentForm";
 import { EditStudentForm } from "./_components/EditStudentForm";
 import { SchoolJoinCodeDialog } from "./_components/SchoolJoinCodeDialog";
-import { DuplicateStudentsCard } from "./_components/DuplicateStudentsCard";
 
 export default function StudentsPage() {
   useSignals();
@@ -26,7 +24,6 @@ export default function StudentsPage() {
   const students = useSignal<Student[]>([]);
   const loading = useSignal(true);
   const search = useSignal("");
-  const createOpen = useSignal(false);
   const editStudent = useSignal<Student | null>(null);
   const joinCodeOpen = useSignal(false);
 
@@ -65,44 +62,19 @@ export default function StudentsPage() {
         title="Students"
         description="Manage Students in Your School"
         action={
-          can("student", "create") ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => (joinCodeOpen.value = true)}
-              >
-                <KeyRound className="mr-2 size-4" />
-                School join code
-              </Button>
-            <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-              <DialogTrigger render={<Button />}>
-                <Plus className="mr-2 size-4" />
-                New Student
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Student</DialogTitle>
-                  <DialogDescription>
-                    Create a new student record for your school
-                  </DialogDescription>
-                </DialogHeader>
-                <CreateStudentForm
-                  onSuccess={() => {
-                    createOpen.value = false;
-                    fetchStudents(search.value);
-                  }}
-                />
-              </DialogContent>
-            </Dialog>
-            </div>
+          can("join-code", "read") || can("join-code", "update") ? (
+            <Button onClick={() => (joinCodeOpen.value = true)}>
+              <KeyRound className="mr-2 size-4" />
+              School join code
+            </Button>
           ) : undefined
         }
       />
 
-      <DuplicateStudentsCard
-        canMerge={can("student", "update")}
-        onMergedAction={() => fetchStudents(search.value)}
-      />
+      <p className="text-sm text-muted-foreground">
+        Students join with your school code. They sign up, enter the code, and
+        appear here once they have joined.
+      </p>
 
       <StudentsSearchField
         value={search.value}
@@ -119,7 +91,7 @@ export default function StudentsPage() {
         <div className="py-12 text-center text-muted-foreground">
           {search.value
             ? "No students match your search."
-            : "No students yet. Add your first one."}
+            : "No students yet. Share your school join code so students can join."}
         </div>
       ) : (
         <StudentsRosterTable
@@ -157,7 +129,7 @@ export default function StudentsPage() {
       <SchoolJoinCodeDialog
         open={joinCodeOpen.value}
         onOpenChangeAction={(v) => (joinCodeOpen.value = v)}
-        canIssue={can("student", "create")}
+        canIssue={can("join-code", "update")}
       />
     </div>
   );

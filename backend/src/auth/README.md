@@ -10,9 +10,9 @@ All paths start with `/api/auth`. "Public" means no guard, though the routes are
 
 | Method | Path | Guard | What it does |
 |--------|------|-------|--------------|
-| POST | `/api/auth/otp/send` | Public. Throttled: `auth-strict` 5/hour, `auth-ip` 30/hour. | Emails an 8-digit sign-in code (body: `SendOtpDto`). Refused with a 403 when the address's school requires SSO (`EmailDomainService.ssoRequirement`). |
+| POST | `/api/auth/otp/send` | Public. Throttled: `auth-strict` 5/hour per address + IP, `auth-ip` 300/hour. | Emails an 8-digit sign-in code (body: `SendOtpDto`). Refused with a 403 when the address's school requires SSO (`EmailDomainService.ssoRequirement`). |
 | POST | `/api/auth/dev/code` | Public. Hidden from Swagger. | **Dev only.** Returns `{ code }` instead of mailing it. Answers 404 unless `NODE_ENV !== 'production'` and `ALLOW_DEV_LOGIN=true`. |
-| POST | `/api/auth/otp/verify` | Public. Throttled: `auth-strict` 10 per 15 min, `auth-ip` 100 per 15 min. | Verifies the code, finds or creates the `app_user` and the `user_profile`, starts a session (sets the `gb_session` cookie) and returns `{ session, user }` (`auth.verifyOtp`). `session.access_token` is always `''`, because the token lives only in the HttpOnly cookie. |
+| POST | `/api/auth/otp/verify` | Public. Throttled: `auth-strict` 10 per 15 min per address + IP, `auth-ip` 600 per 15 min. | Verifies the code, finds or creates the `app_user` and the `user_profile`, starts a session (sets the `gb_session` cookie) and returns `{ session, user }` (`auth.verifyOtp`). `session.access_token` is always `''`, because the token lives only in the HttpOnly cookie. |
 | GET | `/api/auth/me` | `AuthGuard` | The caller's profile, with `school` and `school_management` (cached as `profile:<userId>`). |
 | PATCH | `/api/auth/onboard` | `AuthGuard` | Saves the name and either onboards as a student, joins the single school (on a dedicated deployment), or files a `school_join_request` when `schoolId` is given. If the user ends up with no school, it also tries `EmailDomainService.tryAutoJoin()` on the email domain. |
 | POST | `/api/auth/join-school` | `AuthGuard`. Throttled: `claim-code` 10 per 15 min. | Joins a school with a school-issued code (`StudentMembershipService.joinByCode`). |
@@ -42,7 +42,7 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 
 - A student account can never onboard again as staff.
 - `accountType: 'student'` saves the profile with `account_type = 'student'` and `role = null`.
-- With `DEDICATED_DEPLOYMENT=true`, the user joins the one active school. An existing membership role is kept (so the school creator stays admin), and new members get `teacher` and a `school_management` row.
+- With `DEDICATED_DEPLOYMENT=true`, new staff submit a join request for the single active school (requiring admin approval), while an existing member's role (e.g. the school creator's admin role) is preserved.
 - A user who already has a `school_id` (because they created a school) only has their name updated.
 - A `schoolId` in the request files a `school_join_request` for an admin to approve. Admin rights are never granted from a client-supplied id.
 
@@ -101,7 +101,7 @@ Schemas: [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma) and 
 |----------|---------|----------|
 | `ALLOW_DEV_LOGIN` | unset (off) | Set to `true` outside production to enable `POST /api/auth/dev/code`. |
 | `NODE_ENV` | | `production` always disables the dev code route. |
-| `DEDICATED_DEPLOYMENT` | unset | Set to `true` to auto-join staff to the single active school on onboarding. |
+| `DEDICATED_DEPLOYMENT` | unset | Set to `true` to limit school creation to one and automatically target the single school on staff join requests. |
 
 `AUTH_SECRET` and the cookie settings are read in `src/account`.
 

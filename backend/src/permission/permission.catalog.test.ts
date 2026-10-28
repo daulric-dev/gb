@@ -16,9 +16,18 @@ describe('permission catalog', () => {
 
   test('keys nothing enforces do not exist', () => {
     expect(actionsFor('course')).toEqual(['create', 'update']);
-    expect(actionsFor('student')).toEqual(['create', 'read', 'update']);
+    expect(actionsFor('student')).toEqual(['read', 'update']);
+    expect(actionsFor('join-code')).toEqual(['read', 'update']);
     expect(actionsFor('academic-year')).toEqual(['create', 'read', 'update']);
-    for (const key of ['course:read', 'course:delete', 'student:delete', 'academic-year:delete']) {
+    for (const key of [
+      'course:read',
+      'course:delete',
+      'student:create',
+      'student:delete',
+      'academic-year:delete',
+      'join-code:create',
+      'join-code:delete',
+    ]) {
       expect(isPermissionKey(key)).toBe(false);
     }
   });
@@ -30,6 +39,14 @@ describe('permission catalog', () => {
     expect(isPermissionKey('school:update')).toBe(true);
     for (const action of ['create', 'delete']) {
       expect(isPermissionKey(`school:${action}`)).toBe(false);
+    }
+  });
+
+  test('join-code has read and update only', () => {
+    expect(isPermissionKey('join-code:read')).toBe(true);
+    expect(isPermissionKey('join-code:update')).toBe(true);
+    for (const action of ['create', 'delete']) {
+      expect(isPermissionKey(`join-code:${action}`)).toBe(false);
     }
   });
 
@@ -50,11 +67,13 @@ describe('permission catalog', () => {
     expect(admin.has('school:delete' as never)).toBe(false);
   });
 
-  test('teacher and member defaults grant school:read only', () => {
+  test('teacher and member defaults grant school:read and join-code:read only', () => {
     for (const role of ['teacher', 'member']) {
       const keys = defaultsForRole(role);
       expect(keys.has('school:read')).toBe(true);
       expect(keys.has('school:update' as never)).toBe(false);
+      expect(keys.has('join-code:read')).toBe(true);
+      expect(keys.has('join-code:update' as never)).toBe(false);
     }
   });
 });

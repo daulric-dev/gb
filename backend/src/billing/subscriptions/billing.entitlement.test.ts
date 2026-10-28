@@ -50,16 +50,26 @@ describe('subscription', () => {
     expect(ent({ ...sub, status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: days(1) }).readOnly).toBe(false);
     expect(ent({ ...sub, status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: days(-1) }).readOnly).toBe(true);
   });
-  test('past_due: writable during grace, read-only beyond it', () => {
-    expect(ent({ ...sub, status: 'past_due', currentPeriodEnd: days(-3) })).toEqual({ status: 'past_due', readOnly: false });
-    expect(ent({ ...sub, status: 'past_due', currentPeriodEnd: days(-7.5) })).toEqual({ status: 'read_only', readOnly: true });
+  test('past_due: grace runs from the start of the unpaid period', () => {
+    expect(ent({ ...sub, status: 'past_due', currentPeriodStart: days(-3), currentPeriodEnd: days(27) })).toEqual({ status: 'past_due', readOnly: false });
+    expect(ent({ ...sub, status: 'past_due', currentPeriodStart: days(-7.5), currentPeriodEnd: days(22.5) })).toEqual({ status: 'read_only', readOnly: true });
+  });
+  test('past_due: the advanced period end does not extend the grace', () => {
+    expect(ent({ ...sub, status: 'past_due', currentPeriodStart: days(-10), currentPeriodEnd: days(20) }).readOnly).toBe(true);
+  });
+  test('past_due without a known start falls back to the period end', () => {
+    expect(ent({ ...sub, status: 'past_due', currentPeriodEnd: days(-3) }).readOnly).toBe(false);
   });
   test('canceled: writable until the paid period ends', () => {
     expect(ent({ ...sub, status: 'canceled', currentPeriodEnd: days(3) }).readOnly).toBe(false);
     expect(ent({ ...sub, status: 'canceled', currentPeriodEnd: days(-1) }).readOnly).toBe(true);
   });
+  test('unpaid: same grace from the period start as past_due', () => {
+    expect(ent({ ...sub, status: 'unpaid', currentPeriodStart: days(-3), currentPeriodEnd: days(27) }).readOnly).toBe(false);
+    expect(ent({ ...sub, status: 'unpaid', currentPeriodStart: days(-20), currentPeriodEnd: days(10) }).readOnly).toBe(true);
+  });
   test('unpaid and incomplete are read-only once the trial is over', () => {
-    expect(ent({ ...sub, status: 'unpaid', currentPeriodEnd: days(5) }).readOnly).toBe(true);
+    expect(ent({ ...sub, status: 'unpaid', currentPeriodEnd: days(-25) }).readOnly).toBe(true);
     expect(ent({ ...sub, status: 'incomplete' }).readOnly).toBe(true);
     expect(ent({ status: 'incomplete', trialEndsAt: days(3) }).readOnly).toBe(false);
   });

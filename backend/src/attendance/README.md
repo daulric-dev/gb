@@ -47,7 +47,7 @@ Only the call that actually sets `closed_at` sends the "closed" events.
 
 | Method | Path | Who may call | What it does |
 |--------|------|--------------|--------------|
-| POST | `/api/attendance/scan-claim` | Anyone. Throttled: `claim-code` 300/min (keyed by IP for anonymous callers). | Swaps a live QR token (`ScanClaimDto`) for a `claim` that lasts 10 minutes, so a student who scanned while signed out can sign in and then check in. |
+| POST | `/api/attendance/scan-claim` | Anyone. Throttled: `claim-code` 300/min (keyed by IP for anonymous callers). | Swaps a live QR token (`ScanClaimDto`) for a single-use `claim` that lasts 5 minutes, so a student who scanned while signed out can sign in and then check in. |
 
 ### Check-in rules (`AttendanceService.checkIn`)
 
@@ -78,7 +78,7 @@ The module exports nothing. Its providers are:
   - `newQrSecret()` makes a random per-session secret.
   - `qrWindow(now)` gives the number of the current 15-second window, and `qrToken(secret, window)` gives that window's token: an HMAC of the window number truncated to 22 characters.
   - `verifyQrToken()` accepts the current window and the one before it.
-  - `qrClaim()` and `verifyQrClaim()` create and check the 10-minute scan claim, formatted as `<expiry>.<mac>`.
+  - `qrClaim()` and `verifyQrClaim()` create and check the 2-minute scan claim, formatted as `<expiry>.<nonce>.<mac>`; `readQrClaim()` returns its nonce. On check-in the nonce is recorded with `CacheService.setIfAbsent` and bound to the first student who redeems it; anyone else using the same claim is refused. The wrong-code counter uses the atomic `CacheService.incr`, reserving the attempt before comparing.
 - `geo.ts`: `haversineMeters()` and `withinGeofence()`, with a maximum GPS accuracy allowance of 50 m.
 - `attendance.types.ts`: the wire types (`AttendanceSession`, `AttendanceRosterEntry`, `PortalOpenAttendance` and the others) and `ATTENDANCE_STATUSES`. They mirror the attendance section of `frontend/lib/courses/types.ts`, so keep the two in step.
 

@@ -23,13 +23,13 @@ Two rules drive it:
 | Throttler | Window | Production limit | Tracker |
 | --- | --- | --- | --- |
 | `default` | 60 s | 1 200 | session (`getSessionTracker`), else `ip:<getClientIp>` |
-| `auth-strict` | 1 h | 10 000 | the request body's `email` (lower-cased), else IP |
-| `auth-ip` | 1 h | 10 000 | `ip:<getClientIp>` |
+| `auth-strict` | 1 h | 10 000 | `getEmailIpTracker`: the body's `email` (fingerprinted) plus the client IP, else IP alone. Only on routes that name it. |
+| `auth-ip` | 1 h | 10 000 | `ip:<getClientIp>`. Only on routes that name it. |
 | `claim-code` | 15 min | 10 000 | session, else IP |
 
-Every throttler applies to every route through the global `ThrottlerGuard`; individual routes lower the limits with `@Throttle({ '<name>': { limit, ttl } })`. Storage keys are `default:<tracker>` for the default throttler and `<name>:<Controller>.<handler>:<tracker>` for the others, so a per-route override only counts calls to that route. Current overrides:
+`default` and `claim-code` apply to every route through the global `ThrottlerGuard`; `auth-strict` and `auth-ip` only to routes (or controllers) that name them in `@Throttle()` (`skipUnlessDeclared`), so per-IP sign-in limits never throttle a school behind one NAT address elsewhere; individual routes lower the limits with `@Throttle({ '<name>': { limit, ttl } })`. Storage keys are `default:<tracker>` for the default throttler and `<name>:<Controller>.<handler>:<tracker>` for the others, so a per-route override only counts calls to that route. Current overrides:
 
-- `src/auth/auth.controller.ts` - `auth-strict` on `otp/send` (5/h) and `otp/verify` (10 per 15 min), `claim-code` on `join-school`, `default` on account deletion (3/h).
+- `src/auth/auth.controller.ts` - `auth-strict` on `otp/send` (5/h) and `otp/verify` (10 per 15 min), `auth-ip` on the same (300/h, 600 per 15 min), `claim-code` on `join-school`, `default` on account deletion (3/h).
 - `src/sso/sso.controller.ts` - `auth-ip` on `discover`, `saml/acs`, `:provider/start`, `handoff`.
 - `claim-code` on guessable codes: `src/student-portal/student-portal.controller.ts` (course join), `src/email-domain/email-domain.controller.ts`, `src/attendance/portal-attendance.controller.ts`, `src/attendance/scan-claim.controller.ts`.
 - `src/billing/webhooks/billing-webhook.controller.ts` uses `@SkipThrottle()` (provider webhooks).

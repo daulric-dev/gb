@@ -43,6 +43,7 @@ export async function fetchBillingStatus(): Promise<BillingStatus> {
   try {
     const res = await api<BillingStatus>("/billing/status", {
       skipAuthRedirect: true,
+      skipSubscriptionNotice: true,
     });
     if (!res || typeof res !== "object" || !res.enabled) return BILLING_DISABLED;
     return {

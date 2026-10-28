@@ -165,6 +165,28 @@ describe('RubricService.update', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  test('the used-for-marking check runs inside the locked transaction', async () => {
+    const order: string[] = [];
+    const { service, prisma } = build((p) => {
+      p.$queryRaw.mockImplementation(async (strings: TemplateStringsArray) => {
+        order.push(strings.join('?').includes('for update') ? 'lock' : 'raw');
+        return [];
+      });
+      p.rubric_criterion.findMany.mockImplementation(async () => {
+        order.push('check');
+        return [{ rubric_id: 'rub-1' }];
+      });
+    });
+    await expect(
+      service.update('user-1', 'course-1', 'rub-1', {
+        criteria: [{ title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] }],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(order).toEqual(['lock', 'check']);
+    expect(prisma.rubric_criterion.deleteMany).not.toHaveBeenCalled();
+  });
+
   test('renaming an assessed rubric is fine', async () => {
     const { service, prisma } = build((p) => {
       p.rubric_criterion.findMany.mockResolvedValue([{ rubric_id: 'rub-1' }]);

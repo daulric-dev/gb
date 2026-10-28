@@ -10,6 +10,7 @@ import { PermissionsProvider } from "@/providers/PermissionsProvider";
 import { ToastProvider, useToast } from "@/providers/ToastProvider";
 import { setSubscriptionNoticeHandler } from "@/lib/subscription-required";
 import { NotificationRouter } from "@/providers/NotificationRouter";
+import { UpdateGate } from "@/features/app-update/UpdateGate";
 import { setUnauthorizedHandler } from "@/lib/api";
 
 function RootNavigator() {
@@ -57,6 +58,8 @@ function RootNavigator() {
         <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
         <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
       </Stack>
+      {/* Last, so "Update required" covers everything above. */}
+      <UpdateGate />
     </>
   );
 }

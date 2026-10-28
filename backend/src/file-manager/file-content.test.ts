@@ -1,6 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import {
   verifyContent,
+  verifySubmissionContent,
+  normalizeSubmissionContentType,
   matchesSignature,
   inspectStructure,
 } from './file-content';
@@ -10,6 +12,9 @@ const PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]); // %PDF-1
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]);
 const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]); // xlsx/docx
+const OLE = Buffer.from([
+  0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1,
+]);
 function webp(): Buffer {
   const b = Buffer.alloc(16, 0);
   b.write('RIFF', 0, 'ascii');
@@ -29,18 +34,26 @@ describe('matchesSignature', () => {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       ),
     ).toBe(true);
+    expect(matchesSignature(OLE, 'application/msword')).toBe(true);
   });
 
   test('rejects bytes that do not match the declared type', () => {
     expect(matchesSignature(PNG, 'application/pdf')).toBe(false);
     expect(matchesSignature(PDF, 'image/png')).toBe(false);
     expect(matchesSignature(Buffer.alloc(2), 'image/jpeg')).toBe(false);
+    expect(matchesSignature(PDF, 'application/msword')).toBe(false);
   });
 });
 
 describe('verifyContent', () => {
   test('passes a well-formed, allowed binary file', () => {
     expect(verifyContent(PDF, 'application/pdf')).toEqual({ ok: true });
+  });
+
+  test('accepts legacy Word files only with the OLE signature', () => {
+    expect(verifyContent(OLE, 'application/msword')).toEqual({ ok: true });
+    const invalid = verifyContent(PDF, 'application/msword');
+    expect(invalid.ok).toBe(false);
   });
 
   test('accepts text types without a signature', () => {
@@ -63,6 +76,24 @@ describe('verifyContent', () => {
     const r = verifyContent(PNG, 'application/pdf');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toContain('do not match');
+  });
+});
+
+describe('submission file content', () => {
+  test('accepts programming files with valid but non-preview MIME types', () => {
+    expect(verifySubmissionContent(Buffer.from('print("hello")'), 'text/x-python')).toEqual({
+      ok: true,
+    });
+    expect(
+      normalizeSubmissionContentType('Text/X-Python; charset=utf-8'),
+    ).toBe('text/x-python');
+  });
+
+  test('still validates known preview types and falls back for malformed MIME values', () => {
+    expect(verifySubmissionContent(PNG, 'application/pdf').ok).toBe(false);
+    expect(normalizeSubmissionContentType('not a MIME type')).toBe(
+      'application/octet-stream',
+    );
   });
 });
 

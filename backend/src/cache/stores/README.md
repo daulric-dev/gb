@@ -1,6 +1,6 @@
 # Cache stores (`src/cache/stores`)
 
-This folder holds the storage back ends behind `CacheService`. Every store implements `CacheInterface` (`get`, `set`, `delete`, `deleteByPrefix`, `clear`, all async, with `ttl` in seconds). A store can also have an optional `dispose()`, which `CacheService.onModuleDestroy()` calls. Only `../cache.service.ts` imports from this folder, through `./stores` (`index.ts`).
+This folder holds the storage back ends behind `CacheService`. Every store implements `CacheInterface` (`get`, `set`, `setIfAbsent`, `incr`, `delete`, `deleteByPrefix`, `clear`, all async, with `ttl` in seconds). A store can also have an optional `dispose()`, which `CacheService.onModuleDestroy()` calls. Only `../cache.service.ts` imports from this folder, through `./stores` (`index.ts`).
 
 ## Files
 
@@ -8,7 +8,7 @@ This folder holds the storage back ends behind `CacheService`. Every store imple
 |------|---------|
 | `cache.interface.ts` | `CacheInterface`, the contract every store implements. `index.ts` re-exports it as the type `CacheStore`. |
 | `MemoryStore.ts` | `MemoryStore`: an in-process `Map` with per-entry expiry. A read of an expired entry deletes it, and a sweep every 60 seconds purges the rest (the timer is `unref`'d so it does not keep the process alive). It does **LRU eviction**: reads and writes move a key to the end of the map, and when the store grows past `maxEntries` (default 10,000; a constructor argument) the oldest keys are dropped. Values are stored by reference, not copied. `dispose()` stops the sweep and empties the map. |
-| `RedisStore.ts` | `RedisStore`: built on Bun's `RedisClient`. Values are `JSON.stringify`'d and stored with `SET ... EX ttl`. `deleteByPrefix` runs a `SCAN` loop with `MATCH prefix*` and `COUNT 100`, deleting each batch. `clear` runs `FLUSHALL ASYNC`. It sends a `PING` every 60 seconds to keep the connection alive. `dispose()` stops the ping and closes the client. |
+| `RedisStore.ts` | `RedisStore`: built on Bun's `RedisClient`. Values are `JSON.stringify`'d and stored with `SET ... EX ttl`. `deleteByPrefix` runs a `SCAN` loop with `MATCH prefix*` and `COUNT 100`, deleting each batch. `clear` runs `FLUSHALL ASYNC`. `setIfAbsent` is `SET ... NX EX`; `incr` is an `EVAL` script doing `INCR` plus `EXPIRE` on creation, so both are atomic across API instances. It sends a `PING` every 60 seconds to keep the connection alive. `dispose()` stops the ping and closes the client. |
 | `index.ts` | Barrel file: exports `MemoryStore`, `RedisStore` and the type `CacheStore`. |
 | `MemoryStore.test.ts` | Tests for `MemoryStore`: a miss returns null, round trip, TTL expiry, `delete`, `deleteByPrefix` keeping keys that do not match, and `clear`. |
 

@@ -41,12 +41,21 @@ export function verifyQrToken(
   });
 }
 
-/** How long a scan claim lets a student take to sign in and finish. */
-export const QR_CLAIM_TTL_MS = 10 * 60_000;
+/**
+ * How long a scan claim lets a student take to sign in and finish. Kept short:
+ * the claim is a bearer token until it is redeemed, and redeeming it binds it
+ * to one student (see AttendanceService.checkIn).
+ */
+export const QR_CLAIM_TTL_MS = 5 * 60_000;
 
-function claimMac(secret: string, sessionId: string, exp: number): string {
+function claimMac(
+  secret: string,
+  sessionId: string,
+  exp: number,
+  nonce: string,
+): string {
   return createHmac('sha256', secret)
-    .update(`claim:${sessionId}:${exp}`)
+    .update(`claim:${sessionId}:${exp}:${nonce}`)
     .digest('base64url')
     .slice(0, 32);
 }
@@ -57,14 +66,49 @@ function claimMac(secret: string, sessionId: string, exp: number): string {
  * A student who scans while signed out spends longer than a QR window on the
  * login code, so the scan page swaps the token for this claim first. It does
  * not widen the window for passing the code on: getting a claim still needs a
- * token that is live right now, exactly as checking in directly does.
+ * token that is live right now, exactly as checking in directly does. Each
+ * claim carries a random nonce so the server can redeem it only once.
  */
 export function qrClaim(secret: string, sessionId: string, now: number): {
   claim: string;
   expiresAt: number;
 } {
   const exp = now + QR_CLAIM_TTL_MS;
-  return { claim: `${exp}.${claimMac(secret, sessionId, exp)}`, expiresAt: exp };
+  const nonce = randomBytes(16).toString('base64url');
+  return {
+    claim: `${exp}.${nonce}.${claimMac(secret, sessionId, exp, nonce)}`,
+    expiresAt: exp,
+  };
+}
+
+/**
+ * Check a claim's signature and expiry. Returns its nonce and expiry when
+ * valid (for single-use bookkeeping), otherwise null.
+ */
+export function readQrClaim(
+  secret: string,
+  sessionId: string,
+  claim: string,
+  now: number,
+): { nonce: string; expiresAt: number } | null {
+  const [expPart, nonce, mac, extra] = claim.split('.');
+  if (
+    extra !== undefined ||
+    !expPart ||
+    !nonce ||
+    !mac ||
+    !/^\d+$/.test(expPart) ||
+    !/^[A-Za-z0-9_-]{1,64}$/.test(nonce)
+  ) {
+    return null;
+  }
+  const exp = Number(expPart);
+  if (exp < now || exp > now + QR_CLAIM_TTL_MS) return null;
+  const expected = Buffer.from(claimMac(secret, sessionId, exp, nonce));
+  const given = Buffer.from(mac);
+  const ok =
+    expected.length === given.length && timingSafeEqual(expected, given);
+  return ok ? { nonce, expiresAt: exp } : null;
 }
 
 export function verifyQrClaim(
@@ -73,13 +117,5 @@ export function verifyQrClaim(
   claim: string,
   now: number,
 ): boolean {
-  const [expPart, mac, extra] = claim.split('.');
-  if (extra !== undefined || !expPart || !mac || !/^\d+$/.test(expPart)) {
-    return false;
-  }
-  const exp = Number(expPart);
-  if (exp < now || exp > now + QR_CLAIM_TTL_MS) return false;
-  const expected = Buffer.from(claimMac(secret, sessionId, exp));
-  const given = Buffer.from(mac);
-  return expected.length === given.length && timingSafeEqual(expected, given);
+  return readQrClaim(secret, sessionId, claim, now) !== null;
 }

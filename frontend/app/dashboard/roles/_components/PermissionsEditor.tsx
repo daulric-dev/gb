@@ -34,11 +34,18 @@ const ACTION_LABEL: Record<CatalogEntry["action"], string> = {
   delete: "Delete",
 };
 
+const RESOURCE_PRETTY: Record<string, string> = {
+  "join-code": "School Join Code",
+};
+
 function prettyResource(resource: string) {
-  return resource
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  return (
+    RESOURCE_PRETTY[resource] ??
+    resource
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ")
+  );
 }
 
 export function PermissionsEditor({

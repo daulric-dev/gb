@@ -25,6 +25,12 @@ export const SESSION_COOKIE = 'gb_session';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 /** Renew (and rotate the token of) a session used this long after the last renewal. */
 export const RENEW_AFTER_MS = 24 * 60 * 60_000;
+/**
+ * How long a replaced token can still recover a session whose client never
+ * got the rotation (a response lost on a flaky mobile connection): only from
+ * the same user agent, and only while the new token has never been presented.
+ */
+export const LOST_ROTATION_GRACE_MS = 24 * 60 * 60_000;
 const CACHE_TTL_S = 60;
 /** A second cache purge after revoking, for a lookup that was mid-flight. */
 const REPURGE_AFTER_MS = 1000;
@@ -39,7 +45,8 @@ export type RevokeReason =
   | 'platform_admin'
   | 'token_reuse'
   | 'account_deleted'
-  | 'deactivated';
+  | 'deactivated'
+  | 'email_verified';
 
 /** One row of Signed-in devices. Never carries a token or its hash. */
 export interface SessionSummary {
@@ -154,12 +161,15 @@ function headerOf(req: TokenRequest, name: string): string | undefined {
 
 const isNative = (req: TokenRequest) => headerOf(req, NATIVE_CLIENT_HEADER) === 'native';
 
+const userAgentOf = (req: TokenRequest) => headerOf(req, 'user-agent')?.slice(0, 500) ?? null;
+
 const SESSION_SELECT = {
   id: true,
   user_id: true,
   token_hash: true,
   previous_token_hash: true,
   rotated_at: true,
+  rotation_confirmed_at: true,
   expires_at: true,
   absolute_expires_at: true,
   revoked_at: true,
@@ -184,8 +194,16 @@ const SESSION_SELECT = {
  * - **Rotation.** At that daily renewal the token itself is replaced. The new
  *   one goes out as the cookie (web) or an `X-Session-Token` header (the app).
  *   The replaced token keeps working for SESSION_ROTATION_GRACE_SECONDS, for
- *   requests already in flight; presented after that it must be a copy, so the
- *   whole session is revoked (`token_reuse`) and the user is emailed.
+ *   requests already in flight. After that it still recovers the session
+ *   (handing the current token over again) for up to a day if the client
+ *   plainly never got the rotation: same user agent, and the new token was
+ *   never presented (`rotation_confirmed_at` unset). Otherwise it must be a
+ *   copy, so the whole session is revoked (`token_reuse`) and the user is
+ *   emailed.
+ * - **Token header.** `X-Session-Token` only ever goes to the app: a request
+ *   that authenticated with a bearer token, or a native sign-in with no
+ *   `Origin` (a browser always sends one on a cross-site request), so script
+ *   on a web page cannot mint itself a bearer token from its cookie.
  * - **Cache.** Lookups are cached for a minute under `session:<hash>`; every
  *   revocation deletes those keys, so it takes effect at once.
  */
@@ -210,7 +228,7 @@ export class SessionService {
     const now = new Date();
     const absoluteExpiresAt = new Date(now.getTime() + sessionMaxAgeMs());
     const expiresAt = cappedExpiry(now.getTime(), absoluteExpiresAt);
-    const userAgent = req.headers['user-agent']?.slice(0, 500) ?? null;
+    const userAgent = userAgentOf(req);
     const device = deviceLabel(userAgent, headerOf(req, DEVICE_HEADER), isNative(req));
     const ip = req.ip ?? null;
 
@@ -236,8 +254,8 @@ export class SessionService {
 
     this.setCookie(reply, token, expiresAt);
     // The mobile app keeps its token in secure storage and sends it as a
-    // bearer token instead of relying on the cookie.
-    if (isNative(req)) this.sendTokenHeader(reply, token);
+    // bearer token instead of relying on the cookie. Never to a browser.
+    if (isNative(req) && !headerOf(req, 'origin')) this.sendTokenHeader(reply, token);
 
     // Fire and forget: mail must never hold up or fail a sign-in.
     if (alert) void this.alerts.newSignIn({ userId, device, ip }, now);
@@ -283,10 +301,19 @@ export class SessionService {
 
     if (row.token_hash !== hash) {
       // The token the last rotation replaced.
-      if (row.rotated_at && now - row.rotated_at.getTime() <= rotationGraceMs()) {
-        // A request that was in flight: let it through and hand the current
-        // token over again. Not cached, so the grace period ends on time.
-        this.sendRotated(reply, req, source.via, rotatedToken(source.token), row.expires_at);
+      const sinceRotation = row.rotated_at ? now - row.rotated_at.getTime() : Infinity;
+      const inFlight = sinceRotation <= rotationGraceMs();
+      // The client never received the new token (the rotating response was
+      // lost): nobody has used it, and the old one comes from the same client.
+      const lostRotation =
+        !row.rotation_confirmed_at &&
+        sinceRotation <= LOST_ROTATION_GRACE_MS &&
+        !!row.user_agent &&
+        row.user_agent === userAgentOf(req);
+      if (inFlight || lostRotation) {
+        // Let it through and hand the current token over again. Not cached,
+        // so the grace period ends on time.
+        this.sendRotated(reply, source.via, rotatedToken(source.token), row.expires_at);
         return user;
       }
       await this.revokeForReuse(row, req);
@@ -294,22 +321,30 @@ export class SessionService {
       return null;
     }
 
-    let expiresAt = row.expires_at;
-    let currentHash = hash;
+    // The first use of a rotated token: from now on the replaced one is only
+    // good for requests in flight. A rotated token is not cached until this
+    // has run, so it always does.
+    if (row.rotated_at && !row.rotation_confirmed_at) {
+      await this.prisma.session.updateMany({
+        where: { id: row.id, token_hash: hash, rotation_confirmed_at: null },
+        data: { rotation_confirmed_at: new Date(now) },
+      });
+    }
+
     if (now - row.last_seen_at.getTime() > RENEW_AFTER_MS) {
       const renewed = await this.rotate(row, source.token, now);
       if (!renewed) {
         if (reply) this.clearCookie(reply);
         return null;
       }
-      this.sendRotated(reply, req, source.via, renewed.token, renewed.expiresAt);
+      this.sendRotated(reply, source.via, renewed.token, renewed.expiresAt);
       this.touchKnownDevice(row, now);
-      expiresAt = renewed.expiresAt;
-      currentHash = hashToken(renewed.token);
+      // The new token is cached once the client presents it (see above).
+      return user;
     }
 
-    const entry: CachedSession = { ...user, expiresAt: expiresAt.getTime() };
-    await this.cache.set(`session:${currentHash}`, entry, CACHE_TTL_S);
+    const entry: CachedSession = { ...user, expiresAt: row.expires_at.getTime() };
+    await this.cache.set(cacheKey, entry, CACHE_TTL_S);
     return user;
   }
 
@@ -335,6 +370,7 @@ export class SessionService {
         token_hash: nextHash,
         previous_token_hash: hash,
         rotated_at: new Date(now),
+        rotation_confirmed_at: null,
         last_seen_at: new Date(now),
         expires_at: expiresAt,
       },
@@ -477,16 +513,27 @@ export class SessionService {
       where: { id: { in: rows.map((r) => r.id) }, revoked_at: null },
       data: { revoked_at: new Date(), revoked_reason: reason },
     });
+    await this.purgeCached(rows);
+    return count;
+  }
+
+  /**
+   * Drop the cached lookups of sessions just revoked (current and previous
+   * token), for callers that revoke them inside their own transaction.
+   */
+  async purgeCached(
+    rows: { token_hash: string; previous_token_hash: string | null }[],
+  ): Promise<void> {
     const keys = rows.flatMap((r) =>
       [r.token_hash, r.previous_token_hash]
         .filter((h): h is string => !!h)
         .map((h) => `session:${h}`),
     );
+    if (keys.length === 0) return;
     await this.forget(keys);
     // A lookup that read the row just before the update may cache it again
     // right after the delete above; a second purge closes that window.
     setTimeout(() => void this.forget(keys).catch(() => undefined), REPURGE_AFTER_MS).unref?.();
-    return count;
   }
 
   private async forget(keys: string[]) {
@@ -563,19 +610,18 @@ export class SessionService {
 
   /**
    * Hand a rotated token to the client: the cookie for a cookie session, the
-   * `X-Session-Token` header for the app (bearer token or native client).
+   * `X-Session-Token` header for a bearer-token session (the app) only.
    * Headers set here go out with whatever status the request ends in.
    */
   private sendRotated(
     reply: FastifyReply | undefined,
-    req: TokenRequest,
     via: 'cookie' | 'bearer',
     token: string,
     expiresAt: Date,
   ) {
     if (!reply) return;
     if (via === 'cookie') this.setCookie(reply, token, expiresAt);
-    if (via === 'bearer' || isNative(req)) this.sendTokenHeader(reply, token);
+    if (via === 'bearer') this.sendTokenHeader(reply, token);
   }
 
   private sendTokenHeader(reply: FastifyReply, token: string) {

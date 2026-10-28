@@ -21,7 +21,7 @@ Only version 1 exists today, and every v1 transformer is a pass-through. The web
 | --- | --- | --- | --- |
 | `auth` | `profile`, `session`, `verifyOtp`, `message` | `src/auth/transformer.ts` | `src/auth/auth.controller.ts` |
 | `school` | `list`, `detail` | `src/school/transformer.ts` | `src/school/school.controller.ts` |
-| `student` | `list`, `detail`, `created`, `updated`, `paginated` | `src/student/transformer.ts` | `src/student/student.controller.ts` |
+| `student` | `list`, `detail`, `updated`, `paginated` | `src/student/transformer.ts` | `src/student/student.controller.ts` |
 | `academicYear` | `list`, `detail`, `created`, `updated` | `src/academic-year/transformer.ts` | `src/academic-year/academic-year.controller.ts` |
 | `term` | `list`, `detail`, `created`, `updated`, `deleted` | `src/term/transformer.ts` | `src/term/term.controller.ts` |
 | `gradeScale` | `list`, `detail`, `created`, `updated`, `bandsReplaced`, `defaultSet`, `deleted` | `src/grade-scale/transformer.ts` | `src/grade-scale/grade-scale.controller.ts` |

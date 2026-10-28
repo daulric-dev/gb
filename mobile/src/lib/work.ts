@@ -21,6 +21,7 @@ export interface PortalWorkItem {
   dueAt: string | null;
   status: "published" | "closed";
   allowFile: boolean;
+  allowMultipleFiles: boolean;
   allowText: boolean;
   courseId: string | null;
   courseName: string | null;
@@ -42,6 +43,7 @@ export interface PortalWorkDetail {
   dueAt: string | null;
   status: "published" | "closed";
   allowFile: boolean;
+  allowMultipleFiles: boolean;
   allowText: boolean;
   courseId?: string | null;
   courseName?: string | null;
@@ -65,6 +67,7 @@ export interface PortalWorkDetail {
     textBody: string | null;
     fileId: string | null;
     fileName: string | null;
+    files?: { id: string; name: string; contentType: string }[];
     score: number | null;
     feedback: string | null;
     excused?: boolean;
@@ -89,6 +92,19 @@ export function dueLabel(value: string | null) {
   if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   return `Due ${formatted}`;
+}
+
+export function lateDays(
+  dueAt: string | null,
+  submittedAt: string | null,
+): number | null {
+  if (!dueAt || !submittedAt) return null;
+  const due = new Date(dueAt).getTime();
+  const submitted = new Date(submittedAt).getTime();
+  if (!Number.isFinite(due) || !Number.isFinite(submitted) || submitted <= due) {
+    return null;
+  }
+  return Math.ceil((submitted - due) / 86_400_000);
 }
 
 /**

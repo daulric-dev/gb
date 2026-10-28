@@ -44,7 +44,7 @@ export function JoinCodeForm() {
 
   async function handleSubmit() {
     if (!ready) {
-      toast.error("Enter the full claim code");
+      toast.error("Enter the full school code");
       return;
     }
     setLoading(true);
@@ -54,7 +54,7 @@ export function JoinCodeForm() {
         body: { code },
         skipAuthRedirect: true,
       });
-      // The claim sets school and account type server-side, so the cached
+      // Joining sets school and account type server-side, so the cached
       // profile is stale until this resolves.
       await refresh();
       toast.success("You have joined the school");

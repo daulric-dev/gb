@@ -71,10 +71,11 @@ export class AuthService {
     }
   }
 
-  async sendOtp(email: string) {
+  /** `ip` is the client asking: codes are capped per (address, client). */
+  async sendOtp(email: string, ip?: string) {
     await this.refuseIfSsoRequired(email);
     try {
-      await this.emailCodes.send(email);
+      await this.emailCodes.send(email, ip);
       return 'OTP sent to email';
     } catch (err) {
       // A rate limit (429) keeps its own message; any other failure reads as
@@ -105,7 +106,7 @@ export class AuthService {
     try {
       let verifiedEmail: string;
       try {
-        verifiedEmail = await this.emailCodes.verify(email, token);
+        verifiedEmail = await this.emailCodes.verify(email, token, req.ip);
       } catch (err) {
         this.logger.warn(`OTP verification failed for ${email}: ${(err as Error).message}`);
         throw new UnauthorizedException('Invalid or expired OTP');
@@ -284,7 +285,7 @@ export class AuthService {
 
       // Preserve an existing membership role (e.g. the school creator's
       // 'admin', set by SchoolService.create) - the dedicated branch runs for
-      // every onboard, including theirs. Brand-new members default to teacher.
+      // every onboard, including theirs.
       const membership = await this.prisma.school_management
         .findFirst({
           where: { user_id: userId, school_id: school.id },
@@ -292,32 +293,47 @@ export class AuthService {
         })
         .catch(() => null);
 
-      const role = membership?.role ?? 'teacher';
+      if (membership) {
+        const data = await this.upsertProfile(userId, {
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+          school_id: school.id,
+          role: membership.role,
+        });
+        await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
+        return data;
+      }
 
+      // Brand-new staff on a dedicated deployment: save profile and submit a join
+      // request for the single school so an admin must approve them.
       const data = await this.upsertProfile(userId, {
         first_name: dto.firstName,
         last_name: dto.lastName,
-        school_id: school.id,
-        role,
       });
 
-      // Canonical membership so the permission layer recognizes the user.
-      // Without this, a dedicated-instance user has a school_id but no
-      // school_management row, and PermissionGuard treats them as a non-member.
-      if (!membership) {
+      let joinRequest = await this.prisma.school_join_request
+        .findFirst({
+          where: { user_id: userId, school_id: school.id, status: 'pending' },
+          select: { id: true, school_id: true, status: true },
+        })
+        .catch(() => null);
+
+      if (!joinRequest) {
         try {
-          await this.prisma.school_management.create({
-            data: { user_id: userId, school_id: school.id, role },
+          joinRequest = await this.prisma.school_join_request.create({
+            data: { user_id: userId, school_id: school.id },
+            select: { id: true, school_id: true, status: true },
           });
-        } catch (managementError) {
+        } catch (reqError) {
           this.logger.error(
-            `Failed to create school_management for ${userId} at ${school.id}: ${(managementError as Error).message}`,
+            `Failed to create join request for user ${userId}: ${(reqError as Error).message}`,
           );
+          throw new BadRequestException('Failed to submit join request');
         }
       }
 
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
-      return data;
+      return { ...data, joinRequest };
     }
 
     const names = { first_name: dto.firstName, last_name: dto.lastName };

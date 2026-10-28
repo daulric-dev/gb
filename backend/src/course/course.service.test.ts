@@ -240,6 +240,41 @@ describe('join codes', () => {
     expect(course.id).toBe(COURSE);
   });
 
+  test('a student their teacher dropped cannot rejoin with the code', async () => {
+    const prisma = db({});
+    prisma.course_student.upsert.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    prisma.course_student.findUnique.mockResolvedValue({ status: 'dropped' });
+    const err = await expectRejection(
+      service(prisma).joinByCode('student-1', 'school-1', 'ABC234'),
+    );
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect((err as Error).message).toContain('Ask your teacher to re-add you');
+    const upsert = prisma.course_student.upsert.mock.calls[0][0];
+    expect(upsert.where.status).toEqual({ not: 'dropped' });
+  });
+
+  test('a double tap that races to the same enrolment still succeeds', async () => {
+    const prisma = db({});
+    prisma.course_student.upsert.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    prisma.course_student.findUnique.mockResolvedValue({ status: 'active' });
+    const course = await service(prisma).joinByCode(
+      'student-1',
+      'school-1',
+      'ABC234',
+    );
+    expect(course.id).toBe(COURSE);
+  });
+
   test('an unknown code is a 404', async () => {
     const prisma = db({});
     prisma.course.findFirst.mockResolvedValue(null);

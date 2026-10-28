@@ -4,7 +4,11 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { FileManagerService } from './file-manager.service';
+import {
+  FileManagerService,
+  MAX_PENDING_UPLOADS,
+} from './file-manager.service';
+import { ObjectTooLargeError } from '@/storage/storage.service';
 import { FileListFilter } from './dto/list-files.filter';
 import { expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
@@ -182,7 +186,7 @@ describe('direct uploads', () => {
       method: 'PUT',
       headers: { 'Content-Type': 'application/pdf' },
       contentType: 'application/pdf',
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: 100 * 1024 * 1024,
     });
     expect(t.uploadUrl).toContain(`file-manager/${row.storage_path}`);
     expect(typeof t.expiresAt).toBe('string');
@@ -192,12 +196,61 @@ describe('direct uploads', () => {
     const { svc } = makeService({ rows: null });
     for (const input of [
       { name: 'a.exe', sizeBytes: 10, contentType: 'application/x-msdownload' },
-      { name: 'a.pdf', sizeBytes: 11 * 1024 * 1024, contentType: 'application/pdf' },
+      { name: 'a.pdf', sizeBytes: 101 * 1024 * 1024, contentType: 'application/pdf' },
     ]) {
       expect(await expectRejection(svc.createUploadTicket(USER, input))).toBeInstanceOf(
         BadRequestException,
       );
     }
+  });
+
+  test('submission upload tickets accept a programming-language MIME type', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    const ticket = await svc.createSubmissionUploadTicket(USER, {
+      name: 'solution.py',
+      sizeBytes: 100,
+      contentType: 'Text/X-Python; charset=utf-8',
+    });
+
+    expect(ticket.contentType).toBe('text/x-python');
+    expect(prisma.file.create.mock.calls[0][0].data.content_type).toBe(
+      'text/x-python',
+    );
+  });
+
+  test('submission multipart uploads accept arbitrary file types', async () => {
+    const source = Buffer.from('fn main() {}');
+    const { svc, prisma, storage } = makeService({ rows: null });
+    prisma.file.create.mockImplementation(async ({ data }) =>
+      fileRow({ ...data, size_bytes: BigInt(source.byteLength) }),
+    );
+
+    await svc.uploadSubmissionManual(USER, {
+      filename: 'main.rs',
+      mimetype: 'application/x-rust-source',
+      toBuffer: () => Promise.resolve(source),
+    } as any);
+
+    expect(storage.put).toHaveBeenCalledWith(
+      expect.stringContaining('main.rs'),
+      source,
+      'application/x-rust-source',
+    );
+    expect(prisma.file.create.mock.calls[0][0].data.content_type).toBe(
+      'application/x-rust-source',
+    );
+  });
+
+  test('ordinary multipart uploads still reject unapproved types', async () => {
+    const { svc, storage } = makeService({ rows: null });
+    await expect(
+      svc.uploadManual(USER, {
+        filename: 'main.rs',
+        mimetype: 'application/x-rust-source',
+        toBuffer: () => Promise.resolve(Buffer.from('fn main() {}')),
+      } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(storage.put).not.toHaveBeenCalled();
   });
 
   test('completing marks the file ready when the bytes check out', async () => {
@@ -213,6 +266,35 @@ describe('direct uploads', () => {
     expect(out.status).toBe('ready');
     expect(prisma.file.update.mock.calls[0][0].data.size_bytes).toBe(
       PDF.byteLength,
+    );
+  });
+
+  test('submission uploads accept unrecognized but valid binary file types', async () => {
+    const source = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+    const storage = storageStub(source);
+    const { svc, prisma } = makeService(
+      {
+        rows: fileRow({
+          status: 'pending',
+          content_type: 'application/x-rust-source',
+          size_bytes: BigInt(source.byteLength),
+          storage_path: 'uploads/school-1/user-1/f1-main.rs',
+        }),
+      },
+      accessStub(),
+      storage,
+    );
+    prisma.file.update.mockImplementation(async ({ data }) =>
+      fileRow({ ...data, content_type: 'application/x-rust-source' }),
+    );
+
+    const result = await svc.finaliseSubmissionUpload(USER, FILE_ID);
+
+    expect(result.status).toBe('ready');
+    expect(storage.put).toHaveBeenCalledWith(
+      'file-manager/school-1/user-1/f1-main.rs',
+      source,
+      'application/x-rust-source',
     );
   });
 
@@ -258,5 +340,118 @@ describe('direct uploads', () => {
     const out = await svc.getDownloadContent(USER, FILE_ID);
     expect(out.buffer.equals(PDF)).toBe(true);
     expect(storage.getBuffer).toHaveBeenCalledWith('file-manager/s/p');
+  });
+
+  test('a ticket stages the upload away from the served key and signs its size', async () => {
+    const { svc, prisma, storage } = makeService({ rows: null });
+    await svc.createUploadTicket(USER, {
+      name: 'Essay.pdf',
+      sizeBytes: 100,
+      contentType: 'application/pdf',
+    });
+    const row = prisma.file.create.mock.calls[0][0].data;
+    expect(row.storage_path.startsWith('uploads/school-1/user-1/')).toBe(true);
+    const [, , ttl, length] = storage.uploadUrl.mock.calls[0] as unknown as [
+      string,
+      string,
+      number,
+      number,
+    ];
+    expect(ttl).toBe(5 * 60);
+    expect(length).toBe(100);
+  });
+
+  test('too many live tickets is a 429 and reserves nothing', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    prisma.file.count.mockResolvedValue(MAX_PENDING_UPLOADS);
+    const err = await expectRejection(
+      svc.createUploadTicket(USER, {
+        name: 'a.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
+    );
+    expect((err as any).getStatus()).toBe(429);
+    expect(prisma.file.create).not.toHaveBeenCalled();
+    const where = prisma.file.count.mock.calls[0][0].where;
+    expect(where).toMatchObject({ owner_id: USER, status: 'pending' });
+  });
+
+  test('finalising serves the verified bytes from a new key and drops the staged one', async () => {
+    const storage = storageStub(PDF);
+    const { svc, prisma } = makeService(
+      {
+        rows: fileRow({
+          status: 'pending',
+          storage_path: 'uploads/school-1/user-1/f1-doc.pdf',
+          size_bytes: BigInt(PDF.byteLength),
+        }),
+      },
+      accessStub(),
+      storage,
+    );
+    prisma.file.update.mockImplementation(async ({ data }) =>
+      fileRow({ ...data }),
+    );
+    await svc.finaliseUpload(USER, FILE_ID);
+
+    expect(storage.getBuffer).toHaveBeenCalledWith(
+      'file-manager/uploads/school-1/user-1/f1-doc.pdf',
+      100 * 1024 * 1024,
+    );
+    const [putKey, putBody] = storage.put.mock.calls[0] as unknown as [
+      string,
+      Buffer,
+    ];
+    expect(putKey).toBe('file-manager/school-1/user-1/f1-doc.pdf');
+    expect(putBody.equals(PDF)).toBe(true);
+    expect(prisma.file.update.mock.calls[0][0].data.storage_path).toBe(
+      'school-1/user-1/f1-doc.pdf',
+    );
+    expect(storage.delete).toHaveBeenCalledWith(
+      'file-manager/uploads/school-1/user-1/f1-doc.pdf',
+    );
+  });
+
+  test('an object that grows past the cap after HEAD is rejected and deleted', async () => {
+    const storage = storageStub(PDF);
+    storage.getBuffer.mockImplementation(() =>
+      Promise.reject(new ObjectTooLargeError('k', 1)),
+    );
+    const { svc, prisma } = makeService(
+      { rows: fileRow({ status: 'pending', size_bytes: null }) },
+      accessStub(),
+      storage,
+    );
+    const err = await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+    expect((err as Error).message).toBe('File too large. Maximum is 100MB.');
+    expect(storage.delete).toHaveBeenCalled();
+    expect(prisma.file.updateMany.mock.calls[0][0].data.status).toBe('failed');
+  });
+
+  test('finalise ignores deleted rows', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+    expect(prisma.file.findFirst.mock.calls[0][0].where.deleted_at).toBeNull();
+  });
+});
+
+describe('readContentForAuthorisedCaller', () => {
+  test('a deleted file is not found', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    const err = await expectRejection(
+      svc.readContentForAuthorisedCaller(FILE_ID),
+    );
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(prisma.file.findFirst.mock.calls[0][0].where).toEqual({
+      id: FILE_ID,
+      deleted_at: null,
+    });
+  });
+
+  test('a malformed id is not found without a query', async () => {
+    const { svc, prisma } = makeService({ rows: fileRow() });
+    await expectRejection(svc.readContentForAuthorisedCaller('nope'));
+    expect(prisma.file.findFirst).not.toHaveBeenCalled();
   });
 });

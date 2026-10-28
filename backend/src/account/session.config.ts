@@ -6,7 +6,8 @@
  *   However active it is, a session ends this long after sign-in.
  * - `SESSION_ROTATION_GRACE_SECONDS` (default 120): how long a token keeps
  *   working after the daily rotation replaced it, for requests already in
- *   flight. After that it counts as a copied token.
+ *   flight. After that it counts as a copied token, unless the client
+ *   plainly never got the new one (LOST_ROTATION_GRACE_MS in session.service).
  * - `SESSION_ALERTS_ENABLED` (default true): email users about sign-ins from a
  *   new device and about sessions ended for token reuse.
  */

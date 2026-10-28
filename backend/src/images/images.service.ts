@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Readable } from 'node:stream';
-import { StorageService } from '@/storage/storage.service';
+import {
+  ObjectTooLargeError,
+  StorageService,
+} from '@/storage/storage.service';
 import { objectKey } from '@/storage/keys';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
@@ -18,7 +21,13 @@ export class ImagesService {
   ];
   private static readonly BUCKET = 'images';
   /** How long a presigned avatar upload URL stays valid. */
-  private static readonly UPLOAD_URL_TTL = 15 * 60;
+  private static readonly UPLOAD_URL_TTL = 5 * 60;
+  /**
+   * Presigned PUTs land here, outside `avatars/`, so nothing is ever served
+   * from a key an upload URL was signed for. Completing writes the verified
+   * bytes to `avatars/<userId>.<ext>`.
+   */
+  private static readonly STAGING_PREFIX = 'uploads/';
   private static readonly CACHE_TTL = 3600; // 1 hour
   private static cacheKey(userId: string) {
     return `avatar:${userId}`;
@@ -154,7 +163,10 @@ export class ImagesService {
    * a client cannot point their profile at another user's object.
    */
   private assertOwnedPath(userId: string, path: string): void {
-    if (path !== `avatars/${userId}.${this.safeExtension(path)}`) {
+    if (
+      path !==
+      `${ImagesService.STAGING_PREFIX}${this.buildPath(userId, this.safeExtension(path))}`
+    ) {
       throw new BadRequestException('Upload path does not belong to caller');
     }
   }
@@ -221,6 +233,8 @@ export class ImagesService {
 
   /**
    * A presigned URL the client PUTs the image to, straight into storage.
+   * The URL is bound to the declared size and type, and points at a staging
+   * key that is never served.
    *
    * Flow:
    *  1. Client calls this endpoint and gets `{ path, uploadUrl, headers }`
@@ -233,6 +247,9 @@ export class ImagesService {
     contentType: string,
     totalSize: number,
   ) {
+    if (!Number.isInteger(totalSize) || totalSize <= 0) {
+      throw new BadRequestException('File is empty');
+    }
     if (totalSize > ImagesService.MAX_FILE_SIZE) {
       throw new BadRequestException(
         `File too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`,
@@ -246,7 +263,7 @@ export class ImagesService {
     }
 
     const ext = this.safeExtension(filename);
-    const path = this.buildPath(userId, ext);
+    const path = `${ImagesService.STAGING_PREFIX}${this.buildPath(userId, ext)}`;
     const ttl = ImagesService.UPLOAD_URL_TTL;
 
     let uploadUrl: string;
@@ -255,6 +272,7 @@ export class ImagesService {
         objectKey(ImagesService.BUCKET, path),
         contentType,
         ttl,
+        totalSize,
       );
     } catch (error) {
       this.logger.error(
@@ -273,8 +291,9 @@ export class ImagesService {
   }
 
   /**
-   * After the client finishes the PUT, check what arrived and point the
-   * user's profile at it. A rejected object is deleted.
+   * After the client finishes the PUT, check what arrived, write the checked
+   * bytes to the served avatar key and point the user's profile at it. The
+   * staged object is deleted either way.
    */
   async completeResumableUpload(
     userId: string,
@@ -311,7 +330,15 @@ export class ImagesService {
         `Invalid file type "${contentType || 'unknown'}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
       );
     }
-    const buffer = await this.storage.getBuffer(key);
+    // The object can be replaced between the HEAD and this read, so the read
+    // is capped on its own.
+    let buffer: Buffer | null = null;
+    try {
+      buffer = await this.storage.getBuffer(key, ImagesService.MAX_FILE_SIZE);
+    } catch (error) {
+      if (!(error instanceof ObjectTooLargeError)) throw error;
+      await reject('File too large. Maximum is 5MB.');
+    }
     if (
       !buffer ||
       !ImagesService.matchesImageSignature(buffer, contentType)
@@ -319,7 +346,26 @@ export class ImagesService {
       await reject('File content does not match an allowed image format');
     }
 
-    const avatarUrl = this.cacheBust(this.publicUrl(path, requestOrigin));
+    const finalPath = path.slice(ImagesService.STAGING_PREFIX.length);
+    try {
+      await this.storage.put(
+        objectKey(ImagesService.BUCKET, finalPath),
+        buffer!,
+        contentType,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to store avatar at "${finalPath}": ${(error as Error).message}`,
+      );
+      throw new BadRequestException('Failed to upload image');
+    }
+    await this.storage
+      .delete(key)
+      .catch((err: Error) =>
+        this.logger.error(`Could not remove staged avatar: ${err.message}`),
+      );
+
+    const avatarUrl = this.cacheBust(this.publicUrl(finalPath, requestOrigin));
     await this.updateProfileAvatar(userId, avatarUrl);
 
     return { avatar_url: avatarUrl };

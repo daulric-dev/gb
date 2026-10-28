@@ -64,15 +64,16 @@ The management routes use `AdminGuard` rather than `PermissionGuard`, because ga
 
 ## Permission catalog
 
-Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `academic-year` have `create`, `read` and `update` (neither has a delete route). That makes 30 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
+Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route). That makes 31 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
 
 | Key | Description | teacher | member | Enforced by |
 | --- | --- | :---: | :---: | --- |
 | `course:create` | Create courses | yes | | `@RequirePermission` in `course.controller.ts`, `course-copy.controller.ts`; `course-copy.service.ts` checks it via `loadEffectivePermissions` |
 | `course:update` | Edit courses | | | Not a route decorator: `CourseAccessService` treats a holder as course `admin` in every course, and `course.service.ts` and `dashboard.service.ts` use it to show all of the school's courses |
-| `student:create` | Create students | | | `student.controller.ts`, `student-account/school-join-code.controller.ts` |
-| `student:read` | View students | yes | yes | `student.controller.ts`, `school-join-code.controller.ts` |
-| `student:update` | Edit students | | | `student.controller.ts`, `school-join-code.controller.ts` |
+| `student:read` | View students | yes | yes | `student.controller.ts` |
+| `student:update` | Edit students | | | `student.controller.ts` |
+| `join-code:read` | View school join code status | yes | yes | `student-account/school-join-code.controller.ts` |
+| `join-code:update` | Issue and revoke the school join code | | | `student-account/school-join-code.controller.ts` |
 | `term:create` | Create academic terms | | | `term.controller.ts` |
 | `term:read` | View academic terms | yes | yes | `term.controller.ts` |
 | `term:update` | Edit academic terms | | | `term.controller.ts` |

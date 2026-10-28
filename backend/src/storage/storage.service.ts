@@ -22,6 +22,22 @@ export interface StoredObject {
   size: number | null;
 }
 
+/** Hard ceiling on what `getBuffer` will hold in memory unless told otherwise. */
+export const DEFAULT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
+/** How long a presigned PUT stays valid unless the caller says otherwise. */
+export const DEFAULT_UPLOAD_URL_TTL_SECONDS = 5 * 60;
+
+/** Thrown by `getBuffer` when an object turns out bigger than its cap. */
+export class ObjectTooLargeError extends Error {
+  constructor(
+    readonly key: string,
+    readonly maxBytes: number,
+  ) {
+    super(`Object ${key} is larger than ${maxBytes} bytes`);
+    this.name = 'ObjectTooLargeError';
+  }
+}
 
 @Injectable()
 export class StorageService implements OnModuleInit {
@@ -95,12 +111,19 @@ export class StorageService implements OnModuleInit {
     };
   }
 
-  async getBuffer(key: string): Promise<Buffer | null> {
+  /**
+   * The whole object in memory, or null when there is no such key. The body
+   * is counted as it streams in and abandoned as soon as it passes
+   * `maxBytes` (ObjectTooLargeError): the reported size is not trusted, since
+   * the object can be replaced between a HEAD and this GET.
+   */
+  async getBuffer(
+    key: string,
+    maxBytes = DEFAULT_MAX_BUFFER_BYTES,
+  ): Promise<Buffer | null> {
     const obj = await this.get(key);
     if (!obj) return null;
-    const chunks: Buffer[] = [];
-    for await (const chunk of obj.body) chunks.push(Buffer.from(chunk as Uint8Array));
-    return Buffer.concat(chunks);
+    return readCapped(obj.body, key, maxBytes);
   }
 
   async exists(key: string): Promise<{ size: number; contentType: string | null } | null> {
@@ -179,18 +202,28 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
-   * A URL the client PUTs the file body to. The content type is part of the
-   * signature, so the client must send exactly this Content-Type.
+   * A URL the client PUTs the file body to. The content type, and the length
+   * when given, are part of the signature, so the client must send exactly
+   * this Content-Type and a body of exactly `contentLength` bytes.
    */
   async uploadUrl(
     key: string,
     contentType: string,
-    expiresIn = 15 * 60,
+    expiresIn = DEFAULT_UPLOAD_URL_TTL_SECONDS,
+    contentLength?: number,
   ): Promise<string> {
+    const signed = new Set(['content-type']);
+    if (contentLength !== undefined) signed.add('content-length');
     return getSignedUrl(
       this.publicClient,
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }),
-      { expiresIn },
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+        ContentLength: contentLength,
+      }),
+      // The presigner leaves Content-Type unsigned by default; sign both.
+      { expiresIn, signableHeaders: signed },
     );
   }
 }
@@ -225,6 +258,26 @@ function makeClient(endpoint: string | undefined): S3Client {
           }
         : undefined,
   });
+}
+
+/** Collect a stream, giving up (and closing it) past `maxBytes`. */
+export async function readCapped(
+  body: Readable,
+  key: string,
+  maxBytes: number,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of body) {
+    const buf = Buffer.from(chunk as Uint8Array);
+    total += buf.byteLength;
+    if (total > maxBytes) {
+      body.destroy?.();
+      throw new ObjectTooLargeError(key, maxBytes);
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
 }
 
 function isMissing(err: unknown): boolean {

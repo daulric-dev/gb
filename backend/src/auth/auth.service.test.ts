@@ -92,9 +92,10 @@ describe('AuthService', () => {
 
   describe('sendOtp', () => {
     test('sends a code and returns the success message', async () => {
-      const result = await service.sendOtp('test@example.com');
+      const result = await service.sendOtp('test@example.com', '1.2.3.4');
       expect(result).toBe('OTP sent to email');
-      expect(emailCodes.send).toHaveBeenCalledWith('test@example.com');
+      // The client address goes along: sends are capped per (address, client).
+      expect(emailCodes.send).toHaveBeenCalledWith('test@example.com', '1.2.3.4');
     });
 
     test('a mail failure is a BadRequestException with the usual message', async () => {
@@ -168,10 +169,13 @@ describe('AuthService', () => {
       prisma.user_profile.findUnique.mockResolvedValue(
         dbProfile({ id: userId, email }),
       );
-      const req = {} as any;
+      const req = { ip: '1.2.3.4' } as any;
       const reply = {} as any;
 
       const result: any = await service.verifyOtp(email, '12345678', req, reply);
+
+      // Wrong guesses are counted per (code, client address).
+      expect(emailCodes.verify).toHaveBeenCalledWith(email, '12345678', '1.2.3.4');
 
       expect(accounts.userForVerifiedEmail).toHaveBeenCalledWith(email);
       expect(sessions.create).toHaveBeenCalledWith(reply, req, userId, 'email-code');
@@ -454,7 +458,7 @@ describe('AuthService', () => {
       });
     });
 
-    describe('dedicated deployment auto-joins the single school', () => {
+    describe('dedicated deployment requires admin approval for new staff', () => {
       const userId = 'user-dedicated';
       let prevEnv: string | undefined;
 
@@ -463,7 +467,7 @@ describe('AuthService', () => {
         process.env.DEDICATED_DEPLOYMENT = 'true';
         prisma.school.findFirst.mockResolvedValue({ id: 's1' });
         prisma.user_profile.upsert.mockImplementation(async ({ create }) =>
-          dbProfile({ ...create, school_id: 's1' }),
+          dbProfile(create),
         );
       });
 
@@ -472,27 +476,44 @@ describe('AuthService', () => {
         else process.env.DEDICATED_DEPLOYMENT = prevEnv;
       });
 
-      test('new user gets a teacher membership and profile role', async () => {
+      test('new staff user files a join request and does not get an auto-granted role', async () => {
+        prisma.school_join_request.create.mockResolvedValue({
+          id: 'req-1',
+          school_id: 's1',
+          status: 'pending',
+        });
+
         const result: any = await service.onboard(userId, {
           firstName: 'Jane',
           lastName: 'Doe',
         });
 
-        // user_profile mirrors the teacher role
-        expect(result.role).toBe('teacher');
+        // user_profile does not have a role or school yet
+        expect(result.role).toBeFalsy();
+        expect(result.school_id).toBeNull();
+        expect(result.joinRequest).toMatchObject({
+          id: 'req-1',
+          school_id: 's1',
+          status: 'pending',
+        });
 
-        // a canonical school_management row was inserted as teacher
+        // does not insert a school_management row
+        expect(prisma.school_management.create).not.toHaveBeenCalled();
+
+        // inserts a school_join_request
         expect(
-          prisma.school_management.create.mock.calls[0][0].data,
+          prisma.school_join_request.create.mock.calls[0][0].data,
         ).toMatchObject({
           user_id: userId,
           school_id: 's1',
-          role: 'teacher',
         });
       });
 
-      test('preserves the school creator admin role and does not re-insert membership', async () => {
+      test('preserves the school creator admin role and does not re-insert membership or join request', async () => {
         prisma.school_management.findFirst.mockResolvedValue({ role: 'admin' });
+        prisma.user_profile.upsert.mockImplementation(async ({ create }) =>
+          dbProfile({ ...create, school_id: 's1', role: 'admin' }),
+        );
 
         const result: any = await service.onboard(userId, {
           firstName: 'Admin',
@@ -500,7 +521,9 @@ describe('AuthService', () => {
         });
 
         expect(result.role).toBe('admin');
+        expect(result.school_id).toBe('s1');
         expect(prisma.school_management.create).not.toHaveBeenCalled();
+        expect(prisma.school_join_request.create).not.toHaveBeenCalled();
       });
     });
   });
