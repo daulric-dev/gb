@@ -204,6 +204,55 @@ describe('direct uploads', () => {
     }
   });
 
+  test('submission upload tickets accept a programming-language MIME type', async () => {
+    const { svc, prisma } = makeService({ rows: null });
+    const ticket = await svc.createSubmissionUploadTicket(USER, {
+      name: 'solution.py',
+      sizeBytes: 100,
+      contentType: 'Text/X-Python; charset=utf-8',
+    });
+
+    expect(ticket.contentType).toBe('text/x-python');
+    expect(prisma.file.create.mock.calls[0][0].data.content_type).toBe(
+      'text/x-python',
+    );
+  });
+
+  test('submission multipart uploads accept arbitrary file types', async () => {
+    const source = Buffer.from('fn main() {}');
+    const { svc, prisma, storage } = makeService({ rows: null });
+    prisma.file.create.mockImplementation(async ({ data }) =>
+      fileRow({ ...data, size_bytes: BigInt(source.byteLength) }),
+    );
+
+    await svc.uploadSubmissionManual(USER, {
+      filename: 'main.rs',
+      mimetype: 'application/x-rust-source',
+      toBuffer: () => Promise.resolve(source),
+    } as any);
+
+    expect(storage.put).toHaveBeenCalledWith(
+      expect.stringContaining('main.rs'),
+      source,
+      'application/x-rust-source',
+    );
+    expect(prisma.file.create.mock.calls[0][0].data.content_type).toBe(
+      'application/x-rust-source',
+    );
+  });
+
+  test('ordinary multipart uploads still reject unapproved types', async () => {
+    const { svc, storage } = makeService({ rows: null });
+    await expect(
+      svc.uploadManual(USER, {
+        filename: 'main.rs',
+        mimetype: 'application/x-rust-source',
+        toBuffer: () => Promise.resolve(Buffer.from('fn main() {}')),
+      } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+
   test('completing marks the file ready when the bytes check out', async () => {
     const { svc, prisma } = makeService(
       { rows: fileRow({ status: 'pending', size_bytes: BigInt(PDF.byteLength) }) },
@@ -217,6 +266,35 @@ describe('direct uploads', () => {
     expect(out.status).toBe('ready');
     expect(prisma.file.update.mock.calls[0][0].data.size_bytes).toBe(
       PDF.byteLength,
+    );
+  });
+
+  test('submission uploads accept unrecognized but valid binary file types', async () => {
+    const source = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+    const storage = storageStub(source);
+    const { svc, prisma } = makeService(
+      {
+        rows: fileRow({
+          status: 'pending',
+          content_type: 'application/x-rust-source',
+          size_bytes: BigInt(source.byteLength),
+          storage_path: 'uploads/school-1/user-1/f1-main.rs',
+        }),
+      },
+      accessStub(),
+      storage,
+    );
+    prisma.file.update.mockImplementation(async ({ data }) =>
+      fileRow({ ...data, content_type: 'application/x-rust-source' }),
+    );
+
+    const result = await svc.finaliseSubmissionUpload(USER, FILE_ID);
+
+    expect(result.status).toBe('ready');
+    expect(storage.put).toHaveBeenCalledWith(
+      'file-manager/school-1/user-1/f1-main.rs',
+      source,
+      'application/x-rust-source',
     );
   });
 

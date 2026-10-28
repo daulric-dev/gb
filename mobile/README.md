@@ -13,6 +13,10 @@ frontend's design system and core flows.
 - **Classes** — assigned classes split into *My Classes* / *Subject Classes*.
 - **Students** — searchable (debounced) school roster.
 - **Settings** — profile, light/dark/system theme, logout.
+- **Assignment submissions** — attach files, or multiple files when the teacher
+  enables that option (up to 20, 100 MB each), and hand in text and/or files.
+  DOCX files can be previewed by course staff, while legacy DOC files are
+  included in their submission ZIP.
 
 ## Architecture
 
@@ -66,7 +70,11 @@ a SHA-256 challenge from `expo-crypto`. Native module changes need a fresh
 ```bash
 # from repo root
 bun install
-bun run dev:mobile          # or: cd mobile && bun run start
+bun dev                     # starts workspace dev tasks and opens iOS Simulator
+bun preview                 # starts production-preview tasks and opens iOS Simulator
+
+# open/build the iOS app in the Simulator (from repo root)
+bun run ios
 
 # platform shortcuts (from mobile/)
 bun run ios | android | web

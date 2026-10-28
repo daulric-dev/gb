@@ -38,6 +38,7 @@ export interface SubmissionRow {
     textBody: string | null;
     fileId: string | null;
     fileName: string | null;
+    files?: { id: string; name: string; contentType: string }[];
     score: number | null;
     feedback: string | null;
     submittedAt: string | null;

@@ -25,6 +25,9 @@
       "persistent": true,
       "dependsOn": ["build"]
     },
+    "ios": {
+      "cache": false
+    },
     "lint": {
       "dependsOn": ["^build"]
     },

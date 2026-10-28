@@ -53,6 +53,7 @@ export class CreateActivityDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() assignmentGroupId?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowFile?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() allowMultipleFiles?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowText?: boolean;
 
   /**
@@ -116,6 +117,10 @@ export class UpdateActivityDto {
   @ValidateIf((_, v) => v !== undefined)
   @IsBoolean()
   allowFile?: boolean;
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v !== undefined)
+  @IsBoolean()
+  allowMultipleFiles?: boolean;
   @ApiPropertyOptional()
   @ValidateIf((_, v) => v !== undefined)
   @IsBoolean()

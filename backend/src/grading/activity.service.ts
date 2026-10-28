@@ -172,6 +172,7 @@ export class ActivityService {
       dueAt?: string;
       assignmentGroupId?: string;
       allowFile?: boolean;
+      allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number;
     },
@@ -186,6 +187,11 @@ export class ActivityService {
     if (input.kind === 'assignment' && !input.allowFile && !input.allowText) {
       throw new BadRequestException(
         'An assignment must accept a file, text, or both',
+      );
+    }
+    if (input.allowMultipleFiles && !input.allowFile) {
+      throw new BadRequestException(
+        'Multiple files can only be allowed when file uploads are enabled',
       );
     }
 
@@ -210,6 +216,10 @@ export class ActivityService {
           points: input.points,
           due_at: toTimestamp(input.dueAt ?? null),
           allow_file: online ? (input.allowFile ?? false) : false,
+          allow_multiple_files:
+            online && input.allowFile
+              ? (input.allowMultipleFiles ?? false)
+              : false,
           allow_text: online ? (input.allowText ?? false) : false,
           created_by: userId,
         },
@@ -236,6 +246,7 @@ export class ActivityService {
       assignmentGroupId?: string | null;
       omitFromFinalGrade?: boolean;
       allowFile?: boolean;
+      allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number | null;
     },
@@ -278,6 +289,19 @@ export class ActivityService {
     }
     if (activity.kind === 'assignment') {
       if (patch.allowFile !== undefined) changes.allow_file = patch.allowFile;
+      if (patch.allowMultipleFiles !== undefined) {
+        if (
+          patch.allowMultipleFiles &&
+          (patch.allowFile === false || !activity.allow_file)
+        ) {
+          throw new BadRequestException(
+            'Multiple files can only be allowed when file uploads are enabled',
+          );
+        }
+        changes.allow_multiple_files = patch.allowMultipleFiles;
+      } else if (patch.allowFile === false) {
+        changes.allow_multiple_files = false;
+      }
       if (patch.allowText !== undefined) changes.allow_text = patch.allowText;
     }
     if (patch.maxAttempts !== undefined) {

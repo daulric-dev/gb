@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@/generated/prisma/client';
+import { Readable } from 'node:stream';
 import { SubmissionService } from './submission.service';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
@@ -29,6 +30,7 @@ const ACTIVITY = {
   due_at: null,
   status: 'published',
   allow_file: true,
+  allow_multiple_files: false,
   allow_text: true,
 };
 
@@ -67,6 +69,12 @@ function build(
     {
       uploadManual: () =>
         Promise.resolve({ id: 'file-1', name: 'essay.pdf' } as any),
+      uploadSubmissionManual: () =>
+        Promise.resolve({ id: 'file-1', name: 'essay.pdf' } as any),
+      createSubmissionUploadTicket: () =>
+        Promise.resolve({ uploadUrl: 'unused' } as any),
+      finaliseSubmissionUpload: () =>
+        Promise.resolve({ id: 'file-1', name: 'essay.pdf' } as any),
       readContentForAuthorisedCaller: () =>
         Promise.resolve({
           buffer: Buffer.from('hi'),
@@ -96,13 +104,18 @@ function studentTables(
 
 describe('SubmissionService file handling', () => {
   test('attachFile stores the uploaded id on the draft', async () => {
-    const { service, prisma } = build(studentTables());
+    const { service, prisma } = build((p) => {
+      studentTables()(p);
+      p.submission.updateMany.mockResolvedValue({ count: 1 });
+    });
 
     const result = await service.attachFile('stu-1', 'act-1', {} as any);
 
     expect(result).toEqual({ fileId: 'file-1', name: 'essay.pdf' });
 
-    const update = prisma.submission.updateMany.mock.calls[0]?.[0];
+    const update = prisma.submission.updateMany.mock.calls
+      .map(([args]) => args)
+      .find((args) => args.data.file_id === 'file-1');
     if (!update) throw new Error('expected the draft to be updated');
     expect(update.data.file_id).toBe('file-1');
     expect(update.where.id).toBe('sub-1');
@@ -140,6 +153,62 @@ describe('SubmissionService file handling', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  test('upload tickets stop at the submission file limit', async () => {
+    const { service, prisma } = build(studentTables());
+    prisma.submission_file.count.mockResolvedValue(20);
+
+    await expect(
+      service.createUploadTicket('stu-1', 'act-1', {
+        name: 'extra.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  test('single-file assignments reject another upload ticket', async () => {
+    let ticketRequested = false;
+    const createUploadTicket = async () => {
+      ticketRequested = true;
+      return { uploadUrl: 'unused' };
+    };
+    const { service, prisma } = build(studentTables(), {
+      createSubmissionUploadTicket: createUploadTicket,
+    });
+    prisma.submission_file.count.mockResolvedValue(1);
+
+    await expect(
+      service.createUploadTicket('stu-1', 'act-1', {
+        name: 'second.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
+    ).rejects.toThrow('This assignment allows only one file');
+    expect(ticketRequested).toBe(false);
+  });
+
+  test('multiple-file assignments allow a second upload ticket', async () => {
+    let ticketRequested = false;
+    const createUploadTicket = async () => {
+      ticketRequested = true;
+      return { uploadUrl: 'unused' };
+    };
+    const { service, prisma } = build(
+      studentTables({
+        activity: { ...ACTIVITY, allow_multiple_files: true },
+      }),
+      { createSubmissionUploadTicket: createUploadTicket },
+    );
+    prisma.submission_file.count.mockResolvedValue(1);
+
+    await service.createUploadTicket('stu-1', 'act-1', {
+      name: 'second.pdf',
+      sizeBytes: 10,
+      contentType: 'application/pdf',
+    });
+    expect(ticketRequested).toBe(true);
+  });
+
   test('submitting text keeps a file attached earlier', async () => {
     const { service, prisma } = build((p) => {
       studentTables({
@@ -172,6 +241,32 @@ describe('SubmissionService file handling', () => {
 
     const result = await service.submitAssignment('stu-1', 'act-1', {});
     expect(result).toBeTruthy();
+  });
+
+  test('an assignment can be submitted after its due date', async () => {
+    const { service, prisma } = build((p) => {
+      studentTables({
+        activity: {
+          ...ACTIVITY,
+          due_at: new Date('2026-10-01T12:00:00.000Z'),
+        },
+      })(p);
+      p.submission.updateManyAndReturn.mockResolvedValue([
+        {
+          id: 'sub-1',
+          status: 'submitted',
+          submitted_at: new Date('2026-10-03T12:00:00.000Z'),
+        },
+      ]);
+    });
+
+    const result = await service.submitAssignment('stu-1', 'act-1', {
+      textBody: 'My late work',
+    });
+
+    expect(result.status).toBe('submitted');
+    expect(result.submittedAt).toBe('2026-10-03T12:00:00.000Z');
+    expect(prisma.submission.updateManyAndReturn).toHaveBeenCalledTimes(1);
   });
 
   test('an empty draft cannot be handed in', async () => {
@@ -220,6 +315,70 @@ describe('SubmissionService file handling', () => {
 
     const result = await service.readSubmissionFile('user-1', 'sub-1');
     expect(result.filename).toBe('essay.pdf');
+  });
+
+  test('a TA can read a selected attachment on a multi-file submission', async () => {
+    let readFileId: string | undefined;
+    const { service } = build(
+      (p) =>
+        p.submission.findUnique.mockResolvedValue({
+          id: 'sub-1',
+          activity_id: 'act-1',
+          file_id: 'file-1',
+          submission_file: [{ file_id: 'file-1' }, { file_id: 'file-2' }],
+        }),
+      {
+        readContentForAuthorisedCaller: (fileId: string) => {
+          readFileId = fileId;
+          return Promise.resolve({ filename: 'second.pdf' } as any);
+        },
+      },
+    );
+
+    const result = await service.readSubmissionFile(
+      'user-1',
+      'sub-1',
+      'file-2',
+    );
+    expect(readFileId).toBe('file-2');
+    expect(result.filename).toBe('second.pdf');
+  });
+
+  test('a submission ZIP contains every attachment with unique names', async () => {
+    const { service } = build(
+      (p) =>
+        p.submission.findUnique.mockResolvedValue({
+          id: 'sub-1',
+          activity_id: 'act-1',
+          file_id: 'file-1',
+          activity: { title: 'Essay', course_id: 'course-1' },
+          student: { first_name: 'Ada', last_name: 'Lovelace' },
+          submission_file: [
+            { file_id: 'file-1', file: { name: 'essay.pdf' } },
+            { file_id: 'file-2', file: { name: 'essay.pdf' } },
+          ],
+        }),
+      {
+        readStreamForAuthorisedCaller: () => ({
+          body: Readable.from([Buffer.from('file contents')]),
+        }),
+      },
+    );
+
+    const { archive, archiveName } = await service.readSubmissionArchive(
+      'user-1',
+      'sub-1',
+    );
+    const chunks: Buffer[] = [];
+    for await (const chunk of archive) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const zip = Buffer.concat(chunks);
+
+    expect(archiveName).toBe('Ada Lovelace - Essay.zip');
+    expect(zip.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    expect(zip.toString('latin1')).toContain('essay.pdf');
+    expect(zip.toString('latin1')).toContain('essay (2).pdf');
   });
 
   test('there is nothing to read when no file was handed in', async () => {
@@ -499,6 +658,23 @@ describe('SubmissionService marking', () => {
       score: 1,
     });
     expect(result.status).toBe('graded');
+  });
+
+  test('a teacher can mark after the due date', async () => {
+    const { service } = build(
+      markTables({
+        activity: {
+          ...PUBLISHED,
+          due_at: new Date('2026-10-01T12:00:00.000Z'),
+        },
+      }),
+    );
+
+    const result = await service.grade('user-1', 'act-1', 'stu-1', {
+      score: 18,
+    });
+    expect(result.status).toBe('graded');
+    expect(result.score).toBe(18);
   });
 
   test('refuses a student who is not on the roster', async () => {

@@ -11,6 +11,7 @@ model activity {
   status                activity_status   @default(draft)
   published_at          DateTime?         @db.Timestamptz(6)
   allow_file            Boolean           @default(false)
+  allow_multiple_files  Boolean           @default(false)
   allow_text            Boolean           @default(false)
   created_by            String?           @db.Uuid
   created_at            DateTime          @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
@@ -148,11 +149,26 @@ model submission {
   rubric_assessment rubric_assessment[]
   activity       activity          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   file           file?             @relation(fields: [file_id], references: [id], onUpdate: NoAction)
+  submission_file submission_file[]
   user_profile   user_profile?     @relation(fields: [graded_by], references: [id], onUpdate: NoAction)
   student        student           @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([activity_id, student_id], map: "idx_submission_one_per_student")
   @@index([student_id], map: "idx_submission_student")
+  @@schema("grading")
+}
+
+model submission_file {
+  submission_id String     @db.Uuid
+  file_id       String     @db.Uuid
+  sort_order    Int        @default(0)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+  submission    submission @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  file          file       @relation(fields: [file_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([submission_id, file_id])
+  @@index([file_id], map: "idx_submission_file_file")
+  @@index([submission_id, sort_order], map: "idx_submission_file_order")
   @@schema("grading")
 }
 

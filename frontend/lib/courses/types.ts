@@ -173,6 +173,7 @@ export interface Activity {
   status: ActivityStatus;
   publishedAt: string | null;
   allowFile: boolean;
+  allowMultipleFiles: boolean;
   allowText: boolean;
   /** 0 means unlimited. */
   maxAttempts: number;

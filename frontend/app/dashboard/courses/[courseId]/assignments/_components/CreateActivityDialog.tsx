@@ -84,6 +84,7 @@ export function CreateActivityDialog({
   const dueAt = useSignal("");
   const groupId = useSignal(defaultGroupId ?? "");
   const allowFile = useSignal(true);
+  const allowMultipleFiles = useSignal(false);
   const allowText = useSignal(true);
   const saving = useSignal(false);
 
@@ -114,6 +115,10 @@ export function CreateActivityDialog({
           dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : undefined,
           assignmentGroupId: groupId.value || undefined,
           allowFile: kind.value === "assignment" ? allowFile.value : false,
+          allowMultipleFiles:
+            kind.value === "assignment" && allowFile.value
+              ? allowMultipleFiles.value
+              : false,
           allowText: kind.value === "assignment" ? allowText.value : false,
         },
       });
@@ -267,9 +272,24 @@ export function CreateActivityDialog({
                 <Switch
                   id="allowFile"
                   checked={allowFile.value}
-                  onCheckedChange={(v) => (allowFile.value = v)}
+                  onCheckedChange={(v) => {
+                    allowFile.value = v;
+                    if (!v) allowMultipleFiles.value = false;
+                  }}
                 />
               </div>
+              {allowFile.value && (
+                <div className="flex items-center justify-between pl-4">
+                  <Label htmlFor="allowMultipleFiles" className="font-normal">
+                    Allow multiple files
+                  </Label>
+                  <Switch
+                    id="allowMultipleFiles"
+                    checked={allowMultipleFiles.value}
+                    onCheckedChange={(v) => (allowMultipleFiles.value = v)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

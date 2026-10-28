@@ -19,7 +19,12 @@ import { FileShareService } from './file-share.service';
 import { FolderService } from './folder.service';
 import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
-import { verifyContent, ALLOWED_CONTENT_TYPES } from './file-content';
+import {
+  normalizeSubmissionContentType,
+  verifyContent,
+  verifySubmissionContent,
+  ALLOWED_CONTENT_TYPES,
+} from './file-content';
 import {
   ObjectTooLargeError,
   StorageService,
@@ -258,6 +263,26 @@ export class FileManagerService {
       folderId?: string;
     },
   ) {
+    return this.createUploadTicketInternal(userId, input, false);
+  }
+
+  async createSubmissionUploadTicket(
+    userId: string,
+    input: { name: string; sizeBytes: number; contentType: string },
+  ) {
+    return this.createUploadTicketInternal(userId, input, true);
+  }
+
+  private async createUploadTicketInternal(
+    userId: string,
+    input: {
+      name: string;
+      sizeBytes: number;
+      contentType: string;
+      folderId?: string;
+    },
+    allowAnyContentType: boolean,
+  ) {
     if (input.folderId) await this.folders.getOwned(userId, input.folderId);
 
     if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
@@ -269,8 +294,10 @@ export class FileManagerService {
       );
     }
 
-    const contentType = input.contentType || 'application/octet-stream';
-    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+    const contentType = allowAnyContentType
+      ? normalizeSubmissionContentType(input.contentType)
+      : input.contentType || 'application/octet-stream';
+    if (!allowAnyContentType && !ALLOWED_CONTENT_TYPES.has(contentType)) {
       throw new BadRequestException(`${contentType} files are not accepted`);
     }
 
@@ -348,6 +375,18 @@ export class FileManagerService {
   }
 
   async finaliseUpload(userId: string, fileId: string) {
+    return this.finaliseUploadInternal(userId, fileId, false);
+  }
+
+  async finaliseSubmissionUpload(userId: string, fileId: string) {
+    return this.finaliseUploadInternal(userId, fileId, true);
+  }
+
+  private async finaliseUploadInternal(
+    userId: string,
+    fileId: string,
+    allowAnyContentType: boolean,
+  ) {
     const file = !isUuid(fileId)
       ? null
       : await this.prisma.file.findFirst({
@@ -412,7 +451,9 @@ export class FileManagerService {
       throw new BadRequestException('File too large. Maximum is 100MB.');
     }
 
-    const check = verifyContent(buffer, record.content_type);
+    const check = allowAnyContentType
+      ? verifySubmissionContent(buffer, record.content_type)
+      : verifyContent(buffer, record.content_type);
     if (!check.ok) {
       await this.discardUpload(record, 'failed', check.reason);
       throw new BadRequestException(check.reason);
@@ -509,6 +550,20 @@ export class FileManagerService {
     displayName?: string,
     folderId?: string,
   ) {
+    return this.uploadManualInternal(userId, file, displayName, folderId, false);
+  }
+
+  async uploadSubmissionManual(userId: string, file: MultipartFile) {
+    return this.uploadManualInternal(userId, file, undefined, undefined, true);
+  }
+
+  private async uploadManualInternal(
+    userId: string,
+    file: MultipartFile,
+    displayName: string | undefined,
+    folderId: string | undefined,
+    allowAnyContentType: boolean,
+  ) {
     if (!file) throw new BadRequestException('No file provided');
 
     // A target folder must be one of the caller's own folders.
@@ -527,8 +582,12 @@ export class FileManagerService {
     // Reject unsupported or mislabelled files up front (the async scan repeats
     // this as defence in depth). The declared MIME type is not trusted alone:
     // for fingerprintable formats the leading bytes must match.
-    const contentType = file.mimetype || 'application/octet-stream';
-    const check = verifyContent(buffer, contentType);
+    const contentType = allowAnyContentType
+      ? normalizeSubmissionContentType(file.mimetype || '')
+      : file.mimetype || 'application/octet-stream';
+    const check = allowAnyContentType
+      ? verifySubmissionContent(buffer, contentType)
+      : verifyContent(buffer, contentType);
     if (!check.ok) {
       throw new BadRequestException(check.reason);
     }
@@ -747,6 +806,32 @@ export class FileManagerService {
     }
 
     return this.downloadBytes(data);
+  }
+
+  /** Stream a file after its caller has already checked authorization. */
+  async readStreamForAuthorisedCaller(fileId: string) {
+    const data = !isUuid(fileId)
+      ? null
+      : await this.prisma.file.findFirst({
+          where: { id: fileId, deleted_at: null },
+          select: FILE_COLUMNS,
+        });
+
+    if (!data || data.status !== 'ready') {
+      throw new NotFoundException('File content unavailable');
+    }
+
+    const object = await this.storage.get(
+      objectKey(data.bucket, data.storage_path),
+    );
+    if (!object) {
+      throw new NotFoundException('File content unavailable');
+    }
+    return {
+      body: object.body,
+      contentType: data.content_type,
+      filename: data.name,
+    };
   }
 
   private async downloadBytes(file: FileRecord) {

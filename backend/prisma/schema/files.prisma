@@ -23,6 +23,7 @@ model file {
   file_share   file_share[]
   notification notification[]
   submission   submission[]
+  submission_file submission_file[]
 
   @@index([owner_id, created_at(sort: Desc)], map: "idx_file_owner_active", where: raw("(deleted_at IS NULL)"))
   @@index([owner_id, folder_id], map: "idx_file_owner_folder", where: raw("(deleted_at IS NULL)"))

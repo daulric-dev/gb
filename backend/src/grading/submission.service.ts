@@ -5,6 +5,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ZipArchive } from 'archiver';
+import { basename } from 'node:path';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { pgCode, raisedMessage } from '@/common/db-values';
@@ -33,6 +35,7 @@ const STUDENT_ACTIVITY_SELECT = {
   due_at: true,
   status: true,
   allow_file: true,
+  allow_multiple_files: true,
   allow_text: true,
   max_attempts: true,
   rubric_id: true,
@@ -56,6 +59,14 @@ const MARKED_SELECT = {
   excused_reason: true,
   graded_at: true,
 } satisfies Prisma.submissionSelect;
+
+const MAX_SUBMISSION_FILES = 20;
+
+type SubmissionFileInfo = {
+  id: string;
+  name: string;
+  contentType: string;
+};
 
 /**
  * Submissions: a student's work on an activity, and the mark on it.
@@ -152,6 +163,7 @@ export class SubmissionService {
         dueAt: ts(a.due_at),
         status: a.status,
         allowFile: a.allow_file,
+        allowMultipleFiles: a.allow_multiple_files,
         allowText: a.allow_text,
         submission: submission
           ? {
@@ -260,7 +272,9 @@ export class SubmissionService {
       }));
     }
 
-    const names = await this.fileNames([submission?.file_id as string]);
+    const files = submission
+      ? await this.submissionFiles(submission.id, submission.file_id)
+      : [];
     const graded = submission?.status === 'graded';
 
     // The rubric is shown up front so the student knows how the work will be
@@ -284,6 +298,7 @@ export class SubmissionService {
       dueAt: ts(activity.due_at),
       status: activity.status,
       allowFile: activity.allow_file,
+      allowMultipleFiles: activity.allow_multiple_files,
       allowText: activity.allow_text,
       // 0 means unlimited, matching the teacher's editor.
       maxAttempts: activity.max_attempts ?? 0,
@@ -296,8 +311,9 @@ export class SubmissionService {
             id: submission.id,
             status: submission.status,
             textBody: submission.text_body,
-            fileId: submission.file_id,
-            fileName: names.get(submission.file_id as string) ?? null,
+            fileId: files[0]?.id ?? null,
+            fileName: files[0]?.name ?? null,
+            files,
             // A teacher may be partway through marking; show the mark once
             // it is final.
             score:
@@ -315,16 +331,108 @@ export class SubmissionService {
   }
 
   /** Display names for attached files, so the UI can label a download. */
-  private async fileNames(ids: string[]): Promise<Map<string, string>> {
+  private async fileDetails(
+    ids: string[],
+  ): Promise<Map<string, SubmissionFileInfo>> {
     const unique = [...new Set(ids.filter(Boolean))];
     if (unique.length === 0) return new Map();
 
     const data = await this.prisma.file.findMany({
       where: { id: { in: unique } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, content_type: true },
     });
 
-    return new Map(data.map((f) => [f.id, f.name]));
+    return new Map(
+      data.map((f) => [
+        f.id,
+        { id: f.id, name: f.name, contentType: f.content_type },
+      ]),
+    );
+  }
+
+  private async submissionFiles(
+    submissionId: string,
+    legacyFileId: string | null,
+  ): Promise<SubmissionFileInfo[]> {
+    const links = await this.prisma.submission_file.findMany({
+      where: { submission_id: submissionId },
+      select: {
+        file: { select: { id: true, name: true, content_type: true } },
+      },
+      orderBy: { sort_order: 'asc' },
+    });
+    if (links.length > 0) {
+      return links.map(({ file }) => ({
+        id: file.id,
+        name: file.name,
+        contentType: file.content_type,
+      }));
+    }
+
+    if (!legacyFileId) return [];
+    return [
+      (await this.fileDetails([legacyFileId])).get(legacyFileId) ?? {
+        id: legacyFileId,
+        name: 'Attached file',
+        contentType: 'application/octet-stream',
+      },
+    ];
+  }
+
+  private async submissionFilesById(
+    submissions: { id: string; file_id: string | null }[],
+  ): Promise<Map<string, SubmissionFileInfo[]>> {
+    const ids = submissions.map(({ id }) => id);
+    if (ids.length === 0) return new Map();
+
+    const links = await this.prisma.submission_file.findMany({
+      where: { submission_id: { in: ids } },
+      select: {
+        submission_id: true,
+        file: { select: { id: true, name: true, content_type: true } },
+      },
+      orderBy: [{ submission_id: 'asc' }, { sort_order: 'asc' }],
+    });
+    const bySubmission = new Map<string, SubmissionFileInfo[]>();
+    for (const link of links) {
+      const current = bySubmission.get(link.submission_id) ?? [];
+      current.push({
+        id: link.file.id,
+        name: link.file.name,
+        contentType: link.file.content_type,
+      });
+      bySubmission.set(link.submission_id, current);
+    }
+
+    const missingLegacyIds = submissions
+      .filter(
+        ({ id, file_id }) =>
+          (bySubmission.get(id)?.length ?? 0) === 0 && file_id,
+      )
+      .map(({ file_id }) => file_id as string);
+    const fallbackDetails = await this.fileDetails(missingLegacyIds);
+
+    for (const submission of submissions) {
+      if ((bySubmission.get(submission.id)?.length ?? 0) > 0) continue;
+      const fallback = submission.file_id
+        ? fallbackDetails.get(submission.file_id)
+        : undefined;
+      bySubmission.set(
+        submission.id,
+        fallback
+          ? [fallback]
+          : submission.file_id
+            ? [
+                {
+                  id: submission.file_id,
+                  name: 'Attached file',
+                  contentType: 'application/octet-stream',
+                },
+              ]
+            : [],
+      );
+    }
+    return bySubmission;
   }
 
   /**
@@ -432,21 +540,21 @@ export class SubmissionService {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    await this.assertUploadCapacity(
+      draft.id,
+      activity.allow_multiple_files,
+      draft.file_id,
+    );
 
     // Uploading as the student's own user means the usual scanning, quotas and
     // ownership all apply; nothing here bypasses the file manager.
     const owner = await this.userIdForStudent(studentId);
-    const uploaded = await this.files.uploadManual(owner, file);
-
-    try {
-      await this.prisma.submission.updateMany({
-        where: { id: draft.id },
-        data: { file_id: uploaded.id, updated_at: new Date() },
-      });
-    } catch (error) {
-      this.logger.error(`Failed to attach file: ${(error as Error).message}`);
-      throw new BadRequestException('Failed to attach the file');
-    }
+    const uploaded = await this.files.uploadSubmissionManual(owner, file);
+    await this.linkUploadedFile(
+      draft.id,
+      uploaded.id,
+      activity.allow_multiple_files,
+    );
 
     return { fileId: uploaded.id, name: uploaded.name };
   }
@@ -473,8 +581,14 @@ export class SubmissionService {
       throw new ConflictException('You have already submitted this');
     }
 
+    await this.assertUploadCapacity(
+      draft.id,
+      activity.allow_multiple_files,
+      draft.file_id,
+    );
+
     const owner = await this.userIdForStudent(studentId);
-    return this.files.createUploadTicket(owner, input);
+    return this.files.createSubmissionUploadTicket(owner, input);
   }
 
   async finaliseUploadedFile(
@@ -495,21 +609,87 @@ export class SubmissionService {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    await this.assertUploadCapacity(
+      draft.id,
+      activity.allow_multiple_files,
+      draft.file_id,
+    );
 
     const owner = await this.userIdForStudent(studentId);
-    const file = await this.files.finaliseUpload(owner, fileId);
-
-    try {
-      await this.prisma.submission.updateMany({
-        where: { id: draft.id },
-        data: { file_id: file.id, updated_at: new Date() },
-      });
-    } catch (error) {
-      this.logger.error(`Failed to attach file: ${(error as Error).message}`);
-      throw new BadRequestException('Failed to attach the file');
-    }
+    const file = await this.files.finaliseSubmissionUpload(owner, fileId);
+    await this.linkUploadedFile(
+      draft.id,
+      file.id,
+      activity.allow_multiple_files,
+    );
 
     return { fileId: file.id, name: file.name };
+  }
+
+  private async assertUploadCapacity(
+    submissionId: string,
+    allowMultipleFiles: boolean,
+    legacyFileId: string | null,
+  ) {
+    let attachedCount = await this.prisma.submission_file.count({
+      where: { submission_id: submissionId },
+    });
+    if (attachedCount === 0 && legacyFileId) attachedCount = 1;
+
+    const maxFiles = allowMultipleFiles ? MAX_SUBMISSION_FILES : 1;
+    if (attachedCount >= maxFiles) {
+      throw new BadRequestException(
+        allowMultipleFiles
+          ? `A submission can have at most ${MAX_SUBMISSION_FILES} files`
+          : 'This assignment allows only one file',
+      );
+    }
+  }
+
+  private async linkUploadedFile(
+    submissionId: string,
+    fileId: string,
+    allowMultipleFiles: boolean,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      // Serializes concurrent uploads before checking the per-submission cap.
+      const draft = await tx.submission.updateMany({
+        where: { id: submissionId, status: 'draft' },
+        data: { updated_at: new Date() },
+      });
+      if (draft.count === 0) {
+        throw new ConflictException('You have already submitted this');
+      }
+
+      const sortOrder = await tx.submission_file.count({
+        where: { submission_id: submissionId },
+      });
+      const legacyFile = await tx.submission.findUnique({
+        where: { id: submissionId },
+        select: { file_id: true },
+      });
+      const attachedCount = sortOrder || (legacyFile?.file_id ? 1 : 0);
+      const maxFiles = allowMultipleFiles ? MAX_SUBMISSION_FILES : 1;
+      if (attachedCount >= maxFiles) {
+        throw new BadRequestException(
+          allowMultipleFiles
+            ? `A submission can have at most ${MAX_SUBMISSION_FILES} files`
+            : 'This assignment allows only one file',
+        );
+      }
+
+      await tx.submission_file.create({
+        data: {
+          submission_id: submissionId,
+          file_id: fileId,
+          sort_order: attachedCount,
+        },
+      });
+      await tx.submission.updateMany({
+        where: { id: submissionId, file_id: null },
+        data: { file_id: fileId, updated_at: new Date() },
+      });
+    });
   }
 
   /** The login behind a student record, which owns anything they upload. */
@@ -526,13 +706,29 @@ export class SubmissionService {
   }
 
   /** The file a student handed in, for staff marking it. */
-  async readSubmissionFile(userId: string, submissionId: string) {
+  async readSubmissionFile(
+    userId: string,
+    submissionId: string,
+    requestedFileId?: string,
+  ) {
     const submission = await this.prisma.submission.findUnique({
       where: { id: submissionId },
-      select: { id: true, activity_id: true, file_id: true },
+      select: {
+        id: true,
+        activity_id: true,
+        file_id: true,
+        submission_file: { select: { file_id: true }, orderBy: { sort_order: 'asc' } },
+      },
     });
 
-    if (!submission?.file_id) {
+    const attachedFileIds = submission?.submission_file?.map(
+      ({ file_id }) => file_id,
+    ) ?? [];
+    if (submission?.file_id && attachedFileIds.length === 0) {
+      attachedFileIds.push(submission.file_id);
+    }
+    const fileId = requestedFileId ?? attachedFileIds[0];
+    if (!submission || !fileId || !attachedFileIds.includes(fileId)) {
       throw new NotFoundException('No file was handed in');
     }
 
@@ -541,7 +737,75 @@ export class SubmissionService {
     );
     await this.access.require(userId, courseId, STAFF_ROLES);
 
-    return this.files.readContentForAuthorisedCaller(submission.file_id);
+    return this.files.readContentForAuthorisedCaller(fileId);
+  }
+
+  async readSubmissionArchive(userId: string, submissionId: string) {
+    const submission = await this.prisma.submission.findUnique({
+      where: { id: submissionId },
+      select: {
+        id: true,
+        activity_id: true,
+        file_id: true,
+        activity: { select: { title: true, course_id: true } },
+        student: { select: { first_name: true, last_name: true } },
+        submission_file: {
+          select: {
+            file_id: true,
+            file: { select: { name: true } },
+          },
+          orderBy: { sort_order: 'asc' },
+        },
+      },
+    });
+    if (!submission) throw new NotFoundException('Submission not found');
+
+    await this.access.require(
+      userId,
+      submission.activity.course_id,
+      STAFF_ROLES,
+    );
+
+    const fileRows = submission.submission_file.length
+      ? submission.submission_file
+      : submission.file_id
+        ? [{ file_id: submission.file_id, file: { name: 'submission' } }]
+        : [];
+    if (fileRows.length === 0) {
+      throw new NotFoundException('No files were handed in');
+    }
+
+    const archive = new ZipArchive({ zlib: { level: 5 } });
+    const usedNames = new Set<string>();
+    for (const { file_id, file } of fileRows) {
+      const content = await this.files.readStreamForAuthorisedCaller(file_id);
+      const safeName =
+        basename(file.name.replaceAll('\\', '/')).replace(/\p{Cc}/gu, '_') ||
+        'submission-file';
+      const extension = safeName.includes('.')
+        ? safeName.slice(safeName.lastIndexOf('.'))
+        : '';
+      const stem = extension ? safeName.slice(0, -extension.length) : safeName;
+      let entryName = safeName;
+      let suffix = 2;
+      while (usedNames.has(entryName.toLocaleLowerCase())) {
+        entryName = `${stem} (${suffix++})${extension}`;
+      }
+      usedNames.add(entryName.toLocaleLowerCase());
+      archive.append(content.body, { name: entryName });
+    }
+
+    const studentName =
+      `${submission.student.first_name ?? ''} ${submission.student.last_name ?? ''}`.trim() ||
+      'Student';
+    const archiveName: string =
+      `${studentName} - ${submission.activity.title}`
+        .replace(/[\\/:*?"<>|\p{Cc}]/gu, '_')
+        .slice(0, 180) + '.zip';
+    void archive.finalize().catch((error: Error) => {
+      this.logger.error(`Failed to generate submission archive: ${error.message}`);
+    });
+    return { archive, archiveName };
   }
 
   /** Hand in an assignment: text, a file, or both. */
@@ -855,9 +1119,7 @@ export class SubmissionService {
         })
       : [];
 
-    const names = await this.fileNames(
-      submissions.map((s) => s.file_id as string),
-    );
+    const filesBySubmission = await this.submissionFilesById(submissions);
 
     return students
       .map((s) => {
@@ -872,8 +1134,10 @@ export class SubmissionService {
                 id: submission.id,
                 status: submission.status,
                 textBody: submission.text_body,
-                fileId: submission.file_id,
-                fileName: names.get(submission.file_id as string) ?? null,
+                fileId: filesBySubmission.get(submission.id)?.[0]?.id ?? null,
+                fileName:
+                  filesBySubmission.get(submission.id)?.[0]?.name ?? null,
+                files: filesBySubmission.get(submission.id) ?? [],
                 score:
                   submission.score === null
                     ? null

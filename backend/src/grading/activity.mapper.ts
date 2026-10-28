@@ -23,6 +23,7 @@ export const ACTIVITY_SELECT = {
   status: true,
   published_at: true,
   allow_file: true,
+  allow_multiple_files: true,
   allow_text: true,
   max_attempts: true,
   omit_from_final_grade: true,
@@ -69,6 +70,7 @@ export function toActivity(a: any) {
     status: a.status as ActivityStatus,
     publishedAt: ts(a.published_at),
     allowFile: !!a.allow_file,
+    allowMultipleFiles: !!a.allow_multiple_files,
     allowText: !!a.allow_text,
     // 0 rather than null over the wire: the editor shows a number, and
     // "unlimited" reads better as 0 than as an empty box.
