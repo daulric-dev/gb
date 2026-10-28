@@ -178,9 +178,16 @@ let errorCount = 0;
 
 const STREAM_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/chat/stream`;
 
+function closeStream() {
+  if (!source) return;
+  source.close();
+  source = null;
+}
+
 export function connectChat(userId: string) {
   currentUserId = userId;
-  if (source || typeof window === "undefined") return;
+  if (typeof window === "undefined") return;
+  if (source) return;
 
   void refreshConversations();
   void refreshChatUnread();
@@ -188,7 +195,9 @@ export function connectChat(userId: string) {
 
   // Reconcile presence periodically so a user whose replica crashed (no clean
   // offline event) still drops off within a minute, even while SSE is healthy.
-  presenceTimer = setInterval(() => void refreshPresence(), 45_000);
+  if (!presenceTimer) {
+    presenceTimer = setInterval(() => void refreshPresence(), 45_000);
+  }
 
   try {
     source = new EventSource(STREAM_URL, { withCredentials: true });
@@ -228,6 +237,7 @@ export function connectChat(userId: string) {
   });
 
   source.onerror = () => {
+    closeStream();
     chatConnected.value = false;
     errorCount += 1;
     if (errorCount >= 3) startPollingFallback();
@@ -235,8 +245,7 @@ export function connectChat(userId: string) {
 }
 
 export function disconnectChat() {
-  source?.close();
-  source = null;
+  closeStream();
   chatConnected.value = false;
   stopPollingFallback();
   if (presenceTimer) {

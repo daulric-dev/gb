@@ -25,7 +25,12 @@ export class RedisStore implements CacheInterface {
 
   dispose(): void {
     clearInterval(this.keepalive);
-    this.redis.close?.();
+    try {
+      this.redis.close?.();
+    } catch {
+      // Best effort: the process is already tearing down and the socket should
+      // not keep the worker alive.
+    }
   }
 
   async get(key: string): Promise<any> {

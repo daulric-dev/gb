@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Run Bun audit
+        run: bun audit
+
       # OSV-Scanner (Google)
       - name: Install OSV-Scanner
         run: bash .github/scripts/install-osv-scanner.sh
