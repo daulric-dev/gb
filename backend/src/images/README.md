@@ -2,10 +2,7 @@
 
 User avatars: upload, validation, storage and serving. Avatars are stored in object storage under `images/avatars/<userId>.<ext>`, and the public URL is written to `user_profile.avatar_url`. Every client renders that URL as a plain image source with no credentials.
 
-Uploads can go two ways:
-
-- **Through the API**: a multipart upload of at most 5 MB.
-- **Directly to storage**: a presigned PUT. The client asks for a URL, PUTs the bytes, then calls "complete", and the API checks what arrived. Anything rejected is deleted.
+Uploads go directly to storage with a presigned PUT; the API never receives the bytes in a request. The client asks for a URL, PUTs the image (at most 5 MB), then calls "complete", and the API checks what arrived. Anything rejected is deleted.
 
 Only JPEG, PNG and WebP are accepted. The declared type is never trusted alone: the leading bytes must match the format, which stops SVG or HTML from being smuggled in.
 
@@ -24,9 +21,8 @@ The signed-in avatar routes are declared in `src/auth/auth.controller.ts` and ca
 | Method | Path | Guard | Service call |
 | --- | --- | --- | --- |
 | GET | `/api/auth/avatar` | `AuthGuard` | `getImageFromUserProfile()`: the caller's own avatar bytes (`Cache-Control: private, max-age=3600`) |
-| POST | `/api/auth/avatar` | `AuthGuard` | `setImageToUserProfile()`: multipart upload; response through versioned transformer `images.uploaded` |
 | POST | `/api/auth/avatar/resumable` | `AuthGuard` | `createResumableUpload()`: body `CreateResumableUploadDto`; returns a presigned PUT ticket (`images.resumable`) |
-| POST | `/api/auth/avatar/complete` | `AuthGuard` | `completeResumableUpload()`: body `CompleteUploadDto`; validates the object and sets the avatar (`images.uploaded`) |
+| POST | `/api/auth/avatar/complete` | `AuthGuard` | `completeResumableUpload()`: body `CompleteUploadDto`; validates the object and sets the avatar; response through versioned transformer `images.uploaded` |
 
 ### Services / exports
 
@@ -34,7 +30,6 @@ The signed-in avatar routes are declared in `src/auth/auth.controller.ts` and ca
 
 - `getImageFromUserProfile(userId)`: looks up `avatar_url` (cached under `avatar:<userId>` for 1 hour), works out the object path, and streams it. The path can come from the old hosted-storage public URL or from the current URL shapes. It must match `avatars/<file>` with no traversal.
 - `readAvatar(path)`: reads `images/<path>` from storage, or returns null if the path is not a valid avatar path or nothing is there. Used by the public route.
-- `setImageToUserProfile(userId, file, requestOrigin?)`: checks size, MIME type and byte signature, stores the image, then updates the profile.
 - `createResumableUpload(userId, filename, contentType, totalSize)`: checks size and type, then returns `{ path, method: 'PUT', uploadUrl, headers, expiresAt }`. `path` is the staging key `uploads/avatars/<callerId>.<ext>`, which is never served. The URL is valid for 5 minutes and signs the Content-Type and the declared size (the PUT must be exactly `totalSize` bytes).
 - `completeResumableUpload(userId, path, requestOrigin?)`: the path must be exactly `uploads/avatars/<callerId>.<ext>`, so nobody can claim another user's object. It then checks size, type and byte signature (reading at most 5 MB), deletes the object on rejection, writes the verified bytes to `avatars/<callerId>.<ext>`, deletes the staged object and updates the profile. A still-valid upload URL therefore cannot change an avatar after it was checked.
 
@@ -49,8 +44,8 @@ After a successful upload the stored URL gets a `?t=<timestamp>` cache-buster. T
 - `src/auth/auth.module.ts` imports `ImagesModule`. `src/auth/auth.controller.ts` injects `ImagesService` and uses `CreateResumableUploadDto` and `CompleteUploadDto` for the avatar routes above.
 - `src/versioning/transformer-registry.ts` imports `@/images/transformer`.
 - `src/app.module.ts` imports `ImagesModule`, which registers the public route.
-- Front end: `frontend/app/dashboard/settings/page.tsx` uploads to `/auth/avatar`, and `frontend/app/portal/layout.tsx` renders `/api/auth/avatar`.
-- Mobile: `mobile/app/(tabs)/settings.tsx` uploads to `/auth/avatar`.
+- Front end: `frontend/app/dashboard/settings/page.tsx` uploads through `uploadAvatar()` in `frontend/lib/files/upload.ts` (ticket, PUT, complete), and `frontend/app/portal/layout.tsx` renders `/api/auth/avatar`.
+- Mobile: `mobile/app/(tabs)/settings.tsx` uploads through `uploadAvatar()` in `mobile/src/lib/upload.ts`.
 - Every client that shows another user's picture uses the stored `avatar_url`, which points at `/api/images/avatars/...` or the CDN.
 
 ## Depends on
@@ -88,7 +83,7 @@ The storage backend itself is configured by `src/storage`.
 `cd backend && bun test src/images`. Covers:
 
 - Path checks on complete: own path only; no other user, outside `avatars/`, traversal, smuggled query strings or empty paths.
-- Content-type and signature checks for PNG, JPEG and WebP, including mismatched and too-short buffers and oversize files.
+- Content-type and signature checks on complete for PNG, JPEG and WebP, including a missing or disallowed type, mismatched and too-short objects, and an oversize object (deleted without being read); the ticket refuses oversize and non-image declarations.
 - Hardening of the stored URL on read.
 - The new avatar URL shape, the presigned PUT ticket, and completion rejecting a bad or missing object.
 

@@ -86,23 +86,23 @@ export class StudentPortalController {
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @Res() reply: FastifyReply,
   ) {
-    const { buffer, contentType, filename } = await this.portal.getCourseFile(
+    const { body, size, contentType, filename } = await this.portal.getCourseFile(
       req.student!,
       courseId,
       fileId,
     );
+    if (size !== null) reply.header('Content-Length', size);
     return reply
       .header('Content-Type', contentType ?? 'application/octet-stream')
       .header(
         'Content-Disposition',
         `inline; filename*=UTF-8''${encodeURIComponent(filename ?? 'file')}`,
       )
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
       // Teacher-uploaded content on the API origin: never sniff it into HTML.
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', 'sandbox')
-      .send(buffer);
+      .send(body);
   }
 
   @Get('courses/:courseId/announcements')

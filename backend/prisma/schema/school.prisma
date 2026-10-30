@@ -80,6 +80,7 @@ model push_device {
   @@schema("public")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school {
   id                                          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -93,6 +94,8 @@ model school {
   created_at                                  DateTime?             @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
   updated_at                                  DateTime?             @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
   owner_id                                    String?               @db.Uuid
+  /// Largest upload in MB; null follows UPLOAD_DEFAULT_MB. Capped by UPLOAD_MAX_MB in the app.
+  max_upload_mb                               Int?
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]

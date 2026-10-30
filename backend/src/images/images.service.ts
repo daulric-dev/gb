@@ -7,7 +7,6 @@ import {
 import { objectKey } from '@/storage/keys';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
-import { MultipartFile } from '@fastify/multipart';
 
 @Injectable()
 export class ImagesService {
@@ -169,64 +168,6 @@ export class ImagesService {
     ) {
       throw new BadRequestException('Upload path does not belong to caller');
     }
-  }
-
-  // ── Standard upload (small files, backend-mediated) ─────────────────
-
-  async setImageToUserProfile(
-    userId: string,
-    file: MultipartFile,
-    requestOrigin?: string,
-  ) {
-    const buffer = await file.toBuffer();
-
-    if (buffer.byteLength > ImagesService.MAX_FILE_SIZE) {
-      throw new BadRequestException(
-        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`,
-      );
-    }
-
-    if (
-      !file.mimetype ||
-      !ImagesService.ALLOWED_TYPES.includes(file.mimetype)
-    ) {
-      throw new BadRequestException(
-        `Invalid file type "${file.mimetype ?? 'unknown'}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
-      );
-    }
-
-    // Don't trust the client-declared mimetype: confirm the actual bytes are
-    // one of the allowed image formats (prevents smuggling e.g. SVG/HTML).
-    if (!ImagesService.matchesImageSignature(buffer, file.mimetype)) {
-      throw new BadRequestException(
-        'File content does not match an allowed image format',
-      );
-    }
-
-    const ext = this.safeExtension(file.filename);
-    const path = this.buildPath(userId, ext);
-
-    this.logger.log(
-      `Uploading avatar to "${objectKey(ImagesService.BUCKET, path)}" (${buffer.byteLength} bytes, ${file.mimetype})`,
-    );
-
-    try {
-      await this.storage.put(
-        objectKey(ImagesService.BUCKET, path),
-        buffer,
-        file.mimetype,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to upload avatar at path "${path}": ${(error as Error).message}`,
-      );
-      throw new BadRequestException('Failed to upload image');
-    }
-
-    const avatarUrl = this.cacheBust(this.publicUrl(path, requestOrigin));
-    await this.updateProfileAvatar(userId, avatarUrl);
-
-    return { avatar_url: avatarUrl };
   }
 
   // ── Direct upload (presigned PUT) ───────────────────────────────────

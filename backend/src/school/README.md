@@ -17,6 +17,8 @@ The controller has `@UseGuards(AuthGuard, PermissionGuard)`, so every route need
 | GET | `/api/schools` | Any signed-in user | Active schools (`id`, `name`, `school_type`), sorted by name. Cached under `schools:all` for 30 days. Versioned as `school.list`. |
 | GET | `/api/schools/my-pending-request` | Any signed-in user | The caller's pending join request, or null. |
 | GET | `/api/schools/members` | `@RequirePermission('school', 'read')` | Members of the caller's active school with their base role, owner flag and custom (non-system) roles. |
+| GET | `/api/schools/current/upload-limit` | Any signed-in user (students too) | The active school's upload limit: `{ uploadLimitBytes, uploadLimitMb, maxUploadMb, platformMaxMb, platformDefaultMb }`. `maxUploadMb` is the school's own setting (null = platform default). 400 without an active school. Versioned as `school.uploadLimit`. |
+| PATCH | `/api/schools/current/upload-limit` | `@RequirePermission('school', 'update')` | Body `{ maxUploadMb: number \| null }` (`UpdateUploadLimitDto`); null returns the school to the default. Above `UPLOAD_MAX_MB` is a 400 naming that limit. Returns the same shape as the GET. Resolution and caching are in `UploadLimitService` ([`src/file-manager`](../file-manager/README.md)). |
 | POST | `/api/schools/leave` | Any signed-in user | Leave the active school. Refused for the school owner and for the only admin. Deletes the membership and pending requests and clears the profile's school and role. |
 | DELETE | `/api/schools/members/:membershipId` | `AdminGuard` | Remove a member of the admin's school. The owner and the admin themself cannot be removed. Removal, detaching the user and a `school_membership` entry in the [erasure log](../erasure/README.md) commit together (leaving a school logs one too). |
 | POST | `/api/schools/members/:membershipId/sessions/revoke` | `AdminGuard` | Sign a staff member of the admin's school out of every device, at once (`SessionService.revokeAll(userId, 'admin')`); returns `{ revoked }`. A membership of another school is a 404; only the owner can sign the owner out (403). Logged at info level, not in the erasure log (nothing is erased). |
@@ -34,14 +36,14 @@ Other routes under `/api/schools/...` live elsewhere: `/api/schools/join-code` i
 
 ### Other
 
-- `transformer.ts` - `v1SchoolList` and `v1SchoolDetail`, registered by `src/versioning/transformer-registry.ts` as `school.list` / `school.detail`. Both are pass-through today.
+- `transformer.ts` - `v1SchoolList`, `v1SchoolDetail` and `v1SchoolUploadLimit`, registered by `src/versioning/transformer-registry.ts` as `school.list` / `school.detail` / `school.uploadLimit`. All are pass-through today.
 
 ## Used by
 
-- `src/app.module.ts` imports `SchoolModule`. No other module imports it or injects `SchoolService`; `src/auth/auth.service.ts` only refers to `SchoolService.create` in comments (the creator-is-admin rule).
+- `src/app.module.ts` imports `SchoolModule`, which imports `FileManagerModule` for `UploadLimitService`. No other module imports it or injects `SchoolService`; `src/auth/auth.service.ts` only refers to `SchoolService.create` in comments (the creator-is-admin rule).
 - `src/versioning/transformer-registry.ts` imports `./transformer`.
-- Web: `frontend/app/schools/page.tsx` (list, create, my pending request, request to join), `frontend/app/dashboard/staff/page.tsx` and `staff/_components/PendingRequestsTab.tsx` (members, join requests, approve, reject, remove), `frontend/app/dashboard/_components/AdminDashboard.tsx` (join requests), `frontend/app/dashboard/settings/page.tsx` (leave), and the member pickers in `dashboard/files/_components/ShareDialog.tsx` and `dashboard/courses/[courseId]/people/_components/AddStaffDialog.tsx`.
-- Mobile: `mobile/app/(auth)/schools.tsx`, `mobile/app/staff/index.tsx`, `mobile/src/features/staff/PendingRequests.tsx`, `mobile/src/features/dashboard/AdminDashboard.tsx`, `mobile/src/features/files/ShareSheet.tsx`, `mobile/app/(tabs)/settings.tsx` (leave).
+- Web: `frontend/app/schools/page.tsx` (list, create, my pending request, request to join), `frontend/app/dashboard/staff/page.tsx` and `staff/_components/PendingRequestsTab.tsx` (members, join requests, approve, reject, remove), `frontend/app/dashboard/_components/AdminDashboard.tsx` (join requests), `frontend/app/dashboard/settings/page.tsx` (leave) and `settings/_components/upload-limit-settings.tsx` (upload limit), `frontend/lib/files/upload-limit.ts` (upload limit pre-check), and the member pickers in `dashboard/files/_components/ShareDialog.tsx` and `dashboard/courses/[courseId]/people/_components/AddStaffDialog.tsx`.
+- Mobile: `mobile/app/(auth)/schools.tsx`, `mobile/app/staff/index.tsx`, `mobile/src/features/staff/PendingRequests.tsx`, `mobile/src/features/dashboard/AdminDashboard.tsx`, `mobile/src/features/files/ShareSheet.tsx`, `mobile/app/(tabs)/settings.tsx` (leave), `mobile/src/lib/upload-limit.ts` (upload limit pre-check).
 - Scripts: `scripts/student-flow-check.ts` checks that a student is denied `GET /schools/members`.
 
 ## Depends on
@@ -53,14 +55,14 @@ Other routes under `/api/schools/...` live elsewhere: `/api/schools/join-code` i
 
 Tables in [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma) (Postgres schema `public`):
 
-- `school` - read, created.
+- `school` - read, created; `max_upload_mb` updated through `UploadLimitService`.
 - `school_management` - created, upserted, deleted, counted.
 - `school_management_role` - created on approval; read for member lists.
 - `school_role` - read to validate custom role ids (must belong to the school and not be a system role).
 - `school_join_request` - created, read, updated (approve / reject), deleted on leave.
 - `user_profile` - read; `school_id`, `role`, `is_active` updated.
 
-Cache keys: `schools:all` (30 days, appended to on create) and `profile:<userId>` (deleted on create, approve, leave, remove).
+Cache keys: `upload-limit:<schoolId>` (60 seconds, owned by `UploadLimitService`), `schools:all` (30 days, appended to on create) and `profile:<userId>` (deleted on create, approve, leave, remove).
 
 ## Configuration
 

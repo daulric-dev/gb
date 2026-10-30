@@ -24,11 +24,10 @@ All paths start with `/api/auth`. "Public" means no guard, though the routes are
 | POST | `/api/auth/sessions/revoke-others` | `AuthGuard` | Signs out every other session of the caller (`{ revoked }`). |
 | POST | `/api/auth/sessions/revoke-all` | `AuthGuard` | Signs out every session including this one and clears the cookie (`{ revoked }`). |
 | GET | `/api/auth/avatar` | `AuthGuard` | Streams the caller's avatar image (`ImagesService.getImageFromUserProfile`), cached privately for an hour. |
-| POST | `/api/auth/avatar` | `AuthGuard` | Multipart avatar upload (`ImagesService.setImageToUserProfile`). |
-| POST | `/api/auth/avatar/resumable` | `AuthGuard` | Starts a resumable avatar upload (`CreateResumableUploadDto` from `src/images/dto`). |
-| POST | `/api/auth/avatar/complete` | `AuthGuard` | Finishes a resumable upload (`CompleteUploadDto`). |
+| POST | `/api/auth/avatar/resumable` | `AuthGuard` | Starts an avatar upload: a presigned PUT ticket straight to storage (`CreateResumableUploadDto` from `src/images/dto`). |
+| POST | `/api/auth/avatar/complete` | `AuthGuard` | Checks the uploaded image and sets it as the avatar (`CompleteUploadDto`). |
 
-The three avatar upload routes act on the signed-in user (`req.user.id`, set by `AuthGuard`); the caller cannot name another user.
+Avatar bytes never pass through the API: the client PUTs them to the presigned URL between these two calls. Both upload routes act on the signed-in user (`req.user.id`, set by `AuthGuard`); the caller cannot name another user.
 
 Responses go through `VersioningService.resolve()` with the `auth.*` transformers (`profile`, `verifyOtp`, `message`) and `images.*` for the uploads.
 

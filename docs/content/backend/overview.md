@@ -77,7 +77,7 @@ The app bootstrap logic lives in `src/createApp.ts`; `src/main.ts` is its only c
 - **Swagger**: Available at `/docs`
 - **Validation**: Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform` enabled
 - **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
-- **Multipart**: `@fastify/multipart` with 100MB file size limit
+- **No multipart parser**: no route accepts file bytes; clients upload straight to storage with presigned URLs
 
 `createApp()` calls `app.init()` but does **not** call `app.listen()`. `src/main.ts` calls `createApp()` then `app.listen()` on `PORT` (default 3001), bound to `0.0.0.0`.
 

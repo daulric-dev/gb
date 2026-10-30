@@ -56,16 +56,9 @@ async function login(email: string): Promise<Call> {
       headers: {
         cookie,
         'X-API-Version': '1',
-        ...(body !== undefined && !(body instanceof FormData)
-          ? { 'content-type': 'application/json' }
-          : {}),
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },
-      body:
-        body instanceof FormData
-          ? body
-          : body !== undefined
-            ? JSON.stringify(body)
-            : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const text = await r.text();
     let parsed: any = text;
@@ -80,6 +73,19 @@ async function login(email: string): Promise<Call> {
 
 const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
 const isDateOnly = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/**
+ * Upload a small text file the way clients do: ticket, PUT straight to
+ * storage, complete. Answers with the complete call's response.
+ */
+async function uploadText(call: Call, name: string, text: string) {
+  const bytes = new TextEncoder().encode(text);
+  const ticket = await call('POST', '/files/upload-ticket', { name, sizeBytes: bytes.byteLength, contentType: 'text/plain' });
+  if (ticket.status !== 201) return ticket;
+  const put = await fetch(ticket.data.uploadUrl, { method: 'PUT', headers: ticket.data.headers, body: bytes });
+  if (!put.ok) return { status: put.status, data: await put.text(), headers: put.headers };
+  return call('POST', `/files/upload-ticket/${ticket.data.fileId}/complete`);
+}
 
 async function main() {
   const teacher = await login('teacher@demo.test');
@@ -109,9 +115,7 @@ async function main() {
   check('modules with items', modules.status === 200 && modules.data[0]?.items?.length > 0, modules.data);
   // A file linked from a published module opens for an enrolled student
   // (students hold no file-manager permission, so this goes through the portal).
-  const form = new FormData();
-  form.append('file', new Blob(['smoke'], { type: 'text/plain' }), 'smoke.txt');
-  const uploaded = await teacher('POST', '/files?name=smoke.txt', form);
+  const uploaded = await uploadText(teacher, 'smoke.txt', 'smoke');
   check('teacher uploads a file', uploaded.status === 201 && !!uploaded.data.id, uploaded.data);
   const publishedModule = modules.data.find((m: any) => m.isPublished ?? m.is_published);
   if (uploaded.data?.id && publishedModule) {
@@ -710,9 +714,7 @@ async function erasureChecks(teacher: Call, ta: Call) {
   const [{ now: since }] = await db.$queryRaw<{ now: Date }[]>`SELECT now() AS now`;
   const teacherId = (await teacher('GET', '/auth/me')).data.id as string;
   const taId = (await ta('GET', '/auth/me')).data.id as string;
-  const form = new FormData();
-  form.append('file', new Blob(['erase me'], { type: 'text/plain' }), 'smoke-erasure.txt');
-  const up = await teacher('POST', '/files?name=smoke-erasure.txt', form);
+  const up = await uploadText(teacher, 'smoke-erasure.txt', 'erase me');
   const conv = await teacher('POST', '/chat/conversations', { userId: taId });
   const msg = conv.data?.id ? await teacher('POST', `/chat/conversations/${conv.data.id}/messages`, { body: 'smoke erasure message' }) : conv;
   check('erasure: fixtures (file, chat message)', up.status === 201 && msg.status === 201, [up.data, msg.data]);

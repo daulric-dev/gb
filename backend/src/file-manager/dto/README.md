@@ -1,6 +1,6 @@
 # File manager DTOs (`src/file-manager/dto`)
 
-Request bodies and query strings for `file-manager.controller.ts`. They are validated by the global `ValidationPipe`. The service then enforces what depends on data: ownership, folder existence, the 10 MB limit, the allowed types and the byte checks.
+Request bodies and query strings for `file-manager.controller.ts`. They are validated by the global `ValidationPipe`. The service then enforces what depends on data: ownership, folder existence, the school's upload limit, the allowed types and the byte checks.
 
 | File | Defines | Used by | Validation |
 | --- | --- | --- | --- |
@@ -14,9 +14,7 @@ Request bodies and query strings for `file-manager.controller.ts`. They are vali
 | `move-file.dto.ts` | `MoveFileDto` | `PATCH /api/files/:id/move` | `folderId`: UUID, or `null` for the root |
 | `share-file.dto.ts` | `ShareFileDto`, `ShareTargetDto`, `SharePrincipalType` | `POST /api/files/:id/shares` | `shares`: at least 1 target, validated as nested objects. Each target: `principalType` `user`, `role` or `course`; `principalId` a UUID (a `user_profile`, `school_role` or `course` id); `canDownload` an optional boolean (default view-only). |
 | `update-share.dto.ts` | `UpdateShareDto` | `PATCH /api/files/:id/shares/:shareId` | `canDownload`: boolean |
-| `upload-ticket.dto.ts` | `CreateUploadTicketDto` | `POST /api/files/upload-ticket`, and `src/student-portal/portal-activity.controller.ts` for student hand-ins | `name`: non-empty, at most 255. `sizeBytes`: int, 1 to 10 MB. `contentType`: non-empty, at most 255. `folderId`: optional UUID. Every field is checked again against the stored bytes on completion. |
-
-The multipart `POST /api/files` route takes `name` and `folderId` as plain query parameters, with no DTO.
+| `upload-ticket.dto.ts` | `CreateUploadTicketDto` | `POST /api/files/upload-ticket`, and `src/student-portal/portal-activity.controller.ts` for student hand-ins | `name`: non-empty, at most 255. `sizeBytes`: int, 1 byte to 1000 MB (the DB range); the service then refuses anything above the school's upload limit. `contentType`: non-empty, at most 255. `folderId`: optional UUID. Every field is checked again against the stored bytes on completion. |
 
 ## Adding a DTO
 

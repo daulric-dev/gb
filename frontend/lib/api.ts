@@ -107,24 +107,6 @@ export async function api<T = unknown>(
   }
 }
 
-export async function apiUpload<T = unknown>(
-  path: string,
-  formData: FormData,
-): Promise<T> {
-  const res = await fetchOrThrow(buildUrl(path), {
-    method: "POST",
-    headers: { "X-API-Version": "1" },
-    body: formData,
-    credentials: "include",
-  });
-
-  if (res.status === 401) handleUnauthorized(false);
-
-  if (!res.ok) throw await errorFrom(res);
-
-  return res.json();
-}
-
 export class ApiError extends Error {
   constructor(
     public status: number,

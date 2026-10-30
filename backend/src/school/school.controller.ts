@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -21,6 +22,10 @@ import { VersioningService } from '@/versioning/versioning.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { CreateJoinRequestDto } from './dto/create-join-request.dto';
 import { ApproveJoinRequestDto } from './dto/approve-join-request.dto';
+import { UpdateUploadLimitDto } from './dto/update-upload-limit.dto';
+import { UploadLimitService } from '@/file-manager/upload-limit.service';
+import { userSchoolId } from '@/common/user-school';
+import { PrismaService } from '@/prisma/prisma.service';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
@@ -30,6 +35,8 @@ export class SchoolController {
   constructor(
     private readonly schoolService: SchoolService,
     private readonly versioning: VersioningService,
+    private readonly uploadLimits: UploadLimitService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -52,6 +59,28 @@ export class SchoolController {
   async getMembers(@Req() req: any) {
     const userId: string = req.user.id;
     return this.schoolService.getMembers(userId);
+  }
+
+  /**
+   * The active school's upload limit, so clients can refuse an oversized file
+   * before asking for a ticket. Any signed-in member (students upload too).
+   */
+  @Get('current/upload-limit')
+  async getUploadLimit(@Req() req: any) {
+    const userId: string = req.user.id;
+    const schoolId = await this.activeSchool(userId);
+    const raw = await this.uploadLimits.forSchool(schoolId);
+    return this.versioning.resolve(req, 'school.uploadLimit')(raw);
+  }
+
+  /** Set the active school's upload limit; null returns it to the default. */
+  @RequirePermission('school', 'update')
+  @Patch('current/upload-limit')
+  async updateUploadLimit(@Req() req: any, @Body() dto: UpdateUploadLimitDto) {
+    const userId: string = req.user.id;
+    const schoolId = await this.activeSchool(userId);
+    const raw = await this.uploadLimits.setForSchool(schoolId, dto.maxUploadMb);
+    return this.versioning.resolve(req, 'school.uploadLimit')(raw);
   }
 
   @Post('leave')
@@ -128,5 +157,13 @@ export class SchoolController {
   ) {
     const userId: string = req.user.id;
     return this.schoolService.createJoinRequest(userId, schoolId, dto.message);
+  }
+
+  private async activeSchool(userId: string): Promise<string> {
+    const schoolId = await userSchoolId(this.prisma, userId);
+    if (!schoolId) {
+      throw new BadRequestException('You are not assigned to a school');
+    }
+    return schoolId;
   }
 }

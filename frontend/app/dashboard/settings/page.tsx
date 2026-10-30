@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, apiUpload, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { uploadAvatar, UploadError } from "@/lib/files/upload";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { AvatarCropDialog } from "@/components/dashboard/avatar-crop-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -27,6 +28,7 @@ import {
 import { Camera, Loader2, Trash2 } from "lucide-react";
 import type { Profile } from "./_components/types";
 import { BillingSettingsLink } from "./_components/billing-link";
+import { UploadLimitSettings } from "./_components/upload-limit-settings";
 import { SignedInDevices } from "@/components/account/signed-in-devices";
 
 export default function SettingsPage() {
@@ -145,15 +147,15 @@ export default function SettingsPage() {
   async function handleCropConfirm(blob: Blob) {
     uploading.value = true;
     try {
-      const formData = new FormData();
-      formData.append("file", blob, "avatar.jpg");
-      const result = await apiUpload<{ avatar_url: string }>("/auth/avatar", formData);
-      avatarUrl.value = result.avatar_url;
+      avatarUrl.value = await uploadAvatar(blob, "avatar.jpg");
       toast.success("Profile picture updated");
       cropOpen.value = false;
       cropSrc.value = null;
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to upload image";
+      const message =
+        err instanceof ApiError || err instanceof UploadError
+          ? err.message
+          : "Failed to upload image";
       toast.error(message);
     } finally {
       uploading.value = false;
@@ -196,6 +198,8 @@ export default function SettingsPage() {
       />
 
       <BillingSettingsLink />
+
+      <UploadLimitSettings />
 
       <Card className="p-6">
         <h2 className="text-lg font-semibold">Profile Picture</h2>

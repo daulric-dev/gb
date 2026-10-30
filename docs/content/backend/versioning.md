@@ -158,7 +158,7 @@ All modules have v1 transformers registered:
 | Module | Namespaces |
 |--------|------------|
 | auth | `profile`, `session`, `verifyOtp`, `message` |
-| school | `list`, `detail` |
+| school | `list`, `detail`, `uploadLimit` |
 | student | `list`, `detail`, `updated`, `paginated` |
 | class | `list`, `detail`, `created`, `updated`, `deleted`, `teachers`, `teacherAdded`, `teacherRemoved`, `subjects` |
 | academicYear | `list`, `detail`, `created`, `updated` |

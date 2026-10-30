@@ -25,6 +25,7 @@ export class TransformerRegistry implements OnModuleInit {
     this.versioning.registerAll('school', {
       list: { 1: school.v1SchoolList },
       detail: { 1: school.v1SchoolDetail },
+      uploadLimit: { 1: school.v1SchoolUploadLimit },
     });
 
     this.versioning.registerAll('student', {

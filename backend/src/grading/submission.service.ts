@@ -16,7 +16,6 @@ import {
   CourseAccessService,
   STAFF_ROLES,
 } from '@/course/access/course-access.service';
-import type { MultipartFile } from '@fastify/multipart';
 import {
   ACTIVITY_ORDER,
   ACTIVITY_SELECT,
@@ -517,48 +516,13 @@ export class SubmissionService {
   }
 
   /**
-   * Attach a file to the draft, uploading it as the student's own.
+   * Start a direct upload for the draft, as the student's own file.
    *
    * Students hold no catalog permissions, so they cannot reach the file
    * manager's own endpoints; this is the one way in, and it only ever writes
-   * to their own draft for an activity set to their class.
+   * to their own draft for an activity set to their class. Uploading as the
+   * student's own user means the usual checks and ownership all apply.
    */
-  async attachFile(studentId: string, activityId: string, file: MultipartFile) {
-    const activity = await this.requireSubmittable(studentId, activityId);
-
-    if (activity.kind !== 'assignment') {
-      throw new BadRequestException('This is not an assignment');
-    }
-    if (!activity.allow_file) {
-      throw new BadRequestException('This assignment does not accept files');
-    }
-    if (activity.status !== 'published') {
-      throw new ConflictException('This assignment is closed');
-    }
-
-    const draft = await this.ensureDraft(studentId, activityId);
-    if (draft.status !== 'draft') {
-      throw new ConflictException('You have already submitted this');
-    }
-    await this.assertUploadCapacity(
-      draft.id,
-      activity.allow_multiple_files,
-      draft.file_id,
-    );
-
-    // Uploading as the student's own user means the usual scanning, quotas and
-    // ownership all apply; nothing here bypasses the file manager.
-    const owner = await this.userIdForStudent(studentId);
-    const uploaded = await this.files.uploadSubmissionManual(owner, file);
-    await this.linkUploadedFile(
-      draft.id,
-      uploaded.id,
-      activity.allow_multiple_files,
-    );
-
-    return { fileId: uploaded.id, name: uploaded.name };
-  }
-
   async createUploadTicket(
     studentId: string,
     activityId: string,
@@ -588,7 +552,11 @@ export class SubmissionService {
     );
 
     const owner = await this.userIdForStudent(studentId);
-    return this.files.createSubmissionUploadTicket(owner, input);
+    return this.files.createSubmissionUploadTicket(
+      owner,
+      input,
+      await this.courseSchoolId(activity.course_id),
+    );
   }
 
   async finaliseUploadedFile(
@@ -693,6 +661,15 @@ export class SubmissionService {
   }
 
   /** The login behind a student record, which owns anything they upload. */
+  /** Whose upload limit a hand-in is held to: the course's school. */
+  private async courseSchoolId(courseId: string): Promise<string | undefined> {
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: { school_id: true },
+    });
+    return course?.school_id ?? undefined;
+  }
+
   private async userIdForStudent(studentId: string): Promise<string> {
     const data = await this.prisma.student.findUnique({
       where: { id: studentId },

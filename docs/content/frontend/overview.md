@@ -97,7 +97,7 @@ frontend/
 │       ├── sonner.tsx
 │       └── tooltip.tsx
 ├── lib/
-│   ├── api.ts                     # API client (cookie auth, 401 → /login) and multipart upload
+│   ├── api.ts                     # API client (cookie auth, 401 → /login)
 │   ├── utils.ts                   # cn() utility for class merging
 │   ├── use-profile.ts            # Profile fetching hook
 │   └── reports/                   # Report-related utilities (barrel-exported via index.ts)

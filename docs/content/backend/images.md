@@ -6,7 +6,7 @@ sidebar_label: Images
 
 **Location**: `backend/src/images/`
 
-The images module provides image upload and retrieval services for the application. It handles both standard (backend-mediated) uploads and direct uploads (presigned S3 `PUT`) to object storage via `StorageService`. Its own `ImagesController` serves the public avatar route `GET /api/images/avatars/:file`; the upload endpoints live on `AuthController`, which uses the exported `ImagesService` for avatar management.
+The images module provides image upload and retrieval services for the application. Avatars are uploaded directly to object storage with a presigned S3 `PUT` (via `StorageService`); no route accepts the image bytes through the API. Its own `ImagesController` serves the public avatar route `GET /api/images/avatars/:file`; the upload endpoints live on `AuthController`, which uses the exported `ImagesService` for avatar management.
 
 ## Files
 
@@ -25,7 +25,6 @@ The images module provides image upload and retrieval services for the applicati
 AuthController (auth/auth.controller.ts)
   │
   ├── GET  /auth/avatar          → ImagesService.getImageFromUserProfile()
-  ├── POST /auth/avatar          → ImagesService.setImageToUserProfile()
   ├── POST /auth/avatar/resumable → ImagesService.createResumableUpload()
   └── POST /auth/avatar/complete  → ImagesService.completeResumableUpload()
 
@@ -38,28 +37,17 @@ The `ImagesModule` exports `ImagesService` and is imported by `AuthModule`. This
 
 ## Upload Methods
 
-### Standard Upload (Small Files)
-
-For files under 5MB. The entire file passes through the backend.
-
-1. Client sends `multipart/form-data` to `POST /auth/avatar`
-2. Backend reads the file buffer, validates size, MIME type, and magic-byte signature
-3. Writes the object to storage at key `images/avatars/{userId}.{ext}` via `StorageService.put` (overwriting any previous avatar)
-4. Generates a cache-busted public URL (`?t={timestamp}`)
-5. Updates `user_profile.avatar_url` in the database
-6. Updates the avatar and profile caches
-
 ### Direct Upload (Presigned PUT)
 
-The file uploads directly from the client to object storage - no data passes through the backend. (The endpoint keeps its historical `resumable` name.)
+This is the only way to set an avatar. The file uploads directly from the client to object storage - no data passes through the backend in a request. (The endpoint keeps its historical `resumable` name.) The web app (`uploadAvatar()` in `frontend/lib/files/upload.ts`) and the mobile app (`uploadAvatar()` in `mobile/src/lib/upload.ts`) both use it.
 
 **Flow:**
 1. Client calls `POST /auth/avatar/resumable` with file metadata
-2. Backend validates size/type and creates a presigned `PUT` URL via `StorageService.uploadUrl` (valid 15 minutes; signed for `S3_PUBLIC_ENDPOINT` when set)
+2. Backend validates size/type and creates a presigned `PUT` URL for the staging key `images/uploads/avatars/{userId}.{ext}` via `StorageService.uploadUrl` (valid 5 minutes, signed for the declared type and size; signed for `S3_PUBLIC_ENDPOINT` when set)
 3. Returns `{ path, method, uploadUrl, headers, expiresAt }`
 4. Client `PUT`s the bytes to `uploadUrl` with exactly the returned `Content-Type` header
-5. Client calls `POST /auth/avatar/complete` with the storage path
-6. Backend checks the path belongs to the caller, verifies the object exists, and re-checks its size, content type and **magic-byte signature** (deleting + rejecting it on failure, since the bytes never passed through the backend during upload), then updates the profile
+5. Client calls `POST /auth/avatar/complete` with the returned `path`
+6. Backend checks the path belongs to the caller, verifies the object exists, and re-checks its size, content type and **magic-byte signature** (deleting + rejecting it on failure, since the bytes never passed through the backend during upload), writes the checked bytes to `images/avatars/{userId}.{ext}`, deletes the staged object, then updates `user_profile.avatar_url` and the avatar and profile caches
 
 ## Validation
 
@@ -69,7 +57,7 @@ The file uploads directly from the client to object storage - no data passes thr
 | Allowed types | `image/jpeg`, `image/png`, `image/webp` |
 | Storage area | `images` (object key prefix) |
 | Path | `avatars/{userId}.{ext}` |
-| Presigned URL lifetime | 15 minutes |
+| Presigned URL lifetime | 5 minutes |
 
 ## Cache-Busting
 
