@@ -134,7 +134,7 @@ describe('file and folder delete', () => {
   test('a file soft delete is logged in its transaction', async () => {
     const s = setup();
     s.prisma.file.findFirst.mockResolvedValue({ id: SUBJECT, owner_id: USER, school_id: SCHOOL, name: 'report-card.pdf' });
-    const svc = new FileManagerService(s.storage as any, s.prisma as any, {} as any, {} as any, {} as any, {} as any, s.erasure);
+    const svc = new FileManagerService(s.storage as any, s.prisma as any, {} as any, {} as any, {} as any, {} as any, s.erasure, {} as any, {} as any);
     await svc.softDelete(USER, SUBJECT);
     expect(s.tx.file.updateMany.mock.calls[0][0].where).toEqual({ id: SUBJECT });
     expect(loggedEntry(s.prisma, s.tx)).toMatchObject({ kind: 'file', subject_ids: [SUBJECT], school_id: SCHOOL });
@@ -142,7 +142,7 @@ describe('file and folder delete', () => {
     const f = setup();
     f.prisma.file.findFirst.mockResolvedValue({ id: SUBJECT, owner_id: USER, school_id: SCHOOL });
     failLog(f.tx);
-    const svc2 = new FileManagerService(f.storage as any, f.prisma as any, {} as any, {} as any, {} as any, {} as any, f.erasure);
+    const svc2 = new FileManagerService(f.storage as any, f.prisma as any, {} as any, {} as any, {} as any, {} as any, f.erasure, {} as any, {} as any);
     await expectRejection(svc2.softDelete(USER, SUBJECT));
   });
 

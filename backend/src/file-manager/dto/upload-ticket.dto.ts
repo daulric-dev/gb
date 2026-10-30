@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { MB, SCHOOL_UPLOAD_MB_RANGE } from '../upload-limit.config';
 
 /**
  * What the client declares before a direct upload starts. Every field is
@@ -27,7 +28,9 @@ export class CreateUploadTicketDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100 * 1024 * 1024)
+  // Only the outer bound: the school's own limit (and the platform ceiling,
+  // which can change with the env) is checked by the service.
+  @Max(SCHOOL_UPLOAD_MB_RANGE.max * MB)
   sizeBytes!: number;
 
   @ApiProperty({ example: 'application/pdf' })

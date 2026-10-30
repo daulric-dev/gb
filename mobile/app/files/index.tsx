@@ -3,7 +3,9 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { ChevronRight, FolderClosed, FolderPlus, Upload } from "lucide-react-native";
-import { api, apiUpload, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { uploadMyFile } from "@/lib/upload";
+import { uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
@@ -26,9 +28,6 @@ import type {
   FolderContents,
   FolderItem,
 } from "@/features/files/types";
-
-const MAX_SIZE_IN_MB = 100
-const MAX_SIZE = MAX_SIZE_IN_MB * 1024 * 1024;
 
 const TABS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
@@ -54,6 +53,8 @@ export default function FilesScreen() {
   const { profile } = useAuth();
   const currentUserId = profile?.id;
   const canCreate = can("file", "create");
+  // The school's limit, to refuse a large file before asking for a ticket.
+  const uploadLimit = useUploadLimit();
 
   const [tab, setTab] = useState<Filter>("all");
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -142,28 +143,28 @@ export default function FilesScreen() {
     if (result.canceled) return;
     const asset = result.assets[0];
     if (!asset) return;
-    if (asset.size && asset.size > MAX_SIZE) {
-      toast.error("File must be under 100MB");
+    const tooLarge = uploadSizeError(asset.size, uploadLimit?.uploadLimitBytes);
+    if (tooLarge) {
+      toast.error(tooLarge);
       return;
     }
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", {
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType ?? "application/octet-stream",
-      } as unknown as Blob);
-      let query = `?name=${encodeURIComponent(asset.name)}`;
-      if (tab === "own" && folderId) {
-        query += `&folderId=${encodeURIComponent(folderId)}`;
-      }
-      await apiUpload(`/files${query}`, formData);
-      toast.success("File uploaded — it will be available once scanned");
+      // Straight to storage with a presigned ticket: file bytes never pass
+      // through the API.
+      await uploadMyFile(
+        {
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: asset.mimeType ?? "application/octet-stream",
+        },
+        { folderId: tab === "own" && folderId ? folderId : undefined },
+      );
+      toast.success("File uploaded");
       reload();
-    } catch {
-      toast.error("Upload failed");
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }

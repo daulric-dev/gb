@@ -39,7 +39,8 @@ A native client has no frontend domain of its own; it only ever talks to the API
 Files upload straight to object storage (S3-compatible) with presigned URLs, so the app needs to reach storage as well as the API:
 
 - The backend signs upload URLs for `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT` when unset). That host must be reachable from the phone - in production an HTTPS endpoint such as `https://<account-id>.r2.cloudflarestorage.com`; in development a LAN address, not `127.0.0.1`.
-- The app sends exactly the headers in the upload ticket and no cookies, then calls the ticket's `complete` route so the backend can check and release the file.
+- The app sends exactly the headers in the upload ticket and no cookies, then calls the ticket's `complete` route so the backend can check and release the file. A `503` from `complete` (the server is busy checking other uploads) is retried a few times with backoff; the file stays pending meanwhile.
+- Assignment hand-ins, **Files** uploads and the profile picture all use this path (`src/lib/upload.ts`); the API has no route that takes file bytes.
 
 ## Opening protected files
 

@@ -1,4 +1,4 @@
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 /**
  * Direct uploads to object storage with a presigned URL.
@@ -40,9 +40,12 @@ export class UploadError extends Error {
   }
 }
 
+/** The part of a ticket the PUT to storage needs. */
+type StorageTarget = Pick<UploadTicket, "method" | "uploadUrl" | "headers">;
+
 function putOnce(
   file: Blob,
-  ticket: UploadTicket,
+  ticket: StorageTarget,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -82,7 +85,7 @@ function putOnce(
 /** PUT the bytes, retrying once if the connection drops. */
 export async function sendToStorage(
   file: Blob,
-  ticket: UploadTicket,
+  ticket: StorageTarget,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   try {
@@ -91,6 +94,29 @@ export async function sendToStorage(
     if (!(err instanceof UploadError) || err.status !== 0) throw err;
     onProgress?.(0);
     await putOnce(file, ticket, onProgress);
+  }
+}
+
+/** Waits between attempts when the backend is too busy to check an upload. */
+export const BUSY_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+/**
+ * Run `call`, retrying after each delay while it fails with 503. Completing
+ * an upload answers 503 when the server is busy checking other uploads; the
+ * file stays pending, so asking again is safe.
+ */
+export async function retryWhileBusy<T>(
+  call: () => Promise<T>,
+  delaysMs: readonly number[] = BUSY_RETRY_DELAYS_MS,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      const busy = err instanceof ApiError && err.status === 503;
+      if (!busy || attempt >= delaysMs.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+    }
   }
 }
 
@@ -126,5 +152,44 @@ export async function uploadFile(
   await sendToStorage(file, ticket, options.onProgress);
 
   // The check runs here, so a rejected file throws with the reason.
-  return api<UploadedFile>(paths.complete(ticket.fileId), { method: "POST" });
+  return retryWhileBusy(() =>
+    api<UploadedFile>(paths.complete(ticket.fileId), { method: "POST" }),
+  );
+}
+
+/** The avatar ticket: `path` is the staged object to name on completion. */
+export interface AvatarUploadTicket {
+  path: string;
+  method: "PUT";
+  uploadUrl: string;
+  headers: Record<string, string>;
+  expiresAt: string;
+}
+
+/**
+ * Set the signed-in user's profile picture: PUT the image straight to
+ * storage, then have the backend check it and point the profile at it.
+ * Returns the new avatar URL.
+ */
+export async function uploadAvatar(
+  image: Blob,
+  filename: string,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  const ticket = await api<AvatarUploadTicket>("/auth/avatar/resumable", {
+    method: "POST",
+    body: {
+      filename,
+      contentType: image.type || "application/octet-stream",
+      totalSize: image.size,
+    },
+  });
+
+  await sendToStorage(image, ticket, onProgress);
+
+  const { avatar_url } = await api<{ avatar_url: string }>(
+    "/auth/avatar/complete",
+    { method: "POST", body: { path: ticket.path } },
+  );
+  return avatar_url;
 }

@@ -11,7 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
@@ -28,7 +28,6 @@ import { RenameFolderDto } from './dto/rename-folder.dto';
 import { MoveFileDto } from './dto/move-file.dto';
 import { MoveFolderDto } from './dto/move-folder.dto';
 import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
-import { MultipartFile } from '@fastify/multipart';
 import { CreateUploadTicketDto } from './dto/upload-ticket.dto';
 
 @ApiTags('File Manager')
@@ -50,19 +49,6 @@ export class FileManagerController {
       page: query.page,
       pageSize: query.pageSize,
     });
-  }
-
-  @RequirePermission('file', 'create')
-  @Post()
-  @ApiConsumes('multipart/form-data')
-  async upload(
-    @Req() req: any,
-    @Query('name') name?: string,
-    @Query('folderId') folderId?: string,
-  ) {
-    const userId: string = req.user.id;
-    const file: MultipartFile = await req.file();
-    return this.files.uploadManual(userId, file, name, folderId);
   }
 
   /**
@@ -179,23 +165,23 @@ export class FileManagerController {
     @Res() reply: FastifyReply,
   ) {
     const userId: string = req.user.id;
-    const { buffer, contentType, filename } = await this.files.getViewContent(
+    const { body, size, contentType, filename } = await this.files.getViewContent(
       userId,
       id,
     );
+    if (size !== null) reply.header('Content-Length', size);
     reply
       .header('Content-Type', contentType)
       .header(
         'Content-Disposition',
         `inline; filename="${this.encode(filename)}"`,
       )
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
       // User content on the API origin: never sniff it into HTML, and if it is
       // opened directly, give it no script or same-origin access.
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', 'sandbox')
-      .send(buffer);
+      .send(body);
   }
 
   /** Download — only for the owner or a recipient with download rights. */
@@ -207,21 +193,21 @@ export class FileManagerController {
     @Res() reply: FastifyReply,
   ) {
     const userId: string = req.user.id;
-    const { buffer, contentType, filename } =
+    const { body, size, contentType, filename } =
       await this.files.getDownloadContent(userId, id);
+    if (size !== null) reply.header('Content-Length', size);
     reply
       .header('Content-Type', contentType)
       .header(
         'Content-Disposition',
         `attachment; filename="${this.encode(filename)}"`,
       )
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
       // User content on the API origin: never sniff it into HTML, and if it is
       // opened directly, give it no script or same-origin access.
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', 'sandbox')
-      .send(buffer);
+      .send(body);
   }
 
   @RequirePermission('file', 'update')

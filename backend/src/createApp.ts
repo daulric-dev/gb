@@ -3,7 +3,6 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import multipart from '@fastify/multipart';
 import { insecureCookieWarning, isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 import { registerWebhookRawBody } from './billing/webhooks/raw-body';
@@ -26,10 +25,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   // Billing webhooks verify signatures over the exact bytes received.
   registerWebhookRawBody(app.getHttpAdapter().getInstance());
-
-  await app.register(multipart, {
-    limits: { fileSize: 100 * 1024 * 1024 },
-  });
 
   console.log(`Running in ${process.env.NODE_ENV} mode`);
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
@@ -90,6 +91,23 @@ export class StorageService implements OnModuleInit {
         Bucket: this.bucket,
         Key: key,
         Body: body,
+        ContentType: contentType,
+      }),
+    );
+  }
+
+  /**
+   * Copy an object inside the bucket without passing its bytes through the
+   * API. The content type is set afresh rather than carried over from the
+   * source.
+   */
+  async copy(fromKey: string, toKey: string, contentType: string): Promise<void> {
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        Key: toKey,
+        CopySource: `${this.bucket}/${encodeURIComponent(fromKey).replace(/%2F/g, '/')}`,
+        MetadataDirective: 'REPLACE',
         ContentType: contentType,
       }),
     );

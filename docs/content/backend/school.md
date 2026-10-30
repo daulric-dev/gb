@@ -43,6 +43,7 @@ The school record itself.
 | `email` | string | Contact email |
 | `phone` | string | Contact phone |
 | `is_active` | boolean | Whether the school is active |
+| `max_upload_mb` | int? | Largest upload in MB (1-1024); null follows `UPLOAD_DEFAULT_MB`. Capped by `UPLOAD_MAX_MB` |
 
 ### `school_management`
 
@@ -275,6 +276,34 @@ Rejects a pending request. Same scope checks as approve. The user's profile is n
 
 **Response:** The updated `school_join_request` row.
 
+### `GET /api/schools/current/upload-limit`
+
+**Requires:** a signed-in user with an active school (students included).
+
+The limit uploads in the active school are checked against, so clients can refuse a large file before asking for a ticket.
+
+**Response:**
+
+```json
+{
+  "uploadLimitBytes": 26214400,
+  "uploadLimitMb": 25,
+  "maxUploadMb": 25,
+  "platformMaxMb": 100,
+  "platformDefaultMb": 100
+}
+```
+
+`uploadLimitMb` is `min(maxUploadMb ?? platformDefaultMb, platformMaxMb)`. `maxUploadMb` is null when the school follows the default.
+
+### `PATCH /api/schools/current/upload-limit`
+
+**Requires:** `school:update` in the active school
+
+**Body:** `{ "maxUploadMb": 25 }`, or `{ "maxUploadMb": null }` to return to the platform default. A whole number from 1 to 1024; anything above `UPLOAD_MAX_MB` is a 400 ("can't exceed the platform limit of N MB").
+
+**Response:** the same shape as the GET. Tickets already issued keep the limit they were issued under.
+
 ## Caching
 
 `SchoolService` uses the shared `CacheService`:
@@ -283,6 +312,7 @@ Rejects a pending request. Same scope checks as approve. The user's profile is n
 |-----|-----|--------------|
 | `schools:all` | 30 days | Updated on `POST /schools` |
 | `profile:{userId}` | (managed by AuthService) | Cleared on school create and on join-request approval |
+| `upload-limit:{schoolId}` | 60 seconds | `UploadLimitService`; cleared on `PATCH /schools/current/upload-limit` |
 
 ## Frontend Pages
 

@@ -11,7 +11,7 @@ COPY mobile/package.json mobile/package.json
 # The backend's postinstall runs `prisma generate`, which needs the schema.
 COPY backend/prisma.config.ts backend/prisma.config.ts
 COPY backend/prisma backend/prisma
-RUN bun install
+RUN bun install --frozen-lockfile
 
 # --- build: compile the backend used by this image ---
 FROM install AS build

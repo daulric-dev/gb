@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -15,7 +14,6 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiConsumes,
   ApiExcludeEndpoint,
   ApiProduces,
   ApiTags,
@@ -238,27 +236,6 @@ export class AuthController {
       .header('X-Content-Type-Options', 'nosniff');
     if (size !== null) res.header('Content-Length', size);
     return res.send(body);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(AuthGuard)
-  @Post('avatar')
-  @ApiConsumes('multipart/form-data')
-  async uploadAvatar(@Req() req: FastifyRequest) {
-    const file = await req.file();
-
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
-
-    const userId: string = (req as any).user.id;
-
-    const result = await this.imagesService.setImageToUserProfile(
-      userId,
-      file,
-      requestOrigin(req),
-    );
-    return this.versioning.resolve(req, 'images.uploaded')(result);
   }
 
   @ApiBearerAuth()

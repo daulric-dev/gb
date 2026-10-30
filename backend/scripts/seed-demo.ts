@@ -65,18 +65,10 @@ class Session {
       method,
       headers: {
         'X-API-Version': '1',
-        // A FormData body (a file upload) sets its own multipart type.
-        ...(body !== undefined && !(body instanceof FormData)
-          ? { 'content-type': 'application/json' }
-          : {}),
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(this.cookies.size ? { cookie: this.header() } : {}),
       },
-      body:
-        body instanceof FormData
-          ? body
-          : body !== undefined
-            ? JSON.stringify(body)
-            : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     for (const raw of res.headers.getSetCookie?.() ?? []) {
       const [pair] = raw.split(';');
@@ -414,22 +406,23 @@ async function seed() {
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: microscope.id, indent: 1 });
   // A handout uploaded to Maya's files (S3, like any upload) and linked in
   // the module, so students open it through the portal.
-  const handoutForm = new FormData();
-  handoutForm.append(
-    'file',
-    new Blob(
-      [
-        'Microscope practical checklist\n\n',
-        '1. Clean the lenses with lens paper only.\n',
-        '2. Start on the lowest power objective.\n',
-        '3. Focus with the coarse knob, then the fine knob.\n',
-        '4. Draw what you see, with a title and the magnification.\n',
-      ],
-      { type: 'text/plain' },
-    ),
-    'microscope-checklist.txt',
+  const handoutBody = new TextEncoder().encode(
+    [
+      'Microscope practical checklist\n\n',
+      '1. Clean the lenses with lens paper only.\n',
+      '2. Start on the lowest power objective.\n',
+      '3. Focus with the coarse knob, then the fine knob.\n',
+      '4. Draw what you see, with a title and the magnification.\n',
+    ].join(''),
   );
-  const handout = await maya.call('POST', '/files?name=microscope-checklist.txt', handoutForm);
+  const ticket = await maya.call('POST', '/files/upload-ticket', {
+    name: 'microscope-checklist.txt',
+    sizeBytes: handoutBody.byteLength,
+    contentType: 'text/plain',
+  });
+  const put = await fetch(ticket.uploadUrl, { method: 'PUT', headers: ticket.headers, body: handoutBody });
+  if (!put.ok) throw new Error(`handout upload -> ${put.status}`);
+  const handout = await maya.call('POST', `/files/upload-ticket/${ticket.fileId}/complete`);
   await maya.call('POST', items(week1), { itemType: 'file', fileId: handout.id, title: 'Microscope checklist', indent: 1 });
   await maya.call('POST', items(week2), { itemType: 'page', pageId: genetics.id });
   await maya.call('POST', items(week2), {

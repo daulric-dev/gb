@@ -12,7 +12,7 @@ The core API client used by all pages to communicate with the backend.
 
 - **Base URL**: `/api` (relative path, proxied to the backend via Next.js rewrites)
 - **Proxy**: Auth endpoints (`/api/auth/*`) are handled by a Route Handler at `app/api/auth/[...path]/route.ts` that explicitly forwards cookies and `Set-Cookie` headers. It uses `getSetCookie()` to forward each `Set-Cookie` header individually (the standard `Headers.forEach()` can merge multiple cookies into one unparseable value). All other endpoints use the Next.js rewrite defined in `next.config.ts`.
-- **Content-Type**: `application/json` for all requests (except `apiUpload` which uses `multipart/form-data`)
+- **Content-Type**: `application/json` for all requests. There is no multipart helper: file bytes never go through the API (see `lib/files/upload.ts` below)
 - **API Version**: `X-API-Version: 1` header sent with every request
 
 ### `api<T>(path, options?)` Function
@@ -34,17 +34,15 @@ The main export. Makes authenticated JSON requests to the backend.
 
 If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry - there is no token to refresh, so a 401 means the session itself is gone (expired, revoked, or the cookie was cleared).
 
-### `apiUpload<T>(path, formData)` Function
+### File uploads (`lib/files/upload.ts`)
 
-Uploads files via `multipart/form-data`. Used for avatar uploads and any other file upload that sends a `FormData` body instead of JSON.
+Every upload goes straight to object storage with a presigned URL: the client asks the API for a ticket, `PUT`s the bytes to the ticket's `uploadUrl` with exactly its `headers` (no cookies), then calls the matching complete route so the backend checks the stored bytes.
 
-**Parameters:**
-| Param | Type | Description |
-|-------|------|-------------|
-| `path` | string | API path (e.g., `/auth/avatar`) |
-| `formData` | FormData | The form data containing the file |
-
-Sends `credentials: "include"` and handles 401 the same way as `api()`. Returns the parsed JSON response.
+| Export | Use |
+|--------|-----|
+| `uploadFile(file, { ticket, complete }, options?)` | Files and assignment hand-ins (`/files/upload-ticket`, `/portal/me/activities/:id/upload-ticket`). Returns the released file; a `503` on complete is retried with backoff. |
+| `uploadAvatar(image, filename, onProgress?)` | Profile pictures: `POST /auth/avatar/resumable`, the PUT, then `POST /auth/avatar/complete { path }`. Returns the new `avatar_url`. |
+| `sendToStorage(blob, ticket, onProgress?)` | The PUT itself, retried once on a dropped connection. Throws `UploadError` when storage refuses it. |
 
 ### `buildUrl(path)` Function
 

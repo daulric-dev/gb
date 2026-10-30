@@ -3,7 +3,8 @@ import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, GraduationCap, LogOut, Trash2 } from "lucide-react-native";
-import { api, apiUpload, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { uploadAvatar, UploadError } from "@/lib/upload";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme, type ThemeMode } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -100,18 +101,19 @@ export default function SettingsScreen() {
     }
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", {
+      await uploadAvatar({
         uri: asset.uri,
         name: asset.fileName ?? "avatar.jpg",
-        type: asset.mimeType ?? "image/jpeg",
-        // React Native's FormData file shape differs from the DOM's.
-      } as unknown as Blob);
-      await apiUpload<{ avatar_url: string }>("/auth/avatar", form);
+        mimeType: asset.mimeType ?? "image/jpeg",
+      });
       await refresh();
       toast.success("Profile picture updated");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to upload image");
+      toast.error(
+        err instanceof ApiError || err instanceof UploadError
+          ? err.message
+          : "Failed to upload image",
+      );
     } finally {
       setUploading(false);
     }

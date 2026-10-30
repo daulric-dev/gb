@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { uploadFile } from "@/lib/files/upload";
+import { formatMb, uploadSizeError, useUploadLimit } from "@/lib/files/upload-limit";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -50,6 +51,8 @@ export default function PortalWorkDetailPage() {
   const text = useSignal("");
   const uploading = useSignal(false);
   const uploadProgress = useSignal(0);
+  // The school's upload limit, for the hint and a check before the ticket.
+  const uploadLimit = useUploadLimit();
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -114,6 +117,11 @@ export default function PortalWorkDetailPage() {
   }
 
   async function attachFile(file: File) {
+    const tooLarge = uploadSizeError(file.size, uploadLimit?.uploadLimitBytes);
+    if (tooLarge) {
+      toast.error(tooLarge);
+      return;
+    }
     uploading.value = true;
     uploadProgress.value = 0;
     try {
@@ -427,8 +435,11 @@ export default function PortalWorkDetailPage() {
                           : "Attach a file"}
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Up to 100MB, and an interrupted upload picks up where it
-                      stopped. Attaching a file does not hand it in.
+                      {uploadLimit
+                        ? `Up to ${formatMb(uploadLimit.uploadLimitBytes)}, and`
+                        : "An"}{" "}
+                      interrupted upload picks up where it stopped. Attaching a
+                      file does not hand it in.
                     </p>
                   </>
                 )}

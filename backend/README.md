@@ -71,7 +71,7 @@ All configuration is environment variables in `backend/.env` (template: [`.env.e
 
 A request goes through these layers (details in [src/README.md](./src/README.md#request-flow)):
 
-1. **Fastify** - cookies, multipart (10 MB), raw body for billing webhooks, CORS for the origins in `FRONTEND_URL`.
+1. **Fastify** - cookies, raw body for billing webhooks, CORS for the origins in `FRONTEND_URL`.
 2. **Global guards** - `ThrottlerGuard` (rate limits keyed by session or client IP, [src/throttle](./src/throttle/README.md)) and `VersioningGuard` (`X-API-Version` header, [src/versioning](./src/versioning/README.md)).
 3. **Route guards** - `AuthGuard` resolves the `gb_session` cookie into `req.user`; then `PermissionGuard` with `@RequirePermission(resource, action)` for staff routes, `AdminGuard` for school-admin routes, `StudentGuard` for `/api/portal/me/...`, or the billing guards. Course routes also check course roles with `CourseAccessService`.
 4. **Interceptors** - `BillingEntitlementInterceptor` (global; with `BILLING_ENABLED=true` it answers 402 to mutations from schools whose subscription lapsed).

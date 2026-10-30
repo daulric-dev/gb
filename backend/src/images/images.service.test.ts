@@ -66,15 +66,6 @@ function makeStorage(opts: MockOpts = {}) {
   };
 }
 
-// Minimal MultipartFile stand-in.
-function fakeFile(
-  buffer: Buffer,
-  mimetype: string | undefined,
-  filename = 'a.png',
-) {
-  return { toBuffer: () => Promise.resolve(buffer), mimetype, filename } as any;
-}
-
 function pngBytes(extra = 0): Buffer {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -170,86 +161,97 @@ describe('ImagesService.completeResumableUpload (path IDOR)', () => {
   });
 });
 
-describe('ImagesService.setImageToUserProfile (content-type validation)', () => {
+describe('ImagesService.completeResumableUpload (content checks)', () => {
   let cache: ReturnType<typeof createMockCacheService>;
   beforeEach(() => {
     cache = createMockCacheService();
   });
-  const svc = () => makeService({}, cache);
+  /** Complete an upload whose staged object holds `stored` as `type`. */
+  const complete = (stored: Buffer, type: string) =>
+    makeService({ stored, downloadType: type }, cache).completeResumableUpload(
+      'u',
+      'uploads/avatars/u.png',
+    );
 
   test('accepts a real PNG', async () => {
-    const res = await svc().setImageToUserProfile(
-      'u',
-      fakeFile(pngBytes(), 'image/png'),
-    );
+    const res = await complete(pngBytes(), 'image/png');
     expect(res.avatar_url).toBeDefined();
   });
 
   test('accepts a real JPEG', async () => {
-    const res = await svc().setImageToUserProfile(
-      'u',
-      fakeFile(jpegBytes(), 'image/jpeg'),
-    );
+    const res = await complete(jpegBytes(), 'image/jpeg');
     expect(res.avatar_url).toBeDefined();
   });
 
   test('accepts a real WebP', async () => {
-    const res = await svc().setImageToUserProfile(
-      'u',
-      fakeFile(webpBytes(), 'image/webp'),
-    );
+    const res = await complete(webpBytes(), 'image/webp');
     expect(res.avatar_url).toBeDefined();
   });
 
-  test('rejects a missing mimetype (no longer silently allowed)', async () => {
+  test('rejects a missing content type', async () => {
     expect(
-      await expectRejection(
-        svc().setImageToUserProfile('u', fakeFile(pngBytes(), undefined)),
-      ),
+      await expectRejection(complete(pngBytes(), '')),
     ).toBeInstanceOf(BadRequestException);
   });
 
-  test('rejects a disallowed mimetype (e.g. SVG)', async () => {
+  test('rejects a disallowed content type (e.g. SVG)', async () => {
     expect(
-      await expectRejection(
-        svc().setImageToUserProfile('u', fakeFile(pngBytes(), 'image/svg+xml')),
-      ),
+      await expectRejection(complete(pngBytes(), 'image/svg+xml')),
     ).toBeInstanceOf(BadRequestException);
   });
 
   test('rejects bytes that do not match the declared image type (PNG header lie)', async () => {
     const htmlBytes = Buffer.from('<html><script>alert(1)</script></html>');
     expect(
-      await expectRejection(
-        svc().setImageToUserProfile('u', fakeFile(htmlBytes, 'image/png')),
-      ),
+      await expectRejection(complete(htmlBytes, 'image/png')),
     ).toBeInstanceOf(BadRequestException);
   });
 
   test('rejects a JPEG declared as PNG (mismatched signature)', async () => {
     expect(
+      await expectRejection(complete(jpegBytes(), 'image/png')),
+    ).toBeInstanceOf(BadRequestException);
+  });
+
+  test('rejects a too-short object that cannot carry a signature', async () => {
+    expect(
+      await expectRejection(complete(Buffer.from([0x89, 0x50]), 'image/png')),
+    ).toBeInstanceOf(BadRequestException);
+  });
+
+  test('rejects and deletes an object over 5MB before reading it', async () => {
+    const storage = makeStorage({ stored: Buffer.alloc(5 * 1024 * 1024 + 1) });
+    const svc = new ImagesService(
+      storage as any,
+      createMockPrisma() as any,
+      cache as any,
+    );
+    expect(
       await expectRejection(
-        svc().setImageToUserProfile('u', fakeFile(jpegBytes(), 'image/png')),
+        svc.completeResumableUpload('u', 'uploads/avatars/u.png'),
+      ),
+    ).toBeInstanceOf(BadRequestException);
+    expect(storage.getBuffer).not.toHaveBeenCalled();
+    expect(storage.delete).toHaveBeenCalledWith('images/uploads/avatars/u.png');
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+});
+
+describe('ImagesService.createResumableUpload (ticket checks)', () => {
+  const svc = () => makeService({}, createMockCacheService());
+
+  test('refuses a declared size over 5MB', async () => {
+    expect(
+      await expectRejection(
+        svc().createResumableUpload('u', 'a.png', 'image/png', 5 * 1024 * 1024 + 1),
       ),
     ).toBeInstanceOf(BadRequestException);
   });
 
-  test('rejects a too-short buffer that cannot carry a signature', async () => {
+  test('refuses a type that is not an allowed image', async () => {
     expect(
       await expectRejection(
-        svc().setImageToUserProfile(
-          'u',
-          fakeFile(Buffer.from([0x89, 0x50]), 'image/png'),
-        ),
-      ),
-    ).toBeInstanceOf(BadRequestException);
-  });
-
-  test('rejects an oversize file before doing anything else', async () => {
-    const tooBig = Buffer.alloc(5 * 1024 * 1024 + 1, 0);
-    expect(
-      await expectRejection(
-        svc().setImageToUserProfile('u', fakeFile(tooBig, 'image/png')),
+        svc().createResumableUpload('u', 'a.svg', 'image/svg+xml', 100),
       ),
     ).toBeInstanceOf(BadRequestException);
   });
@@ -324,9 +326,9 @@ describe('ImagesService avatar URLs and direct uploads', () => {
     const prev = process.env.API_URL;
     process.env.API_URL = 'https://api.example.com/';
     try {
-      const res = await makeService({}, cache).setImageToUserProfile(
+      const res = await makeService({}, cache).completeResumableUpload(
         'u',
-        fakeFile(pngBytes(), 'image/png'),
+        'uploads/avatars/u.png',
       );
       expect(res.avatar_url).toMatch(
         /^https:\/\/api\.example\.com\/api\/images\/avatars\/u\.png\?t=\d+$/,

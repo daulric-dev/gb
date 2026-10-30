@@ -98,7 +98,7 @@ Questions are frozen once a quiz is published, because changing the answer key w
 - `listForStudent(studentId)`: the to-do list across visible courses.
 - `listCourseForStudent()`.
 - `getForStudent()`: questions without the answers.
-- `attachFile()`, `createUploadTicket()`, `finaliseUploadedFile()`: the file is uploaded as the student's own login through `FileManagerService`, because students hold no `file:*` permissions.
+- `createUploadTicket()`, `finaliseUploadedFile()`: the student PUTs the file straight to storage with a presigned ticket (no route takes file bytes through the API); it is uploaded as the student's own login through `FileManagerService`, because students hold no `file:*` permissions. The size limit is the course's school's upload limit (`UploadLimitService`).
 - `submitAssignment()`: a client-supplied `fileId` must be the student's own `ready` file.
 - `submitQuiz()`: stores answers (only answers to this quiz's questions, and only options belonging to each question), then calls the database function `grading.submit_quiz`.
   - The function locks the row, enforces `max_attempts`, scores the quiz, scales the score to the activity's points and marks it `graded`.
@@ -187,7 +187,7 @@ Rows are CRLF-terminated. `csvCell()` prefixes cells that start with `= + - @ ta
 - `src/student-portal/student-portal.module.ts` imports `GradingModule`.
   - `portal-activity.controller.ts` (routes under `/api/portal/me`) uses:
     - `SubmissionService.listForStudent()`, `listCourseForStudent()` and `getForStudent()`,
-    - `createUploadTicket()`, `finaliseUploadedFile()`, `attachFile()`, `submitAssignment()` and `submitQuiz()`,
+    - `createUploadTicket()`, `finaliseUploadedFile()`, `submitAssignment()` and `submitQuiz()`,
     - `GradebookService.studentGrades()`.
   - It also uses `SubmitAssignmentDto` and `SubmitQuizDto` from `dto/activity.dto.ts`.
   - `student-portal.service.ts` calls `GradebookService.studentSummary()` for each portal course card.

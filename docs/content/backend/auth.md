@@ -292,27 +292,11 @@ If the user has no avatar, returns `400 Bad Request`.
 
 ---
 
-### `POST /api/auth/avatar`
-
-**Requires:** `AuthGuard`  
-**Content-Type:** `multipart/form-data`
-
-Uploads a profile picture. The file is validated (max 5MB, JPEG/PNG/WebP only), stored in S3 object storage at `images/avatars/<userId>.<ext>`, and the public URL (with cache-busting timestamp) is saved to `user_profile.avatar_url`. That URL is `<API_URL>/api/images/avatars/<file>` (served by the public `GET /api/images/avatars/:file` route), or `<S3_PUBLIC_URL>/images/avatars/<file>` when a public storage/CDN host is configured.
-
-**Response:**
-```json
-{
-  "avatar_url": "https://api.example.com/api/images/avatars/user-id.jpg?t=1745512900000"
-}
-```
-
----
-
 ### `POST /api/auth/avatar/resumable`
 
 **Requires:** `AuthGuard`
 
-Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 minutes) and the client uploads the bytes straight to object storage - no file data passes through the backend.
+Creates a direct upload, the only way to set a profile picture: the backend returns a presigned S3 `PUT` URL (valid 5 minutes) and the client uploads the bytes straight to object storage - no file data passes through the backend. At most 5MB, JPEG/PNG/WebP only.
 
 **Body:**
 ```json
@@ -326,7 +310,7 @@ Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 
 **Response:**
 ```json
 {
-  "path": "avatars/user-id.png",
+  "path": "uploads/avatars/user-id.png",
   "method": "PUT",
   "uploadUrl": "https://<s3-endpoint>/...",
   "headers": { "Content-Type": "image/png" },
@@ -340,12 +324,19 @@ Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 
 
 **Requires:** `AuthGuard`
 
-Called after the direct upload finishes. Verifies the object exists in storage, re-checks its size, type and magic bytes (deleting it if rejected), and updates `user_profile.avatar_url`.
+Called after the direct upload finishes. Verifies the object exists in storage, re-checks its size, type and magic bytes (deleting it if rejected), copies the checked image to `images/avatars/<userId>.<ext>`, and saves its public URL (with a cache-busting timestamp) to `user_profile.avatar_url`. That URL is `<API_URL>/api/images/avatars/<file>` (served by the public `GET /api/images/avatars/:file` route), or `<S3_PUBLIC_URL>/images/avatars/<file>` when a public storage/CDN host is configured.
 
 **Body:**
 ```json
 {
-  "path": "avatars/user-id.png"
+  "path": "uploads/avatars/user-id.png"
+}
+```
+
+**Response:**
+```json
+{
+  "avatar_url": "https://api.example.com/api/images/avatars/user-id.jpg?t=1745512900000"
 }
 ```
 

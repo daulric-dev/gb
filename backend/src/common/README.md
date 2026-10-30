@@ -1,6 +1,6 @@
 # Common helpers (`src/common`)
 
-Small, dependency-free helper functions shared by many backend services. This folder is not a Nest module: nothing is registered or injected, files are imported directly with `@/common/...`. It holds two things: converters that keep API responses in the JSON shapes clients expect now that the data layer is Prisma, and a lookup for the school a user is currently working in.
+Small, dependency-free helper functions shared by many backend services. This folder is not a Nest module: nothing is registered or injected, files are imported directly with `@/common/...`. It holds converters that keep API responses in the JSON shapes clients expect now that the data layer is Prisma, and a lookup for the school a user is currently working in.
 
 ## What it provides
 

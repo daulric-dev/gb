@@ -33,7 +33,6 @@ Both controllers are `@Controller('portal/me')` with `@UseGuards(AuthGuard, Stud
 | GET | `/api/portal/me/activities/:activityId` | One activity with the student's submission. |
 | POST | `/api/portal/me/activities/:activityId/upload-ticket` | Body `CreateUploadTicketDto`. Starts a direct (presigned PUT) upload for an assignment. |
 | POST | `/api/portal/me/activities/:activityId/upload-ticket/:fileId/complete` | Checks the uploaded bytes and attaches the file to the draft. |
-| POST | `/api/portal/me/activities/:activityId/file` | Multipart upload in one request (fallback for small files). |
 | POST | `/api/portal/me/activities/:activityId/submit` | Body `SubmitAssignmentDto`. Hand in an assignment. |
 | POST | `/api/portal/me/activities/:activityId/quiz` | Body `SubmitQuizDto`. Submit quiz answers; scored on submit up to the attempt limit. |
 

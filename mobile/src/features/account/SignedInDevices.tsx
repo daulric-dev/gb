@@ -37,7 +37,7 @@ const isPhone = (device: string) =>
 
 /**
  * Signed-in devices: every live session of this account, this one marked,
- * each with a sign-out button, plus "Sign out of all other devices". Shared
+ * a sign-out button on every other device, plus "Sign out of all other devices". Shared
  * by the staff and student settings screens.
  */
 export function SignedInDevices({ refreshKey = 0 }: { refreshKey?: number }) {
@@ -136,16 +136,19 @@ export function SignedInDevices({ refreshKey = 0 }: { refreshKey?: number }) {
                     {s.ip ? ` · ${s.ip}` : ""}
                   </Text>
                 </View>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  loading={busy === s.id}
-                  disabled={busy !== null}
-                  onPress={() => void signOut(s)}
-                  accessibilityLabel={`Sign out ${s.device}`}
-                >
-                  Sign out
-                </Button>
+                {/* This device signs out from Settings, not here. */}
+                {s.current ? null : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    loading={busy === s.id}
+                    disabled={busy !== null}
+                    onPress={() => void signOut(s)}
+                    accessibilityLabel={`Sign out ${s.device}`}
+                  >
+                    Sign out
+                  </Button>
+                )}
               </View>
             );
           })
