@@ -42,6 +42,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useCourse } from "../_components/course-context";
+import { CourseAppearanceCard } from "../_components/CourseAppearanceCard";
 import { SectionHeader } from "../_components/SectionHeader";
 import { MarkdownEditor } from "../_components/MarkdownEditor";
 import { CourseCalendarFields } from "../../_components/CourseCalendarFields";
@@ -179,7 +180,10 @@ export default function CourseSettingsPage() {
 
   return (
     <div className="space-y-5">
-      <SectionHeader title="Settings" description="Details, status and grading" />
+      <SectionHeader
+        title="Settings"
+        description="Details, appearance, status and grading"
+      />
 
       <form onSubmit={save} className="space-y-5">
         <Card className="animate-fade-in-up-delay-1">
@@ -300,6 +304,8 @@ export default function CourseSettingsPage() {
           </Button>
         </div>
       </form>
+
+      <CourseAppearanceCard />
 
       <Card>
         <CardHeader>

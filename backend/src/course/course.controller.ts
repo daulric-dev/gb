@@ -17,6 +17,9 @@ import { AuthGuard } from '@/auth/auth.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { CourseService } from './course.service';
+import { CourseBannerService } from './course-banner.service';
+import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
+import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
 import {
   AddCourseStaffDto,
   CreateCourseDto,
@@ -38,7 +41,10 @@ import {
 @Controller('courses')
 @UseGuards(AuthGuard, PermissionGuard)
 export class CourseController {
-  constructor(private readonly courses: CourseService) {}
+  constructor(
+    private readonly courses: CourseService,
+    private readonly banners: CourseBannerService,
+  ) {}
 
   @Get()
   async list(@Req() req: any, @Query() query: ListCoursesQueryDto) {
@@ -92,6 +98,44 @@ export class CourseController {
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
     await this.courses.disableJoinCode(req.user.id as string, courseId);
+  }
+
+  // ── appearance ────────────────────────────────────────────────────────────
+  // The banner colour is part of PATCH /courses/:courseId (`bannerColor`).
+
+  /** A presigned PUT for a new cover image (JPEG, PNG or WebP, at most 5 MB). */
+  @Post(':courseId/banner/upload-ticket')
+  async bannerTicket(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() dto: CreateResumableUploadDto,
+  ) {
+    return this.banners.createTicket(
+      req.user.id as string,
+      courseId,
+      dto.contentType,
+      dto.totalSize,
+    );
+  }
+
+  /** Verify the uploaded cover and set it; returns the course. */
+  @Post(':courseId/banner/complete')
+  @HttpCode(200)
+  async bannerComplete(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Body() dto: CompleteUploadDto,
+  ) {
+    return this.banners.complete(req.user.id as string, courseId, dto.path);
+  }
+
+  /** Remove the cover image; returns the course. */
+  @Delete(':courseId/banner')
+  async bannerRemove(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+  ) {
+    return this.banners.remove(req.user.id as string, courseId);
   }
 
   // ── people ────────────────────────────────────────────────────────────────

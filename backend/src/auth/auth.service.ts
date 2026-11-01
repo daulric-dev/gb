@@ -20,6 +20,7 @@ import { plan, userStoragePrefixes } from '@/erasure/erasure-plan';
 import { objectKey } from '@/storage/keys';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { optionalImageUrl } from '@/images/public-url';
 
 const PROFILE_TTL = 60 * 60 * 24 * 30;
 
@@ -35,12 +36,18 @@ const WITH_SCHOOL = {
 
 type ProfileWithSchool = Prisma.user_profileGetPayload<typeof WITH_SCHOOL>;
 
-/** Rename the school relation to the `school` key clients read. */
+/**
+ * Rename the school relation to the `school` key clients read, with the
+ * logo's URL (`logo_url`, null without one) beside its stored key.
+ */
 function withSchool({
   school_user_profile_school_idToschool: school,
   ...profile
 }: ProfileWithSchool) {
-  return { ...profile, school };
+  return {
+    ...profile,
+    school: school && { ...school, logo_url: optionalImageUrl(school.logo_path) },
+  };
 }
 
 @Injectable()

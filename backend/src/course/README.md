@@ -20,11 +20,14 @@ All routes use `AuthGuard`. `CourseController` and `CourseCopyController` also u
 |--------|------|-----|--------------|
 | GET | `/api/courses?status&termId&academicYearId` | Signed-in staff | The caller's courses in their school, sorted by name, each with `role` and active `studentCount`. Holders of `course:update` see every course as `admin`; others see the courses they teach or assist. |
 | POST | `/api/courses` | `course:create` | Create a course; the creator becomes its teacher in the same transaction. Year, term and grade scale must belong to the school, and a term must be in the chosen year (a term alone implies its year). |
-| GET | `/api/courses/:courseId` | Staff role | One course with `role` and `studentCount`. |
-| PATCH | `/api/courses/:courseId` | Manage role | Update name, code, description, status, year, term, grade scale, `isTemplate`. Turning a course into a template is refused while it has non-dropped students and clears its join code. |
-| DELETE | `/api/courses/:courseId` | Manage role | Delete (`204`). A course that is not archived and has any submissions must be archived first (`409`). The delete and a `course` entry in the [erasure log](../erasure/README.md) commit together (students' work and attendance cascade with the course). |
+| GET | `/api/courses/:courseId` | Staff role | One course with `role` and `studentCount`. Every course response (list, detail, create, update, copy, templates) also carries `bannerColor` (a preset key or null) and `bannerImageUrl` (null without a cover). |
+| PATCH | `/api/courses/:courseId` | Manage role | Update name, code, description, status, year, term, grade scale, `isTemplate`, `bannerColor` (one of `COURSE_BANNER_COLORS` in `course-appearance.ts`, or null for the id-derived gradient). Turning a course into a template is refused while it has non-dropped students and clears its join code. |
+| DELETE | `/api/courses/:courseId` | Manage role | Delete (`204`). A course that is not archived and has any submissions must be archived first (`409`). The delete and a `course` entry in the [erasure log](../erasure/README.md) commit together (students' work and attendance cascade with the course). After the commit every object under `images/course-banners/<courseId>-` is removed (best effort; the log entry's prefix step repeats it on replay). |
 | POST | `/api/courses/:courseId/join-code` | Manage role | Issue a new 6-character join code (alphabet without 0/O/1/I/L; retried on a clash, unique across schools). Refused for templates. |
 | DELETE | `/api/courses/:courseId/join-code` | Manage role | Turn the join code off (`204`). |
+| POST | `/api/courses/:courseId/banner/upload-ticket` | Manage role | Body `{ filename, contentType, totalSize }` (`CreateResumableUploadDto`). A presigned PUT (5 minutes) to the staging key `images/uploads/course-banners/<courseId>-<32 hex>.<ext>`. JPEG, PNG or WebP, at most 5 MB. |
+| POST | `/api/courses/:courseId/banner/complete` | Manage role | Body `{ path }`. The path must be a staging key for this course. Checks size, type and leading bytes (`ImagesService.finalizeImage`), writes the bytes to `images/course-banners/<courseId>-<32 hex>.<ext>`, deletes the staged object, points the course at it and deletes the previous cover. Returns the course. |
+| DELETE | `/api/courses/:courseId/banner` | Manage role | Clear the cover image and delete its object. Returns the course. |
 
 **People** (`CourseController`)
 
@@ -88,10 +91,12 @@ All `:courseId`, `:moduleId`, `:itemId`, `:pageId`, `:fileId`, `:userProfileId` 
 - `PageService` - `list`, `get`, `getPublished(courseId, pageId)` (for students; an unpublished page is `404`), `create`, `update`, `remove`.
 - `CourseCopyService` (not exported) - `listTemplates`, `copy`, `importInto`, `copyContent(tx, sourceId, targetId, userId, shift, targetSchoolId)`, `shiftOf(dates)`. Also exports the pure helpers `shiftDate` and `relinkIds`, and the `CopyDates` / `CopyCounts` types.
 - `CourseFileService` (not exported) - `read(userId, courseId, fileId)`.
+- `CourseBannerService` (not exported) - `createTicket`, `complete`, `remove` for the cover image, built on `ImagesService`'s shared upload steps.
 
 ### Other
 
 - Course access lives in the global `CourseAccessModule`; see [access/README.md](access/README.md).
+- `course-appearance.ts` exports `COURSE_BANNER_COLORS` (the banner presets; also a CHECK on `course.course.banner_color`) and `COURSE_BANNER_MAX_BYTES`. Cover images are served publicly by an unguessable name from `GET /api/images/course-banners/<file>` (or the image CDN), the same exposure as avatars; see [`../images/README.md`](../images/README.md). A copied course keeps the colour but not the cover image: each image object belongs to one course and is deleted with it.
 - `dto/content.dto.ts` exports `MODULE_ITEM_TYPES` / `ModuleItemType` (`page`, `activity`, `file`, `link`, `header`, `discussion`); `dto/course.dto.ts` exports `COURSE_STATUSES` / `CourseStatus` and `JoinCourseDto` (used by the student portal). See [dto/README.md](dto/README.md).
 
 ## Used by
@@ -104,7 +109,7 @@ Backend:
 
 Web (`frontend/`):
 
-- Course list, create, copy and import: `app/dashboard/courses/page.tsx`, `_components/CreateCourseDialog.tsx` (also lists `/courses/templates`), `_components/CopyCourseDialog.tsx`, `_components/ImportContentDialog.tsx` (lists courses and templates, then imports); settings in `app/dashboard/courses/[courseId]/settings/page.tsx`; course shell in `app/dashboard/courses/[courseId]/layout.tsx` and `page.tsx`.
+- Course list, create, copy and import: `app/dashboard/courses/page.tsx`, `_components/CreateCourseDialog.tsx` (also lists `/courses/templates`), `_components/CopyCourseDialog.tsx`, `_components/ImportContentDialog.tsx` (lists courses and templates, then imports); settings in `app/dashboard/courses/[courseId]/settings/page.tsx` (appearance in `[courseId]/_components/CourseAppearanceCard.tsx`, uploads via `uploadCourseBanner` in `lib/files/upload.ts`); banners drawn by `components/courses/course-banner.tsx` from `lib/courses/appearance.ts`; course shell in `app/dashboard/courses/[courseId]/layout.tsx` and `page.tsx`.
 - People: `app/dashboard/courses/[courseId]/people/page.tsx` with `_components/AddStaffDialog.tsx`, `AddStudentsDialog.tsx`, `JoinCodeCard.tsx`.
 - Modules: `app/dashboard/courses/[courseId]/modules/page.tsx` and `_components/AddItemDialog.tsx`, `ModuleItemRow.tsx`.
 - Pages: `app/dashboard/courses/[courseId]/pages/page.tsx` and `pages/[pageId]/page.tsx`.
@@ -113,6 +118,7 @@ Web (`frontend/`):
 
 Mobile (`mobile/`):
 
+- Banners: `src/features/course/CourseBanner.tsx` and `appearance.ts` (display only; editing is web-only).
 - `app/teaching/index.tsx`, `app/teaching/[courseId]/index.tsx`, `src/features/dashboard/TeacherDashboard.tsx` (course lists and detail; the dashboard calls `GET /courses`), `src/features/course/StaffSections.tsx` (modules, people), `src/lib/course.ts`, `app/teaching/[courseId]/page/[pageId].tsx` and `src/features/course/PageScreen.tsx` (pages), `src/features/course/useOpenModuleItem.ts` (course files), `src/features/files/ShareSheet.tsx`.
 
 Scripts: `backend/scripts/seed-demo.ts` builds demo courses, staff, students, join codes, modules, items and pages through these routes; `backend/scripts/smoke.ts` exercises courses, people, join codes, modules and items, templates, copy, import and course files.
@@ -123,6 +129,7 @@ Scripts: `backend/scripts/seed-demo.ts` builds demo courses, staff, students, jo
 - `CourseAccessService` (global, `access/`).
 - `loadEffectivePermissions` from `src/permission/permission.effective.ts` (course listing and template copy rules); `PermissionGuard` / `@RequirePermission` from `src/permission/`.
 - `FileManagerModule` (imported) for `FileManagerService.readContentForAuthorisedCaller`.
+- `ImagesModule` (imported) for `ImagesService` (cover image tickets, verification, deletion) and `publicImageUrl`.
 - `userSchoolId`, `isoDate`, `isUniqueViolation` from `src/common/`.
 
 ## Data
@@ -145,8 +152,10 @@ None.
 
 | File | Purpose |
 |------|---------|
-| `course.module.ts` | Module; imports `FileManagerModule`, registers five controllers and services, exports `CourseService`, `ModuleService`, `PageService`. |
-| `course.controller.ts` | Courses, join codes and people. |
+| `course.module.ts` | Module; imports `FileManagerModule` and `ImagesModule`, registers five controllers and six services, exports `CourseService`, `ModuleService`, `PageService`. |
+| `course.controller.ts` | Courses, join codes, banner image and people. |
+| `course-banner.service.ts` | Course cover image upload, replace and remove. |
+| `course-appearance.ts` | Banner colour keys and the cover size cap. |
 | `course.service.ts` | Course CRUD, link validation, join codes, self-enrolment, staff and roster. |
 | `module.controller.ts` | Modules and module items. |
 | `module.service.ts` | Module/item reads (staff and student views), writes, target checks, reordering. |
@@ -163,6 +172,7 @@ None.
 | `page.service.test.ts` | Page list, scoping, role checks, create defaults, empty updates, `getPublished`. |
 | `course-copy.service.test.ts` | Copy and import behaviour, date handling, permissions, helpers. |
 | `course-file.service.test.ts` | Which files course staff may open. |
+| `course-banner.service.test.ts` | `bannerColor` validation and storage, banner fields in responses, cover ticket/complete/remove and who may use them. |
 
 ## Tests
 
@@ -170,7 +180,7 @@ None.
 cd backend && bun test src/course
 ```
 
-The tests use mocked Prisma, cache and access services. They cover: the creator becoming teacher (and a failed teacher insert failing the whole create); listing for teachers versus admins; 404 for no role, 403 for a TA changing settings, and loss of access when removed from the school; join code format, clash retry and joining by code; the people shape; staff rules (last teacher, student accounts); enrolment scoping, de-duplication and drop-versus-delete; delete requiring archive; template rules; module and item listings for staff and students (unpublished pages, draft activities, deleted files, unpublished topics hidden); positions and reorder validation; item target validation per type; page scoping and defaults; copy producing a draft course without class data, repointing references and shifting or clearing dates, permission rules for TAs, strangers and templates; import merging groups and appending modules; and course file access.
+The tests use mocked Prisma, cache and access services. They cover: the creator becoming teacher (and a failed teacher insert failing the whole create); listing for teachers versus admins; 404 for no role, 403 for a TA changing settings, and loss of access when removed from the school; join code format, clash retry and joining by code; the people shape; staff rules (last teacher, student accounts); enrolment scoping, de-duplication and drop-versus-delete; delete requiring archive; template rules; delete removing cover images; banner colour validation; cover image tickets, verification (non-image, oversize, another course's key), replace and remove, and refusal for TAs, strangers and non-members; module and item listings for staff and students (unpublished pages, draft activities, deleted files, unpublished topics hidden); positions and reorder validation; item target validation per type; page scoping and defaults; copy producing a draft course without class data, repointing references and shifting or clearing dates, permission rules for TAs, strangers and templates; import merging groups and appending modules; and course file access.
 
 ## See also
 

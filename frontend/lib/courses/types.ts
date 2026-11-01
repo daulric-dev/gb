@@ -3,6 +3,8 @@
  * (camelCase); see LMS_REVAMP_PLAN.md for the endpoints that serve them.
  */
 
+import type { CourseBannerColor } from "./appearance";
+
 export type CourseStatus = "draft" | "published" | "archived";
 export type CourseRole = "admin" | "teacher" | "ta";
 
@@ -19,6 +21,10 @@ export interface Course {
   gradeScaleId: string | null;
   /** A school template: copied into new courses, never takes students. */
   isTemplate: boolean;
+  /** Banner gradient preset (lib/courses/appearance.ts); null is Auto. */
+  bannerColor: CourseBannerColor | null;
+  /** Cover image, drawn over the colour; null when none is set. */
+  bannerImageUrl: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -241,6 +247,8 @@ export interface PortalCourseCard {
   description: string | null;
   status: CourseStatus;
   termId: string | null;
+  bannerColor: CourseBannerColor | null;
+  bannerImageUrl: string | null;
   teachers: { firstName: string | null; lastName: string | null }[];
   grade: CourseGrade | null;
 }

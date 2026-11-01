@@ -106,10 +106,14 @@ export interface ReplayPlan {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-/** Storage prefixes a plan may name: a user's file-manager folder, an avatar. */
+/**
+ * Storage prefixes a plan may name: a user's file-manager folder, an avatar,
+ * a course's cover images.
+ */
 const PREFIX_RES = [
   new RegExp(`^file-manager/${UUID}/${UUID}/$`, 'i'),
   new RegExp(`^images/avatars/${UUID}\\.$`, 'i'),
+  new RegExp(`^images/course-banners/${UUID}-$`, 'i'),
 ];
 
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);

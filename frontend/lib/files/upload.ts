@@ -157,13 +157,49 @@ export async function uploadFile(
   );
 }
 
-/** The avatar ticket: `path` is the staged object to name on completion. */
-export interface AvatarUploadTicket {
+/**
+ * An image ticket (avatar, course cover, school logo): `path` is the staged
+ * object to name on completion.
+ */
+export interface ImageUploadTicket {
   path: string;
   method: "PUT";
   uploadUrl: string;
   headers: Record<string, string>;
   expiresAt: string;
+}
+
+/** @deprecated Use `ImageUploadTicket`. */
+export type AvatarUploadTicket = ImageUploadTicket;
+
+/**
+ * The shared image flow: ask `ticketPath` for a presigned URL, PUT the image
+ * straight to storage, then POST the staged path to `completePath`, where the
+ * backend checks the bytes (JPEG, PNG or WebP) and publishes them. Returns
+ * whatever the complete route answers.
+ */
+export async function uploadImage<T>(
+  ticketPath: string,
+  completePath: string,
+  image: Blob,
+  filename: string,
+  onProgress?: (fraction: number) => void,
+): Promise<T> {
+  const ticket = await api<ImageUploadTicket>(ticketPath, {
+    method: "POST",
+    body: {
+      filename,
+      contentType: image.type || "application/octet-stream",
+      totalSize: image.size,
+    },
+  });
+
+  await sendToStorage(image, ticket, onProgress);
+
+  return api<T>(completePath, {
+    method: "POST",
+    body: { path: ticket.path },
+  });
 }
 
 /**
@@ -176,20 +212,67 @@ export async function uploadAvatar(
   filename: string,
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
-  const ticket = await api<AvatarUploadTicket>("/auth/avatar/resumable", {
-    method: "POST",
-    body: {
-      filename,
-      contentType: image.type || "application/octet-stream",
-      totalSize: image.size,
-    },
-  });
-
-  await sendToStorage(image, ticket, onProgress);
-
-  const { avatar_url } = await api<{ avatar_url: string }>(
+  const { avatar_url } = await uploadImage<{ avatar_url: string }>(
+    "/auth/avatar/resumable",
     "/auth/avatar/complete",
-    { method: "POST", body: { path: ticket.path } },
+    image,
+    filename,
+    onProgress,
   );
   return avatar_url;
+}
+
+/**
+ * Set a course's cover image (staff who can change the course's settings).
+ * Returns the updated course.
+ */
+export function uploadCourseBanner<T>(
+  courseId: string,
+  image: Blob,
+  filename: string,
+  onProgress?: (fraction: number) => void,
+): Promise<T> {
+  return uploadImage<T>(
+    `/courses/${courseId}/banner/upload-ticket`,
+    `/courses/${courseId}/banner/complete`,
+    image,
+    filename,
+    onProgress,
+  );
+}
+
+/** Set the active school's logo (`school:update`). Returns the new URL. */
+export async function uploadSchoolLogo(
+  image: Blob,
+  filename: string,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  const { logoUrl } = await uploadImage<{ logoUrl: string }>(
+    "/schools/current/logo/upload-ticket",
+    "/schools/current/logo/complete",
+    image,
+    filename,
+    onProgress,
+  );
+  return logoUrl;
+}
+
+/** The image types every image upload accepts (never SVG). */
+export const IMAGE_UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/**
+ * Why `file` cannot be uploaded as an image of at most `maxBytes`, or null
+ * when it can. The backend checks again; this only saves a wasted upload.
+ */
+export function imageFileProblem(
+  file: { type: string; size: number },
+  maxBytes: number,
+): string | null {
+  if (!IMAGE_UPLOAD_TYPES.includes(file.type)) {
+    return "Only JPEG, PNG and WebP images are allowed";
+  }
+  if (file.size > maxBytes) {
+    return `Image must be under ${Math.round(maxBytes / 1024 / 1024)}MB`;
+  }
+  return null;
 }

@@ -96,6 +96,8 @@ model school {
   owner_id                                    String?               @db.Uuid
   /// Largest upload in MB; null follows UPLOAD_DEFAULT_MB. Capped by UPLOAD_MAX_MB in the app.
   max_upload_mb                               Int?
+  /// Storage key of the school's logo under images/school-logos/; null shows the app mark.
+  logo_path                                   String?
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]

@@ -29,6 +29,7 @@ import { Camera, Loader2, Trash2 } from "lucide-react";
 import type { Profile } from "./_components/types";
 import { BillingSettingsLink } from "./_components/billing-link";
 import { UploadLimitSettings } from "./_components/upload-limit-settings";
+import { SchoolLogoSettings } from "./_components/school-logo-settings";
 import { SignedInDevices } from "@/components/account/signed-in-devices";
 
 export default function SettingsPage() {
@@ -200,6 +201,8 @@ export default function SettingsPage() {
       <BillingSettingsLink />
 
       <UploadLimitSettings />
+
+      <SchoolLogoSettings />
 
       <Card className="p-6">
         <h2 className="text-lg font-semibold">Profile Picture</h2>

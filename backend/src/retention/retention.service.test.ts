@@ -318,6 +318,21 @@ describe('abandoned uploads', () => {
     expect(report.stagedObjects).toBe(2);
   });
 
+  test('staged image uploads older than an hour are removed, newer ones kept', async () => {
+    const { storage, service } = setup();
+    storage.objects.set('images/uploads/avatars/old.png', Buffer.from('x'));
+    storage.modified.set('images/uploads/avatars/old.png', new Date(Date.now() - 2 * 60 * 60 * 1000));
+    storage.objects.set('images/uploads/course-banners/new.png', Buffer.from('x'));
+    storage.modified.set('images/uploads/course-banners/new.png', new Date());
+    storage.objects.set('images/avatars/served.png', Buffer.from('x'));
+    storage.modified.set('images/avatars/served.png', new Date(0));
+    const report = await service.purge({ now: NOW });
+    expect(storage.objects.has('images/uploads/avatars/old.png')).toBe(false);
+    expect(storage.objects.has('images/uploads/course-banners/new.png')).toBe(true);
+    expect(storage.objects.has('images/avatars/served.png')).toBe(true);
+    expect(report.stagedObjects).toBeGreaterThanOrEqual(1);
+  });
+
   test('stagedFileId reads the id out of a staged key', () => {
     expect(stagedFileId(`file-manager/uploads/s/u/${U(8)}-notes.pdf`)).toBe(U(8));
     expect(stagedFileId('file-manager/uploads/nope')).toBeNull();

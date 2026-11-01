@@ -208,13 +208,23 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
           href="/dashboard"
           className="flex items-center gap-2 overflow-hidden"
         >
-          <Image
-            src="/icons/logo2.png"
-            alt=""
-            width={24}
-            height={24}
-            className="size-6 shrink-0"
-          />
+          {profile?.school?.logo_url ? (
+            // The school's own logo replaces the app mark when it has one.
+            // eslint-disable-next-line @next/next/no-img-element -- served by the API/CDN
+            <img
+              src={profile.school.logo_url}
+              alt=""
+              className="size-6 shrink-0 rounded object-contain"
+            />
+          ) : (
+            <Image
+              src="/icons/logo2.png"
+              alt=""
+              width={24}
+              height={24}
+              className="size-6 shrink-0"
+            />
+          )}
           {!collapsed && (
             <div className="min-w-0">
               <span className="text-lg font-bold tracking-tight truncate block">

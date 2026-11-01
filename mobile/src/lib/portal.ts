@@ -7,7 +7,12 @@ export interface PortalMe {
   id: string;
   firstName: string | null;
   lastName: string | null;
-  school: { id: string; name: string | null; type: string | null } | null;
+  school: {
+    id: string;
+    name: string | null;
+    type: string | null;
+    logoUrl?: string | null;
+  } | null;
 }
 
 /** GET /portal/me/courses - a course the student is enrolled in. */
@@ -18,6 +23,10 @@ export interface PortalCourseCard {
   description: string | null;
   status: "draft" | "published" | "archived";
   termId: string | null;
+  /** Banner colour preset; null is the id-derived gradient. */
+  bannerColor?: string | null;
+  /** Cover image set on the web app; null when none. */
+  bannerImageUrl?: string | null;
   teachers: { firstName: string | null; lastName: string | null }[];
   grade: CourseGrade | null;
 }

@@ -12,10 +12,12 @@ Also exports `COURSE_STATUSES` (`draft`, `published`, `archived`) and the `Cours
 |-------|-------|-----------|
 | `ListCoursesQueryDto` | `GET /api/courses` (query) | Optional `status` (one of the statuses), `termId`, `academicYearId` (UUIDs). |
 | `CreateCourseDto` | `POST /api/courses` | `name` required, max 200. Optional `code` (max 40), `description` (max 5000), `academicYearId`, `termId` (UUIDs). |
-| `UpdateCourseDto` | `PATCH /api/courses/:courseId` | All optional: `name` (non-empty, max 200), `code` (max 40, nullable), `description` (max 5000, nullable), `status`, `academicYearId` / `termId` / `gradeScaleId` (UUID, nullable), `isTemplate` (boolean). |
+| `UpdateCourseDto` | `PATCH /api/courses/:courseId` | All optional: `name` (non-empty, max 200), `code` (max 40, nullable), `description` (max 5000, nullable), `status`, `academicYearId` / `termId` / `gradeScaleId` (UUID, nullable), `isTemplate` (boolean), `bannerColor` (one of `COURSE_BANNER_COLORS` from `../course-appearance.ts`, or null for Auto). |
 | `AddCourseStaffDto` | `POST /api/courses/:courseId/staff` | `userProfileId` UUID; `role` `teacher` or `ta`. |
 | `UpdateCourseStaffDto` | `PATCH /api/courses/:courseId/staff/:userProfileId` | `role` `teacher` or `ta`. |
 | `EnrollStudentsDto` | `POST /api/courses/:courseId/students` | `studentIds`: 1-500 UUIDs. |
+
+The banner upload routes (`/api/courses/:courseId/banner/upload-ticket`, `/complete`) reuse `CreateResumableUploadDto` and `CompleteUploadDto` from [`src/images/dto`](../../images/dto/README.md).
 | `JoinCourseDto` | `POST /api/portal/me/courses/join` (in `src/student-portal/student-portal.controller.ts`) | `joinCode`: non-empty string, max 20. |
 
 ### `content.dto.ts`

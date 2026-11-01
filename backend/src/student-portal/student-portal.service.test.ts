@@ -105,13 +105,19 @@ describe('StudentPortalService.getMe', () => {
       id: 'school-1',
       name: 'S',
       school_type: 'secondary',
+      logo_path: null,
     });
 
     const me = await service(prisma).getMe(CTX);
     expect(me.firstName).toBe('Sam');
     expect(me.dateOfBirth).toBe('2010-04-05');
     expect(me.enrollmentDate).toBeNull();
-    expect(me.school).toEqual({ id: 'school-1', name: 'S', type: 'secondary' });
+    expect(me.school).toEqual({
+      id: 'school-1',
+      name: 'S',
+      type: 'secondary',
+      logoUrl: null,
+    });
     expect('classes' in me).toBe(false);
 
     const call = prisma.student.findUnique.mock.calls[0][0];
@@ -154,6 +160,8 @@ describe('StudentPortalService courses', () => {
         description: null,
         status: 'published',
         termId: 'term-1',
+        bannerColor: null,
+        bannerImageUrl: null,
         teachers: [{ firstName: 'Tess', lastName: 'Teach' }],
         grade: GRADE,
       },
@@ -165,6 +173,21 @@ describe('StudentPortalService courses', () => {
     expect(enrol.where.status).toEqual({ not: 'dropped' });
     const staff = prisma.course_staff.findMany.mock.calls[0][0];
     expect(staff.where.role).toBe('teacher');
+  });
+
+  test('cards carry the banner colour and cover image URL', async () => {
+    const prisma = tables(createMockPrisma());
+    const name = `course-banners/course-1-${'a'.repeat(32)}.png`;
+    prisma.course.findMany.mockResolvedValue([
+      course({ banner_color: 'teal', banner_image_path: name }),
+    ]);
+    const [card] = await service(prisma).listCourses(CTX);
+
+    expect(card.bannerColor).toBe('teal');
+    expect(card.bannerImageUrl).toEndWith(`/images/${name}`);
+    const select = prisma.course.findMany.mock.calls[0][0].select;
+    expect(select.banner_color).toBe(true);
+    expect(select.banner_image_path).toBe(true);
   });
 
   test('a grade that fails to compute leaves the card without one', async () => {

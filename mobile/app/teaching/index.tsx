@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useTheme } from "@/theme/ThemeProvider";
 import { staffCourseHref, type StaffCourse } from "@/lib/course";
 import { WebHint } from "@/features/course/StaffSections";
+import { CourseThumb } from "@/features/course/CourseBanner";
 
 const ROLE_LABEL = { admin: "Admin", teacher: "Teacher", ta: "TA" } as const;
 
@@ -73,6 +74,7 @@ export default function TeachingCoursesScreen() {
             >
               <Card>
                 <CardContent style={styles.row}>
+                  <CourseThumb course={c} />
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text weight="600" numberOfLines={1}>
                       {c.name}

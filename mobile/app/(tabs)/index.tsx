@@ -6,6 +6,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { AdminDashboard } from "@/features/dashboard/AdminDashboard";
 import { TeacherDashboard } from "@/features/dashboard/TeacherDashboard";
 import { ReadOnlyBanner } from "@/features/billing/ReadOnlyBanner";
+import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
 
 type Tab = "admin" | "teacher";
 
@@ -32,6 +33,10 @@ export default function DashboardScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      <SchoolLogo
+        logoUrl={profile?.school?.logo_url}
+        name={profile?.school?.name}
+      />
       <ReadOnlyBanner isAdmin={isAdmin} />
       {isAdmin ? (
         <View style={{ gap: 20 }}>

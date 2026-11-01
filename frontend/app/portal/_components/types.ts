@@ -10,7 +10,12 @@ export interface PortalMe {
   dateOfBirth: string | null;
   gender: string | null;
   enrollmentDate: string | null;
-  school: { id: string; name: string | null; type: string | null } | null;
+  school: {
+    id: string;
+    name: string | null;
+    type: string | null;
+    logoUrl: string | null;
+  } | null;
 }
 
 export interface PortalTeacher {
@@ -85,22 +90,4 @@ export function formatDateTime(value: string | null | undefined) {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-/** A stable accent per course so cards are easy to tell apart. */
-const ACCENTS = [
-  "from-sky-500 to-blue-600",
-  "from-emerald-500 to-teal-600",
-  "from-violet-500 to-purple-600",
-  "from-amber-500 to-orange-600",
-  "from-rose-500 to-pink-600",
-  "from-cyan-500 to-sky-600",
-  "from-lime-500 to-green-600",
-  "from-fuchsia-500 to-violet-600",
-];
-
-export function courseAccent(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  return ACCENTS[Math.abs(hash) % ACCENTS.length];
 }
