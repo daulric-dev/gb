@@ -3,6 +3,9 @@ import { KNOWN_DEVICE_WINDOW_MS } from '@/account/session.config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
 import { objectKey, UPLOAD_STAGING_PREFIX } from '@/storage/keys';
+
+/** How old an untracked staged image upload must be before it is purged. */
+const STAGED_IMAGE_MAX_AGE_MS = 60 * 60 * 1000;
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { ErasureReplayService } from '@/erasure/erasure-replay.service';
 import { plan } from '@/erasure/erasure-plan';
@@ -128,6 +131,7 @@ export class RetentionService {
         ['sign-in leftovers', () => this.purgeAuthLeftovers(now, ctx)],
         ['abandoned uploads', () => this.purgeAbandonedUploads(now, ctx)],
         ['staged upload objects', () => this.purgeStagedObjects(ctx)],
+        ['staged image uploads', () => this.purgeStagedImages(ctx)],
         ['erasure log', async () => {
           const pruned = await this.erasure.prune(now, opts.dryRun);
           report.erasureLogRows = pruned.rows;
@@ -304,6 +308,28 @@ export class RetentionService {
       if (stale.length === 0) continue;
       await this.storage.delete(stale);
       report.stagedObjects += stale.length;
+    }
+  }
+
+  /**
+   * Staged image uploads (`images/uploads/...`: avatars, course covers,
+   * school logos) left behind when a ticket was never completed. No row
+   * tracks them, so age is the signal: an hour is well past the upload URL's
+   * lifetime, and completing deletes the staged object anyway.
+   */
+  private async purgeStagedImages({ opts, deadline, report }: Ctx) {
+    if (opts.dryRun) return;
+    this.checkTime(deadline);
+    const before = new Date(Date.now() - STAGED_IMAGE_MAX_AGE_MS);
+    const keys = await this.storage.listKeysOlderThan(
+      objectKey('images', UPLOAD_STAGING_PREFIX),
+      before,
+    );
+    for (let i = 0; i < keys.length; i += batchSize()) {
+      this.checkTime(deadline);
+      const batch = keys.slice(i, i + batchSize());
+      await this.storage.delete(batch);
+      report.stagedObjects += batch.length;
     }
   }
 

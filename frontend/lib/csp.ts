@@ -23,8 +23,9 @@ export function contentSecurityPolicy(nonce: string): string {
     storageOrigin,
   ].filter(Boolean);
 
-  // Only images we host: avatars come from the API or the image CDN, files
-  // from object storage, previews are blob:. No `https:` - Markdown that
+  // Only images we host: avatars, course covers and school logos come from
+  // the API or the image CDN, files from object storage, previews are blob:.
+  // No `https:` - Markdown that
   // points at any other host renders as a link (components/markdown.tsx), so
   // a post cannot carry a tracking pixel that logs readers' IPs.
   const imgSrc = ["'self'", "blob:", "data:", ...trustedImageOrigins()];

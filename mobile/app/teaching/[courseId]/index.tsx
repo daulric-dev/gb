@@ -17,6 +17,7 @@ import {
   StaffWorkSection,
 } from "@/features/course/StaffSections";
 import { TopicList } from "@/features/discussions/TopicList";
+import { CourseBanner, BannerText } from "@/features/course/CourseBanner";
 
 type StaffTab =
   | "modules"
@@ -142,6 +143,13 @@ export default function StaffCourseScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      <CourseBanner course={course}>
+        {course.code ? (
+          <BannerText size="xs" weight="600">
+            {course.code}
+          </BannerText>
+        ) : null}
+      </CourseBanner>
       {course.status === "published" && (
         <Button
           variant="secondary"

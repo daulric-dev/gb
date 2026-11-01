@@ -29,6 +29,8 @@ export interface UserProfile {
   school: {
     id: string;
     name: string;
+    /** The school's logo; null shows the app mark. */
+    logo_url?: string | null;
   } | null;
 }
 

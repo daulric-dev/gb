@@ -17,9 +17,9 @@ import { api } from "@/lib/api";
 import type { Activity } from "@/lib/courses/types";
 import {
   ACTIVITY_KIND_LABEL,
-  courseColor,
   formatDue,
 } from "@/lib/courses/format";
+import { bannerAccent } from "@/lib/courses/appearance";
 import {
   Card,
   CardContent,
@@ -195,7 +195,7 @@ export function TeacherDashboard({
                 >
                   <span
                     className="h-8 w-1 shrink-0 rounded-full"
-                    style={{ background: courseColor(a.course.id) }}
+                    style={{ background: bannerAccent(a.course) }}
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{a.title}</p>

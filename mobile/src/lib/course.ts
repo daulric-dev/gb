@@ -207,6 +207,10 @@ export interface StaffCourse {
   status: "draft" | "published" | "archived";
   role: CourseRole | null;
   studentCount?: number;
+  /** Banner colour preset; null is the id-derived gradient. */
+  bannerColor?: string | null;
+  /** Cover image set on the web app; null when none. */
+  bannerImageUrl?: string | null;
 }
 
 export function canManage(role: CourseRole | null | undefined): boolean {

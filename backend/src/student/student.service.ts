@@ -17,6 +17,7 @@ import {
 import { UpdateStudentDto } from './dto/update-student.dto';
 
 import { serializeStudent, type StudentRow } from './student.rows';
+import { optionalImageUrl } from '@/images/public-url';
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 const DEFAULT_PAGE_SIZE = 20;
@@ -220,6 +221,8 @@ export class StudentService {
               status: true,
               term_id: true,
               academic_year_id: true,
+              banner_color: true,
+              banner_image_path: true,
             },
           },
         },
@@ -258,6 +261,8 @@ export class StudentService {
         status: e.course.status,
         termId: e.course.term_id ?? null,
         academicYearId: e.course.academic_year_id ?? null,
+        bannerColor: e.course.banner_color ?? null,
+        bannerImageUrl: optionalImageUrl(e.course.banner_image_path),
         enrollmentStatus: e.status,
         enrolledAt: isoDate(e.enrolled_at),
       }))

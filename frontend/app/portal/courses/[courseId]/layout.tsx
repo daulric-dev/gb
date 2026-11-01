@@ -11,11 +11,8 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  courseAccent,
-  teacherNames,
-  type PortalCourseDetail,
-} from "../../_components/types";
+import { CourseBannerBackdrop } from "@/components/courses/course-banner";
+import { teacherNames, type PortalCourseDetail } from "../../_components/types";
 import { EmptyState } from "../../_components/portal-ui";
 import { CourseProvider } from "./_components/course-context";
 
@@ -107,30 +104,34 @@ export default function PortalCourseLayout({
       <div className="space-y-6">
         <div
           className={cn(
-            "relative overflow-hidden rounded-xl bg-gradient-to-br p-5 text-white shadow-sm",
-            courseAccent(c.id),
+            "relative overflow-hidden rounded-xl p-5 text-white shadow-sm",
             c.status === "archived" && "grayscale",
           )}
         >
-          <Link
-            href="/portal/courses"
-            className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white"
-          >
-            <ArrowLeft className="size-3" />
-            Courses
-          </Link>
-          <div className="flex flex-wrap items-center gap-2">
-            {c.code && (
-              <span className="rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium">
-                {c.code}
-              </span>
-            )}
-            {c.status === "archived" && (
-              <Badge variant="secondary">Archived</Badge>
+          <CourseBannerBackdrop course={c} />
+          <div className="relative">
+            <Link
+              href="/portal/courses"
+              className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white"
+            >
+              <ArrowLeft className="size-3" />
+              Courses
+            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {c.code && (
+                <span className="rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium">
+                  {c.code}
+                </span>
+              )}
+              {c.status === "archived" && (
+                <Badge variant="secondary">Archived</Badge>
+              )}
+            </div>
+            <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{c.name}</h1>
+            {teachers && (
+              <p className="mt-1 text-sm text-white/85">{teachers}</p>
             )}
           </div>
-          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{c.name}</h1>
-          {teachers && <p className="mt-1 text-sm text-white/85">{teachers}</p>}
         </div>
 
         <nav className="-mx-1 overflow-x-auto border-b">

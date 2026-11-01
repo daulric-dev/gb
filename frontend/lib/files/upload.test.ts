@@ -2,7 +2,10 @@ import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import {
   retryWhileBusy,
   sendToStorage,
+  imageFileProblem,
   uploadAvatar,
+  uploadCourseBanner,
+  uploadSchoolLogo,
   UploadError,
   type UploadTicket,
 } from "@/lib/files/upload";
@@ -152,7 +155,7 @@ describe("uploadAvatar", () => {
     globalThis.fetch = mock(async (url: string, init: RequestInit) => {
       const body = init.body ? JSON.parse(init.body as string) : undefined;
       calls.push({ url, body });
-      const reply = url.endsWith("/auth/avatar/resumable")
+      const reply = /\/(resumable|upload-ticket)$/.test(url)
         ? {
             path: "uploads/avatars/u.jpg",
             method: "PUT",
@@ -160,7 +163,11 @@ describe("uploadAvatar", () => {
             headers: { "Content-Type": "image/jpeg" },
             expiresAt: new Date().toISOString(),
           }
-        : { avatar_url: "https://api.example.com/api/images/avatars/u.jpg?t=1" };
+        : url.endsWith("/schools/current/logo/complete")
+          ? { logoUrl: "https://api.example.com/api/images/school-logos/s-x.jpg" }
+          : url.includes("/banner/complete")
+            ? { id: "c1", bannerImageUrl: "https://api.example.com/api/images/course-banners/c1-x.jpg" }
+            : { avatar_url: "https://api.example.com/api/images/avatars/u.jpg?t=1" };
       return new Response(JSON.stringify(reply), { status: 200 });
     }) as unknown as typeof fetch;
   });
@@ -198,5 +205,40 @@ describe("uploadAvatar", () => {
       uploadAvatar(new Blob(["x"], { type: "image/jpeg" }), "avatar.jpg"),
     ).rejects.toBeInstanceOf(UploadError);
     expect(calls).toHaveLength(1);
+  });
+
+  test("course covers and school logos use their own ticket and complete routes", async () => {
+    const image = new Blob(["jpeg-bytes"], { type: "image/jpeg" });
+    const course = await uploadCourseBanner<{ bannerImageUrl: string }>(
+      "c1",
+      image,
+      "cover.jpg",
+    );
+    expect(calls[0].url).toEndWith("/courses/c1/banner/upload-ticket");
+    expect(calls[1].url).toEndWith("/courses/c1/banner/complete");
+    expect(calls[1].body).toEqual({ path: "uploads/avatars/u.jpg" });
+    expect(course.bannerImageUrl).toContain("/course-banners/");
+
+    const logo = await uploadSchoolLogo(image, "logo.jpg");
+    expect(calls[2].url).toEndWith("/schools/current/logo/upload-ticket");
+    expect(calls[3].url).toEndWith("/schools/current/logo/complete");
+    expect(logo).toContain("/school-logos/");
+    expect(sent).toHaveLength(2);
+  });
+});
+
+describe("imageFileProblem", () => {
+  test("accepts JPEG, PNG and WebP within the cap", () => {
+    for (const type of ["image/jpeg", "image/png", "image/webp"]) {
+      expect(imageFileProblem({ type, size: 1024 }, 2048)).toBeNull();
+    }
+  });
+
+  test("refuses SVG, other types and oversized files", () => {
+    expect(imageFileProblem({ type: "image/svg+xml", size: 1 }, 2048)).toContain("JPEG");
+    expect(imageFileProblem({ type: "application/pdf", size: 1 }, 2048)).toContain("JPEG");
+    expect(imageFileProblem({ type: "image/png", size: 3 * 1024 * 1024 }, 2 * 1024 * 1024)).toBe(
+      "Image must be under 2MB",
+    );
   });
 });

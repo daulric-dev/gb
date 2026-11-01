@@ -120,13 +120,22 @@ export default function PortalLayout({
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
           <Link href="/portal" className="flex items-center gap-2 overflow-hidden">
-            <Image
-              src="/icons/logo2.png"
-              alt=""
-              width={24}
-              height={24}
-              className="size-6 shrink-0"
-            />
+            {student.school.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element -- served by the API/CDN
+              <img
+                src={student.school.logo_url}
+                alt=""
+                className="size-6 shrink-0 rounded object-contain"
+              />
+            ) : (
+              <Image
+                src="/icons/logo2.png"
+                alt=""
+                width={24}
+                height={24}
+                className="size-6 shrink-0"
+              />
+            )}
             <span className="truncate text-sm font-semibold">
               {student.school.name}
             </span>

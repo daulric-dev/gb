@@ -24,6 +24,9 @@ import { CreateJoinRequestDto } from './dto/create-join-request.dto';
 import { ApproveJoinRequestDto } from './dto/approve-join-request.dto';
 import { UpdateUploadLimitDto } from './dto/update-upload-limit.dto';
 import { UploadLimitService } from '@/file-manager/upload-limit.service';
+import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
+import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
+import { SchoolLogoService } from './school-logo.service';
 import { userSchoolId } from '@/common/user-school';
 import { PrismaService } from '@/prisma/prisma.service';
 
@@ -37,6 +40,7 @@ export class SchoolController {
     private readonly versioning: VersioningService,
     private readonly uploadLimits: UploadLimitService,
     private readonly prisma: PrismaService,
+    private readonly logos: SchoolLogoService,
   ) {}
 
   @Get()
@@ -81,6 +85,34 @@ export class SchoolController {
     const schoolId = await this.activeSchool(userId);
     const raw = await this.uploadLimits.setForSchool(schoolId, dto.maxUploadMb);
     return this.versioning.resolve(req, 'school.uploadLimit')(raw);
+  }
+
+  /**
+   * A presigned PUT for a new school logo (JPEG, PNG or WebP, at most 2 MB).
+   * Members read the logo from their profile (`school.logo_url`).
+   */
+  @RequirePermission('school', 'update')
+  @Post('current/logo/upload-ticket')
+  async logoTicket(@Req() req: any, @Body() dto: CreateResumableUploadDto) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.logos.createTicket(schoolId, dto.contentType, dto.totalSize);
+  }
+
+  /** Verify the uploaded logo and set it; returns `{ logoUrl }`. */
+  @RequirePermission('school', 'update')
+  @Post('current/logo/complete')
+  @HttpCode(200)
+  async logoComplete(@Req() req: any, @Body() dto: CompleteUploadDto) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.logos.complete(schoolId, dto.path);
+  }
+
+  /** Remove the logo; clients fall back to the app mark. */
+  @RequirePermission('school', 'update')
+  @Delete('current/logo')
+  async logoRemove(@Req() req: any) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.logos.remove(schoolId);
   }
 
   @Post('leave')

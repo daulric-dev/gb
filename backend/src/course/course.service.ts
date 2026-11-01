@@ -24,6 +24,8 @@ import { userSchoolId } from '@/common/user-school';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { plan } from '@/erasure/erasure-plan';
+import { optionalImageUrl } from '@/images/public-url';
+import type { CourseBannerColor } from './course-appearance';
 
 // No 0/O, 1/I/L: join codes get read off a board and typed on a phone.
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -251,6 +253,7 @@ export class CourseService {
       termId?: string | null;
       gradeScaleId?: string | null;
       isTemplate?: boolean;
+      bannerColor?: CourseBannerColor | null;
     },
   ) {
     const { course, role } = await this.access.require(
@@ -270,6 +273,7 @@ export class CourseService {
       changes.description = patch.description?.trim() || null;
     }
     if (patch.status !== undefined) changes.status = patch.status;
+    if (patch.bannerColor !== undefined) changes.banner_color = patch.bannerColor;
     if (patch.gradeScaleId !== undefined) {
       changes.grade_scale_id = patch.gradeScaleId;
     }
@@ -371,13 +375,19 @@ export class CourseService {
           schoolId: course.school_id,
           actor: userId,
           reason: 'admin',
-          replay: plan.of(plan.del('course.course', { id: [courseId] })),
+          replay: plan.of(
+            plan.del('course.course', { id: [courseId] }),
+            plan.prefixes([courseBannerPrefix(courseId)]),
+          ),
         });
       });
     } catch (error) {
       this.logger.error(`Failed to delete course: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete course');
     }
+    // The cover image (and any left by an earlier replace that failed to
+    // clean up) goes after the commit; a failure is logged and replay finishes it.
+    await this.erasure.removeObjects([], [courseBannerPrefix(courseId)]);
   }
 
   // ── join codes ────────────────────────────────────────────────────────────
@@ -750,9 +760,16 @@ export class CourseService {
       joinCode: c.join_code,
       gradeScaleId: c.grade_scale_id,
       isTemplate: c.is_template,
+      bannerColor: c.banner_color,
+      bannerImageUrl: optionalImageUrl(c.banner_image_path),
       createdBy: c.created_by,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
     };
   }
+}
+
+/** Every cover image object a course has, for erasure. */
+function courseBannerPrefix(courseId: string): string {
+  return `images/course-banners/${courseId}-`;
 }

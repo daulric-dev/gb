@@ -13,7 +13,7 @@ The dashboard module computes the staff home screen in one call. Every staff mem
 Response fields:
 
 - `activeYear` - the academic year covering today, otherwise the most recent one, as `{ id, name, startDate, endDate }`, or `null`.
-- `myCourses` - `DashboardCourse[]`: courses where the caller is a `course_staff` row (role `teacher` or `ta`) in their school, archived courses left out, sorted by name, each with `studentCount` (active enrolments) and `awaitingMarking` (submissions with status `submitted`).
+- `myCourses` - `DashboardCourse[]`: courses where the caller is a `course_staff` row (role `teacher` or `ta`) in their school, archived courses left out, sorted by name, each with `bannerColor` and `bannerImageUrl` (the course banner), `studentCount` (active enrolments) and `awaitingMarking` (submissions with status `submitted`).
 - `awaitingMarking` - the sum across `myCourses`.
 - `isAdmin` - whether the caller's effective permissions include `course:update`.
 - `school` - `SchoolOverview` for admins, else `null`: course totals by status, students total/active, staff total by `school_management.role` (`admin`, `teacher`, `member`) and `recentActivity` - the 10 latest of course created, activity published and course announcement events, newest first.
