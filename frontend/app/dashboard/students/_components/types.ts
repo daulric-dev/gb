@@ -21,6 +21,8 @@ export interface StudentProfile {
     status: "draft" | "published" | "archived";
     termId: string | null;
     academicYearId: string | null;
+    bannerColor: string | null;
+    bannerImageUrl: string | null;
     enrollmentStatus: "active" | "completed" | "dropped";
     enrolledAt: string | null;
   }[];

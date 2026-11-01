@@ -200,6 +200,28 @@ export class StorageService implements OnModuleInit {
     return keys;
   }
 
+  /** Keys under `prefix` last written before `before`. */
+  async listKeysOlderThan(prefix: string, before: Date): Promise<string[]> {
+    const keys: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key && obj.LastModified && obj.LastModified < before) {
+          keys.push(obj.Key);
+        }
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
+  }
+
   /** A URL the browser can GET the object from, for `expiresIn` seconds. */
   async downloadUrl(
     key: string,

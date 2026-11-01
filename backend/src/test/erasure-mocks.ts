@@ -1,7 +1,8 @@
 import { mock } from 'bun:test';
 
 /**
- * An in-memory StorageService: put/get/getBuffer/exists/delete/listKeys over
+ * An in-memory StorageService: put/get/getBuffer/exists/delete/listKeys
+ * (and listKeysOlderThan, by the `modified` map) over
  * a Map. Set `failDelete` (or `failPut`) to make those calls reject, to test
  * partial failures.
  */
@@ -9,13 +10,19 @@ export function createFakeStorage(initial: Record<string, string> = {}) {
   const objects = new Map<string, Buffer>(
     Object.entries(initial).map(([k, v]) => [k, Buffer.from(v)]),
   );
+  /** When each object was written; set an entry to age an object in a test. */
+  const modified = new Map<string, Date>(
+    [...objects.keys()].map((k) => [k, new Date()]),
+  );
   const fake = {
     objects,
+    modified,
     failDelete: false,
     failPut: false,
     put: mock(async (key: string, body: Buffer | Uint8Array | string) => {
       if (fake.failPut) throw new Error('storage down');
       objects.set(key, Buffer.from(body as string));
+      modified.set(key, new Date());
     }),
     getBuffer: mock(async (key: string) => objects.get(key) ?? null),
     exists: mock(async (key: string) =>
@@ -31,6 +38,12 @@ export function createFakeStorage(initial: Record<string, string> = {}) {
           .filter((k) => k.startsWith(prefix))
           .filter((k) => !opts.endBefore || k < opts.endBefore)
           .sort(),
+    ),
+    listKeysOlderThan: mock(async (prefix: string, before: Date) =>
+      [...objects.keys()]
+        .filter((k) => k.startsWith(prefix))
+        .filter((k) => (modified.get(k) ?? new Date()) < before)
+        .sort(),
     ),
   };
   return fake;

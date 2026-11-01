@@ -3,7 +3,8 @@ import { CalendarRange, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { COURSE_ROLE_LABEL, courseGradient } from "@/lib/courses/format";
+import { COURSE_ROLE_LABEL } from "@/lib/courses/format";
+import { CourseBannerBackdrop } from "@/components/courses/course-banner";
 import type { Course } from "@/lib/courses/types";
 import { cn } from "@/lib/utils";
 import { CourseStatusBadge } from "./CourseStatusBadge";
@@ -11,7 +12,14 @@ import { CourseStatusBadge } from "./CourseStatusBadge";
 /** What a card needs; the dashboard summary's course rows satisfy it too. */
 export type CourseCardData = Pick<
   Course,
-  "id" | "name" | "code" | "status" | "role" | "studentCount"
+  | "id"
+  | "name"
+  | "code"
+  | "status"
+  | "role"
+  | "studentCount"
+  | "bannerColor"
+  | "bannerImageUrl"
 > & {
   /** Handed-in work not yet marked, when known. */
   awaitingMarking?: number;
@@ -38,11 +46,8 @@ export function CourseCard({
           course.status === "archived" && "opacity-70",
         )}
       >
-        <div
-          className="relative h-24 shrink-0"
-          style={{ background: courseGradient(course.id) }}
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.25),transparent_55%)]" />
+        <div className="relative h-24 shrink-0">
+          <CourseBannerBackdrop course={course} />
           {course.code && (
             <span className="absolute bottom-2 left-3 rounded-md bg-black/25 px-2 py-0.5 font-mono text-xs font-medium text-white backdrop-blur-sm">
               {course.code}

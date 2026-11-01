@@ -35,7 +35,7 @@ School-wide announcements appear for staff, with an unread marker until read. Fo
 
 ## Settings
 
-Your name, profile picture and the school you belong to. Your email address is your identity and is not editable here — an administrator changes it if it has to change.
+Your name, profile picture and the school you belong to. Administrators (anyone who can change school settings) also see **School logo** here: upload a JPEG, PNG or WebP up to 2MB (square works best) and it replaces the GradeBook mark in the sidebar, the student portal header and the top of the mobile home screens for everyone in the school. Replace or remove it at any time. Your email address is your identity and is not editable here — an administrator changes it if it has to change.
 
 The light/dark toggle is in the top corner of every page and follows your device by default.
 

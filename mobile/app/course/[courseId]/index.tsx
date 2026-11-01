@@ -16,6 +16,7 @@ import {
   WorkSection,
 } from "@/features/course/StudentSections";
 import { TopicList } from "@/features/discussions/TopicList";
+import { CourseBanner, BannerText } from "@/features/course/CourseBanner";
 
 const TABS: TabItem<CourseTab>[] = [
   { value: "home", label: "Home" },
@@ -124,6 +125,15 @@ export default function StudentCourseScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      {course && (
+        <CourseBanner course={course}>
+          {course.code ? (
+            <BannerText size="xs" weight="600">
+              {course.code}
+            </BannerText>
+          ) : null}
+        </CourseBanner>
+      )}
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       {loading ? <Skeleton style={{ height: 220 }} /> : section}
     </Screen>

@@ -1,3 +1,4 @@
+import type { CourseBannerColor } from "@/lib/courses/appearance";
 import type { CourseRole, CourseStatus } from "@/lib/courses/types";
 
 /** GET /dashboard/summary */
@@ -23,6 +24,8 @@ export interface DashboardCourse {
   name: string;
   code: string | null;
   status: CourseStatus;
+  bannerColor: CourseBannerColor | null;
+  bannerImageUrl: string | null;
   role: CourseRole;
   studentCount: number;
   /** Submissions handed in and not yet marked. */

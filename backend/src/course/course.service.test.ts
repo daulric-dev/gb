@@ -432,6 +432,28 @@ describe('remove', () => {
     expect((err as Error).message).toContain('archive the course');
     expect(prisma.course.deleteMany).not.toHaveBeenCalled();
   });
+
+  test('deleting a course removes its cover images and logs the prefix', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.submission.count.mockResolvedValue(0);
+    const cache = createMockCacheService() as any;
+    const erasure = createMockErasureLog();
+    const svc = new CourseService(
+      cache,
+      new CourseAccessService(cache, prisma as any),
+      prisma as any,
+      erasure as any,
+    );
+    await svc.remove(USER, COURSE);
+
+    const prefix = `images/course-banners/${COURSE}-`;
+    expect(erasure.removeObjects).toHaveBeenCalledWith([], [prefix]);
+    const entry = (erasure.record as any).mock.calls[0][1];
+    expect(entry.replay.steps).toContainEqual({
+      op: 'delete_storage_prefix',
+      prefixes: [prefix],
+    });
+  });
 });
 
 describe('templates', () => {

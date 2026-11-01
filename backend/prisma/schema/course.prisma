@@ -88,6 +88,8 @@ model course {
   created_at          DateTime                   @default(now()) @db.Timestamptz(6)
   updated_at          DateTime                   @default(now()) @db.Timestamptz(6)
   is_template         Boolean                    @default(false)
+  banner_color        String?
+  banner_image_path   String?
   assignment_group    assignment_group[]
   attendance_record   course_attendance_record[]
   attendance_session  attendance_session?

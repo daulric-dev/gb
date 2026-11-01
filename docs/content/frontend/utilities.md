@@ -42,6 +42,10 @@ Every upload goes straight to object storage with a presigned URL: the client as
 |--------|-----|
 | `uploadFile(file, { ticket, complete }, options?)` | Files and assignment hand-ins (`/files/upload-ticket`, `/portal/me/activities/:id/upload-ticket`). Returns the released file; a `503` on complete is retried with backoff. |
 | `uploadAvatar(image, filename, onProgress?)` | Profile pictures: `POST /auth/avatar/resumable`, the PUT, then `POST /auth/avatar/complete { path }`. Returns the new `avatar_url`. |
+| `uploadImage(ticketPath, completePath, image, filename, onProgress?)` | The shared image flow behind the three below: ticket, PUT, then `POST completePath { path }`; returns the complete route's answer. |
+| `uploadCourseBanner(courseId, image, filename, onProgress?)` | Course cover images: `/courses/:id/banner/upload-ticket` then `/banner/complete`. Returns the updated course. |
+| `uploadSchoolLogo(image, filename, onProgress?)` | The school logo: `/schools/current/logo/upload-ticket` then `/complete`. Returns the new `logoUrl`. |
+| `imageFileProblem(file, maxBytes)` | A pre-check (JPEG/PNG/WebP and size) that returns a message or null; the backend checks again. |
 | `sendToStorage(blob, ticket, onProgress?)` | The PUT itself, retried once on a dropped connection. Throws `UploadError` when storage refuses it. |
 
 ### `buildUrl(path)` Function

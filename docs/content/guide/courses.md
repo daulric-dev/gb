@@ -62,7 +62,11 @@ Why it is hard to cheat: the code is never sent to students, the QR stops workin
 
 ## Settings
 
-Name, code, description, year and term, grade scale and status. **Delete** removes the course and everything in it; if students have handed in work, archive it first.
+Name, code, description, year and term, grade scale and status.
+
+**Appearance** sets the banner behind the course name, on the course page and on everyone's course cards (students included, on the web and in the app). Pick one of ten colours, or **Auto** for the colour the course was given automatically, and optionally upload a cover image (JPEG, PNG or WebP, up to 5MB; a wide image fits best), which is shown over the colour with a dark shade so the name stays readable. Replace or remove it at any time. Teachers and admins can change it; **Edit appearance** on the course header jumps straight there. A copied course keeps the colour but not the cover image. Appearance is set on the web only.
+
+**Delete** removes the course and everything in it; if students have handed in work, archive it first.
 
 ## Copying a course and templates
 

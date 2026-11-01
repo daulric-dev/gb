@@ -281,8 +281,8 @@ describe('AuthService', () => {
 
       const result = await service.getProfile(userId);
       expect(result.id).toBe(userId);
-      // The school is embedded under `school`, as before.
-      expect(result.school).toEqual({ id: 's1', name: 'Demo' });
+      // The school is embedded under `school`, as before, with its logo URL.
+      expect(result.school).toEqual({ id: 's1', name: 'Demo', logo_url: null });
       expect('school_user_profile_school_idToschool' in result).toBe(false);
 
       const stored = await mockCache.get(`profile:${userId}`);

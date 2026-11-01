@@ -7,7 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { PortalCourseCard } from "@/lib/courses/types";
-import { courseAccent, formatPercent, teacherNames } from "./types";
+import { CourseBannerBackdrop } from "@/components/courses/course-banner";
+import { formatPercent, teacherNames } from "./types";
 
 export function CourseCard({ course }: { course: PortalCourseCard }) {
   const archived = course.status === "archived";
@@ -23,13 +24,13 @@ export function CourseCard({ course }: { course: PortalCourseCard }) {
       <Card className="h-full gap-0 py-0 transition-shadow group-hover:shadow-md">
         <div
           className={cn(
-            "relative h-24 bg-gradient-to-br p-4 text-white",
-            courseAccent(course.id),
+            "relative h-24 overflow-hidden rounded-t-xl p-4 text-white",
             archived && "grayscale",
           )}
         >
+          <CourseBannerBackdrop course={course} />
           {course.code && (
-            <span className="rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
+            <span className="relative rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
               {course.code}
             </span>
           )}

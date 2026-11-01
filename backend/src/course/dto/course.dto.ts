@@ -12,6 +12,10 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  COURSE_BANNER_COLORS,
+  type CourseBannerColor,
+} from '../course-appearance';
 
 export const COURSE_STATUSES = ['draft', 'published', 'archived'] as const;
 export type CourseStatus = (typeof COURSE_STATUSES)[number];
@@ -73,6 +77,15 @@ export class UpdateCourseDto {
   @ValidateIf((_, v) => v !== undefined)
   @IsBoolean()
   isTemplate?: boolean;
+
+  @ApiPropertyOptional({
+    enum: COURSE_BANNER_COLORS,
+    nullable: true,
+    description: 'Banner gradient preset; null derives one from the course id',
+  })
+  @IsOptional()
+  @IsIn(COURSE_BANNER_COLORS)
+  bannerColor?: CourseBannerColor | null;
 }
 
 export class AddCourseStaffDto {

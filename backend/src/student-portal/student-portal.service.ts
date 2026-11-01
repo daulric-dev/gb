@@ -8,6 +8,7 @@ import {
 import { CourseService } from '@/course/course.service';
 import { ModuleService } from '@/course/module.service';
 import { PageService } from '@/course/page.service';
+import { optionalImageUrl } from '@/images/public-url';
 import { AnnouncementService } from '@/announcement/announcement.service';
 import { GradebookService } from '@/grading/gradebook.service';
 import { FileManagerService } from '@/file-manager/file-manager.service';
@@ -19,7 +20,14 @@ const VISIBLE_COURSE_STATUSES = ['published', 'archived'] as const;
 /** What a portal course card is drawn from. */
 type CardCourse = Pick<
   CourseRow,
-  'id' | 'name' | 'code' | 'description' | 'status' | 'term_id'
+  | 'id'
+  | 'name'
+  | 'code'
+  | 'description'
+  | 'status'
+  | 'term_id'
+  | 'banner_color'
+  | 'banner_image_path'
 >;
 
 /**
@@ -78,7 +86,7 @@ export class StudentPortalService {
 
     const school = await this.prisma.school.findUnique({
       where: { id: ctx.schoolId },
-      select: { id: true, name: true, school_type: true },
+      select: { id: true, name: true, school_type: true, logo_path: true },
     });
 
     return {
@@ -89,7 +97,12 @@ export class StudentPortalService {
       gender: student.gender,
       enrollmentDate: dateOnly(student.enrollment_date as Date),
       school: school
-        ? { id: school.id, name: school.name, type: school.school_type }
+        ? {
+            id: school.id,
+            name: school.name,
+            type: school.school_type,
+            logoUrl: optionalImageUrl(school.logo_path),
+          }
         : null,
     };
   }
@@ -127,6 +140,8 @@ export class StudentPortalService {
         description: true,
         status: true,
         term_id: true,
+        banner_color: true,
+        banner_image_path: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -253,6 +268,8 @@ export class StudentPortalService {
       description: c.description,
       status: c.status,
       termId: c.term_id,
+      bannerColor: c.banner_color ?? null,
+      bannerImageUrl: optionalImageUrl(c.banner_image_path),
       teachers: teachersOf.get(c.id) ?? [],
       grade: grades[i] ?? null,
     }));

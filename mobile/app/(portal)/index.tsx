@@ -30,6 +30,8 @@ import { isOutstanding, type PortalWorkItem } from "@/lib/work";
 import { OpenAttendanceCards } from "@/features/attendance/OpenAttendanceCards";
 import { studentCourseHref } from "@/lib/course";
 import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
+import { CourseThumb } from "@/features/course/CourseBanner";
+import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
@@ -78,6 +80,10 @@ export default function PortalHomeScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      <SchoolLogo
+        logoUrl={profile?.school?.logo_url ?? me?.school?.logoUrl}
+        name={profile?.school?.name}
+      />
       <ReadOnlyBanner />
       <Button
         size="lg"
@@ -144,6 +150,7 @@ export default function PortalHomeScreen() {
                     { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
                   ]}
                 >
+                  <CourseThumb course={c} size={36} />
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text weight="500" numberOfLines={1}>
                       {c.name}

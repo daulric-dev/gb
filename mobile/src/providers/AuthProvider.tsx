@@ -26,6 +26,8 @@ export interface UserProfile {
   school: {
     id: string;
     name: string;
+    /** The school's logo; null shows nothing extra. */
+    logo_url?: string | null;
   } | null;
 }
 
