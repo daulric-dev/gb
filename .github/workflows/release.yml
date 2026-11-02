@@ -1,0 +1,102 @@
+name: Release
+
+# Packages the frontend, backend and docs sources (plus the root workspace
+# files needed to install them with Bun) into one zip for self-hosting schools.
+# A version tag publishes a GitHub Release; a manual run is a dry run that only
+# uploads the zip as a workflow artifact.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for the dry-run zip (e.g. 1.2.3) - nothing is published"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${INPUT_VERSION#v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "Invalid version: '$version'" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          name="gradebook-$VERSION"
+          # git archive only takes tracked files: no node_modules, build
+          # output or .env files.
+          git archive --format=zip --prefix="$name/" -o "$name.zip" HEAD \
+            frontend backend docs \
+            package.json bun.lock turbo.json tsconfig.json README.md LICENSE.md
+          sha256sum "$name.zip" > SHA256SUMS
+          cat SHA256SUMS
+          ls -lh "$name.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradebook-${{ steps.version.outputs.version }}
+          path: |
+            gradebook-${{ steps.version.outputs.version }}.zip
+            SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gradebook-${{ needs.package.outputs.version }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          prerelease=()
+          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$TAG" "gradebook-$VERSION.zip" SHA256SUMS \
+            --verify-tag \
+            --title "GradeBook $VERSION" \
+            --generate-notes \
+            "${prerelease[@]}"
