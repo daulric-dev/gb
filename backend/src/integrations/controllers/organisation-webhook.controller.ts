@@ -25,6 +25,7 @@ import {
   CreateWebhookDto,
   ListDeliveriesQueryDto,
   ListIntegrationAuditQueryDto,
+  RotateSecretDto,
   UpdateWebhookDto,
 } from '@/integrations/webhooks/dto/webhook.dto';
 
@@ -137,9 +138,10 @@ export class OrganisationWebhookController {
     @Req() req: Req,
     @Param('schoolId', new ParseUUIDPipe()) schoolId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: RotateSecretDto,
   ) {
     await this.organisation.requireSchool(schoolId);
-    return this.webhooks.rotateSecret(schoolId, id, asOrgAdmin(req));
+    return this.webhooks.rotateSecret(schoolId, id, asOrgAdmin(req), dto.signingSecret);
   }
 
   @Post(':id/test')

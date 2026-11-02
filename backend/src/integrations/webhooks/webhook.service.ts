@@ -10,13 +10,21 @@ import type { Prisma } from '@/generated/prisma/client';
 import {
   expandEvents,
   UnknownEventTypeError,
-  WEBHOOK_API_VERSION,
 } from '@/integrations/events/webhook-event-types';
 import {
+  customSecretProblem,
+  decryptWebhookHeaderValue,
   decryptWebhookSecret,
+  encryptWebhookHeaderValue,
   encryptWebhookSecret,
   generateWebhookSecret,
 } from '@/integrations/webhooks/webhook-secret';
+import {
+  headerPlanIsEmpty,
+  planHeaders,
+  type HeaderPlan,
+  type WebhookHeaderInput,
+} from '@/integrations/webhooks/webhook-headers';
 import {
   IntegrationAuditService,
   type IntegrationActor,
@@ -25,9 +33,11 @@ import {
 import {
   WebhookDeliveryService,
   type DeliveryStatus,
-  type WebhookEnvelope,
 } from '@/integrations/delivery/webhook-delivery.service';
+import { buildEnvelope, toEnvelope } from '@/integrations/events/webhook-envelope';
 import { maxAttempts } from '@/integrations/config/webhook.config';
+import { WebhookAlertService } from '@/integrations/alerts/webhook-alert.service';
+import { caFingerprints, parseCaBundle } from '@/integrations/webhooks/webhook-tls';
 import {
   DELIVERIES_DEFAULT_LIMIT,
   DELIVERIES_MAX_LIMIT,
@@ -35,7 +45,17 @@ import {
   MAX_URL,
 } from '@/integrations/webhooks/dto/webhook.dto';
 
-/** A webhook as admins see it. Never the secret. */
+/** A custom header as admins see it: the name only, never the value. */
+export interface WebhookHeaderItem {
+  id: string;
+  name: string;
+  /** Always true: a saved header always has a value. Never returned itself. */
+  hasValue: true;
+  /** The stored value no longer decrypts (AUTH_SECRET changed): enter it again. */
+  valueUnreadable: boolean;
+}
+
+/** A webhook as admins see it. Never the secret, never a header value. */
 export interface WebhookItem {
   id: string;
   name: string;
@@ -51,6 +71,13 @@ export interface WebhookItem {
   hasSecret: boolean;
   /** The stored secret no longer decrypts (AUTH_SECRET changed): rotate it. */
   secretUnreadable: boolean;
+  /** Custom headers sent with every delivery, in the order they were added. */
+  headers: WebhookHeaderItem[];
+  /**
+   * Certificate checks on https URLs: `verify` false means deliveries can be
+   * intercepted; `caFingerprints` (SHA-256) of a trusted CA bundle, if any.
+   */
+  tls: { verify: boolean; caFingerprints: string[] };
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -63,10 +90,15 @@ export interface WebhookItem {
   } | null;
 }
 
-/** Create and rotate answer with the secret, the only time it is shown. */
+/**
+ * Create and rotate answer with a generated secret, the only time it is
+ * shown. A secret the school supplied is not echoed back: `secret` is null
+ * and `secretGenerated` false.
+ */
 export interface WebhookWithSecret {
   webhook: WebhookItem;
-  secret: string;
+  secret: string | null;
+  secretGenerated: boolean;
 }
 
 export interface DeliveryItem {
@@ -81,6 +113,8 @@ export interface DeliveryItem {
   lastStatusCode: number | null;
   lastError: string | null;
   durationMs: number | null;
+  /** The last attempt checked the certificate; false when sent with verification off, null for http. */
+  tlsVerified: boolean | null;
   createdAt: string;
   deliveredAt: string | null;
 }
@@ -95,9 +129,20 @@ export interface WebhookInput {
   url: string;
   events: string[];
   enabled?: boolean;
+  /** Custom headers; values write-only. */
+  headers?: WebhookHeaderInput[];
+  /** The school's own signing secret; generated when omitted. */
+  signingSecret?: string;
+  /** Certificate checks: `verify` (default true), `caCert` PEM bundle ('' clears). */
+  tls?: WebhookTlsInput;
 }
 
-export type WebhookPatch = Partial<WebhookInput>;
+export interface WebhookTlsInput {
+  verify?: boolean;
+  caCert?: string;
+}
+
+export type WebhookPatch = Partial<Omit<WebhookInput, 'signingSecret'>>;
 
 const WEBHOOK_SELECT = {
   id: true,
@@ -109,9 +154,15 @@ const WEBHOOK_SELECT = {
   enabled: true,
   consecutive_failures: true,
   disabled_reason: true,
+  verify_tls: true,
+  tls_ca_cert: true,
   created_by: true,
   created_at: true,
   updated_at: true,
+  headers: {
+    select: { id: true, name: true, value_enc: true },
+    orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+  },
 } satisfies Prisma.school_webhookSelect;
 
 type WebhookRow = Prisma.school_webhookGetPayload<{ select: typeof WEBHOOK_SELECT }>;
@@ -128,6 +179,7 @@ const DELIVERY_SELECT = {
   last_status_code: true,
   last_error: true,
   duration_ms: true,
+  tls_verified: true,
   created_at: true,
   delivered_at: true,
 } satisfies Prisma.webhook_deliverySelect;
@@ -184,6 +236,21 @@ function normaliseEvents(raw: string[]): string[] {
   return events;
 }
 
+/** The signing secret to store: the school's own (checked) or a new one. */
+function signingSecretOf(raw: string | undefined): { secret: string; generated: boolean } {
+  if (raw === undefined || raw === '') return { secret: generateWebhookSecret(), generated: true };
+  const problem = customSecretProblem(raw);
+  if (problem) throw new BadRequestException(problem);
+  return { secret: raw, generated: false };
+}
+
+/** A CA bundle as entered: '' (or blank) clears it; else parsed and normalised (400 if bad). */
+function caBundleOf(raw: string | undefined): { pem: string | null; fingerprints: string[] } | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw.trim()) return { pem: null, fingerprints: [] };
+  return parseCaBundle(raw);
+}
+
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
 /**
@@ -204,6 +271,7 @@ export class WebhookService {
     private readonly prisma: PrismaService,
     private readonly audit: IntegrationAuditService,
     private readonly deliveries: WebhookDeliveryService,
+    private readonly alerts: WebhookAlertService,
   ) {}
 
   // ── webhooks ──────────────────────────────────────────────────────────────
@@ -233,8 +301,11 @@ export class WebhookService {
     const url = normaliseWebhookUrl(input.url);
     const events = normaliseEvents(input.events);
     const enabled = input.enabled ?? true;
+    const headers = planHeaders([], input.headers ?? []);
+    const verifyTls = input.tls?.verify ?? true;
+    const ca = caBundleOf(input.tls?.caCert);
     const id = randomUUID();
-    const secret = generateWebhookSecret();
+    const { secret, generated } = signingSecretOf(input.signingSecret);
     const secretEnc = encryptWebhookSecret({ schoolId, webhookId: id }, secret);
 
     let row: WebhookRow;
@@ -249,7 +320,20 @@ export class WebhookService {
             secret_enc: secretEnc,
             events,
             enabled,
+            verify_tls: verifyTls,
+            tls_ca_cert: ca?.pem ?? null,
             created_by: actor.id,
+            ...(headers.create.length
+              ? {
+                  headers: {
+                    create: headers.create.map((h) => ({
+                      id: h.id,
+                      name: h.name,
+                      value_enc: encryptWebhookHeaderValue({ schoolId, webhookId: id, headerId: h.id }, h.value),
+                    })),
+                  },
+                }
+              : {}),
           },
           select: WEBHOOK_SELECT,
         });
@@ -258,8 +342,26 @@ export class WebhookService {
             action: 'webhook_created',
             webhookId: id,
             webhook: name,
-            changes: { name, url, events, enabled },
+            changes: {
+              name,
+              url,
+              events,
+              enabled,
+              ...(headers.changes.added ? { headers: { added: headers.changes.added } } : {}),
+              ...(generated ? {} : { customSigningSecret: true }),
+              ...(ca?.pem ? { tlsCaFingerprints: ca.fingerprints } : {}),
+            },
           },
+          ...(verifyTls
+            ? []
+            : [
+                {
+                  action: 'tls_verification_disabled' as const,
+                  webhookId: id,
+                  webhook: name,
+                  changes: { verifyTls: { before: null, after: false } },
+                },
+              ]),
         ]);
         return created;
       });
@@ -268,7 +370,8 @@ export class WebhookService {
       throw new BadRequestException('Failed to create the webhook');
     }
     this.logger.log(`User ${actor.id} created webhook ${id} for school ${schoolId}`);
-    return { webhook: this.toItem(row, null), secret };
+    if (!verifyTls) this.alertTlsOff(schoolId, id, name);
+    return { webhook: this.toItem(row, null), secret: generated ? secret : null, secretGenerated: generated };
   }
 
   async update(
@@ -281,13 +384,16 @@ export class WebhookService {
       patch.name === undefined &&
       patch.url === undefined &&
       patch.events === undefined &&
-      patch.enabled === undefined
+      patch.enabled === undefined &&
+      patch.headers === undefined &&
+      patch.tls?.verify === undefined &&
+      patch.tls?.caCert === undefined
     ) {
       throw new BadRequestException('Nothing to update');
     }
     const before = await this.require(schoolId, id);
     const data: Prisma.school_webhookUpdateInput = {};
-    const changes: Record<string, { before: unknown; after: unknown }> = {};
+    const changes: Record<string, unknown> = {};
 
     if (patch.name !== undefined) {
       const name = normaliseName(patch.name);
@@ -310,6 +416,13 @@ export class WebhookService {
         changes.events = { before: before.events, after: events };
       }
     }
+    // Validated before anything is written; values never reach the audit log.
+    let headers: HeaderPlan | null = null;
+    if (patch.headers !== undefined) {
+      headers = planHeaders(before.headers, patch.headers);
+      if (headerPlanIsEmpty(headers)) headers = null;
+      else changes.headers = headers.changes;
+    }
     const entries: IntegrationAuditEntry[] = [];
     const name = (data.name as string | undefined) ?? before.name;
     if (patch.enabled !== undefined && patch.enabled !== before.enabled) {
@@ -331,6 +444,28 @@ export class WebhookService {
         },
       });
     }
+    // TLS: each change is its own entry (off is the one that matters); the
+    // audit gets CA fingerprints, never the PEM.
+    const tlsOff = patch.tls?.verify === false && before.verify_tls;
+    if (patch.tls?.verify !== undefined && patch.tls.verify !== before.verify_tls) {
+      data.verify_tls = patch.tls.verify;
+      entries.push({
+        action: patch.tls.verify ? 'tls_verification_enabled' : 'tls_verification_disabled',
+        webhookId: id,
+        webhook: name,
+        changes: { verifyTls: { before: before.verify_tls, after: patch.tls.verify } },
+      });
+    }
+    const ca = caBundleOf(patch.tls?.caCert);
+    if (ca && ca.pem !== before.tls_ca_cert) {
+      data.tls_ca_cert = ca.pem;
+      entries.push({
+        action: 'tls_ca_changed',
+        webhookId: id,
+        webhook: name,
+        changes: { caFingerprints: { before: caFingerprints(before.tls_ca_cert), after: ca.fingerprints } },
+      });
+    }
     if (Object.keys(changes).length) {
       entries.unshift({ action: 'webhook_updated', webhookId: id, webhook: name, changes });
     }
@@ -342,12 +477,14 @@ export class WebhookService {
           where: { id },
           data: { ...data, updated_at: new Date() },
         });
+        if (headers) await this.writeHeaders(tx, schoolId, id, headers);
         await this.audit.record(tx, schoolId, actor, entries);
       });
     } catch (err) {
       this.logger.error(`Failed to update webhook ${id}: ${(err as Error).message}`);
       throw new BadRequestException('Failed to update the webhook');
     }
+    if (tlsOff) this.alertTlsOff(schoolId, id, name);
     return this.get(schoolId, id);
   }
 
@@ -380,9 +517,10 @@ export class WebhookService {
     schoolId: string,
     id: string,
     actor: IntegrationActor,
+    signingSecret?: string,
   ): Promise<WebhookWithSecret> {
     const before = await this.require(schoolId, id);
-    const secret = generateWebhookSecret();
+    const { secret, generated } = signingSecretOf(signingSecret);
     const secretEnc = encryptWebhookSecret({ schoolId, webhookId: id }, secret);
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -391,14 +529,23 @@ export class WebhookService {
           data: { secret_enc: secretEnc, updated_at: new Date() },
         });
         await this.audit.record(tx, schoolId, actor, [
-          { action: 'secret_rotated', webhookId: id, webhook: before.name, changes: {} },
+          {
+            action: 'secret_rotated',
+            webhookId: id,
+            webhook: before.name,
+            changes: generated ? {} : { customSigningSecret: true },
+          },
         ]);
       });
     } catch (err) {
       this.logger.error(`Failed to rotate webhook ${id}'s secret: ${(err as Error).message}`);
       throw new BadRequestException('Failed to rotate the secret');
     }
-    return { webhook: await this.get(schoolId, id), secret };
+    return {
+      webhook: await this.get(schoolId, id),
+      secret: generated ? secret : null,
+      secretGenerated: generated,
+    };
   }
 
   /**
@@ -412,20 +559,17 @@ export class WebhookService {
       where: { id: schoolId },
       select: { name: true },
     });
-    const envelope: WebhookEnvelope = {
-      id: randomUUID(),
-      type: 'ping',
-      apiVersion: WEBHOOK_API_VERSION,
-      createdAt: new Date().toISOString(),
+    const eventId = randomUUID();
+    const envelope = buildEnvelope('ping', {
       school: { id: schoolId, name: school?.name ?? '' },
-      data: { message: 'Test delivery from GradeBook', webhook: { id, name: hook.name } },
-    };
+      webhook: { id, name: hook.name },
+    });
     const deliveryId = await this.prisma.$transaction(async (tx) => {
       const created = await tx.webhook_delivery.create({
         data: {
           webhook_id: id,
           school_id: schoolId,
-          event_id: envelope.id,
+          event_id: eventId,
           event_type: 'ping',
           payload: envelope as unknown as Prisma.InputJsonValue,
           status: 'pending',
@@ -499,7 +643,10 @@ export class WebhookService {
   /**
    * Send a past delivery's payload again, now, as a new delivery with the
    * same event id (receivers that already handled it can skip it). Not
-   * retried; works while the webhook is switched off, to check a fix.
+   * retried; works while the webhook is switched off, to check a fix. A
+   * payload stored in the old `{ id, type, apiVersion, createdAt, school,
+   * data }` shape is converted to `{ event_type, message, data }` (school
+   * moved into data) and stored converted.
    */
   async redeliver(
     schoolId: string,
@@ -525,7 +672,7 @@ export class WebhookService {
           school_id: schoolId,
           event_id: original.event_id,
           event_type: original.event_type,
-          payload: original.payload as Prisma.InputJsonValue,
+          payload: toEnvelope(original.payload, original.event_type).envelope as unknown as Prisma.InputJsonValue,
           status: 'pending',
           next_attempt_at: null,
         },
@@ -551,6 +698,56 @@ export class WebhookService {
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Apply a header plan in the caller's transaction: deletes first, renames
+   * through a temporary name (so swapping two names never trips the unique
+   * index), then new values and new headers. Each value is encrypted with its
+   * header's id in the AAD.
+   */
+  private async writeHeaders(
+    tx: Prisma.TransactionClient,
+    schoolId: string,
+    webhookId: string,
+    plan: HeaderPlan,
+  ): Promise<void> {
+    const now = new Date();
+    if (plan.remove.length) {
+      await tx.school_webhook_header.deleteMany({ where: { id: { in: plan.remove }, webhook_id: webhookId } });
+    }
+    const renames = plan.update.filter((u) => u.name !== undefined);
+    for (const u of renames) {
+      await tx.school_webhook_header.update({ where: { id: u.id }, data: { name: `tmp-${u.id}` } });
+    }
+    for (const u of plan.update) {
+      await tx.school_webhook_header.update({
+        where: { id: u.id },
+        data: {
+          ...(u.name !== undefined ? { name: u.name } : {}),
+          ...(u.value !== undefined
+            ? { value_enc: encryptWebhookHeaderValue({ schoolId, webhookId, headerId: u.id }, u.value) }
+            : {}),
+          updated_at: now,
+        },
+      });
+    }
+    if (plan.create.length) {
+      await tx.school_webhook_header.createMany({
+        data: plan.create.map((h) => ({
+          id: h.id,
+          webhook_id: webhookId,
+          name: h.name,
+          value_enc: encryptWebhookHeaderValue({ schoolId, webhookId, headerId: h.id }, h.value),
+        })),
+      });
+    }
+  }
+
+  /** Email the school's admins that a webhook's TLS verification is off. Never throws. */
+  private alertTlsOff(schoolId: string, id: string, name: string) {
+    this.logger.warn(`TLS verification turned off for webhook ${id} of school ${schoolId}`);
+    void this.alerts.tlsVerificationDisabled(schoolId, { id, name }).catch(() => undefined);
+  }
 
   private async require(schoolId: string, id: string): Promise<WebhookRow> {
     if (!UUID.test(id)) throw new NotFoundException('Webhook not found');
@@ -596,6 +793,14 @@ export class WebhookService {
       hasSecret: true,
       secretUnreadable:
         decryptWebhookSecret({ schoolId: r.school_id, webhookId: r.id }, r.secret_enc) === null,
+      headers: r.headers.map((h) => ({
+        id: h.id,
+        name: h.name,
+        hasValue: true as const,
+        valueUnreadable:
+          decryptWebhookHeaderValue({ schoolId: r.school_id, webhookId: r.id, headerId: h.id }, h.value_enc) === null,
+      })),
+      tls: { verify: r.verify_tls, caFingerprints: caFingerprints(r.tls_ca_cert) },
       createdBy: r.created_by,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
@@ -616,6 +821,7 @@ export class WebhookService {
       lastStatusCode: r.last_status_code,
       lastError: r.last_error,
       durationMs: r.duration_ms,
+      tlsVerified: r.tls_verified,
       createdAt: r.created_at.toISOString(),
       deliveredAt: iso(r.delivered_at),
     };

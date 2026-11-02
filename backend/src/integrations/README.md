@@ -10,12 +10,12 @@ School admin (`school:update` + `AdminGuard`, the active school) under `/api/sch
 
 | Method | Path (after the prefix) | Step-up | What it does |
 | --- | --- | --- | --- |
-| GET | `/` | | The school's webhooks; never the secret (`hasSecret`, `secretUnreadable`), with the last delivery and `insecure` (plain http). |
-| POST | `/` | yes | Create: `{ name, url, events, enabled? }` → `{ webhook, secret }`, the only time the secret is returned. `events: ["*"]` is every current type except `ping`, stored expanded. |
+| GET | `/` | | The school's webhooks; never the secret (`hasSecret`, `secretUnreadable`), with the last delivery, `insecure` (plain http) and `tls: { verify, caFingerprints }`. |
+| POST | `/` | yes | Create: `{ name, url, events, enabled?, headers?, signingSecret?, tls?: { verify?, caCert? } }` → `{ webhook, secret, secretGenerated }`, the only time a generated secret is returned (`secret: null` when the school supplied its own). `events: ["*"]` is every current type except `ping`, stored expanded. |
 | GET | `/:id` | | One webhook. |
-| PATCH | `/:id` | yes | Any of `name`, `url`, `events`, `enabled`; switching on clears an auto-disable. |
+| PATCH | `/:id` | yes | Any of `name`, `url`, `events`, `enabled`, `headers` (the full desired list `[{ id?, name, value? }]`: saved id + no value keeps, + value replaces, no id is new, missing ones are deleted), `tls: { verify?, caCert? }` (`''` clears the CA); switching on clears an auto-disable. |
 | DELETE | `/:id` | yes | 204; deliveries cascade. |
-| POST | `/:id/rotate-secret` | yes | New secret, effective immediately → `{ webhook, secret }`. |
+| POST | `/:id/rotate-secret` | yes | Body optional `{ signingSecret? }`. New secret, effective immediately → `{ webhook, secret, secretGenerated }`. |
 | POST | `/:id/test` | | Sends `ping` now (not retried, not counted); returns the delivery. Audited. |
 | QUERY | `/:id/deliveries` | | Body `{ status?, eventType?, limit? (≤200), before? }`, newest first. |
 | GET | `/deliveries/:deliveryId` | | Payload, response excerpt, attempts. |
@@ -60,9 +60,13 @@ The database is the queue. Each `webhook_delivery` row is `pending` with a `next
 - **Without Redis**: `WebhookWorker` polls every `WEBHOOK_POLL_INTERVAL_MS` (5 s) in every instance, and is kicked straight after an event is queued.
 - **With Redis** (`USE_REDIS=true`, `REDIS_URL`): each new or rescheduled delivery is also a BullMQ job on `webhook-deliver` (delayed until due); `WebhookDeliverProcessor` claims it by id. The poller runs once a minute as a backstop.
 
-A send: POST, headers `Content-Type`, `User-Agent: GradeBook-Webhooks/1`, `X-GradeBook-Event`, `X-GradeBook-Delivery`, `X-GradeBook-Timestamp`, `X-GradeBook-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>`; 10 s timeout; redirects not followed (3xx fails); at most 1 KB of the response read. 2xx succeeds. Failures retry after ~1 min, 5 min, 30 min, 2 h, 5 h, 8 h, 8 h (±20% jitter) - 8 attempts, about a day - then `abandoned`. Every failed attempt adds to the webhook's `consecutive_failures` (a success resets it); at `WEBHOOK_MAX_CONSECUTIVE_FAILURES` (50) it switches itself off (`disabled_reason`), logs `webhook_auto_disabled` and emails the school admin and organisation admins (same recipients as SSO alerts). Ordering is not guaranteed; receivers dedupe by event id.
+Body (`events/webhook-envelope.ts`): exactly `{ event_type, message, data }` - `message` is the catalog type's plain-text sentence (`eventMessage`: ≤ 280 chars, whitespace collapsed, fallbacks like "A student"), `data` starts with `school: { id, name }` (added by `WebhookEvents.emit`). `webhook_delivery.payload` stores exactly that; a payload stored in the old `{ id, type, apiVersion, createdAt, school, data }` shape is converted by `toEnvelope` when retried (written back with the outcome) or redelivered. A send: POST, headers `Content-Type`, `User-Agent: GradeBook-Webhooks/1`, `X-GradeBook-Event`, `X-GradeBook-Event-Id` (from the row's `event_id`), `X-GradeBook-School-Id`, `X-GradeBook-Api-Version: 1`, `X-GradeBook-Delivery`, `X-GradeBook-Timestamp`, `X-GradeBook-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>`; 10 s timeout; redirects not followed (3xx fails); at most 1 KB of the response read. 2xx succeeds. Failures retry after ~1 min, 5 min, 30 min, 2 h, 5 h, 8 h, 8 h (±20% jitter) - 8 attempts, about a day - then `abandoned`. Every failed attempt adds to the webhook's `consecutive_failures` (a success resets it); at `WEBHOOK_MAX_CONSECUTIVE_FAILURES` (50) it switches itself off (`disabled_reason`), logs `webhook_auto_disabled` and emails the school admin and organisation admins (same recipients as SSO alerts). Ordering is not guaranteed; receivers dedupe by event id.
 
-Secrets: 32 random bytes (`whsec_` + base64url), AES-256-GCM under an HKDF key from `AUTH_SECRET` (info `gradebook:webhook-secret:v1`) with the school and webhook id as AAD. Shown once (create, rotate); rotation is immediate.
+Secrets: 32 random bytes (`whsec_` + base64url), or the school's own (16-256 printable ASCII, `customSecretProblem`), AES-256-GCM under an HKDF key from `AUTH_SECRET` (info `gradebook:webhook-secret:v1`) with the school and webhook id as AAD. A generated one is shown once (create, rotate); an own one is never echoed (`secret: null`); rotation is immediate.
+
+TLS (`webhooks/webhook-tls.ts`): `school_webhook.verify_tls` (default true) and `tls_ca_cert` (normalised PEM bundle, `parseCaBundle`: X.509 certificates only via `crypto.X509Certificate`, ≤ 64 KB, private keys refused). On https the sender passes `tls: { rejectUnauthorized, ca }` to Bun's fetch (`fetchTlsOptions`; nothing for http). Each attempt records `webhook_delivery.tls_verified` (false = sent unverified, null = http). Turning verification off (create or PATCH, so step-up) is audited `tls_verification_disabled` and emails the same recipients as auto-disable (`WebhookAlertService.tlsVerificationDisabled`); back on is `tls_verification_enabled`; a CA change is `tls_ca_changed` with SHA-256 fingerprints before/after (never PEM). Responses carry `tls: { verify, caFingerprints }`.
+
+Custom headers (`public.school_webhook_header`, `webhooks/webhook-headers.ts`): up to 20 `name: value` pairs per webhook sent with every attempt (events, retries, test, redeliver), for receivers that expect a key (`Authorization: Bearer ...`, `X-API-Key`). Names: letters, digits, `-`, at most 100, unique ignoring case; reserved `Content-Type`, `Content-Length`, `Host`, `User-Agent`, `Transfer-Encoding`, `Connection`, `X-GradeBook-*` (GradeBook's own headers also win in `webhookHeaders`). Values: 1-4096 printable ASCII, no CR/LF; each encrypted with its own HKDF info (`gradebook:webhook-header:v1`) and the school, webhook and header id as AAD. Write-only: responses carry names only; values are never logged, never audited (the log lists header names added / removed / renamed / value changed), never in alert emails, and are replaced by `[redacted]` in the stored response excerpt and error (`redactValues`; request headers are not stored).
 
 ## Depends on
 
@@ -70,7 +74,7 @@ Secrets: 32 random bytes (`whsec_` + base64url), AES-256-GCM under an HKDF key f
 
 ## Data
 
-Tables in [`prisma/schema/integration.prisma`](../../prisma/schema/integration.prisma) (migration `20261104100000_webhooks`): `school_webhook`, `webhook_delivery`, `integration_audit_log`. Deliveries older than `WEBHOOK_DELIVERY_RETENTION_DAYS` (30) are purged by `src/retention`; deleting a school cascades to all three.
+Tables in [`prisma/schema/integration.prisma`](../../prisma/schema/integration.prisma) (migrations `20261104100000_webhooks`, `20261105100000_webhook_auth`, `20261105110000_webhook_tls`): `school_webhook`, `school_webhook_header`, `webhook_delivery`, `integration_audit_log`. Deliveries older than `WEBHOOK_DELIVERY_RETENTION_DAYS` (30) are purged by `src/retention`; deleting a school cascades to all of them.
 
 ## Configuration
 
@@ -95,12 +99,14 @@ Grouped by role. Each test file sits next to the file it tests.
 | `config/webhook.constants.ts` | The queue name and job type. |
 | **`events/`** | The event types and emitting them. |
 | `events/index.ts` | The public barrel for emitting services: `WebhookEvents`, ref helpers, event keys, `validateEventData`. |
-| `events/webhook-event-types.ts` | **The catalog** - every type's key, group, label, description, JSON Schema of `data` and example; `expandEvents` (`"*"`), a small schema validator. Used by the API, UI, docs and tests. **Add new event types here.** |
+| `events/webhook-event-types.ts` | **The catalog** - every type's key, group, label, description, `message(data)` wording (`eventMessage`), JSON Schema of `data` and example; `expandEvents` (`"*"`), a small schema validator. Used by the API, UI, docs and tests. **Add new event types here.** |
 | `events/webhook-events.service.ts` | `WebhookEvents`. |
+| `events/webhook-envelope.ts` | The body: `buildEnvelope`, `envelopeBody` (fixed key order), `toEnvelope` (old-shape conversion). |
 | `events/webhook-emitters.test.ts` | Each wired service emits its event, and its data validates against the schema. |
 | **`webhooks/`** | Managing webhooks. |
 | `webhooks/webhook.service.ts` | `WebhookService` (shared by both consoles). |
-| `webhooks/webhook-secret.ts` | Secret generation and encryption. |
+| `webhooks/webhook-secret.ts` | Secret generation, own-secret validation, and encryption of signing secrets and header values. |
+| `webhooks/webhook-headers.ts` | Custom header rules, `planHeaders` (keep / replace / add / delete from the full desired list), `redactValues`. |
 | `webhooks/dto/webhook.dto.ts` | Request DTOs. |
 | **`delivery/`** | Sending. |
 | `delivery/webhook-delivery.service.ts` | Claim, send, retry, abandon, auto-disable; `sendNow` for test/redeliver. |
@@ -117,4 +123,4 @@ Grouped by role. Each test file sits next to the file it tests.
 cd backend && bun test src/integrations
 ```
 
-Catalog (unique keys, examples validate, `*` expansion, validator), signature format and headers, sender (2xx, 3xx not followed, 5xx, 1 KB cap, timeout, network error), backoff schedule and jitter, delivery (success resets, retry scheduling, abandon after max attempts, auto-disable + audit + alert once, switched-off webhook / feature, unreadable secret, `sendNow`, claim by id), worker loop, secrets (encrypted, AAD-bound, shown once, never listed, rotate), service (URL syntax with internal hosts, `*`, 404 for another school, update/delete audits, test, deliveries QUERY filters, redeliver), controllers (step-up only on config routes, feature guard 403, org 404, catalog access), `WebhookEvents` gating and never throwing, audit secret scrubbing, alert email, and emission (with schema-valid data) from the course, announcement, school, permission, student, join-code, activity, submission and attendance services (the email-domain join and CSV-import emitters are covered only by type checks). Retention purge: `src/retention/retention.service.test.ts`.
+Catalog (unique keys, examples validate, every example has `school` and a ≤ 280-char message, per-type wording and fallbacks, `*` expansion, validator), envelope (exactly three keys, old-shape conversion on retry and redeliver), TLS (CA bundle parsing and fingerprints, fetch options for verify on / off / CA / http, live Bun HTTPS server with an openssl self-signed cert: refused by default, accepted with its CA or with verification off; `tls_verified` recorded; disable audited + alerted; CA change audited by fingerprint), signature format and headers, sender (2xx, 3xx not followed, 5xx, 1 KB cap, timeout, network error), backoff schedule and jitter, delivery (success resets, retry scheduling, abandon after max attempts, auto-disable + audit + alert once, switched-off webhook / feature, unreadable secret, `sendNow`, claim by id, custom headers sent on attempts and test/redeliver, header values redacted from stored excerpts, unreadable header value), worker loop, secrets (encrypted, AAD-bound, shown once, never listed, rotate, own signing secret accepted / used for HMAC / not echoed, header values on their own key and AAD), headers (name rules and reserved names, value rules, keep / rename / replace / delete plan, limits, audit by name only), service (URL syntax with internal hosts, `*`, 404 for another school, update/delete audits, test, deliveries QUERY filters, redeliver), controllers (step-up only on config routes, feature guard 403, org 404, catalog access), `WebhookEvents` gating and never throwing, audit secret scrubbing, alert email, and emission (with schema-valid data) from the course, announcement, school, permission, student, join-code, activity, submission and attendance services (the email-domain join and CSV-import emitters are covered only by type checks). Retention purge: `src/retention/retention.service.test.ts`.

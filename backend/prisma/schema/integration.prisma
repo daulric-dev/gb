@@ -19,14 +19,44 @@ model school_webhook {
   enabled              Boolean            @default(true)
   consecutive_failures Int                @default(0)
   disabled_reason      String?
+  /// Check the receiver's TLS certificate on https URLs (default). Off sends
+  /// even to a server whose certificate can't be verified - deliveries can be
+  /// intercepted - so turning it off is audited and alerted.
+  verify_tls           Boolean            @default(true)
+  /// PEM bundle of CA certificates to trust instead of the public roots (an
+  /// internal server with a private-CA or self-signed certificate): the safe
+  /// alternative to turning verification off. Public data, stored plain.
+  tls_ca_cert          String?
   /// Who created it (no foreign key: the webhook outlives the account).
   created_by           String?            @db.Uuid
   created_at           DateTime           @default(now()) @db.Timestamptz(6)
   updated_at           DateTime           @default(now()) @db.Timestamptz(6)
   school               school             @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   webhook_delivery     webhook_delivery[]
+  headers              school_webhook_header[]
 
   @@index([school_id, enabled], map: "school_webhook_school_enabled_idx")
+  @@schema("public")
+}
+
+/// A custom header sent with every delivery of one webhook (up to 20 per
+/// webhook), for receivers that expect a key: `Authorization: Bearer ...`,
+/// `X-API-Key: ...`. `name` is an HTTP token (CHECK `^[A-Za-z0-9-]{1,100}$`;
+/// reserved names are refused by the API). The migration adds a unique index
+/// Prisma cannot express: one name per webhook ignoring case
+/// (school_webhook_header_name_key on `(webhook_id, lower(name))`).
+/// `value_enc` is the value, AES-256-GCM under its own key derived from
+/// AUTH_SECRET, bound to the school, webhook and header id
+/// (src/integrations/webhooks/webhook-secret.ts); never returned or audited.
+model school_webhook_header {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhook_id String         @db.Uuid
+  name       String
+  value_enc  String
+  created_at DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at DateTime       @default(now()) @db.Timestamptz(6)
+  webhook    school_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
   @@schema("public")
 }
 
@@ -51,6 +81,9 @@ model webhook_delivery {
   /// At most 1 KB of the last response body.
   response_excerpt String?
   duration_ms      Int?
+  /// Whether the last attempt checked the receiver's certificate: false when
+  /// the webhook has verify_tls off, null for plain http (or not sent yet).
+  tls_verified     Boolean?
   created_at       DateTime       @default(now()) @db.Timestamptz(6)
   delivered_at     DateTime?      @db.Timestamptz(6)
   webhook          school_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade, onUpdate: NoAction)

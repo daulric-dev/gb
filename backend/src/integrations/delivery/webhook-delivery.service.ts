@@ -4,7 +4,8 @@ import type { Queue } from 'bullmq';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FeatureService } from '@/features/feature.service';
 import type { Prisma } from '@/generated/prisma/client';
-import { decryptWebhookSecret } from '@/integrations/webhooks/webhook-secret';
+import { decryptWebhookHeaderValue, decryptWebhookSecret } from '@/integrations/webhooks/webhook-secret';
+import { redactValues } from '@/integrations/webhooks/webhook-headers';
 import { sendWebhook, type FetchLike, type WebhookAttempt } from '@/integrations/delivery/webhook-sender';
 import {
   backoffMs,
@@ -16,39 +17,20 @@ import {
 import { IntegrationAuditService, SYSTEM_ACTOR } from '@/integrations/audit/integration-audit.service';
 import { WebhookAlertService } from '@/integrations/alerts/webhook-alert.service';
 import { QUEUE_WEBHOOK_DELIVER, type WebhookDeliverJob } from '@/integrations/config/webhook.constants';
+import { envelopeBody, toEnvelope, type WebhookEnvelope } from '@/integrations/events/webhook-envelope';
 
 export type DeliveryStatus = 'pending' | 'succeeded' | 'failed' | 'abandoned';
 
-/** The envelope as stored in webhook_delivery.payload. */
-export interface WebhookEnvelope {
-  id: string;
-  type: string;
-  apiVersion: number;
-  createdAt: string;
-  school: { id: string; name: string };
-  data: Record<string, unknown>;
-}
-
-/**
- * The body sent: the envelope's fields in a fixed order (jsonb does not keep
- * key order), so every delivery of an event reads the same way.
- */
-export function envelopeBody(payload: unknown): string {
-  const p = (payload ?? {}) as Partial<WebhookEnvelope>;
-  return JSON.stringify({
-    id: p.id,
-    type: p.type,
-    apiVersion: p.apiVersion,
-    createdAt: p.createdAt,
-    school: p.school,
-    data: p.data,
-  });
-}
+export {
+  envelopeBody,
+  type WebhookEnvelope,
+} from '@/integrations/events/webhook-envelope';
 
 const DELIVERY_SELECT = {
   id: true,
   webhook_id: true,
   school_id: true,
+  event_id: true,
   event_type: true,
   payload: true,
   status: true,
@@ -62,6 +44,9 @@ const WEBHOOK_SELECT = {
   url: true,
   secret_enc: true,
   enabled: true,
+  verify_tls: true,
+  tls_ca_cert: true,
+  headers: { select: { id: true, name: true, value_enc: true } },
 } satisfies Prisma.school_webhookSelect;
 
 /**
@@ -188,7 +173,8 @@ export class WebhookDeliveryService {
       return null;
     }
 
-    const result = await this.send(hook, delivery);
+    const { envelope, stored } = this.envelopeOf(delivery);
+    const result = await this.send(hook, delivery, envelope);
     const attempts = delivery.attempts + 1;
     const now = new Date();
 
@@ -198,6 +184,7 @@ export class WebhookDeliveryService {
           where: { id: deliveryId },
           data: {
             ...outcome(result),
+            ...stored,
             attempts,
             status: 'succeeded',
             next_attempt_at: null,
@@ -218,6 +205,7 @@ export class WebhookDeliveryService {
       where: { id: deliveryId },
       data: {
         ...outcome(result),
+        ...stored,
         attempts,
         status: last ? 'abandoned' : 'pending',
         next_attempt_at: last ? null : new Date(now.getTime() + delay),
@@ -239,11 +227,13 @@ export class WebhookDeliveryService {
       select: { ...DELIVERY_SELECT, webhook: { select: WEBHOOK_SELECT } },
     });
     if (!delivery) return null;
-    const result = await this.send(delivery.webhook, delivery);
+    const { envelope, stored } = this.envelopeOf(delivery);
+    const result = await this.send(delivery.webhook, delivery, envelope);
     await this.prisma.webhook_delivery.update({
       where: { id: deliveryId },
       data: {
         ...outcome(result),
+        ...stored,
         attempts: delivery.attempts + 1,
         status: result.ok ? 'succeeded' : 'failed',
         next_attempt_at: null,
@@ -253,9 +243,36 @@ export class WebhookDeliveryService {
     return result;
   }
 
+  /**
+   * The envelope to send. A delivery stored in the old shape (queued before
+   * the three-key body) is converted, and `stored` writes the converted
+   * envelope back with the outcome, so the row shows what was sent.
+   */
+  private envelopeOf(delivery: { event_type: string; payload: unknown }): {
+    envelope: WebhookEnvelope;
+    stored: { payload?: Prisma.InputJsonValue };
+  } {
+    const { envelope, converted } = toEnvelope(delivery.payload, delivery.event_type);
+    return { envelope, stored: converted ? { payload: envelope as unknown as Prisma.InputJsonValue } : {} };
+  }
+
+  /**
+   * One POST, with the webhook's custom headers. Their values never reach the
+   * delivery row: the stored response excerpt and error have them replaced
+   * by `[redacted]` (request headers themselves are never stored).
+   */
   private async send(
-    hook: { id: string; school_id: string; url: string; secret_enc: string },
-    delivery: { id: string; event_type: string; payload: unknown },
+    hook: {
+      id: string;
+      school_id: string;
+      url: string;
+      secret_enc: string;
+      verify_tls: boolean;
+      tls_ca_cert: string | null;
+      headers: { id: string; name: string; value_enc: string }[];
+    },
+    delivery: { id: string; event_id: string; school_id: string },
+    envelope: WebhookEnvelope,
   ): Promise<WebhookAttempt> {
     const secret = decryptWebhookSecret(
       { schoolId: hook.school_id, webhookId: hook.id },
@@ -268,18 +285,48 @@ export class WebhookDeliveryService {
         error: "The signing secret can't be read (AUTH_SECRET changed?): rotate the webhook's secret",
         responseExcerpt: null,
         durationMs: 0,
+        tlsVerified: null,
       };
     }
-    return sendWebhook(
+    const headers: Record<string, string> = {};
+    for (const h of hook.headers) {
+      const value = decryptWebhookHeaderValue(
+        { schoolId: hook.school_id, webhookId: hook.id, headerId: h.id },
+        h.value_enc,
+      );
+      if (value === null) {
+        return {
+          ok: false,
+          statusCode: null,
+          error: `The value of the ${h.name} header can't be read (AUTH_SECRET changed?): enter it again`,
+          responseExcerpt: null,
+          durationMs: 0,
+          tlsVerified: null,
+        };
+      }
+      headers[h.name] = value;
+    }
+    const result = await sendWebhook(
       {
         url: hook.url,
         secret,
         deliveryId: delivery.id,
-        eventType: delivery.event_type,
-        body: envelopeBody(delivery.payload),
+        eventId: delivery.event_id,
+        schoolId: delivery.school_id,
+        eventType: envelope.event_type,
+        body: envelopeBody(envelope),
+        headers,
+        tls: { verify: hook.verify_tls, ca: hook.tls_ca_cert },
       },
       this.fetchImpl,
     );
+    const values = Object.values(headers);
+    if (values.length === 0) return result;
+    return {
+      ...result,
+      error: redactValues(result.error, values),
+      responseExcerpt: redactValues(result.responseExcerpt, values),
+    };
   }
 
   /**
@@ -334,5 +381,6 @@ function outcome(r: WebhookAttempt) {
     last_error: r.error,
     response_excerpt: r.responseExcerpt,
     duration_ms: r.durationMs,
+    tls_verified: r.tlsVerified,
   };
 }

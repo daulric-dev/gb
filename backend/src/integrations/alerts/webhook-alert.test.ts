@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { createMockPrisma } from '@/test/prisma-mock';
 import { WebhookAlertService } from './webhook-alert.service';
-import { webhookDisabledEmail } from './webhook-alert.email';
+import { webhookDisabledEmail, webhookTlsDisabledEmail } from './webhook-alert.email';
 
 const SCHOOL = '11111111-1111-4111-8111-111111111111';
 
@@ -39,5 +39,21 @@ describe('webhook switched-off alert', () => {
   test('the email escapes names', () => {
     const m = webhookDisabledEmail({ school: 'A&B', webhook: '<x>', failures: 5, at: new Date(), settingsUrl: 'https://gb.test' });
     expect(m.html).not.toContain('<x>');
+  });
+});
+
+describe('TLS verification turned off alert', () => {
+  test('mails the same recipients: deliveries can be intercepted', async () => {
+    process.env.FRONTEND_URL = 'https://gb.test';
+    const prisma = createMockPrisma();
+    prisma.school.findUnique.mockResolvedValue({ name: 'Riverside' });
+    const mail = { configured: () => true, send: mock(async () => {}) };
+    const sso = { recipients: async () => [{ email: 'head@riverside.edu', orgAdmin: false }] };
+    await new WebhookAlertService(prisma as any, mail as any, sso as any).tlsVerificationDisabled(SCHOOL, { id: 'h', name: 'SIS' });
+    const m = (mail.send.mock.calls[0] as any[])[0];
+    expect(m.to).toBe('head@riverside.edu');
+    expect(m.subject).toBe('TLS verification turned off for webhook "SIS" - deliveries can be intercepted');
+    expect(m.text).toContain('trusted CA certificate');
+    expect(webhookTlsDisabledEmail({ school: 'A', webhook: '<x>', at: new Date(), settingsUrl: 'https://gb.test' }).html).not.toContain('<x>');
   });
 });

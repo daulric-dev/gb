@@ -66,7 +66,9 @@ const settle = async () => {
 function expectEvent(webhooks: ReturnType<typeof recorder>, type: string) {
   const e = webhooks.events.find((x) => x.type === type);
   if (!e) throw new Error(`expected a ${type} event; got ${webhooks.events.map((x) => x.type).join(', ') || 'none'}`);
-  expect(validateEventData(type, e.data)).toEqual([]);
+  // WebhookEvents.emit puts the school first in the data; the builders leave it out.
+  expect(e.data.school).toBeUndefined();
+  expect(validateEventData(type, { school: { id: SCHOOL, name: 'Riverside' }, ...e.data })).toEqual([]);
   return e;
 }
 

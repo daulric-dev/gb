@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+  customSecretProblem,
+  decryptWebhookHeaderValue,
   decryptWebhookSecret,
+  encryptWebhookHeaderValue,
   encryptWebhookSecret,
   generateWebhookSecret,
 } from './webhook-secret';
@@ -33,5 +36,29 @@ describe('webhook signing secrets', () => {
     process.env.AUTH_SECRET = 'b'.repeat(40);
     expect(decryptWebhookSecret(OWNER, enc)).toBeNull();
     expect(decryptWebhookSecret(OWNER, 'garbage')).toBeNull();
+  });
+
+  test('header values use their own key and AAD: never interchangeable with the signing secret or another header', () => {
+    const header = { ...OWNER, headerId: '33333333-3333-4333-8333-333333333333' };
+    const enc = encryptWebhookHeaderValue(header, 'Bearer abc');
+    expect(enc).not.toContain('Bearer');
+    expect(decryptWebhookHeaderValue(header, enc)).toBe('Bearer abc');
+    // Swapped into the signing secret column, or the other way round: unreadable.
+    expect(decryptWebhookSecret(OWNER, enc)).toBeNull();
+    expect(decryptWebhookHeaderValue(header, encryptWebhookSecret(OWNER, 'whsec_abc'))).toBeNull();
+    // Moved to another header, webhook or school: unreadable.
+    expect(decryptWebhookHeaderValue({ ...header, headerId: OWNER.webhookId }, enc)).toBeNull();
+    expect(decryptWebhookHeaderValue({ ...header, webhookId: header.headerId }, enc)).toBeNull();
+    expect(decryptWebhookHeaderValue({ ...header, schoolId: header.headerId }, enc)).toBeNull();
+  });
+
+  test('a custom signing secret: 16-256 printable ASCII characters, no edge spaces', () => {
+    expect(customSecretProblem('a'.repeat(16))).toBeNull();
+    expect(customSecretProblem('my receiver secret 2026!')).toBeNull();
+    expect(customSecretProblem('a'.repeat(15))).toContain('16-256');
+    expect(customSecretProblem('a'.repeat(257))).toContain('16-256');
+    expect(customSecretProblem(' ' + 'a'.repeat(20))).toContain('space');
+    expect(customSecretProblem('a'.repeat(20) + '\n')).toContain('printable');
+    expect(customSecretProblem('pässwörd-pässwörd')).toContain('printable');
   });
 });

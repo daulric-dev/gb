@@ -1,20 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Inbox, Loader2, RotateCw } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   DELIVERY_PAGE,
+  deliveryHeaders,
   deliveryStatusText,
   getDelivery,
   listDeliveries,
+  payloadMessage,
+  payloadSchoolId,
   webhooksApi,
   type DeliveryStatus,
   type EventTypeCatalog,
   type WebhookDelivery,
   type WebhookDeliveryDetail,
 } from "@/lib/webhooks";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -159,7 +163,14 @@ export function WebhookDeliveries({
                   <TableCell>
                     <DeliveryStatusBadge status={d.status} />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{d.eventType}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {d.eventType}
+                    {d.tlsVerified === false && (
+                      <Badge variant="destructive" className="ml-2 font-sans" title="Sent without checking the certificate">
+                        TLS not verified
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                     {when(d.createdAt)}
                   </TableCell>
@@ -262,6 +273,12 @@ function DeliveryDialog({
                   <dd>{when(detail.nextAttemptAt)}</dd>
                 </>
               )}
+              {detail.tlsVerified === false && (
+                <>
+                  <dt className="text-muted-foreground">TLS</dt>
+                  <dd className="text-destructive">Sent without verifying the certificate</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">HTTP status</dt>
               <dd>{detail.lastStatusCode ?? "—"}</dd>
               <dt className="text-muted-foreground">Duration</dt>
@@ -273,8 +290,24 @@ function DeliveryDialog({
                 </>
               )}
             </dl>
+            {payloadMessage(detail.payload) && (
+              <p className="rounded-md border bg-muted/30 p-2 text-sm">{payloadMessage(detail.payload)}</p>
+            )}
             <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Payload</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Headers (besides signature and timestamp)</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border bg-muted/50 p-2 font-mono text-xs">
+                {deliveryHeaders(detail, payloadSchoolId(detail.payload)).map(([name, value]) => (
+                  <Fragment key={name}>
+                    <dt className="text-muted-foreground">{name}</dt>
+                    <dd className="break-all">{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                Body (<code>event_type</code>, <code>message</code>, <code>data</code>)
+              </p>
               <pre className="max-h-72 overflow-auto rounded-md border bg-muted/50 p-2 text-xs">
                 {JSON.stringify(detail.payload, null, 2)}
               </pre>
