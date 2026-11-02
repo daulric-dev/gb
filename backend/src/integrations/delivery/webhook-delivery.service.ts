@@ -26,10 +26,7 @@ import { envelopeBody, toEnvelope, type WebhookEnvelope } from '@/integrations/e
 
 export type DeliveryStatus = 'pending' | 'succeeded' | 'failed' | 'abandoned';
 
-export {
-  envelopeBody,
-  type WebhookEnvelope,
-} from '@/integrations/events/webhook-envelope';
+export { envelopeBody, type WebhookEnvelope } from '../events/webhook-envelope';
 
 const DELIVERY_SELECT = {
   id: true,
