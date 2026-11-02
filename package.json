@@ -12,6 +12,7 @@
     "scripts": {
         "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup",
         "postload": "docker compose -f ./docker-compose.dev.yml down",
+        "release": "bun scripts/release.ts",
         "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",
