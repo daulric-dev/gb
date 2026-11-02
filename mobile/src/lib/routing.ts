@@ -9,6 +9,11 @@ import type { UserProfile } from "@/providers/AuthProvider";
  */
 export function homeRouteFor(profile: UserProfile | null) {
   if (!profile) return "/(auth)/login" as const;
+  // An organisation admin need not belong to a school; their console is on
+  // the web, so the app just points them there.
+  if (profile.is_org_admin && !profile.school) {
+    return "/(auth)/organisation" as const;
+  }
   // Named at onboarding; without it we do not know which flow they chose.
   if (!profile.first_name) return "/(auth)/onboard" as const;
   // Staff await approval of a join request, students await approval or a

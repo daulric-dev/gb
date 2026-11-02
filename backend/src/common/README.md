@@ -1,6 +1,6 @@
 # Common helpers (`src/common`)
 
-Small, dependency-free helper functions shared by many backend services. This folder is not a Nest module: nothing is registered or injected, files are imported directly with `@/common/...`. It holds two things: converters that keep API responses in the JSON shapes clients expect now that the data layer is Prisma, and a lookup for the school a user is currently working in.
+Small helper functions shared by many backend services. This folder is not a Nest module: nothing is registered or injected, files are imported directly with `@/common/...`. It holds converters that keep API responses in the JSON shapes clients expect now that the data layer is Prisma, and a lookup for the school a user is currently working in.
 
 ## What it provides
 
@@ -19,6 +19,18 @@ Prisma returns `Date` for date and timestamp columns, `Decimal` for numerics and
 | `pgCode(err)` | The Postgres SQLSTATE behind an error, including errors from `$queryRaw` and driver-adapter errors where Prisma wraps the database error. |
 | `raisedMessage(err)` | The text of an error plus its `meta`, so a message raised by a SQL function (`RAISE EXCEPTION 'no_attempts_left'`) can be matched and mapped to an HTTP error. |
 
+### `http-query.ts`
+
+HTTP `QUERY` support for the search and filter lists (see [docs/content/backend/http-query.md](../../../docs/content/backend/http-query.md)).
+
+| Export | What it does |
+|--------|--------------|
+| `QUERY_METHOD` | `'QUERY'`. |
+| `CORS_METHODS` | The methods CORS allows (`GET`, `QUERY`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`); `createApp.ts` passes it to `enableCors`. QUERY is not CORS-safelisted, so browsers preflight it. |
+| `acceptEmptyQueryBodies(fastify)` | A `preParsing` hook: an empty QUERY body (no `Content-Type`, or a JSON one) is parsed as `{}`, so "no filters" reaches the handler as an empty DTO instead of Fastify's 400 for a QUERY without `Content-Type` or an empty JSON body. Other methods and non-empty bodies are untouched. |
+
+`http-query.test.ts` checks every converted route (QUERY metadata, `@Body()` DTO, empty-body defaults, 400s) and, through `fastify.inject`, that a QUERY body reaches a handler, that an empty one is every default, that the old GET is a 404 and that the CORS preflight allows QUERY.
+
 ### `user-school.ts`
 
 | Export | What it does |
@@ -27,9 +39,11 @@ Prisma returns `Date` for date and timestamp columns, `Decimal` for numerics and
 
 ## Used by
 
-`db-values.ts` is imported by: `academic-year/academic-year.rows.ts`, `account/account.service.ts`, `announcement/announcement.service.ts`, `attendance/attendance.service.ts`, `billing/webhooks/billing-events.service.ts`, `billing/subscriptions/invoice.service.ts`, `billing/subscriptions/subscription.service.ts`, `calendar/calendar.service.ts`, `chat/chat.service.ts`, `course-notification/course-notification.service.ts`, `course/access/course-access.service.ts`, `course/course.service.ts`, `course/module.service.ts`, `course/page.service.ts`, `dashboard/dashboard.service.ts`, `discussion/discussion.service.ts`, `email-domain/email-domain.service.ts`, `file-manager/file-manager.service.ts`, `file-manager/file-share.service.ts`, `file-manager/folder.service.ts`, `grade-scale/grade-scale.service.ts`, `grading/assignment-group.service.ts`, `grading/submission.service.ts`, `permission/permission.service.ts`, `student-account/student-membership.service.ts`, `student-portal/student-portal.service.ts`, `student/student.rows.ts`, `student/student.service.ts`, `term/term.rows.ts`, `term/term.service.ts`.
+`db-values.ts` is imported by: `academic-year/academic-year.rows.ts`, `account/account.service.ts`, `announcement/announcement.service.ts`, `attendance/attendance.service.ts`, `calendar/calendar.service.ts`, `chat/chat.service.ts`, `course-notification/course-notification.service.ts`, `course/access/course-access.service.ts`, `course/course.service.ts`, `course/module.service.ts`, `course/page.service.ts`, `dashboard/dashboard.service.ts`, `discussion/discussion.service.ts`, `email-domain/email-domain.service.ts`, `file-manager/file-manager.service.ts`, `file-manager/file-share.service.ts`, `file-manager/folder.service.ts`, `grade-scale/grade-scale.service.ts`, `grading/assignment-group.service.ts`, `grading/submission.service.ts`, `organisation/organisation.service.ts`, `permission/permission.service.ts`, `student-account/student-membership.service.ts`, `student-portal/student-portal.service.ts`, `student/student.rows.ts`, `student/student.service.ts`, `term/term.rows.ts`, `term/term.service.ts`.
 
 `user-school.ts` is imported by: `calendar/calendar.service.ts`, `chat/chat.controller.ts`, `chat/chat.service.ts`, `course/course-copy.service.ts`, `course/course.service.ts`, `dashboard/dashboard.service.ts`, `email-domain/email-domain.service.ts`, `file-manager/file-manager.service.ts`, `file-manager/folder.service.ts`, `permission/permission.service.ts`, `student/student.service.ts`, `term/term.service.ts`.
+
+`http-query.ts` is imported by `createApp.ts`.
 
 Nothing outside `backend/src` uses these files.
 
@@ -52,6 +66,7 @@ None.
 |------|---------|
 | `db-values.ts` | Response value converters and Prisma/Postgres error-code helpers. |
 | `user-school.ts` | `userSchoolId` lookup of the caller's current school. |
+| `school-membership.ts` | `setSchoolMembership(tx, userId, schoolId, role)`: create or update a `school_management` row without Prisma `upsert` (the partial one-admin-per-school index makes its ON CONFLICT fail with 42P10). Used by organisation appoint-admin and join-request approval. |
 | `db-values.test.ts`, `user-school.test.ts` | Unit tests (see Tests). |
 
 ## Tests

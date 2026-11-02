@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   SearchX,
   Settings,
+  Palette,
   Users,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -24,7 +25,6 @@ import type { Course } from "@/lib/courses/types";
 import {
   canManageCourse,
   COURSE_ROLE_LABEL,
-  courseGradient,
 } from "@/lib/courses/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,8 +38,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { CourseBannerBackdrop } from "@/components/courses/course-banner";
 import { CourseStatusBadge } from "../_components/CourseStatusBadge";
 import { CourseContext } from "./_components/course-context";
+import { useFeatures } from "@/hooks/use-features";
 
 export default function CourseLayout({
   children,
@@ -50,6 +52,7 @@ export default function CourseLayout({
   const params = useParams<{ courseId: string }>();
   const courseId = params?.courseId ?? "";
   const pathname = usePathname() ?? "";
+  const { hasFeature } = useFeatures();
 
   const course = useSignal<Course | null>(null);
   const loading = useSignal(true);
@@ -134,10 +137,16 @@ export default function CourseLayout({
     { href: `${base}/modules`, label: "Modules", icon: Layers },
     { href: `${base}/assignments`, label: "Assignments", icon: ClipboardList },
     { href: `${base}/pages`, label: "Pages", icon: FileText },
-    { href: `${base}/announcements`, label: "Announcements", icon: Megaphone },
-    { href: `${base}/discussions`, label: "Discussions", icon: MessagesSquare },
+    ...(hasFeature("announcements")
+      ? [{ href: `${base}/announcements`, label: "Announcements", icon: Megaphone }]
+      : []),
+    ...(hasFeature("discussions")
+      ? [{ href: `${base}/discussions`, label: "Discussions", icon: MessagesSquare }]
+      : []),
     { href: `${base}/people`, label: "People", icon: Users },
-    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck },
+    ...(hasFeature("attendance")
+      ? [{ href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck }]
+      : []),
     { href: `${base}/grades`, label: "Grades", icon: BarChart3 },
     ...(canManage
       ? [{ href: `${base}/settings`, label: "Settings", icon: Settings }]
@@ -156,9 +165,8 @@ export default function CourseLayout({
       <div className="space-y-6">
         <header
           className="relative animate-fade-in-up overflow-hidden rounded-xl px-5 py-5 text-white shadow-sm"
-          style={{ background: courseGradient(c.id) }}
         >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.22),transparent_50%)]" />
+          <CourseBannerBackdrop course={c} />
           <div className="relative flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <Link
@@ -176,6 +184,15 @@ export default function CourseLayout({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {canManage && (
+                <Link
+                  href={`${base}/settings#appearance`}
+                  className="inline-flex items-center gap-1 rounded-md bg-black/20 px-2 py-1 text-xs font-medium text-white/90 backdrop-blur-sm hover:bg-black/30 hover:text-white"
+                >
+                  <Palette className="size-3.5" />
+                  Edit appearance
+                </Link>
+              )}
               <Badge className="border-transparent bg-white/20 text-white">
                 {COURSE_ROLE_LABEL[c.role]}
               </Badge>

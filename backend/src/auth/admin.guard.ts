@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { isOrgAdmin } from '@/organisation/org-admin';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -43,6 +44,16 @@ export class AdminGuard implements CanActivate {
         .catch(() => null);
 
       if (membership) return true;
+    }
+
+    // An organisation admin administers every school in the install, so the
+    // active school's admin routes are theirs without a membership row.
+    if (
+      profile?.is_active &&
+      profile.school_id &&
+      (await isOrgAdmin(this.prisma, userId as string).catch(() => false))
+    ) {
+      return true;
     }
 
     this.logger.warn(`User ${userId} denied admin access`);

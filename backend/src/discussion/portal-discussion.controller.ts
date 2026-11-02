@@ -13,17 +13,11 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
-import {
-  StudentGuard,
-  type StudentRequest,
-} from '@/student-portal/student.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
+import { StudentGuard, type StudentRequest } from '@/student-portal/student.guard';
 import { DiscussionService } from './discussion.service';
-import {
-  CreateReplyDto,
-  CreateTopicDto,
-  UpdateReplyDto,
-  UpdateTopicDto,
-} from './dto/discussion.dto';
+import { CreateReplyDto, CreateTopicDto, UpdateReplyDto, UpdateTopicDto } from './dto/discussion.dto';
 
 /**
  * A student's side of course discussions. The student is the one
@@ -33,7 +27,8 @@ import {
 @ApiTags('Student Portal')
 @ApiBearerAuth()
 @Controller('portal/me/courses/:courseId/discussions')
-@UseGuards(AuthGuard, StudentGuard)
+@UseGuards(AuthGuard, StudentGuard, FeatureGuard)
+@RequireFeature('discussions')
 export class PortalDiscussionController {
   constructor(private readonly discussions: DiscussionService) {}
 

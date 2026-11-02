@@ -17,7 +17,7 @@ import {
   EmailDomainService,
   type VerifiedDomain,
 } from '@/email-domain/email-domain.service';
-import { SsoRegistry, info } from './sso.registry';
+import { SsoRegistry, info, type ResolvedProvider } from './sso.registry';
 import { apiBase, oidcRedirectUri } from './sso.config';
 import { SamlAdapter } from './adapters/saml.adapter';
 import type {
@@ -66,6 +66,15 @@ interface PendingHandoff {
 /** A sign-in between /start and the callback, kept server side. */
 export interface PendingSignIn {
   provider: string;
+  /**
+   * The school whose configuration started the sign-in (the email's verified
+   * domain's school), or null when no school was known. The callback
+   * resolves the provider for this same school, so the code is exchanged
+   * with the client that asked for it - never another school's.
+   */
+  schoolId: string | null;
+  /** Whose credentials started it: the school's own app, or the env. */
+  configSource: 'school' | 'env';
   platform: SsoPlatform;
   next: string | null;
   /** The verified domain the sign-in started for, reloaded at the end. */
@@ -143,27 +152,35 @@ export class SsoService {
     private readonly sessions: SessionService,
   ) {}
 
+  /**
+   * Login buttons that work before the user says who they are: providers
+   * the install sets up in the env. A school's own apps (and SAML) are
+   * offered by `discover` once the address is known.
+   */
   providers(): SsoProviderInfo[] {
-    return this.registry.enabled();
+    return this.registry.unscoped();
   }
 
   /**
-   * What the login page should offer for an address: its school's provider,
-   * and whether email codes are off for it.
+   * What the login page should offer for an address: its school's provider
+   * (from that school's own configuration, else the env fallback), and
+   * whether email codes are off for it.
    */
   async discover(email: string) {
     const domain = await this.domains.verifiedDomainFor(email);
-    const adapter = this.registry.get(domain?.ssoProvider);
-    const ready = !!adapter && !!domain && adapter.readyFor(domain);
+    const resolved = domain
+      ? await this.registry.resolve(domain.ssoProvider, domain.schoolId)
+      : undefined;
+    const ready = !!resolved && !!domain && resolved.adapter.readyFor(domain);
     return {
-      provider: ready && adapter ? info(adapter) : null,
+      provider: ready && resolved ? info(resolved.adapter) : null,
       required: !!(ready && domain?.ssoRequired),
     };
   }
 
-  /** Our SP metadata XML, or null when SAML is off. */
+  /** Our SP metadata XML (one service provider for the whole install). */
   samlMetadata(): string | null {
-    const adapter = this.registry.get('saml');
+    const adapter = this.registry.adapter('saml');
     return adapter instanceof SamlAdapter ? adapter.metadata() : null;
   }
 
@@ -181,10 +198,6 @@ export class SsoService {
       code_challenge?: string;
     },
   ): Promise<string> {
-    const adapter = this.registry.get(providerId);
-    if (!adapter)
-      throw new NotFoundException('That sign-in option is not available');
-
     const platform: SsoPlatform = input.platform === 'mobile' ? 'mobile' : 'web';
     const codeChallenge =
       platform === 'mobile' ? input.code_challenge : undefined;
@@ -206,6 +219,14 @@ export class SsoService {
 
     const email = input.email?.trim().toLowerCase() || undefined;
     const domain = email ? await this.domains.verifiedDomainFor(email) : null;
+    // The address's school decides which app signs it in: its own, or the
+    // env's when it has none. No address, no school: the env's only.
+    const schoolId = domain?.schoolId ?? null;
+    const resolved = await this.registry.resolve(providerId, schoolId);
+    if (!resolved)
+      throw new NotFoundException('That sign-in option is not available');
+    const { adapter } = resolved;
+
     const state = randomBytes(24).toString('base64url');
     const flow = randomBytes(24).toString('base64url');
 
@@ -216,6 +237,8 @@ export class SsoService {
         redirectUri: oidcRedirectUri(req),
         email,
         domain: domainConfig(domain),
+        config: resolved.config,
+        clientKey: resolved.clientKey,
       });
     } catch (err) {
       if (err instanceof HttpException) throw err;
@@ -229,6 +252,8 @@ export class SsoService {
 
     const pending: PendingSignIn = {
       provider: adapter.id,
+      schoolId,
+      configSource: resolved.source,
       platform,
       next: safeNext(input.next),
       domainId: domain?.id ?? null,
@@ -264,6 +289,18 @@ export class SsoService {
     return pending;
   }
 
+  /**
+   * The provider for the school the sign-in started for, with that school's
+   * configuration now - or undefined when it is no longer available, or its
+   * credentials switched between the school's own and the env's meanwhile
+   * (the code was issued to the other client).
+   */
+  private async resolvePending(pending: PendingSignIn): Promise<ResolvedProvider | undefined> {
+    const resolved = await this.registry.resolve(pending.provider, pending.schoolId ?? null);
+    if (!resolved || resolved.source !== (pending.configSource ?? 'env')) return undefined;
+    return resolved;
+  }
+
   private async reloadDomain(pending: PendingSignIn): Promise<SsoDomainConfig | null> {
     if (!pending.domainId) return null;
     return domainConfig(await this.domains.verifiedDomainById(pending.domainId));
@@ -287,15 +324,17 @@ export class SsoService {
     if (!pending || pending.provider !== 'saml') {
       return this.failUrl(pending?.platform ?? 'web', 'expired');
     }
-    const adapter = this.registry.get('saml');
-    if (!adapter) return this.failUrl(pending.platform, 'provider');
+    const resolved = await this.resolvePending(pending);
+    if (!resolved) return this.failUrl(pending.platform, 'provider');
 
     try {
-      const identity = await adapter.complete({
+      const identity = await resolved.adapter.complete({
         state,
         secrets: pending.secrets,
         domain: await this.reloadDomain(pending),
         samlResponse,
+        config: resolved.config,
+        clientKey: resolved.clientKey,
       });
       await this.cache.set(stateKey(state), { ...pending, identity }, HANDOFF_TTL_S);
     } catch (err) {
@@ -330,8 +369,9 @@ export class SsoService {
       return fail(query.error === 'access_denied' ? 'cancelled' : 'failed');
     }
 
-    const adapter = this.registry.get(pending.provider);
-    if (!adapter) return fail('provider');
+    const resolved = await this.resolvePending(pending);
+    if (!resolved) return fail('provider');
+    const { adapter } = resolved;
 
     let identity: SsoIdentity;
     try {
@@ -342,6 +382,8 @@ export class SsoService {
           secrets: pending.secrets,
           domain: await this.reloadDomain(pending),
           callbackUrl: this.currentUrl(req),
+          config: resolved.config,
+          clientKey: resolved.clientKey,
         }));
     } catch (err) {
       this.logger.warn(
@@ -437,7 +479,7 @@ export class SsoService {
       domain.ssoProvider &&
       domain.ssoProvider !== adapter.id
     ) {
-      const required = this.registry.get(domain.ssoProvider);
+      const required = this.registry.adapter(domain.ssoProvider);
       throw new ForbiddenException(
         `Your school signs in with ${required?.label ?? 'its own provider'}`,
       );
@@ -555,7 +597,7 @@ export class SsoService {
       select: { provider: true, claims: true },
     });
     if (!identity) return null;
-    const adapter = this.registry.get(identity.provider);
+    const adapter = this.registry.adapter(identity.provider);
     const claims = (identity.claims ?? {}) as Record<string, unknown>;
     return adapter ? adapter.profileFrom(claims) : null;
   }

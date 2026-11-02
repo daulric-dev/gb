@@ -14,8 +14,8 @@ Both controllers are `@Controller('portal/me')` with `@UseGuards(AuthGuard, Stud
 
 | Method | Path | What it does |
 | --- | --- | --- |
-| GET | `/api/portal/me` | The student's record (`firstName`, `lastName`, `dateOfBirth`, `gender`, `enrollmentDate`) and school. |
-| GET | `/api/portal/me/courses` | Course cards for every non-dropped enrolment in a published or archived, non-template course, sorted by name: teachers and the student's grade summary (a grade that fails to compute is left out, not an error). Never includes the course join code. |
+| GET | `/api/portal/me` | The student's record (`firstName`, `lastName`, `dateOfBirth`, `gender`, `enrollmentDate`) and school (`id`, `name`, `type`, `logoUrl`). |
+| GET | `/api/portal/me/courses` | Course cards for every non-dropped enrolment in a published or archived, non-template course, sorted by name: teachers, the banner (`bannerColor`, `bannerImageUrl`) and the student's grade summary (a grade that fails to compute is left out, not an error). Never includes the course join code. |
 | POST | `/api/portal/me/courses/join` | Body `JoinCourseDto` (`joinCode`). Enrols via `CourseService.joinByCode()` and returns the new card. Throttled by `claim-code` (10 per 15 min). |
 | GET | `/api/portal/me/courses/:courseId` | One course card. |
 | GET | `/api/portal/me/courses/:courseId/modules` | Published modules and items (`ModuleService.listForStudent`). |
@@ -33,7 +33,6 @@ Both controllers are `@Controller('portal/me')` with `@UseGuards(AuthGuard, Stud
 | GET | `/api/portal/me/activities/:activityId` | One activity with the student's submission. |
 | POST | `/api/portal/me/activities/:activityId/upload-ticket` | Body `CreateUploadTicketDto`. Starts a direct (presigned PUT) upload for an assignment. |
 | POST | `/api/portal/me/activities/:activityId/upload-ticket/:fileId/complete` | Checks the uploaded bytes and attaches the file to the draft. |
-| POST | `/api/portal/me/activities/:activityId/file` | Multipart upload in one request (fallback for small files). |
 | POST | `/api/portal/me/activities/:activityId/submit` | Body `SubmitAssignmentDto`. Hand in an assignment. |
 | POST | `/api/portal/me/activities/:activityId/quiz` | Body `SubmitQuizDto`. Submit quiz answers; scored on submit up to the attempt limit. |
 

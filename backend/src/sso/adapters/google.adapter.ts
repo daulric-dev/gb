@@ -18,7 +18,9 @@ const GOOGLE_MAIL = new Set(['gmail.com', 'googlemail.com']);
  * check accepts the domain itself or a parent of it, since a Workspace for
  * srmss.edu.gd also hosts students.srmss.edu.gd.
  *
- * Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
+ * Credentials: the school's own app (public.school_sso_provider), else the
+ * install-wide env GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET for schools that
+ * have not saved one.
  */
 export class GoogleAdapter extends OidcAdapter {
   constructor() {
@@ -27,6 +29,8 @@ export class GoogleAdapter extends OidcAdapter {
       label: 'Google',
       clientIdEnv: 'GOOGLE_CLIENT_ID',
       clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
+      adminNotes:
+        'In Google Cloud Console (signed in with your school\'s Google Workspace), open APIs & Services > Credentials and create an OAuth client ID of type "Web application". Add the redirect URI below as an authorised redirect URI, then paste the client ID and secret here and pick Google on your email domains.',
     });
   }
 

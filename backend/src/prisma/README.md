@@ -16,7 +16,7 @@ The API connects as an owner role and enforces every access rule in code. The sc
 
 ## Used by
 
-Almost every feature module. `PrismaModule` is imported once, in `src/app.module.ts`, and `PrismaService` is injected by (among others) `account`, `auth` (`auth.guard.ts`, `admin.guard.ts`), `academic-year`, `announcement`, `attendance`, `billing`, `calendar`, `chat`, `common/user-school.ts`, `course` (including `course/access/course-access.service.ts`), `course-notification`, `dashboard`, `discussion`, `email-domain`, `file-manager`, `grade-scale`, `grading`, `images`, `notifications`, `permission`, `queue/handlers`, `school`, `sso`, `student`, `student-account`, `student-portal` and `term`.
+Almost every feature module. `PrismaModule` is imported once, in `src/app.module.ts`, and `PrismaService` is injected by (among others) `account`, `auth` (`auth.guard.ts`, `admin.guard.ts`), `academic-year`, `announcement`, `attendance`, `calendar`, `chat`, `common/user-school.ts`, `course` (including `course/access/course-access.service.ts`), `course-notification`, `dashboard`, `discussion`, `email-domain`, `file-manager`, `grade-scale`, `grading`, `images`, `notifications`, `organisation`, `permission`, `queue/handlers`, `school`, `sso`, `student`, `student-account`, `student-portal` and `term`.
 
 Tests do not use the real client: `src/test/prisma-mock.ts` (`createMockPrisma()`) builds a mock with the same model delegates.
 
@@ -27,7 +27,7 @@ Tests do not use the real client: `src/test/prisma-mock.ts` (`createMockPrisma()
 
 ## Data
 
-Every table. The schema is split one file per Postgres schema in [`prisma/schema/`](../../prisma/schema/README.md) (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `billing`). Migrations live in `backend/prisma/migrations/`; `backend/prisma.config.ts` points Prisma at both.
+Every table. The schema is split one file per Postgres schema in [`prisma/schema/`](../../prisma/schema/README.md) (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `compliance`). Migrations live in `backend/prisma/migrations/`; `backend/prisma.config.ts` points Prisma at both.
 
 ## Configuration
 

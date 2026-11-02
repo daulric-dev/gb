@@ -40,11 +40,10 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 
 | Method | Path | Permission | Purpose |
 |--------|------|------------|---------|
-| `GET` | `/files` | `file:read` | Flat list (`filter=all\|own\|shared`; optional `page`/`pageSize`) — backs the All / Shared tabs |
-| `POST` | `/files` | `file:create` | Upload a file (`multipart/form-data`, optional `?name=`, optional `?folderId=`) |
+| `QUERY` | `/files` | `file:read` | Flat list (JSON body `{ filter?: all\|own\|shared, page?, pageSize? }`) — backs the All / Shared tabs |
 | `POST` | `/files/upload-ticket` | `file:create` | Start a direct upload: reserves a `pending` row and returns a presigned `PUT` URL |
-| `POST` | `/files/upload-ticket/:fileId/complete` | `file:create` | Finish a direct upload: re-checks the stored bytes and marks the file `ready` |
-| `GET` | `/files/folders/contents` | `file:read` | Browse a folder: `{ folder, breadcrumb, folders, files }` (`?folderId=`, omit for root) |
+| `POST` | `/files/upload-ticket/:fileId/complete` | `file:create` | Finish a direct upload: re-checks the stored bytes and marks the file `ready`. `503` when the server is busy checking other uploads; the row stays `pending`, so retry the same call. |
+| `QUERY` | `/files/folders/contents` | `file:read` | Browse a folder: `{ folder, breadcrumb, folders, files }` (body `{ folderId? }`, omit for root) |
 | `GET` | `/files/folders` | `file:read` | Flat list of the caller's folders (move-target picker) |
 | `POST` | `/files/folders` | `file:create` | Create a folder (`{ name, parentId? }`) |
 | `PATCH` | `/files/folders/:folderId` | `file:update` | Rename a folder (not system folders) |
@@ -69,13 +68,13 @@ All routes are under `/files`, guarded by `AuthGuard` + `PermissionGuard`.
 
 Folders are an **owner-private organization layer** — a folder is never shared, and `folder_id` is the owner's placement of a file, irrelevant to recipients. Every `FolderService` method is scoped to `owner_id = userId` in the API. Folder names are unique within a parent per owner, enforced by two partial unique indexes (one for nested folders, one for roots, since a `NULL` parent would otherwise never collide).
 
-- **Browsing** — the **My files** tab calls `GET /files/folders/contents`, which returns the current folder's subfolders, the files directly inside it (`folder_id = current`, or `IS NULL` at the root), and a breadcrumb trail. The **All** and **Shared with me** tabs stay flat (`GET /files`) and ignore folders.
+- **Browsing** — the **My files** tab calls `QUERY /files/folders/contents`, which returns the current folder's subfolders, the files directly inside it (`folder_id = current`, or `IS NULL` at the root), and a breadcrumb trail. The **All** and **Shared with me** tabs stay flat (`QUERY /files`) and ignore folders.
 - **Delete is recursive** — deleting a folder soft-deletes the folder, all descendant folders, and every file within them. The subtree is walked in JS (trees are shallow) so contained files are soft-deleted the same way a direct file delete is, rather than being hard-deleted by the FK cascade.
 - **System folders** (`is_system = true`) can't be renamed, but the owner may still delete them. No code creates them today; the column and the rename check remain for existing rows.
 
 ## Listing
 
-`GET /files` returns a bare array by default. Passing `page` switches it to a
+`QUERY /files` returns a bare array by default. Passing `page` switches it to a
 paginated envelope (`{ data, meta }`) - mirroring the `student` list
 convention - so existing array consumers are unaffected.
 
@@ -114,11 +113,35 @@ upload paths share them:
    alone.
 3. **Structure.** `inspectStructure` looks *inside* the file (below).
 
-A single-request upload is stored and recorded directly as `ready`. A direct
-(presigned `PUT`) upload reserves the row as `pending`, and `finaliseUpload` re-checks the
+Every upload is a direct (presigned `PUT`) upload; no route accepts file bytes
+through the API. It reserves the row as `pending`, and `finaliseUpload` re-checks the
 stored bytes before releasing it; anything that fails is deleted from storage
 and the row is marked `failed` with the reason, so the failure is visible
 rather than silent.
+
+Each school has an upload limit: its own `school.max_upload_mb`, or
+`UPLOAD_DEFAULT_MB` when it has none, never above `UPLOAD_MAX_MB` (both 100 by
+default). `UploadLimitService` resolves it (cached for a minute per school,
+dropped on change). It is checked against the declared size when the ticket is
+issued and returned as the ticket's `maxBytes`; completing only checks the
+bytes match the declared size, so lowering the limit does not fail a ticket
+already issued. Hand-ins use the course's school. Admins with
+`school:update` change it in Settings, through
+`PATCH /api/schools/current/upload-limit`.
+
+Completing a direct upload reads the object back only when its type's check
+looks at the bytes (`inspectsBytes()`: PDF, images, DOCX, XLSX, DOC). Other
+types - plain text, CSV, and the non-previewable types submissions accept -
+are judged on their declared type alone, so after the size checks the staged
+object is copied to the served key inside the store (`StorageService.copy`).
+The upload URL signs the length, so a second `PUT` cannot change the size, and
+swapping bytes nobody inspects changes nothing.
+
+Reads for checked types draw from one process-wide memory budget
+(`ByteBudget`, `UPLOAD_VERIFY_MEMORY_MB`, default 256). A completion waits up
+to 10 seconds for room, then answers `503` and leaves the row `pending` for the
+client to retry. A file bigger than the whole budget waits until nothing else
+is being checked and then runs alone.
 
 ### Structural inspection
 

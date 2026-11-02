@@ -16,6 +16,9 @@ import {
   WorkSection,
 } from "@/features/course/StudentSections";
 import { TopicList } from "@/features/discussions/TopicList";
+import { CourseBanner, BannerText } from "@/features/course/CourseBanner";
+import { useFeatures } from "@/lib/use-features";
+import { sectionEnabled } from "@/lib/features";
 
 const TABS: TabItem<CourseTab>[] = [
   { value: "home", label: "Home" },
@@ -47,6 +50,10 @@ export default function StudentCourseScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { features } = useFeatures();
+  const tabs = TABS.filter((t) => sectionEnabled(features, t.value));
+  // A section switched off (or a push for one) lands on Home instead.
+  const shownTab: CourseTab = sectionEnabled(features, tab) ? tab : "home";
 
   useEffect(() => {
     if (isTab(params.tab)) setTab(params.tab);
@@ -89,7 +96,7 @@ export default function StudentCourseScreen() {
 
   const section = (() => {
     const props = { courseId, refreshKey };
-    switch (tab) {
+    switch (shownTab) {
       case "home":
         return <HomeSection {...props} course={course} onTab={setTab} />;
       case "modules":
@@ -124,7 +131,16 @@ export default function StudentCourseScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
-      <Tabs tabs={TABS} value={tab} onChange={setTab} />
+      {course && (
+        <CourseBanner course={course}>
+          {course.code ? (
+            <BannerText size="xs" weight="600">
+              {course.code}
+            </BannerText>
+          ) : null}
+        </CourseBanner>
+      )}
+      <Tabs tabs={tabs} value={shownTab} onChange={setTab} />
       {loading ? <Skeleton style={{ height: 220 }} /> : section}
     </Screen>
   );

@@ -17,7 +17,7 @@ by the hosting platform (it starts with `bun dist/src/main`). See
 
 | Service | Image | Dev compose | Prod compose | Required? | Backend code that uses it |
 | --- | --- | --- | --- | --- | --- |
-| [Postgres](#postgres-db) | `postgres:18.6-alpine` (prod: + WAL-G, `infrastructure/postgres/`) | `db` (+ optional `db-walg`, profile `walg`) | `db` + `db-backup` (commented out; use a managed Postgres) | **Yes** | `src/prisma/` (every module), billing advisory locks |
+| [Postgres](#postgres-db) | `postgres:18.6-alpine` (prod: + WAL-G, `infrastructure/postgres/`) | `db` (+ optional `db-walg`, profile `walg`) | `db` + `db-backup` (commented out; use a managed Postgres) | **Yes** | `src/prisma/` (every module), retention and setup advisory locks |
 | [Redis](#redis-redis) | `redis:7.4-alpine` | `redis` | `redis` | Optional for one instance, **yes** for more than one | `src/cache/`, `src/realtime/`, `src/queue/` |
 | [S3 object storage](#s3-object-storage-s3) | `chrislusf/seaweedfs:4.48` | `s3` | not included (use any S3 provider) | **Yes** | `src/storage/` → `src/file-manager/`, `src/images/` |
 | [Mailpit / SMTP](#mailpit--smtp-mailpit) | `axllent/mailpit:v1.27` | `mailpit` | not included (use any SMTP server) | **Yes** (sign-in sends email) | `src/mail/` → `src/account/email-code.service.ts` |
@@ -33,7 +33,7 @@ the production template is [`infrastructure/env.example`](./env.example).
 ## Postgres (`db`)
 
 **What it is.** The only database: every school, user, course, mark, file record,
-chat message, notification and billing row lives here.
+chat message and notification lives here.
 
 **How the backend connects.**
 
@@ -43,8 +43,9 @@ chat message, notification and billing row lives here.
   module, so every service gets it by injection.
 - The schema is split by Postgres schema under `backend/prisma/schema/`:
   `public` (schools, profiles, roles, years, terms, announcements, email
-  domains), `account` (users, sessions, sign-in codes, SSO identities),
-  `course`, `grading`, `student`, `file_manager`, `chat` and `billing`.
+  domains, the organisation and its admins), `account` (users, sessions,
+  sign-in codes, SSO identities), `course`, `grading`, `student`,
+  `file_manager`, `chat` and `compliance`.
 
 **What uses it beyond plain queries.**
 
@@ -54,8 +55,8 @@ chat message, notification and billing row lives here.
 | School join codes | SQL function `public.redeem_school_join_code` | Called by `src/student-account/` |
 | Student duplicates / merge | SQL functions `merge_student_records`, `student_duplicate_candidates` | Called by `src/student/` |
 | Search | `pg_trgm` extension (created by the baseline migration in schema `extensions`) | Fuzzy name search |
-| Billing sweeps | `pg_try_advisory_xact_lock` in `src/billing/jobs/billing.scheduler.ts` | Only one API replica runs the hourly billing sweep |
-| Invoice numbers | `pg_advisory_xact_lock` in `src/billing/subscriptions/invoice.service.ts` | `GB-YYYYMM-<seq>` numbers for invoices recorded from Stripe never collide |
+| Retention purge | `pg_try_advisory_xact_lock` in `src/retention/retention.scheduler.ts` | Only one API replica runs the daily purge |
+| First-run setup | `pg_advisory_xact_lock` in `src/organisation/organisation.service.ts` (plus the `organisation_singleton` unique index) | Two setups racing each other cannot both create an organisation |
 
 **Migrations.** Hand-written SQL in `backend/prisma/migrations/`, applied with
 `prisma migrate deploy` (the container does this on start; see
@@ -136,7 +137,6 @@ and presence would only be seen by the instance that produced them.
 | Signed-in session lookups (`session:<hash>`) | `src/account/session.service.ts` | Saves a database read on every authenticated request; deleted on sign-out |
 | SSO sign-in state and mobile hand-off codes | `src/sso/sso.service.ts` | Short-lived (minutes); single use |
 | Effective permissions per user and school | `src/permission/` | Invalidated when roles change |
-| Billing entitlement (is the school read-only?) | `src/billing/subscriptions/subscription.service.ts` | Read by the billing interceptor on every write; ~60 s TTL, invalidated on any billing change |
 | School, academic year, term, grade-scale, announcement and student lists | the matching modules | Invalidated on writes |
 | Student portal guard lookups | `src/student-portal/student.guard.ts` | Maps a signed-in user to their student record |
 | Auth helpers (profile, join requests) | `src/auth/auth.service.ts`, `src/email-domain/`, `src/student-account/` | |
@@ -175,7 +175,7 @@ in the request (errors are logged, never returned to the caller).
 
 - **Rate limiting** (`@nestjs/throttler`, configured in `src/app.module.ts`)
   uses its default in-memory storage, so limits are per API instance.
-- Billing schedules use Postgres advisory locks, not Redis.
+- Scheduled jobs (the retention purge) use Postgres advisory locks, not Redis.
 
 **Compose details.**
 
@@ -318,9 +318,8 @@ It needs, at minimum: `DATABASE_URL`, the `S3_*` variables, SMTP settings,
 `AUTH_SECRET`, `FRONTEND_URL` and `API_URL`, plus `REDIS_URL` when
 `USE_REDIS=true`. Optional features add their own: SSO (`SSO_*`, Google and
 Microsoft client ids), push notifications (Expo), chat encryption
-(`CHAT_ENCRYPTION_KEY` or the `CHAT_ENCRYPTION_KEYS` ring) and hosted billing
-(`BILLING_ENABLED` and the Stripe keys; leave it unset when
-self-hosting).
+(`CHAT_ENCRYPTION_KEY` or the `CHAT_ENCRYPTION_KEYS` ring) and organisation
+admins by email (`ORG_ADMIN_EMAILS`).
 
 `infrastructure/nginx/` holds an nginx config that load-balances three replicas
 named `app1`-`app3` and turns off buffering for the SSE streams. No compose file
@@ -334,7 +333,7 @@ front of several API containers yourself.
 | Concern | Needed |
 | --- | --- |
 | Shared cache, realtime events and presence | `USE_REDIS=true` with one shared Redis |
-| One billing sweep at a time | Already handled by Postgres advisory locks |
+| One retention purge at a time | Already handled by Postgres advisory locks |
 | Background notifications processed once | BullMQ on the shared Redis |
 | Rate limits | Per instance (in-memory); multiply the configured limits by the instance count when sizing |
 | Long-lived SSE connections | The proxy must not buffer `/api/chat/stream`, `/api/portal/me/stream` or the attendance session streams (see the nginx config) |
@@ -343,6 +342,5 @@ front of several API containers yourself.
 
 - [`backend/README.md`](../backend/README.md): running the backend locally
 - [`docs/content/environment-variables.md`](../docs/content/environment-variables.md): every variable
-- [`docs/content/dedicated-deployment.md`](../docs/content/dedicated-deployment.md): deploying on your own server
 - [`BACKUPS.md`](./BACKUPS.md) and [`docs/content/backups.md`](../docs/content/backups.md): backups, point-in-time recovery and GDPR
 - [`backend/src/storage/README.md`](../backend/src/storage/README.md), [`backend/src/cache/README.md`](../backend/src/cache/README.md), [`backend/src/realtime/README.md`](../backend/src/realtime/README.md), [`backend/src/queue/README.md`](../backend/src/queue/README.md), [`backend/src/mail/README.md`](../backend/src/mail/README.md), [`backend/src/prisma/README.md`](../backend/src/prisma/README.md)

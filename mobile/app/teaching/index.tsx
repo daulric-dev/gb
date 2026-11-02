@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BookOpen, ChevronRight } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useTheme } from "@/theme/ThemeProvider";
 import { staffCourseHref, type StaffCourse } from "@/lib/course";
 import { WebHint } from "@/features/course/StaffSections";
+import { CourseThumb } from "@/features/course/CourseBanner";
 
 const ROLE_LABEL = { admin: "Admin", teacher: "Teacher", ta: "TA" } as const;
 
@@ -24,7 +25,7 @@ export default function TeachingCoursesScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    setCourses(await api<StaffCourse[]>("/courses").catch(() => null));
+    setCourses(await apiQuery<StaffCourse[]>("/courses").catch(() => null));
   }, []);
 
   useEffect(() => {
@@ -73,6 +74,7 @@ export default function TeachingCoursesScreen() {
             >
               <Card>
                 <CardContent style={styles.row}>
+                  <CourseThumb course={c} />
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text weight="600" numberOfLines={1}>
                       {c.name}

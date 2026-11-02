@@ -16,6 +16,7 @@ const ENV = [
   'SOFT_DELETE_RETENTION_DAYS_CHAT_MESSAGES',
   'RETENTION_PURGE_BATCH_SIZE',
   'RETENTION_PURGE_MAX_MINUTES',
+  'WEBHOOK_DELIVERY_RETENTION_DAYS',
 ];
 let saved: Record<string, string | undefined>;
 beforeEach(() => {
@@ -186,6 +187,33 @@ describe('other kinds', () => {
     expect(kinds).toEqual(['delete', 'update']);
   });
 
+  test('webhook deliveries older than WEBHOOK_DELIVERY_RETENTION_DAYS are deleted in batches', async () => {
+    const { prisma, service } = setup();
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([{ id: U(10) }, { id: U(11) }]).mockResolvedValue([]);
+    prisma.webhook_delivery.deleteMany.mockResolvedValue({ count: 2 });
+    const report = await service.purge({ now: NOW });
+    expect(report.webhookDeliveries).toBe(2);
+    expect(prisma.webhook_delivery.findMany.mock.calls[0][0].where).toEqual({
+      created_at: { lt: new Date(NOW.getTime() - 30 * DAY) },
+    });
+    expect(prisma.webhook_delivery.deleteMany.mock.calls[0][0]).toEqual({ where: { id: { in: [U(10), U(11)] } } });
+
+    process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = '7';
+    const second = setup();
+    await second.service.purge({ now: NOW });
+    expect(second.prisma.webhook_delivery.findMany.mock.calls[0][0].where.created_at.lt).toEqual(
+      new Date(NOW.getTime() - 7 * DAY),
+    );
+  });
+
+  test('a dry run only counts webhook deliveries', async () => {
+    const { prisma, service } = setup();
+    prisma.webhook_delivery.count.mockResolvedValue(4);
+    const report = await service.purge({ now: NOW, dryRun: true });
+    expect(report.webhookDeliveries).toBe(4);
+    expect(prisma.webhook_delivery.deleteMany).not.toHaveBeenCalled();
+  });
+
   test('expired sessions, old sign-in codes and unused remembered devices are cleared (not logged)', async () => {
     const { prisma, service } = setup();
     prisma.session.findMany.mockResolvedValueOnce([{ id: U(1) }]).mockResolvedValue([]);
@@ -316,6 +344,21 @@ describe('abandoned uploads', () => {
     expect(storage.objects.has(orphan)).toBe(false);
     expect(storage.objects.has(junk)).toBe(false);
     expect(report.stagedObjects).toBe(2);
+  });
+
+  test('staged image uploads older than an hour are removed, newer ones kept', async () => {
+    const { storage, service } = setup();
+    storage.objects.set('images/uploads/avatars/old.png', Buffer.from('x'));
+    storage.modified.set('images/uploads/avatars/old.png', new Date(Date.now() - 2 * 60 * 60 * 1000));
+    storage.objects.set('images/uploads/course-banners/new.png', Buffer.from('x'));
+    storage.modified.set('images/uploads/course-banners/new.png', new Date());
+    storage.objects.set('images/avatars/served.png', Buffer.from('x'));
+    storage.modified.set('images/avatars/served.png', new Date(0));
+    const report = await service.purge({ now: NOW });
+    expect(storage.objects.has('images/uploads/avatars/old.png')).toBe(false);
+    expect(storage.objects.has('images/uploads/course-banners/new.png')).toBe(true);
+    expect(storage.objects.has('images/avatars/served.png')).toBe(true);
+    expect(report.stagedObjects).toBeGreaterThanOrEqual(1);
   });
 
   test('stagedFileId reads the id out of a staged key', () => {

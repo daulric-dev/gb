@@ -5,16 +5,19 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, RefreshCw } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { EmailDomain } from "@/lib/email-domains";
+import { emailDomainsApi, type EmailDomain } from "@/lib/email-domains";
 import { Button } from "@/components/ui/button";
 import { CopyRow } from "./CopyRow";
 
 /** DNS instructions for an unverified domain, plus the "Check now" action. */
 export function VerifyPanel({
   domain,
+  apiBase,
   onVerifiedAction,
 }: {
   domain: EmailDomain;
+  /** See `emailDomainsApi`; default: the active school. */
+  apiBase?: string;
   onVerifiedAction: (domain: EmailDomain) => void;
 }) {
   useSignals();
@@ -26,8 +29,8 @@ export function VerifyPanel({
     error.value = null;
     try {
       const updated = await api<EmailDomain>(
-        `/schools/email-domains/${domain.id}/verify`,
-        { method: "POST" },
+        `${emailDomainsApi(apiBase)}/${domain.id}/verify`,
+        { method: "POST", stepUp: true },
       );
       toast.success(`${updated.domain} verified`);
       onVerifiedAction(updated);

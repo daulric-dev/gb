@@ -219,6 +219,10 @@ export class CourseCopyService {
             code: input.code?.trim() || null,
             description: source.description,
             grade_scale_id: source.grade_scale_id,
+            // The colour carries over; the cover image does not. Each image
+            // object belongs to one course (deleted with it), and the new
+            // course's teacher can upload their own.
+            banner_color: source.banner_color,
             created_by: userId,
           },
           select: COURSE_SELECT,
@@ -259,6 +263,7 @@ export class CourseCopyService {
       throw new BadRequestException('Failed to copy the course');
     }
 
+    this.courses.announceCreated?.(created.id, userId);
     return {
       ...this.courses.toCourse(created),
       role: 'teacher' as const,

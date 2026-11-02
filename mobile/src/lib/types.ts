@@ -7,6 +7,8 @@ export interface CourseSummary {
   code: string | null;
   status: "draft" | "published" | "archived";
   studentCount?: number;
+  bannerColor?: string | null;
+  bannerImageUrl?: string | null;
 }
 
 export interface AcademicYear {

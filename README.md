@@ -2,7 +2,7 @@
 
 A course-based learning platform for schools, in the spirit of Canvas and Moodle. Teachers create courses and build them out of modules, pages, assignments and quizzes; students do their work, check in to class and follow their grades on the web or in the mobile app. Built by [daulric](https://daulric.dev).
 
-GradeBook is not affiliated with any specific school - any educator can sign up, create a school, and start running courses.
+GradeBook is not affiliated with any specific school. Each install is self-hosted by one organisation, which may run several schools: the first person to sign in names the organisation, then its admins create the schools and appoint each school's admin. Organisation admins can also manage any school themselves: each school's page in the organisation console sets its upload limit, logo and features, and "Open school dashboard" opens the rest, and anyone who works in more than one school switches between them from the dashboard sidebar or the app's Settings.
 
 ## Features
 
@@ -58,6 +58,7 @@ gb/
 │       ├── auth/  account/  # Email-code sign-in, sessions, guards, profile
 │       ├── sso/             # OIDC (Google, Microsoft) and SAML sign-in
 │       ├── permission/      # Roles and permission catalog
+│       ├── organisation/    # First-run setup, organisation admins, creating schools
 │       ├── school/  student/  student-account/  academic-year/  term/  grade-scale/
 │       ├── chat/  file-manager/  dashboard/  images/
 │       └── prisma/  storage/  mail/  cache/  realtime/  queue/  versioning/  throttle/
@@ -114,7 +115,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 ### 3. Start the local services and create the schema
 
 ```bash
-bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `prisma migrate deploy`, then the Stripe webhook listener (only with billing on and a sk_test_ key)
+bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `prisma migrate deploy`
 ```
 
 `bun run postload` stops them. `bun run db:setup` applies pending migrations on its own. Sign-in emails land in Mailpit at http://127.0.0.1:8025.
@@ -182,7 +183,7 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 
 | Command                                                                    | Description                           |
 | -------------------------------------------------------------------------- | ------------------------------------- |
-| `bun run preload` / `postload`                                         | Start (and migrate) / stop local Postgres, Redis, S3, Mailpit and the Stripe webhook listener |
+| `bun run preload` / `postload`                                         | Start (and migrate) / stop local Postgres, Redis, S3 and Mailpit                              |
 | `bun run dev`                                                            | Start every workspace in development  |
 | `bun run dev:frontend` / `dev:backend` / `dev:mobile` / `dev:docs` | Start one workspace                   |
 | `bun run build`                                                          | Build all projects (cached)           |

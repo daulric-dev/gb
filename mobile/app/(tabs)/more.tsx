@@ -15,6 +15,8 @@ import {
 import type { ComponentType } from "react";
 import { useTheme } from "@/theme/ThemeProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { useFeatures } from "@/lib/use-features";
+import type { FeatureKey } from "@/lib/features";
 import { Screen } from "@/components/layout/Screen";
 import { Card } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -27,6 +29,8 @@ interface MenuItem {
   description: string;
   icon: ComponentType<LucideProps>;
   adminOnly?: boolean;
+  /** Platform feature that must be on for the school. */
+  feature?: FeatureKey;
 }
 
 const ITEMS: MenuItem[] = [
@@ -39,18 +43,21 @@ const ITEMS: MenuItem[] = [
   {
     href: "/announcements",
     label: "Announcements",
+    feature: "announcements",
     description: "School-wide notices",
     icon: Megaphone,
   },
   {
     href: "/chat",
     label: "Messages",
+    feature: "messaging",
     description: "Conversations with staff",
     icon: MessageSquare,
   },
   {
     href: "/files",
     label: "Files",
+    feature: "files",
     description: "Documents and shares",
     icon: FolderClosed,
   },
@@ -86,8 +93,12 @@ export default function MoreScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { isAdmin } = usePermissions();
+  const { hasFeature } = useFeatures();
 
-  const items = ITEMS.filter((i) => !i.adminOnly || isAdmin);
+  const items = ITEMS.filter(
+    (i) =>
+      (!i.adminOnly || isAdmin) && (!i.feature || hasFeature(i.feature)),
+  );
 
   return (
     <Screen title="More" description="Everything else in your school">

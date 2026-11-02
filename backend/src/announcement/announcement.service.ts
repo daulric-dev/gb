@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import { isoDate, isNotFound } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import {
@@ -102,7 +103,22 @@ export class AnnouncementService {
     private readonly cache: CacheService,
     private readonly courseAccess: CourseAccessService,
     @Optional() private readonly notices?: CourseNotificationService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
+
+  /** announcement.posted (title only, never the body). Fire and forget. */
+  private announcePosted(
+    schoolId: string,
+    item: { id: string; title: string | null },
+    course: { id: string; name: string | null; code: string | null } | null,
+    authorId: string,
+  ) {
+    void this.webhooks?.emit(schoolId, 'announcement.posted', async () => ({
+      announcement: { id: item.id, title: item.title ?? '', scope: course ? 'course' : 'school' },
+      course: course ? { id: course.id, name: course.name ?? '', code: course.code } : null,
+      author: await this.webhooks!.staffOrNull(authorId),
+    }));
+  }
 
   /** Resolve the caller's school + role in one lookup. */
   private async getProfile(userId: string) {
@@ -221,6 +237,7 @@ export class AnnouncementService {
       throw new BadRequestException('Failed to create announcement');
     }
     await this.cache.delete(contentKey(school_id));
+    this.announcePosted(school_id, data, null, userId);
     return { ...data, readers: [] as ReaderRow[] };
   }
 
@@ -393,6 +410,7 @@ export class AnnouncementService {
 
     // Fire and forget: posting never waits on notices or pushes.
     void this.notices?.announcementPosted(course.id, data);
+    this.announcePosted(course.school_id, data, course, userId);
     return { ...data, readers: [] as ReaderRow[] };
   }
 

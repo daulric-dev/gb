@@ -9,10 +9,11 @@ export function urlOrigin(url: string | undefined): string | null {
 
 /**
  * Origins, besides this site, that serve images we host ourselves:
- * - the API (`NEXT_PUBLIC_API_URL`): avatars at `/api/images/avatars/<file>`;
+ * - the API (`NEXT_PUBLIC_API_URL`): avatars, course covers and school logos
+ *   at `/api/images/{avatars,course-banners,school-logos}/<file>`;
  * - object storage (`NEXT_PUBLIC_STORAGE_URL`): presigned downloads;
  * - the optional public image CDN (`NEXT_PUBLIC_IMAGES_URL`, the origin of
- *   the backend's `S3_PUBLIC_URL`): avatars when that is configured.
+ *   the backend's `S3_PUBLIC_URL`): those same images when that is configured.
  *
  * Both the CSP `img-src` and the Markdown renderer allow exactly these, so
  * nothing on a page can make a student's browser fetch from a third party.

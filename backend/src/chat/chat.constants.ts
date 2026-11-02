@@ -9,11 +9,6 @@ export function userChannel(userId: string): string {
   return `chat:u:${userId}`;
 }
 
-/** Whether multi-participant channels are enabled. DMs are always on. */
-export function channelsEnabled(): boolean {
-  return process.env.CHAT_CHANNELS_ENABLED === 'true';
-}
-
 /** SSE event names pushed to the browser (also the `type` on bus events). */
 export const ChatEventType = {
   Message: 'message', // a new (or edited/deleted) message in a conversation

@@ -1,8 +1,4 @@
 import { loginPath } from "@/lib/routing";
-import {
-  isSubscriptionRequired,
-  notifySubscriptionRequired,
-} from "@/lib/subscription-required";
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
 
@@ -16,13 +12,58 @@ export function buildUrl(path: string): string {
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   skipAuthRedirect?: boolean;
-  skipSubscriptionNotice?: boolean;
+  /**
+   * Opt in to step-up: when the API answers `403 { code: 'STEP_UP_REQUIRED' }`
+   * (changing single sign-on settings), ask the registered step-up handler
+   * to confirm it's the user, then send the request once more. Without a
+   * handler, or if the user cancels, the 403 is thrown as usual.
+   */
+  stepUp?: boolean;
 };
 
+/** The API's code for "confirm it's you first" (backend `@RequireStepUp()`). */
+export const STEP_UP_REQUIRED = "STEP_UP_REQUIRED";
+
 let unauthorizedHandler: (() => void) | null = null;
+let featureDisabledHandler: ((error: ApiError) => void) | null = null;
+let stepUpHandler: (() => Promise<boolean>) | null = null;
+let pendingStepUp: Promise<boolean> | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
+}
+
+/**
+ * Called when the API answers `403 { code: 'FEATURE_DISABLED' }`: the school's
+ * features changed under us. The AuthProvider re-reads the profile so the
+ * navigation drops whatever was switched off. The error is still thrown, so
+ * the caller shows its message.
+ */
+export function setFeatureDisabledHandler(
+  handler: ((error: ApiError) => void) | null,
+) {
+  featureDisabledHandler = handler;
+}
+
+/**
+ * Registered by the step-up dialog (`StepUpDialogHost`): show "Confirm it's
+ * you", resolve true once the code is verified, false if dismissed.
+ */
+export function setStepUpHandler(handler: (() => Promise<boolean>) | null) {
+  stepUpHandler = handler;
+}
+
+/** Ask the user to confirm, once for any number of requests waiting at the same time. */
+function confirmStepUp(): Promise<boolean> {
+  if (!stepUpHandler) return Promise.resolve(false);
+  if (!pendingStepUp) {
+    pendingStepUp = stepUpHandler()
+      .catch(() => false)
+      .finally(() => {
+        pendingStepUp = null;
+      });
+  }
+  return pendingStepUp;
 }
 
 function redirectToLogin() {
@@ -57,27 +98,19 @@ async function fetchOrThrow(
   }
 }
 
-/**
- * The ApiError for a failed response. A 402 SUBSCRIPTION_REQUIRED (the school
- * is read-only) also raises the app-wide notice; it is still thrown so the
- * caller stops what it was doing.
- */
-async function errorFrom(
-  res: Response,
-  options?: RequestOptions,
-): Promise<ApiError> {
+/** The ApiError for a failed response, carrying the API's message. */
+async function errorFrom(res: Response): Promise<ApiError> {
   const error = await res.json().catch(() => ({ message: res.statusText }));
-  if (!options?.skipSubscriptionNotice && isSubscriptionRequired(res.status, error)) {
-    notifySubscriptionRequired();
-  }
-  return new ApiError(res.status, error?.message || res.statusText, error);
+  const apiError = new ApiError(res.status, error?.message || res.statusText, error);
+  if (apiError.code === "FEATURE_DISABLED") featureDisabledHandler?.(apiError);
+  return apiError;
 }
 
 export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { body, headers: customHeaders, skipAuthRedirect, ...rest } = options;
+  const { body, headers: customHeaders, skipAuthRedirect, stepUp, ...rest } = options;
 
   const headers: Record<string, string> = {
     "X-API-Version": "1",
@@ -97,7 +130,14 @@ export async function api<T = unknown>(
 
   if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
 
-  if (!res.ok) throw await errorFrom(res, options);
+  if (!res.ok) {
+    const error = await errorFrom(res);
+    // Retried once: a second STEP_UP_REQUIRED is thrown, never looped on.
+    if (stepUp && error.code === STEP_UP_REQUIRED && (await confirmStepUp())) {
+      return api<T>(path, { ...options, stepUp: false });
+    }
+    throw error;
+  }
 
   const text = await res.text();
   try {
@@ -107,22 +147,22 @@ export async function api<T = unknown>(
   }
 }
 
-export async function apiUpload<T = unknown>(
+/**
+ * HTTP QUERY: a safe, idempotent read with its filters in a JSON body instead
+ * of the URL. The API's search and filter lists take it (courses, students,
+ * files, chat history, notices, organisation schools and invites, SSO
+ * activity); a GET to those paths is a 404. `filters` defaults to `{}`, so
+ * every QUERY carries a JSON body and the API sees "no filters", never a
+ * missing body. QUERY is not CORS-safelisted, so the browser sends a
+ * preflight first. There is no response cache here: two QUERYs to one path
+ * with different bodies are two different reads.
+ */
+export function apiQuery<T = unknown>(
   path: string,
-  formData: FormData,
+  filters: object = {},
+  options: Omit<RequestOptions, "method" | "body"> = {},
 ): Promise<T> {
-  const res = await fetchOrThrow(buildUrl(path), {
-    method: "POST",
-    headers: { "X-API-Version": "1" },
-    body: formData,
-    credentials: "include",
-  });
-
-  if (res.status === 401) handleUnauthorized(false);
-
-  if (!res.ok) throw await errorFrom(res);
-
-  return res.json();
+  return api<T>(path, { ...options, method: "QUERY", body: filters });
 }
 
 export class ApiError extends Error {
@@ -133,5 +173,17 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+
+  /** The API's machine-readable error code, e.g. "FEATURE_DISABLED". */
+  get code(): string | undefined {
+    const code = (this.data as { code?: unknown } | undefined)?.code;
+    return typeof code === "string" ? code : undefined;
+  }
+
+  /** For a FEATURE_DISABLED error, which feature is off. */
+  get feature(): string | undefined {
+    const feature = (this.data as { feature?: unknown } | undefined)?.feature;
+    return typeof feature === "string" ? feature : undefined;
   }
 }

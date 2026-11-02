@@ -12,7 +12,7 @@ Every query is scoped to the caller's active school (`user_profile.school_id`, v
 
 | Method | Path | Guard / who may call | What it does |
 | --- | --- | --- | --- |
-| GET | `/api/students` | `student:read` | The roster sorted by last, first name. Optional `search` (first or last name substring). Without `page`/`cursor` it returns the whole list (cached when not searching), versioned as `student.list`; with them, a page `{ data, meta }`, versioned as `student.paginated`. |
+| QUERY | `/api/students` (JSON body) | `student:read` | The roster sorted by last, first name. Body (all optional, empty = whole roster): `search`, `page`, `pageSize`, `cursor`, `cursorColumn`, `cursorDirection`. Optional `search` (first or last name substring). Without `page`/`cursor` it returns the whole list (cached when not searching), versioned as `student.list`; with them, a page `{ data, meta }`, versioned as `student.paginated`. |
 | GET | `/api/students/:id` | `student:read` | One student in the caller's school, or 404. Versioned as `student.detail`. |
 | GET | `/api/students/:id/profile` | `student:read` | `{ student, courses, account, guardians }`: enrolments (active first, then by name), the linked login, and guardians from `parent_student_link`. |
 | PATCH | `/api/students/:id` | `student:update` | Update fields, including `isActive`. Versioned as `student.updated`. |
@@ -38,7 +38,7 @@ Students are created by `POST /api/auth/join-school` (`src/student-account`) or 
 - Cache contract: `update()` deletes `student-context:<userProfileId>` when `isActive` changes, so `StudentGuard` in `src/student-portal` notices a deactivation on the student's next request. `src/student-account` drops `students:<schoolId>` when membership changes.
 - Web: `frontend/app/dashboard/students/page.tsx` (list and search), `students/[studentId]/page.tsx` (profile), `students/_components/EditStudentForm.tsx`, `dashboard/courses/[courseId]/people/_components/AddStudentsDialog.tsx`, `dashboard/_components/AdminDashboard.tsx`.
 - Mobile: `mobile/app/(tabs)/students.tsx`, `mobile/src/features/students/StudentForm.tsx`, `mobile/src/features/dashboard/AdminDashboard.tsx`.
-- Scripts: `scripts/smoke.ts` (search), `scripts/student-flow-check.ts` (a student is denied `GET /students`).
+- Scripts: `scripts/smoke.ts` (search), `scripts/student-flow-check.ts` (a student is denied `QUERY /students`).
 
 ## Depends on
 

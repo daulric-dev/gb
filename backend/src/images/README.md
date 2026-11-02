@@ -1,11 +1,10 @@
 # Images (`src/images`)
 
-User avatars: upload, validation, storage and serving. Avatars are stored in object storage under `images/avatars/<userId>.<ext>`, and the public URL is written to `user_profile.avatar_url`. Every client renders that URL as a plain image source with no credentials.
+User avatars, course cover images and school logos: upload, validation, storage and serving. Avatars are stored in object storage under `images/avatars/<userId>.<ext>`, and the public URL is written to `user_profile.avatar_url`. Every client renders that URL as a plain image source with no credentials.
 
-Uploads can go two ways:
+Uploads go directly to storage with a presigned PUT; the API never receives the bytes in a request. The client asks for a URL, PUTs the image (at most 5 MB), then calls "complete", and the API checks what arrived. Anything rejected is deleted.
 
-- **Through the API**: a multipart upload of at most 5 MB.
-- **Directly to storage**: a presigned PUT. The client asks for a URL, PUTs the bytes, then calls "complete", and the API checks what arrived. Anything rejected is deleted.
+Course covers (`course-banners/<courseId>-<32 hex>.<ext>`, 5 MB) and school logos (`school-logos/<schoolId>-<32 hex>.<ext>`, 2 MB) use the same flow through the shared steps below; their routes live in `src/course` and `src/school`, and only the stored key is kept (`course.banner_image_path`, `school.logo_path`). Each upload gets a new random name, so a URL can't be guessed and a cached copy is never stale; the previous object is deleted on replace or remove.
 
 Only JPEG, PNG and WebP are accepted. The declared type is never trusted alone: the leading bytes must match the format, which stops SVG or HTML from being smuggled in.
 
@@ -17,6 +16,7 @@ This module's own controller serves one public route.
 
 | Method | Path | Guard | What it does |
 | --- | --- | --- | --- |
+| GET | `/api/images/course-banners/:name`, `/api/images/school-logos/:name` | public | Stream a course cover or school logo. Only `<area>/<[A-Za-z0-9-]+>.(jpg\|png\|webp)` can be read. Same headers as avatars but `Cache-Control: public, max-age=604800, immutable`. 404 if missing. These are school content served without a session (like avatars): what protects them is the 128-bit random part of the name, which only members are shown. |
 | GET | `/api/images/avatars/:name` | public | Stream an avatar object. Only `avatars/<[A-Za-z0-9._-]+>` can be read. Headers: `Cache-Control: public, max-age=86400`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox`. 404 if missing. |
 
 The signed-in avatar routes are declared in `src/auth/auth.controller.ts` and call `ImagesService`:
@@ -24,9 +24,8 @@ The signed-in avatar routes are declared in `src/auth/auth.controller.ts` and ca
 | Method | Path | Guard | Service call |
 | --- | --- | --- | --- |
 | GET | `/api/auth/avatar` | `AuthGuard` | `getImageFromUserProfile()`: the caller's own avatar bytes (`Cache-Control: private, max-age=3600`) |
-| POST | `/api/auth/avatar` | `AuthGuard` | `setImageToUserProfile()`: multipart upload; response through versioned transformer `images.uploaded` |
 | POST | `/api/auth/avatar/resumable` | `AuthGuard` | `createResumableUpload()`: body `CreateResumableUploadDto`; returns a presigned PUT ticket (`images.resumable`) |
-| POST | `/api/auth/avatar/complete` | `AuthGuard` | `completeResumableUpload()`: body `CompleteUploadDto`; validates the object and sets the avatar (`images.uploaded`) |
+| POST | `/api/auth/avatar/complete` | `AuthGuard` | `completeResumableUpload()`: body `CompleteUploadDto`; validates the object and sets the avatar; response through versioned transformer `images.uploaded` |
 
 ### Services / exports
 
@@ -34,9 +33,19 @@ The signed-in avatar routes are declared in `src/auth/auth.controller.ts` and ca
 
 - `getImageFromUserProfile(userId)`: looks up `avatar_url` (cached under `avatar:<userId>` for 1 hour), works out the object path, and streams it. The path can come from the old hosted-storage public URL or from the current URL shapes. It must match `avatars/<file>` with no traversal.
 - `readAvatar(path)`: reads `images/<path>` from storage, or returns null if the path is not a valid avatar path or nothing is there. Used by the public route.
-- `setImageToUserProfile(userId, file, requestOrigin?)`: checks size, MIME type and byte signature, stores the image, then updates the profile.
 - `createResumableUpload(userId, filename, contentType, totalSize)`: checks size and type, then returns `{ path, method: 'PUT', uploadUrl, headers, expiresAt }`. `path` is the staging key `uploads/avatars/<callerId>.<ext>`, which is never served. The URL is valid for 5 minutes and signs the Content-Type and the declared size (the PUT must be exactly `totalSize` bytes).
 - `completeResumableUpload(userId, path, requestOrigin?)`: the path must be exactly `uploads/avatars/<callerId>.<ext>`, so nobody can claim another user's object. It then checks size, type and byte signature (reading at most 5 MB), deletes the object on rejection, writes the verified bytes to `avatars/<callerId>.<ext>`, deletes the staged object and updates the profile. A still-valid upload URL therefore cannot change an avatar after it was checked.
+
+Shared upload steps (used by the avatar methods above, `CourseBannerService` and `SchoolLogoService`):
+
+- `newImagePath(area, ownerId, contentType)`: a fresh `{ staging, served }` key pair for `course-banners` or `school-logos`, the extension taken from the (allowed) type.
+- `servedPathFor(area, ownerId, path)`: checks `path` is a staging key issued for that owner and returns the served key, else 400.
+- `createImageTicket(stagingPath, contentType, totalSize, maxBytes)`: size and type checks, then the presigned PUT ticket.
+- `finalizeImage(stagingPath, servedPath, maxBytes)`: size, type and signature checks (reading at most `maxBytes`), writes the served object, deletes the staged one (or deletes it and throws 400 on rejection).
+- `removeImage(path)`: best-effort delete of a served cover or logo.
+- `readPublicImage(path)`: the public route's read, limited to the `IMAGE_AREAS`.
+
+`public-url.ts` exports `publicImageUrl(path, requestOrigin?)` and `optionalImageUrl(path)`, which turn a stored key into the URL clients render (CDN when `S3_PUBLIC_URL` is set, else `<API_URL>/api/images/...`).
 
 After a successful upload the stored URL gets a `?t=<timestamp>` cache-buster. The `avatar:<userId>` cache entry is refreshed, and `avatar_url` is patched into the cached `profile:<userId>`.
 
@@ -46,11 +55,12 @@ After a successful upload the stored URL gets a `?t=<timestamp>` cache-buster. T
 
 ## Used by
 
+- `src/course/course.module.ts` and `src/school/school.module.ts` import `ImagesModule` for course covers and school logos. `public-url.ts` is also used by `src/course/course.service.ts`, `src/student-portal`, `src/dashboard`, `src/student` and `src/auth/auth.service.ts` (the profile's `school.logo_url`).
 - `src/auth/auth.module.ts` imports `ImagesModule`. `src/auth/auth.controller.ts` injects `ImagesService` and uses `CreateResumableUploadDto` and `CompleteUploadDto` for the avatar routes above.
 - `src/versioning/transformer-registry.ts` imports `@/images/transformer`.
 - `src/app.module.ts` imports `ImagesModule`, which registers the public route.
-- Front end: `frontend/app/dashboard/settings/page.tsx` uploads to `/auth/avatar`, and `frontend/app/portal/layout.tsx` renders `/api/auth/avatar`.
-- Mobile: `mobile/app/(tabs)/settings.tsx` uploads to `/auth/avatar`.
+- Front end: `frontend/app/dashboard/settings/page.tsx` uploads through `uploadAvatar()` in `frontend/lib/files/upload.ts` (ticket, PUT, complete), and `frontend/app/portal/layout.tsx` renders `/api/auth/avatar`.
+- Mobile: `mobile/app/(tabs)/settings.tsx` uploads through `uploadAvatar()` in `mobile/src/lib/upload.ts`.
 - Every client that shows another user's picture uses the stored `avatar_url`, which points at `/api/images/avatars/...` or the CDN.
 
 ## Depends on
@@ -61,14 +71,14 @@ After a successful upload the stored URL gets a `?t=<timestamp>` cache-buster. T
 
 ## Data
 
-`public.user_profile.avatar_url` is read and written. Objects live in the storage "bucket" `images` under `avatars/`. See [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma).
+`public.user_profile.avatar_url` is read and written. Objects live in the storage "bucket" `images` under `avatars/`, `course-banners/` and `school-logos/` (staged under `uploads/`). See [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma).
 
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `S3_PUBLIC_URL` | unset | When set (a CDN or public bucket host), avatar URLs are `<S3_PUBLIC_URL>/images/avatars/<file>` |
-| `API_URL` | the request's own origin, else `http://localhost:3001` | Base for `<API_URL>/api/images/avatars/<file>` when there is no `S3_PUBLIC_URL` |
+| `S3_PUBLIC_URL` | unset | When set (a CDN or public bucket host), image URLs are `<S3_PUBLIC_URL>/images/<area>/<file>` |
+| `API_URL` | the request's own origin (avatars only), else `http://localhost:3001` | Base for `<API_URL>/api/images/<area>/<file>` when there is no `S3_PUBLIC_URL`. Cover and logo URLs are built per response without a request, so set `API_URL` (or `S3_PUBLIC_URL`) in any deployment that shows them. |
 
 The storage backend itself is configured by `src/storage`.
 
@@ -77,8 +87,9 @@ The storage backend itself is configured by `src/storage`.
 | File | Purpose |
 | --- | --- |
 | `images.module.ts` | Module: public controller plus `ImagesService` (exported) |
-| `images.controller.ts` | `GET /api/images/avatars/:name` |
-| `images.service.ts` | Avatar upload, validation, URLs and reads |
+| `images.controller.ts` | `GET /api/images/avatars/:name` and `GET /api/images/:area/:name` (covers, logos) |
+| `public-url.ts` | Stored key to client URL |
+| `images.service.ts` | Avatar upload, the shared image upload steps, validation, URLs and reads |
 | `transformer.ts` | v1 response transformers for the versioning layer |
 | `images.service.test.ts` | Service tests |
 | `dto/` | Request DTOs, see [`dto/README.md`](dto/README.md) |
@@ -88,7 +99,7 @@ The storage backend itself is configured by `src/storage`.
 `cd backend && bun test src/images`. Covers:
 
 - Path checks on complete: own path only; no other user, outside `avatars/`, traversal, smuggled query strings or empty paths.
-- Content-type and signature checks for PNG, JPEG and WebP, including mismatched and too-short buffers and oversize files.
+- Content-type and signature checks on complete for PNG, JPEG and WebP, including a missing or disallowed type, mismatched and too-short objects, and an oversize object (deleted without being read); the ticket refuses oversize and non-image declarations.
 - Hardening of the stored URL on read.
 - The new avatar URL shape, the presigned PUT ticket, and completion rejecting a bad or missing object.
 

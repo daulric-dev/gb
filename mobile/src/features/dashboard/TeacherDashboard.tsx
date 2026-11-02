@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { BookOpen, Hand, Users } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import type { CourseSummary } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useTheme } from "@/theme/ThemeProvider";
 import { CoursesOnWebCard } from "./CoursesOnWebCard";
 import { staffCourseHref } from "@/lib/course";
+import { CourseThumb } from "@/features/course/CourseBanner";
 
 /**
  * The staff member's courses at a glance. A course opens its staff screen
@@ -27,7 +28,7 @@ export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    api<CourseSummary[]>("/courses")
+    apiQuery<CourseSummary[]>("/courses")
       .then((data) => !cancelled && setCourses(data))
       .catch(() => !cancelled && setCourses([]))
       .finally(() => !cancelled && setLoading(false));
@@ -68,6 +69,7 @@ export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
           <CardContent style={{ gap: 10 }}>
             {active.map((c) => (
               <View key={c.id} style={styles.row}>
+                <CourseThumb course={c} size={36} />
                 <Pressable
                   style={{ flex: 1 }}
                   onPress={() => router.push(staffCourseHref(c.id))}

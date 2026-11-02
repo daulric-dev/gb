@@ -10,6 +10,7 @@ import { AuthService } from './auth.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { FeatureService } from '@/features/feature.service';
 
 /** No school in these tests requires single sign-on. */
 const noSso = { ssoRequirement: async () => null } as any;
@@ -75,6 +76,7 @@ describe('AuthService', () => {
       accounts as any,
       sessions as any,
       erasure as any,
+      new FeatureService(prisma as any, mockCache as any),
     );
   }
 
@@ -122,6 +124,7 @@ describe('AuthService', () => {
         accounts as any,
         sessions as any,
         erasure as any,
+        new FeatureService(prisma as any, mockCache as any),
       );
       const err = await expectRejection(service.sendOtp('a@school.edu'));
       expect((err as Error).message).toContain('Continue with Google');
@@ -268,6 +271,9 @@ describe('AuthService', () => {
         id: userId,
         email: 'john@example.com',
         school_management: { role: 'admin' },
+        is_org_admin: false,
+        organisation: null,
+        features: { messaging: true },
       };
       await mockCache.set(`profile:${userId}`, cached, 1);
 
@@ -276,13 +282,87 @@ describe('AuthService', () => {
       expect(prisma.user_profile.findUnique).not.toHaveBeenCalled();
     });
 
+    test('rebuilds a cached profile that lacks the organisation fields', async () => {
+      await mockCache.set(
+        `profile:${userId}`,
+        { id: userId, email: 'john@example.com' },
+        1,
+      );
+      prisma.user_profile.findUnique.mockResolvedValue(makeDbProfile());
+
+      const result = await service.getProfile(userId);
+      expect(prisma.user_profile.findUnique).toHaveBeenCalled();
+      expect(result.is_org_admin).toBe(false);
+      expect(result.organisation).toBeNull();
+    });
+
+    test('adds is_org_admin and the organisation', async () => {
+      prisma.user_profile.findUnique.mockResolvedValue(makeDbProfile());
+      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: userId });
+      prisma.organisation.findFirst.mockResolvedValue({ name: 'Riverside Trust' });
+
+      const result = await service.getProfile(userId);
+      expect(result.is_org_admin).toBe(true);
+      expect(result.organisation).toEqual({ name: 'Riverside Trust' });
+      expect((await mockCache.get(`profile:${userId}`)).is_org_admin).toBe(true);
+    });
+
+    test('carries the features effective for the active school', async () => {
+      prisma.user_profile.findUnique.mockResolvedValue(makeDbProfile());
+      prisma.organisation.findFirst.mockResolvedValue({
+        name: 'Riverside Trust',
+        features: { student_messaging: true, calendar: false },
+      });
+      prisma.school.findUnique.mockResolvedValue({ disabled_features: ['attendance'] });
+
+      const result = await service.getProfile(userId);
+      expect(prisma.school.findUnique.mock.calls[0][0].where).toEqual({ id: 's1' });
+      expect(result.features).toMatchObject({
+        messaging: true,
+        student_messaging: true,
+        chat_channels: false,
+        calendar: false,
+        attendance: false,
+        announcements: true,
+      });
+    });
+
+    test('a cached profile without features is rebuilt', async () => {
+      await mockCache.set(
+        `profile:${userId}`,
+        { id: userId, email: 'john@example.com', is_org_admin: false, organisation: null },
+        1,
+      );
+      prisma.user_profile.findUnique.mockResolvedValue(makeDbProfile());
+      const result = await service.getProfile(userId);
+      expect(prisma.user_profile.findUnique).toHaveBeenCalled();
+      expect(result.features.messaging).toBe(true);
+    });
+
+    test('a verified email in ORG_ADMIN_EMAILS counts as an organisation admin', async () => {
+      const prev = process.env.ORG_ADMIN_EMAILS;
+      process.env.ORG_ADMIN_EMAILS = 'Other@x.org, john@example.com';
+      try {
+        prisma.user_profile.findUnique.mockResolvedValue(makeDbProfile());
+        prisma.app_user.findUnique.mockResolvedValue({
+          email: 'john@example.com',
+          email_verified_at: new Date(),
+          disabled_at: null,
+        });
+        expect((await service.getProfile(userId)).is_org_admin).toBe(true);
+      } finally {
+        if (prev === undefined) delete process.env.ORG_ADMIN_EMAILS;
+        else process.env.ORG_ADMIN_EMAILS = prev;
+      }
+    });
+
     test('fetches from DB and caches when not cached', async () => {
       prisma.user_profile.findUnique.mockResolvedValue(makeDbProfile());
 
       const result = await service.getProfile(userId);
       expect(result.id).toBe(userId);
-      // The school is embedded under `school`, as before.
-      expect(result.school).toEqual({ id: 's1', name: 'Demo' });
+      // The school is embedded under `school`, as before, with its logo URL.
+      expect(result.school).toEqual({ id: 's1', name: 'Demo', logo_url: null });
       expect('school_user_profile_school_idToschool' in result).toBe(false);
 
       const stored = await mockCache.get(`profile:${userId}`);
@@ -458,73 +538,23 @@ describe('AuthService', () => {
       });
     });
 
-    describe('dedicated deployment requires admin approval for new staff', () => {
-      const userId = 'user-dedicated';
-      let prevEnv: string | undefined;
+    test('staff without a school only saves the name: no join request, no membership', async () => {
+      prisma.user_profile.upsert.mockImplementation(async ({ create }) =>
+        dbProfile(create),
+      );
 
-      beforeEach(() => {
-        prevEnv = process.env.DEDICATED_DEPLOYMENT;
-        process.env.DEDICATED_DEPLOYMENT = 'true';
-        prisma.school.findFirst.mockResolvedValue({ id: 's1' });
-        prisma.user_profile.upsert.mockImplementation(async ({ create }) =>
-          dbProfile(create),
-        );
+      const result: any = await service.onboard('user-new-staff', {
+        firstName: 'Jane',
+        lastName: 'Doe',
       });
 
-      afterEach(() => {
-        if (prevEnv === undefined) delete process.env.DEDICATED_DEPLOYMENT;
-        else process.env.DEDICATED_DEPLOYMENT = prevEnv;
-      });
-
-      test('new staff user files a join request and does not get an auto-granted role', async () => {
-        prisma.school_join_request.create.mockResolvedValue({
-          id: 'req-1',
-          school_id: 's1',
-          status: 'pending',
-        });
-
-        const result: any = await service.onboard(userId, {
-          firstName: 'Jane',
-          lastName: 'Doe',
-        });
-
-        // user_profile does not have a role or school yet
-        expect(result.role).toBeFalsy();
-        expect(result.school_id).toBeNull();
-        expect(result.joinRequest).toMatchObject({
-          id: 'req-1',
-          school_id: 's1',
-          status: 'pending',
-        });
-
-        // does not insert a school_management row
-        expect(prisma.school_management.create).not.toHaveBeenCalled();
-
-        // inserts a school_join_request
-        expect(
-          prisma.school_join_request.create.mock.calls[0][0].data,
-        ).toMatchObject({
-          user_id: userId,
-          school_id: 's1',
-        });
-      });
-
-      test('preserves the school creator admin role and does not re-insert membership or join request', async () => {
-        prisma.school_management.findFirst.mockResolvedValue({ role: 'admin' });
-        prisma.user_profile.upsert.mockImplementation(async ({ create }) =>
-          dbProfile({ ...create, school_id: 's1', role: 'admin' }),
-        );
-
-        const result: any = await service.onboard(userId, {
-          firstName: 'Admin',
-          lastName: 'User',
-        });
-
-        expect(result.role).toBe('admin');
-        expect(result.school_id).toBe('s1');
-        expect(prisma.school_management.create).not.toHaveBeenCalled();
-        expect(prisma.school_join_request.create).not.toHaveBeenCalled();
-      });
+      expect(result.role).toBeFalsy();
+      expect(result.school_id).toBeNull();
+      expect(result.joinRequest).toBeUndefined();
+      expect(result.is_org_admin).toBe(false);
+      expect(prisma.school.findFirst).not.toHaveBeenCalled();
+      expect(prisma.school_join_request.create).not.toHaveBeenCalled();
+      expect(prisma.school_management.create).not.toHaveBeenCalled();
     });
   });
 
@@ -557,6 +587,28 @@ describe('AuthService', () => {
       await service.deleteAccount(userId);
       expect(sessions.revokeAll).toHaveBeenCalledWith(userId, 'account_deleted');
       expect(prisma.app_user.deleteMany.mock.calls[0][0]).toEqual({ where: { id: userId } });
+    });
+
+    test("refuses the organisation's last stored administrator", async () => {
+      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'admin-1' });
+      prisma.organisation_admin.count.mockResolvedValue(0);
+      const err = await expectRejection(service.deleteAccount('admin-1'));
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as Error).message).toBe(
+        "You're the organisation's last administrator. Add another administrator before deleting your account.",
+      );
+      expect(prisma.organisation_admin.count.mock.calls[0][0]).toEqual({
+        where: { user_id: { not: 'admin-1' } },
+      });
+      expect(sessions.revokeAll).not.toHaveBeenCalled();
+      expect(prisma.app_user.deleteMany).not.toHaveBeenCalled();
+    });
+
+    test('lets an organisation admin go when another stored admin remains', async () => {
+      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'admin-1' });
+      prisma.organisation_admin.count.mockResolvedValue(1);
+      await service.deleteAccount('admin-1');
+      expect(prisma.app_user.deleteMany).toHaveBeenCalled();
     });
 
     test('a failed profile cleanup leaves the account alone', async () => {

@@ -16,8 +16,29 @@ export interface SsoAdapter {
   readonly label: string;
   readonly kind: 'oauth' | 'saml';
 
-  /** Whether this deployment has the provider configured. */
-  isEnabled(): boolean;
+  /** The name admins see on the school's sign-in apps ("SAML 2.0"); defaults to `label`. */
+  readonly adminLabel?: string;
+  /** Setup hints for admins: where to create credentials, what to paste. */
+  readonly adminNotes?: string;
+  /**
+   * Whether it needs an OAuth client ID and secret (OIDC: yes - each school
+   * may register its own; SAML: no - the IdP details live on the domain).
+   */
+  readonly needsClient: boolean;
+  /** Non-secret settings a school may set for it (none yet). */
+  readonly settingFields: readonly SsoSettingField[];
+
+  /** What the env vars say - the install-wide fallback for schools without their own app. */
+  envConfig(): SsoProviderConfig;
+
+  /** Turned on and fully configured under `config` (enabled, with credentials if it needs them). */
+  available(config: SsoProviderConfig): boolean;
+
+  /**
+   * Check and normalize one of `settingFields` before it is saved. Throws a
+   * BadRequestException with a message for the admin.
+   */
+  normalizeSetting?(key: string, value: string): string;
 
   /**
    * Whether a school domain has what this adapter needs (a Microsoft tenant,
@@ -57,6 +78,24 @@ export interface SsoAdapter {
   verifiesEmail?(identity: SsoIdentity): boolean;
 }
 
+/** A provider's effective configuration. */
+export interface SsoProviderConfig {
+  enabled: boolean;
+  clientId: string | null;
+  clientSecret: string | null;
+  /** Non-secret extras, by `settingFields` key. */
+  settings: Record<string, string>;
+}
+
+/** A non-secret setting admins may set for a provider. */
+export interface SsoSettingField {
+  key: string;
+  label: string;
+  description: string;
+  /** Shown as the placeholder: what applies when it is left empty. */
+  placeholder?: string;
+}
+
 /** A school email domain, as an adapter sees it. */
 export interface SsoDomainConfig {
   id: string;
@@ -67,7 +106,21 @@ export interface SsoDomainConfig {
   samlCertificate: string | null;
 }
 
-export interface SsoStartContext {
+/**
+ * The configuration one sign-in runs under: a school's own app, or the
+ * install-wide env one. Resolved by the registry, never by the adapter, so a
+ * sign-in started with one school's credentials finishes with the same ones.
+ */
+export interface SsoClientContext {
+  config: SsoProviderConfig;
+  /**
+   * Identifies whose credentials these are (`school:<id>` or `env`), for
+   * caching per-client provider metadata. Never shown to anyone.
+   */
+  clientKey: string;
+}
+
+export interface SsoStartContext extends SsoClientContext {
   /** Random, single-use; sent to the provider and checked on the way back. */
   state: string;
   /** Our OpenID Connect redirect URI. */
@@ -83,7 +136,7 @@ export interface SsoStart {
   secrets: Record<string, string>;
 }
 
-export interface SsoCompleteContext {
+export interface SsoCompleteContext extends SsoClientContext {
   state: string;
   secrets: Record<string, string>;
   /** The domain the sign-in was started for, reloaded. */

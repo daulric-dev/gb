@@ -27,17 +27,4 @@ jobs:
       - name: Reset staging to main
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          MAIN_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/main --jq '.object.sha')
-
-          if gh api repos/${{ github.repository }}/git/ref/heads/staging >/dev/null 2>&1; then
-            gh api repos/${{ github.repository }}/git/refs/heads/staging \
-              -X PATCH \
-              -f sha="$MAIN_SHA" \
-              -F force=true
-          else
-            gh api repos/${{ github.repository }}/git/refs \
-              -X POST \
-              -f ref="refs/heads/staging" \
-              -f sha="$MAIN_SHA"
-          fi
+        run: bash .github/scripts/reset-staging.sh

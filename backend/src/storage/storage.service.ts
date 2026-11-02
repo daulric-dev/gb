@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
@@ -95,6 +96,23 @@ export class StorageService implements OnModuleInit {
     );
   }
 
+  /**
+   * Copy an object inside the bucket without passing its bytes through the
+   * API. The content type is set afresh rather than carried over from the
+   * source.
+   */
+  async copy(fromKey: string, toKey: string, contentType: string): Promise<void> {
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        Key: toKey,
+        CopySource: `${this.bucket}/${encodeURIComponent(fromKey).replace(/%2F/g, '/')}`,
+        MetadataDirective: 'REPLACE',
+        ContentType: contentType,
+      }),
+    );
+  }
+
   /** The object, or null when there is no such key. */
   async get(key: string): Promise<StoredObject | null> {
     let res: GetObjectCommandOutput;
@@ -176,6 +194,28 @@ export class StorageService implements OnModuleInit {
         if (!obj.Key) continue;
         if (opts.endBefore && obj.Key >= opts.endBefore) return keys;
         keys.push(obj.Key);
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
+  }
+
+  /** Keys under `prefix` last written before `before`. */
+  async listKeysOlderThan(prefix: string, before: Date): Promise<string[]> {
+    const keys: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key && obj.LastModified && obj.LastModified < before) {
+          keys.push(obj.Key);
+        }
       }
       token = res.IsTruncated ? res.NextContinuationToken : undefined;
     } while (token);

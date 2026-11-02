@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { Cell, Pie, PieChart } from "recharts";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -219,7 +219,7 @@ export function AdminDashboard({
   // Gender split and join requests are not in the summary; the counts are.
   useEffect(() => {
     Promise.all([
-      api<SchoolStudent[]>("/students").catch(() => []),
+      apiQuery<SchoolStudent[]>("/students").catch(() => []),
       api<JoinRequest[]>("/schools/join-requests").catch(() => []),
     ])
       .then(([studs, reqs]) => {

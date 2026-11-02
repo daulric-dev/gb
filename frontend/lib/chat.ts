@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals-react";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 
 // Types (mirror the backend chat DTOs)
 
@@ -115,11 +115,9 @@ export async function selectConversation(conversationId: string) {
 }
 
 export async function loadMessages(conversationId: string, before?: string) {
-  const query = before
-    ? `?before=${encodeURIComponent(before)}&limit=30`
-    : "?limit=30";
-  const page = await api<ChatMessage[]>(
-    `/chat/conversations/${conversationId}/messages${query}`,
+  const page = await apiQuery<ChatMessage[]>(
+    `/chat/conversations/${conversationId}/messages`,
+    before ? { before, limit: 30 } : { limit: 30 },
   );
   // The API returns newest-first; store oldest-first for rendering.
   const ordered = [...page].reverse();

@@ -1,4 +1,5 @@
-import { describe, test, expect, afterAll } from 'bun:test';
+import { describe, test, expect, afterAll, mock } from 'bun:test';
+import { CopyObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'node:stream';
 import {
   ObjectTooLargeError,
@@ -52,5 +53,23 @@ describe('uploadUrl', () => {
     const signed = url.searchParams.get('X-Amz-SignedHeaders')!.split(';');
     expect(signed).toContain('content-type');
     expect(signed).not.toContain('content-length');
+  });
+});
+
+describe('copy', () => {
+  test('copies inside the bucket and replaces the content type', async () => {
+    const svc = new StorageService();
+    const send = mock(() => Promise.resolve({}));
+    (svc as any).client = { send };
+    await svc.copy('file-manager/uploads/a b.rs', 'file-manager/a b.rs', 'text/x-rust');
+    const cmd = (send.mock.calls[0] as unknown as [CopyObjectCommand])[0];
+    expect(cmd).toBeInstanceOf(CopyObjectCommand);
+    expect(cmd.input).toEqual({
+      Bucket: svc.bucket,
+      Key: 'file-manager/a b.rs',
+      CopySource: `${svc.bucket}/file-manager/uploads/a%20b.rs`,
+      MetadataDirective: 'REPLACE',
+      ContentType: 'text/x-rust',
+    });
   });
 });

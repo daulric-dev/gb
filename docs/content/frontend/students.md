@@ -35,5 +35,5 @@ A form pre-filled with the student's first and last name, gender, date of birth 
 
 | Action | Endpoint |
 |--------|----------|
-| List/Search | `GET /api/students?search=<query>` |
+| List/Search | `QUERY /api/students` with `{ "search": "<query>" }` (`apiQuery`) |
 | Update | `PATCH /api/students/:id` |

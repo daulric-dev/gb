@@ -1,4 +1,12 @@
 import type { user_profile as UserProfile } from '@/generated/prisma/client';
+import {
+  effectiveForOrganisation,
+  organisationSettings,
+  type FeatureKey,
+} from '@/features/feature.catalog';
+
+/** Catalog defaults, for a profile built before features existed. */
+const defaultFeatures = () => effectiveForOrganisation(organisationSettings({}));
 
 export interface ProfileResponse {
   id: string;
@@ -13,6 +21,12 @@ export interface ProfileResponse {
   school_management: {
     role: UserProfile['role'];
   } | null;
+  /** Manages the organisation (public.organisation_admin or ORG_ADMIN_EMAILS). */
+  is_org_admin: boolean;
+  /** The organisation running this install; null until first-run setup. */
+  organisation: { name: string } | null;
+  /** Platform features effective for the active school (see src/features). */
+  features: Record<FeatureKey, boolean>;
 }
 
 export interface SessionResponse {
@@ -41,6 +55,9 @@ export function v1Profile(raw: any): ProfileResponse {
     avatar_url: raw.avatar_url ?? null,
     school: raw.school ?? null,
     school_management: raw.school_management ?? null,
+    is_org_admin: raw.is_org_admin === true,
+    organisation: raw.organisation ?? null,
+    features: raw.features ?? defaultFeatures(),
   };
 }
 
@@ -71,6 +88,9 @@ export function v1VerifyOtp(
       school: profile?.school ?? null,
       is_onboarded: hasOnboarded,
       school_management: profile?.school_management ?? null,
+      is_org_admin: profile?.is_org_admin === true,
+      organisation: profile?.organisation ?? null,
+      features: profile?.features ?? defaultFeatures(),
     },
   };
 }

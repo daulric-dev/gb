@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { BookOpen, Search } from "lucide-react";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import type { Course, CourseStatus } from "@/lib/courses/types";
 import {
   calendarLabel,
@@ -60,13 +60,12 @@ export default function CoursesPage() {
   const statusValue = status.value;
   const termValue = termId.value;
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (statusValue !== "all") params.set("status", statusValue);
-    if (termValue !== ALL_TERMS) params.set("termId", termValue);
-    const qs = params.toString();
+    const filters: { status?: string; termId?: string } = {};
+    if (statusValue !== "all") filters.status = statusValue;
+    if (termValue !== ALL_TERMS) filters.termId = termValue;
 
     loading.value = true;
-    api<Course[]>(`/courses${qs ? `?${qs}` : ""}`)
+    apiQuery<Course[]>("/courses", filters)
       .then((data) => (courses.value = data))
       .catch(() => {
         courses.value = [];

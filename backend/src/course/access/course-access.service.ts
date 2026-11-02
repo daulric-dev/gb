@@ -25,7 +25,7 @@ export const MANAGE_ROLES: readonly CourseRole[] = ['admin', 'teacher'];
 export const STAFF_ROLES: readonly CourseRole[] = ['admin', 'teacher', 'ta'];
 
 export const COURSE_COLUMNS =
-  'id, school_id, academic_year_id, term_id, name, code, description, status, join_code, grade_scale_id, is_template, created_by, created_at, updated_at';
+  'id, school_id, academic_year_id, term_id, name, code, description, status, join_code, grade_scale_id, is_template, banner_color, banner_image_path, created_by, created_at, updated_at';
 
 /** The same columns as `COURSE_COLUMNS`, as a Prisma `select`. */
 export const COURSE_SELECT = {
@@ -40,6 +40,8 @@ export const COURSE_SELECT = {
   join_code: true,
   grade_scale_id: true,
   is_template: true,
+  banner_color: true,
+  banner_image_path: true,
   created_by: true,
   created_at: true,
   updated_at: true,
@@ -57,6 +59,8 @@ export interface CourseRow {
   join_code: string | null;
   grade_scale_id: string | null;
   is_template: boolean;
+  banner_color: string | null;
+  banner_image_path: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -75,6 +79,8 @@ export function toCourseRow(c: {
   join_code: string | null;
   grade_scale_id: string | null;
   is_template?: boolean;
+  banner_color?: string | null;
+  banner_image_path?: string | null;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -82,6 +88,8 @@ export function toCourseRow(c: {
   return {
     ...c,
     is_template: c.is_template ?? false,
+    banner_color: c.banner_color ?? null,
+    banner_image_path: c.banner_image_path ?? null,
     created_at: isoDate(c.created_at)!,
     updated_at: isoDate(c.updated_at)!,
   };

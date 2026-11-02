@@ -17,10 +17,10 @@ No `.env` files are committed to the repository. You must create them manually i
 | Variable                      | Required                 | Default                 | Description                                                                                                                                                                                                                                                           |
 | ----------------------------- | ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | **Yes**                  | -                       | PostgreSQL 15+ connection string, used by Prisma (`src/prisma/prisma.service.ts`, `prisma.config.ts`). Dev: `postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook` (the `db` service in `docker-compose.dev.yml`). Apply the schema with `bun run db:deploy`. Not needed by `prisma generate`. |
-| `AUTH_SECRET`                 | **Prod**                 | -                       | 32+ characters (`openssl rand -base64 32`). Keys the HMAC hashes of sign-in codes and signs short-lived tokens. **Required in production** - the app refuses to boot without it. Unset in dev = an insecure development secret (with a warning). Changing it voids outstanding codes and makes the erasure-log copy in storage fail its signature check (`erasure:replay --allow-unsigned` reads it anyway). |
+| `AUTH_SECRET`                 | **Prod**                 | -                       | 32+ characters (`openssl rand -base64 32`). Keys the HMAC hashes of sign-in codes and signs short-lived tokens. **Required in production** - the app refuses to boot without it. Unset in dev = an insecure development secret (with a warning). Changing it voids outstanding codes and makes the erasure-log copy in storage fail its signature check (`erasure:replay --allow-unsigned` reads it anyway), and makes schools' saved SSO client secrets unreadable (enter them again under each school's Single sign-on > Sign-in apps). |
 | `ALLOW_DEV_LOGIN`             | No (dev)                 | `false`                 | `true` turns on `POST /auth/dev/code`, which returns a sign-in code instead of mailing it, so `seed:demo` and `smoke` can sign in. Refused (404) when `NODE_ENV=production`. Never set it on a shared deployment. |
 | `ALLOW_UNVERIFIED_EMAIL_DOMAINS` | No (dev)              | `false`                 | Skips the DNS TXT check for school email domains so a local stack can use made-up domains like `demo.test`. Ignored in production. |
-| `API_URL`                     | For SSO / avatars        | request host            | Absolute URL of this API. SSO redirect URIs (`${API_URL}/api/auth/sso/callback`), the SAML entity ID and avatar URLs are built from it. |
+| `API_URL`                     | For SSO / avatars        | request host            | Absolute URL of this API. SSO redirect URIs (`${API_URL}/api/auth/sso/callback`), the SAML entity ID and avatar, course cover and school logo URLs are built from it (covers and logos have no request to fall back on, so set it outside localhost unless `S3_PUBLIC_URL` is set). |
 | `SMTP_URL`                    | One of `SMTP_URL` or `SMTP_HOST`/`SMTP_SERVICE` (to send mail) | -   | SMTP connection URL, e.g. `smtp://127.0.0.1:1025` (Mailpit in dev, inbox at http://127.0.0.1:8025) or `smtps://user:pass@smtp.example.com:465`. The password must be URL-encoded; prefer the separate fields below for app passwords. Wins over the fields when both are set. |
 | `SMTP_SERVICE`                | No                       | -                       | Preset host/port: `gmail`, `outlook`, `office365`, `yahoo`, `icloud`, `zoho`. |
 | `SMTP_HOST` / `SMTP_PORT`     | No                       | port `587` (or preset)  | Any other SMTP server. Port 465 uses implicit TLS; other ports use STARTTLS. |
@@ -30,10 +30,10 @@ No `.env` files are committed to the repository. You must create them manually i
 | `SMTP_PASSWORD_FILE`          | No                       | -                       | Read the password from a file (Docker/Kubernetes secret) instead of `SMTP_PASSWORD`. |
 | `SMTP_ALLOW_INSECURE`         | No                       | `false`                 | `true` allows sending credentials without TLS (not recommended). |
 | `MAIL_FROM`                   | No                       | `SMTP_USER`             | From address, e.g. `"GradeBook <no-reply@example.com>"`. Gmail and Outlook only send as the signed-in account or a verified alias. |
-| `SSO_PROVIDERS`               | No                       | -                       | Comma-separated SSO providers to enable: `google`, `azure`, `saml`. See [Single sign-on](./sso.md). |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google SSO | -                    | OAuth client from Google Cloud. Redirect URI: `${API_URL}/api/auth/sso/callback`. |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | For Microsoft SSO | -         | Multi-tenant app registration in Microsoft Entra. Each school's tenant is taken from its email domain. |
-| `SAML_SP_ENTITY_ID`           | No                       | `${API_URL}/api/auth/sso/saml/metadata` | Our SAML entity ID. Change it only together with the frontend's `NEXT_PUBLIC_SAML_SP_ENTITY_ID`. |
+| `SSO_PROVIDERS`               | No                       | -                       | Optional install-wide fallback: comma-separated OAuth providers (`google`, `azure`) whose env app is on for schools that have **not** saved their own app for that provider (Single sign-on > Sign-in apps), and for the login page's buttons. `saml` is ignored: SAML is set up per email domain. See [Single sign-on](./sso.md). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | No (fallback) | -                    | Install-wide Google app, used only for schools without their own Google settings (a school's own row, even switched off, replaces it). OAuth client from Google Cloud (External). Redirect URI: `${API_URL}/api/auth/sso/callback`. |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | No (fallback) | -         | Install-wide Microsoft app (multitenant Entra registration), used only for schools without their own Microsoft settings. Each school's tenant is taken from its email domain. |
+| `SAML_SP_ENTITY_ID`           | No                       | `${API_URL}/api/auth/sso/saml/metadata` | Our SAML entity ID and audience - one for the whole install, given to every school's IdP. Changing it breaks every SAML connection already set up. |
 | `MOBILE_SSO_RETURN_URL`       | No                       | `gradebook://sso`       | Where the mobile app picks up a finished SSO sign-in. |
 | `TRUST_PROXY_HOPS`            | No                       | -                       | Number of proxies in front of the API, so rate limits see the real client IP. |
 | `EXPO_ACCESS_TOKEN`           | No                       | -                       | Expo push access token, when push security is enabled on the Expo project. |
@@ -42,8 +42,11 @@ No `.env` files are committed to the repository. You must create them manually i
 | `S3_REGION`, `S3_BUCKET`      | Yes                      | `auto`, `gradebook`     | Region and the single bucket every object lives in, under `<area>/<path>` (`file-manager/...`, `images/...`, `report-books/...`). |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Yes         | -                       | Store credentials. |
 | `S3_PUBLIC_ENDPOINT`          | No                       | `S3_ENDPOINT`           | The store's address as browsers and phones reach it; presigned upload/download URLs are signed for this host. |
-| `S3_PUBLIC_URL`               | No                       | -                       | A public CDN/bucket host for avatars. Unset, avatar URLs point at the API's public route `/api/images/avatars/<file>`. |
+| `S3_PUBLIC_URL`               | No                       | -                       | A public CDN/bucket host for avatars, course covers and school logos. Unset, their URLs point at the API's public routes `/api/images/{avatars,course-banners,school-logos}/<file>`. |
 | `S3_FORCE_PATH_STYLE`         | No                       | `true` with an endpoint | Path-style bucket addressing (needed by SeaweedFS/MinIO). |
+| `UPLOAD_VERIFY_MEMORY_MB`     | No                       | `256`                   | Memory, in MB, the API may hold at once while checking the bytes of completed direct uploads (PDF, images, Office files). Completions beyond it wait up to 10 seconds, then get `503` and can be retried. A single file larger than this still runs, alone. Per process: each replica has its own budget. |
+| `UPLOAD_MAX_MB`               | No                       | `1024`                  | Largest upload, in whole MB (1-1024), any school may allow: a school's own limit above it is capped to it, and admins cannot set one higher. PDFs, images and Office files are also capped at `UPLOAD_VERIFY_MEMORY_MB`, because they are read whole to be checked. Malformed values stop the boot in production (development warns and uses the default). |
+| `UPLOAD_DEFAULT_MB`           | No                       | `100`                   | Upload limit, in MB, for schools that have not set their own (`school.max_upload_mb` null). Clamped to `UPLOAD_MAX_MB`. School admins change their school's limit in Settings (`PATCH /api/schools/current/upload-limit`). Same validation as `UPLOAD_MAX_MB`. |
 | `AUTH_COOKIE_SECURE`          | No                       | `true` in production    | Force the auth cookies' `Secure` (HTTPS-only) flag on or off. Only for running a production build locally over plain `http://`: the mobile app drops Secure cookies on http and shows "Session expired". The API logs a warning at startup when cookies are Secure but `API_URL` is `http://`. Never set `false` on a real deployment. |
 | `AUTH_COOKIE_DOMAIN`          | No                       | derived                 | `Domain` for the `gb_session` auth cookie in production. The web proxy (`frontend/proxy.ts`) checks for this cookie on the **frontend's** domain, so it must be visible to both app and API. Derived from the last two labels of `FRONTEND_URL` when unset — set it explicitly if the API is on a different registrable domain, or the domain has a multi-part suffix (`app.example.co.uk` derives `.co.uk`, which browsers reject). `none` = host-only cookie. |
 | `SESSION_MAX_AGE_DAYS`        | No                       | `90`                    | Absolute lifetime of a sign-in: a session ends this many days after sign-in however active it is (the sliding 30-day expiry is capped at it). Existing sessions got sign-in + 90 days when the setting was introduced. |
@@ -53,34 +56,34 @@ No `.env` files are committed to the repository. You must create them manually i
 | `PORT`                        | No                       | `3001`                  | Port the backend server listens on.                                                                                                                                                                                                                                   |
 | `USE_REDIS`                   | No                       | `false`                 | Set to `true` to use Redis for caching, BullMQ queues, **and chat pub/sub fan-out**. When `false`, chat still works but delivers in-process only (single replica).                                                                                                    |
 | `REDIS_URL`                   | Only if `USE_REDIS=true` | -                       | Redis connection URL (e.g., `redis://localhost:6379`).                                                                                                                                                                                                                |
-| `CHAT_CHANNELS_ENABLED`       | No                       | `false`                 | Set to `true` to enable multi-participant chat channels. Direct messages are always on; see [Chat](./backend/chat.md).                                                                                                                                                |
 | `CHAT_ENCRYPTION_KEY`         | **Prod**                 | -                       | Base64 of 32 random bytes (`openssl rand -base64 32`). Encrypts message content at rest (AES-256-GCM). **Required in production** — the app refuses to boot without it. Unset in dev = messages stored unencrypted (with a warning).                                  |
 | `CHAT_ENCRYPTION_KEYS`        | No                       | -                       | Rotation ring: `1:<b64>,2:<b64>`. Overrides `CHAT_ENCRYPTION_KEY`. New rows use the highest version; old rows decrypt by their stored version.                                                                                                                        |
 | `CHAT_ENCRYPTION_KEY_VERSION` | No                       | highest                 | Which key version to encrypt new messages with: a bare number from the ring (`2`, not `v2`). Ignored if it is not in the ring.                                                                                                                                                                                                                       |
 | `STUDENT_CLAIM_CODE_PEPPER`   | **Prod**                 | -                       | Secret used to key the HMAC that hashes school join codes (`openssl rand -base64 32`; the name is historical). **Required in production** - the app refuses to boot without it. Unset in dev = a well-known pepper is used (with a warning). Changing it invalidates every outstanding code.                                                  |
-| `MOBILE_MIN_VERSION`          | No                       | -                       | Oldest mobile app version (semver, e.g. `1.4.0`) the API still serves. The app sends its version on every request; older builds get `426 Upgrade Required` and show a blocking "Update required" screen. Raise it only once the new build is live in both stores. `MOBILE_MIN_VERSION_IOS` / `MOBILE_MIN_VERSION_ANDROID` override it per platform. Malformed values stop the boot in production. |
+| `MOBILE_MIN_VERSION`          | No                       | -                       | Oldest mobile app version (semver, e.g. `1.4.0`) the API still serves. The app sends its version on every request; older builds get `426 Upgrade Required` and show a blocking "Update required" screen. Raise it only once the new build is live in both stores. Raise it to the first build that uses HTTP `QUERY` for the list screens: older builds send `GET` there and get 404s (see [HTTP QUERY](./backend/http-query.md)). `MOBILE_MIN_VERSION_IOS` / `MOBILE_MIN_VERSION_ANDROID` override it per platform. Malformed values stop the boot in production. |
 | `MOBILE_LATEST_VERSION`       | No                       | -                       | Newest released app version. Older installs get a dismissible "Update available" prompt. Per-platform overrides `MOBILE_LATEST_VERSION_IOS` / `MOBILE_LATEST_VERSION_ANDROID`. Served at `GET /api/app/version`. |
 | `MOBILE_IOS_STORE_URL`, `MOBILE_ANDROID_STORE_URL` | No  | -                       | App Store / Google Play links the app opens from its update screens. Must be `https://` in production. |
-| `DEDICATED_DEPLOYMENT`        | No                       | `false`                 | Set to `true` for single-school dedicated instances. Blocks creation of a second school. See [Dedicated Deployment](./dedicated-deployment.md).                                                                                                                       |
 
-### Billing
+### Organisation
 
-SaaS billing for the **hosted platform**: schools pay for GradeBook. **Self-hosted deployments leave `BILLING_ENABLED` unset** - billing is off by default, so there is no trial, no read-only mode, no `402`, and every `/api/billing/*` and `/api/platform/*` route answers 404 (except `GET /api/billing/status`, which reports `enabled: false` so the apps hide billing UI). See [Billing](./backend/billing.md), [Billing providers](./billing-providers.md) and the [staging checklist](./billing-staging.md).
+Each install is self-hosted by one organisation, which may run several schools. The first signed-in user names it (first-run setup) and becomes its admin; organisation admins create schools and appoint each school's admin. See [Organisation](./backend/organisation.md).
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `BILLING_ENABLED` | No | off | `true` turns billing on. Anything else (or unset) = off. |
-| `BILLING_PER_USER_CENTS` | No | `500` | Per-user plan: price per billable user per month, in minor units. |
-| `BILLING_FLAT_CENTS` | No | `30000` | Flat plan: price per month, unlimited users. |
-| `BILLING_CURRENCY` | No | `USD` | ISO currency code for every price and invoice. |
-| `BILLING_TRIAL_DAYS` | No | `30` | Free trial for a new school (existing schools get it from the day billing is first turned on). |
-| `BILLING_GRACE_DAYS` | No | `7` | How long a missed payment (past due) stays writable before the school turns read-only. |
-| `PLATFORM_ADMIN_EMAILS` | With billing | - | Comma list of account emails (verified) that get the platform dashboard (`/platform`). Admins can also be rows in `billing.platform_admin`. |
-| `APP_URL` | No | first `FRONTEND_URL` | Web app origin for checkout return URLs (`${APP_URL}/dashboard/settings/billing?checkout=success`). |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | With billing | - | Stripe API secret key (`sk_test_...` / `sk_live_...`) and the webhook signing secret (`whsec_...`). Stripe is the only payment provider; it is offered to schools once **both** are set. With billing on and either missing, schools see "payments are not configured yet" and the API logs a warning at startup. Payments are online only (no bank transfer / manual option). |
-| `STRIPE_PRICE_PER_USER`, `STRIPE_PRICE_FLAT` | No | - | Reuse existing recurring monthly Stripe prices. Unset: inline prices built from `BILLING_*_CENTS` on two stable products (`gradebook_per_user`, `gradebook_flat`) created on first use. |
+| `ORG_ADMIN_EMAILS` | No | - | Comma list of account emails (verified) that are organisation admins without a row in `public.organisation_admin`. While set, only these accounts may run first-run setup (`POST /api/setup`). |
 
-Stripe webhook URL: `${API_URL}/api/billing/webhooks/stripe`. See [Billing providers](./billing-providers.md) for the events to enable and local testing with `stripe listen`.
+### Integrations (webhooks)
+
+Only used while the organisation has the `integrations` feature on. See [Webhooks](./backend/webhooks.md).
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `WEBHOOK_MAX_ATTEMPTS` | No | `8` | Attempts per delivery (the first included) before it is given up (`abandoned`). The default spreads them over about 24 hours. |
+| `WEBHOOK_MAX_CONSECUTIVE_FAILURES` | No | `50` | Failed attempts in a row after which a webhook switches itself off and the school's admins are emailed. |
+| `WEBHOOK_DELIVERY_RETENTION_DAYS` | No | `30` | Days a delivery (and its payload, which holds personal data) is kept; purged by the daily retention job. |
+| `WEBHOOK_POLL_INTERVAL_MS` | No | `5000` | How often each API instance looks for due deliveries when Redis is off. With `USE_REDIS=true` a BullMQ queue sends them and the database is checked once a minute as a backstop. |
+
+`AUTH_SECRET` also keys the encryption of webhook signing secrets: changing it makes them unreadable (rotate each webhook's secret afterwards).
 
 ### Data retention and erasure log
 
@@ -122,8 +125,8 @@ PORT=3001
 USE_REDIS=false
 # REDIS_URL=redis://localhost:6379
 
-# Chat: DMs are always on; channels are gated off until their UI ships
-# CHAT_CHANNELS_ENABLED=false
+# Chat: messaging, student messaging and channels are features the
+# organisation switches on in the app (see backend/features.md), not env vars.
 # Message encryption at rest (AES-256-GCM). Required in production.
 #   openssl rand -base64 32
 # CHAT_ENCRYPTION_KEY=base64-of-32-bytes
@@ -145,7 +148,7 @@ USE_REDIS=false
 | `DATABASE_URL`                                      | `src/prisma/prisma.service.ts`     | Prisma client (`pg` driver adapter); also `prisma.config.ts` |
 | `S3_*`                                              | `src/storage/storage.service.ts`   | Object storage client and presigned URLs                     |
 | `SMTP_*`, `MAIL_FROM`                               | `src/mail/`                        | Outgoing email                                               |
-| `AUTH_SECRET`                                       | `src/account/secret.ts`            | Hashes of sign-in codes and session tokens                   |
+| `AUTH_SECRET`                                       | `src/account/secret.ts`            | Hashes of sign-in codes and session tokens; key for SSO secrets (`src/sso/sso-secret.ts`) and webhook signing secrets (`src/integrations/webhooks/webhook-secret.ts`) |
 | `SESSION_MAX_AGE_DAYS`, `SESSION_ROTATION_GRACE_SECONDS`, `SESSION_ALERTS_ENABLED` | `src/account/session.config.ts` | Session lifetime, token rotation grace, security emails |
 | `GOOGLE_*`, `MICROSOFT_*`, `SAML_SP_ENTITY_ID`      | `src/sso/`                         | SSO adapters                                                 |
 | `FRONTEND_URL`                                      | `src/createApp.ts`                 | CORS `origin` configuration                                  |
@@ -154,6 +157,7 @@ USE_REDIS=false
 | `REDIS_URL`                                         | `src/cache/cache.service.ts`       | Redis connection URL for `ioredis`                           |
 | `RETENTION_PURGE_*`, `SOFT_DELETE_RETENTION_DAYS*` | `src/retention/retention.config.ts` | Daily purge of soft-deleted data                             |
 | `ERASURE_LOG_*`                                     | `src/erasure/erasure.config.ts`    | Erasure-log storage copy and retention                       |
+| `WEBHOOK_*`                                         | `src/integrations/config/webhook.config.ts` | Webhook retries, auto-disable, delivery retention, poll interval |
 
 ---
 
@@ -208,7 +212,7 @@ Continuous archiving / point-in-time recovery (self-hosted `db` + `db-backup`, `
 | `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No       | `false`                 | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
 | `NEXT_PUBLIC_SAML_SP_ENTITY_ID`    | No       | API metadata URL        | The SAML entity ID the email-domain admin shows schools. Set it only when the backend's `SAML_SP_ENTITY_ID` is overridden, to the same value. |
 | `NEXT_PUBLIC_STORAGE_URL`          | **Prod** | -                       | Origin browsers upload to with presigned URLs: the origin of the backend's `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT`), e.g. `http://127.0.0.1:8333` in dev, `https://<account-id>.r2.cloudflarestorage.com` in production. Added to the production CSP (`connect-src`, `img-src`); without it uploads are blocked. |
-| `NEXT_PUBLIC_IMAGES_URL`           | When `S3_PUBLIC_URL` is set | -                | Origin avatars are served from when the backend's `S3_PUBLIC_URL` points at a CDN/bucket host. Added to the production CSP `img-src` and to the hosts Markdown images may load from; images from any other host render as a link instead of loading. Without it, avatars on that host do not load. |
+| `NEXT_PUBLIC_IMAGES_URL`           | When `S3_PUBLIC_URL` is set | -                | Origin avatars, course covers and school logos are served from when the backend's `S3_PUBLIC_URL` points at a CDN/bucket host. Added to the production CSP `img-src` and to the hosts Markdown images may load from; images from any other host render as a link instead of loading. Without it, avatars on that host do not load. |
 
 ### Example `frontend/.env.local`
 

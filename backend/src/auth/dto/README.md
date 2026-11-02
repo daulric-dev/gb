@@ -10,6 +10,7 @@ These are the request body classes for the `/api/auth` routes. They are validate
 | `verify-otp.dto.ts` | `VerifyOtpDto` | `POST /api/auth/otp/verify` | `email`: required, a valid email. `token`: required string. The 8-digit code `EmailCodeService` emailed. |
 | `onboard.dto.ts` | `OnboardDto` | `PATCH /api/auth/onboard` | `firstName` and `lastName`: required strings of at most 100 characters. `schoolId`: optional UUID, which files a join request. `accountType`: optional, `'staff'` or `'student'` (default staff). The account type only picks the onboarding flow; it never grants a privilege. |
 | `update-profile.dto.ts` | `UpdateProfileDto` | `PATCH /api/auth/profile` | `firstName` and `lastName`: required strings of at most 100 characters. |
+| `set-active-school.dto.ts` | `SetActiveSchoolDto` | `PUT /api/me/active-school` | `schoolId`: required UUID. `ActiveSchoolService` decides whether the caller may switch to it. |
 | `claim-student.dto.ts` | `ClaimStudentDto` | `POST /api/auth/join-school` | `code`: required string of at most 32 characters. `StudentMembershipService` ignores case and dashes. |
 
 The avatar upload routes use DTOs from `src/images/dto`, not from this folder.

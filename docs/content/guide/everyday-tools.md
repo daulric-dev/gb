@@ -13,7 +13,7 @@ The parts of GradeBook that are not about marks.
 
 Upload by choosing a file. Large files on a weak connection resume rather than restarting, so a dropped connection is not a lost upload.
 
-**What you can upload:** PDFs, Word documents, spreadsheets, plain text, CSV, and images (PNG, JPEG, WebP). Up to 100MB each.
+**What you can upload:** PDFs, Word documents, spreadsheets, plain text, CSV, and images (PNG, JPEG, WebP). Up to 100MB each by default; your school's administrator can set a different limit in Settings.
 
 Anything else is refused. So is a file whose contents do not match its name — renaming a program to `.pdf` does not get it in. Documents carrying macros and PDFs with embedded actions are refused too. If an upload is rejected and you believe the file is fine, re-save it from the application that made it; that usually clears whatever the original was carrying.
 
@@ -35,7 +35,7 @@ School-wide announcements appear for staff, with an unread marker until read. Fo
 
 ## Settings
 
-Your name, profile picture and the school you belong to. Your email address is your identity and is not editable here — an administrator changes it if it has to change.
+Your name, profile picture and the school you belong to. Administrators (anyone who can change school settings) also see **School logo** here: upload a JPEG, PNG or WebP up to 2MB (square works best) and it replaces the GradeBook mark in the sidebar, the student portal header and the top of the mobile home screens for everyone in the school. Replace or remove it at any time. Your email address is your identity and is not editable here — an administrator changes it if it has to change.
 
 The light/dark toggle is in the top corner of every page and follows your device by default.
 

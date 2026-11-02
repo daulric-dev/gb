@@ -67,10 +67,6 @@ function build(
   const service = new SubmissionService(
     prisma as any,
     {
-      uploadManual: () =>
-        Promise.resolve({ id: 'file-1', name: 'essay.pdf' } as any),
-      uploadSubmissionManual: () =>
-        Promise.resolve({ id: 'file-1', name: 'essay.pdf' } as any),
       createSubmissionUploadTicket: () =>
         Promise.resolve({ uploadUrl: 'unused' } as any),
       finaliseSubmissionUpload: () =>
@@ -103,13 +99,17 @@ function studentTables(
 }
 
 describe('SubmissionService file handling', () => {
-  test('attachFile stores the uploaded id on the draft', async () => {
+  test('finaliseUploadedFile stores the uploaded id on the draft', async () => {
     const { service, prisma } = build((p) => {
       studentTables()(p);
       p.submission.updateMany.mockResolvedValue({ count: 1 });
     });
 
-    const result = await service.attachFile('stu-1', 'act-1', {} as any);
+    const result = await service.finaliseUploadedFile(
+      'stu-1',
+      'act-1',
+      'file-1',
+    );
 
     expect(result).toEqual({ fileId: 'file-1', name: 'essay.pdf' });
 
@@ -121,27 +121,35 @@ describe('SubmissionService file handling', () => {
     expect(update.where.id).toBe('sub-1');
   });
 
-  test('attachFile refuses an assignment that does not accept files', async () => {
+  test('createUploadTicket refuses an assignment that does not accept files', async () => {
     const { service } = build(
       studentTables({ activity: { ...ACTIVITY, allow_file: false } }),
     );
 
     await expect(
-      service.attachFile('stu-1', 'act-1', {} as any),
+      service.createUploadTicket('stu-1', 'act-1', {
+        name: 'essay.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  test('attachFile refuses a quiz', async () => {
+  test('createUploadTicket refuses a quiz', async () => {
     const { service } = build(
       studentTables({ activity: { ...ACTIVITY, kind: 'quiz' } }),
     );
 
     await expect(
-      service.attachFile('stu-1', 'act-1', {} as any),
+      service.createUploadTicket('stu-1', 'act-1', {
+        name: 'essay.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  test('attachFile refuses once the work is already handed in', async () => {
+  test('createUploadTicket refuses once the work is already handed in', async () => {
     const { service } = build(
       studentTables({
         submission: { id: 'sub-1', status: 'submitted', file_id: 'file-0' },
@@ -149,7 +157,11 @@ describe('SubmissionService file handling', () => {
     );
 
     await expect(
-      service.attachFile('stu-1', 'act-1', {} as any),
+      service.createUploadTicket('stu-1', 'act-1', {
+        name: 'essay.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -435,7 +447,11 @@ describe('SubmissionService student access', () => {
       service.submitAssignment('stu-1', 'act-1', { textBody: 'x' }),
     ).rejects.toBeInstanceOf(ConflictException);
     await expect(
-      service.attachFile('stu-1', 'act-1', {} as any),
+      service.createUploadTicket('stu-1', 'act-1', {
+        name: 'essay.pdf',
+        sizeBytes: 10,
+        contentType: 'application/pdf',
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
     await expect(
       service.submitQuiz('stu-1', 'act-1', []),
@@ -496,7 +512,9 @@ describe('SubmissionService student access', () => {
         })(p);
         p.$queryRaw.mockRejectedValue(raised(message));
       });
-      const err = await service.submitQuiz('stu-1', 'act-1', []).catch((e) => e);
+      const err = await service
+        .submitQuiz('stu-1', 'act-1', [])
+        .catch((e) => e);
       expect(err).toBeInstanceOf(ConflictException);
       expect(err.message).toBe(expected);
     }
@@ -613,12 +631,14 @@ describe('SubmissionService marking', () => {
         'rosterRow' in over ? over.rosterRow : { student_id: 'stu-1' },
       );
       p.submission.findFirst.mockResolvedValue(over.existing ?? null);
-      p.submission.upsert.mockImplementation(async ({ create, update }: any) => ({
-        id: 'sub-1',
-        student_id: 'stu-1',
-        excused: false,
-        ...(over.existing ? update : create),
-      }));
+      p.submission.upsert.mockImplementation(
+        async ({ create, update }: any) => ({
+          id: 'sub-1',
+          student_id: 'stu-1',
+          excused: false,
+          ...(over.existing ? update : create),
+        }),
+      );
     };
   }
 
@@ -678,9 +698,7 @@ describe('SubmissionService marking', () => {
   });
 
   test('refuses a student who is not on the roster', async () => {
-    const { service } = build(
-      markTables({ rosterRow: null }),
-    );
+    const { service } = build(markTables({ rosterRow: null }));
     await expect(
       service.grade('user-1', 'act-1', 'stu-9', { score: 1 }),
     ).rejects.toBeInstanceOf(NotFoundException);

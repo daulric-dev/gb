@@ -7,7 +7,8 @@
  *
  * Needs the local database (DATABASE_URL in backend/.env) and the API running
  * on :3001 (`bun run start:dev`) with ALLOW_DEV_LOGIN=true. Accounts, the
- * school and its roster go straight into the database - that is what
+ * organisation (if the install has none yet), the school and its roster go
+ * straight into the database - that is what
  * onboarding would have done. Everything course-shaped goes through the real
  * API as the teacher or student who would do it, so seeding also exercises
  * the endpoints.
@@ -65,18 +66,10 @@ class Session {
       method,
       headers: {
         'X-API-Version': '1',
-        // A FormData body (a file upload) sets its own multipart type.
-        ...(body !== undefined && !(body instanceof FormData)
-          ? { 'content-type': 'application/json' }
-          : {}),
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(this.cookies.size ? { cookie: this.header() } : {}),
       },
-      body:
-        body instanceof FormData
-          ? body
-          : body !== undefined
-            ? JSON.stringify(body)
-            : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     for (const raw of res.headers.getSetCookie?.() ?? []) {
       const [pair] = raw.split(';');
@@ -196,6 +189,19 @@ async function seed() {
     });
   }
 
+  // The install's organisation (first-run setup, POST /setup, on a real
+  // one), with the demo admin as an organisation admin. A database that is
+  // already set up keeps its organisation; the admin row goes with the
+  // account on --fresh.
+  if ((await db.organisation.count()) === 0) {
+    await db.organisation.create({ data: { name: 'Riverside Education Trust' } });
+  }
+  await db.organisation_admin.create({
+    data: { user_id: staffIds.admin, created_by: staffIds.admin },
+  });
+
+  // Organisation admins create schools (POST /organisation/schools) and
+  // appoint each one's admin; here the school and its staff go in directly.
   const school = await db.school.create({
     data: { name: SCHOOL_NAME, code: 'RVA', school_type: 'secondary', owner_id: staffIds.admin },
     select: { id: true },
@@ -414,22 +420,23 @@ async function seed() {
   await maya.call('POST', items(week1), { itemType: 'activity', activityId: microscope.id, indent: 1 });
   // A handout uploaded to Maya's files (S3, like any upload) and linked in
   // the module, so students open it through the portal.
-  const handoutForm = new FormData();
-  handoutForm.append(
-    'file',
-    new Blob(
-      [
-        'Microscope practical checklist\n\n',
-        '1. Clean the lenses with lens paper only.\n',
-        '2. Start on the lowest power objective.\n',
-        '3. Focus with the coarse knob, then the fine knob.\n',
-        '4. Draw what you see, with a title and the magnification.\n',
-      ],
-      { type: 'text/plain' },
-    ),
-    'microscope-checklist.txt',
+  const handoutBody = new TextEncoder().encode(
+    [
+      'Microscope practical checklist\n\n',
+      '1. Clean the lenses with lens paper only.\n',
+      '2. Start on the lowest power objective.\n',
+      '3. Focus with the coarse knob, then the fine knob.\n',
+      '4. Draw what you see, with a title and the magnification.\n',
+    ].join(''),
   );
-  const handout = await maya.call('POST', '/files?name=microscope-checklist.txt', handoutForm);
+  const ticket = await maya.call('POST', '/files/upload-ticket', {
+    name: 'microscope-checklist.txt',
+    sizeBytes: handoutBody.byteLength,
+    contentType: 'text/plain',
+  });
+  const put = await fetch(ticket.uploadUrl, { method: 'PUT', headers: ticket.headers, body: handoutBody });
+  if (!put.ok) throw new Error(`handout upload -> ${put.status}`);
+  const handout = await maya.call('POST', `/files/upload-ticket/${ticket.fileId}/complete`);
   await maya.call('POST', items(week1), { itemType: 'file', fileId: handout.id, title: 'Microscope checklist', indent: 1 });
   await maya.call('POST', items(week2), { itemType: 'page', pageId: genetics.id });
   await maya.call('POST', items(week2), {
@@ -706,7 +713,7 @@ async function seed() {
 Demo ready - ${SCHOOL_NAME}
 
 Staff (web: http://localhost:3000/login)
-  admin@${DOMAIN}     Grace Okafor   school admin, sees every course
+  admin@${DOMAIN}     Grace Okafor   school and organisation admin, sees every course
   teacher@${DOMAIN}   Maya Patel     teaches Biology 101, World History (draft)
   teacher2@${DOMAIN}  Leo Brooks     teaches Algebra I, Creative Writing (archived)
   ta@${DOMAIN}        Ana Ruiz       TA in Biology 101

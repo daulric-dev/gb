@@ -6,14 +6,16 @@ import {
   Param,
   Patch,
   Post,
-  Query,
+  QueryMethod,
   Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { FileManagerService } from './file-manager.service';
@@ -28,13 +30,17 @@ import { RenameFolderDto } from './dto/rename-folder.dto';
 import { MoveFileDto } from './dto/move-file.dto';
 import { MoveFolderDto } from './dto/move-folder.dto';
 import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
-import { MultipartFile } from '@fastify/multipart';
 import { CreateUploadTicketDto } from './dto/upload-ticket.dto';
 
+/**
+ * The `files` feature gates the Files page's own tools - folders, moving,
+ * sharing and share notifications. Uploading, listing and opening your own
+ * files stay available with it off: course content attaches files from here.
+ */
 @ApiTags('File Manager')
 @ApiBearerAuth()
 @Controller('files')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard, FeatureGuard, PermissionGuard)
 export class FileManagerController {
   constructor(
     private readonly files: FileManagerService,
@@ -42,27 +48,15 @@ export class FileManagerController {
     private readonly folders: FolderService,
   ) {}
 
+  /** QUERY /files: `filter` and paging in the JSON body. */
   @RequirePermission('file', 'read')
-  @Get()
-  async list(@Req() req: any, @Query() query: ListFilesQueryDto) {
+  @QueryMethod()
+  async list(@Req() req: any, @Body() query: ListFilesQueryDto) {
     const userId: string = req.user.id;
     return this.files.list(userId, query.filter, {
       page: query.page,
       pageSize: query.pageSize,
     });
-  }
-
-  @RequirePermission('file', 'create')
-  @Post()
-  @ApiConsumes('multipart/form-data')
-  async upload(
-    @Req() req: any,
-    @Query('name') name?: string,
-    @Query('folderId') folderId?: string,
-  ) {
-    const userId: string = req.user.id;
-    const file: MultipartFile = await req.file();
-    return this.files.uploadManual(userId, file, name, folderId);
   }
 
   /**
@@ -91,13 +85,15 @@ export class FileManagerController {
   // ── Folders (declared before :id so the literal path wins) ────────────────
 
   @RequirePermission('file', 'read')
-  @Get('folders/contents')
-  async browseFolder(@Req() req: any, @Query() query: BrowseFolderQueryDto) {
+  @RequireFeature('files')
+  @QueryMethod('folders/contents')
+  async browseFolder(@Req() req: any, @Body() query: BrowseFolderQueryDto) {
     const userId: string = req.user.id;
     return this.files.browseFolder(userId, query.folderId ?? null);
   }
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('folders')
   async listFolders(@Req() req: any) {
     const userId: string = req.user.id;
@@ -105,6 +101,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'create')
+  @RequireFeature('files')
   @Post('folders')
   async createFolder(@Req() req: any, @Body() dto: CreateFolderDto) {
     const userId: string = req.user.id;
@@ -112,6 +109,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch('folders/:folderId')
   async renameFolder(
     @Req() req: any,
@@ -124,6 +122,7 @@ export class FileManagerController {
 
   /** Re-parent a folder (drag a folder into another folder, or to the root). */
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch('folders/:folderId/move')
   async moveFolder(
     @Req() req: any,
@@ -135,6 +134,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'delete')
+  @RequireFeature('files')
   @Delete('folders/:folderId')
   async deleteFolder(@Req() req: any, @Param('folderId') folderId: string) {
     const userId: string = req.user.id;
@@ -144,6 +144,7 @@ export class FileManagerController {
   // ── Notifications (declared before :id so the literal path wins) ──────────
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('notifications')
   async listNotifications(@Req() req: any) {
     const userId: string = req.user.id;
@@ -151,6 +152,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('notifications/unread-count')
   async unreadNotifications(@Req() req: any) {
     const userId: string = req.user.id;
@@ -158,6 +160,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Post('notifications/mark-read')
   async markNotificationsRead(@Req() req: any) {
     const userId: string = req.user.id;
@@ -179,23 +182,23 @@ export class FileManagerController {
     @Res() reply: FastifyReply,
   ) {
     const userId: string = req.user.id;
-    const { buffer, contentType, filename } = await this.files.getViewContent(
+    const { body, size, contentType, filename } = await this.files.getViewContent(
       userId,
       id,
     );
+    if (size !== null) reply.header('Content-Length', size);
     reply
       .header('Content-Type', contentType)
       .header(
         'Content-Disposition',
         `inline; filename="${this.encode(filename)}"`,
       )
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
       // User content on the API origin: never sniff it into HTML, and if it is
       // opened directly, give it no script or same-origin access.
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', 'sandbox')
-      .send(buffer);
+      .send(body);
   }
 
   /** Download — only for the owner or a recipient with download rights. */
@@ -207,21 +210,21 @@ export class FileManagerController {
     @Res() reply: FastifyReply,
   ) {
     const userId: string = req.user.id;
-    const { buffer, contentType, filename } =
+    const { body, size, contentType, filename } =
       await this.files.getDownloadContent(userId, id);
+    if (size !== null) reply.header('Content-Length', size);
     reply
       .header('Content-Type', contentType)
       .header(
         'Content-Disposition',
         `attachment; filename="${this.encode(filename)}"`,
       )
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
       // User content on the API origin: never sniff it into HTML, and if it is
       // opened directly, give it no script or same-origin access.
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', 'sandbox')
-      .send(buffer);
+      .send(body);
   }
 
   @RequirePermission('file', 'update')
@@ -237,6 +240,7 @@ export class FileManagerController {
 
   /** Move a file into a folder (or to the root with `folderId: null`). */
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch(':id/move')
   async move(
     @Req() req: any,
@@ -257,6 +261,7 @@ export class FileManagerController {
   // ── Shares (owner only; ownership enforced in the service) ─────────────────
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Get(':id/shares')
   async listShares(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -264,6 +269,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Post(':id/shares')
   async share(
     @Req() req: any,
@@ -275,6 +281,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch(':id/shares/:shareId')
   async updateShare(
     @Req() req: any,
@@ -287,6 +294,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Delete(':id/shares/:shareId')
   async revokeShare(
     @Req() req: any,

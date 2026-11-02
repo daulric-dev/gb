@@ -4,13 +4,11 @@ import { useRef } from "react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { uploadFile } from "@/lib/files/upload";
+import { uploadSizeError, useUploadLimit } from "@/lib/files/upload-limit";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-
-const MAX_SIZE_IN_MB = 100
-const MAX_SIZE = MAX_SIZE_IN_MB * 1024 * 1024;
 
 export function UploadButton({
   onUploaded,
@@ -24,14 +22,17 @@ export function UploadButton({
   const inputRef = useRef<HTMLInputElement>(null);
   const uploading = useSignal(false);
   const progress = useSignal(0);
+  // The school's limit, to refuse a large file before asking for a ticket.
+  const limit = useUploadLimit();
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file later
     if (!file) return;
 
-    if (file.size > MAX_SIZE) {
-      toast.error("File must be under 100MB");
+    const tooLarge = uploadSizeError(file.size, limit?.uploadLimitBytes);
+    if (tooLarge) {
+      toast.error(tooLarge);
       return;
     }
 

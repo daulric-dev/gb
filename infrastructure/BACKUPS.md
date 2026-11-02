@@ -25,11 +25,11 @@ Contents: [What is (and is not) backed up](#what-is-and-is-not-backed-up) ·
 ## What is (and is not) backed up
 
 **Backed up:** the whole `gradebook` database: every schema (`public`,
-`account`, `course`, `grading`, `student`, `file_manager`, `chat`, `billing`,
-`extensions`), all rows, functions, indexes, sequences and the
+`account`, `course`, `grading`, `student`, `file_manager`, `chat`,
+`compliance`, `extensions`), all rows, functions, indexes, sequences and the
 `_prisma_migrations` history. That covers every school, user, profile, course,
 mark, submission, attendance record, file **metadata**, chat message
-(stored encrypted by the API), notification and billing row.
+(stored encrypted by the API) and notification, and the organisation.
 
 **Not backed up by these tools - plan for them separately:**
 

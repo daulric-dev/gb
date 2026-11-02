@@ -22,6 +22,7 @@ import {
   type AttendanceSession,
   type AttendanceSessionDetail,
 } from "@/lib/attendance";
+import { withFeature } from "@/components/layout/FeatureGate";
 
 const POLL_MS = 5_000;
 /** Fetch the next QR frame just after the current one rotates. */
@@ -36,7 +37,7 @@ type Duration = (typeof DURATIONS)[number];
  * Staff quick action: open a self check-in window for one course and watch
  * the roster fill in. Everything else about attendance lives on the web.
  */
-export default function TakeAttendanceScreen() {
+function TakeAttendanceScreen() {
   const router = useRouter();
   const toast = useToast();
   const { courseId, name } = useLocalSearchParams<{
@@ -421,3 +422,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });
+
+export default withFeature("attendance", "Attendance", TakeAttendanceScreen);

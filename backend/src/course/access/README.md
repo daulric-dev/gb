@@ -16,7 +16,7 @@ The one place the backend decides what a caller may do inside a course. Every co
 
 | Role | Who | Constant membership |
 |------|-----|---------------------|
-| `admin` | Anyone whose effective permissions in the course's school include `course:update` (the school admin by default) | `MANAGE_ROLES`, `STAFF_ROLES` |
+| `admin` | Anyone whose effective permissions in the course's school include `course:update` (the school admin by default, and every organisation admin, who holds the full catalog in every school) | `MANAGE_ROLES`, `STAFF_ROLES` |
 | `teacher` | A `course.course_staff` row with role `teacher` | `MANAGE_ROLES`, `STAFF_ROLES` |
 | `ta` | A `course.course_staff` row with role `ta`; reads everything and marks, but does not change settings, people or delete things | `STAFF_ROLES` |
 

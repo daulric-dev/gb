@@ -15,13 +15,25 @@ function fakeChat() {
       id: `dm-${b}`,
     })),
     postMessage: mock(async () => ({})),
+    studentAccountsAmong: mock(async (_ids: string[]) => new Set<string>()),
+  };
+}
+
+/** Effective features for the file's school (messaging on by default). */
+function fakeFeatures(over: Record<string, boolean> = {}) {
+  return {
+    effective: mock(async (_school: string) => ({
+      messaging: true,
+      student_messaging: false,
+      ...over,
+    })),
   };
 }
 
 describe('ChatSystemService.notifyFileShares', () => {
   test('posts a pending file_share message into each direct share DM', async () => {
     const chat = fakeChat();
-    await new ChatSystemService(chat as any).notifyFileShares('owner', file, [
+    await new ChatSystemService(chat as any, fakeFeatures() as any).notifyFileShares('owner', file, [
       share('s1', 'user', 'u1', false),
     ]);
     expect(chat.ensureDirectConversationRow).toHaveBeenCalledWith(
@@ -48,7 +60,7 @@ describe('ChatSystemService.notifyFileShares', () => {
 
   test('skips role/course shares and shares with the owner', async () => {
     const chat = fakeChat();
-    await new ChatSystemService(chat as any).notifyFileShares('owner', file, [
+    await new ChatSystemService(chat as any, fakeFeatures() as any).notifyFileShares('owner', file, [
       share('s1', 'role', 'teacher'),
       share('s2', 'course', 'c1'),
       share('s3', 'user', 'owner'),
@@ -62,7 +74,7 @@ describe('ChatSystemService.notifyFileShares', () => {
     chat.ensureDirectConversationRow.mockImplementationOnce(async () => {
       throw new Error('boom');
     });
-    await new ChatSystemService(chat as any).notifyFileShares('owner', file, [
+    await new ChatSystemService(chat as any, fakeFeatures() as any).notifyFileShares('owner', file, [
       share('s1', 'user', 'u1'),
       share('s2', 'user', 'u2'),
     ]);
@@ -70,5 +82,38 @@ describe('ChatSystemService.notifyFileShares', () => {
     expect((chat.postMessage.mock.calls[0] as any)[0].conversation).toEqual({
       id: 'dm-u2',
     });
+  });
+
+  test('posts nothing while the school has messaging off', async () => {
+    const chat = fakeChat();
+    const features = fakeFeatures({ messaging: false });
+    await new ChatSystemService(chat as any, features as any).notifyFileShares(
+      'owner',
+      file,
+      [share('s1', 'user', 'u1')],
+    );
+    expect(features.effective).toHaveBeenCalledWith('school-1');
+    expect(chat.ensureDirectConversationRow).not.toHaveBeenCalled();
+    expect(chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test('skips student recipients unless student messaging is on', async () => {
+    const chat = fakeChat();
+    chat.studentAccountsAmong.mockImplementation(async () => new Set(['stu']));
+    await new ChatSystemService(chat as any, fakeFeatures() as any).notifyFileShares(
+      'owner',
+      file,
+      [share('s1', 'user', 'stu'), share('s2', 'user', 'u2')],
+    );
+    expect(chat.postMessage).toHaveBeenCalledTimes(1);
+    expect((chat.postMessage.mock.calls[0] as any)[0].conversation).toEqual({ id: 'dm-u2' });
+
+    const chat2 = fakeChat();
+    await new ChatSystemService(
+      chat2 as any,
+      fakeFeatures({ student_messaging: true }) as any,
+    ).notifyFileShares('owner', file, [share('s1', 'user', 'stu')]);
+    expect(chat2.studentAccountsAmong).not.toHaveBeenCalled();
+    expect(chat2.postMessage).toHaveBeenCalledTimes(1);
   });
 });

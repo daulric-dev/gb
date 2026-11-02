@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FileManagerModule } from '@/file-manager/file-manager.module';
+import { ImagesModule } from '@/images/images.module';
+import { CourseBannerService } from './course-banner.service';
 import { CourseController } from './course.controller';
 import { CourseCopyController } from './course-copy.controller';
 import { CourseCopyService } from './course-copy.service';
@@ -12,7 +14,7 @@ import { PageController } from './page.controller';
 import { PageService } from './page.service';
 
 @Module({
-  imports: [FileManagerModule],
+  imports: [FileManagerModule, ImagesModule],
   controllers: [
     CourseController,
     CourseCopyController,
@@ -22,6 +24,7 @@ import { PageService } from './page.service';
   ],
   providers: [
     CourseService,
+    CourseBannerService,
     CourseCopyService,
     CourseFileService,
     ModuleService,

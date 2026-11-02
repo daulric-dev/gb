@@ -1,18 +1,22 @@
+import { Readable } from 'node:stream';
 import { describe, test, expect, mock } from 'bun:test';
 import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   FileManagerService,
   MAX_PENDING_UPLOADS,
 } from './file-manager.service';
 import { ObjectTooLargeError } from '@/storage/storage.service';
+import { ByteBudget } from '@/storage/byte-budget';
 import { FileListFilter } from './dto/list-files.filter';
 import { expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
+import { MB } from './upload-limit.config';
 
 const USER = 'user-1';
 const FILE_ID = '00000000-0000-4000-8000-0000000000f1';
@@ -64,8 +68,26 @@ function storageStub(object: Buffer | null = null, size?: number) {
       ),
     ),
     getBuffer: mock(() => Promise.resolve(object)),
+    get: mock(() =>
+      Promise.resolve(
+        object
+          ? { body: Readable.from([object]), contentType: null, size: object.byteLength }
+          : null,
+      ),
+    ),
     put: mock(() => Promise.resolve()),
+    copy: mock(() => Promise.resolve()),
     delete: mock(() => Promise.resolve()),
+  };
+}
+
+/** UploadLimitService stand-in: every school gets `schoolMb`, ceiling `maxMb`. */
+function limitsStub(schoolMb = 100, maxMb = 100) {
+  return {
+    config: { maxMb, defaultMb: 100 },
+    bytesForSchool: mock((_schoolId: string) =>
+      Promise.resolve(Math.min(schoolMb, maxMb) * MB),
+    ),
   };
 }
 
@@ -73,6 +95,8 @@ function makeService(
   fileResult: { rows: any; count?: number },
   access = accessStub(),
   storage = storageStub(),
+  budget = new ByteBudget(1024 * 1024),
+  limits = limitsStub(),
 ) {
   const prisma = createMockPrisma();
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
@@ -94,8 +118,10 @@ function makeService(
     chatSystem as any,
     folders as any,
     createMockErasureLog() as any,
+    budget,
+    limits as any,
   );
-  return { svc, prisma, storage };
+  return { svc, prisma, storage, budget, limits };
 }
 
 describe('list', () => {
@@ -204,6 +230,100 @@ describe('direct uploads', () => {
     }
   });
 
+  test("a ticket above the school's limit names that limit", async () => {
+    const { svc, prisma } = makeService(
+      { rows: null },
+      accessStub(),
+      storageStub(),
+      new ByteBudget(1024 * 1024),
+      limitsStub(10),
+    );
+    const err = await expectRejection(
+      svc.createUploadTicket(USER, {
+        name: 'a.pdf',
+        sizeBytes: 10 * MB + 1,
+        contentType: 'application/pdf',
+      }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toContain("school's limit is 10MB");
+    expect(prisma.file.create).not.toHaveBeenCalled();
+  });
+
+  test('a school set to 100MB takes a 100MB file, and the ticket says so', async () => {
+    const { svc } = makeService(
+      { rows: null },
+      accessStub(),
+      storageStub(),
+      new ByteBudget(256 * MB),
+    );
+    const t = await svc.createUploadTicket(USER, {
+      name: 'big.pdf',
+      sizeBytes: 100 * MB,
+      contentType: 'application/pdf',
+    });
+    expect(t.maxBytes).toBe(100 * MB);
+  });
+
+  test('a checked type cannot be bigger than the verify budget', async () => {
+    const { svc } = makeService(
+      { rows: null },
+      accessStub(),
+      storageStub(),
+      new ByteBudget(50 * MB),
+    );
+    const err = await expectRejection(
+      svc.createUploadTicket(USER, {
+        name: 'big.pdf',
+        sizeBytes: 60 * MB,
+        contentType: 'application/pdf',
+      }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toContain('at most 50MB');
+  });
+
+  test('an unchecked type may use the whole school limit', async () => {
+    const { svc } = makeService(
+      { rows: null },
+      accessStub(),
+      storageStub(),
+      new ByteBudget(1 * MB),
+    );
+    const t = await svc.createSubmissionUploadTicket(USER, {
+      name: 'project.zip',
+      sizeBytes: 90 * MB,
+      contentType: 'application/zip',
+    });
+    expect(t.maxBytes).toBe(100 * MB);
+  });
+
+  test('a ticket for a 10MB school reports 10MB as maxBytes', async () => {
+    const { svc } = makeService(
+      { rows: null },
+      accessStub(),
+      storageStub(),
+      new ByteBudget(1024 * 1024),
+      limitsStub(10),
+    );
+    const t = await svc.createUploadTicket(USER, {
+      name: 'a.pdf',
+      sizeBytes: 100,
+      contentType: 'application/pdf',
+    });
+    expect(t.maxBytes).toBe(10 * MB);
+  });
+
+  test("a submission ticket is held to the course's school, when given", async () => {
+    const { svc, limits } = makeService({ rows: null });
+    await svc.createSubmissionUploadTicket(
+      USER,
+      { name: 'a.pdf', sizeBytes: 100, contentType: 'application/pdf' },
+      'course-school',
+    );
+    expect(limits.bytesForSchool).toHaveBeenCalledWith('course-school');
+  });
+
   test('submission upload tickets accept a programming-language MIME type', async () => {
     const { svc, prisma } = makeService({ rows: null });
     const ticket = await svc.createSubmissionUploadTicket(USER, {
@@ -216,41 +336,6 @@ describe('direct uploads', () => {
     expect(prisma.file.create.mock.calls[0][0].data.content_type).toBe(
       'text/x-python',
     );
-  });
-
-  test('submission multipart uploads accept arbitrary file types', async () => {
-    const source = Buffer.from('fn main() {}');
-    const { svc, prisma, storage } = makeService({ rows: null });
-    prisma.file.create.mockImplementation(async ({ data }) =>
-      fileRow({ ...data, size_bytes: BigInt(source.byteLength) }),
-    );
-
-    await svc.uploadSubmissionManual(USER, {
-      filename: 'main.rs',
-      mimetype: 'application/x-rust-source',
-      toBuffer: () => Promise.resolve(source),
-    } as any);
-
-    expect(storage.put).toHaveBeenCalledWith(
-      expect.stringContaining('main.rs'),
-      source,
-      'application/x-rust-source',
-    );
-    expect(prisma.file.create.mock.calls[0][0].data.content_type).toBe(
-      'application/x-rust-source',
-    );
-  });
-
-  test('ordinary multipart uploads still reject unapproved types', async () => {
-    const { svc, storage } = makeService({ rows: null });
-    await expect(
-      svc.uploadManual(USER, {
-        filename: 'main.rs',
-        mimetype: 'application/x-rust-source',
-        toBuffer: () => Promise.resolve(Buffer.from('fn main() {}')),
-      } as any),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(storage.put).not.toHaveBeenCalled();
   });
 
   test('completing marks the file ready when the bytes check out', async () => {
@@ -291,11 +376,119 @@ describe('direct uploads', () => {
     const result = await svc.finaliseSubmissionUpload(USER, FILE_ID);
 
     expect(result.status).toBe('ready');
-    expect(storage.put).toHaveBeenCalledWith(
+    // Bytes of an unchecked type are never read: the store copies them.
+    expect(storage.getBuffer).not.toHaveBeenCalled();
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(storage.copy).toHaveBeenCalledWith(
+      'file-manager/uploads/school-1/user-1/f1-main.rs',
       'file-manager/school-1/user-1/f1-main.rs',
-      source,
       'application/x-rust-source',
     );
+    expect(storage.delete).toHaveBeenCalledWith(
+      'file-manager/uploads/school-1/user-1/f1-main.rs',
+    );
+    expect(prisma.file.update.mock.calls[0][0].data.size_bytes).toBe(
+      source.byteLength,
+    );
+  });
+
+  test('an unchecked type still has its size checked before the copy', async () => {
+    const storage = storageStub(Buffer.alloc(4), 9);
+    const { svc } = makeService(
+      {
+        rows: fileRow({
+          status: 'pending',
+          content_type: 'application/x-rust-source',
+          size_bytes: BigInt(4),
+          storage_path: 'uploads/school-1/user-1/f1-main.rs',
+        }),
+      },
+      accessStub(),
+      storage,
+    );
+    const err = await expectRejection(svc.finaliseSubmissionUpload(USER, FILE_ID));
+    expect((err as Error).message).toBe(
+      'The uploaded file does not match the declared size',
+    );
+    expect(storage.copy).not.toHaveBeenCalled();
+  });
+
+  test('a checked type holds verify budget while reading and releases it', async () => {
+    const storage = storageStub(PDF);
+    const budget = new ByteBudget(1024 * 1024);
+    let heldDuringRead = 0;
+    storage.getBuffer.mockImplementation(() => {
+      heldDuringRead = budget.inUse;
+      return Promise.resolve(PDF);
+    });
+    const { svc, prisma } = makeService(
+      { rows: fileRow({ status: 'pending', size_bytes: BigInt(PDF.byteLength) }) },
+      accessStub(),
+      storage,
+      budget,
+    );
+    prisma.file.update.mockImplementation(async ({ data }) => fileRow({ ...data }));
+    await svc.finaliseUpload(USER, FILE_ID);
+    expect(heldDuringRead).toBe(PDF.byteLength);
+    expect(budget.inUse).toBe(0);
+  });
+
+  test('verify budget is released when the check fails', async () => {
+    const html = Buffer.from('<html></html>');
+    const budget = new ByteBudget(1024 * 1024);
+    const { svc } = makeService(
+      { rows: fileRow({ status: 'pending', size_bytes: null }) },
+      accessStub(),
+      storageStub(html),
+      budget,
+    );
+    await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+    expect(budget.inUse).toBe(0);
+  });
+
+  test('verify budget is released when the read throws', async () => {
+    const storage = storageStub(PDF);
+    storage.getBuffer.mockImplementation(() => Promise.reject(new Error('reset')));
+    const budget = new ByteBudget(1024 * 1024);
+    const { svc } = makeService(
+      { rows: fileRow({ status: 'pending', size_bytes: null }) },
+      accessStub(),
+      storage,
+      budget,
+    );
+    await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+    expect(budget.inUse).toBe(0);
+  });
+
+  test('a full verify budget is a 503 that leaves the row pending to retry', async () => {
+    const { setTimeout: realSetTimeout } = globalThis;
+    // Skip the real 10s wait: fire budget timeouts at once.
+    globalThis.setTimeout = ((fn: () => void) => realSetTimeout(fn, 0)) as any;
+    try {
+      const storage = storageStub(PDF);
+      const budget = new ByteBudget(PDF.byteLength);
+      const hold = await budget.acquire(PDF.byteLength, 0);
+      const { svc, prisma } = makeService(
+        { rows: fileRow({ status: 'pending', size_bytes: BigInt(PDF.byteLength) }) },
+        accessStub(),
+        storage,
+        budget,
+      );
+      const err = await expectRejection(svc.finaliseUpload(USER, FILE_ID));
+      expect(err).toBeInstanceOf(ServiceUnavailableException);
+      expect(storage.getBuffer).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
+      expect(prisma.file.updateMany).not.toHaveBeenCalled();
+      expect(prisma.file.update).not.toHaveBeenCalled();
+
+      // Once room frees up, the same pending row completes.
+      hold();
+      prisma.file.update.mockImplementation(async ({ data }) => fileRow({ ...data }));
+      const out = await svc.finaliseUpload(USER, FILE_ID);
+      expect(out.status).toBe('ready');
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
   });
 
   test('completing with nothing uploaded fails the row', async () => {
@@ -338,8 +531,13 @@ describe('direct uploads', () => {
     (svc as any).access.accessFor = () =>
       Promise.resolve({ isOwner: true, canView: true, canDownload: true });
     const out = await svc.getDownloadContent(USER, FILE_ID);
-    expect(out.buffer.equals(PDF)).toBe(true);
-    expect(storage.getBuffer).toHaveBeenCalledWith('file-manager/s/p');
+    const chunks: Buffer[] = [];
+    for await (const chunk of out.body) chunks.push(chunk as Buffer);
+    expect(Buffer.concat(chunks).equals(PDF)).toBe(true);
+    expect(out.size).toBe(PDF.byteLength);
+    expect(storage.get).toHaveBeenCalledWith('file-manager/s/p');
+    // Served as a stream: a download never reads the object into memory.
+    expect(storage.getBuffer).not.toHaveBeenCalled();
   });
 
   test('a ticket stages the upload away from the served key and signs its size', async () => {
@@ -397,7 +595,7 @@ describe('direct uploads', () => {
 
     expect(storage.getBuffer).toHaveBeenCalledWith(
       'file-manager/uploads/school-1/user-1/f1-doc.pdf',
-      100 * 1024 * 1024,
+      PDF.byteLength,
     );
     const [putKey, putBody] = storage.put.mock.calls[0] as unknown as [
       string,
@@ -424,7 +622,9 @@ describe('direct uploads', () => {
       storage,
     );
     const err = await expectRejection(svc.finaliseUpload(USER, FILE_ID));
-    expect((err as Error).message).toBe('File too large. Maximum is 100MB.');
+    expect((err as Error).message).toBe(
+      'The uploaded file does not match the declared size',
+    );
     expect(storage.delete).toHaveBeenCalled();
     expect(prisma.file.updateMany.mock.calls[0][0].data.status).toBe('failed');
   });

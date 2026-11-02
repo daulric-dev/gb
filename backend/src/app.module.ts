@@ -44,10 +44,12 @@ import { AttendanceModule } from '@/attendance/attendance.module';
 import { DiscussionModule } from '@/discussion/discussion.module';
 import { CalendarModule } from '@/calendar/calendar.module';
 import { CourseNotificationModule } from '@/course-notification/course-notification.module';
-import { BillingModule } from '@/billing/billing.module';
+import { OrganisationModule } from '@/organisation/organisation.module';
+import { FeaturesModule } from '@/features/features.module';
 import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
+import { IntegrationsModule } from '@/integrations/integrations.module';
 
 @Module({
   imports: [
@@ -99,6 +101,7 @@ import { AppVersionModule } from '@/app-version/app-version.module';
     }),
 
     PrismaModule,
+    FeaturesModule,
     StorageModule,
     MailModule,
     AccountModule,
@@ -131,10 +134,11 @@ import { AppVersionModule } from '@/app-version/app-version.module';
     DiscussionModule,
     CalendarModule,
     CourseNotificationModule,
-    BillingModule,
+    OrganisationModule,
     ErasureModule,
     RetentionModule,
     AppVersionModule,
+    IntegrationsModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [

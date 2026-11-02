@@ -7,7 +7,7 @@ sidebar_position: 0
 
 A school management platform: rosters, attendance, classwork, marks and report cards, in one place. Teachers run their classes, students see their own record, and the term grade is calculated from the work rather than typed in at the end.
 
-It runs as a web app and a mobile app against a shared API, and any educator can create a school and start using it — it is not tied to a particular institution.
+It runs as a web app and a mobile app against a shared API, and each install is self-hosted by one organisation, which can run several schools — it is not tied to a particular institution.
 
 ## Start here
 

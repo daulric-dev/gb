@@ -12,7 +12,7 @@ The core API client used by all pages to communicate with the backend.
 
 - **Base URL**: `/api` (relative path, proxied to the backend via Next.js rewrites)
 - **Proxy**: Auth endpoints (`/api/auth/*`) are handled by a Route Handler at `app/api/auth/[...path]/route.ts` that explicitly forwards cookies and `Set-Cookie` headers. It uses `getSetCookie()` to forward each `Set-Cookie` header individually (the standard `Headers.forEach()` can merge multiple cookies into one unparseable value). All other endpoints use the Next.js rewrite defined in `next.config.ts`.
-- **Content-Type**: `application/json` for all requests (except `apiUpload` which uses `multipart/form-data`)
+- **Content-Type**: `application/json` for all requests. There is no multipart helper: file bytes never go through the API (see `lib/files/upload.ts` below)
 - **API Version**: `X-API-Version: 1` header sent with every request
 
 ### `api<T>(path, options?)` Function
@@ -30,21 +30,31 @@ The main export. Makes authenticated JSON requests to the backend.
 - Sends `credentials: "include"` so the browser forwards the `gb_session` cookie on every request
 - The frontend never reads or attaches a token - the backend's `AuthGuard` validates the session cookie on every authenticated request and slides its expiry
 
+### `apiQuery<T>(path, filters?, options?)` Function
+
+For the API's search and filter lists, which take the HTTP `QUERY` method ([HTTP QUERY](../backend/http-query.md)): sends `method: "QUERY"` with `filters` as the JSON body (`{}` when omitted, so there is always a body and a `Content-Type`). Everything else - headers, cookies, 401 and `FEATURE_DISABLED` handling - is `api()`'s. There is no response cache, so different filters to one path are separate reads. Used for `/courses`, `/students`, `/files`, `/files/folders/contents`, chat history (`lib/chat.ts`), portal notices (`lib/portal-notifications.ts`), organisation schools and invites (`listOrganisationSchools`, `listInvites` in `lib/organisation.ts`) and SSO activity (`listSsoAudit` in `lib/sso-audit.ts`).
+
+```ts
+const students = await apiQuery<Student[]>("/students", { search: "ada" });
+```
+
 ### 401 Handling
 
 If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry - there is no token to refresh, so a 401 means the session itself is gone (expired, revoked, or the cookie was cleared).
 
-### `apiUpload<T>(path, formData)` Function
+### File uploads (`lib/files/upload.ts`)
 
-Uploads files via `multipart/form-data`. Used for avatar uploads and any other file upload that sends a `FormData` body instead of JSON.
+Every upload goes straight to object storage with a presigned URL: the client asks the API for a ticket, `PUT`s the bytes to the ticket's `uploadUrl` with exactly its `headers` (no cookies), then calls the matching complete route so the backend checks the stored bytes.
 
-**Parameters:**
-| Param | Type | Description |
-|-------|------|-------------|
-| `path` | string | API path (e.g., `/auth/avatar`) |
-| `formData` | FormData | The form data containing the file |
-
-Sends `credentials: "include"` and handles 401 the same way as `api()`. Returns the parsed JSON response.
+| Export | Use |
+|--------|-----|
+| `uploadFile(file, { ticket, complete }, options?)` | Files and assignment hand-ins (`/files/upload-ticket`, `/portal/me/activities/:id/upload-ticket`). Returns the released file; a `503` on complete is retried with backoff. |
+| `uploadAvatar(image, filename, onProgress?)` | Profile pictures: `POST /auth/avatar/resumable`, the PUT, then `POST /auth/avatar/complete { path }`. Returns the new `avatar_url`. |
+| `uploadImage(ticketPath, completePath, image, filename, onProgress?)` | The shared image flow behind the three below: ticket, PUT, then `POST completePath { path }`; returns the complete route's answer. |
+| `uploadCourseBanner(courseId, image, filename, onProgress?)` | Course cover images: `/courses/:id/banner/upload-ticket` then `/banner/complete`. Returns the updated course. |
+| `uploadSchoolLogo(image, filename, onProgress?)` | The school logo: `/schools/current/logo/upload-ticket` then `/complete`. Returns the new `logoUrl`. |
+| `imageFileProblem(file, maxBytes)` | A pre-check (JPEG/PNG/WebP and size) that returns a message or null; the backend checks again. |
+| `sendToStorage(blob, ticket, onProgress?)` | The PUT itself, retried once on a dropped connection. Throws `UploadError` when storage refuses it. |
 
 ### `buildUrl(path)` Function
 

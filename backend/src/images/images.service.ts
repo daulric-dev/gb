@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import {
   ObjectTooLargeError,
@@ -7,18 +8,26 @@ import {
 import { objectKey } from '@/storage/keys';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
-import { MultipartFile } from '@fastify/multipart';
+import { publicImageUrl } from './public-url';
+
+/** Image types every upload here accepts: never SVG or anything scriptable. */
+export const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+const EXTENSION: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
+export const IMAGE_AREAS = ['course-banners', 'school-logos'] as const;
+export type ImageArea = (typeof IMAGE_AREAS)[number];
 
 @Injectable()
 export class ImagesService {
   private readonly logger = new Logger(ImagesService.name);
 
   private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024;
-  private static readonly ALLOWED_TYPES = [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-  ];
+  private static readonly ALLOWED_TYPES: readonly string[] = IMAGE_TYPES;
   private static readonly BUCKET = 'images';
   /** How long a presigned avatar upload URL stays valid. */
   private static readonly UPLOAD_URL_TTL = 5 * 60;
@@ -148,13 +157,7 @@ export class ImagesService {
    * avatar route.
    */
   private publicUrl(path: string, requestOrigin?: string): string {
-    const cdn = process.env.S3_PUBLIC_URL?.replace(/\/+$/, '');
-    if (cdn) return `${cdn}/${objectKey(ImagesService.BUCKET, path)}`;
-    const api =
-      process.env.API_URL?.replace(/\/+$/, '') ||
-      requestOrigin?.replace(/\/+$/, '') ||
-      'http://localhost:3001';
-    return `${api}/api/${objectKey(ImagesService.BUCKET, path)}`;
+    return publicImageUrl(path, requestOrigin);
   }
 
   /**
@@ -169,64 +172,6 @@ export class ImagesService {
     ) {
       throw new BadRequestException('Upload path does not belong to caller');
     }
-  }
-
-  // ── Standard upload (small files, backend-mediated) ─────────────────
-
-  async setImageToUserProfile(
-    userId: string,
-    file: MultipartFile,
-    requestOrigin?: string,
-  ) {
-    const buffer = await file.toBuffer();
-
-    if (buffer.byteLength > ImagesService.MAX_FILE_SIZE) {
-      throw new BadRequestException(
-        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`,
-      );
-    }
-
-    if (
-      !file.mimetype ||
-      !ImagesService.ALLOWED_TYPES.includes(file.mimetype)
-    ) {
-      throw new BadRequestException(
-        `Invalid file type "${file.mimetype ?? 'unknown'}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
-      );
-    }
-
-    // Don't trust the client-declared mimetype: confirm the actual bytes are
-    // one of the allowed image formats (prevents smuggling e.g. SVG/HTML).
-    if (!ImagesService.matchesImageSignature(buffer, file.mimetype)) {
-      throw new BadRequestException(
-        'File content does not match an allowed image format',
-      );
-    }
-
-    const ext = this.safeExtension(file.filename);
-    const path = this.buildPath(userId, ext);
-
-    this.logger.log(
-      `Uploading avatar to "${objectKey(ImagesService.BUCKET, path)}" (${buffer.byteLength} bytes, ${file.mimetype})`,
-    );
-
-    try {
-      await this.storage.put(
-        objectKey(ImagesService.BUCKET, path),
-        buffer,
-        file.mimetype,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to upload avatar at path "${path}": ${(error as Error).message}`,
-      );
-      throw new BadRequestException('Failed to upload image');
-    }
-
-    const avatarUrl = this.cacheBust(this.publicUrl(path, requestOrigin));
-    await this.updateProfileAvatar(userId, avatarUrl);
-
-    return { avatar_url: avatarUrl };
   }
 
   // ── Direct upload (presigned PUT) ───────────────────────────────────
@@ -247,29 +192,67 @@ export class ImagesService {
     contentType: string,
     totalSize: number,
   ) {
+    const ext = this.safeExtension(filename);
+    return this.createImageTicket(
+      `${ImagesService.STAGING_PREFIX}${this.buildPath(userId, ext)}`,
+      contentType,
+      totalSize,
+      ImagesService.MAX_FILE_SIZE,
+    );
+  }
+
+
+  async completeResumableUpload(userId: string, path: string, requestOrigin?: string) {
+    this.assertOwnedPath(userId, path);
+    const finalPath = path.slice(ImagesService.STAGING_PREFIX.length);
+    await this.finalizeImage(path, finalPath, ImagesService.MAX_FILE_SIZE);
+
+    const avatarUrl = this.cacheBust(this.publicUrl(finalPath, requestOrigin));
+    await this.updateProfileAvatar(userId, avatarUrl);
+
+    return { avatar_url: avatarUrl };
+  }
+
+  // ── Shared upload steps (avatars, course banners, school logos) ─────
+
+  newImagePath(area: ImageArea, ownerId: string, contentType: string) {
+    this.assertAllowedType(contentType);
+    const name = `${area}/${ownerId}-${randomBytes(16).toString('hex')}.${EXTENSION[contentType]}`;
+    return { staging: `${ImagesService.STAGING_PREFIX}${name}`, served: name };
+  }
+
+  servedPathFor(area: ImageArea, ownerId: string, path: string): string {
+    const name = path.startsWith(ImagesService.STAGING_PREFIX)
+      ? path.slice(ImagesService.STAGING_PREFIX.length)
+      : '';
+    const re = new RegExp(`^${area}/${escapeRe(ownerId)}-[0-9a-f]{32}\\.(jpg|png|webp)$`);
+    if (!re.test(name)) {
+      throw new BadRequestException('Upload path does not belong to caller');
+    }
+    return name;
+  }
+
+  async createImageTicket(
+    stagingPath: string,
+    contentType: string,
+    totalSize: number,
+    maxBytes: number,
+  ) {
     if (!Number.isInteger(totalSize) || totalSize <= 0) {
       throw new BadRequestException('File is empty');
     }
-    if (totalSize > ImagesService.MAX_FILE_SIZE) {
+    if (totalSize > maxBytes) {
       throw new BadRequestException(
-        `File too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`,
+        `File too large (${(totalSize / 1024 / 1024).toFixed(1)}MB). Maximum is ${mb(maxBytes)}MB.`,
       );
     }
+    this.assertAllowedType(contentType);
 
-    if (!ImagesService.ALLOWED_TYPES.includes(contentType)) {
-      throw new BadRequestException(
-        `Invalid file type "${contentType}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
-      );
-    }
-
-    const ext = this.safeExtension(filename);
-    const path = `${ImagesService.STAGING_PREFIX}${this.buildPath(userId, ext)}`;
     const ttl = ImagesService.UPLOAD_URL_TTL;
-
     let uploadUrl: string;
     try {
       uploadUrl = await this.storage.uploadUrl(
-        objectKey(ImagesService.BUCKET, path),
+        objectKey(ImagesService.BUCKET, stagingPath),
         contentType,
         ttl,
         totalSize,
@@ -282,7 +265,7 @@ export class ImagesService {
     }
 
     return {
-      path,
+      path: stagingPath,
       method: 'PUT' as const,
       uploadUrl,
       headers: { 'Content-Type': contentType },
@@ -291,22 +274,22 @@ export class ImagesService {
   }
 
   /**
-   * After the client finishes the PUT, check what arrived, write the checked
-   * bytes to the served avatar key and point the user's profile at it. The
-   * staged object is deleted either way.
+   * Check a staged upload (size, declared type, leading bytes, reading at
+   * most `maxBytes`) and write the checked bytes to `servedPath`. The staged
+   * object is deleted whether it passes or not, so a still-valid upload URL
+   * cannot change anything after the check.
    */
-  async completeResumableUpload(
-    userId: string,
-    path: string,
-    requestOrigin?: string,
-  ) {
-    this.assertOwnedPath(userId, path);
-    const key = objectKey(ImagesService.BUCKET, path);
+  async finalizeImage(
+    stagingPath: string,
+    servedPath: string,
+    maxBytes: number,
+  ): Promise<void> {
+    const key = objectKey(ImagesService.BUCKET, stagingPath);
 
     const head = await this.storage.exists(key);
     if (!head) {
       throw new BadRequestException(
-        `File at "${path}" not found. Upload may not be complete yet.`,
+        `File at "${stagingPath}" not found. Upload may not be complete yet.`,
       );
     }
 
@@ -314,14 +297,14 @@ export class ImagesService {
       await this.storage
         .delete(key)
         .catch((err: Error) =>
-          this.logger.error(`Could not remove rejected avatar: ${err.message}`),
+          this.logger.error(`Could not remove rejected image: ${err.message}`),
         );
       throw new BadRequestException(message);
     };
 
-    if (head.size > ImagesService.MAX_FILE_SIZE) {
+    if (head.size > maxBytes) {
       await reject(
-        `File too large (${(head.size / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`,
+        `File too large (${(head.size / 1024 / 1024).toFixed(1)}MB). Maximum is ${mb(maxBytes)}MB.`,
       );
     }
     const contentType = head.contentType ?? '';
@@ -334,10 +317,10 @@ export class ImagesService {
     // is capped on its own.
     let buffer: Buffer | null = null;
     try {
-      buffer = await this.storage.getBuffer(key, ImagesService.MAX_FILE_SIZE);
+      buffer = await this.storage.getBuffer(key, maxBytes);
     } catch (error) {
       if (!(error instanceof ObjectTooLargeError)) throw error;
-      await reject('File too large. Maximum is 5MB.');
+      await reject(`File too large. Maximum is ${mb(maxBytes)}MB.`);
     }
     if (
       !buffer ||
@@ -346,29 +329,63 @@ export class ImagesService {
       await reject('File content does not match an allowed image format');
     }
 
-    const finalPath = path.slice(ImagesService.STAGING_PREFIX.length);
     try {
       await this.storage.put(
-        objectKey(ImagesService.BUCKET, finalPath),
+        objectKey(ImagesService.BUCKET, servedPath),
         buffer!,
         contentType,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to store avatar at "${finalPath}": ${(error as Error).message}`,
+        `Failed to store image at "${servedPath}": ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to upload image');
     }
     await this.storage
       .delete(key)
       .catch((err: Error) =>
-        this.logger.error(`Could not remove staged avatar: ${err.message}`),
+        this.logger.error(`Could not remove staged image: ${err.message}`),
       );
+  }
 
-    const avatarUrl = this.cacheBust(this.publicUrl(finalPath, requestOrigin));
-    await this.updateProfileAvatar(userId, avatarUrl);
+  /** Best-effort removal of a served image that nothing points at any more. */
+  async removeImage(path: string | null | undefined): Promise<void> {
+    if (!path || !ImagesService.SERVED_PATH.test(path)) return;
+    await this.storage
+      .delete(objectKey(ImagesService.BUCKET, path))
+      .catch((err: Error) =>
+        this.logger.error(`Could not remove image "${path}": ${err.message}`),
+      );
+  }
 
-    return { avatar_url: avatarUrl };
+  /**
+   * A course banner or school logo by its path inside the images area, for
+   * the public image routes. Null when the path is not one of those or there
+   * is no such object.
+   */
+  async readPublicImage(
+    path: string,
+  ): Promise<{ body: Readable; contentType: string; size: number | null } | null> {
+    if (!ImagesService.SERVED_PATH.test(path)) return null;
+    const obj = await this.storage.get(objectKey(ImagesService.BUCKET, path));
+    if (!obj) return null;
+    return {
+      body: obj.body,
+      contentType: obj.contentType || 'application/octet-stream',
+      size: obj.size,
+    };
+  }
+
+  private static readonly SERVED_PATH = new RegExp(
+    `^(${IMAGE_AREAS.join('|')})/[A-Za-z0-9-]+\\.(jpg|png|webp)$`,
+  );
+
+  private assertAllowedType(contentType: string): void {
+    if (!ImagesService.ALLOWED_TYPES.includes(contentType)) {
+      throw new BadRequestException(
+        `Invalid file type "${contentType}". Allowed: ${ImagesService.ALLOWED_TYPES.join(', ')}`,
+      );
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
@@ -415,4 +432,12 @@ export class ImagesService {
       3600 * 24 * 30,
     );
   }
+}
+
+function mb(bytes: number): string {
+  return String(Math.round((bytes / 1024 / 1024) * 10) / 10);
+}
+
+function escapeRe(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

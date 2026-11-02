@@ -322,7 +322,8 @@ async function main() {
     check('the code stays valid for the next student', join2.status === 201 && join2.body?.schoolId === schoolId, `status ${join2.status} ${short(join2.body)}`);
 
     // ---- staff see the student; nobody creates one ------------------------
-    const roster = await staff.fetch('/students');
+    // The roster is an HTTP QUERY with its filters in the body.
+    const roster = await staff.fetch('/students', { method: 'QUERY', body: '{}' });
     check('the joined student is on the roster',
       roster.status === 200 && Array.isArray(roster.body) && roster.body.some((r: any) => r.id === joinedId),
       `status ${roster.status} ${short(roster.body, 200)}`,
@@ -389,14 +390,14 @@ async function main() {
     check('course announcements respond', news.status === 200 && Array.isArray(news.body), `status ${news.status}`);
 
     // ---- a student must not reach the staff API ---------------------------
-    for (const [label, path] of [
-      ['students roster', '/students'],
-      ['staff dashboard', '/dashboard/summary'],
-      ['school members', '/schools/members'],
-      ['permission catalog', '/permissions/catalog'],
-      ['join code status', '/schools/join-code'],
+    for (const [label, path, init] of [
+      ['students roster', '/students', { method: 'QUERY', body: '{}' }],
+      ['staff dashboard', '/dashboard/summary', {}],
+      ['school members', '/schools/members', {}],
+      ['permission catalog', '/permissions/catalog', {}],
+      ['join code status', '/schools/join-code', {}],
     ] as const) {
-      const res = await student.fetch(path);
+      const res = await student.fetch(path, init);
       check(`student denied ${label}`, res.status === 403, `status ${res.status}`);
     }
 
@@ -423,8 +424,8 @@ async function main() {
   } finally {
     // ---- clean-up -----------------------------------------------------------
     // The school cascades to its years, terms, courses (and their content,
-    // enrolments, activities, submissions), students, join codes, memberships
-    // and billing rows. Accounts are not under the school: deleting app_user
+    // enrolments, activities, submissions), students, join codes and
+    // memberships. Accounts are not under the school: deleting app_user
     // cascades to user_profile, sessions and identities. Sign-in codes are
     // keyed by email only.
     if (schoolId) await db.school.delete({ where: { id: schoolId } }).catch((e) => console.error('clean-up school', e));

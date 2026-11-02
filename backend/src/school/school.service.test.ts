@@ -50,48 +50,6 @@ describe('SchoolService', () => {
     });
   });
 
-  describe('create', () => {
-    const newSchool = { id: '3', name: 'Gamma School', school_type: 'primary' };
-
-    test('calls cache.update to append new school to list', async () => {
-      const existing = [{ id: '1', name: 'Alpha School' }];
-      await mockCache.set('schools:all', existing, SCHOOL_TTL);
-      prisma.school.create.mockResolvedValue(newSchool);
-
-      await service.create(
-        { name: 'Gamma School', schoolType: 'primary' } as any,
-        'user-1',
-      );
-
-      const cached = await mockCache.get('schools:all');
-      expect(cached).toBeArray();
-      expect(cached).toHaveLength(2);
-      expect(cached.some((s: any) => s.id === '3')).toBe(true);
-
-      // Creator becomes the admin member, mirrored on the profile.
-      expect(prisma.school_management.create.mock.calls[0][0].data).toEqual({
-        user_id: 'user-1',
-        school_id: '3',
-        role: 'admin',
-      });
-      expect(prisma.user_profile.updateMany.mock.calls[0][0]).toEqual({
-        where: { id: 'user-1' },
-        data: { school_id: '3', role: 'admin' },
-      });
-    });
-
-    test('throws on DB error', () => {
-      prisma.school.create.mockRejectedValue(new Error('duplicate key'));
-
-      expect(
-        service.create(
-          { name: 'Fail School', schoolType: 'primary' } as any,
-          'user-1',
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-  });
-
   describe('createJoinRequest', () => {
     const userId = 'user-join';
     const school = { id: 's1', name: 'Orphan School' };
@@ -239,7 +197,7 @@ describe('SchoolService', () => {
         school_id: 's1',
         status: 'pending',
       });
-      prisma.school_management.upsert.mockResolvedValue({ id: 'm9' });
+      prisma.school_management.create.mockResolvedValue({ id: 'm9' });
       prisma.school_join_request.update.mockResolvedValue({
         id: 'req',
         status: 'approved',

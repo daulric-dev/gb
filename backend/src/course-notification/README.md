@@ -10,7 +10,7 @@ All under `AuthGuard` + `StudentGuard`. Notices belong to the signed-in account 
 
 | Method | Path | Who | What it does |
 |--------|------|-----|--------------|
-| GET | `/api/portal/me/notifications?limit&before&unread` | Student | `CourseNotification[]`, newest first. `limit` default 30, max 100; `before` pages back by `createdAt`; `unread=true` (or `1`) for unread only. |
+| QUERY | `/api/portal/me/notifications` (body `{ limit?, before?, unread? }`) | Student | `CourseNotification[]`, newest first. `limit` default 30, max 100; `before` pages back by `createdAt`; `unread: true` for unread only. |
 | GET | `/api/portal/me/notifications/unread-count` | Student | `{ count }` of unread notices. |
 | POST | `/api/portal/me/notifications/read` | Student | Mark the given `ids` read (`204`). Ids that are not the caller's are ignored. |
 | POST | `/api/portal/me/notifications/read-all` | Student | Mark every unread notice read (`204`). |

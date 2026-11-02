@@ -5,8 +5,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
+import { WebhookEvents } from '@/integrations/events';
 import { CacheService } from '@/cache/cache.service';
 import { loadEffectivePermissions } from '@/permission/permission.effective';
 import {
@@ -24,6 +26,8 @@ import { userSchoolId } from '@/common/user-school';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { plan } from '@/erasure/erasure-plan';
+import { optionalImageUrl } from '@/images/public-url';
+import type { CourseBannerColor } from './course-appearance';
 
 // No 0/O, 1/I/L: join codes get read off a board and typed on a phone.
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -38,7 +42,34 @@ export class CourseService {
     private readonly access: CourseAccessService,
     private readonly prisma: PrismaService,
     private readonly erasure: ErasureLogService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
+
+  /** course.created, after the course committed (new or copied). Fire and forget. */
+  announceCreated(courseId: string, userId: string | null) {
+    void this.webhooks?.emitForCourse(courseId, 'course.created', async (course) => ({
+      course,
+      createdBy: await this.webhooks!.staffOrNull(userId),
+    }));
+  }
+
+  /** student.enrolled / student.unenrolled for each student. Fire and forget. */
+  private announceEnrolment(
+    courseId: string,
+    studentIds: string[],
+    type: 'student.enrolled' | 'student.unenrolled',
+    extra: Record<string, unknown>,
+  ) {
+    const webhooks = this.webhooks;
+    if (!webhooks) return;
+    for (const studentId of studentIds) {
+      void webhooks.emitForCourse(courseId, type, async (course) => ({
+        student: await webhooks.student(studentId),
+        course,
+        ...extra,
+      }));
+    }
+  }
 
   private async requireSchool(userId: string): Promise<string> {
     const schoolId = await userSchoolId(this.prisma, userId);
@@ -236,6 +267,7 @@ export class CourseService {
       throw new BadRequestException('Failed to create course');
     }
 
+    this.announceCreated(data.id, userId);
     return { ...this.toCourse(data), role: 'teacher', studentCount: 0 };
   }
 
@@ -251,6 +283,7 @@ export class CourseService {
       termId?: string | null;
       gradeScaleId?: string | null;
       isTemplate?: boolean;
+      bannerColor?: CourseBannerColor | null;
     },
   ) {
     const { course, role } = await this.access.require(
@@ -270,6 +303,7 @@ export class CourseService {
       changes.description = patch.description?.trim() || null;
     }
     if (patch.status !== undefined) changes.status = patch.status;
+    if (patch.bannerColor !== undefined) changes.banner_color = patch.bannerColor;
     if (patch.gradeScaleId !== undefined) {
       changes.grade_scale_id = patch.gradeScaleId;
     }
@@ -328,6 +362,10 @@ export class CourseService {
       throw new BadRequestException('Failed to update course');
     }
 
+    if (patch.status === 'archived' && course.status !== 'archived') {
+      void this.webhooks?.emitForCourse(courseId, 'course.archived', (ref) => ({ course: ref }));
+    }
+
     const counts = await this.studentCounts([courseId]);
     return {
       ...this.toCourse(data),
@@ -371,13 +409,19 @@ export class CourseService {
           schoolId: course.school_id,
           actor: userId,
           reason: 'admin',
-          replay: plan.of(plan.del('course.course', { id: [courseId] })),
+          replay: plan.of(
+            plan.del('course.course', { id: [courseId] }),
+            plan.prefixes([courseBannerPrefix(courseId)]),
+          ),
         });
       });
     } catch (error) {
       this.logger.error(`Failed to delete course: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete course');
     }
+    // The cover image (and any left by an earlier replace that failed to
+    // clean up) goes after the commit; a failure is logged and replay finishes it.
+    await this.erasure.removeObjects([], [courseBannerPrefix(courseId)]);
   }
 
   // ── join codes ────────────────────────────────────────────────────────────
@@ -461,6 +505,10 @@ export class CourseService {
     const course = toCourseRow(found);
 
     const key = { course_id: course.id, student_id: studentId };
+    const wasActive = await this.prisma.course_student
+      .findUnique({ where: { course_id_student_id: key }, select: { status: true } })
+      .then((r) => r?.status === 'active')
+      .catch(() => false);
     try {
       // The status filter leaves a dropped row unmatched, so the upsert falls
       // through to create and hits the unique key instead of reactivating it.
@@ -486,6 +534,9 @@ export class CourseService {
       // Otherwise a double tap raced us to the same enrolment; it stands.
     }
 
+    if (!wasActive) {
+      this.announceEnrolment(course.id, [studentId], 'student.enrolled', { via: 'join_code' });
+    }
     return this.toCourse(course);
   }
 
@@ -684,6 +735,15 @@ export class CourseService {
       );
     }
 
+    const alreadyActive = new Set(
+      (
+        await this.prisma.course_student.findMany({
+          where: { course_id: courseId, student_id: { in: valid }, status: 'active' },
+          select: { student_id: true },
+        })
+      ).map((r) => r.student_id),
+    );
+
     // Upsert: revive existing enrolments, add the rest.
     try {
       await this.prisma.$transaction([
@@ -707,6 +767,12 @@ export class CourseService {
       throw new BadRequestException('Failed to enrol students');
     }
 
+    this.announceEnrolment(
+      courseId,
+      valid.filter((id) => !alreadyActive.has(id)),
+      'student.enrolled',
+      { via: 'staff' },
+    );
     return { enrolled: valid.length };
   }
 
@@ -723,17 +789,23 @@ export class CourseService {
     const hasWork = count > 0;
 
     const where = { course_id: courseId, student_id: studentId };
+    let changed: number;
     try {
       if (hasWork) {
-        await this.prisma.course_student.updateMany({
-          where,
-          data: { status: 'dropped' },
-        });
+        changed = (
+          await this.prisma.course_student.updateMany({
+            where,
+            data: { status: 'dropped' },
+          })
+        ).count;
       } else {
-        await this.prisma.course_student.deleteMany({ where });
+        changed = (await this.prisma.course_student.deleteMany({ where })).count;
       }
     } catch {
       throw new BadRequestException('Failed to remove the student');
+    }
+    if (changed > 0) {
+      this.announceEnrolment(courseId, [studentId], 'student.unenrolled', { dropped: hasWork });
     }
   }
 
@@ -750,9 +822,16 @@ export class CourseService {
       joinCode: c.join_code,
       gradeScaleId: c.grade_scale_id,
       isTemplate: c.is_template,
+      bannerColor: c.banner_color,
+      bannerImageUrl: optionalImageUrl(c.banner_image_path),
       createdBy: c.created_by,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
     };
   }
+}
+
+/** Every cover image object a course has, for erasure. */
+function courseBannerPrefix(courseId: string): string {
+  return `images/course-banners/${courseId}-`;
 }

@@ -11,7 +11,11 @@ import {
 import { useRouter } from "next/navigation";
 import { useSignal, type Signal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, setUnauthorizedHandler } from "@/lib/api";
+import {
+  api,
+  setFeatureDisabledHandler,
+  setUnauthorizedHandler,
+} from "@/lib/api";
 import { loginPath } from "@/lib/routing";
 
 export interface UserProfile {
@@ -29,13 +33,26 @@ export interface UserProfile {
   school: {
     id: string;
     name: string;
+    /** The school's logo; null shows the app mark. */
+    logo_url?: string | null;
   } | null;
+  /** Runs this install's organisation (the /organisation console). */
+  is_org_admin?: boolean;
+  /** The organisation running this install; null before setup. */
+  organisation?: { name: string } | null;
+  /**
+   * Effective feature switches for the active school. Missing on servers that
+   * predate them; read it through `useFeatures()`, which fills the gaps.
+   */
+  features?: Partial<Record<string, boolean>>;
 }
 
 interface AuthContextValue {
   profile: Signal<UserProfile | null>;
   loading: Signal<boolean>;
   refresh: () => Promise<void>;
+  /** Re-reads the profile without the loading state (no skeleton flash). */
+  refreshSilently: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -46,9 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loading = useSignal<boolean>(true);
   const inFlight = useRef<Promise<void> | null>(null);
 
-  const fetchProfile = useCallback(() => {
+  const fetchProfile = useCallback((silent = false) => {
     if (inFlight.current) return inFlight.current;
-    loading.value = true;
+    if (!silent) loading.value = true;
     inFlight.current = api<UserProfile>("/auth/me", {
       skipAuthRedirect: true,
     })
@@ -56,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile.value = data;
       })
       .catch(() => {
-        profile.value = null;
+        if (!silent) profile.value = null;
       })
       .finally(() => {
         loading.value = false;
@@ -83,12 +100,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [router, profile]);
 
+  // A feature was switched off while the app was open: re-read the profile
+  // (at most every few seconds) so the navigation drops it.
+  const lastFeatureRefresh = useRef(0);
+  useEffect(() => {
+    setFeatureDisabledHandler(() => {
+      const now = Date.now();
+      if (now - lastFeatureRefresh.current < 5_000) return;
+      lastFeatureRefresh.current = now;
+      void fetchProfile(true);
+    });
+    return () => setFeatureDisabledHandler(null);
+  }, [fetchProfile]);
+
   const value: AuthContextValue = {
     profile,
     loading,
     refresh: async () => {
       inFlight.current = null;
       await fetchProfile();
+    },
+    refreshSilently: async () => {
+      await fetchProfile(true);
     },
   };
 

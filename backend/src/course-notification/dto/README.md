@@ -8,7 +8,7 @@ Validation classes for the student notice routes, enforced by the global `Valida
 
 | Class | Route | Rules |
 |-------|-------|-------|
-| `ListCourseNotificationsQueryDto` | `GET /api/portal/me/notifications` (query) | `limit`: optional integer 1-100 (converted with `@Type(() => Number)`; the service defaults to 30). `before`: optional ISO 8601 timestamp. `unread`: optional boolean; the strings `true` and `1` are accepted. |
+| `ListCourseNotificationsQueryDto` | `QUERY /api/portal/me/notifications` (JSON body) | `limit`: optional integer 1-100 (converted with `@Type(() => Number)`; the service defaults to 30). `before`: optional ISO 8601 timestamp. `unread`: optional boolean; `true` (the strings `true` and `1` are also accepted). |
 | `MarkCourseNotificationsReadDto` | `POST /api/portal/me/notifications/read` (body) | `ids`: array of at most 200 UUIDs. |
 
 ## How the parent uses them

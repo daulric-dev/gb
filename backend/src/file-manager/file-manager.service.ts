@@ -6,9 +6,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import crypto from 'node:crypto';
-import type { MultipartFile } from '@fastify/multipart';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma, file_status } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
@@ -23,21 +23,28 @@ import {
   normalizeSubmissionContentType,
   verifyContent,
   verifySubmissionContent,
+  inspectsBytes,
   ALLOWED_CONTENT_TYPES,
+  type ContentCheck,
 } from './file-content';
 import {
   ObjectTooLargeError,
   StorageService,
 } from '@/storage/storage.service';
+import { ByteBudget, ByteBudgetTimeoutError } from '@/storage/byte-budget';
 import { objectKey, UPLOAD_STAGING_PREFIX } from '@/storage/keys';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
+import { UploadLimitService } from './upload-limit.service';
+import { MB } from './upload-limit.config';
 
 const BUCKET = 'file-manager';
-const MAX_UPLOAD_SIZE_IN_MB = 100; // 100MB
-const MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_IN_MB * 1024 * 1024;
+const toMb = (bytes: number) => Math.floor(bytes / MB);
 
-/** Long enough to send a 100MB file, short enough to be worth little. */
+/** How long a completion waits for room in the verify budget before a 503. */
+export const VERIFY_BUDGET_WAIT_MS = 10_000;
+
+/** Long enough to send a large file, short enough to be worth little. */
 export const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 
 /** Live (unexpired) upload tickets one user may hold at once. */
@@ -90,6 +97,8 @@ export class FileManagerService {
     private readonly chatSystem: ChatSystemService,
     private readonly folders: FolderService,
     private readonly erasure: ErasureLogService,
+    private readonly verifyBudget: ByteBudget,
+    private readonly uploadLimits: UploadLimitService,
   ) {}
 
   // ── Listing ──────────────────────────────────────────────────────────────
@@ -266,11 +275,16 @@ export class FileManagerService {
     return this.createUploadTicketInternal(userId, input, false);
   }
 
+  /**
+   * `limitSchoolId` is the course's school, whose upload limit applies to a
+   * hand-in; without it, the uploader's active school's limit does.
+   */
   async createSubmissionUploadTicket(
     userId: string,
     input: { name: string; sizeBytes: number; contentType: string },
+    limitSchoolId?: string,
   ) {
-    return this.createUploadTicketInternal(userId, input, true);
+    return this.createUploadTicketInternal(userId, input, true, limitSchoolId);
   }
 
   private async createUploadTicketInternal(
@@ -282,15 +296,24 @@ export class FileManagerService {
       folderId?: string;
     },
     allowAnyContentType: boolean,
+    limitSchoolId?: string,
   ) {
     if (input.folderId) await this.folders.getOwned(userId, input.folderId);
 
     if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
       throw new BadRequestException('File is empty');
     }
-    if (input.sizeBytes > MAX_UPLOAD_SIZE) {
+
+    const schoolId = await this.schoolIdOf(userId);
+    // The limit is checked here, once, against the declared size. Finalising
+    // only checks the bytes match that size (the URL signs it too), so an
+    // admin lowering the limit does not fail a ticket already issued.
+    const maxBytes = await this.uploadLimits.bytesForSchool(
+      limitSchoolId ?? schoolId,
+    );
+    if (input.sizeBytes > maxBytes) {
       throw new BadRequestException(
-        `File too large (${(input.sizeBytes / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`,
+        `File too large (${(input.sizeBytes / MB).toFixed(1)}MB). Your school's limit is ${toMb(maxBytes)}MB.`,
       );
     }
 
@@ -300,8 +323,14 @@ export class FileManagerService {
     if (!allowAnyContentType && !ALLOWED_CONTENT_TYPES.has(contentType)) {
       throw new BadRequestException(`${contentType} files are not accepted`);
     }
-
-    const schoolId = await this.schoolIdOf(userId);
+    // Types whose content is checked are read whole into memory on completion,
+    // so they can be no bigger than the verify budget (UPLOAD_VERIFY_MEMORY_MB),
+    // whatever the school allows. Other types are copied in storage, unread.
+    if (inspectsBytes(contentType) && input.sizeBytes > this.verifyBudget.total) {
+      throw new BadRequestException(
+        `PDFs, images and Office files are checked on upload and can be at most ${toMb(this.verifyBudget.total)}MB.`,
+      );
+    }
 
     // Every ticket reserves a row (and, until it is purged, an object), so cap
     // how many unexpired ones a user can hold.
@@ -370,7 +399,7 @@ export class FileManagerService {
       headers: { 'Content-Type': contentType },
       expiresAt,
       contentType,
-      maxBytes: MAX_UPLOAD_SIZE,
+      maxBytes,
     };
   }
 
@@ -409,11 +438,16 @@ export class FileManagerService {
       throw new BadRequestException('The upload did not complete');
     }
 
-    // A presigned PUT cannot cap the body, so the size is enforced here,
-    // before anything is read back.
-    if (head.size > MAX_UPLOAD_SIZE) {
+    // The school's limit was applied to the declared size when the ticket
+    // was issued; here the bytes must match that size. The platform ceiling
+    // is a backstop for a row with no declared size, checked before anything
+    // is read back.
+    const ceiling = this.uploadLimits.config.maxMb * MB;
+    if (head.size > ceiling) {
       await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 100MB.');
+      throw new BadRequestException(
+        `File too large. Maximum is ${toMb(ceiling)}MB.`,
+      );
     }
     const declared = num(record.size_bytes);
     if (declared && head.size > 0 && head.size !== declared) {
@@ -427,55 +461,41 @@ export class FileManagerService {
       );
     }
 
-    // The object can change between the HEAD and this read, so the read is
-    // capped on its own.
-    let buffer: Buffer | null;
-    try {
-      buffer = await this.storage.getBuffer(key, MAX_UPLOAD_SIZE);
-    } catch (error) {
-      if (!(error instanceof ObjectTooLargeError)) throw error;
-      await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 100MB.');
-    }
-    if (!buffer) {
-      await this.failUpload(fileId, 'failed', 'Upload did not complete');
-      throw new BadRequestException('The upload did not complete');
-    }
-
-    if (buffer.byteLength === 0) {
+    if (head.size === 0) {
       await this.discardUpload(record, 'failed', 'Uploaded file was empty');
       throw new BadRequestException('File is empty');
     }
-    if (buffer.byteLength > MAX_UPLOAD_SIZE) {
-      await this.discardUpload(record, 'failed', 'Uploaded file was too large');
-      throw new BadRequestException('File too large. Maximum is 100MB.');
-    }
 
-    const check = allowAnyContentType
-      ? verifySubmissionContent(buffer, record.content_type)
-      : verifyContent(buffer, record.content_type);
-    if (!check.ok) {
-      await this.discardUpload(record, 'failed', check.reason);
-      throw new BadRequestException(check.reason);
-    }
-
-    // Serve the bytes that were verified, from a key no upload URL was ever
-    // signed for. Writing the checked buffer (rather than copying the staged
-    // object) leaves no window for the staged object to be swapped.
+    const check = (buffer: Buffer) =>
+      allowAnyContentType
+        ? verifySubmissionContent(buffer, record.content_type)
+        : verifyContent(buffer, record.content_type);
     const finalPath = finalStoragePath(record.storage_path);
-    if (finalPath !== record.storage_path) {
-      try {
-        await this.storage.put(
-          objectKey(record.bucket, finalPath),
-          buffer,
-          record.content_type,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to store verified upload ${fileId}: ${(error as Error).message}`,
-        );
-        throw new BadRequestException('Failed to record file');
+    const finalKey = objectKey(record.bucket, finalPath);
+    let sizeBytes = head.size;
+
+    if (!inspectsBytes(record.content_type)) {
+      // The verdict for this type does not depend on the bytes, so they are
+      // never fetched: the object is copied inside the store. The upload URL
+      // signs the length, so a re-PUT before the copy cannot change the size
+      // checked above, and swapping bytes nobody inspects changes nothing.
+      const verdict = check(Buffer.alloc(0));
+      if (!verdict.ok) {
+        await this.discardUpload(record, 'failed', verdict.reason);
+        throw new BadRequestException(verdict.reason);
       }
+      if (finalPath !== record.storage_path) {
+        try {
+          await this.storage.copy(key, finalKey, record.content_type);
+        } catch (error) {
+          this.logger.error(
+            `Failed to store upload ${fileId}: ${(error as Error).message}`,
+          );
+          throw new BadRequestException('Failed to record file');
+        }
+      }
+    } else {
+      sizeBytes = await this.verifyAndStore(record, key, finalKey, head.size, check);
     }
 
     let updated: FileRecord;
@@ -485,7 +505,7 @@ export class FileManagerService {
         data: {
           status: 'ready',
           storage_path: finalPath,
-          size_bytes: buffer.byteLength,
+          size_bytes: sizeBytes,
           scan_detail: null,
           updated_at: new Date(),
         },
@@ -507,6 +527,80 @@ export class FileManagerService {
     }
 
     return this.present(updated, true);
+  }
+
+  /**
+   * Read the staged object, check it, and write the checked bytes to
+   * `finalKey`. Buffers are drawn from the process-wide verify budget, so
+   * parallel completions cannot pin unbounded memory; when it stays full the
+   * row is left `pending` and the client may retry. Returns the stored size.
+   */
+  private async verifyAndStore(
+    record: FileRecord,
+    key: string,
+    finalKey: string,
+    size: number,
+    check: (buffer: Buffer) => ContentCheck,
+  ): Promise<number> {
+    let release: () => void;
+    try {
+      release = await this.verifyBudget.acquire(size, VERIFY_BUDGET_WAIT_MS);
+    } catch (error) {
+      if (!(error instanceof ByteBudgetTimeoutError)) throw error;
+      throw new ServiceUnavailableException(
+        'The server is busy checking other uploads. Try again in a moment.',
+      );
+    }
+
+    try {
+      // The object can change between the HEAD and this read, so the read is
+      // capped at the size that was checked (and budgeted) on its own.
+      let buffer: Buffer | null;
+      try {
+        buffer = await this.storage.getBuffer(key, size);
+      } catch (error) {
+        if (!(error instanceof ObjectTooLargeError)) throw error;
+        await this.discardUpload(
+          record,
+          'failed',
+          'Uploaded file does not match the declared size',
+        );
+        throw new BadRequestException(
+          'The uploaded file does not match the declared size',
+        );
+      }
+      if (!buffer) {
+        await this.failUpload(record.id, 'failed', 'Upload did not complete');
+        throw new BadRequestException('The upload did not complete');
+      }
+      if (buffer.byteLength === 0) {
+        await this.discardUpload(record, 'failed', 'Uploaded file was empty');
+        throw new BadRequestException('File is empty');
+      }
+
+      const verdict = check(buffer);
+      if (!verdict.ok) {
+        await this.discardUpload(record, 'failed', verdict.reason);
+        throw new BadRequestException(verdict.reason);
+      }
+
+      // Serve the bytes that were verified, from a key no upload URL was ever
+      // signed for. Writing the checked buffer (rather than copying the staged
+      // object) leaves no window for the staged object to be swapped.
+      if (finalKey !== key) {
+        try {
+          await this.storage.put(finalKey, buffer, record.content_type);
+        } catch (error) {
+          this.logger.error(
+            `Failed to store verified upload ${record.id}: ${(error as Error).message}`,
+          );
+          throw new BadRequestException('Failed to record file');
+        }
+      }
+      return buffer.byteLength;
+    } finally {
+      release();
+    }
   }
 
   /** Mark a reserved row as failed without touching storage. */
@@ -540,105 +634,6 @@ export class FileManagerService {
     }
 
     await this.failUpload(file.id, status, detail);
-  }
-
-  // ── Manual upload ──────────────────────────────────────────────────────────
-
-  async uploadManual(
-    userId: string,
-    file: MultipartFile,
-    displayName?: string,
-    folderId?: string,
-  ) {
-    return this.uploadManualInternal(userId, file, displayName, folderId, false);
-  }
-
-  async uploadSubmissionManual(userId: string, file: MultipartFile) {
-    return this.uploadManualInternal(userId, file, undefined, undefined, true);
-  }
-
-  private async uploadManualInternal(
-    userId: string,
-    file: MultipartFile,
-    displayName: string | undefined,
-    folderId: string | undefined,
-    allowAnyContentType: boolean,
-  ) {
-    if (!file) throw new BadRequestException('No file provided');
-
-    // A target folder must be one of the caller's own folders.
-    if (folderId) await this.folders.getOwned(userId, folderId);
-
-    const buffer = await file.toBuffer();
-    if (buffer.byteLength === 0) {
-      throw new BadRequestException('File is empty');
-    }
-    if (buffer.byteLength > MAX_UPLOAD_SIZE) {
-      throw new BadRequestException(
-        `File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`,
-      );
-    }
-
-    // Reject unsupported or mislabelled files up front (the async scan repeats
-    // this as defence in depth). The declared MIME type is not trusted alone:
-    // for fingerprintable formats the leading bytes must match.
-    const contentType = allowAnyContentType
-      ? normalizeSubmissionContentType(file.mimetype || '')
-      : file.mimetype || 'application/octet-stream';
-    const check = allowAnyContentType
-      ? verifySubmissionContent(buffer, contentType)
-      : verifyContent(buffer, contentType);
-    if (!check.ok) {
-      throw new BadRequestException(check.reason);
-    }
-
-    const schoolId = await this.schoolIdOf(userId);
-    const id = crypto.randomUUID();
-    const name = (displayName?.trim() || file.filename || 'untitled').slice(
-      0,
-      255,
-    );
-    const storagePath = `${schoolId}/${userId}/${id}-${this.slug(name)}`;
-
-    try {
-      await this.storage.put(
-        objectKey(BUCKET, storagePath),
-        buffer,
-        contentType,
-      );
-    } catch (error) {
-      this.logger.error(`Failed to store file: ${(error as Error).message}`);
-      throw new BadRequestException('Failed to store file');
-    }
-
-    let data: FileRecord;
-    try {
-      data = await this.prisma.file.create({
-        data: {
-          id,
-          school_id: schoolId,
-          owner_id: userId,
-          name,
-          bucket: BUCKET,
-          storage_path: storagePath,
-          content_type: contentType,
-          size_bytes: buffer.byteLength,
-          source: 'upload',
-          folder_id: folderId ?? null,
-          // The bytes were checked above before being stored, so the file is
-          // immediately viewable - no async scan step.
-          status: 'ready',
-        },
-        select: FILE_COLUMNS,
-      });
-    } catch (error) {
-      this.logger.error(
-        `Failed to record uploaded file: ${(error as Error).message}`,
-      );
-      throw new BadRequestException('Failed to record file');
-    }
-
-    return this.present(data, true);
   }
 
   // ── Rename / delete ────────────────────────────────────────────────────────
@@ -688,13 +683,13 @@ export class FileManagerService {
 
   // ── Content delivery ────────────────────────────────────────────────────────
 
-  /** Bytes for the inline viewer. Requires view access (owner or share). */
+  /** Content for the inline viewer. Requires view access (owner or share). */
   async getViewContent(userId: string, fileId: string) {
     const { file } = await this.loadViewable(userId, fileId);
-    return this.downloadBytes(file);
+    return this.openContent(file);
   }
 
-  /** Bytes for download. Requires download access (owner or downloadable share). */
+  /** Content for download. Requires download access (owner or downloadable share). */
   async getDownloadContent(userId: string, fileId: string) {
     const { file, access } = await this.loadViewable(userId, fileId);
     if (!access.canDownload) {
@@ -702,7 +697,7 @@ export class FileManagerService {
         'You do not have permission to download this file',
       );
     }
-    return this.downloadBytes(file);
+    return this.openContent(file);
   }
 
   // ── Shares (owner only) ─────────────────────────────────────────────────────
@@ -786,7 +781,7 @@ export class FileManagerService {
   }
 
   /**
-   * Bytes for a caller who has already been authorised by something other than
+   * Content for a caller who has already been authorised by something other than
    * file sharing - a teacher reading work handed in to their own class, where
    * the student owns the file and no share exists. The caller must do that
    * check; this deliberately does none.
@@ -805,7 +800,7 @@ export class FileManagerService {
       throw new NotFoundException('File not found');
     }
 
-    return this.downloadBytes(data);
+    return this.openContent(data);
   }
 
   /** Stream a file after its caller has already checked authorization. */
@@ -834,27 +829,30 @@ export class FileManagerService {
     };
   }
 
-  private async downloadBytes(file: FileRecord) {
+  /**
+   * The object as a stream, so serving a file never holds it in memory
+   * (uploads go up to UPLOAD_MAX_MB). `size` is the stored length, for Content-Length.
+   */
+  private async openContent(file: FileRecord) {
     if (file.status !== 'ready') {
       throw new NotFoundException('File is not available');
     }
 
-    let buffer: Buffer | null = null;
+    let object: Awaited<ReturnType<StorageService['get']>> = null;
     try {
-      buffer = await this.storage.getBuffer(
-        objectKey(file.bucket, file.storage_path),
-      );
+      object = await this.storage.get(objectKey(file.bucket, file.storage_path));
     } catch (error) {
       this.logger.error(
         `Failed to read ${file.bucket}/${file.storage_path}: ${(error as Error).message}`,
       );
     }
-    if (!buffer) {
+    if (!object) {
       this.logger.error(`Missing object ${file.bucket}/${file.storage_path}`);
       throw new NotFoundException('File content unavailable');
     }
     return {
-      buffer,
+      body: object.body,
+      size: object.size,
       contentType: file.content_type,
       filename: file.name,
     };

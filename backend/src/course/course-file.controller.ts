@@ -28,22 +28,22 @@ export class CourseFileController {
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @Res() reply: FastifyReply,
   ) {
-    const { buffer, contentType, filename } = await this.files.read(
+    const { body, size, contentType, filename } = await this.files.read(
       req.user.id as string,
       courseId,
       fileId,
     );
+    if (size !== null) reply.header('Content-Length', size);
     return reply
       .header('Content-Type', contentType ?? 'application/octet-stream')
       .header(
         'Content-Disposition',
         `inline; filename*=UTF-8''${encodeURIComponent(filename ?? 'file')}`,
       )
-      .header('Content-Length', buffer.length)
       .header('Cache-Control', 'private, no-store')
       // Uploaded content on the API origin: never sniff it into HTML.
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', 'sandbox')
-      .send(buffer);
+      .send(body);
   }
 }

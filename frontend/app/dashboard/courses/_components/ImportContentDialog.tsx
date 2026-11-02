@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Download, Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, apiQuery, ApiError } from "@/lib/api";
 import type {
   CopyCounts,
   Course,
@@ -79,7 +79,7 @@ export function ImportContentDialog({
   async function load() {
     loading.value = true;
     const [mine, templates] = await Promise.all([
-      api<Course[]>("/courses").catch(() => [] as Course[]),
+      apiQuery<Course[]>("/courses").catch(() => [] as Course[]),
       api<CourseTemplate[]>("/courses/templates").catch(
         () => [] as CourseTemplate[],
       ),

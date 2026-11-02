@@ -21,6 +21,7 @@ import {
   type PortalWorkDetail,
 } from "@/lib/work";
 import { uploadSubmissionFile } from "@/lib/upload";
+import { formatMb, uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { formatScore } from "@/lib/format-number";
 import { Markdown } from "@/components/ui/Markdown";
 import { RubricView } from "@/features/course/RubricView";
@@ -36,6 +37,8 @@ export default function WorkDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [working, setWorking] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // The school's upload limit, for the hint and a check before the tickets.
+  const uploadLimit = useUploadLimit();
   /** questionId -> chosen optionId */
   const [answers, setAnswers] = useState<Record<string, string>>({});
   /** questionId -> typed answer, for short-answer questions */
@@ -130,6 +133,13 @@ export default function WorkDetailScreen() {
       multiple: work?.allowMultipleFiles ?? false,
     });
     if (picked.canceled || picked.assets.length === 0) return;
+    for (const asset of picked.assets) {
+      const tooLarge = uploadSizeError(asset.size, uploadLimit?.uploadLimitBytes);
+      if (tooLarge) {
+        toast.error(`${asset.name}: ${tooLarge}`);
+        return;
+      }
+    }
 
     setUploading(true);
     try {
@@ -425,8 +435,8 @@ export default function WorkDetailScreen() {
                         </Button>
                         <Text variant="muted" size="xs">
                           {work.allowMultipleFiles
-                            ? "Select up to 20 files (100MB each)."
-                            : "Select one file (up to 100MB)."}{" "}
+                            ? `Select up to 20 files${uploadLimit ? ` (${formatMb(uploadLimit.uploadLimitBytes)} each)` : ""}.`
+                            : `Select one file${uploadLimit ? ` (up to ${formatMb(uploadLimit.uploadLimitBytes)})` : ""}.`}{" "}
                           Attaching files does not hand them in.
                         </Text>
                       </>

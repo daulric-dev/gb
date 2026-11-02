@@ -39,7 +39,7 @@ The authentication module handles user login via email OTP (one-time password), 
 
 3. If user has no name/school (first login)
    └── PATCH /auth/onboard { firstName, lastName, schoolId }
-       ├─ If user already has school_id (because they just created one): updates name
+       ├─ If user already has school_id (appointed a school admin, or joined): updates name
        ├─ If joining an existing school: creates a school_join_request and returns
        │  the profile with a `joinRequest` field - frontend redirects to /onboard/pending
        └─ If no schoolId provided: saves name, leaves school empty
@@ -181,7 +181,13 @@ The `session` object is kept for clients that read the response shape; `access_t
 
 **Requires:** `AuthGuard`
 
-Returns the current user's profile including their school.
+Returns the current user's profile including their school, plus:
+
+- `is_org_admin` (boolean): the user is an organisation admin (a row in `public.organisation_admin`, or a verified email listed in `ORG_ADMIN_EMAILS`). See [Organisation](./organisation.md).
+- `organisation` (`{ name }` or `null`): the organisation running the install; `null` until first-run setup.
+- `features` (`{ [key]: boolean }`): the platform features effective for the user's active school (the organisation's without one). See [Platform features](./features.md).
+
+The profile is cached as `profile:<userId>`; organisation and feature changes clear it.
 
 ---
 
@@ -191,7 +197,7 @@ Returns the current user's profile including their school.
 
 Completes the user's profile after first login. The behavior depends on the user's existing state:
 
-- **User already has `school_id`** (because they just created a school via `POST /schools`, which auto-assigns them as `admin`): only `first_name` / `last_name` are updated.
+- **User already has `school_id`** (an organisation admin appointed them a school's admin, or they joined by code or email domain): only `first_name` / `last_name` are updated.
 - **User selected an existing school** via `schoolId`: a `school_join_request` is created in `pending` status. The user's `school_id` is **not** set - they remain in a pending state until an admin approves. The response includes a `joinRequest` field.
 - **No `schoolId` provided**: only the name is saved.
 
@@ -274,7 +280,7 @@ Signs out every session, this one included, and clears the cookie: `{ revoked }`
 ### Admin sign-out
 
 - `POST /api/schools/members/:membershipId/sessions/revoke` (`AdminGuard`): a school admin signs a staff member of their school out of every device. Another school's membership is a 404; only the owner can sign the owner out. The staff page has a **Sign out of all devices** button for it.
-- `POST /api/platform/users/:userId/sessions/revoke` (platform admins, `BILLING_ENABLED=true`): the same for any user.
+- `POST /api/organisation/users/:userId/sessions/revoke` (organisation admins): the same for any user (`revoked_reason = 'organisation_admin'`).
 
 Both log at info level; neither touches the erasure log.
 
@@ -292,27 +298,11 @@ If the user has no avatar, returns `400 Bad Request`.
 
 ---
 
-### `POST /api/auth/avatar`
-
-**Requires:** `AuthGuard`  
-**Content-Type:** `multipart/form-data`
-
-Uploads a profile picture. The file is validated (max 5MB, JPEG/PNG/WebP only), stored in S3 object storage at `images/avatars/<userId>.<ext>`, and the public URL (with cache-busting timestamp) is saved to `user_profile.avatar_url`. That URL is `<API_URL>/api/images/avatars/<file>` (served by the public `GET /api/images/avatars/:file` route), or `<S3_PUBLIC_URL>/images/avatars/<file>` when a public storage/CDN host is configured.
-
-**Response:**
-```json
-{
-  "avatar_url": "https://api.example.com/api/images/avatars/user-id.jpg?t=1745512900000"
-}
-```
-
----
-
 ### `POST /api/auth/avatar/resumable`
 
 **Requires:** `AuthGuard`
 
-Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 minutes) and the client uploads the bytes straight to object storage - no file data passes through the backend.
+Creates a direct upload, the only way to set a profile picture: the backend returns a presigned S3 `PUT` URL (valid 5 minutes) and the client uploads the bytes straight to object storage - no file data passes through the backend. At most 5MB, JPEG/PNG/WebP only.
 
 **Body:**
 ```json
@@ -326,7 +316,7 @@ Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 
 **Response:**
 ```json
 {
-  "path": "avatars/user-id.png",
+  "path": "uploads/avatars/user-id.png",
   "method": "PUT",
   "uploadUrl": "https://<s3-endpoint>/...",
   "headers": { "Content-Type": "image/png" },
@@ -340,12 +330,19 @@ Creates a direct upload: the backend returns a presigned S3 `PUT` URL (valid 15 
 
 **Requires:** `AuthGuard`
 
-Called after the direct upload finishes. Verifies the object exists in storage, re-checks its size, type and magic bytes (deleting it if rejected), and updates `user_profile.avatar_url`.
+Called after the direct upload finishes. Verifies the object exists in storage, re-checks its size, type and magic bytes (deleting it if rejected), copies the checked image to `images/avatars/<userId>.<ext>`, and saves its public URL (with a cache-busting timestamp) to `user_profile.avatar_url`. That URL is `<API_URL>/api/images/avatars/<file>` (served by the public `GET /api/images/avatars/:file` route), or `<S3_PUBLIC_URL>/images/avatars/<file>` when a public storage/CDN host is configured.
 
 **Body:**
 ```json
 {
-  "path": "avatars/user-id.png"
+  "path": "uploads/avatars/user-id.png"
+}
+```
+
+**Response:**
+```json
+{
+  "avatar_url": "https://api.example.com/api/images/avatars/user-id.jpg?t=1745512900000"
 }
 ```
 

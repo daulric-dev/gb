@@ -11,7 +11,6 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
-import { ReadOnlyBanner } from "@/features/billing/ReadOnlyBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
@@ -30,6 +29,9 @@ import { isOutstanding, type PortalWorkItem } from "@/lib/work";
 import { OpenAttendanceCards } from "@/features/attendance/OpenAttendanceCards";
 import { studentCourseHref } from "@/lib/course";
 import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
+import { CourseThumb } from "@/features/course/CourseBanner";
+import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
+import { useFeatures } from "@/lib/use-features";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
@@ -37,6 +39,8 @@ import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
  */
 export default function PortalHomeScreen() {
   const { profile } = useAuth();
+  const { hasFeature } = useFeatures();
+  const attendanceOn = hasFeature("attendance");
   const router = useRouter();
   const { colors } = useTheme();
   const [me, setMe] = useState<PortalMe | null>(null);
@@ -78,16 +82,23 @@ export default function PortalHomeScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
-      <ReadOnlyBanner />
-      <Button
-        size="lg"
-        icon={<ScanLine color={colors.primaryForeground} size={20} />}
-        onPress={() => router.push("/attendance/scan")}
-      >
-        Scan attendance QR
-      </Button>
+      <SchoolLogo
+        logoUrl={profile?.school?.logo_url ?? me?.school?.logoUrl}
+        name={profile?.school?.name}
+      />
+      {attendanceOn && (
+        <>
+          <Button
+            size="lg"
+            icon={<ScanLine color={colors.primaryForeground} size={20} />}
+            onPress={() => router.push("/attendance/scan")}
+          >
+            Scan attendance QR
+          </Button>
 
-      <OpenAttendanceCards refreshKey={refreshKey} />
+          <OpenAttendanceCards refreshKey={refreshKey} />
+        </>
+      )}
 
       <View style={styles.stats}>
         <StatCard
@@ -144,6 +155,7 @@ export default function PortalHomeScreen() {
                     { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
                   ]}
                 >
+                  <CourseThumb course={c} size={36} />
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text weight="500" numberOfLines={1}>
                       {c.name}

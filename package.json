@@ -10,10 +10,9 @@
         "gb": "./command/index.ts"
     },
     "scripts": {
-        "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup && bun run stripe:listen",
-        "stripe:listen": "bun scripts/dev-stripe.ts",
-        "stripe:stop": "docker compose -f ./docker-compose.dev.yml --profile stripe stop stripe-listen",
-        "postload": "docker compose -f ./docker-compose.dev.yml --profile stripe down",
+        "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup",
+        "postload": "docker compose -f ./docker-compose.dev.yml down",
+        "release": "bun scripts/release.ts",
         "dev": "turbo run dev start:dev",
         "dev:frontend": "turbo run dev --filter=frontend",
         "dev:backend": "turbo run start:dev --filter=backend",
@@ -50,9 +49,8 @@
         "sharp": "^0.35.5",
         "zod": "^4.6.7",
         "deepmerge": "4.1.2",
-        "@node-minify/core": {
-            "glob": "^10.5.0"
-        }
+        "glob": "^14.0.3",
+        "minimatch": "^11.0.3"
     },
     "dependencies": {
         "typescript": "^6.0.3"

@@ -8,7 +8,7 @@ The calendar module turns activity due dates into a calendar. Staff get every da
 
 | Method | Path | Guard / who may call | What it does |
 |--------|------|----------------------|--------------|
-| GET | `/api/calendar?from&to` | `AuthGuard` (any signed-in user) | `CalendarItem[]` for activities due in the window in courses where the caller is a `course_staff` row, limited to their current school and to `draft`/`published` courses. Activity statuses `draft`, `published` and `closed` are included. |
+| GET | `/api/calendar?from&to` | `AuthGuard` (any signed-in user), `FeatureGuard` | `CalendarItem[]` for activities due in the window in courses where the caller is a `course_staff` row, limited to their current school and to `draft`/`published` courses. Activity statuses `draft`, `published` and `closed` are included. |
 | GET | `/api/calendar/ics?from&to` | `AuthGuard` | The same items as a `text/calendar` download named `gradebook.ics` (`Cache-Control: private, no-store`). |
 | GET | `/api/portal/me/calendar?from&to` | `AuthGuard` + `StudentGuard` | `StudentCalendarItem[]` for published/closed activities in published courses where the student has an `active` or `completed` enrolment, each with the student's `submission` (status, score once graded, excused, submittedAt) or `null`. |
 | GET | `/api/portal/me/calendar/ics?from&to` | `AuthGuard` + `StudentGuard` | The student's items as `due-dates.ics`. |
@@ -43,6 +43,7 @@ The module exports nothing; `CalendarService` is used only by its own controller
 - `userSchoolId` from `src/common/user-school.ts`, `isoDate` from `src/common/db-values.ts`.
 - `roundScore` from `src/grading/round.ts`.
 - `StudentGuard` / `StudentRequest` from `src/student-portal/student.guard.ts`, `AuthGuard` from `src/auth/auth.guard.ts`.
+- `FeatureGuard` / `@RequireFeature('calendar')` from [`src/features`](../features/README.md): every route here (including `.ics`) answers 403 `FEATURE_DISABLED` while the `calendar` feature is off.
 
 ## Data
 

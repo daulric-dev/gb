@@ -29,6 +29,13 @@ frontend's design system and core flows.
 | `sonner` toasts            | `src/providers/ToastProvider`                  |
 | `recharts`                 | `src/components/charts` (`react-native-svg`) |
 
+The search and filter lists (courses, students, files, folder contents, chat
+history, notices) use the HTTP `QUERY` method: `apiQuery(path, filters)` in
+`src/lib/api.ts` sends the filters as a JSON body. App builds from before this
+send `GET` there and get 404s, so `MOBILE_MIN_VERSION` should be raised to the
+first build with `QUERY` once it is in both stores
+(`docs/content/backend/http-query.md`).
+
 Auth is cookie-based: the API sets one opaque httpOnly session cookie,
 `gb_session`, on `/auth/otp/verify` and on `/auth/sso/handoff` (SSO sign-ins
 come back as a one-time code that the app trades for the cookie). React

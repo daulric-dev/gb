@@ -38,11 +38,12 @@ The school record itself.
 | `id` | UUID | Primary key |
 | `name` | string | School name |
 | `code` | string? | Optional school code |
-| `school_type` | enum | `primary` or `secondary` |
+| `school_type` | enum | `preschool`, `primary`, `middle`, `secondary`, `all_through`, `sixth_form`, `college`, `university`, `vocational`, `special_education`, `online` or `other` |
 | `address` | string? | Optional physical address |
 | `email` | string | Contact email |
 | `phone` | string | Contact phone |
 | `is_active` | boolean | Whether the school is active |
+| `max_upload_mb` | int? | Largest upload in MB (1-1024); null follows `UPLOAD_DEFAULT_MB`. Capped by `UPLOAD_MAX_MB` |
 
 ### `school_management`
 
@@ -91,21 +92,24 @@ These are kept in sync on every write that affects membership (school creation a
 
 | Role | Meaning |
 |------|---------|
-| `admin` | Full administrative control of the school. Can approve/reject join requests, manage all data. School creators are automatically `admin`. |
+| `admin` | Full administrative control of the school. Can approve/reject join requests, manage all data. Appointed by an organisation admin (`PUT /organisation/schools/:id/admin`); one per school. |
 | `teacher` | Staff who create and run courses. Inside a course, access comes from their course role (teacher or TA) via `CourseAccessService`. |
 | `member` | Generic school participant - for users who belong to the school but aren't teaching staff or admins. |
 
 ## Flows
 
-### Creating a school (auto-admin)
+### Creating a school and appointing its admin
 
-When a user creates a school, they become its admin immediately - no approval needed.
+Only organisation admins create schools; they do not become members. Appointing an admin makes that account the school's owner and only admin (the previous admin becomes a teacher). See [Organisation](./organisation.md).
 
 ```
-User → POST /schools { name, schoolType, ... }
-  ├─ INSERT school
-  ├─ INSERT school_management { user_id, school_id, role: 'admin' }
-  └─ UPDATE user_profile { school_id, role: 'admin' }   (cache mirror)
+Org admin → POST /organisation/schools { name, code?, schoolType?, adminEmail? }
+  └─ INSERT school                                   (trigger seeds the system roles)
+Org admin → PUT /organisation/schools/:id/admin { email }
+  ├─ UPDATE school_management { role: 'teacher' }    (previous admin, if any)
+  ├─ UPSERT school_management { user_id, school_id, role: 'admin' }
+  ├─ UPDATE school { owner_id }
+  └─ UPDATE user_profile { school_id, role: 'admin' } (only if they had no active school, or this is it)
 ```
 
 ### Joining an existing school (request → approval)
@@ -151,32 +155,9 @@ Returns all active schools ordered by name. Used during onboarding and in the sc
 
 ---
 
-### `POST /api/schools`
+### Creating a school
 
-Creates a new school **and** assigns the requesting user as its admin (inserts `school_management` row, mirrors role/school to `user_profile`). On dedicated deployments, blocked once any school exists.
-
-**Body:**
-```json
-{
-  "name": "Grenada Academy",
-  "code": "GA",
-  "schoolType": "secondary",
-  "address": "123 Main St",
-  "email": "info@school.com",
-  "phone": "+1473-555-0100"
-}
-```
-
-| Field | Required | Notes |
-|-------|----------|-------|
-| `name` | Yes | |
-| `code` | No | |
-| `schoolType` | Yes | `primary` or `secondary` |
-| `address` | No | |
-| `email` | No | |
-| `phone` | No | |
-
-**Response:** The created school object.
+There is no `POST /api/schools`. Schools are created by organisation admins with `POST /api/organisation/schools`, which can also appoint the school's admin; see [Organisation](./organisation.md).
 
 ---
 
@@ -275,21 +256,64 @@ Rejects a pending request. Same scope checks as approve. The user's profile is n
 
 **Response:** The updated `school_join_request` row.
 
+### `GET /api/schools/current/upload-limit`
+
+**Requires:** a signed-in user with an active school (students included).
+
+The limit uploads in the active school are checked against, so clients can refuse a large file before asking for a ticket.
+
+**Response:**
+
+```json
+{
+  "uploadLimitBytes": 26214400,
+  "uploadLimitMb": 25,
+  "maxUploadMb": 25,
+  "platformMaxMb": 100,
+  "platformDefaultMb": 100
+}
+```
+
+`uploadLimitMb` is `min(maxUploadMb ?? platformDefaultMb, platformMaxMb)`. `maxUploadMb` is null when the school follows the default.
+
+### `PATCH /api/schools/current/upload-limit`
+
+**Requires:** `school:update` in the active school
+
+**Body:** `{ "maxUploadMb": 25 }`, or `{ "maxUploadMb": null }` to return to the platform default. A whole number from 1 to 1024; anything above `UPLOAD_MAX_MB` is a 400 ("can't exceed the platform limit of N MB").
+
+**Response:** the same shape as the GET. Tickets already issued keep the limit they were issued under.
+
+### `GET /api/schools/current/features`
+
+**Requires:** `school:update` in the active school
+
+**Response:** `[{ key, label, description, availableInOrganisation, enabledForSchool, effective, requires }]`, one row per platform feature.
+
+### `PATCH /api/schools/current/features`
+
+**Requires:** `school:update` in the active school
+
+**Body:** `{ "features": { "attendance": false } }`. `false` switches a feature off for the school, `true` back on. Turning on a feature the organisation does not allow is a 400 ("&lt;Label&gt; is turned off for your organisation"); an unknown key is a 400.
+
+**Response:** the same list as the GET. See [Platform features](./features.md).
+
 ## Caching
 
 `SchoolService` uses the shared `CacheService`:
 
 | Key | TTL | Invalidation |
 |-----|-----|--------------|
-| `schools:all` | 30 days | Updated on `POST /schools` |
-| `profile:{userId}` | (managed by AuthService) | Cleared on school create and on join-request approval |
+| `schools:all` | 30 days | Dropped when an organisation admin creates or changes a school |
+| `profile:{userId}` | (managed by AuthService) | Cleared on join-request approval and when an admin is appointed |
+| `upload-limit:{schoolId}` | 60 seconds | `UploadLimitService`; cleared on `PATCH /schools/current/upload-limit` |
 
 ## Frontend Pages
 
 | Path | Audience | Purpose |
 |------|----------|---------|
-| `/onboard` | New users | Pick or create a school. Selecting an existing school submits a join request. |
+| `/onboard` | New users | Pick a school. Selecting an existing school submits a join request. |
 | `/onboard/pending` | Users with a pending request | Polls `/auth/me` every 10s and auto-redirects to `/dashboard` once approved. |
 | `/dashboard/staff` (Pending Members tab) | Admins only | Lists pending join requests with approve (with role picker) / reject actions. |
 | Sidebar → "Change School" | Any user | Submits a join request to switch schools. Does not change the active school until approved. |
-| `/dashboard/settings` | Any user | School selector goes through the join-request flow; name updates apply immediately. |
+| `/dashboard/settings` | Any user | School selector goes through the join-request flow; name updates apply immediately. School admins also get the school's settings sections, including **Integrations** (webhooks, once the organisation turns the `integrations` feature on - see [Webhooks](./webhooks.md)). |

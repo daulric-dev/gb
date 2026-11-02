@@ -17,6 +17,9 @@ import {
   StaffWorkSection,
 } from "@/features/course/StaffSections";
 import { TopicList } from "@/features/discussions/TopicList";
+import { CourseBanner, BannerText } from "@/features/course/CourseBanner";
+import { useFeatures } from "@/lib/use-features";
+import { sectionEnabled } from "@/lib/features";
 
 type StaffTab =
   | "modules"
@@ -56,6 +59,9 @@ export default function StaffCourseScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { features } = useFeatures();
+  const tabs = TABS.filter((t) => sectionEnabled(features, t.value));
+  const shownTab: StaffTab = sectionEnabled(features, tab) ? tab : "work";
 
   const load = useCallback(async () => {
     if (!courseId) return;
@@ -98,7 +104,7 @@ export default function StaffCourseScreen() {
 
   const props = { course, refreshKey };
   const section = (() => {
-    switch (tab) {
+    switch (shownTab) {
       case "modules":
         return <StaffModulesSection {...props} />;
       case "work":
@@ -142,7 +148,14 @@ export default function StaffCourseScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
-      {course.status === "published" && (
+      <CourseBanner course={course}>
+        {course.code ? (
+          <BannerText size="xs" weight="600">
+            {course.code}
+          </BannerText>
+        ) : null}
+      </CourseBanner>
+      {course.status === "published" && features.attendance && (
         <Button
           variant="secondary"
           size="sm"
@@ -158,7 +171,7 @@ export default function StaffCourseScreen() {
           Take attendance
         </Button>
       )}
-      <Tabs tabs={TABS} value={tab} onChange={setTab} />
+      <Tabs tabs={tabs} value={shownTab} onChange={setTab} />
       {section}
     </Screen>
   );

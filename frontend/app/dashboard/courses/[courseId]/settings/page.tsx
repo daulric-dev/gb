@@ -42,6 +42,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useCourse } from "../_components/course-context";
+import { CourseAppearanceCard } from "../_components/CourseAppearanceCard";
 import { SectionHeader } from "../_components/SectionHeader";
 import { MarkdownEditor } from "../_components/MarkdownEditor";
 import { CourseCalendarFields } from "../../_components/CourseCalendarFields";
@@ -49,6 +50,7 @@ import { CopyCourseDialog } from "../../_components/CopyCourseDialog";
 import { ImportContentDialog } from "../../_components/ImportContentDialog";
 import { Switch } from "@/components/ui/switch";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { useFeatures } from "@/hooks/use-features";
 
 const STATUS_ITEMS: { value: CourseStatus; label: string; hint: string }[] = [
   { value: "draft", label: "Draft", hint: "Hidden from students" },
@@ -63,6 +65,7 @@ export default function CourseSettingsPage() {
   const router = useRouter();
   const { course, canManage, reload } = useCourse();
   const { can } = usePermissions();
+  const { hasFeature } = useFeatures();
   const togglingTemplate = useSignal(false);
 
   const name = useSignal(course.name);
@@ -179,7 +182,10 @@ export default function CourseSettingsPage() {
 
   return (
     <div className="space-y-5">
-      <SectionHeader title="Settings" description="Details, status and grading" />
+      <SectionHeader
+        title="Settings"
+        description="Details, appearance, status and grading"
+      />
 
       <form onSubmit={save} className="space-y-5">
         <Card className="animate-fade-in-up-delay-1">
@@ -301,6 +307,9 @@ export default function CourseSettingsPage() {
         </div>
       </form>
 
+      <CourseAppearanceCard />
+
+      {hasFeature("course_copy") && (
       <Card>
         <CardHeader>
           <CardTitle>Copy and templates</CardTitle>
@@ -338,6 +347,7 @@ export default function CourseSettingsPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       <Card className="border-destructive/40">
         <CardHeader>

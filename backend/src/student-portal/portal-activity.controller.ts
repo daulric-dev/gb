@@ -8,8 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import type { MultipartFile } from '@fastify/multipart';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { StudentGuard, type StudentRequest } from './student.guard';
 import { SubmissionService } from '@/grading/submission.service';
@@ -98,24 +97,6 @@ export class PortalActivityController {
       req.student!.studentId,
       activityId,
       fileId,
-    );
-  }
-
-  /**
-   * Attach a file in one request. Kept for small files and as a fallback when
-   * a direct upload cannot be used; the path above is preferred.
-   */
-  @Post('activities/:activityId/file')
-  @ApiConsumes('multipart/form-data')
-  async attachFile(
-    @Req() req: StudentRequest & { file: () => Promise<MultipartFile> },
-    @Param('activityId') activityId: string,
-  ) {
-    const file = await req.file();
-    return this.submissions.attachFile(
-      req.student!.studentId,
-      activityId,
-      file,
     );
   }
 

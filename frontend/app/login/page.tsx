@@ -62,6 +62,8 @@ function LoginEmailForm() {
     router.replace(setupDone && next ? next : home);
   }, [profileLoading.value, profile.value, router, next]);
 
+  // Buttons that work without knowing the school (the server's own apps). A
+  // school's own providers are offered after discovery, on "Continue".
   useEffect(() => {
     api<SsoProvider[]>("/auth/sso/providers", { skipAuthRedirect: true })
       .then((list) => (providers.value = Array.isArray(list) ? list : []))

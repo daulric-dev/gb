@@ -5,6 +5,7 @@ import { FileShareService } from './file-share.service';
 import { FileAccessService } from './file-access.service';
 import { FileNotificationService } from './file-notification.service';
 import { FolderService } from './folder.service';
+import { UploadLimitService } from './upload-limit.service';
 
 @Module({
   controllers: [FileManagerController],
@@ -14,7 +15,8 @@ import { FolderService } from './folder.service';
     FileAccessService,
     FileNotificationService,
     FolderService,
+    UploadLimitService,
   ],
-  exports: [FolderService, FileManagerService],
+  exports: [FolderService, FileManagerService, UploadLimitService],
 })
 export class FileManagerModule {}

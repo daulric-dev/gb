@@ -14,6 +14,8 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import {
   StudentGuard,
   type StudentRequest,
@@ -31,7 +33,8 @@ import { openEventStream } from './sse';
 @ApiTags('Student Portal')
 @ApiBearerAuth()
 @Controller('portal/me')
-@UseGuards(AuthGuard, StudentGuard)
+@UseGuards(AuthGuard, StudentGuard, FeatureGuard)
+@RequireFeature('attendance')
 export class PortalAttendanceController {
   constructor(
     private readonly attendance: AttendanceService,

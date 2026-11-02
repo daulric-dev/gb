@@ -13,6 +13,15 @@ export const ALLOWED_CONTENT_TYPES = new Set<string>([
 /** Content types with no reliable byte signature — accepted on declaration. */
 const UNVERIFIABLE = new Set<string>(['text/plain', 'text/csv']);
 
+/**
+ * True when checking `contentType` reads the file's bytes. For every other
+ * type `verifyContent` and `verifySubmissionContent` decide on the declared
+ * type alone, so the bytes need not be fetched to check them.
+ */
+export function inspectsBytes(contentType: string): boolean {
+  return ALLOWED_CONTENT_TYPES.has(contentType) && !UNVERIFIABLE.has(contentType);
+}
+
 function startsWith(buffer: Buffer, bytes: number[]): boolean {
   if (buffer.length < bytes.length) return false;
   return bytes.every((b, i) => buffer[i] === b);

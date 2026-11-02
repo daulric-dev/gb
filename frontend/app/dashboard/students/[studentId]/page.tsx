@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight, Mail, UserRound } from "lucide-react";
 import type { StudentProfile } from "../_components/types";
-import { courseColor } from "@/lib/courses/format";
+import { bannerAccent } from "@/lib/courses/appearance";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -140,7 +140,7 @@ export default function StudentProfilePage() {
                   <div className="flex items-center gap-3 rounded-md border px-3 py-2 transition-colors hover:bg-muted/50">
                     <span
                       className="h-8 w-1 shrink-0 rounded-full"
-                      style={{ background: courseColor(c.id) }}
+                      style={{ background: bannerAccent(c) }}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{c.name}</p>

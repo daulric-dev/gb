@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Laptop, Loader2, LogOut, Smartphone } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { resetBillingState } from "@/lib/billing";
 import {
   DEVICES_ANCHOR,
   isMobileDevice,
@@ -29,7 +28,7 @@ import {
 
 /**
  * Signed-in devices: every live session of this account (this one marked),
- * with a sign-out button each and "Sign out of all other devices". Used on the
+ * with a sign-out button on every other device and "Sign out of all other devices". Used on the
  * staff settings page and the student portal's settings page; the "New
  * sign-in" email links here (#devices).
  */
@@ -68,7 +67,6 @@ export function SignedInDevices() {
     try {
       await api(`/auth/sessions/${session.id}`, { method: "DELETE" });
       if (session.current) {
-        resetBillingState();
         router.push("/login");
         return;
       }
@@ -140,16 +138,19 @@ export function SignedInDevices() {
                       .join(" · ")}
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy !== null}
-                  onClick={() => void signOut(s)}
-                  aria-label={`Sign out ${s.device}${s.current ? " (this device)" : ""}`}
-                >
-                  {busy === s.id && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                  Sign out
-                </Button>
+                {/* This device signs out from the account menu, not here. */}
+                {!s.current && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => void signOut(s)}
+                    aria-label={`Sign out ${s.device}`}
+                  >
+                    {busy === s.id && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    Sign out
+                  </Button>
+                )}
               </li>
             );
           })}

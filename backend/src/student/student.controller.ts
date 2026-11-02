@@ -4,7 +4,7 @@ import {
   Get,
   Param,
   Patch,
-  Query,
+  QueryMethod,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -27,11 +27,12 @@ export class StudentController {
     private readonly versioning: VersioningService,
   ) {}
 
+  /** QUERY /students: search and paging in the JSON body. */
   @RequirePermission('student', 'read')
-  @Get()
+  @QueryMethod()
   async findAll(
     @Req() req: any,
-    @Query() query: ListStudentsQueryDto,
+    @Body() query: ListStudentsQueryDto,
   ) {
     const { search, ...pagination } = query;
     const hasPaginationParams =

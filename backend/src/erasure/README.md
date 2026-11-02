@@ -42,7 +42,7 @@ The uuids themselves are pseudonymous personal data: after a restore they point 
 | --- | --- |
 | `{ "op": "delete", "table", "where", "objects"? }` | `DELETE FROM <table> WHERE <col> = ANY(uuids) AND ...`. With `objects: true` (file rows only) the rows' storage objects are deleted first. |
 | `{ "op": "update", "table", "where", "set" }` | Blank columns: `null`, `''`, `{}` (jsonb), a uuid, or `"$occurred_at"` = `COALESCE(col, occurred_at)`. Only rows that would change are touched, so a re-run updates 0 rows. |
-| `{ "op": "delete_storage_prefix", "prefixes" }` | Delete every object under `file-manager/<school uuid>/<user uuid>/` or `images/avatars/<user uuid>.` - the only prefixes allowed. |
+| `{ "op": "delete_storage_prefix", "prefixes" }` | Delete every object under `file-manager/<school uuid>/<user uuid>/`, `images/avatars/<user uuid>.` or `images/course-banners/<course uuid>-` - the only prefixes allowed. |
 
 `where` maps a column to a uuid list (`= ANY`) or `null` (`IS NULL`); at least one list is required, so a step can never match a whole table. Tables and columns must be in `REGISTRY` in `erasure-plan.ts`; identifiers in the SQL come from there, values are always bound parameters. Plans read back from storage are untrusted and validated again.
 
@@ -57,11 +57,11 @@ What each path writes:
 | Delete a folder (`FolderService.remove`) | `folder` / `user_request` | set `deleted_at` on the subtree's folders and their files |
 | Delete a chat message (`ChatService.deleteMessage`) | `chat_message` / `user_request` | clear `body`, set `deleted_at` |
 | Delete a discussion topic / reply (`DiscussionService`) | `discussion_topic`, `discussion_reply` / author: `user_request`, moderator: `admin` | delete (replies cascade with a topic); a reply with answers is blanked instead |
-| Delete a course (`CourseService.remove`) | `course` / `admin` | delete (cascades enrolments, work, marks, attendance, discussions) |
+| Delete a course (`CourseService.remove`) | `course` / `admin` | delete (cascades enrolments, work, marks, attendance, discussions); storage prefix `images/course-banners/<course id>-` (cover images) |
 | Delete an attendance session (`AttendanceService.remove`) | `attendance_session` / `admin` | delete (cascades its attendance records) |
 | Retention purge ([`src/retention`](../retention/README.md)) | `file`, `folder`, `chat_message`, `discussion_reply` / `retention_purge`, actor `system` | delete (files with objects); answered discussion placeholders lose `author_user_profile_id` |
 
-Not logged, on purpose: deleting content that is not personal data (modules, pages, activities - refused when they have work - rubrics, grade scales, terms, announcements, roles, email domains, join codes); roster changes inside a course (`course_student` / `course_staff` removal - access changes, not erasures; a student with work is only marked `dropped`); push-token removal; expired sessions and sign-in codes (a restore signs everyone out anyway, BACKUPS.md step 4); quiz-answer replacement during an attempt. Billing invoices are financial records and are not erased.
+Not logged, on purpose: deleting content that is not personal data (modules, pages, activities - refused when they have work - rubrics, grade scales, terms, announcements, roles, email domains, join codes); roster changes inside a course (`course_student` / `course_staff` removal - access changes, not erasures; a student with work is only marked `dropped`); push-token removal; expired sessions and sign-in codes (a restore signs everyone out anyway, BACKUPS.md step 4); quiz-answer replacement during an attempt.
 
 ## The storage copy (surviving a restore)
 

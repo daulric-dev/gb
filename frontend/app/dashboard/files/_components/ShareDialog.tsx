@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -77,7 +77,7 @@ export function ShareDialog({
     Promise.all([
       api<SchoolMember[]>("/schools/members").catch(() => []),
       api<SchoolRole[]>("/permissions/roles").catch(() => []),
-      api<CourseItem[]>("/courses").catch(() => []),
+      apiQuery<CourseItem[]>("/courses").catch(() => []),
       api<FileShare[]>(`/files/${file.id}/shares`).catch(() => []),
     ])
       .then(([m, r, c, s]) => {

@@ -3,16 +3,18 @@
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { KeyRound, Loader2 } from "lucide-react";
+import { ExternalLink, KeyRound, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { EmailDomain } from "@/lib/email-domains";
+import { emailDomainsApi, type EmailDomain } from "@/lib/email-domains";
 import {
   isHttpsUrl,
   looksLikeCertificate,
   samlServiceProvider,
   ssoProviderName,
+  ssoStartUrl,
   type SsoProvider,
 } from "@/lib/sso";
+import { unavailableApps, type SchoolSsoProvider } from "@/lib/sign-in-providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,11 +42,17 @@ const TENANT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 export function SsoPanel({
   domain,
   providers,
+  catalog,
+  apiBase,
   onSavedAction,
 }: {
   domain: EmailDomain;
-  /** null while loading. */
+  /** The providers available to this school; null while loading. */
   providers: SsoProvider[] | null;
+  /** The school's providers with their status (SAML service provider details too). */
+  catalog: SchoolSsoProvider[] | null;
+  /** See `emailDomainsApi`; default: the active school. */
+  apiBase?: string;
   onSavedAction: (domain: EmailDomain) => void;
 }) {
   useSignals();
@@ -79,8 +87,8 @@ export function SsoPanel({
     return (
       <Section>
         <p className="text-sm text-muted-foreground">
-          No sign-in providers are set up on this server - see the SSO guide
-          (Single Sign-On in the developer docs).
+          No sign-in provider is set up for this school yet. Add your
+          Google or Microsoft app under Sign-in apps above.
           {domain.ssoProvider && (
             <>
               {" "}
@@ -97,7 +105,7 @@ export function SsoPanel({
     { value: NONE, label: "None - email codes" },
     ...providers.map((p) => ({ value: p.id, label: ssoProviderName(p, p.id) })),
   ];
-  // Stored but switched off on the server since: keep it visible.
+  // Stored but no longer available to the school: keep it visible.
   if (domain.ssoProvider && !providers.some((p) => p.id === domain.ssoProvider)) {
     items.push({
       value: domain.ssoProvider,
@@ -136,8 +144,9 @@ export function SsoPanel({
   async function save() {
     saving.value = true;
     try {
-      const saved = await api<EmailDomain>(`/schools/email-domains/${domain.id}`, {
+      const saved = await api<EmailDomain>(`${emailDomainsApi(apiBase)}/${domain.id}`, {
         method: "PATCH",
+        stepUp: true,
         body: {
           ssoProvider: chosen,
           azureTenantId: tenantValue || null,
@@ -160,6 +169,14 @@ export function SsoPanel({
       saving.value = false;
     }
   }
+
+  const missing = catalog ? unavailableApps(catalog) : [];
+  const sp = catalog?.find((p) => p.saml)?.saml ?? samlServiceProvider();
+  // Test only what is saved and offered right now.
+  const testable =
+    !dirty &&
+    !!domain.ssoProvider &&
+    providers.some((p) => p.id === domain.ssoProvider);
 
   return (
     <Section>
@@ -188,6 +205,12 @@ export function SsoPanel({
           People at @{domain.domain} can sign in with their school account
           instead of an emailed code.
         </p>
+        {missing.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Not set up for this school: {missing.map((p) => p.label).join(", ")}.
+            Add it under Sign-in apps above to use it here.
+          </p>
+        )}
       </div>
 
       {isAzure && (
@@ -218,6 +241,7 @@ export function SsoPanel({
       {isSaml && (
         <SamlFields
           ids={ids}
+          sp={sp}
           entryPoint={samlEntryPoint.value}
           issuer={samlIssuer.value}
           certificate={samlCertificate.value}
@@ -248,6 +272,10 @@ export function SsoPanel({
         />
       </div>
 
+      {testable && (
+        <TestSignIn ids={ids} providerId={domain.ssoProvider!} domain={domain.domain} />
+      )}
+
       <div className="flex justify-end">
         <Button
           size="sm"
@@ -263,8 +291,67 @@ export function SsoPanel({
 }
 
 /** The school's IdP details, and what to register with the IdP in return. */
+/**
+ * A start link for the saved provider with an address on the domain (it
+ * picks the Microsoft tenant or SAML connection). Opening it signs that
+ * browser in as the test account, so the hint says to use a private window.
+ */
+function TestSignIn({
+  ids,
+  providerId,
+  domain,
+}: {
+  ids: string;
+  providerId: string;
+  domain: string;
+}) {
+  useSignals();
+  const email = useSignal("");
+  const value = email.value.trim().toLowerCase();
+  const valid = value.endsWith(`@${domain}`) && value.length > domain.length + 1;
+  const url = valid ? ssoStartUrl(providerId, { email: value }) : null;
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+      <Label htmlFor={`${ids}-test`}>Test sign-in</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id={`${ids}-test`}
+          className="sm:w-72"
+          type="email"
+          placeholder={`someone@${domain}`}
+          value={email.value}
+          onChange={(e) => (email.value = e.target.value)}
+          autoComplete="off"
+        />
+        {url ? (
+          <Button
+            size="sm"
+            variant="outline"
+            nativeButton={false}
+            render={<a href={url} target="_blank" rel="noopener noreferrer" />}
+          >
+            <ExternalLink className="mr-1.5 size-4" />
+            Open
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled>
+            <ExternalLink className="mr-1.5 size-4" />
+            Open
+          </Button>
+        )}
+      </div>
+      {url && <CopyRow label="Sign-in link" value={url} />}
+      <p className="text-xs text-muted-foreground">
+        Finishing the sign-in signs that browser in as the test account - copy
+        the link into a private window to stay signed in here.
+      </p>
+    </div>
+  );
+}
+
 function SamlFields({
   ids,
+  sp,
   entryPoint,
   issuer,
   certificate,
@@ -275,6 +362,7 @@ function SamlFields({
   onCertificate,
 }: {
   ids: string;
+  sp: { metadataUrl: string; acsUrl: string; entityId: string };
   entryPoint: string;
   issuer: string;
   certificate: string;
@@ -284,7 +372,6 @@ function SamlFields({
   onIssuer: (value: string) => void;
   onCertificate: (value: string) => void;
 }) {
-  const sp = samlServiceProvider();
   return (
     <div className="space-y-4">
       <div className="space-y-3 rounded-lg border bg-muted/20 p-3">

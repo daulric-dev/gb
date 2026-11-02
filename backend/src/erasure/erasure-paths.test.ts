@@ -5,6 +5,7 @@
  * Prisma mock hands interactive transactions a separate `tx` mock, so a write
  * on `tx` is a write inside the transaction.
  */
+import { FeatureService } from '@/features/feature.service';
 import { describe, expect, mock, test } from 'bun:test';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
@@ -66,7 +67,7 @@ describe('DELETE /api/auth/account', () => {
     s.prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
     s.storage.objects.set(`file-manager/${SCHOOL}/${USER}/${SUBJECT}-report-card.pdf`, Buffer.from('x'));
     s.storage.objects.set(`images/avatars/${USER}.png`, Buffer.from('x'));
-    const svc = new AuthService(s.prisma as any, cache as any, {} as any, {} as any, {} as any, sessions as any, s.erasure);
+    const svc = new AuthService(s.prisma as any, cache as any, {} as any, {} as any, {} as any, sessions as any, s.erasure, new FeatureService(s.prisma as any, cache as any));
     return { ...s, svc, cache };
   }
 
@@ -123,6 +124,7 @@ describe('removing someone from a school', () => {
     const s = setup();
     s.prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL, role: 'teacher' });
     s.prisma.school.findUnique.mockResolvedValue({ owner_id: OTHER });
+    s.prisma.school_management.findFirst.mockResolvedValue({ id: SUBJECT });
     s.tx.school_management.findMany.mockResolvedValue([{ id: SUBJECT }]);
     const svc = new SchoolService(s.prisma as any, createMockCacheService() as any, s.erasure, {} as any);
     await svc.leaveSchool(USER);
@@ -134,7 +136,7 @@ describe('file and folder delete', () => {
   test('a file soft delete is logged in its transaction', async () => {
     const s = setup();
     s.prisma.file.findFirst.mockResolvedValue({ id: SUBJECT, owner_id: USER, school_id: SCHOOL, name: 'report-card.pdf' });
-    const svc = new FileManagerService(s.storage as any, s.prisma as any, {} as any, {} as any, {} as any, {} as any, s.erasure);
+    const svc = new FileManagerService(s.storage as any, s.prisma as any, {} as any, {} as any, {} as any, {} as any, s.erasure, {} as any, {} as any);
     await svc.softDelete(USER, SUBJECT);
     expect(s.tx.file.updateMany.mock.calls[0][0].where).toEqual({ id: SUBJECT });
     expect(loggedEntry(s.prisma, s.tx)).toMatchObject({ kind: 'file', subject_ids: [SUBJECT], school_id: SCHOOL });
@@ -142,7 +144,7 @@ describe('file and folder delete', () => {
     const f = setup();
     f.prisma.file.findFirst.mockResolvedValue({ id: SUBJECT, owner_id: USER, school_id: SCHOOL });
     failLog(f.tx);
-    const svc2 = new FileManagerService(f.storage as any, f.prisma as any, {} as any, {} as any, {} as any, {} as any, f.erasure);
+    const svc2 = new FileManagerService(f.storage as any, f.prisma as any, {} as any, {} as any, {} as any, {} as any, f.erasure, {} as any, {} as any);
     await expectRejection(svc2.softDelete(USER, SUBJECT));
   });
 
@@ -165,7 +167,7 @@ describe('chat message delete', () => {
     s.tx.message.update.mockResolvedValue({ id: SUBJECT, sender_id: USER, conversation_id: U(7), school_id: SCHOOL, body: null, metadata: {}, deleted_at: new Date() });
     const cipher = { decrypt: (v: string) => v, encrypt: (v: string) => v };
     const realtime = { publish: mock(async () => undefined), publishToConversation: mock(async () => undefined) };
-    const svc = new ChatService(s.prisma as any, realtime as any, cipher as any, s.erasure);
+    const svc = new ChatService(s.prisma as any, realtime as any, cipher as any, s.erasure, {} as any);
     (svc as any).fanOutMessage = mock(async () => undefined);
     return { ...s, svc };
   }

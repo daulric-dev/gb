@@ -9,12 +9,15 @@ import { loadEffectivePermissions } from '@/permission/permission.effective';
 import { PrismaService } from '@/prisma/prisma.service';
 import { userSchoolId } from '@/common/user-school';
 import { dateOnly, isoDate } from '@/common/db-values';
+import { optionalImageUrl } from '@/images/public-url';
 
 interface CourseLite {
   id: string;
   name: string;
   code: string | null;
   status: 'draft' | 'published' | 'archived';
+  banner_color: string | null;
+  banner_image_path: string | null;
   created_at: string;
 }
 
@@ -23,6 +26,8 @@ export interface DashboardCourse {
   name: string;
   code: string | null;
   status: CourseLite['status'];
+  bannerColor: string | null;
+  bannerImageUrl: string | null;
   role: 'admin' | 'teacher' | 'ta';
   studentCount: number;
   /** Submissions handed in and not yet marked. */
@@ -57,6 +62,8 @@ const COURSE_LITE_SELECT = {
   name: true,
   code: true,
   status: true,
+  banner_color: true,
+  banner_image_path: true,
   created_at: true,
 } as const;
 
@@ -65,9 +72,16 @@ function toCourseLite(c: {
   name: string;
   code: string | null;
   status: CourseLite['status'];
+  banner_color?: string | null;
+  banner_image_path?: string | null;
   created_at: Date;
 }): CourseLite {
-  return { ...c, created_at: isoDate(c.created_at)! };
+  return {
+    ...c,
+    banner_color: c.banner_color ?? null,
+    banner_image_path: c.banner_image_path ?? null,
+    created_at: isoDate(c.created_at)!,
+  };
 }
 
 /**
@@ -204,6 +218,8 @@ export class DashboardService {
       name: c.name,
       code: c.code,
       status: c.status,
+      bannerColor: c.banner_color,
+      bannerImageUrl: optionalImageUrl(c.banner_image_path),
       role: roles.get(c.id)!,
       studentCount: students.get(c.id) ?? 0,
       awaitingMarking: awaiting.get(c.id) ?? 0,

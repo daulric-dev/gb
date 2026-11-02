@@ -4,7 +4,7 @@ import {
   Get,
   HttpCode,
   Post,
-  Query,
+  QueryMethod,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,10 +31,11 @@ import {
 export class CourseNotificationController {
   constructor(private readonly notifications: CourseNotificationService) {}
 
-  @Get()
+  /** QUERY: `limit`, `before` and `unread` in the JSON body. */
+  @QueryMethod()
   async list(
     @Req() req: StudentRequest,
-    @Query() query: ListCourseNotificationsQueryDto,
+    @Body() query: ListCourseNotificationsQueryDto,
   ) {
     return this.notifications.list(req.user!.id, query);
   }

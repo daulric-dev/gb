@@ -5,6 +5,7 @@ import {
   normalizeSubmissionContentType,
   matchesSignature,
   inspectStructure,
+  inspectsBytes,
 } from './file-content';
 import { crc32 } from 'node:zlib';
 
@@ -268,5 +269,25 @@ describe('inspectStructure - other types', () => {
     expect(inspectStructure(Buffer.from('a,b'), 'text/csv')).toEqual({
       ok: true,
     });
+  });
+});
+
+describe('inspectsBytes', () => {
+  test('is true only for types whose bytes are checked', () => {
+    expect(inspectsBytes('application/pdf')).toBe(true);
+    expect(inspectsBytes('image/png')).toBe(true);
+    expect(inspectsBytes('text/plain')).toBe(false);
+    expect(inspectsBytes('text/csv')).toBe(false);
+    expect(inspectsBytes('application/x-rust-source')).toBe(false);
+  });
+
+  test('types it skips get the same verdict whatever the bytes', () => {
+    const junk = Buffer.from('%PDF junk');
+    for (const type of ['text/plain', 'text/csv', 'application/x-rust-source']) {
+      expect(verifySubmissionContent(junk, type)).toEqual(
+        verifySubmissionContent(Buffer.alloc(0), type),
+      );
+      expect(verifyContent(junk, type)).toEqual(verifyContent(Buffer.alloc(0), type));
+    }
   });
 });

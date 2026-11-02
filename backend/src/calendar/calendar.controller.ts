@@ -2,6 +2,8 @@ import { Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import {
   StudentGuard,
   type StudentRequest,
@@ -21,7 +23,8 @@ function sendIcs(reply: FastifyReply, body: string, filename: string) {
 @ApiTags('Calendar')
 @ApiBearerAuth()
 @Controller('calendar')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureGuard)
+@RequireFeature('calendar')
 export class CalendarController {
   constructor(private readonly calendar: CalendarService) {}
 
@@ -50,7 +53,8 @@ export class CalendarController {
 @ApiTags('Student Portal')
 @ApiBearerAuth()
 @Controller('portal/me/calendar')
-@UseGuards(AuthGuard, StudentGuard)
+@UseGuards(AuthGuard, StudentGuard, FeatureGuard)
+@RequireFeature('calendar')
 export class PortalCalendarController {
   constructor(private readonly calendar: CalendarService) {}
 

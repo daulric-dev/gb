@@ -81,13 +81,14 @@ export class ActivityController {
     @Query('fileId', new ParseUUIDPipe({ optional: true })) fileId: string | undefined,
     @Res() res: FastifyReply,
   ) {
-    const { buffer, contentType, filename } =
+    const { body, size, contentType, filename } =
       await this.submissions.readSubmissionFile(
         req.user.id as string,
         submissionId,
         fileId,
       );
 
+    if (size !== null) res.header('Content-Length', size);
     return res
       .header(
         'Content-Type',
@@ -97,9 +98,11 @@ export class ActivityController {
       )
       .header('Content-Disposition', contentDisposition('inline', filename))
       .header('Cache-Control', 'private, max-age=60')
-      // Student-uploaded content on the API origin: never sniff it into HTML.
+      // Student-uploaded content on the API origin: never sniff it into HTML,
+      // and if it is opened directly, give it no script or same-origin access.
       .header('X-Content-Type-Options', 'nosniff')
-      .send(buffer);
+      .header('Content-Security-Policy', 'sandbox')
+      .send(body);
   }
 
   /** Download every file attached to a submission in one named archive. */
