@@ -49,6 +49,7 @@ import { FeaturesModule } from '@/features/features.module';
 import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
+import { IntegrationsModule } from '@/integrations/integrations.module';
 
 @Module({
   imports: [
@@ -137,6 +138,7 @@ import { AppVersionModule } from '@/app-version/app-version.module';
     ErasureModule,
     RetentionModule,
     AppVersionModule,
+    IntegrationsModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [

@@ -7,6 +7,7 @@ import { objectKey, UPLOAD_STAGING_PREFIX } from '@/storage/keys';
 /** How old an untracked staged image upload must be before it is purged. */
 const STAGED_IMAGE_MAX_AGE_MS = 60 * 60 * 1000;
 import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { deliveryRetentionDays } from '@/integrations/config/webhook.config';
 import { ErasureReplayService } from '@/erasure/erasure-replay.service';
 import { plan } from '@/erasure/erasure-plan';
 import {
@@ -52,6 +53,8 @@ export interface PurgeReport {
   abandonedUploads: number;
   /** Staged upload objects no pending upload owns any more. */
   stagedObjects: number;
+  /** Webhook deliveries (with their payloads) older than WEBHOOK_DELIVERY_RETENTION_DAYS. */
+  webhookDeliveries: number;
   exported: number;
   errors: string[];
 }
@@ -113,6 +116,7 @@ export class RetentionService {
       leftoverObjects: 0,
       abandonedUploads: 0,
       stagedObjects: 0,
+      webhookDeliveries: 0,
       exported: 0,
       errors: [],
     };
@@ -132,6 +136,7 @@ export class RetentionService {
         ['abandoned uploads', () => this.purgeAbandonedUploads(now, ctx)],
         ['staged upload objects', () => this.purgeStagedObjects(ctx)],
         ['staged image uploads', () => this.purgeStagedImages(ctx)],
+        ['webhook deliveries', () => this.purgeWebhookDeliveries(now, ctx)],
         ['erasure log', async () => {
           const pruned = await this.erasure.prune(now, opts.dryRun);
           report.erasureLogRows = pruned.rows;
@@ -495,6 +500,33 @@ export class RetentionService {
       });
       report.discussionRepliesScrubbed += scrubbed;
       if (scrubbed === 0) return;
+    }
+  }
+
+  /**
+   * Webhook deliveries older than WEBHOOK_DELIVERY_RETENTION_DAYS (default
+   * 30): their payloads hold personal data (names, emails, marks). Finished or
+   * not - one that old has used every retry. Not written to the erasure log:
+   * an operational record, like sessions, and a restore only brings back rows
+   * the next run removes again. Deleting a school or webhook cascades.
+   */
+  private async purgeWebhookDeliveries(now: Date, { opts, deadline, report }: Ctx) {
+    const where = {
+      created_at: { lt: new Date(now.getTime() - deliveryRetentionDays() * DAY_MS) },
+    };
+    if (opts.dryRun) {
+      report.webhookDeliveries = await this.prisma.webhook_delivery.count({ where });
+      return;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.webhook_delivery.findMany({ where, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.webhook_delivery.deleteMany({ where: { id: { in: ids } } });
+      report.webhookDeliveries += count;
+      if (count === 0) break;
     }
   }
 

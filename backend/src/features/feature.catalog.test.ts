@@ -24,6 +24,7 @@ describe('feature catalog', () => {
       calendar: true,
       course_copy: true,
       push_notifications: true,
+      integrations: false,
     });
   });
 

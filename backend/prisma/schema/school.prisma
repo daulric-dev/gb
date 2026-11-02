@@ -121,6 +121,8 @@ model school {
   organisation_invite                         organisation_invite[]
   school_sso_provider                         school_sso_provider[]
   sso_audit_log                               sso_audit_log[]
+  school_webhook                              school_webhook[]
+  integration_audit_log                       integration_audit_log[]
 
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")

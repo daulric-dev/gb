@@ -18,6 +18,7 @@ Platform features the organisation switches on or off for its schools. A school'
 | `calendar` | Calendar | on | |
 | `course_copy` | Course templates & copying | on | |
 | `push_notifications` | Push notifications | on | |
+| `integrations` | Integrations (webhooks) | off | Data leaves the platform, so the organisation turns it on. |
 
 Effective for a school = the organisation's value AND not in the school's `disabled_features` AND every `requires` effective (`effectiveForSchool`). Without a school, the organisation's values and requirements (`effectiveForOrganisation`). `organisationSettings(stored)` applies the stored overrides to the defaults, ignoring unknown keys and non-booleans.
 
@@ -47,6 +48,7 @@ Effective for a school = the organisation's value AND not in the school's `disab
 | `files` | Only the Files page's own tools: folders, moving files, sharing and share notifications (`src/file-manager/file-manager.controller.ts`). Listing, uploading (`upload-ticket`), opening, renaming and deleting your own files stay available, because course content attaches files from the file manager. Course content files (`src/course/course-file.controller.ts`, the portal's course files) are not gated. |
 | `calendar` | `src/calendar/calendar.controller.ts` (staff and portal, including `.ics`). |
 | `course_copy` | `src/course/course-copy.controller.ts` (templates, copy, import) and `PATCH /courses/:courseId` with `isTemplate: true` (`src/course/course.controller.ts`). |
+| `integrations` | `src/integrations`: every webhook route (school admin and organisation console) and `WebhookEvents.emit` / the delivery worker (nothing is queued or sent for a school with it off). |
 | `push_notifications` | `src/notifications/push.service.ts`: `sendToUsers` drops recipients whose school has it off (checked once per school). Registration routes stay; in-app course notifications are still created. |
 
 The routes for changing features live with their owners: `GET`/`PATCH /api/organisation/features` in `src/organisation` (organisation admins) and `GET`/`PATCH /api/schools/current/features` in `src/school` (`school:update`), plus `GET`/`PATCH /api/organisation/schools/:id/features` in `src/organisation` (organisation admins, any school; same rules). The profile's `features` map is added in `src/auth/auth.service.ts`.

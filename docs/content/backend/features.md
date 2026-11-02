@@ -24,6 +24,7 @@ Defined once in `backend/src/features/feature.catalog.ts`.
 | `calendar` | Calendar | on | |
 | `course_copy` | Course templates & copying | on | |
 | `push_notifications` | Push notifications | on | |
+| `integrations` | Integrations (webhooks) | off | Data leaves the platform, so the organisation turns it on. |
 
 **Effective for a school** = the organisation's value AND the school has not switched it off AND every feature it requires is effective. Without a school (an organisation admin with none), the organisation's values and requirements decide.
 
@@ -86,4 +87,5 @@ Added by migration `20261102120000_features`. Lookups are cached for 30 seconds 
 | `files` | The Files page's own tools under `/api/files`: folders, moving files, sharing and share notifications. Listing, uploading, opening, renaming and deleting your own files stay available, because course content attaches files from the file manager; course content files (`/api/courses/:courseId/files`, the portal's course files) are not gated. |
 | `calendar` | `/api/calendar`, `/api/calendar/ics`, `/api/portal/me/calendar`, `/api/portal/me/calendar/ics` |
 | `course_copy` | `GET /api/courses/templates`, `POST /api/courses/:courseId/copy`, `POST /api/courses/:courseId/import`, and `PATCH /api/courses/:courseId` with `isTemplate: true` |
+| `integrations` | Every webhook route (`/api/schools/current/webhooks/...`, `/api/organisation/schools/:schoolId/webhooks/...`); no events are queued and no deliveries are sent for a school with it off. See [webhooks.md](./webhooks.md). |
 | `push_notifications` | `PushService` sends nothing to users whose school has it off. Device registration still works, and in-app course notifications are still created. |

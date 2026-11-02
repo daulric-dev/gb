@@ -16,6 +16,7 @@ export const FEATURE_KEYS = [
   "calendar",
   "course_copy",
   "push_notifications",
+  "integrations",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -33,6 +34,7 @@ export const FALLBACK_FEATURES: FeatureMap = {
   calendar: true,
   course_copy: true,
   push_notifications: true,
+  integrations: false,
 };
 
 const REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {

@@ -4,8 +4,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import { CacheService } from '@/cache/cache.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { SessionService } from '@/account/session.service';
@@ -24,7 +26,21 @@ export class SchoolService {
     private readonly cache: CacheService,
     private readonly erasure: ErasureLogService,
     private readonly sessions: SessionService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
+
+  /** staff.joined / staff.left after the change committed. Fire and forget. */
+  private announceStaff(
+    schoolId: string,
+    userId: string,
+    type: 'staff.joined' | 'staff.left',
+    extra: Record<string, unknown>,
+  ) {
+    void this.webhooks?.emit(schoolId, type, async () => ({
+      staff: await this.webhooks!.staff(userId),
+      ...extra,
+    }));
+  }
 
   async findAll() {
     const cached = await this.cache.get('schools:all');
@@ -259,6 +275,10 @@ export class SchoolService {
     });
 
     await this.cache.delete(`profile:${request.user_id}`);
+    this.announceStaff(request.school_id, request.user_id, 'staff.joined', {
+      role,
+      via: 'join_request',
+    });
     return updated;
   }
 
@@ -438,6 +458,7 @@ export class SchoolService {
     }
 
     await this.cache.delete(`profile:${userId}`);
+    this.announceStaff(schoolId, userId, 'staff.left', { via: 'left' });
     return { left: true };
   }
 
@@ -505,6 +526,7 @@ export class SchoolService {
     }
 
     await this.cache.delete(`profile:${membership.user_id}`);
+    this.announceStaff(membership.school_id, membership.user_id, 'staff.left', { via: 'removed' });
     return { removed: true };
   }
 

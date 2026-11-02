@@ -4,10 +4,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { promises as dns } from 'node:dns';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isoDate, isUniqueViolation, raisedMessage } from '@/common/db-values';
@@ -226,6 +228,7 @@ export class EmailDomainService {
     private readonly sso: SsoRegistry,
     private readonly audit: SsoAuditService,
     private readonly alerts: SsoAlertService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
 
   /** Mail the school's admins about a committed change; never awaited, never throws. */
@@ -776,6 +779,19 @@ export class EmailDomainService {
     this.logger.log(
       `User ${userId} joined school ${match.schoolId} as ${match.audience} via @${match.domain}`,
     );
+    const webhooks = this.webhooks;
+    if (match.audience === 'student') {
+      void webhooks?.emit(match.schoolId, 'student.joined_school', async () => {
+        const student = await webhooks.studentOfUser(userId);
+        return student ? { student, via: 'email_domain' } : null;
+      });
+    } else {
+      void webhooks?.emit(match.schoolId, 'staff.joined', async () => ({
+        staff: await webhooks.staff(userId),
+        role: staffRole,
+        via: 'email_domain',
+      }));
+    }
     return {
       status: 'joined',
       schoolId: match.schoolId,

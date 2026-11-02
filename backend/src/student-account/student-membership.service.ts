@@ -3,9 +3,11 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { createHmac, randomInt } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import { isoDate, pgCode, raisedMessage } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 
@@ -44,6 +46,7 @@ export class StudentMembershipService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {
     const configured = process.env.STUDENT_CLAIM_CODE_PEPPER?.trim();
 
@@ -263,6 +266,11 @@ export class StudentMembershipService {
     }
 
     await this.finalise(userId, row.school_id);
+    const studentId = row.student_id;
+    void this.webhooks?.emit(row.school_id, 'student.joined_school', async () => ({
+      student: await this.webhooks!.student(studentId),
+      via: 'join_code',
+    }));
 
     this.logger.log(
       `User ${userId} joined school ${row.school_id} as student ${row.student_id}`,

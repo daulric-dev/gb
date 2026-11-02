@@ -35,7 +35,7 @@ describe('StepUpGuard', () => {
       expect((err as ForbiddenException).getResponse()).toEqual({
         statusCode: 403,
         code: STEP_UP_REQUIRED,
-        message: "Confirm it's you to change single sign-on settings.",
+        message: "Confirm it's you to change single sign-on or integration settings.",
       });
     }
   });

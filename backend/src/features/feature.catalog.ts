@@ -25,6 +25,7 @@ export const FEATURE_KEYS = [
   'calendar',
   'course_copy',
   'push_notifications',
+  'integrations',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -103,6 +104,14 @@ export const FEATURES: readonly FeatureDefinition[] = [
     label: 'Push notifications',
     description: 'Notifications sent to the mobile app.',
     default: true,
+    requires: [],
+  },
+  {
+    key: 'integrations',
+    label: 'Integrations (webhooks)',
+    description:
+      "Schools send platform events (grades, attendance, people, courses) to their own systems' URLs as signed webhooks. Off by default: data leaves the platform.",
+    default: false,
     requires: [],
   },
 ];

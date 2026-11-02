@@ -82,7 +82,7 @@ describe('FeatureService', () => {
     test('lists every feature with its setting, default and requirements', async () => {
       orgFeatures = { calendar: false };
       const rows = await service.organisationFeatures();
-      expect(rows).toHaveLength(10);
+      expect(rows).toHaveLength(11);
       expect(rows.find((r) => r.key === 'calendar')).toMatchObject({
         enabled: false,
         default: true,

@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { toActivityRef, WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import {
   CourseAccessService,
@@ -49,6 +50,7 @@ export class ActivityService {
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
     @Optional() private readonly notices?: CourseNotificationService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
 
   /**
@@ -377,6 +379,20 @@ export class ActivityService {
       title: data.title,
       kind: data.kind,
     });
+    const published = data as {
+      id: string;
+      title: string;
+      kind: string;
+      points: unknown;
+      due_at: Date | string | null;
+    };
+    void this.webhooks?.emitForCourse(activity.course_id, 'activity.published', (course) => ({
+      activity: {
+        ...toActivityRef(published),
+        dueAt: published.due_at ? new Date(published.due_at).toISOString() : null,
+      },
+      course,
+    }));
 
     return toActivity(data);
   }

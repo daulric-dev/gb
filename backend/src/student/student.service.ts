@@ -3,8 +3,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isNotFound, isoDate } from '@/common/db-values';
@@ -57,6 +59,7 @@ export class StudentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
 
   async findAll(userId: string, search?: string) {
@@ -321,6 +324,13 @@ export class StudentService {
         ? parseDateOnly(dto.enrollementDate)
         : null;
     if (dto.isActive !== undefined) updateData.is_active = dto.isActive;
+    // Marking an active student inactive is the student leaving the school.
+    const leaving =
+      dto.isActive === false &&
+      (await this.prisma.student
+        .findFirst({ where: { id: studentId, school_id: schoolId }, select: { is_active: true } })
+        .then((s) => s?.is_active !== false)
+        .catch(() => false));
 
     let data: StudentRow;
     try {
@@ -347,6 +357,12 @@ export class StudentService {
     // on the student's next request, not when that cache expires.
     if (dto.isActive !== undefined && data.user_profile_id) {
       await this.cache.delete(`student-context:${data.user_profile_id}`);
+    }
+    if (leaving) {
+      void this.webhooks?.emit(schoolId, 'student.left_school', async () => ({
+        student: await this.webhooks!.student(studentId),
+        via: 'marked_inactive',
+      }));
     }
     return data;
   }

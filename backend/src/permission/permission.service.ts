@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { CacheService } from '@/cache/cache.service';
 import {
@@ -18,6 +19,7 @@ import {
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isUniqueViolation, pgCode } from '@/common/db-values';
@@ -39,6 +41,7 @@ export class PermissionService {
   constructor(
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
 
   /** The code-defined catalog of assignable permissions (for the admin UI). */
@@ -295,6 +298,13 @@ export class PermissionService {
     }
     await this.cache.delete(`profile:${membership.user_id}`);
     await this.invalidate();
+    const before = membership.role ?? null;
+    if (before !== role) {
+      void this.webhooks?.emit(schoolId, 'staff.role_changed', async () => ({
+        staff: await this.webhooks!.staff(membership.user_id),
+        role: { before, after: role },
+      }));
+    }
     return { role };
   }
 
@@ -443,7 +453,7 @@ export class PermissionService {
     const membership = await this.prisma.school_management
       .findUnique({
         where: { id: membershipId },
-        select: { id: true, user_id: true, school_id: true },
+        select: { id: true, user_id: true, school_id: true, role: true },
       })
       .catch(() => null);
 
