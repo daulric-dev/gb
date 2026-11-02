@@ -7,7 +7,8 @@
  *
  * Needs the local database (DATABASE_URL in backend/.env) and the API running
  * on :3001 (`bun run start:dev`) with ALLOW_DEV_LOGIN=true. Accounts, the
- * school and its roster go straight into the database - that is what
+ * organisation (if the install has none yet), the school and its roster go
+ * straight into the database - that is what
  * onboarding would have done. Everything course-shaped goes through the real
  * API as the teacher or student who would do it, so seeding also exercises
  * the endpoints.
@@ -188,6 +189,19 @@ async function seed() {
     });
   }
 
+  // The install's organisation (first-run setup, POST /setup, on a real
+  // one), with the demo admin as an organisation admin. A database that is
+  // already set up keeps its organisation; the admin row goes with the
+  // account on --fresh.
+  if ((await db.organisation.count()) === 0) {
+    await db.organisation.create({ data: { name: 'Riverside Education Trust' } });
+  }
+  await db.organisation_admin.create({
+    data: { user_id: staffIds.admin, created_by: staffIds.admin },
+  });
+
+  // Organisation admins create schools (POST /organisation/schools) and
+  // appoint each one's admin; here the school and its staff go in directly.
   const school = await db.school.create({
     data: { name: SCHOOL_NAME, code: 'RVA', school_type: 'secondary', owner_id: staffIds.admin },
     select: { id: true },
@@ -699,7 +713,7 @@ async function seed() {
 Demo ready - ${SCHOOL_NAME}
 
 Staff (web: http://localhost:3000/login)
-  admin@${DOMAIN}     Grace Okafor   school admin, sees every course
+  admin@${DOMAIN}     Grace Okafor   school and organisation admin, sees every course
   teacher@${DOMAIN}   Maya Patel     teaches Biology 101, World History (draft)
   teacher2@${DOMAIN}  Leo Brooks     teaches Algebra I, Creative Writing (archived)
   ta@${DOMAIN}        Ana Ruiz       TA in Biology 101

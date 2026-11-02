@@ -4,6 +4,7 @@ import { ChatService } from './chat.service';
 import { ChatSystemService } from './chat-system.service';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { MessageCipher } from './message-cipher.service';
+import { ChatAccessGuard } from './chat-access.guard';
 
 @Global()
 @Module({
@@ -13,6 +14,7 @@ import { MessageCipher } from './message-cipher.service';
     ChatSystemService,
     ChatRealtimeService,
     MessageCipher,
+    ChatAccessGuard,
   ],
   exports: [ChatService, ChatSystemService],
 })

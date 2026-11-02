@@ -21,7 +21,7 @@ A token belongs to whoever registered it last, so a shared phone stops notifying
 
 - `register(userId, token, platform)`: upsert on the token (trimmed), setting `user_id`, `platform` and `last_seen_at`. A database error becomes a 400.
 - `unregister(userId, token)`: delete where both the user and the token match.
-- `sendToUsers(userIds, { title, body, data?, channelId? })`: load every device of the de-duplicated users, keep only tokens that look like Expo tokens (`ExpoPushToken[...]` or `ExponentPushToken[...]`), and POST them to `https://exp.host/--/api/v2/push/send` in chunks of 100. Each message has `sound: 'default'` and `priority: 'high'`. `channelId` names the Android notification channel the app created. Tokens Expo calls `DeviceNotRegistered` are deleted; other ticket errors are logged.
+- `sendToUsers(userIds, { title, body, data?, channelId? })`: drop users whose school has the `push_notifications` feature off (checked once per school through `FeatureService`, [`src/features`](../features/README.md); the organisation's setting for users without a school), then load every device of the remaining de-duplicated users, keep only tokens that look like Expo tokens (`ExpoPushToken[...]` or `ExponentPushToken[...]`), and POST them to `https://exp.host/--/api/v2/push/send` in chunks of 100. Each message has `sound: 'default'` and `priority: 'high'`. `channelId` names the Android notification channel the app created. Tokens Expo calls `DeviceNotRegistered` are deleted; other ticket errors are logged.
 - `fetchImpl` can be replaced in tests.
 - Also exported: `EXPO_PUSH_URL`, and the `PushMessage` and `PushPlatform` types.
 
@@ -59,7 +59,7 @@ A token belongs to whoever registered it last, so a shared phone stops notifying
 
 ## Tests
 
-`cd backend && bun test src/notifications`. Covers chunking into 100s and skipping non-Expo tokens, forgetting `DeviceNotRegistered` tokens (and only those), doing nothing without users or devices, never throwing when Expo fails, sending the access token, register taking a token over, and unregister touching only the caller's own token.
+`cd backend && bun test src/notifications`. Covers chunking into 100s and skipping non-Expo tokens, forgetting `DeviceNotRegistered` tokens (and only those), doing nothing without users or devices, never throwing when Expo fails, sending the access token, register taking a token over, unregister touching only the caller's own token, and skipping recipients whose school has `push_notifications` off (nothing sent when it is off everywhere).
 
 ## See also
 

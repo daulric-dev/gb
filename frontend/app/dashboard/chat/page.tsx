@@ -92,7 +92,7 @@ export default function ChatPage() {
             </div>
           )}
           <div className="h-full">
-            <MessageThread selfId={selfId} />
+            <MessageThread selfId={selfId} canSend={can("chat", "create")} />
           </div>
         </div>
       </div>

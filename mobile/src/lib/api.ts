@@ -1,9 +1,5 @@
 import Constants from "expo-constants";
 import {
-  isSubscriptionRequired,
-  notifySubscriptionRequired,
-} from "@/lib/subscription-required";
-import {
   isUpdateRequiredResponse,
   setUpdateRequired,
   storeUrlFrom,
@@ -45,6 +41,15 @@ function resolveBaseUrl(): string {
 
 const BASE_URL = resolveBaseUrl();
 
+/** The backend's host (e.g. "api.example.com"), for telling people where it is. */
+export function serverHost(): string {
+  try {
+    return new URL(BASE_URL).host;
+  } catch {
+    return BASE_URL;
+  }
+}
+
 export function buildUrl(path: string): string {
   if (!path.startsWith("/")) {
     throw new Error(`API path must start with "/": ${path}`);
@@ -65,6 +70,19 @@ let unauthorizedHandler: (() => void) | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
+}
+
+/**
+ * Called on `403 { code: 'FEATURE_DISABLED' }`: the school switched a feature
+ * off while the app was open. The AuthProvider re-reads the profile so tabs
+ * and lists drop it. The error is still thrown, so the screen shows it.
+ */
+let featureDisabledHandler: ((error: ApiError) => void) | null = null;
+
+export function setFeatureDisabledHandler(
+  handler: ((error: ApiError) => void) | null,
+) {
+  featureDisabledHandler = handler;
 }
 
 /**
@@ -132,17 +150,17 @@ async function fetchOrThrow(
 }
 
 /**
- * The ApiError for a failed response. A 402 SUBSCRIPTION_REQUIRED (the school
- * is read-only) also raises a single notice, and a 426 `update_required` (this
- * build is below the API's minimum) switches to the blocking update screen;
- * both are still thrown so the caller stops.
+ * The ApiError for a failed response. A 426 `update_required` (this build is
+ * below the API's minimum) also switches to the blocking update screen; it is
+ * still thrown so the caller stops.
  */
 async function errorFrom(res: Response): Promise<ApiError> {
   const error = await res.json().catch(() => ({ message: res.statusText }));
-  if (isSubscriptionRequired(res.status, error)) notifySubscriptionRequired();
   if (isUpdateRequiredResponse(res.status, error))
     setUpdateRequired(storeUrlFrom(error));
-  return new ApiError(res.status, error?.message || res.statusText, error);
+  const apiError = new ApiError(res.status, error?.message || res.statusText, error);
+  if (apiError.code === "FEATURE_DISABLED") featureDisabledHandler?.(apiError);
+  return apiError;
 }
 
 export async function api<T = unknown>(
@@ -195,5 +213,17 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+
+  /** The API's machine-readable error code, e.g. "FEATURE_DISABLED". */
+  get code(): string | undefined {
+    const code = (this.data as { code?: unknown } | undefined)?.code;
+    return typeof code === "string" ? code : undefined;
+  }
+
+  /** For a FEATURE_DISABLED error, which feature is off. */
+  get feature(): string | undefined {
+    const feature = (this.data as { feature?: unknown } | undefined)?.feature;
+    return typeof feature === "string" ? feature : undefined;
   }
 }

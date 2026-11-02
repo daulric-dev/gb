@@ -3,6 +3,7 @@ import {
   CalendarDays,
   GraduationCap,
   LayoutDashboard,
+  MessageSquare,
   NotebookPen,
   Settings,
 } from "lucide-react-native";
@@ -10,6 +11,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
 import { isStudentProfile } from "@/lib/routing";
+import { resolveFeatures } from "@/lib/features";
 
 /**
  * The student area. Staff are sent to the tabs; a student with no school has
@@ -24,6 +26,10 @@ export default function PortalLayout() {
   if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
   if (!isStudentProfile(profile)) return <Redirect href="/(tabs)" />;
   if (!profile.school) return <Redirect href="/(auth)/schools" />;
+
+  // Tabs for switched-off features are hidden (href: null), not removed, so
+  // the route table stays stable when the school changes its features.
+  const features = resolveFeatures(profile.features);
 
   return (
     <Tabs
@@ -64,8 +70,19 @@ export default function PortalLayout() {
         name="calendar"
         options={{
           title: "Calendar",
+          href: features.calendar ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <CalendarDays color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: "Messages",
+          href: features.student_messaging ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <MessageSquare color={color} size={size} />
           ),
         }}
       />

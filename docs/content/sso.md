@@ -64,11 +64,67 @@ address can never take over an account. An unverified address that belongs
 to no one does not create an account either: the sign-in is refused with
 "Sign in with an email code instead", and the email code creates it.
 
-## Turning on a provider
+## Setting up a school's single sign-on
 
-Every provider needs its id in `SSO_PROVIDERS`; Google and Microsoft also
-need their client credentials. `GET /api/auth/sso/providers` lists only what
-is configured, and the login pages and admin picker read that list.
+Single sign-on is set up **per school**. In the organisation console, open
+**Schools > <school>**: its **Single sign-on** section lists the school's
+email domains (add, verify with the DNS TXT record shown, remove) and, for
+each domain, who it is for (audience, auto-join, staff role), its sign-in
+provider (Google Workspace; Microsoft Entra with the school's tenant ID; or
+SAML with the school's IdP sign-on URL, entity ID and certificate, plus our
+metadata URL, ACS URL and entity ID to copy), **Require single sign-on**,
+and a **Test sign-in** link (the provider's start URL for an address on the
+domain - open it in a private window, since finishing it signs that browser
+in). Providers the server has no sign-in app for are listed as not set up,
+with a link to Settings > Sign-in apps. The school's own admin has the same
+section as **Email domains** in the school dashboard (same components, their
+own school's routes). The organisation **Overview** shows every school's
+domains in a small table linking to each school.
+
+## Turning on a provider (sign-in apps)
+
+The apps every school's SSO runs through are server-wide and secondary:
+**organisation console > Settings > Sign-in apps**
+(`/organisation/settings#sign-in-apps`). Each provider has a row with an on/off
+switch, the client ID and client secret (Google, Microsoft), the redirect URI
+to paste into the provider's console (with a copy button), and for SAML the
+metadata URL, ACS URL and entity ID to give identity providers. A provider is
+**available** - offered on the login page and in each domain's provider
+picker - when it is switched on and has a complete client ID and secret
+(SAML needs none). Saves take effect without a restart: this instance at
+once, other instances within about 30 seconds.
+
+Only organisation admins can set up sign-in apps.
+
+**Secrets.** The client secret is write-only: the API never returns it, only
+`hasSecret` and `secretSource` (`database`, `env` or none), so the console
+shows "Saved" or "From server config". It is stored in
+`public.sso_provider_setting.client_secret_enc`, encrypted with AES-256-GCM
+under a key derived from `AUTH_SECRET` (HKDF-SHA256, its own info string).
+**Rotating `AUTH_SECRET` makes saved secrets unreadable**: the console then
+says so, the provider falls back to the env secret (if any) or becomes
+unavailable, and an organisation admin must enter the secret again.
+
+**Environment fallback.** The env vars below still work, and an install
+that never saves anything in the console behaves exactly as before. Once a
+provider has been saved in the console, its row decides whether it is on
+(`SSO_PROVIDERS` no longer matters for it), and each of its client ID,
+secret and settings comes from the row when set there, else from the env.
+Clearing a field in the console (empty value) brings the env value back.
+
+The routes behind the page (organisation admins only, 403 otherwise):
+`GET /api/organisation/sign-in/providers`,
+`PUT /api/organisation/sign-in/providers/:key` (body `{ enabled?, clientId?,
+clientSecret?, settings? }`; empty string clears a field; turning a provider
+on without a complete client ID and secret is a 400),
+`GET /api/organisation/sign-in/domains`, and
+`GET/POST /api/organisation/schools/:id/email-domains`,
+`PATCH/DELETE .../email-domains/:domainId`,
+`POST .../email-domains/:domainId/verify` with the same bodies and rules as a
+school admin's `/api/schools/email-domains` routes. See
+`backend/src/organisation/README.md`.
+
+Env-only setup (fallback):
 
 ```env
 # backend/.env
@@ -92,8 +148,10 @@ The redirect URI for both OpenID providers is
    (External, so every school's Workspace can sign in).
 2. Credentials > Create credentials > OAuth client ID > *Web application*.
 3. Authorised redirect URI: `${API_URL}/api/auth/sso/callback`.
-4. Put the client ID and secret in `GOOGLE_CLIENT_ID` /
-   `GOOGLE_CLIENT_SECRET`, and add `google` to `SSO_PROVIDERS`.
+4. Paste the client ID and secret into the Google row in the organisation
+   console (Settings > Sign-in apps) and switch it on - or, as a fallback, set
+   `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and add `google` to
+   `SSO_PROVIDERS`.
 
 The issuer is `https://accounts.google.com`. Sign-in asks Google for the
 account on the school's domain (`hd`, `login_hint`, `prompt=select_account`).
@@ -109,8 +167,10 @@ not placed in a school.
    (multitenant), so every school's tenant can sign in.
 2. Redirect URI, platform *Web*: `${API_URL}/api/auth/sso/callback`.
 3. Certificates & secrets > New client secret.
-4. Put the application (client) ID and the secret in `MICROSOFT_CLIENT_ID` /
-   `MICROSOFT_CLIENT_SECRET`, and add `azure` to `SSO_PROVIDERS`.
+4. Paste the application (client) ID and the secret value into the
+   Microsoft row in the organisation console (Settings > Sign-in apps) and switch it on -
+   or, as a fallback, set `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`
+   and add `azure` to `SSO_PROVIDERS`.
 
 Each school admin enters their **tenant ID** on the email domain (Entra ID >
 Overview > Tenant ID). Every Microsoft sign-in goes to that school's own
@@ -128,15 +188,17 @@ be switched on without a tenant ID.
 
 ### SAML (ADFS, Okta, ClassLink, Google Workspace SAML, Entra SAML, ...)
 
-Add `saml` to `SSO_PROVIDERS`. Nothing else is configured by the platform
-operator: each school connects its own IdP from the admin page.
+Switch on SAML 2.0 in the organisation console (Settings > Sign-in apps) (or add `saml` to
+`SSO_PROVIDERS`). Nothing else is configured by the organisation: each
+school connects its own IdP on its email domain (from its dashboard, or by
+an organisation admin from the school's page in the console).
 
 What the school gives its IdP (shown on the admin page):
 
 | | |
 | --- | --- |
 | Metadata URL | `${API_URL}/api/auth/sso/saml/metadata` |
-| Entity ID (audience) | the same URL, unless `SAML_SP_ENTITY_ID` is set |
+| Entity ID (audience) | the same URL, unless set on the SAML row in Settings > Sign-in apps (or `SAML_SP_ENTITY_ID`); set `NEXT_PUBLIC_SAML_SP_ENTITY_ID` on the web app to match so the domain page shows it |
 | ACS (reply) URL | `${API_URL}/api/auth/sso/saml/acs` (HTTP-POST) |
 | NameID | the user's email address (persistent or email format preferred) |
 | Attributes | optional: `givenName`/`sn`, `firstName`/`lastName`, or the `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/{givenname,surname,emailaddress}` claims |
@@ -182,7 +244,12 @@ interface SsoAdapter {
   id: string;            // stored on school_email_domain.sso_provider and account.identity
   label: string;         // "Continue with <label>"
   kind: 'oauth' | 'saml';
-  isEnabled(): boolean;                         // credentials present + in SSO_PROVIDERS
+  adminLabel?: string; adminNotes?: string;     // organisation console card
+  needsClient: boolean;                         // OAuth client ID + secret?
+  settingFields: SsoSettingField[];             // non-secret console settings
+  envConfig(): SsoProviderConfig;               // what the env vars say
+  useConfig(source): void; config(): SsoProviderConfig; // live config (console over env)
+  isEnabled(): boolean;                         // switched on + complete credentials
   readyFor(domain): boolean;                    // has this school set it up?
   start(ctx): Promise<{ url, secrets }>;        // provider sign-in URL
   complete(ctx): Promise<SsoIdentity>;          // check the response
@@ -204,6 +271,7 @@ export class KeycloakAdapter extends OidcAdapter {
       label: 'Keycloak',
       clientIdEnv: 'KEYCLOAK_CLIENT_ID',
       clientSecretEnv: 'KEYCLOAK_CLIENT_SECRET',
+      adminNotes: 'Create a confidential client in your realm ...',
     });
   }
 
@@ -220,10 +288,15 @@ export class KeycloakAdapter extends OidcAdapter {
 }
 ```
 
-Register it in `backend/src/sso/sso.registry.ts`, register the redirect URI
-`${API_URL}/api/auth/sso/callback` with the provider, set its env vars and
-add its id to `SSO_PROVIDERS`. The login pages and the admin picker read the
-list from `GET /api/auth/sso/providers`, so no frontend change is needed.
+Register it in `createAdapters()` in `backend/src/sso/sso.registry.ts` and
+register the redirect URI `${API_URL}/api/auth/sso/callback` with the
+provider. It then gets its own row in the organisation console (Settings > Sign-in apps),
+where its client ID and secret are entered and it is switched on; env vars
+plus `SSO_PROVIDERS` remain the fallback. Read credentials through
+`this.clientId()` / `this.clientSecret()` / `this.config()`, never
+`process.env` directly, so console settings apply. The login pages, the
+admin picker and the console read the list from the API, so no frontend
+change is needed.
 
 `vouchesForDomain` is the security boundary: it decides whether an identity
 from that provider may join a school by its email domain. Base it on

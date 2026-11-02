@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { CourseCopyService } from './course-copy.service';
@@ -25,7 +27,8 @@ import { CopyCourseDto, ImportCourseContentDto } from './dto/course-copy.dto';
 @ApiTags('Courses')
 @ApiBearerAuth()
 @Controller('courses')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard, FeatureGuard, PermissionGuard)
+@RequireFeature('course_copy')
 export class CourseCopyController {
   constructor(private readonly copies: CourseCopyService) {}
 

@@ -31,9 +31,11 @@ function initials(p: ChatParticipant) {
 export function NewChatDialog({
   open,
   onOpenChange,
+  description = "Pick someone in your school to start a conversation.",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  description?: string;
 }) {
   useSignals();
   const users = useSignal<ChatParticipant[]>([]);
@@ -68,9 +70,7 @@ export function NewChatDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>New message</DialogTitle>
-          <DialogDescription>
-            Pick someone in your school to start a conversation.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <Input

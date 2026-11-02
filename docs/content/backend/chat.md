@@ -6,7 +6,7 @@ sidebar_label: Chat
 
 **Location**: `backend/src/chat/`
 
-Real-time direct messaging between users in the same school. Any active member can message any other active member; messages are delivered live over **Server-Sent Events (SSE)**, fanned out across the stateless backend replicas by **Redis pub/sub**. The same surface renders **system messages** — a shared file or a class invitation arrive in the relevant DM as a message with an inline action button.
+Real-time direct messaging between users in the same school. Staff can message any other active staff member; students take part only when the `student_messaging` feature is on (see [Students](#students) and [Platform features](./features.md)); messages are delivered live over **Server-Sent Events (SSE)**, fanned out across the stateless backend replicas by **Redis pub/sub**. The same surface renders **system messages** — a shared file or a class invitation arrive in the relevant DM as a message with an inline action button.
 
 Postgres is the source of truth for every message. Redis is only a fan-out bus, so nothing is lost if Redis restarts (prod runs it with `--appendonly no`).
 
@@ -94,17 +94,17 @@ State is shared across replicas in Redis: a per-user connection counter (`presen
 
 ## REST API
 
-All routes are under `/chat`, guarded by `AuthGuard` + `PermissionGuard` and require the `chat:*` catalog permissions (granted to `admin`, `teacher`, and `member` by default; ownership of a given message is enforced per-row in the service).
+All routes are under `/chat`, guarded by `AuthGuard`, `FeatureGuard` (the `messaging` feature; `403 FEATURE_DISABLED` while it is off) and `ChatAccessGuard`. For staff, `ChatAccessGuard` is `PermissionGuard` with the `chat:*` catalog permissions (granted to `admin`, `teacher`, and `member` by default; ownership of a given message is enforced per-row in the service). Students hold no catalog permissions: they pass while their school has `student_messaging` on, and never on channel routes.
 
 | Method | Path | Permission | Purpose |
 |--------|------|------------|---------|
 | `GET` | `/chat/stream` | `chat:read` | SSE event stream (see above) |
-| `GET` | `/chat/users` | `chat:read` | Active users in your school you can message |
+| `GET` | `/chat/users` | `chat:read` | Who you can message: staff see active staff, plus the students they teach when `student_messaging` is on; a student sees the staff who teach them |
 | `GET` | `/chat/presence` | `chat:read` | `{ online: string[] }` — user ids currently online in your school |
 | `GET` | `/chat/unread-count` | `chat:read` | `{ count }` total unread, for the sidebar badge |
 | `GET` | `/chat/conversations` | `chat:read` | Your conversations, newest first, with preview + unread |
-| `POST` | `/chat/conversations` | `chat:create` | Start (or reuse) a DM: `{ userId }` |
-| `POST` | `/chat/channels` | `chat:create` | Create a channel (**feature-flagged**, see below) |
+| `POST` | `/chat/conversations` | `chat:create` | Start (or reuse) a DM: `{ userId }` (rules for students below) |
+| `POST` | `/chat/channels` | `chat:create` | Create a channel of staff (the `chat_channels` feature; never students) |
 | `GET` | `/chat/conversations/:id/messages` | `chat:read` | History, newest first; cursor via `?before=<iso>&limit=` |
 | `POST` | `/chat/conversations/:id/messages` | `chat:create` | Send text: `{ body }` |
 | `POST` | `/chat/conversations/:id/read` | `chat:update` | Advance your read marker |
@@ -112,13 +112,29 @@ All routes are under `/chat`, guarded by `AuthGuard` + `PermissionGuard` and req
 | `DELETE` | `/chat/messages/:id` | `chat:delete` | Soft-delete your own message |
 | `POST` | `/chat/messages/:id/action` | `chat:update` | Act on a system message: `{ action: 'accept' \| 'dismiss' }` |
 
+## Students
+
+With `student_messaging` effective for their school, a student can use the DM routes (`/chat/stream`, `/chat/presence`, `/chat/users`, `/chat/unread-count`, `/chat/conversations`, messages, read markers, editing and deleting their own messages). While it is off they get `403 FEATURE_DISABLED` (`feature: "student_messaging"`) on every chat route, and staff can still read the history.
+
+"Teaches" means the staff member is on a course's staff (`course.course_staff`) where the student has an active enrolment (`course.course_student.status = 'active'`).
+
+| Action | Rule |
+| --- | --- |
+| Student directory | Only active staff who teach them. |
+| Staff directory | Active staff; students only with `student_messaging` on, and only the ones they teach. |
+| Student starts a DM | Only with a staff member who teaches them. |
+| Staff starts a DM with a student | Only with `student_messaging` on and only a student they teach. |
+| Student with student | Never (`403` "Students cannot message each other"). |
+| Reply rule | In an existing DM between a student and staff, either side may write (and reopen it with `POST /chat/conversations`) even if the staff member no longer teaches the student, while `student_messaging` is on. |
+| Channels | Students cannot create, list, read or post in channels; channel members must be staff. |
+
 ## System messages
 
 `ChatSystemService` lets other features drop messages into the sender↔recipient DM. Every method is **best-effort**: a chat failure is logged and swallowed so it never breaks the originating action, and the chat message is a *notification surface*, not the authority for access.
 
 ### File share → "Accept & view file"
 
-`FileManagerService.share` calls `notifyFileShares` after creating shares. For each **direct-user** share (role/group shares are skipped — they have no single DM, and the file manager's own notification still covers them) it ensures the owner↔recipient DM and posts a `file_share` message with `metadata { fileId, shareId, fileName, canDownload }` and `action_state = 'pending'`. The recipient sees **Accept & view file**; accepting sets `action_state = 'accepted'` and opens the file. **Access was already granted by the `file_share` row** — accepting is acknowledgement, not authorization.
+`FileManagerService.share` calls `notifyFileShares` after creating shares. For each **direct-user** share (role/group shares are skipped — they have no single DM, and the file manager's own notification still covers them) it ensures the owner↔recipient DM and posts a `file_share` message (nothing is posted while the school has `messaging` off, nor to a student while `student_messaging` is off) with `metadata { fileId, shareId, fileName, canDownload }` and `action_state = 'pending'`. The recipient sees **Accept & view file**; accepting sets `action_state = 'accepted'` and opens the file. **Access was already granted by the `file_share` row** — accepting is acknowledgement, not authorization.
 
 ### Class invite → "View class"
 
@@ -126,9 +142,9 @@ All routes are under `/chat`, guarded by `AuthGuard` + `PermissionGuard` and req
 
 Both integrations depend on `ChatModule` being `@Global` so `ChatSystemService` injects without an import cycle (chat never imports file-manager or class).
 
-## Feature flag: channels
+## Features: messaging and channels
 
-Direct messages are always on. Multi-participant **channels** are built into the schema and service but gated behind `CHAT_CHANNELS_ENABLED` (default `false`). While off, `POST /chat/channels` and `ChatService.createChannel` throw `403`. Turn it on per environment when the channel UI ships.
+Chat is the `messaging` feature (on by default). Multi-participant **channels** are the `chat_channels` feature (off by default, requires `messaging`); it replaces the old `CHAT_CHANNELS_ENABLED` environment variable. While it is off, `POST /chat/channels`, `ChatService.createChannel` and posting in an existing channel answer `403 FEATURE_DISABLED`. The organisation switches these on in its settings, and a school can switch them off; see [Platform features](./features.md).
 
 ## Known limitations / future work
 

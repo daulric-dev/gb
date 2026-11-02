@@ -8,25 +8,33 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { api, ApiError } from "@/lib/api";
 import {
   formatLimitMb,
-  UPLOAD_LIMIT_PATH,
   uploadLimitStops,
   type UploadLimit,
 } from "@/lib/files/upload-limit";
-import { usePermissions } from "@/providers/PermissionsProvider";
+import { CURRENT_SCHOOL_API } from "@/lib/organisation";
+import { useOptionalCan } from "@/providers/PermissionsProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 
 /**
- * The school's largest upload (school:update only), picked on a slider that
- * snaps to set stops up to the platform ceiling. "Use platform default"
- * clears the school's own value.
+ * The school's largest upload, picked on a slider that snaps to set stops up
+ * to the platform ceiling. "Use platform default" clears the school's own
+ * value. By default the active school's (school:update only); the
+ * organisation console passes one school's `apiBase` and `canEdit`.
  */
-export function UploadLimitSettings() {
+export function UploadLimitSettings({
+  apiBase = CURRENT_SCHOOL_API,
+  canEdit,
+}: {
+  apiBase?: string;
+  canEdit?: boolean;
+} = {}) {
   useSignals();
-  const { can } = usePermissions();
-  const allowed = can("school", "update");
+  const can = useOptionalCan();
+  const allowed = canEdit ?? can("school", "update");
+  const path = `${apiBase}/upload-limit`;
   const limit = useSignal<UploadLimit | null>(null);
   /** The slider's position, in MB. */
   const draft = useSignal(0);
@@ -34,13 +42,13 @@ export function UploadLimitSettings() {
 
   useEffect(() => {
     if (!allowed) return;
-    api<UploadLimit>(UPLOAD_LIMIT_PATH)
+    api<UploadLimit>(path)
       .then((res) => {
         limit.value = res;
         draft.value = res.uploadLimitMb;
       })
       .catch(() => toast.error("Failed to load the upload limit"));
-  }, [allowed, limit, draft]);
+  }, [allowed, path, limit, draft]);
 
   if (!allowed || !limit.value) return null;
   const current = limit.value;
@@ -52,7 +60,7 @@ export function UploadLimitSettings() {
   async function save(maxUploadMb: number | null) {
     saving.value = true;
     try {
-      const res = await api<UploadLimit>(UPLOAD_LIMIT_PATH, {
+      const res = await api<UploadLimit>(path, {
         method: "PATCH",
         body: { maxUploadMb },
       });
@@ -72,7 +80,7 @@ export function UploadLimitSettings() {
     <Card className="p-6">
       <h2 className="text-lg font-semibold">Upload size limit</h2>
       <p className="text-sm text-muted-foreground mb-4">
-        The largest file anyone in your school can upload, including
+        The largest file anyone in the school can upload, including
         assignment hand-ins. Currently {formatLimitMb(current.uploadLimitMb)}
         {current.maxUploadMb === null ? " (platform default)" : ""}.
       </p>

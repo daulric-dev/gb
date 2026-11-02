@@ -3,7 +3,12 @@ import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 globalThis.document ??= { cookie: "" } as unknown as Document;
 globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 
-import { ApiError, api, setUnauthorizedHandler } from "@/lib/api";
+import {
+  ApiError,
+  api,
+  setFeatureDisabledHandler,
+  setUnauthorizedHandler,
+} from "@/lib/api";
 
 type MockedFetch = typeof fetch & {
   mock: {
@@ -165,6 +170,55 @@ describe("401 handling", () => {
     // bun has no implementation for - the point here is only that the handler
     // is not called once it has been removed.
     await api("/auth/me").catch(() => {});
+    expect(called).toBe(0);
+  });
+});
+
+describe("FEATURE_DISABLED handling", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            code: "FEATURE_DISABLED",
+            feature: "files",
+            message: "Files are turned off for your school",
+          }),
+          { status: 403 },
+        ),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    setFeatureDisabledHandler(null);
+  });
+
+  test("throws an ApiError carrying code, feature and message", async () => {
+    const error = (await api("/files").catch((e: unknown) => e)) as ApiError;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(403);
+    expect(error.code).toBe("FEATURE_DISABLED");
+    expect(error.feature).toBe("files");
+    expect(error.message).toBe("Files are turned off for your school");
+  });
+
+  test("calls the registered handler", async () => {
+    const seen: string[] = [];
+    setFeatureDisabledHandler((e) => seen.push(e.feature ?? ""));
+    await api("/files").catch(() => {});
+    expect(seen).toEqual(["files"]);
+  });
+
+  test("a plain 403 does not call it", async () => {
+    globalThis.fetch = mock(
+      async () => new Response(JSON.stringify({ message: "Forbidden" }), { status: 403 }),
+    ) as unknown as typeof fetch;
+    let called = 0;
+    setFeatureDisabledHandler(() => (called += 1));
+    await api("/files").catch(() => {});
     expect(called).toBe(0);
   });
 });

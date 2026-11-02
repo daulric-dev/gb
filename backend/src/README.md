@@ -9,7 +9,7 @@ Every folder below has its own README with its routes, exports, consumers, table
 | File | What it does |
 | --- | --- |
 | `app.module.ts` | The root module. Imports every feature module, configures `ConfigModule` (global) and `ThrottlerModule` with four named throttlers (`default`, `auth-strict`, `auth-ip`, `claim-code` - see [throttle/README.md](./throttle/README.md)), and registers two global guards: `ThrottlerGuard` and `VersioningGuard`. `QueueModule` is imported as `QueueModule.forRoot()`, which picks Redis or inline mode. |
-| `createApp.ts` | Builds the Nest app on Fastify; `main.ts` is its only caller. Sets Fastify `trustProxy` from `TRUST_PROXY_HOPS` (default 1); registers `@fastify/cookie` and the billing webhook raw-body hook (`billing/webhooks/raw-body.ts`) - no multipart parser, since file bytes go straight to storage with presigned URLs; mounts Swagger at `/docs` when `NODE_ENV !== 'production'`; sets the global prefix `api`; installs the global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`); adds two raw Fastify routes outside the prefix - `GET /` (`gb`) and `GET /health` (`ok`); and enables CORS for origins allowed by `config/origins.ts` with credentials, the `X-API-Version` and `X-GradeBook-App-Version` headers and an exposed `Content-Disposition`. Calls `app.init()` but not `listen()`. |
+| `createApp.ts` | Builds the Nest app on Fastify; `main.ts` is its only caller. Sets Fastify `trustProxy` from `TRUST_PROXY_HOPS` (default 1); registers `@fastify/cookie` - no multipart parser, since file bytes go straight to storage with presigned URLs; mounts Swagger at `/docs` when `NODE_ENV !== 'production'`; sets the global prefix `api`; installs the global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`); adds two raw Fastify routes outside the prefix - `GET /` (`gb`) and `GET /health` (`ok`); and enables CORS for origins allowed by `config/origins.ts` with credentials, the `X-API-Version` and `X-GradeBook-App-Version` headers and an exposed `Content-Disposition`. Calls `app.init()` but not `listen()`. |
 | `main.ts` | The server entry point: `createApp()` then `listen(PORT ?? 3001, '0.0.0.0')`. Used by `bun run start:dev` (`bun --watch src/main.ts`), `start:prod`, and the container image (`bun dist/src/main`), which is the supported deployment. |
 | `app.controller.ts` | `GET /api` - returns `AppService.getHello()`. |
 | `app.service.ts` | `getHello()` returns `'Hello World!'`. |
@@ -17,10 +17,9 @@ Every folder below has its own README with its routes, exports, consumers, table
 
 ## Request flow
 
-1. **Fastify** parses the request: cookies and, for billing webhooks, the raw body. CORS is applied.
+1. **Fastify** parses the request: cookies. CORS is applied.
 2. **Global guards** run on every route: `ThrottlerGuard` (rate limits), `VersioningGuard` (rejects a bad `X-API-Version`) and `AppVersionGuard` (426 for a mobile build below the minimum; registered by [app-version](./app-version/README.md)).
-3. **Route guards** declared with `@UseGuards(...)`: usually `AuthGuard` (resolves the `gb_session` cookie into `req.user`; from [auth](./auth/README.md)) followed by one of `PermissionGuard` + `@RequirePermission(resource, action)` ([permission](./permission/README.md)), `AdminGuard` ([auth](./auth/README.md)), `StudentGuard` ([student-portal](./student-portal/README.md)) or the billing guards. Course routes check course roles inside the service with `CourseAccessService` ([course](./course/README.md)).
-4. **Global interceptor** `BillingEntitlementInterceptor` (registered by [billing](./billing/README.md) as `APP_INTERCEPTOR`): when `BILLING_ENABLED=true`, refuses mutations with 402 for members of a school whose subscription has lapsed. It is an interceptor so that it runs after `AuthGuard` has identified the user.
+3. **Route guards** declared with `@UseGuards(...)`: usually `AuthGuard` (resolves the `gb_session` cookie into `req.user`; from [auth](./auth/README.md)) followed by one of `PermissionGuard` + `@RequirePermission(resource, action)` ([permission](./permission/README.md)), `AdminGuard` ([auth](./auth/README.md)), `StudentGuard` ([student-portal](./student-portal/README.md)) or `OrganisationAdminGuard` ([organisation](./organisation/README.md)). Routes of a platform feature also carry `FeatureGuard` + `@RequireFeature(key)` ([features](./features/README.md)), which answers 403 `FEATURE_DISABLED` when the feature is off for the caller's school; chat uses `ChatAccessGuard` ([chat](./chat/README.md)) so students can pass with `student_messaging`. Course routes check course roles inside the service with `CourseAccessService` ([course](./course/README.md)).
 5. **Pipes**: the global `ValidationPipe` validates and transforms DTOs; some routes add `ParseUUIDPipe`.
 6. **Controller** -> **service** -> **`PrismaService`** (Postgres) and the other shared services (cache, storage, mail, queue, realtime). Some controllers pass the result through `VersioningService.resolve()`.
 
@@ -36,7 +35,6 @@ There is no row-level security in the database: guards and service code are the 
 | [app-version](./app-version/README.md) | Mobile app update check: public `GET /api/app/version` (minimum / latest version and store URL per platform) and a global guard answering 426 to app builds below the minimum. |
 | [attendance](./attendance/README.md) | Course attendance: check-in sessions, codes and rotating QR, student self check-in, live SSE feed; students who have not checked in when a session closes are marked absent. |
 | [auth](./auth/README.md) | Auth HTTP routes (email code sign-in, `me`, onboarding, join school by code, profile, avatar, logout), `AuthGuard` and `AdminGuard`. |
-| [billing](./billing/README.md) | Hosted-platform billing (off unless `BILLING_ENABLED=true`): plans, subscriptions, invoices, payment providers, webhooks, platform admin dashboard, the entitlement interceptor. |
 | [cache](./cache/README.md) | Global `CacheService` over a pluggable store (memory or Redis). |
 | [calendar](./calendar/README.md) | Due-date calendars for staff and students, with `.ics` export. |
 | [chat](./chat/README.md) | Direct messages over SSE with Redis fan-out, presence, system messages, encryption at rest (global module). |
@@ -55,6 +53,8 @@ There is no row-level security in the database: guards and service code are the 
 | [images](./images/README.md) | Avatar uploads (direct and presigned) and the public avatar route. |
 | [mail](./mail/README.md) | Global `MailService` over SMTP (nodemailer). |
 | [notifications](./notifications/README.md) | Push device registration and Expo push delivery. |
+| [organisation](./organisation/README.md) | The organisation that self-hosts the install: public first-run setup (`/setup`), organisation admins (`ORG_ADMIN_EMAILS` or `organisation_admin` rows) and their routes to create schools, appoint school admins and sign users out (`/organisation`). |
+| [features](./features/README.md) | Platform features the organisation switches on or off and schools may switch off (`FeatureService`, `FeatureGuard`, `@RequireFeature`); the catalog, the effective rule and where each one is enforced. Routes: `/organisation/features`, `/schools/current/features`. |
 | [pagination](./pagination/README.md) | Shared DTO and result type for offset and cursor pagination (`PaginationQueryDto`, `PaginatedResult`). |
 | [permission](./permission/README.md) | Permission catalog, custom school roles, `PermissionGuard` and `@RequirePermission`. |
 | [prisma](./prisma/README.md) | Global `PrismaService`: Prisma 7 with the `pg` driver adapter. |
@@ -68,7 +68,7 @@ There is no row-level security in the database: guards and service code are the 
 | [student-account](./student-account/README.md) | The school join code students redeem, and merging duplicate student records. |
 | [student-portal](./student-portal/README.md) | `/api/portal/me`: the student's own record, courses, work and grades; `StudentGuard`. |
 | [term](./term/README.md) | Terms within an academic year. |
-| [test](./test/README.md) | Unit-test helpers: `createMockPrisma()`, an in-memory cache, billing fakes, a fake SAML IdP. |
+| [test](./test/README.md) | Unit-test helpers: `createMockPrisma()`, an in-memory cache, erasure fakes, a fake SAML IdP. |
 | [throttle](./throttle/README.md) | Rate-limit trackers (client IP and session buckets) used by `app.module.ts`. |
 | [versioning](./versioning/README.md) | `X-API-Version` response versioning: service, global guard, transformer registry. |
 

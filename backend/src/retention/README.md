@@ -32,7 +32,7 @@ A dry run counts what each kind would purge and changes nothing (no storage call
 
 ## Scheduling
 
-`RetentionScheduler` ticks every 15 minutes in every API instance (not in tests). Each tick retries the erasure-log export; the purge runs when it is due: once `RETENTION_PURGE_INTERVAL_HOURS` (24) have passed since this instance last ran it, and - for a whole-day interval - during `RETENTION_PURGE_HOUR_UTC` (3). Like [`BillingScheduler`](../billing/README.md), the purge holds a transaction-scoped Postgres advisory lock (`pg_try_advisory_xact_lock(hashtext('gradebook:retention:purge'))`), so only one instance purges at a time; an instance that finds the lock held skips the day. A second instance running later the same day finds nothing left. `RETENTION_PURGE_ENABLED=false` stops the purge (the export still runs).
+`RetentionScheduler` ticks every 15 minutes in every API instance (not in tests). Each tick retries the erasure-log export; the purge runs when it is due: once `RETENTION_PURGE_INTERVAL_HOURS` (24) have passed since this instance last ran it, and - for a whole-day interval - during `RETENTION_PURGE_HOUR_UTC` (3). The purge holds a transaction-scoped Postgres advisory lock (`pg_try_advisory_xact_lock(hashtext('gradebook:retention:purge'))`), so only one instance purges at a time; an instance that finds the lock held skips the day. A second instance running later the same day finds nothing left. `RETENTION_PURGE_ENABLED=false` stops the purge (the export still runs).
 
 ## Used by
 

@@ -2,12 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { EXPO_PUSH_URL, PushService } from './push.service';
 import { createMockPrisma } from '@/test/prisma-mock';
 
+/** Every school has push notifications on. */
+const featuresOn = { isEnabled: async () => true };
+
 const token = (i: number) => `ExponentPushToken[tok-${i}]`;
 
 function setup(tokens: string[], respond?: (messages: any[]) => any) {
   const prisma = createMockPrisma();
   prisma.push_device.findMany.mockResolvedValue(tokens.map((t) => ({ token: t })));
-  const service = new PushService(prisma as any);
+  const service = new PushService(prisma as any, featuresOn as any);
   const requests: { url: string; init: RequestInit; messages: any[] }[] = [];
   service.fetchImpl = async (url, init) => {
     const messages = JSON.parse(String(init.body));
@@ -98,7 +101,7 @@ describe('PushService.sendToUsers', () => {
 describe('PushService devices', () => {
   test('register upserts on token so it moves to the caller', async () => {
     const prisma = createMockPrisma();
-    await new PushService(prisma as any).register('u-2', ' ExpoPushToken[a] ', 'ios');
+    await new PushService(prisma as any, featuresOn as any).register('u-2', ' ExpoPushToken[a] ', 'ios');
     const [args] = prisma.push_device.upsert.mock.calls[0];
     expect(args.where).toEqual({ token: 'ExpoPushToken[a]' });
     expect(args.create).toMatchObject({ user_id: 'u-2', token: 'ExpoPushToken[a]', platform: 'ios' });
@@ -107,8 +110,53 @@ describe('PushService devices', () => {
 
   test('unregister only touches the caller’s own token', async () => {
     const prisma = createMockPrisma();
-    await new PushService(prisma as any).unregister('u-2', 'ExpoPushToken[a]');
+    await new PushService(prisma as any, featuresOn as any).unregister('u-2', 'ExpoPushToken[a]');
     const [args] = prisma.push_device.deleteMany.mock.calls[0];
     expect(args.where).toEqual({ user_id: 'u-2', token: 'ExpoPushToken[a]' });
+  });
+});
+
+describe('PushService and the push_notifications feature', () => {
+  test('skips recipients whose school has push notifications off', async () => {
+    const prisma = createMockPrisma();
+    prisma.user_profile.findMany.mockResolvedValue([
+      { id: 'u-on', school_id: 's-on' },
+      { id: 'u-off', school_id: 's-off' },
+    ]);
+    prisma.push_device.findMany.mockResolvedValue([{ token: token(1) }]);
+    const checked: (string | null)[] = [];
+    const features = {
+      isEnabled: async (school: string | null, key: string) => {
+        expect(key).toBe('push_notifications');
+        checked.push(school);
+        return school === 's-on';
+      },
+    };
+    const service = new PushService(prisma as any, features as any);
+    let sent = 0;
+    service.fetchImpl = async (_url, init) => {
+      sent += JSON.parse(String(init.body)).length;
+      return new Response(JSON.stringify({ data: [{ status: 'ok' }] }), { status: 200 });
+    };
+
+    await service.sendToUsers(['u-on', 'u-off'], { title: 't', body: 'b' });
+
+    expect(checked.sort()).toEqual(['s-off', 's-on']);
+    expect(prisma.push_device.findMany.mock.calls[0][0].where.user_id.in).toEqual(['u-on']);
+    expect(sent).toBe(1);
+  });
+
+  test('sends nothing when it is off everywhere', async () => {
+    const prisma = createMockPrisma();
+    prisma.user_profile.findMany.mockResolvedValue([{ id: 'u-1', school_id: 's-1' }]);
+    const service = new PushService(prisma as any, { isEnabled: async () => false } as any);
+    let calls = 0;
+    service.fetchImpl = async () => {
+      calls++;
+      return new Response('{}', { status: 200 });
+    };
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    expect(prisma.push_device.findMany).not.toHaveBeenCalled();
+    expect(calls).toBe(0);
   });
 });

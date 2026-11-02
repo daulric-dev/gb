@@ -1,6 +1,8 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
+import { FeatureService } from '@/features/feature.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { AttendanceService } from './attendance.service';
 import { ScanClaimDto } from './dto/attendance.dto';
 
@@ -13,7 +15,11 @@ import { ScanClaimDto } from './dto/attendance.dto';
 @ApiTags('Attendance')
 @Controller('attendance')
 export class ScanClaimController {
-  constructor(private readonly attendance: AttendanceService) {}
+  constructor(
+    private readonly attendance: AttendanceService,
+    private readonly features: FeatureService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // Keyed by IP for anonymous callers; generous enough for a whole class
   // behind one school NAT, tight enough to stop token guessing.
@@ -21,6 +27,17 @@ export class ScanClaimController {
   @Post('scan-claim')
   @HttpCode(200)
   async scanClaim(@Body() dto: ScanClaimDto) {
+    // Public: the school comes from the session's course. An unknown session
+    // falls through to the service's own error.
+    const session = await this.prisma.attendance_session
+      .findUnique({
+        where: { id: dto.sessionId },
+        select: { course: { select: { school_id: true } } },
+      })
+      .catch(() => null);
+    if (session?.course) {
+      await this.features.assertEnabled(session.course.school_id, 'attendance');
+    }
     return this.attendance.scanClaim(dto.sessionId, dto.qrToken);
   }
 }

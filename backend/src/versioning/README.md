@@ -28,7 +28,7 @@ Only version 1 exists today, and every v1 transformer is a pass-through. The web
 | `announcement` | `list`, `detail`, `created`, `updated`, `deleted`, `unreadCount`, `markRead` | `src/announcement/transformer.ts` | `src/announcement/announcement.controller.ts` |
 | `images` | `uploaded`, `resumable` | `src/images/transformer.ts` | `src/auth/auth.controller.ts` (avatar upload routes) |
 
-Routes in other modules (courses, grading, files, chat, billing, ...) do not go through versioning; they return their results directly.
+Routes in other modules (courses, grading, files, chat, organisation, ...) do not go through versioning; they return their results directly.
 
 ## Used by
 

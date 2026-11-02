@@ -29,6 +29,7 @@ import {
   type CourseNotification,
   type PortalCalendarItem,
 } from "@/lib/calendar";
+import { withFeature } from "@/components/layout/FeatureGate";
 
 function timeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, {
@@ -118,7 +119,7 @@ function NoticeRow({
  * What is coming up: unread notices about new work, announcements and
  * discussions, then every due date in the next two months, day by day.
  */
-export default function PortalCalendarScreen() {
+function PortalCalendarScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const [items, setItems] = useState<PortalCalendarItem[]>([]);
@@ -234,3 +235,5 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1, gap: 2 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 });
+
+export default withFeature("calendar", "Calendar", PortalCalendarScreen);

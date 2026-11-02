@@ -193,9 +193,9 @@ Before any release build, run `bunx expo install --check`. Mobile's dependency v
 
 Automatic. `.github/workflows/docs.yml` typechecks, builds and deploys on every push to `main` touching `docs/**`. `DOCS_BASE` defaults to `/gb/`; set it if you serve from a custom domain or a differently-named repository.
 
-### Single-school instances
+### The organisation and its schools
 
-`DEDICATED_DEPLOYMENT=true` (and `NEXT_PUBLIC_DEDICATED_DEPLOYMENT=true`) pins an instance to one school and skips school selection. See **[Dedicated deployment](./dedicated-deployment.md)**.
+Each install is run by one organisation, which may have several schools. On a new install the first person to sign in names the organisation (first-run setup) and becomes its admin; set `ORG_ADMIN_EMAILS` to decide in advance who that may be. Organisation admins then create schools and appoint each school's admin. See **[Organisation](./backend/organisation.md)**.
 
 ---
 

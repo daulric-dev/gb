@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { useAuth, type UserProfile } from "@/providers/AuthProvider";
 import { homePathFor } from "@/lib/routing";
+import { useSetupGate } from "@/lib/setup";
 import type { SsoSuggestedProfile } from "@/lib/sso";
 import { cn } from "@/lib/utils";
 import { GraduationCap, Briefcase } from "lucide-react";
@@ -58,6 +59,7 @@ export default function OnboardPage() {
   const loading = useSignal(false);
   // Signed in through the school's provider, which already knows their name.
   const fromSso = useSignal(false);
+  useSetupGate(!!profile.value);
 
   useEffect(() => {
     let cancelled = false;

@@ -16,11 +16,10 @@ import {
   BookOpen,
   CalendarDays,
   CalendarRange,
+  Building2,
   ChevronsUpDown,
-  CreditCard,
   FileText,
   FolderOpen,
-  GraduationCap,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -29,22 +28,18 @@ import {
   Scale,
   Settings,
   Shield,
-  ShieldEllipsis,
   UserRoundSearch,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import {
-  BILLING_PATH,
-  billingStatus,
-  loadPlatformAdmin,
-  platformAdmin,
-  resetBillingState,
-} from "@/lib/billing";
+import { ORGANISATION_PATH } from "@/lib/routing";
+import type { FeatureKey } from "@/lib/features";
+import { useFeatures } from "@/hooks/use-features";
 import type { UserProfile } from "@/providers/AuthProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { SchoolSwitcher } from "@/components/layout/school-switcher";
 import {
   Sidebar,
   SidebarContent,
@@ -74,8 +69,8 @@ type NavItem = {
   permission?: [string, string];
   /** Mirrors a backend AdminGuard rather than a catalog permission. */
   adminOnly?: boolean;
-  /** Only shown on the hosted platform, where billing is on. */
-  billing?: boolean;
+  /** Platform feature that must be on for the school. */
+  feature?: FeatureKey;
 };
 
 const navItems: NavItem[] = [
@@ -84,7 +79,12 @@ const navItems: NavItem[] = [
   // list; the API returns only the courses the caller has a role in.
   { title: "Courses", href: "/dashboard/courses", icon: BookOpen },
   // Due dates across the caller's own courses; no permission, like Courses.
-  { title: "Calendar", href: "/dashboard/calendar", icon: CalendarDays },
+  {
+    title: "Calendar",
+    href: "/dashboard/calendar",
+    icon: CalendarDays,
+    feature: "calendar",
+  },
   {
     title: "Students",
     href: "/dashboard/students",
@@ -108,18 +108,21 @@ const navItems: NavItem[] = [
     href: "/dashboard/files",
     icon: FolderOpen,
     permission: ["file", "read"],
+    feature: "files",
   },
   {
     title: "Messages",
     href: "/dashboard/chat",
     icon: MessagesSquare,
     permission: ["chat", "read"],
+    feature: "messaging",
   },
   {
     title: "Announcements",
     href: "/dashboard/announcements",
     icon: Megaphone,
     permission: ["announcement", "read"],
+    feature: "announcements",
   },
 ];
 
@@ -136,13 +139,6 @@ const adminNavItems: NavItem[] = [
     href: "/dashboard/email-domains",
     icon: AtSign,
     adminOnly: true,
-  },
-  {
-    title: "Billing",
-    href: BILLING_PATH,
-    icon: CreditCard,
-    permission: ["school", "update"],
-    billing: true,
   },
 ];
 
@@ -164,19 +160,18 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
   const router = useRouter();
   const { state } = useSidebar();
   const { can, isAdmin } = usePermissions();
+  const { hasFeature } = useFeatures();
+  const announcementsOn = hasFeature("announcements");
+  const filesOn = hasFeature("files");
+  const messagingOn = hasFeature("messaging");
   const collapsed = state === "collapsed";
-  const billingEnabled = billingStatus.value.enabled;
-
-  useEffect(() => {
-    if (billingEnabled) void loadPlatformAdmin();
-  }, [billingEnabled]);
 
   // Keep the unread badges fresh as the user navigates.
   useEffect(() => {
-    refreshAnnouncementUnread();
-    refreshFileUnread();
-    refreshChatUnread();
-  }, [pathname]);
+    if (announcementsOn) refreshAnnouncementUnread();
+    if (filesOn) refreshFileUnread();
+    if (messagingOn) refreshChatUnread();
+  }, [pathname, announcementsOn, filesOn, messagingOn]);
 
   async function handleLogout() {
     try {
@@ -184,15 +179,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     } catch {
       toast.error("Failed to logout");
     }
-    resetBillingState();
     router.push("/login");
     toast.success("Logged out");
   }
 
   const visibleAdminNavItems = adminNavItems.filter((item) =>
-    item.billing && !billingEnabled
-      ? false
-      : item.adminOnly
+    item.adminOnly
       ? isAdmin
       : !item.permission || can(item.permission[0], item.permission[1]),
   );
@@ -236,13 +228,19 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             </div>
           )}
         </Link>
-        {!collapsed && profile?.school?.name && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <GraduationCap className="size-3.5 shrink-0 text-muted-foreground" />
+        {!collapsed && profile?.organisation?.name && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="text-xs text-muted-foreground truncate flex-1">
-              {profile.school.name}
+              {profile.organisation.name}
             </span>
           </div>
+        )}
+        {!collapsed && profile?.school?.name && (
+          <SchoolSwitcher
+            schoolName={profile.school.name}
+            isOrgAdmin={!!profile.is_org_admin}
+          />
         )}
       </SidebarHeader>
 
@@ -254,8 +252,9 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
               {navItems
                 .filter(
                   (item) =>
-                    !item.permission ||
-                    can(item.permission[0], item.permission[1]),
+                    (!item.feature || hasFeature(item.feature)) &&
+                    (!item.permission ||
+                      can(item.permission[0], item.permission[1])),
                 )
                 .map((item) => {
                   const Icon = item.icon;
@@ -317,6 +316,25 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
                       </SidebarMenuItem>
                     );
                   })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {profile?.is_org_admin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Organisation</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    render={<Link href={ORGANISATION_PATH} />}
+                    tooltip="Organisation"
+                  >
+                    <Building2 className="size-4" />
+                    <span>Organisation</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -399,10 +417,10 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
               <Settings className="mr-2 size-4" />
               Settings
             </DropdownMenuItem>
-            {billingEnabled && platformAdmin.value && (
-              <DropdownMenuItem onClick={() => router.push("/platform")}>
-                <ShieldEllipsis className="mr-2 size-4" />
-                Platform admin
+            {profile?.is_org_admin && (
+              <DropdownMenuItem onClick={() => router.push(ORGANISATION_PATH)}>
+                <Building2 className="mr-2 size-4" />
+                Organisation
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={handleLogout}>

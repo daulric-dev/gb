@@ -28,6 +28,7 @@ import type {
   FolderContents,
   FolderItem,
 } from "@/features/files/types";
+import { withFeature } from "@/components/layout/FeatureGate";
 
 const TABS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
@@ -45,7 +46,7 @@ function ListSkeleton() {
   );
 }
 
-export default function FilesScreen() {
+function FilesScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const toast = useToast();
@@ -433,3 +434,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 });
+
+export default withFeature("files", "Files", FilesScreen);

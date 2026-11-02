@@ -7,14 +7,11 @@ import {
   type CacheProvider,
   type Profile,
 } from '@node-saml/node-saml';
-import {
-  emailDomainOf,
-  enabledProviders,
-  samlAcsUrl,
-  samlEntityId,
-} from '../sso.config';
+import { emailDomainOf, samlAcsUrl, samlEntityId } from '../sso.config';
 import type {
   SsoAdapter,
+  SsoProviderConfig,
+  SsoSettingField,
   SsoCompleteContext,
   SsoDomainConfig,
   SsoDomainContext,
@@ -105,9 +102,30 @@ export class SamlAdapter implements SsoAdapter {
   readonly id = 'saml';
   readonly label = 'your school (SSO)';
   readonly kind = 'saml' as const;
+  readonly adminLabel = 'SAML 2.0';
+  readonly adminNotes =
+    'No app to register: each email domain connects its own identity provider (ADFS, Okta, ClassLink, Google or Entra SAML, Shibboleth). Give the identity provider the metadata URL below, or the ACS URL and entity ID.';
+  readonly needsClient = false;
+  readonly settingFields: readonly SsoSettingField[] = [];
 
-  isEnabled(): boolean {
-    return enabledProviders().has(this.id);
+  /**
+   * Always on: there is nothing install-wide to switch. A school uses SAML
+   * by entering its identity provider's details on an email domain.
+   */
+  envConfig(): SsoProviderConfig {
+    return { enabled: true, clientId: null, clientSecret: null, settings: {} };
+  }
+
+  available(): boolean {
+    return true;
+  }
+
+  /**
+   * Our entity ID (SAML_SP_ENTITY_ID, else the metadata URL). One for the
+   * whole install: identity providers already set up with it keep working.
+   */
+  entityId(): string {
+    return samlEntityId();
   }
 
   readyFor(domain: SsoDomainConfig): boolean {
@@ -124,9 +142,9 @@ export class SamlAdapter implements SsoAdapter {
     if (!cert) throw new Error(`Invalid SAML certificate on ${domain.domain}`);
     return new SAML({
       entryPoint: domain.samlEntryPoint!.trim(),
-      issuer: samlEntityId(),
+      issuer: this.entityId(),
       callbackUrl: samlAcsUrl(),
-      audience: samlEntityId(),
+      audience: this.entityId(),
       idpCert: cert,
       idpIssuer: domain.samlIssuer!.trim(),
       wantAssertionsSigned: true,
@@ -251,7 +269,7 @@ export class SamlAdapter implements SsoAdapter {
   /** Our SP metadata, for the school to load into its IdP. */
   metadata(): string {
     return generateServiceProviderMetadata({
-      issuer: samlEntityId(),
+      issuer: this.entityId(),
       callbackUrl: samlAcsUrl(),
       wantAssertionsSigned: true,
       identifierFormat: null,

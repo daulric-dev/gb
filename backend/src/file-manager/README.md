@@ -25,7 +25,7 @@ Other modules reuse the service to store student hand-ins and to read file bytes
 
 ### HTTP routes
 
-Every route is behind `AuthGuard` and `PermissionGuard`, with the `file:*` key shown. Ownership is checked again in the service: rename, move, delete and shares are for the owner only (403 otherwise), and folders are always private to their owner. Literal paths (`folders`, `notifications`, `upload-ticket`) are declared before `:id`.
+Every route is behind `AuthGuard`, `FeatureGuard` and `PermissionGuard`. The `files` feature ([`src/features`](../features/README.md)) gates only folders, moving files, shares and share notifications (403 `FEATURE_DISABLED` while off); listing, uploading, opening, renaming and deleting your own files stay available so teachers can still add course content, with the `file:*` key shown. With `messaging` off, sharing posts no chat message. Ownership is checked again in the service: rename, move, delete and shares are for the owner only (403 otherwise), and folders are always private to their owner. Literal paths (`folders`, `notifications`, `upload-ticket`) are declared before `:id`.
 
 | Method | Path | Permission | What it does |
 | --- | --- | --- | --- |

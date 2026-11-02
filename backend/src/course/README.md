@@ -12,7 +12,7 @@ Access inside a course is decided by the caller's course role, worked out by `Co
 
 ### HTTP routes
 
-All routes use `AuthGuard`. `CourseController` and `CourseCopyController` also use `PermissionGuard`, but only the routes marked with a permission below carry `@RequirePermission`.
+All routes use `AuthGuard`. `CourseController` and `CourseCopyController` also use `PermissionGuard`, but only the routes marked with a permission below carry `@RequirePermission`. `CourseCopyController` (templates, copy, import) also needs the `course_copy` feature (`FeatureGuard`, [`src/features`](../features/README.md)), and so does `PATCH /courses/:courseId` with `isTemplate: true`; course files are not gated by `files`.
 
 **Courses** (`CourseController`, `course.controller.ts`)
 

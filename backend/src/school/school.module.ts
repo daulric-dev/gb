@@ -10,6 +10,6 @@ import { SchoolLogoService } from './school-logo.service';
   imports: [FileManagerModule, ImagesModule],
   controllers: [SchoolController],
   providers: [SchoolService, SchoolLogoService],
-  exports: [SchoolService],
+  exports: [SchoolService, SchoolLogoService],
 })
 export class SchoolModule {}

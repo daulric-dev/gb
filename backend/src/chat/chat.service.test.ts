@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   BadRequestException,
   ConflictException,
@@ -10,10 +10,14 @@ import { ChatEventType } from './chat.constants';
 import { expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { FeatureDisabledException } from '@/features/feature-disabled.exception';
 
 const ME = '00000000-0000-4000-8000-000000000001';
 const YOU = '00000000-0000-4000-8000-000000000002';
 const THEM = '00000000-0000-4000-8000-000000000003';
+/** Student accounts in school-1. */
+const STU = '00000000-0000-4000-8000-000000000004';
+const STU2 = '00000000-0000-4000-8000-000000000005';
 const CONV = '10000000-0000-4000-8000-000000000001';
 const MSG = '20000000-0000-4000-8000-000000000001';
 const T0 = new Date('2026-10-01T10:00:00.000Z');
@@ -67,6 +71,18 @@ describe('ChatService', () => {
     [ME]: 'school-1',
     [YOU]: 'school-1',
     [THEM]: 'school-2',
+    [STU]: 'school-1',
+    [STU2]: 'school-1',
+  };
+  const students = new Set([STU, STU2]);
+
+  /** Feature switches for every school; FeatureService's shape. */
+  let featureState: Record<string, boolean>;
+  const features = {
+    isEnabled: async (_school: string | null, key: string) => !!featureState[key],
+    assertEnabled: async (_school: string | null, key: string) => {
+      if (!featureState[key]) throw new FeatureDisabledException(key as any);
+    },
   };
 
   /** Make `userId` a member of CONV (or of nothing). */
@@ -96,8 +112,19 @@ describe('ChatService', () => {
     prisma = createMockPrisma();
     realtime = { publishToUsers: mock(async () => undefined) };
     cipher = fakeCipher();
+    featureState = { messaging: true, chat_channels: true, student_messaging: false };
     prisma.user_profile.findUnique.mockImplementation(async ({ where }) =>
-      where.id in schools ? { school_id: schools[where.id] } : null,
+      where.id in schools
+        ? {
+            school_id: schools[where.id],
+            account_type: students.has(where.id) ? 'student' : 'staff',
+          }
+        : null,
+    );
+    prisma.student.findFirst.mockImplementation(async ({ where }) =>
+      students.has(where.user_profile_id)
+        ? { id: `rec-${where.user_profile_id}`, school_id: 'school-1' }
+        : null,
     );
     prisma.conversation.findUnique.mockResolvedValue(convRow());
     prisma.message.create.mockImplementation(async ({ data }) =>
@@ -111,7 +138,13 @@ describe('ChatService', () => {
         action_state: data.action_state,
       }),
     );
-    service = new ChatService(prisma as any, realtime as any, cipher as any, createMockErasureLog() as any);
+    service = new ChatService(
+      prisma as any,
+      realtime as any,
+      cipher as any,
+      createMockErasureLog() as any,
+      features as any,
+    );
   });
 
   describe('directKey', () => {
@@ -130,10 +163,19 @@ describe('ChatService', () => {
         { userId: YOU, firstName: 'Ada', lastName: 'L', avatarUrl: null },
       ]);
       const arg = prisma.user_profile.findMany.mock.calls[0][0];
+      // Staff only: student messaging is off.
       expect(arg.where).toEqual({
         school_id: 'school-1',
         is_active: true,
         id: { not: ME },
+        // A staff profile needs a membership: an organisation admin managing
+        // the school without one is not in its directory.
+        OR: [
+          {
+            account_type: 'staff',
+            school_management: { some: { school_id: 'school-1' } },
+          },
+        ],
       });
       expect(arg.orderBy).toEqual({ first_name: 'asc' });
     });
@@ -241,24 +283,24 @@ describe('ChatService', () => {
   });
 
   describe('createChannel', () => {
-    let saved: string | undefined;
     beforeEach(() => {
-      saved = process.env.CHAT_CHANNELS_ENABLED;
-      process.env.CHAT_CHANNELS_ENABLED = 'true';
       prisma.conversation.create.mockResolvedValue(
         convRow({ type: 'channel', title: 'Staff', direct_key: null }),
       );
     });
-    afterEach(() => {
-      if (saved === undefined) delete process.env.CHAT_CHANNELS_ENABLED;
-      else process.env.CHAT_CHANNELS_ENABLED = saved;
+    test('403 FEATURE_DISABLED when chat_channels is off', async () => {
+      featureState.chat_channels = false;
+      const err: any = await expectRejection(service.createChannel(ME, 'x', [YOU]));
+      expect(err).toBeInstanceOf(FeatureDisabledException);
+      expect(err.getResponse()).toMatchObject({ code: 'FEATURE_DISABLED', feature: 'chat_channels' });
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
     });
 
-    test('403 when the feature flag is off', async () => {
-      process.env.CHAT_CHANNELS_ENABLED = 'false';
-      const err = await expectRejection(service.createChannel(ME, 'x', [YOU]));
+    test('students cannot create channels', async () => {
+      const err = await expectRejection(service.createChannel(STU, 'x', [ME]));
       expect(err).toBeInstanceOf(ForbiddenException);
-      expect((err as Error).message).toBe('Channels are not enabled');
+      expect((err as Error).message).toBe('Channels are for staff');
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
     });
 
     test('403 when a member is outside the school', async () => {
@@ -270,6 +312,8 @@ describe('ChatService', () => {
       expect(prisma.user_profile.findMany.mock.calls[0][0].where).toEqual({
         id: { in: [YOU, THEM] },
         school_id: 'school-1',
+        account_type: 'staff',
+        school_management: { some: { school_id: 'school-1' } },
       });
       expect(prisma.conversation.create).not.toHaveBeenCalled();
     });
@@ -847,6 +891,176 @@ describe('ChatService', () => {
       expect(
         (await service.ensureDirectConversationRow('school-1', ME, YOU)).id,
       ).toBe(CONV);
+    });
+  });
+
+  describe('students and student messaging', () => {
+    /** user_profile.findMany answers the student-account lookup by id. */
+    const studentLookup = () =>
+      prisma.user_profile.findMany.mockImplementation(async ({ where }) =>
+        where?.account_type === 'student'
+          ? (where.id.in as string[]).filter((id) => students.has(id)).map((id) => ({ id }))
+          : [],
+      );
+
+    test('a student directory is only the staff who teach them', async () => {
+      featureState.student_messaging = true;
+      prisma.course_staff.findMany.mockResolvedValue([
+        { user_profile_id: ME },
+        { user_profile_id: ME },
+      ]);
+      await service.listMessageableUsers(STU);
+      expect(prisma.course_staff.findMany.mock.calls[0][0].where).toEqual({
+        course: {
+          school_id: 'school-1',
+          course_student: { some: { student_id: `rec-${STU}`, status: 'active' } },
+        },
+      });
+      expect(prisma.user_profile.findMany.mock.calls[0][0].where).toEqual({
+        id: { in: [ME] },
+        school_id: 'school-1',
+        is_active: true,
+        account_type: 'staff',
+      });
+    });
+
+    test('a student has no directory while student messaging is off', async () => {
+      const err: any = await expectRejection(service.listMessageableUsers(STU));
+      expect(err).toBeInstanceOf(FeatureDisabledException);
+      expect(err.getResponse()).toEqual({
+        statusCode: 403,
+        code: 'FEATURE_DISABLED',
+        feature: 'student_messaging',
+        message: 'Students can message their teachers is turned off for your school',
+      });
+      expect(prisma.user_profile.findMany).not.toHaveBeenCalled();
+    });
+
+    test('staff see students only when on, and only the ones they teach', async () => {
+      await service.listMessageableUsers(ME);
+      expect(prisma.student.findMany).not.toHaveBeenCalled();
+
+      featureState.student_messaging = true;
+      prisma.user_profile.findMany.mockClear();
+      prisma.student.findMany.mockResolvedValue([{ user_profile_id: STU }]);
+      await service.listMessageableUsers(ME);
+      const studentWhere = prisma.student.findMany.mock.calls[0][0].where;
+      expect(studentWhere.course_student.some.course.course_staff).toEqual({
+        some: { user_profile_id: ME },
+      });
+      expect(studentWhere.course_student.some.status).toBe('active');
+      expect(prisma.user_profile.findMany.mock.calls[0][0].where.OR).toEqual([
+        {
+          account_type: 'staff',
+          school_management: { some: { school_id: 'school-1' } },
+        },
+        { id: { in: [STU] } },
+      ]);
+    });
+
+    test('two students can never start a DM', async () => {
+      featureState.student_messaging = true;
+      const err = await expectRejection(service.getOrCreateDirect(STU, STU2));
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as Error).message).toBe('Students cannot message each other');
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
+    });
+
+    test('a student cannot DM staff who do not teach them', async () => {
+      featureState.student_messaging = true;
+      prisma.course_staff.count.mockResolvedValue(0);
+      const err = await expectRejection(service.getOrCreateDirect(STU, ME));
+      expect((err as Error).message).toBe('You can only message your teachers');
+      expect(prisma.course_staff.count.mock.calls[0][0].where).toEqual({
+        user_profile_id: ME,
+        course: {
+          school_id: 'school-1',
+          course_student: {
+            some: { status: 'active', student: { user_profile_id: STU } },
+          },
+        },
+      });
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
+    });
+
+    test('a student can DM their teacher', async () => {
+      featureState.student_messaging = true;
+      prisma.course_staff.count.mockResolvedValue(1);
+      prisma.conversation.create.mockResolvedValue(convRow());
+      const res = await service.getOrCreateDirect(STU, ME);
+      expect(res.id).toBe(CONV);
+      expect(prisma.conversation.create).toHaveBeenCalledTimes(1);
+    });
+
+    test('staff DM a student only with the feature on and only if they teach them', async () => {
+      const off = await expectRejection(service.getOrCreateDirect(ME, STU));
+      expect(off).toBeInstanceOf(FeatureDisabledException);
+
+      featureState.student_messaging = true;
+      prisma.course_staff.count.mockResolvedValue(0);
+      const notTaught = await expectRejection(service.getOrCreateDirect(ME, STU));
+      expect((notTaught as Error).message).toBe('You can only message students you teach');
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
+    });
+
+    test('reply rule: a student may reopen and reply to a staff DM without the teaching check', async () => {
+      featureState.student_messaging = true;
+      prisma.course_staff.count.mockResolvedValue(0); // no longer their teacher
+      prisma.conversation.findFirst.mockResolvedValue(convRow());
+      expect((await service.getOrCreateDirect(STU, ME)).id).toBe(CONV);
+
+      memberOf(ME, STU);
+      studentLookup();
+      const sent = await service.sendMessage(STU, CONV, 'thanks');
+      expect(sent.body).toBe('thanks');
+      expect(prisma.course_staff.count).not.toHaveBeenCalled();
+    });
+
+    test('a student cannot reply once student messaging is off; staff still read history', async () => {
+      memberOf(ME, STU);
+      studentLookup();
+      const err: any = await expectRejection(service.sendMessage(STU, CONV, 'hi'));
+      expect(err).toBeInstanceOf(FeatureDisabledException);
+      expect(prisma.message.create).not.toHaveBeenCalled();
+
+      // Staff can neither write to the student...
+      const staffErr = await expectRejection(service.sendMessage(ME, CONV, 'hi'));
+      expect(staffErr).toBeInstanceOf(FeatureDisabledException);
+      // ...but can still read the conversation.
+      prisma.message.findMany.mockResolvedValue([msgRow()]);
+      expect(await service.listMessages(ME, CONV)).toHaveLength(1);
+    });
+
+    test('a student cannot post in a DM with another student', async () => {
+      featureState.student_messaging = true;
+      memberOf(STU, STU2);
+      studentLookup();
+      const err = await expectRejection(service.sendMessage(STU, CONV, 'hi'));
+      expect((err as Error).message).toBe('Students cannot message each other');
+    });
+
+    test('students cannot read or post in channels; staff posts need chat_channels', async () => {
+      featureState.student_messaging = true;
+      prisma.conversation.findUnique.mockResolvedValue(
+        convRow({ type: 'channel', title: 'Staff', direct_key: null }),
+      );
+      memberOf(ME, STU);
+      const read = await expectRejection(service.listMessages(STU, CONV));
+      expect((read as Error).message).toBe('Channels are for staff');
+
+      featureState.chat_channels = false;
+      const post: any = await expectRejection(service.sendMessage(ME, CONV, 'hi'));
+      expect(post.getResponse().feature).toBe('chat_channels');
+    });
+
+    test('a student never sees channel conversations in their list', async () => {
+      prisma.conversation_member.findMany.mockResolvedValue([
+        { conversation_id: CONV, last_read_at: null },
+      ]);
+      prisma.conversation.findMany.mockResolvedValue([
+        convRow({ type: 'channel', title: 'Staff', direct_key: null }),
+      ]);
+      expect(await service.listConversations(STU)).toEqual([]);
     });
   });
 });

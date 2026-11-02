@@ -45,6 +45,9 @@ export default function PortalSettingsScreen() {
           <Row label="Name" value={name} />
           <Row label="Email" value={profile?.email ?? "-"} />
           <Row label="School" value={profile?.school?.name ?? "-"} />
+          {profile?.organisation?.name ? (
+            <Row label="Organisation" value={profile.organisation.name} />
+          ) : null}
         </CardContent>
       </Card>
 

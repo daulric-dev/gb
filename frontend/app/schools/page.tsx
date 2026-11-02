@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
-import { homePathFor, isStudentProfile } from "@/lib/routing";
+import { homePathFor, isStudentProfile, ORGANISATION_PATH } from "@/lib/routing";
+import { useSetupGate } from "@/lib/setup";
+import Link from "next/link";
 import type { DomainJoinResult, DomainMatch } from "@/lib/email-domains";
 import { JoinCodeForm } from "@/components/auth/join-code-form";
 import { useSignal, useComputed } from "@preact/signals-react";
@@ -17,107 +19,23 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import {
   AtSign,
+  Building2,
   GraduationCap,
   Loader2,
   LogOut,
-  Plus,
   Search,
 } from "lucide-react";
-
-const isDedicated = process.env.NEXT_PUBLIC_DEDICATED_DEPLOYMENT === "true";
 
 interface School {
   id: string;
   name: string;
   parish: string | null;
   school_type: string | null;
-}
-
-function CreateSchoolForm({ onSuccess }: { onSuccess: (school: School) => void }) {
-  useSignals();
-
-  const name = useSignal("");
-  const schoolType = useSignal<"primary" | "secondary">("secondary");
-  const loading = useSignal(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    loading.value = true;
-    try {
-      const school = await api<School>("/schools", {
-        method: "POST",
-        body: {
-          name: name.value,
-          schoolType: schoolType.value,
-        },
-      });
-      onSuccess(school);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to create school";
-      toast.error(msg);
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="schoolName">School Name</Label>
-        <Input
-          id="schoolName"
-          placeholder="Gradebook Academy"
-          value={name.value}
-          onChange={(e) => (name.value = e.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="schoolType">Type</Label>
-        <Select
-          value={schoolType.value}
-          onValueChange={(v) => (schoolType.value = v as "primary" | "secondary")}
-          items={[
-            { value: "primary", label: "Primary" },
-            { value: "secondary", label: "Secondary" },
-          ]}
-        >
-          <SelectTrigger id="schoolType" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="primary">Primary</SelectItem>
-            <SelectItem value="secondary">Secondary</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading.value}>
-        {loading.value ? "Creating..." : "Create School"}
-      </Button>
-    </form>
-  );
 }
 
 /**
@@ -172,6 +90,9 @@ function DomainMatchCard({
   );
 }
 
+const NO_SELF_CREATE =
+  "Schools are added by your organisation's administrators. Ask your school for a join code, or ask an administrator to add you.";
+
 /** How often a waiting applicant re-checks whether they have been approved. */
 const POLL_MS = 8000;
 
@@ -185,7 +106,6 @@ export default function SchoolsPage() {
   const joiningId = useSignal<string | null>(null);
   const pendingSchoolId = useSignal<string | null>(null);
   const search = useSignal("");
-  const createOpen = useSignal(false);
   const domainMatch = useSignal<DomainMatch | null>(null);
   const domainJoining = useSignal(false);
 
@@ -200,6 +120,7 @@ export default function SchoolsPage() {
   });
 
   const settledProfile = profile.value;
+  useSetupGate(!profileLoading.value && !!settledProfile);
   useEffect(() => {
     if (!profileLoading.value && settledProfile?.school) {
       router.replace(homePathFor(settledProfile));
@@ -308,12 +229,6 @@ export default function SchoolsPage() {
     }
   }
 
-  function handleSchoolCreated(school: School) {
-    createOpen.value = false;
-    toast.success(`${school.name} created! You're now the admin.`);
-    router.push("/dashboard")
-  }
-
   async function handleLogout() {
     try {
       await api("/auth/logout", { method: "POST" });
@@ -326,7 +241,7 @@ export default function SchoolsPage() {
     : "";
 
   // A student joins by redeeming the code their school issued, so they get the
-  // code field alone - no school list, no create-a-school option.
+  // code field alone - no school list.
   if (isStudentProfile(profile.value)) {
     return (
       <AuthPageShell>
@@ -342,6 +257,10 @@ export default function SchoolsPage() {
           {otherWaysHeading}
 
           <JoinCodeForm />
+
+          <p className="text-center text-sm text-muted-foreground">
+            {NO_SELF_CREATE}
+          </p>
 
           <button
             type="button"
@@ -369,34 +288,25 @@ export default function SchoolsPage() {
           </p>
         </div>
 
+        {profile.value?.is_org_admin && (
+          <Button
+            variant="outline"
+            className="w-full"
+            nativeButton={false}
+            render={<Link href={ORGANISATION_PATH} />}
+          >
+            <Building2 className="mr-2 size-4" />
+            Manage your organisation
+          </Button>
+        )}
+
         {matchCard}
         {otherWaysHeading}
 
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg">Schools</CardTitle>
-                <CardDescription>Select a school to request access</CardDescription>
-              </div>
-              {!isDedicated && (
-                <Dialog open={createOpen.value} onOpenChange={(v) => (createOpen.value = v)}>
-                  <DialogTrigger render={<Button size="sm" variant="outline" />}>
-                    <Plus className="mr-1.5 size-3.5" />
-                    Create
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create a School</DialogTitle>
-                      <DialogDescription>
-                        Add a new school - you&apos;ll be assigned as its admin.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <CreateSchoolForm onSuccess={handleSchoolCreated} />
-                  </DialogContent>
-                </Dialog>
-              )}
-            </div>
+            <CardTitle className="text-lg">Schools</CardTitle>
+            <CardDescription>Select a school to request access</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {!loading.value && schools.value.length > 5 && (
@@ -467,6 +377,10 @@ export default function SchoolsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <p className="text-center text-sm text-muted-foreground">
+          {NO_SELF_CREATE}
+        </p>
 
         <div className="text-center">
           <Button variant="ghost" size="sm" onClick={handleLogout}>

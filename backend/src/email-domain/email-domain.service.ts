@@ -112,6 +112,25 @@ const hasSamlConfig = (d: {
   saml_certificate: string | null;
 }) => !!(d.saml_entry_point && d.saml_issuer && d.saml_certificate);
 
+export interface AddDomainInput {
+  domain: string;
+  audience: DomainAudience;
+  autoJoin?: boolean;
+  staffRole?: DomainStaffRole;
+}
+
+export interface UpdateDomainInput {
+  audience?: DomainAudience;
+  autoJoin?: boolean;
+  staffRole?: DomainStaffRole;
+  ssoProvider?: string | null;
+  ssoRequired?: boolean;
+  azureTenantId?: string | null;
+  samlEntryPoint?: string | null;
+  samlIssuer?: string | null;
+  samlCertificate?: string | null;
+}
+
 export interface DomainMatch {
   domainId: string;
   domain: string;
@@ -193,9 +212,17 @@ export class EmailDomainService {
   }
 
   // ── admin ─────────────────────────────────────────────────────────────────
+  //
+  // `list`/`add`/`update`/`remove`/`verify` act on the school admin's active
+  // school; the `...ForSchool` forms take the school explicitly, for the
+  // organisation console (src/organisation/sign-in.controller.ts), which
+  // checks the school exists first.
 
   async list(adminUserId: string) {
-    const schoolId = await this.adminSchool(adminUserId);
+    return this.listForSchool(await this.adminSchool(adminUserId));
+  }
+
+  async listForSchool(schoolId: string) {
     let data: DomainRecord[];
     try {
       data = await this.prisma.school_email_domain.findMany({
@@ -212,16 +239,34 @@ export class EmailDomainService {
     return data.map((d) => this.toDomain(toDomainRow(d)));
   }
 
-  async add(
-    adminUserId: string,
-    input: {
-      domain: string;
-      audience: DomainAudience;
-      autoJoin?: boolean;
-      staffRole?: DomainStaffRole;
-    },
-  ) {
+  /** Every school's domains, with the school's name, by school then domain. */
+  async listAll() {
+    let data: (DomainRecord & { school: { name: string | null } })[];
+    try {
+      data = await this.prisma.school_email_domain.findMany({
+        select: { ...DOMAIN_SELECT, school: { select: { name: true } } },
+        orderBy: [{ school: { name: 'asc' } }, { domain: 'asc' }],
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to list email domains: ${(error as Error).message}`,
+      );
+      throw new BadRequestException('Failed to load email domains');
+    }
+    return data.map(({ school, ...d }) => ({
+      schoolId: d.school_id,
+      schoolName: school.name ?? 'Unnamed school',
+      ...this.toDomain(toDomainRow(d)),
+    }));
+  }
+
+  async add(adminUserId: string, input: AddDomainInput) {
     const schoolId = await this.adminSchool(adminUserId);
+    return this.addToSchool(schoolId, adminUserId, input);
+  }
+
+  /** `actorId` is recorded as the domain's creator. */
+  async addToSchool(schoolId: string, actorId: string, input: AddDomainInput) {
     const domain = normalizeDomain(input.domain);
     if (!domain) {
       throw new BadRequestException('Enter a domain like riverside.edu');
@@ -254,7 +299,7 @@ export class EmailDomainService {
           auto_join: input.autoJoin ?? input.audience === 'student',
           staff_role: input.staffRole ?? 'teacher',
           verification_token: randomBytes(16).toString('hex'),
-          created_by: adminUserId,
+          created_by: actorId,
         },
         select: DOMAIN_SELECT,
       });
@@ -270,22 +315,11 @@ export class EmailDomainService {
     return this.toDomain(toDomainRow(data));
   }
 
-  async update(
-    adminUserId: string,
-    id: string,
-    patch: {
-      audience?: DomainAudience;
-      autoJoin?: boolean;
-      staffRole?: DomainStaffRole;
-      ssoProvider?: string | null;
-      ssoRequired?: boolean;
-      azureTenantId?: string | null;
-      samlEntryPoint?: string | null;
-      samlIssuer?: string | null;
-      samlCertificate?: string | null;
-    },
-  ) {
-    const schoolId = await this.adminSchool(adminUserId);
+  async update(adminUserId: string, id: string, patch: UpdateDomainInput) {
+    return this.updateInSchool(await this.adminSchool(adminUserId), id, patch);
+  }
+
+  async updateInSchool(schoolId: string, id: string, patch: UpdateDomainInput) {
     const row = await this.loadOwn(schoolId, id);
 
     const changes: Prisma.school_email_domainUncheckedUpdateInput = {};
@@ -294,8 +328,15 @@ export class EmailDomainService {
     if (patch.staffRole !== undefined) changes.staff_role = patch.staffRole;
 
     if (patch.ssoProvider !== undefined) {
-      if (patch.ssoProvider !== null && !this.sso.get(patch.ssoProvider)) {
-        throw new BadRequestException('That sign-in provider is not available');
+      // Only a provider this school can use: its own app, the install's
+      // env fallback, or SAML.
+      if (
+        patch.ssoProvider !== null &&
+        !(await this.sso.resolve(patch.ssoProvider, schoolId))
+      ) {
+        throw new BadRequestException(
+          'That sign-in provider is not set up for this school',
+        );
       }
       changes.sso_provider = patch.ssoProvider;
       if (patch.ssoProvider === null) changes.sso_required = false;
@@ -408,7 +449,10 @@ export class EmailDomainService {
 
   /** Removing a domain stops new joins; nobody already in is removed. */
   async remove(adminUserId: string, id: string) {
-    const schoolId = await this.adminSchool(adminUserId);
+    await this.removeFromSchool(await this.adminSchool(adminUserId), id);
+  }
+
+  async removeFromSchool(schoolId: string, id: string) {
     await this.loadOwn(schoolId, id);
     try {
       await this.prisma.school_email_domain.deleteMany({ where: { id } });
@@ -419,7 +463,10 @@ export class EmailDomainService {
 
   /** Look for the TXT record and, if it is there, take the domain. */
   async verify(adminUserId: string, id: string) {
-    const schoolId = await this.adminSchool(adminUserId);
+    return this.verifyInSchool(await this.adminSchool(adminUserId), id);
+  }
+
+  async verifyInSchool(schoolId: string, id: string) {
     const row = await this.loadOwn(schoolId, id);
     if (row.verified_at) return this.toDomain(row);
 
@@ -657,7 +704,8 @@ export class EmailDomainService {
   ): Promise<{ providerId: string; label: string } | null> {
     const domain = await this.verifiedDomainFor(email);
     if (!domain?.ssoRequired) return null;
-    const adapter = this.sso.get(domain.ssoProvider);
+    const resolved = await this.sso.resolve(domain.ssoProvider, domain.schoolId);
+    const adapter = resolved?.adapter;
     // Nor does one the school has not finished setting up.
     return adapter && adapter.readyFor(domain) ? { providerId: adapter.id, label: adapter.label } : null;
   }

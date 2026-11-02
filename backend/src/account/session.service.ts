@@ -42,7 +42,7 @@ export type RevokeReason =
   | 'signed_out_others'
   | 'signed_out_all'
   | 'admin'
-  | 'platform_admin'
+  | 'organisation_admin'
   | 'token_reuse'
   | 'account_deleted'
   | 'deactivated'

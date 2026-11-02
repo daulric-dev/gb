@@ -9,17 +9,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { FastifyRequest } from 'fastify';
 import { SchoolService } from './school.service';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AdminGuard } from '@/auth/admin.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
-import { CreateSchoolDto } from './dto/create-school.dto';
 import { CreateJoinRequestDto } from './dto/create-join-request.dto';
 import { ApproveJoinRequestDto } from './dto/approve-join-request.dto';
 import { UpdateUploadLimitDto } from './dto/update-upload-limit.dto';
@@ -29,6 +30,10 @@ import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
 import { SchoolLogoService } from './school-logo.service';
 import { userSchoolId } from '@/common/user-school';
 import { PrismaService } from '@/prisma/prisma.service';
+import { FeatureService } from '@/features/feature.service';
+import { UpdateFeaturesDto } from '@/features/feature.dto';
+import { SchoolSsoService } from '@/sso/school-sso.service';
+import { UpdateSchoolSsoProviderDto } from '@/sso/school-sso.dto';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
@@ -41,6 +46,8 @@ export class SchoolController {
     private readonly uploadLimits: UploadLimitService,
     private readonly prisma: PrismaService,
     private readonly logos: SchoolLogoService,
+    private readonly features: FeatureService,
+    private readonly schoolSso: SchoolSsoService,
   ) {}
 
   @Get()
@@ -85,6 +92,49 @@ export class SchoolController {
     const schoolId = await this.activeSchool(userId);
     const raw = await this.uploadLimits.setForSchool(schoolId, dto.maxUploadMb);
     return this.versioning.resolve(req, 'school.uploadLimit')(raw);
+  }
+
+  /**
+   * Platform features for the active school: what the organisation allows,
+   * what the school switched off, and what it gets.
+   */
+  @RequirePermission('school', 'update')
+  @Get('current/features')
+  async getFeatures(@Req() req: any) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.features.schoolFeatures(schoolId);
+  }
+
+  /** Switch features off for the school, or back on where allowed. */
+  @RequirePermission('school', 'update')
+  @Patch('current/features')
+  async updateFeatures(@Req() req: any, @Body() dto: UpdateFeaturesDto) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.features.updateSchoolFeatures(schoolId, dto.features);
+  }
+
+  /**
+   * The active school's own sign-in apps (Google, Microsoft) and our SAML
+   * service provider details. Secrets are never returned.
+   */
+  @RequirePermission('school', 'update')
+  @Get('current/sso/providers')
+  async getSsoProviders(@Req() req: any) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.schoolSso.list(schoolId, req as FastifyRequest);
+  }
+
+  /** Save one of the active school's sign-in apps. */
+  @RequirePermission('school', 'update')
+  @Put('current/sso/providers/:key')
+  async updateSsoProvider(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Body() dto: UpdateSchoolSsoProviderDto,
+  ) {
+    const userId = req.user.id as string;
+    const schoolId = await this.activeSchool(userId);
+    return this.schoolSso.update(schoolId, key, dto, userId, req as FastifyRequest);
   }
 
   /**
@@ -172,13 +222,6 @@ export class SchoolController {
   async rejectRequest(@Req() req: any, @Param('requestId') requestId: string) {
     const userId: string = req.user.id;
     return this.schoolService.rejectRequest(userId, requestId);
-  }
-
-  @Post()
-  async create(@Req() req: any, @Body() dto: CreateSchoolDto) {
-    const userId: string = req.user.id;
-    const raw = await this.schoolService.create(dto, userId);
-    return this.versioning.resolve(req, 'school.detail')(raw);
   }
 
   @Post(':schoolId/join-requests')

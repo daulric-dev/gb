@@ -14,6 +14,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { FileManagerService } from './file-manager.service';
@@ -30,10 +32,15 @@ import { MoveFolderDto } from './dto/move-folder.dto';
 import { BrowseFolderQueryDto } from './dto/browse-folder.query.dto';
 import { CreateUploadTicketDto } from './dto/upload-ticket.dto';
 
+/**
+ * The `files` feature gates the Files page's own tools - folders, moving,
+ * sharing and share notifications. Uploading, listing and opening your own
+ * files stay available with it off: course content attaches files from here.
+ */
 @ApiTags('File Manager')
 @ApiBearerAuth()
 @Controller('files')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard, FeatureGuard, PermissionGuard)
 export class FileManagerController {
   constructor(
     private readonly files: FileManagerService,
@@ -77,6 +84,7 @@ export class FileManagerController {
   // ── Folders (declared before :id so the literal path wins) ────────────────
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('folders/contents')
   async browseFolder(@Req() req: any, @Query() query: BrowseFolderQueryDto) {
     const userId: string = req.user.id;
@@ -84,6 +92,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('folders')
   async listFolders(@Req() req: any) {
     const userId: string = req.user.id;
@@ -91,6 +100,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'create')
+  @RequireFeature('files')
   @Post('folders')
   async createFolder(@Req() req: any, @Body() dto: CreateFolderDto) {
     const userId: string = req.user.id;
@@ -98,6 +108,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch('folders/:folderId')
   async renameFolder(
     @Req() req: any,
@@ -110,6 +121,7 @@ export class FileManagerController {
 
   /** Re-parent a folder (drag a folder into another folder, or to the root). */
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch('folders/:folderId/move')
   async moveFolder(
     @Req() req: any,
@@ -121,6 +133,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'delete')
+  @RequireFeature('files')
   @Delete('folders/:folderId')
   async deleteFolder(@Req() req: any, @Param('folderId') folderId: string) {
     const userId: string = req.user.id;
@@ -130,6 +143,7 @@ export class FileManagerController {
   // ── Notifications (declared before :id so the literal path wins) ──────────
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('notifications')
   async listNotifications(@Req() req: any) {
     const userId: string = req.user.id;
@@ -137,6 +151,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Get('notifications/unread-count')
   async unreadNotifications(@Req() req: any) {
     const userId: string = req.user.id;
@@ -144,6 +159,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'read')
+  @RequireFeature('files')
   @Post('notifications/mark-read')
   async markNotificationsRead(@Req() req: any) {
     const userId: string = req.user.id;
@@ -223,6 +239,7 @@ export class FileManagerController {
 
   /** Move a file into a folder (or to the root with `folderId: null`). */
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch(':id/move')
   async move(
     @Req() req: any,
@@ -243,6 +260,7 @@ export class FileManagerController {
   // ── Shares (owner only; ownership enforced in the service) ─────────────────
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Get(':id/shares')
   async listShares(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -250,6 +268,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Post(':id/shares')
   async share(
     @Req() req: any,
@@ -261,6 +280,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Patch(':id/shares/:shareId')
   async updateShare(
     @Req() req: any,
@@ -273,6 +293,7 @@ export class FileManagerController {
   }
 
   @RequirePermission('file', 'update')
+  @RequireFeature('files')
   @Delete(':id/shares/:shareId')
   async revokeShare(
     @Req() req: any,

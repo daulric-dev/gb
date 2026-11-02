@@ -21,6 +21,12 @@ import { objectKey } from '@/storage/keys';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { optionalImageUrl } from '@/images/public-url';
+import {
+  isLastStoredOrgAdmin,
+  isOrgAdmin,
+  organisationSummary,
+} from '@/organisation/org-admin';
+import { FeatureService } from '@/features/feature.service';
 
 const PROFILE_TTL = 60 * 60 * 24 * 30;
 
@@ -62,6 +68,7 @@ export class AuthService {
     private readonly accounts: AccountService,
     private readonly sessions: SessionService,
     private readonly erasure: ErasureLogService,
+    private readonly features: FeatureService,
   ) {}
 
   /**
@@ -170,6 +177,10 @@ export class AuthService {
       }
 
       if (profile) {
+        profile = {
+          ...profile,
+          ...(await this.organisationFields(userId, profile.school_id)),
+        };
         await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
       }
 
@@ -182,9 +193,29 @@ export class AuthService {
     }
   }
 
+  /**
+   * The organisation fields every profile response carries: whether the user
+   * is an organisation admin, the organisation (null before setup), and the
+   * platform features effective for the user's active school (the
+   * organisation's when they have none).
+   */
+  private async organisationFields(userId: string, schoolId?: string | null) {
+    const [isAdmin, organisation, features] = await Promise.all([
+      isOrgAdmin(this.prisma, userId).catch(() => false),
+      organisationSummary(this.prisma).catch(() => null),
+      this.features.effective(schoolId ?? null).catch((err: Error) => {
+        this.logger.error(`Failed to load features for ${userId}: ${err.message}`);
+        return null;
+      }),
+    ]);
+    return { is_org_admin: isAdmin, organisation, features };
+  }
+
   async getProfile(userId: string) {
     const cached = await this.cache.get(`profile:${userId}`);
-    if (cached?.email) return cached;
+    // Entries written by sign-in, onboarding or a profile edit lack the
+    // organisation fields; rebuild those.
+    if (cached?.email && 'is_org_admin' in cached && cached.features) return cached;
 
     let row;
     let message: string | undefined;
@@ -247,14 +278,29 @@ export class AuthService {
       profile.school_management = { role: memberships[0].role };
     }
 
+    Object.assign(
+      profile,
+      await this.organisationFields(userId, (row as { school_id: string | null }).school_id),
+    );
+
     await this.cache.set(`profile:${userId}`, profile, PROFILE_TTL);
     return profile;
   }
 
   async onboard(userId: string, dto: OnboardDto) {
-    // Account type is chosen once. Re-onboarding a student account as staff
-    // would hand it a teacher membership (and every default teacher
-    // permission) on dedicated deployments.
+    const data = await this.onboardProfile(userId, dto);
+    return {
+      ...data,
+      ...(await this.organisationFields(
+        userId,
+        (data as { school_id?: string | null } | null)?.school_id,
+      )),
+    };
+  }
+
+  private async onboardProfile(userId: string, dto: OnboardDto) {
+    // Account type is chosen once: a student account cannot re-onboard as
+    // staff and pick up a staff membership through a join request.
     const current = await this.prisma.user_profile
       .findUnique({ where: { id: userId }, select: { account_type: true } })
       .catch(() => null);
@@ -279,79 +325,16 @@ export class AuthService {
       return data;
     }
 
-    if (process.env.DEDICATED_DEPLOYMENT === 'true') {
-      const school = await this.prisma.school
-        .findFirst({ where: { is_active: true }, select: { id: true } })
-        .catch(() => null);
-
-      if (!school) {
-        throw new BadRequestException(
-          'No school found on this dedicated instance',
-        );
-      }
-
-      // Preserve an existing membership role (e.g. the school creator's
-      // 'admin', set by SchoolService.create) - the dedicated branch runs for
-      // every onboard, including theirs.
-      const membership = await this.prisma.school_management
-        .findFirst({
-          where: { user_id: userId, school_id: school.id },
-          select: { role: true },
-        })
-        .catch(() => null);
-
-      if (membership) {
-        const data = await this.upsertProfile(userId, {
-          first_name: dto.firstName,
-          last_name: dto.lastName,
-          school_id: school.id,
-          role: membership.role,
-        });
-        await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
-        return data;
-      }
-
-      // Brand-new staff on a dedicated deployment: save profile and submit a join
-      // request for the single school so an admin must approve them.
-      const data = await this.upsertProfile(userId, {
-        first_name: dto.firstName,
-        last_name: dto.lastName,
-      });
-
-      let joinRequest = await this.prisma.school_join_request
-        .findFirst({
-          where: { user_id: userId, school_id: school.id, status: 'pending' },
-          select: { id: true, school_id: true, status: true },
-        })
-        .catch(() => null);
-
-      if (!joinRequest) {
-        try {
-          joinRequest = await this.prisma.school_join_request.create({
-            data: { user_id: userId, school_id: school.id },
-            select: { id: true, school_id: true, status: true },
-          });
-        } catch (reqError) {
-          this.logger.error(
-            `Failed to create join request for user ${userId}: ${(reqError as Error).message}`,
-          );
-          throw new BadRequestException('Failed to submit join request');
-        }
-      }
-
-      await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
-      return { ...data, joinRequest };
-    }
-
     const names = { first_name: dto.firstName, last_name: dto.lastName };
 
-    // Check if user already has a school_id (set when they created a school)
+    // Already in a school (appointed its admin by an organisation admin, or
+    // joined by code or email domain): keep it.
     const existing = await this.prisma.user_profile
       .findUnique({ where: { id: userId }, select: { school_id: true } })
       .catch(() => null);
 
     if (existing?.school_id) {
-      // User created a school - just update name
+      // Just update the name
       const data = await this.upsertProfile(userId, names);
       await this.cache.set(`profile:${userId}`, data, PROFILE_TTL);
       return data;
@@ -359,10 +342,10 @@ export class AuthService {
 
     if (dto.schoolId) {
       // Joining an existing school always goes through the join-request flow,
-      // which an existing admin must approve. Admin rights are only ever
-      // granted to the user who *creates* a school (see SchoolService.create);
-      // we never auto-grant admin from a client-supplied schoolId, since that
-      // let any user claim ownership of any school lacking an admin.
+      // which an existing admin must approve. Admin rights are only granted
+      // by an organisation admin (OrganisationService.appointAdmin); we never
+      // auto-grant admin from a client-supplied schoolId, since that let any
+      // user claim ownership of any school lacking an admin.
       //
       // Go through the join request flow.
       const data = await this.upsertProfile(userId, names);
@@ -418,6 +401,17 @@ export class AuthService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const data = await this.saveProfile(userId, dto);
+    return {
+      ...data,
+      ...(await this.organisationFields(
+        userId,
+        (data as { school_id?: string | null } | null)?.school_id,
+      )),
+    };
+  }
+
+  private async saveProfile(userId: string, dto: UpdateProfileDto) {
     let data;
     try {
       data = withSchool(
@@ -439,6 +433,12 @@ export class AuthService {
   }
 
   async deleteAccount(userId: string) {
+    if (await isLastStoredOrgAdmin(this.prisma, userId)) {
+      throw new BadRequestException(
+        "You're the organisation's last administrator. Add another administrator before deleting your account.",
+      );
+    }
+
     const [files, profile] = await Promise.all([
       this.prisma.file
         .findMany({

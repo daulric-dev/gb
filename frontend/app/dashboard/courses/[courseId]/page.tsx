@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCourse } from "./_components/course-context";
+import { useFeatures } from "@/hooks/use-features";
 import {
   announcementAuthor,
   type CourseAnnouncement,
@@ -62,6 +63,8 @@ function Stat({
 export default function CourseHomePage() {
   useSignals();
   const { course, base, canManage, reload } = useCourse();
+  const { hasFeature } = useFeatures();
+  const announcementsOn = hasFeature("announcements");
 
   const activities = useSignal<Activity[]>([]);
   const modules = useSignal<CourseModule[]>([]);
@@ -78,9 +81,11 @@ export default function CourseHomePage() {
       api<CourseModule[]>(`/courses/${course.id}/modules`).catch(
         () => [] as CourseModule[],
       ),
-      api<CourseAnnouncement[]>(`/courses/${course.id}/announcements`).catch(
-        () => [] as CourseAnnouncement[],
-      ),
+      announcementsOn
+        ? api<CourseAnnouncement[]>(`/courses/${course.id}/announcements`).catch(
+            () => [] as CourseAnnouncement[],
+          )
+        : Promise.resolve([] as CourseAnnouncement[]),
     ]).then(([a, m, n]) => {
       activities.value = a;
       const now = Date.now();
@@ -100,7 +105,7 @@ export default function CourseHomePage() {
       announcements.value = n;
       loading.value = false;
     });
-  }, [course.id, activities, upcoming, modules, announcements, loading]);
+  }, [course.id, activities, upcoming, modules, announcements, loading, announcementsOn]);
 
   async function publish() {
     publishing.value = true;
@@ -167,12 +172,14 @@ export default function CourseHomePage() {
           value={activities.value.length}
           loading={loading.value}
         />
-        <Stat
-          icon={Megaphone}
-          label="Announcements"
-          value={announcements.value.length}
-          loading={loading.value}
-        />
+        {announcementsOn && (
+          <Stat
+            icon={Megaphone}
+            label="Announcements"
+            value={announcements.value.length}
+            loading={loading.value}
+          />
+        )}
       </div>
 
       <div className="grid animate-fade-in-up-delay-2 gap-6 lg:grid-cols-[1fr_20rem]">
@@ -237,6 +244,7 @@ export default function CourseHomePage() {
             </CardContent>
           </Card>
 
+          {announcementsOn && (
           <Card size="sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
@@ -268,6 +276,7 @@ export default function CourseHomePage() {
               )}
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
     </div>

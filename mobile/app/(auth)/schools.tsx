@@ -5,7 +5,6 @@ import {
   GraduationCap,
   LogOut,
   Mail,
-  Plus,
   Search,
 } from "lucide-react-native";
 import { api, ApiError } from "@/lib/api";
@@ -17,80 +16,15 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 interface School {
   id: string;
   name: string;
   parish: string | null;
   school_type: string | null;
-}
-
-function CreateSchool({ onCreated }: { onCreated: (s: School) => void }) {
-  const toast = useToast();
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"primary" | "secondary">("secondary");
-  const [loading, setLoading] = useState(false);
-
-  async function submit() {
-    if (!name.trim()) {
-      toast.error("Enter a school name");
-      return;
-    }
-    setLoading(true);
-    try {
-      const school = await api<School>("/schools", {
-        method: "POST",
-        body: { name: name.trim(), schoolType: type },
-        skipAuthRedirect: true,
-      });
-      onCreated(school);
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to create school",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardContent style={{ gap: 14 }}>
-        <Text variant="subtitle">Create a school</Text>
-        <Text variant="muted" style={{ marginTop: -6 }}>
-          You&apos;ll be assigned as its admin.
-        </Text>
-        <View>
-          <Label>School name</Label>
-          <Input
-            placeholder="GradeBook Academy"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-          />
-        </View>
-        <View>
-          <Label>Type</Label>
-          <SegmentedControl<"primary" | "secondary">
-            value={type}
-            onChange={setType}
-            options={[
-              { value: "primary", label: "Primary" },
-              { value: "secondary", label: "Secondary" },
-            ]}
-          />
-        </View>
-        <Button onPress={submit} loading={loading}>
-          Create school
-        </Button>
-      </CardContent>
-    </Card>
-  );
 }
 
 /** A school that verified the domain of the signed-in user's email address. */
@@ -156,6 +90,9 @@ function DomainMatchCard({
   );
 }
 
+const NO_SELF_CREATE =
+  "Schools are added by your organisation's administrators. Ask your school for a join code, or ask an administrator to add you.";
+
 /** How often a waiting applicant re-checks whether they have been approved. */
 const POLL_MS = 8000;
 
@@ -170,7 +107,6 @@ export default function SchoolsScreen() {
   const [search, setSearch] = useState("");
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
   const [match, setMatch] = useState<DomainMatch | null>(null);
   const [domainJoining, setDomainJoining] = useState(false);
 
@@ -204,9 +140,12 @@ export default function SchoolsScreen() {
     return () => clearInterval(timer);
   }, [pendingId, profile?.school, refresh]);
 
-  // Once the profile carries a school they belong in the app proper.
+  // Once the profile carries a school they belong in the app proper (and an
+  // organisation admin without one belongs on the organisation screen).
   useEffect(() => {
-    if (profile?.school) router.replace(homeRouteFor(profile));
+    if (profile?.school || profile?.is_org_admin) {
+      router.replace(homeRouteFor(profile));
+    }
   }, [profile, router]);
 
   const filtered = useMemo(() => {
@@ -268,12 +207,6 @@ export default function SchoolsScreen() {
     }
   }
 
-  async function onCreated(school: School) {
-    toast.success(`${school.name} created! You're the admin.`);
-    await refresh();
-    router.replace("/(tabs)");
-  }
-
   async function handleLogout() {
     await logout();
     router.replace("/(auth)/login");
@@ -300,7 +233,7 @@ export default function SchoolsScreen() {
   ) : null;
 
   // A student joins by redeeming the code their school issued, so they get the
-  // code field alone - no school list, no create-a-school option.
+  // code field alone - no school list.
   if (isStudentProfile(profile)) {
     return (
       <AuthShell>
@@ -316,6 +249,10 @@ export default function SchoolsScreen() {
           {otherWays}
 
           <JoinCodeForm />
+
+          <Text variant="muted" style={{ textAlign: "center" }}>
+            {NO_SELF_CREATE}
+          </Text>
 
           <Button variant="ghost" onPress={handleLogout}>
             Log out
@@ -334,24 +271,12 @@ export default function SchoolsScreen() {
             {displayName ? `Welcome, ${displayName}` : "Choose a school"}
           </Text>
           <Text variant="muted" style={{ textAlign: "center" }}>
-            Create your own school or request to join an existing one.
+            Request to join one of the schools below.
           </Text>
         </View>
 
         {domainCard}
         {otherWays}
-
-        {showCreate ? (
-          <CreateSchool onCreated={onCreated} />
-        ) : (
-          <Button
-            variant="outline"
-            onPress={() => setShowCreate(true)}
-            icon={<Plus size={16} color={colors.foreground} />}
-          >
-            Create a school
-          </Button>
-        )}
 
         <Card>
           <CardContent style={{ gap: 12 }}>
@@ -382,7 +307,7 @@ export default function SchoolsScreen() {
             ) : filtered.length === 0 ? (
               <Text variant="muted" style={styles.empty}>
                 {schools.length === 0
-                  ? "No schools available yet — create one above."
+                  ? "No schools available yet."
                   : "No schools match your search."}
               </Text>
             ) : (
@@ -435,6 +360,10 @@ export default function SchoolsScreen() {
             )}
           </CardContent>
         </Card>
+
+        <Text variant="muted" style={{ textAlign: "center" }}>
+          {NO_SELF_CREATE}
+        </Text>
 
         <Button
           variant="ghost"

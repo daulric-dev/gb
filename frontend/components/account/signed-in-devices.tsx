@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Laptop, Loader2, LogOut, Smartphone } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { resetBillingState } from "@/lib/billing";
 import {
   DEVICES_ANCHOR,
   isMobileDevice,
@@ -68,7 +67,6 @@ export function SignedInDevices() {
     try {
       await api(`/auth/sessions/${session.id}`, { method: "DELETE" });
       if (session.current) {
-        resetBillingState();
         router.push("/login");
         return;
       }

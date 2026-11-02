@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureService } from '@/features/feature.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { CourseService } from './course.service';
@@ -44,6 +46,8 @@ export class CourseController {
   constructor(
     private readonly courses: CourseService,
     private readonly banners: CourseBannerService,
+    private readonly features: FeatureService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -71,6 +75,16 @@ export class CourseController {
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Body() dto: UpdateCourseDto,
   ) {
+    // Offering a course as a template belongs to course templates & copying.
+    if (dto.isTemplate === true) {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: { school_id: true },
+      });
+      if (course) {
+        await this.features.assertEnabled(course.school_id, 'course_copy');
+      }
+    }
     return this.courses.update(req.user.id as string, courseId, dto);
   }
 

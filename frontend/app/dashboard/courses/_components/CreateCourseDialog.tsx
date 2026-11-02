@@ -39,6 +39,7 @@ import {
   EMPTY_DATE_CHOICE,
   type DateChoice,
 } from "./CopyDateFields";
+import { useFeatures } from "@/hooks/use-features";
 
 const BLANK = "blank";
 
@@ -63,14 +64,21 @@ export function CreateCourseDialog({
   // opens; BLANK is an empty course.
   const templates = useSignal<CourseTemplate[]>([]);
   const templateId = useSignal(BLANK);
+  const { hasFeature } = useFeatures();
+  const copyOn = hasFeature("course_copy");
   const dates = useSignal<DateChoice>(EMPTY_DATE_CHOICE);
 
   function reset() {
     templateId.value = BLANK;
     dates.value = EMPTY_DATE_CHOICE;
-    api<CourseTemplate[]>("/courses/templates")
-      .then((data) => (templates.value = data))
-      .catch(() => (templates.value = []));
+    // Templates are course copying; with it off there is nothing to offer.
+    if (copyOn) {
+      api<CourseTemplate[]>("/courses/templates")
+        .then((data) => (templates.value = data))
+        .catch(() => (templates.value = []));
+    } else {
+      templates.value = [];
+    }
     name.value = "";
     code.value = "";
     description.value = "";
@@ -170,7 +178,7 @@ export function CreateCourseDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {templates.value.length > 0 && (
+          {copyOn && templates.value.length > 0 && (
             <div className="space-y-2">
               <Label>Start from a template</Label>
               <Select

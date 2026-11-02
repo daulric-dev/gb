@@ -10,7 +10,7 @@ import { CacheService } from '@/cache/cache.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { SessionService } from '@/account/session.service';
 import { plan } from '@/erasure/erasure-plan';
-import { CreateSchoolDto } from './dto/create-school.dto';
+import { setSchoolMembership } from '@/common/school-membership';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
 
@@ -43,71 +43,6 @@ export class SchoolService {
     }
 
     await this.cache.set('schools:all', data, SCHOOL_TTL);
-    return data;
-  }
-
-  async create(dto: CreateSchoolDto, userId: string) {
-    if (process.env.DEDICATED_DEPLOYMENT === 'true') {
-      const count = await this.prisma.school.count().catch(() => 0);
-
-      if (count > 0) {
-        throw new ForbiddenException(
-          'School creation is disabled on dedicated deployments',
-        );
-      }
-    }
-
-    let data;
-    try {
-      data = await this.prisma.school.create({
-        data: {
-          name: dto.name,
-          code: dto.code ?? null,
-          school_type: dto.schoolType,
-          address: dto.address ?? null,
-          email: dto.email ?? null,
-          phone: dto.phone ?? null,
-          is_active: true,
-          owner_id: userId,
-        },
-      });
-    } catch (err) {
-      this.logger.error(`Failed to create school: ${(err as Error).message}`);
-      throw new BadRequestException('Failed to create school');
-    }
-
-    // Canonical membership record - creator is admin
-    try {
-      await this.prisma.school_management.create({
-        data: { user_id: userId, school_id: data.id, role: 'admin' },
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to create school_management row for ${userId} at ${data.id}: ${(err as Error).message}`,
-      );
-    }
-
-    // Mirror to user_profile (denormalized cache for active school + role)
-    try {
-      await this.prisma.user_profile.updateMany({
-        where: { id: userId },
-        data: { school_id: data.id, role: 'admin' },
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to assign creator ${userId} to school ${data.id}: ${(err as Error).message}`,
-      );
-    }
-
-    await this.cache.delete(`profile:${userId}`);
-    await this.cache.update<any[]>(
-      'schools:all',
-      (list) =>
-        [...list, data].sort((a, b) =>
-          (a.name ?? '').localeCompare(b.name ?? ''),
-        ),
-      SCHOOL_TTL,
-    );
     return data;
   }
 
@@ -263,26 +198,16 @@ export class SchoolService {
     // Membership, custom roles, profile mirror and the request's status
     // change together: a failure part-way leaves nothing behind.
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Canonical membership record (upsert in case a prior membership
+      // Canonical membership record (updated in case a prior membership
       // exists for this pair).
       let membership: { id: string };
       try {
-        membership = await tx.school_management.upsert({
-          where: {
-            user_id_school_id: {
-              user_id: request.user_id,
-              school_id: request.school_id,
-            },
-          },
-          create: {
-            user_id: request.user_id,
-            school_id: request.school_id,
-            role,
-            updated_at: new Date(),
-          },
-          update: { role, updated_at: new Date() },
-          select: { id: true },
-        });
+        membership = await setSchoolMembership(
+          tx,
+          request.user_id,
+          request.school_id,
+          role,
+        );
       } catch (err) {
         this.logger.error(
           `Failed to upsert school_management for ${request.user_id}: ${(err as Error).message}`,
@@ -425,6 +350,23 @@ export class SchoolService {
       .catch(() => null);
     if (school?.owner_id === userId) {
       throw new ForbiddenException('The school owner cannot leave the school');
+    }
+
+    // An organisation admin managing the school without a membership has
+    // nothing to remove: they just stop managing it.
+    const member = await this.prisma.school_management
+      .findFirst({
+        where: { user_id: userId, school_id: schoolId },
+        select: { id: true },
+      })
+      .catch(() => null);
+    if (!member) {
+      await this.prisma.user_profile.updateMany({
+        where: { id: userId },
+        data: { school_id: null, role: null },
+      });
+      await this.cache.delete(`profile:${userId}`);
+      return { left: true };
     }
 
     if (profile.role === 'admin') {

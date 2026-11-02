@@ -7,6 +7,7 @@ import { CircleX, Loader2, TimerOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { storeScanClaim } from "@/lib/attendance-scan";
 import { SCAN_PATH } from "@/lib/routing";
+import { isFeatureDisabledError } from "@/lib/features";
 import { Button } from "@/components/ui/button";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,6 +49,15 @@ function ScanLanding() {
         router.replace(`${SCAN_PATH}?s=${encodeURIComponent(sessionId)}`);
       })
       .catch((err) => {
+        if (isFeatureDisabledError(err)) {
+          setState({
+            kind: "error",
+            icon: CircleX,
+            title: "Attendance is turned off",
+            body: "Your school has switched attendance check-in off.",
+          });
+          return;
+        }
         const closed = err instanceof ApiError && /closed/i.test(err.message);
         setState({
           kind: "error",

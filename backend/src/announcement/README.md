@@ -9,7 +9,7 @@ This module manages two kinds of announcement that share one table, `public.anno
 
 ### HTTP routes
 
-**`AnnouncementController`** (`/api/announcements`) is guarded by `AuthGuard` and `PermissionGuard`. It works on school-wide announcements in the caller's school, and its responses go through the `announcement.*` versioned transformers.
+**`AnnouncementController`** (`/api/announcements`) is guarded by `AuthGuard`, `FeatureGuard` (the `announcements` feature, 403 `FEATURE_DISABLED` while off; [`src/features`](../features/README.md)) and `PermissionGuard`. It works on school-wide announcements in the caller's school, and its responses go through the `announcement.*` versioned transformers.
 
 | Method | Path | Permission | What it does |
 |--------|------|------------|--------------|
@@ -21,7 +21,7 @@ This module manages two kinds of announcement that share one table, `public.anno
 | PATCH | `/api/announcements/:id` | `announcement:update` | Edits one. Only its author or a school admin (`user_profile.role === 'admin'`) may do this; anyone else gets a 403. |
 | DELETE | `/api/announcements/:id` | `announcement:delete` | Deletes one, with the same author-or-admin rule. A post that is already gone still counts as success. |
 
-**`CourseAnnouncementController`** (`/api/courses/:courseId/announcements`) is guarded by `AuthGuard` only. Access is checked with `CourseAccessService.require()`. Both ids must be UUIDs (`ParseUUIDPipe`). Its responses are not versioned.
+**`CourseAnnouncementController`** (`/api/courses/:courseId/announcements`) is guarded by `AuthGuard` and `FeatureGuard` (`announcements`, resolved through the course's school). The portal's `GET /api/portal/me/courses/:courseId/announcements` needs `announcements` too. Access is checked with `CourseAccessService.require()`. Both ids must be UUIDs (`ParseUUIDPipe`). Its responses are not versioned.
 
 | Method | Path | Who may call | What it does |
 |--------|------|--------------|--------------|

@@ -14,12 +14,14 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
-import { PermissionGuard } from '@/permission/permission.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { PrismaService } from '@/prisma/prisma.service';
 import { userSchoolId } from '@/common/user-school';
 import { PresenceService } from '@/realtime/presence.service';
 import { ChatService } from './chat.service';
+import { ChatAccessGuard, ChatStaffOnly } from './chat-access.guard';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -34,7 +36,8 @@ const SSE_HEARTBEAT_MS = 25_000;
 @ApiTags('Chat')
 @ApiBearerAuth()
 @Controller('chat')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard, FeatureGuard, ChatAccessGuard)
+@RequireFeature('messaging')
 export class ChatController {
   constructor(
     private readonly chat: ChatService,
@@ -165,6 +168,8 @@ export class ChatController {
   }
 
   @RequirePermission('chat', 'create')
+  @RequireFeature('messaging', 'chat_channels')
+  @ChatStaffOnly()
   @Post('channels')
   async createChannel(@Req() req: any, @Body() dto: CreateChannelDto) {
     const userId = req.user.id as string;

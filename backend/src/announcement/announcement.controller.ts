@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
@@ -21,7 +23,8 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 @ApiTags('Announcements')
 @ApiBearerAuth()
 @Controller('announcements')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard, FeatureGuard, PermissionGuard)
+@RequireFeature('announcements')
 export class AnnouncementController {
   constructor(
     private readonly announcementService: AnnouncementService,

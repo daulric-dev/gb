@@ -6,6 +6,8 @@ A sign-in is a series of browser redirects: `GET /api/auth/sso/:provider/start` 
 
 Each provider is an **adapter** behind the `SsoAdapter` interface in `sso.types.ts`. Nothing outside `sso.registry.ts` knows which providers exist.
 
+Which providers are on, and their client credentials, are set by organisation admins in the organisation console (`/api/organisation/sign-in/*`, in [`src/organisation`](../organisation/README.md)) and stored in `public.sso_provider_setting`; the env vars are the fallback. Adapters read their **live configuration** (`config()`) at use time: a saved row's values where set, the env for the rest, and exactly the env when there is no row. `SsoSettingsService` keeps the rows in memory for 30 s (this instance reloads at once after a save), and the request paths (`providers`, `discover`, `saml/metadata`, `start`, ACS, callback, and the email-domain checks) `await registry.ready()` first, so a change needs no restart.
+
 ## What it provides
 
 ### HTTP routes
@@ -25,7 +27,8 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 
 ### Services / exports
 
-- `SsoCoreModule` is `@Global()` and exports **`SsoRegistry`** - `get(id)` (an *enabled* adapter or undefined), `known(id)` (any registered adapter), `enabled()` (public info for enabled adapters). It is separate from `SsoModule` so `src/email-domain` can use it without importing the sign-in module.
+- `SsoCoreModule` is `@Global()` and exports **`SsoRegistry`** - `ready()` (refresh the console settings when older than 30 s), `get(id)` (an *available* adapter - enabled with complete credentials - or undefined), `adapter(id)` / `all()` (any registered adapter, for the console), `known(id)`, `enabled()` (public info for available adapters) - and **`SsoSettingsService`** - `ready()`, `refresh()`, `stored(id)` (the saved row, secret decrypted, with `secretUnreadable`), `resolve(adapter)` (console over env), `save(id, write, actorId)` (encrypts the secret, reloads). Each registry builds its own adapter instances and points them at the settings service; without one (tests, scripts) adapters read only the env. It is separate from `SsoModule` so `src/email-domain` and `src/organisation` can use it without importing the sign-in module.
+- `sso-secret.ts` - `encryptSsoSecret(provider, plaintext)` / `decryptSsoSecret(provider, stored)`: AES-256-GCM (`v1:<iv>:<tag>:<ct>`, base64), key = HKDF-SHA256 of `AUTH_SECRET` with info `gradebook:sso-provider-secret:v1`, the provider id as additional data. Decryption returns null on any failure - typically after `AUTH_SECRET` changed, which means the secrets must be entered again.
 - `SsoModule` (not exported) provides `SsoService`: `providers`, `discover`, `samlMetadata`, `start`, `samlAcs`, `callback`, `handoff`, `signIn`, `provision`, `suggestedProfile`, `takeState`.
 - Helpers other code imports:
   - `sso.config.ts` - `enabledProviders()`, `apiBase()`, `oidcRedirectUri()`, `samlAcsUrl()`, `samlEntityId()`, `emailDomainOf()`.
@@ -44,9 +47,9 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 ## Used by
 
 - `src/app.module.ts` imports `SsoCoreModule` and `SsoModule`.
+- `src/organisation/sign-in.service.ts` injects `SsoRegistry` and `SsoSettingsService` for the console's provider routes.
 - `src/email-domain/email-domain.service.ts` injects `SsoRegistry` (validates a domain's `sso_provider`, decides what discovery offers) and imports `normalizeCertificate` for SAML certificates entered by admins.
-- `src/billing/school/billing.service.ts` imports `apiBase()` to build webhook callback URLs.
-- Web: `frontend/lib/sso.ts` builds start, metadata and ACS URLs; `frontend/app/login/page.tsx` calls `providers` and `discover`; `frontend/app/onboard/page.tsx` calls `suggested-profile`; `frontend/app/dashboard/email-domains/page.tsx` lists `providers` for the admin picker.
+- Web: `frontend/app/organisation/settings/_components/sign-in-apps.tsx` (console Settings > Sign-in apps) configures providers; the per-school single sign-on section (`frontend/app/dashboard/email-domains/_components/`, also on `frontend/app/organisation/schools/[schoolId]/page.tsx`) builds test sign-in links with `ssoStartUrl`; `frontend/lib/sso.ts` builds start, metadata and ACS URLs; `frontend/app/login/page.tsx` calls `providers` and `discover`; `frontend/app/onboard/page.tsx` calls `suggested-profile`; `frontend/app/dashboard/email-domains/page.tsx` lists `providers` for the admin picker.
 - Mobile: `mobile/src/lib/sso.ts` calls `providers`, `discover`, `suggested-profile`, `start` (with `platform=mobile`) and `handoff`.
 - Scripts: `scripts/smoke.ts` checks `discover` for the demo domain.
 
@@ -61,18 +64,22 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 ## Data
 
 - `public.user_profile` - read and created by `provision()` ([`school.prisma`](../../prisma/schema/school.prisma)).
+- `public.sso_provider_setting` - read by `SsoSettingsService` (every 30 s at most), written by `save()` ([`sso.prisma`](../../prisma/schema/sso.prisma), migration `20261103100000_sso_settings`).
 - `account.identity` - read by `suggestedProfile()`; written by `AccountService` ([`account.prisma`](../../prisma/schema/account.prisma)).
 - `public.school_email_domain` - read through `EmailDomainService` (`sso_provider`, `sso_required`, tenant and SAML settings).
 
 ## Configuration
 
+The organisation console is the primary place for provider settings; these are the fallback for any provider (or field) not saved there.
+
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `SSO_PROVIDERS` | empty (all off) | Comma list of adapter ids to offer: `google`, `azure`, `saml`. |
+| `AUTH_SECRET` | dev fallback | Derives the key that encrypts console-saved client secrets. Rotating it makes them unreadable: re-enter them under Settings > Sign-in apps in the organisation console. |
+| `SSO_PROVIDERS` | empty (all off) | Comma list of adapter ids to offer: `google`, `azure`, `saml`. Ignored for a provider once the console has saved a setting for it. |
 | `API_URL` | request host, else `http://localhost:3001` | Public API origin; redirect URI is `${API_URL}/api/auth/sso/callback`, ACS is `${API_URL}/api/auth/sso/saml/acs`. Set it wherever SSO is on. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset | Google is enabled only when both are set and `google` is listed. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset | Google is available only when it is on and both are set (console or env). |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | unset | Same for Microsoft (`azure`), a multitenant Entra app. |
-| `SAML_SP_ENTITY_ID` | `${API_URL}/api/auth/sso/saml/metadata` | Our SAML entity ID and audience. |
+| `SAML_SP_ENTITY_ID` | `${API_URL}/api/auth/sso/saml/metadata` | Our SAML entity ID and audience (the console's SAML `entityId` setting wins). |
 | `MOBILE_SSO_RETURN_URL` | `gradebook://sso` | Where mobile sign-ins return. |
 | `NODE_ENV` | - | `production` marks the `gb_sso_flow` cookie `Secure`. |
 
@@ -81,8 +88,11 @@ All under `@Controller('auth/sso')`. Only `suggested-profile` needs a session; t
 | File | Purpose |
 | --- | --- |
 | `sso.types.ts` | `SsoAdapter` interface and the context / identity / profile types. |
-| `sso.registry.ts` | The list of adapters and `SsoRegistry`. Register new adapters here. |
-| `sso-core.module.ts` | Global module exporting `SsoRegistry`. |
+| `sso.registry.ts` | The list of adapters (`createAdapters()`) and `SsoRegistry`. Register new adapters here. |
+| `sso-settings.service.ts` | `SsoSettingsService`: console settings over env, 30 s in-memory copy, save. |
+| `sso-secret.ts` | Client secret encryption (AES-256-GCM, HKDF from `AUTH_SECRET`). |
+| `sso-settings.test.ts` | Encryption round-trip and tamper/rotation, DB-over-env precedence, disabled = unavailable, undecryptable secret, save, live config in `providers`/`discover` without a restart. |
+| `sso-core.module.ts` | Global module exporting `SsoRegistry` and `SsoSettingsService`. |
 | `sso.module.ts` | Controller and `SsoService`; imports `EmailDomainModule`. |
 | `sso.controller.ts` | The routes above and their query/body DTOs (defined inline). |
 | `sso.service.ts` | The sign-in flow, account linking and provisioning. |

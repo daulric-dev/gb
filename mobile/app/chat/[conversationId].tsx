@@ -30,6 +30,7 @@ import {
   type ChatConversation,
   type ChatMessage,
 } from "@/features/chat/types";
+import { withFeature, chatAllowed } from "@/components/layout/FeatureGate";
 
 /** New-message poll cadence for an open thread. */
 const MESSAGES_POLL_MS = 5_000;
@@ -38,7 +39,7 @@ const PRESENCE_POLL_MS = 10_000;
 /** Page size for the message history request. */
 const PAGE_LIMIT = 30;
 
-export default function ChatThreadScreen() {
+function ChatThreadScreen() {
   const router = useRouter();
   const toast = useToast();
   const insets = useSafeAreaInsets();
@@ -351,3 +352,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
+export default withFeature(chatAllowed, "Messages", ChatThreadScreen);

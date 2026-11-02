@@ -1,0 +1,27 @@
+/// A school's own sign-in app for one OAuth provider, set by the school's
+/// admin (`/api/schools/current/sso/providers`) or an organisation admin
+/// (`/api/organisation/schools/:id/sso/providers`). Provider = adapter id
+/// in src/sso/sso.registry.ts that needs a client (`google`, `azure`); SAML
+/// lives on school_email_domain. No row = the school uses the install-wide
+/// env credentials (SSO_PROVIDERS, GOOGLE_CLIENT_ID, ...), if any; a row,
+/// even a switched-off one, replaces them for that school. `client_secret_enc`
+/// is AES-256-GCM ciphertext under a key derived from AUTH_SECRET, bound to
+/// the school and provider (src/sso/sso-secret.ts): rotating AUTH_SECRET
+/// means re-entering the secrets.
+model school_sso_provider {
+  school_id         String   @db.Uuid
+  /// google | azure
+  provider          String
+  enabled           Boolean  @default(false)
+  client_id         String?
+  client_secret_enc String?
+  /// Non-secret per-provider settings (none yet for Google or Microsoft).
+  settings          Json     @default("{}")
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+  /// Who last saved it (no foreign key: the setting outlives the account).
+  updated_by        String?  @db.Uuid
+  school            school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([school_id, provider])
+  @@schema("public")
+}

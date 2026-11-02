@@ -11,12 +11,39 @@ import type { UserProfile } from "@/providers/AuthProvider";
  */
 export function homePathFor(profile: UserProfile | null): string {
   if (!profile) return "/login";
+  // An organisation admin need not belong to a school (nor finish the
+  // staff/student onboarding); their home is the organisation console.
+  if (profile.is_org_admin && !profile.school) return ORGANISATION_PATH;
   // Named at onboarding; without it we do not yet know which flow they chose.
   if (!profile.first_name) return "/onboard";
   // Staff await approval of a join request, students await approval or a
   // school join code. Both wait on the school list.
   if (!profile.school) return "/schools";
   return profile.account_type === "student" ? "/portal" : "/dashboard";
+}
+
+/** The organisation console, for organisation admins. */
+export const ORGANISATION_PATH = "/organisation";
+/** Where first-run setup lands: the school manager, ready to add the first school. */
+export const ORGANISATION_SCHOOLS_WELCOME_PATH = "/organisation/schools?welcome=1";
+
+/** First-run setup: names the organisation that runs this install. */
+export const SETUP_PATH = "/setup";
+
+/**
+ * Where to send a signed-in user before setup has run, or null to stay put.
+ * Until the install has an organisation, everyone the API says may set it up
+ * goes to the setup wizard from every signed-in entry point; nobody else does.
+ */
+export function setupRedirectPath(
+  canSetUp: boolean | null,
+  pathname: string,
+): string | null {
+  if (canSetUp !== true) return null;
+  if (pathname === SETUP_PATH || pathname.startsWith(`${SETUP_PATH}/`)) {
+    return null;
+  }
+  return SETUP_PATH;
 }
 
 /** QR check-in landing page (the QR encodes `?s=<session>&t=<token>`). */

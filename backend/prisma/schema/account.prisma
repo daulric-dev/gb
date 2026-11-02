@@ -12,8 +12,6 @@ model app_user {
   session           session[]
   known_device      known_device[]
   user_profile      user_profile?
-  invoice           invoice[]
-  platform_admin    platform_admin?
 
   @@schema("account")
 }

@@ -22,7 +22,6 @@ Shared configuration helpers. At the moment the folder holds one file, `origins.
 - `src/storage/storage.service.ts` - bucket CORS rules use `allowedOrigins()` (plus `http://localhost:3000`).
 - `src/sso/sso.service.ts` - post-login and error redirects to `primaryOrigin()`.
 - `src/account/session.service.ts` - sets and clears the session cookie with `authCookieDomain()`.
-- `src/billing/config/billing.config.ts` - falls back to `primaryOrigin()` for the app URL used in checkout return links.
 
 ## Depends on
 

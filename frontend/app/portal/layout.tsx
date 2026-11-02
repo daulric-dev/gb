@@ -7,15 +7,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
-import { isStudentProfile, loginPath, SCAN_PATH } from "@/lib/routing";
+import { homePathFor, isStudentProfile, loginPath, SCAN_PATH } from "@/lib/routing";
+import { useSetupGate } from "@/lib/setup";
 import { api } from "@/lib/api";
-import { resetBillingState } from "@/lib/billing";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { AttendanceBanner } from "./_components/attendance-banner";
-import { BillingBanner, BillingStatusLoader } from "@/components/billing/billing-banner";
 import { NotificationBell } from "./_components/notification-bell";
+import { useFeatures } from "@/hooks/use-features";
+import { featureForPath, type FeatureKey } from "@/lib/features";
+import { FeatureDisabled } from "@/components/feature-disabled";
+import { ChatProvider } from "@/providers/ChatProvider";
+import { unreadChat } from "@/lib/chat";
 import {
   Avatar,
   AvatarFallback,
@@ -34,15 +38,29 @@ import {
   GraduationCap,
   LayoutDashboard,
   LogOut,
+  MessagesSquare,
   Settings,
+  type LucideIcon,
 } from "lucide-react";
 
-const NAV = [
+const NAV: {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  exact?: boolean;
+  feature?: FeatureKey;
+}[] = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/portal/courses", label: "Courses", icon: BookOpen },
   { href: "/portal/grades", label: "Grades", icon: GraduationCap },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
-  { href: "/portal/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/portal/calendar", label: "Calendar", icon: CalendarDays, feature: "calendar" },
+  {
+    href: "/portal/messages",
+    label: "Messages",
+    icon: MessagesSquare,
+    feature: "student_messaging",
+  },
 ];
 
 export default function PortalLayout({
@@ -55,7 +73,9 @@ export default function PortalLayout({
   const router = useRouter();
   const pathname = usePathname() ?? "";
   const { profile, loading } = useProfile();
+  const { hasFeature } = useFeatures();
   const isScan = pathname === SCAN_PATH;
+  useSetupGate(!loading.value && !!profile.value && !isScan);
 
   useEffect(() => {
     if (loading.value) return;
@@ -75,7 +95,7 @@ export default function PortalLayout({
       return;
     }
     if (!profile.value.school) {
-      router.replace("/schools");
+      router.replace(homePathFor(profile.value));
     }
   }, [loading.value, profile.value, router, isScan]);
 
@@ -108,15 +128,22 @@ export default function PortalLayout({
     } catch {
       toast.error("Failed to log out");
     }
-    resetBillingState();
     router.push("/login");
   }
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
+  const nav = NAV.filter((item) => !item.feature || hasFeature(item.feature));
+  // A page whose feature is off (a bookmark, an old link) says so instead.
+  const pageFeature = featureForPath(pathname);
+  const pageOff = pageFeature !== null && !hasFeature(pageFeature);
+  const messagingOn = hasFeature("student_messaging");
+
   return (
     <div className="min-h-dvh bg-background">
+      {/* The chat stream only runs while students may message. */}
+      {messagingOn && <ChatProvider />}
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
           <Link href="/portal" className="flex items-center gap-2 overflow-hidden">
@@ -172,7 +199,7 @@ export default function PortalLayout({
 
         <nav className="mx-auto max-w-5xl px-2">
           <div className="flex gap-1 overflow-x-auto">
-            {NAV.map((item) => {
+            {nav.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href, item.exact);
               return (
@@ -189,6 +216,11 @@ export default function PortalLayout({
                 >
                   <Icon className="size-4" />
                   {item.label}
+                  {item.href === "/portal/messages" && unreadChat.value > 0 && (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                      {unreadChat.value}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -196,12 +228,10 @@ export default function PortalLayout({
         </nav>
       </header>
 
-      <BillingStatusLoader schoolId={student.school.id} />
       <main className="mx-auto max-w-5xl p-4 md:p-6">
-        <BillingBanner audience="student" />
         {/* The scan page is itself the check-in for that session. */}
-        {!isScan && <AttendanceBanner />}
-        {children}
+        {!isScan && hasFeature("attendance") && <AttendanceBanner />}
+        {pageOff ? <FeatureDisabled /> : children}
       </main>
     </div>
   );

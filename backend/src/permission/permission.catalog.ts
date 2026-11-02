@@ -26,7 +26,7 @@ export type PermissionKey = `${Resource}:${Action}`;
 // Resources without the full create/read/update/delete set. A key exists only
 // when something enforces it:
 // - school:update gates the school's own settings that are not a resource of
-//   their own - billing (plan, payment, invoices). Admins hold it by default.
+//   their own (upload limit, logo). Admins hold it by default.
 // - course: reading and deleting a course are decided by the course role
 //   (CourseAccessService), so only create and update are school-wide powers.
 // - student and join-code have read and update only (students self-register and

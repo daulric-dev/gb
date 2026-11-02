@@ -65,17 +65,27 @@ const samlDomain = (over: Partial<SsoDomainConfig> = {}): SsoDomainConfig => ({
   ...over,
 });
 
+/** The env client, as the registry hands it to an adapter. */
+const envClient = (adapter: SsoAdapter) => ({ config: adapter.envConfig(), clientKey: 'env' });
+
 describe('registry', () => {
-  test('lists only adapters this deployment configured', () => {
-    expect(new SsoRegistry().enabled().map((p) => p.id)).toEqual(['google', 'azure', 'saml']);
+  test('login buttons: only the env-configured OAuth apps (SAML needs a school)', () => {
+    expect(new SsoRegistry().unscoped().map((p) => p.id)).toEqual(['google', 'azure']);
     const secret = process.env.GOOGLE_CLIENT_SECRET;
     delete process.env.GOOGLE_CLIENT_SECRET;
     try {
-      // No credentials, no Google; SAML needs nothing until a school sets it up.
-      expect(new SsoRegistry().enabled().map((p) => p.id)).toEqual(['azure', 'saml']);
+      // No credentials, no Google.
+      expect(new SsoRegistry().unscoped().map((p) => p.id)).toEqual(['azure']);
     } finally {
       process.env.GOOGLE_CLIENT_SECRET = secret;
     }
+  });
+
+  test('without saved settings every school gets the env, and SAML', async () => {
+    const registry = new SsoRegistry();
+    expect((await registry.availableFor('school-1')).map((p) => p.id)).toEqual(['google', 'azure', 'saml']);
+    expect(await registry.resolve('google', 'school-1')).toMatchObject({ source: 'env', clientKey: 'env' });
+    expect(await registry.resolve('nope', 'school-1')).toBeUndefined();
   });
 });
 
@@ -176,7 +186,7 @@ describe('AzureAdapter', () => {
 
   test('cannot start without the school tenant', async () => {
     const start = (domain: SsoDomainConfig | null) =>
-      azure.start({ state: 's', redirectUri: 'https://api.gb.test/cb', domain });
+      azure.start({ state: 's', redirectUri: 'https://api.gb.test/cb', domain, ...envClient(azure) });
     await expect(start(null)).rejects.toThrow('Enter your school email to sign in with Microsoft');
     await expect(start(samlDomain({ azureTenantId: null }))).rejects.toBeInstanceOf(
       BadRequestException,
@@ -188,7 +198,7 @@ describe('SamlAdapter', () => {
   const saml = new SamlAdapter();
 
   async function started(domain = samlDomain()) {
-    const s = await saml.start({ state: 'state-1', redirectUri: '', domain });
+    const s = await saml.start({ state: 'state-1', redirectUri: '', domain, ...envClient(saml) });
     return s;
   }
 
@@ -208,7 +218,7 @@ describe('SamlAdapter', () => {
   }
 
   const complete = (secrets: Record<string, string>, samlResponse: string, domain = samlDomain()) =>
-    saml.complete({ state: 'state-1', secrets, domain, samlResponse });
+    saml.complete({ state: 'state-1', secrets, domain, samlResponse, ...envClient(saml) });
 
   test('start redirects to the IdP with an AuthnRequest and RelayState', async () => {
     const s = await started();
@@ -221,7 +231,7 @@ describe('SamlAdapter', () => {
   });
 
   test('start needs a configured school domain', async () => {
-    await expect(saml.start({ state: 's', redirectUri: '', domain: null })).rejects.toThrow(
+    await expect(saml.start({ state: 's', redirectUri: '', domain: null, ...envClient(saml) })).rejects.toThrow(
       'Enter your school email',
     );
     await expect(started(samlDomain({ samlCertificate: null }))).rejects.toThrow('not set up');
@@ -504,8 +514,12 @@ describe('SsoService flow', () => {
     });
   }
   const registryOf = (adapter: SsoAdapter) => ({
-    get: (id: string) => (id === adapter.id ? adapter : undefined),
-    enabled: () => [],
+    resolve: async (id: string) =>
+      id === adapter.id
+        ? { adapter, config: adapter.envConfig(), source: 'env', clientKey: 'env' }
+        : undefined,
+    adapter: (id: string) => (id === adapter.id ? adapter : undefined),
+    unscoped: () => [],
   });
 
   const VERIFIER = 'v'.repeat(20) + '-._~' + 'A1b2C3d4E5f6G7h8I9j0K';

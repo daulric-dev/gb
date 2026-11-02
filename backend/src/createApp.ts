@@ -5,7 +5,6 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { insecureCookieWarning, isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
-import { registerWebhookRawBody } from './billing/webhooks/raw-body';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -22,9 +21,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
   );
 
   await app.register(cookie);
-
-  // Billing webhooks verify signatures over the exact bytes received.
-  registerWebhookRawBody(app.getHttpAdapter().getInstance());
 
   console.log(`Running in ${process.env.NODE_ENV} mode`);
 

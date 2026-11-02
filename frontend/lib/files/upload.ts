@@ -241,15 +241,20 @@ export function uploadCourseBanner<T>(
   );
 }
 
-/** Set the active school's logo (`school:update`). Returns the new URL. */
+/**
+ * Set a school's logo. Returns the new URL. `apiBase` is the active school's
+ * routes (`school:update`) by default, or `/organisation/schools/<id>` for an
+ * organisation admin setting any school's.
+ */
 export async function uploadSchoolLogo(
   image: Blob,
   filename: string,
   onProgress?: (fraction: number) => void,
+  apiBase = "/schools/current",
 ): Promise<string> {
   const { logoUrl } = await uploadImage<{ logoUrl: string }>(
-    "/schools/current/logo/upload-ticket",
-    "/schools/current/logo/complete",
+    `${apiBase}/logo/upload-ticket`,
+    `${apiBase}/logo/complete`,
     image,
     filename,
     onProgress,

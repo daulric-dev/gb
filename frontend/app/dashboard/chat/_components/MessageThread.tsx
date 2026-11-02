@@ -28,7 +28,6 @@ import {
   type ChatMessage,
 } from "@/lib/chat";
 import { PresenceDot } from "./PresenceDot";
-import { usePermissions } from "@/providers/PermissionsProvider";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -44,9 +43,18 @@ function messageTime(iso: string) {
   });
 }
 
-export function MessageThread({ selfId }: { selfId: string | null }) {
+export function MessageThread({
+  selfId,
+  canSend,
+  classLinks = true,
+}: {
+  selfId: string | null;
+  /** Whether the composer shows (staff: chat:create; students: always). */
+  canSend: boolean;
+  /** Legacy class invites open the staff class page; off for students. */
+  classLinks?: boolean;
+}) {
   useSignals();
-  const { can } = usePermissions();
   const router = useRouter();
   const draft = useSignal("");
   const sending = useSignal(false);
@@ -125,7 +133,7 @@ export function MessageThread({ selfId }: { selfId: string | null }) {
                     "_blank",
                     "noopener",
                   );
-                } else if (m.type === "class_invite") {
+                } else if (m.type === "class_invite" && classLinks) {
                   router.push(`/dashboard/classes/${m.metadata.classId}`);
                 }
               }}
@@ -136,7 +144,7 @@ export function MessageThread({ selfId }: { selfId: string | null }) {
         <div ref={bottomRef} />
       </div>
 
-      {can("chat", "create") ? (
+      {canSend ? (
         <div className="flex items-end gap-2 border-t p-3">
           <Textarea
             value={draft.value}

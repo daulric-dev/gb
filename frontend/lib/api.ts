@@ -1,8 +1,4 @@
 import { loginPath } from "@/lib/routing";
-import {
-  isSubscriptionRequired,
-  notifySubscriptionRequired,
-} from "@/lib/subscription-required";
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
 
@@ -16,13 +12,25 @@ export function buildUrl(path: string): string {
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   skipAuthRedirect?: boolean;
-  skipSubscriptionNotice?: boolean;
 };
 
 let unauthorizedHandler: (() => void) | null = null;
+let featureDisabledHandler: ((error: ApiError) => void) | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
+}
+
+/**
+ * Called when the API answers `403 { code: 'FEATURE_DISABLED' }`: the school's
+ * features changed under us. The AuthProvider re-reads the profile so the
+ * navigation drops whatever was switched off. The error is still thrown, so
+ * the caller shows its message.
+ */
+export function setFeatureDisabledHandler(
+  handler: ((error: ApiError) => void) | null,
+) {
+  featureDisabledHandler = handler;
 }
 
 function redirectToLogin() {
@@ -57,20 +65,12 @@ async function fetchOrThrow(
   }
 }
 
-/**
- * The ApiError for a failed response. A 402 SUBSCRIPTION_REQUIRED (the school
- * is read-only) also raises the app-wide notice; it is still thrown so the
- * caller stops what it was doing.
- */
-async function errorFrom(
-  res: Response,
-  options?: RequestOptions,
-): Promise<ApiError> {
+/** The ApiError for a failed response, carrying the API's message. */
+async function errorFrom(res: Response): Promise<ApiError> {
   const error = await res.json().catch(() => ({ message: res.statusText }));
-  if (!options?.skipSubscriptionNotice && isSubscriptionRequired(res.status, error)) {
-    notifySubscriptionRequired();
-  }
-  return new ApiError(res.status, error?.message || res.statusText, error);
+  const apiError = new ApiError(res.status, error?.message || res.statusText, error);
+  if (apiError.code === "FEATURE_DISABLED") featureDisabledHandler?.(apiError);
+  return apiError;
 }
 
 export async function api<T = unknown>(
@@ -97,7 +97,7 @@ export async function api<T = unknown>(
 
   if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
 
-  if (!res.ok) throw await errorFrom(res, options);
+  if (!res.ok) throw await errorFrom(res);
 
   const text = await res.text();
   try {
@@ -115,5 +115,17 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+
+  /** The API's machine-readable error code, e.g. "FEATURE_DISABLED". */
+  get code(): string | undefined {
+    const code = (this.data as { code?: unknown } | undefined)?.code;
+    return typeof code === "string" ? code : undefined;
+  }
+
+  /** For a FEATURE_DISABLED error, which feature is off. */
+  get feature(): string | undefined {
+    const feature = (this.data as { feature?: unknown } | undefined)?.feature;
+    return typeof feature === "string" ? feature : undefined;
   }
 }

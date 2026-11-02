@@ -391,6 +391,7 @@ export class PermissionService {
       role: effective.role,
       accountType,
       isAdmin: effective.role === 'admin',
+      viaOrganisation: effective.viaOrganisation ?? false,
       permissions: effective.keys,
     };
   }

@@ -15,7 +15,8 @@ as a single schema (`prisma.config.ts` points here).
 | `files.prisma` | `file_manager` | Files, folders, shares, notifications |
 | `chat.prisma` | `chat` | Conversations, members, messages |
 | `compliance.prisma` | `compliance` | The GDPR erasure log (`erasure_log`): ids-only record of every erasure, replayed after a backup restore (see `src/erasure`) |
-| `billing.prisma` | `billing` | Hosted-platform billing: subscriptions, invoices recorded from Stripe, webhook events, platform admins (`provider_setting`, the old per-provider switch, is kept but no longer read) (unused unless `BILLING_ENABLED=true`) |
+| `organisation.prisma` | `public` | The organisation that self-hosts the install (`organisation`, one row; the singleton index is in the migration, Prisma cannot express it; `features` holds its platform feature overrides) its admins (`organisation_admin`) and invites for people without an account yet (`organisation_invite`; its partial unique indexes are in the migration). `school.disabled_features` (in `school.prisma`) holds a school's opt-outs; see `src/features`. |
+| `sso.prisma` | `public` | Sign-in provider settings saved from the organisation console (`sso_provider_setting`: on/off, client ID, encrypted client secret, non-secret `extra`); see `src/sso`. |
 
 ## Changing the schema
 

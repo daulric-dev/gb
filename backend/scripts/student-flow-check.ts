@@ -423,8 +423,8 @@ async function main() {
   } finally {
     // ---- clean-up -----------------------------------------------------------
     // The school cascades to its years, terms, courses (and their content,
-    // enrolments, activities, submissions), students, join codes, memberships
-    // and billing rows. Accounts are not under the school: deleting app_user
+    // enrolments, activities, submissions), students, join codes and
+    // memberships. Accounts are not under the school: deleting app_user
     // cascades to user_profile, sessions and identities. Sign-in codes are
     // keyed by email only.
     if (schoolId) await db.school.delete({ where: { id: schoolId } }).catch((e) => console.error('clean-up school', e));

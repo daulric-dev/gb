@@ -6,10 +6,11 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type {
-  EmailDomain,
-  EmailDomainAudience,
-  EmailDomainStaffRole,
+import {
+  emailDomainsApi,
+  type EmailDomain,
+  type EmailDomainAudience,
+  type EmailDomainStaffRole,
 } from "@/lib/email-domains";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,11 +45,14 @@ const ROLE_ITEMS = [
 export function DomainFormDialog({
   open,
   existing,
+  apiBase,
   onOpenChangeAction,
   onSavedAction,
 }: {
   open: boolean;
   existing: EmailDomain | null;
+  /** See `emailDomainsApi`; default: the active school. */
+  apiBase?: string;
   onOpenChangeAction: (open: boolean) => void;
   onSavedAction: (domain: EmailDomain) => void;
 }) {
@@ -78,11 +82,11 @@ export function DomainFormDialog({
         : {};
     try {
       const saved = existing
-        ? await api<EmailDomain>(`/schools/email-domains/${existing.id}`, {
+        ? await api<EmailDomain>(`${emailDomainsApi(apiBase)}/${existing.id}`, {
             method: "PATCH",
             body: { audience: audience.value, ...staffFields },
           })
-        : await api<EmailDomain>("/schools/email-domains", {
+        : await api<EmailDomain>(emailDomainsApi(apiBase), {
             method: "POST",
             body: {
               domain: domain.value.trim(),

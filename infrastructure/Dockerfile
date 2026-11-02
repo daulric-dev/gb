@@ -16,8 +16,7 @@ RUN bun install --frozen-lockfile
 # --- build: compile the backend used by this image ---
 FROM install AS build
 # Public build-time env baked into the frontend (Next.js) bundle.
-ENV NEXT_PUBLIC_API_URL=http://localhost:3001 \
-    NEXT_PUBLIC_DEDICATED_DEPLOYMENT=false
+ENV NEXT_PUBLIC_API_URL=http://localhost:3001
 # Copy all source (node_modules/dist/.next/.git excluded via .dockerignore).
 COPY . .
 # The production image only runs the backend; avoid building unrelated clients.

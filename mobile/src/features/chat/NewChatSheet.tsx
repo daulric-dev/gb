@@ -24,10 +24,12 @@ export function NewChatSheet({
   onClose,
   onlineUsers,
   onStarted,
+  description = "Pick someone in your school to start a conversation.",
 }: {
   open: boolean;
   onClose: () => void;
   onlineUsers: Set<string>;
+  description?: string;
   onStarted: (conversation: ChatConversation) => void;
 }) {
   const { colors } = useTheme();
@@ -73,7 +75,7 @@ export function NewChatSheet({
       open={open}
       onClose={onClose}
       title="New message"
-      description="Pick someone in your school to start a conversation."
+      description={description}
     >
       <Input
         placeholder="Search people…"

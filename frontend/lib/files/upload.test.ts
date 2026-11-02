@@ -224,6 +224,11 @@ describe("uploadAvatar", () => {
     expect(calls[3].url).toEndWith("/schools/current/logo/complete");
     expect(logo).toContain("/school-logos/");
     expect(sent).toHaveLength(2);
+
+    // An organisation admin setting another school's logo.
+    await uploadSchoolLogo(image, "logo.jpg", undefined, "/organisation/schools/s9");
+    expect(calls[4].url).toEndWith("/organisation/schools/s9/logo/upload-ticket");
+    expect(calls[5].url).toEndWith("/organisation/schools/s9/logo/complete");
   });
 });
 

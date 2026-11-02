@@ -31,7 +31,10 @@ export function tenantIssuer(tenantId: string): string {
  * when it comes from the school's own tenant, which the school admin records
  * on the domain.
  *
- * Env: MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET (a multitenant app).
+ * Credentials: the school's own app registration (single tenant is fine,
+ * since sign-in always uses the school's tenant authority), else the
+ * install-wide env MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET (a
+ * multitenant app) for schools that have not saved one.
  */
 export class AzureAdapter extends OidcAdapter {
   constructor() {
@@ -40,6 +43,8 @@ export class AzureAdapter extends OidcAdapter {
       label: 'Microsoft',
       clientIdEnv: 'MICROSOFT_CLIENT_ID',
       clientSecretEnv: 'MICROSOFT_CLIENT_SECRET',
+      adminNotes:
+        'In the Microsoft Entra admin center, register an application with a Web redirect URI set to the one below ("Accounts in this organizational directory only" is enough for your own school). Create a client secret under Certificates & secrets and paste the Application (client) ID and the secret value here. Then add your tenant ID on each email domain that uses Microsoft.',
     });
   }
 
