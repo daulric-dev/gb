@@ -8,7 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { getSessionToken, setSessionToken } from "@/lib/session-token";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, setFeatureDisabledHandler } from "@/lib/api";
+import { resolveFeatures } from "@/lib/features";
 import { registerForPush, unregisterPush } from "@/lib/push";
 
 export interface UserProfile {
@@ -29,6 +30,15 @@ export interface UserProfile {
     /** The school's logo; null shows nothing extra. */
     logo_url?: string | null;
   } | null;
+  /** Runs this install's organisation (managed on the web). */
+  is_org_admin?: boolean;
+  /** The organisation running this install; null before setup. */
+  organisation?: { name: string } | null;
+  /**
+   * Effective feature switches for the active school. Missing on servers that
+   * predate them; read it through `useFeatures()`, which fills the gaps.
+   */
+  features?: Partial<Record<string, boolean>>;
 }
 
 interface AuthContextValue {
@@ -36,6 +46,8 @@ interface AuthContextValue {
   loading: boolean;
   /** Re-reads the session; resolves with the profile (null when signed out). */
   refresh: () => Promise<UserProfile | null>;
+  /** Re-reads the profile without the loading state (no splash flash). */
+  refreshSilently: () => Promise<UserProfile | null>;
   logout: () => Promise<void>;
 }
 
@@ -51,8 +63,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchProfile = useCallback((): Promise<UserProfile | null> => {
+  const fetchProfile = useCallback((silent = false): Promise<UserProfile | null> => {
     if (inFlight.current) return inFlight.current;
+    if (silent) {
+      // Only the profile is re-read; a failure keeps what we have.
+      inFlight.current = api<UserProfile>("/auth/me", { skipAuthRedirect: true })
+        .then((data) => {
+          setProfile(data);
+          return data;
+        })
+        .catch(() => null)
+        .finally(() => {
+          inFlight.current = null;
+        });
+      return inFlight.current;
+    }
     if (retryTimer.current) {
       clearTimeout(retryTimer.current);
       retryTimer.current = null;
@@ -103,15 +128,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Register this device for pushes once per signed-in account. Staff get a
   // token too; the API only sends them what is meant for them.
+  // Not while the school has push notifications switched off.
   const userId = profile?.id ?? null;
+  const pushOn = resolveFeatures(profile?.features).push_notifications;
   useEffect(() => {
-    if (userId) void registerForPush();
-  }, [userId]);
+    if (userId && pushOn) void registerForPush();
+  }, [userId, pushOn]);
+
+  // A feature was switched off while the app was open: re-read the profile
+  // (at most every few seconds) so tabs and lists drop it.
+  const lastFeatureRefresh = useRef(0);
+  useEffect(() => {
+    setFeatureDisabledHandler(() => {
+      const now = Date.now();
+      if (now - lastFeatureRefresh.current < 5_000) return;
+      lastFeatureRefresh.current = now;
+      void fetchProfile(true);
+    });
+    return () => setFeatureDisabledHandler(null);
+  }, [fetchProfile]);
 
   const refresh = useCallback(async () => {
     inFlight.current = null;
     return fetchProfile();
   }, [fetchProfile]);
+
+  const refreshSilently = useCallback(() => fetchProfile(true), [fetchProfile]);
 
   const logout = useCallback(async () => {
     // Before /auth/logout: the device is removed as the signed-in user.
@@ -126,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ profile, loading, refresh, logout }}>
+    <AuthContext.Provider value={{ profile, loading, refresh, refreshSilently, logout }}>
       {children}
     </AuthContext.Provider>
   );

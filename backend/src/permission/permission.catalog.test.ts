@@ -32,7 +32,7 @@ describe('permission catalog', () => {
     }
   });
 
-  test('school has read and update (billing) only', () => {
+  test('school has read and update (settings) only', () => {
     expect(actionsFor('school')).toEqual(['read', 'update']);
 
     expect(isPermissionKey('school:read')).toBe(true);

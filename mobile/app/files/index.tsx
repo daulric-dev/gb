@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { ChevronRight, FolderClosed, FolderPlus, Upload } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api, apiQuery, ApiError } from "@/lib/api";
 import { uploadMyFile } from "@/lib/upload";
 import { uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -28,6 +28,7 @@ import type {
   FolderContents,
   FolderItem,
 } from "@/features/files/types";
+import { withFeature } from "@/components/layout/FeatureGate";
 
 const TABS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
@@ -45,7 +46,7 @@ function ListSkeleton() {
   );
 }
 
-export default function FilesScreen() {
+function FilesScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const toast = useToast();
@@ -79,7 +80,7 @@ export default function FilesScreen() {
   const fetchList = useCallback(
     async (f: Filter) => {
       try {
-        const data = await api<FileItem[]>(`/files?filter=${f}`);
+        const data = await apiQuery<FileItem[]>("/files", { filter: f });
         setFiles(data);
       } catch {
         toast.error("Failed to load files");
@@ -91,8 +92,10 @@ export default function FilesScreen() {
   const fetchContents = useCallback(
     async (id: string | null) => {
       try {
-        const q = id ? `?folderId=${id}` : "";
-        const data = await api<FolderContents>(`/files/folders/contents${q}`);
+        const data = await apiQuery<FolderContents>(
+          "/files/folders/contents",
+          id ? { folderId: id } : {},
+        );
         setContents(data);
       } catch {
         toast.error("Failed to load folder");
@@ -433,3 +436,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 });
+
+export default withFeature("files", "Files", FilesScreen);

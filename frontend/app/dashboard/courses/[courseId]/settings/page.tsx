@@ -50,6 +50,7 @@ import { CopyCourseDialog } from "../../_components/CopyCourseDialog";
 import { ImportContentDialog } from "../../_components/ImportContentDialog";
 import { Switch } from "@/components/ui/switch";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { useFeatures } from "@/hooks/use-features";
 
 const STATUS_ITEMS: { value: CourseStatus; label: string; hint: string }[] = [
   { value: "draft", label: "Draft", hint: "Hidden from students" },
@@ -64,6 +65,7 @@ export default function CourseSettingsPage() {
   const router = useRouter();
   const { course, canManage, reload } = useCourse();
   const { can } = usePermissions();
+  const { hasFeature } = useFeatures();
   const togglingTemplate = useSignal(false);
 
   const name = useSignal(course.name);
@@ -307,6 +309,7 @@ export default function CourseSettingsPage() {
 
       <CourseAppearanceCard />
 
+      {hasFeature("course_copy") && (
       <Card>
         <CardHeader>
           <CardTitle>Copy and templates</CardTitle>
@@ -344,6 +347,7 @@ export default function CourseSettingsPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       <Card className="border-destructive/40">
         <CardHeader>

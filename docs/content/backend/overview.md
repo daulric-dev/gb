@@ -62,7 +62,8 @@ backend/
 │   ├── file-manager/          # Personal files, folders, sharing (user/role/course), notifications
 │   ├── chat/                  # Real-time DMs (SSE + Redis pub/sub) + system messages
 │   ├── images/                # Avatar upload service (direct + presigned PUT) and public avatar route
-│   ├── billing/               # Hosted-platform billing (off unless BILLING_ENABLED=true)
+│   ├── organisation/          # First-run setup, organisation admins, creating schools
+│   ├── features/              # Platform features the organisation switches on/off; FeatureGuard
 │   ├── realtime/              # Redis (or in-process) pub/sub bus and presence for SSE
 │   ├── queue/                 # BullMQ job for file share notifications (inline without Redis)
 │   └── cache/                 # Pluggable caching (memory or Redis)
@@ -76,7 +77,8 @@ The app bootstrap logic lives in `src/createApp.ts`; `src/main.ts` is its only c
 - **Global prefix**: `api` - all routes are prefixed with this
 - **Swagger**: Available at `/docs`
 - **Validation**: Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform` enabled
-- **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
+- **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`), with the methods in `CORS_METHODS` (GET, QUERY, POST, PUT, PATCH, DELETE, OPTIONS)
+- **HTTP QUERY**: search and filter lists are `QUERY` routes with a JSON body; an empty QUERY body is read as `{}` (`acceptEmptyQueryBodies`). See [http-query.md](./http-query.md)
 - **No multipart parser**: no route accepts file bytes; clients upload straight to storage with presigned URLs
 
 `createApp()` calls `app.init()` but does **not** call `app.listen()`. `src/main.ts` calls `createApp()` then `app.listen()` on `PORT` (default 3001), bound to `0.0.0.0`.
@@ -122,11 +124,12 @@ AppModule
 ├── QueueModule (global - BullMQ file share-notify job with inline fallback)
 ├── ImagesModule (exports ImagesService - used by AuthModule for avatar uploads)
 ├── VersioningModule (global - exports VersioningService; includes TransformerRegistry and VersioningGuard)
-├── BillingModule (hosted-platform billing; off unless BILLING_ENABLED=true)
+├── OrganisationModule (first-run setup, organisation admins, schools and their admins)
+├── FeaturesModule (global - FeatureService + FeatureGuard; platform features, see features.md)
 └── CacheModule (global - exports CacheService with memory or Redis store)
 ```
 
-> See [versioning.md](./versioning.md) for how API versioning and pagination work.
+> See [versioning.md](./versioning.md) for how API versioning and pagination work, and [http-query.md](./http-query.md) for the QUERY list endpoints.
 
 ## Database Access
 
@@ -139,13 +142,12 @@ The PostgreSQL database uses multiple schemas to organize tables:
 | Schema | Contains |
 |--------|----------|
 | `account` | `app_user`, `session`, `email_code`, `identity` (own auth and linked SSO identities) |
-| `public` | `user_profile`, `school`, membership and roles, `permission_catalog`, `academic_year`, `term`, `announcement`, `announcement_read`, `school_email_domain`, `push_device` |
+| `public` | `organisation`, `organisation_admin`, `user_profile`, `school`, membership and roles, `permission_catalog`, `academic_year`, `term`, `announcement`, `announcement_read`, `school_email_domain`, `push_device` |
 | `student` | `student`, `school_join_code`, `parent_student_link` |
 | `course` | `course`, `course_staff`, `course_student`, `assignment_group`, `module`, `module_item`, `page`, `attendance_session`, `attendance_record`, `course_notification`, `discussion_topic`, `discussion_reply`, `discussion_read`, `discussion_setting` |
 | `grading` | `activity`, `quiz_question`, `quiz_option`, `quiz_answer`, `submission`, `grade_scale`, `grade_scale_band` |
 | `file_manager` | `file`, `file_share`, `notification`, `folder` |
 | `chat` | `conversation`, `conversation_member`, `message` |
-| `billing` | `subscription`, `invoice`, `payment_event`, `provider_setting`, `platform_admin` (hosted platform only) |
 
 ## Guards
 

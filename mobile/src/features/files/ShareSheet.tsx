@@ -6,7 +6,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { Sheet } from "@/components/ui/Sheet";
@@ -83,7 +83,7 @@ export function ShareSheet({
     Promise.all([
       api<ShareMember[]>("/schools/members").catch(() => []),
       api<ShareRole[]>("/permissions/roles").catch(() => []),
-      api<ShareCourse[]>("/courses").catch(() => []),
+      apiQuery<ShareCourse[]>("/courses").catch(() => []),
       api<FileShare[]>(`/files/${file.id}/shares`).catch(() => []),
     ])
       .then(([m, r, c, s]) => {

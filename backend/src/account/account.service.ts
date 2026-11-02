@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { Prisma } from '@/generated/prisma/client';
 import { isUniqueViolation } from '@/common/db-values';
@@ -13,6 +13,12 @@ export interface LinkedIdentity {
 }
 
 /**
+ * Runs after a sign-in proved the user's email (an email code, or an SSO
+ * provider that vouches for it), once the user is found or created.
+ */
+export type VerifiedSignInHook = (user: { id: string; email: string }) => Promise<void>;
+
+/**
  * Users of our own auth: one row per person, keyed by email, plus the SSO
  * identities linked to it.
  *
@@ -25,13 +31,41 @@ export interface LinkedIdentity {
  */
 @Injectable()
 export class AccountService {
+  private readonly logger = new Logger(AccountService.name);
+  private readonly verifiedHooks: VerifiedSignInHook[] = [];
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sessions: SessionService,
   ) {}
 
-  /** The user for a proven email address, created on first sign-in. */
+  /**
+   * Register work for every verified sign-in, such as applying the invites
+   * for that email (src/organisation/invite.service.ts registers itself at
+   * boot, so this module does not depend on the organisation module).
+   */
+  onVerifiedSignIn(hook: VerifiedSignInHook): void {
+    this.verifiedHooks.push(hook);
+  }
+
+  /**
+   * The user for a proven email address, created on first sign-in. Then the
+   * verified sign-in hooks run; one failing is logged and never fails the
+   * sign-in.
+   */
   async userForVerifiedEmail(rawEmail: string): Promise<{ id: string; email: string }> {
+    const user = await this.findOrCreateVerified(rawEmail);
+    for (const hook of this.verifiedHooks) {
+      try {
+        await hook(user);
+      } catch (err) {
+        this.logger.error(`Verified sign-in hook failed for ${user.id}: ${(err as Error).message}`);
+      }
+    }
+    return user;
+  }
+
+  private async findOrCreateVerified(rawEmail: string): Promise<{ id: string; email: string }> {
     const email = normalizeEmail(rawEmail);
     const existing = await this.prisma.app_user.findUnique({
       where: { email },

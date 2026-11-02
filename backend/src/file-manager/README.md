@@ -25,14 +25,14 @@ Other modules reuse the service to store student hand-ins and to read file bytes
 
 ### HTTP routes
 
-Every route is behind `AuthGuard` and `PermissionGuard`, with the `file:*` key shown. Ownership is checked again in the service: rename, move, delete and shares are for the owner only (403 otherwise), and folders are always private to their owner. Literal paths (`folders`, `notifications`, `upload-ticket`) are declared before `:id`.
+Every route is behind `AuthGuard`, `FeatureGuard` and `PermissionGuard`. The `files` feature ([`src/features`](../features/README.md)) gates only folders, moving files, shares and share notifications (403 `FEATURE_DISABLED` while off); listing, uploading, opening, renaming and deleting your own files stay available so teachers can still add course content, with the `file:*` key shown. With `messaging` off, sharing posts no chat message. Ownership is checked again in the service: rename, move, delete and shares are for the owner only (403 otherwise), and folders are always private to their owner. Literal paths (`folders`, `notifications`, `upload-ticket`) are declared before `:id`.
 
 | Method | Path | Permission | What it does |
 | --- | --- | --- | --- |
-| GET | `/api/files?filter=own\|shared\|all&page=&pageSize=` | `file:read` | Files the caller owns and/or that are shared with them, newest first. Returns a bare array without `page`, and a `{ data, meta }` envelope with it (`pageSize` at most 100). |
+| QUERY | `/api/files` (body `{ filter?: own\|shared\|all, page?, pageSize? }`) | `file:read` | Files the caller owns and/or that are shared with them, newest first. Returns a bare array without `page`, and a `{ data, meta }` envelope with it (`pageSize` at most 100). |
 | POST | `/api/files/upload-ticket` | `file:create` | Reserve a `pending` row and return a presigned PUT (`CreateUploadTicketDto`). The URL is valid for 5 minutes and signs the declared size and type. |
 | POST | `/api/files/upload-ticket/:fileId/complete` | `file:create` | Check the uploaded object (exists, size, declared size, signature, structure), then mark it `ready`. `503` while the verify budget is full; the row stays `pending`, retry. |
-| GET | `/api/files/folders/contents?folderId=` | `file:read` | One folder of the caller's tree: subfolders, files, breadcrumb. Omit `folderId` for the root. |
+| QUERY | `/api/files/folders/contents` (body `{ folderId? }`) | `file:read` | One folder of the caller's tree: subfolders, files, breadcrumb. Omit `folderId` for the root. |
 | GET | `/api/files/folders` | `file:read` | Every live folder the caller owns (for a move picker) |
 | POST | `/api/files/folders` | `file:create` | Create a folder (`CreateFolderDto`). A duplicate name under the same parent is a 400. |
 | PATCH | `/api/files/folders/:folderId` | `file:update` | Rename a folder (`RenameFolderDto`). System folders cannot be renamed. |

@@ -13,7 +13,7 @@ import {
   MessagesSquare,
   Paperclip,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, apiQuery, ApiError } from "@/lib/api";
 import type {
   Activity,
   CoursePage,
@@ -99,7 +99,7 @@ export function AddItemDialog({
       api<Activity[]>(`/courses/${courseId}/activities`).catch(
         () => [] as Activity[],
       ),
-      api<FileItem[]>("/files?filter=all").catch(() => [] as FileItem[]),
+      apiQuery<FileItem[]>("/files", { filter: "all" }).catch(() => [] as FileItem[]),
       api<DiscussionList>(`/courses/${courseId}/discussions`)
         .then((d) => d.topics)
         .catch(() => [] as DiscussionTopicSummary[]),

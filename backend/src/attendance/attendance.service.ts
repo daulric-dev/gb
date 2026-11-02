@@ -10,9 +10,11 @@ import {
   OnModuleDestroy,
   ServiceUnavailableException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
+import { WebhookEvents } from '@/integrations/events';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
@@ -217,7 +219,25 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     private readonly push: PushService,
     private readonly realtime: AttendanceRealtime,
     private readonly erasure: ErasureLogService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
+
+  /** attendance.recorded after a check-in or a teacher's change; fire and forget. */
+  private emitRecorded(session: SessionRow, studentId: string, record: RecordRow, by: string | null) {
+    const webhooks = this.webhooks;
+    if (!webhooks) return;
+    void webhooks.emitForCourse(session.course_id, 'attendance.recorded', async (course) => ({
+      session: { id: session.id },
+      course,
+      student: await webhooks.student(studentId),
+      record: {
+        status: record.status,
+        method: record.method,
+        checkedInAt: record.checked_in_at ? new Date(record.checked_in_at).toISOString() : null,
+      },
+      recordedBy: await webhooks.staffOrNull(by),
+    }));
+  }
 
   onModuleInit() {
     if (process.env.NODE_ENV === 'test') return;
@@ -458,6 +478,21 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
     const closed = toSessionRow(updated[0]);
     void this.announceClosed(closed, active);
+    void this.webhooks?.emitForCourse(closed.course_id, 'attendance.session_closed', async (course) => {
+      const records = await this.recordsFor([closed.id]);
+      const counts = { present: 0, late: 0, absent: 0, excused: 0 };
+      for (const r of records) counts[r.status]++;
+      return {
+        session: {
+          id: closed.id,
+          title: closed.title,
+          openedAt: new Date(closed.opened_at).toISOString(),
+          closedAt: new Date(closed.closed_at ?? stamp).toISOString(),
+        },
+        course,
+        counts,
+      };
+    });
     return closed;
   }
 
@@ -635,6 +670,18 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     const session = toSessionRow(data);
     // Fire and forget: opening never waits on pushes or the bus.
     void this.announceOpened(course, session);
+    void this.webhooks?.emitForCourse(courseId, 'attendance.session_opened', async (ref) => ({
+      session: {
+        id: session.id,
+        title: session.title,
+        openedAt: new Date(session.opened_at).toISOString(),
+        closesAt: new Date(session.closes_at).toISOString(),
+        requiresCode: !!session.check_in_code,
+        lateAfterMinutes: session.late_after_minutes,
+      },
+      course: ref,
+      openedBy: await this.webhooks!.staffOrNull(userId),
+    }));
     return this.detailOf(session);
   }
 
@@ -808,6 +855,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
     const [student] = await this.students([studentId]);
     const entry = this.toEntry(student, studentId, data);
+    this.emitRecorded(session, studentId, data, userId);
     void this.realtime.publishStaff(session.id, {
       type: 'attendance.record',
       data: entry,
@@ -1185,6 +1233,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       type: 'attendance.record',
       data: this.toEntry(student, studentId, record),
     });
+    this.emitRecorded(session, studentId, record, null);
 
     return this.toPortalOpen(session, course.name, status);
   }

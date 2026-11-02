@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { FeatureService } from '@/features/feature.service';
 
 export const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -42,7 +43,10 @@ export class PushService {
     init,
   ) => fetch(url, init);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly features: FeatureService,
+  ) {}
 
   async register(userId: string, token: string, platform: PushPlatform) {
     const device = {
@@ -81,7 +85,9 @@ export class PushService {
   /** Push to every device of these users. Never throws. */
   async sendToUsers(userIds: string[], message: PushMessage): Promise<void> {
     try {
-      const unique = [...new Set(userIds.filter(Boolean))];
+      const unique = await this.withPushOn([
+        ...new Set(userIds.filter(Boolean)),
+      ]);
       if (unique.length === 0) return;
 
       let data: { token: string }[];
@@ -116,6 +122,34 @@ export class PushService {
     } catch (err) {
       this.logger.error(`Push send failed: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * The recipients whose school has push notifications on (the
+   * organisation's setting for users without a school). Checked once per
+   * school. Registration is unaffected, so devices are ready when it is
+   * switched back on.
+   */
+  private async withPushOn(userIds: string[]): Promise<string[]> {
+    if (userIds.length === 0) return [];
+    const profiles = await this.prisma.user_profile.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, school_id: true },
+    });
+    const schoolOf = new Map(profiles.map((p) => [p.id, p.school_id ?? null]));
+    const decided = new Map<string | null, boolean>();
+    const out: string[] = [];
+    for (const id of userIds) {
+      const school = schoolOf.get(id) ?? null;
+      if (!decided.has(school)) {
+        decided.set(
+          school,
+          await this.features.isEnabled(school, 'push_notifications'),
+        );
+      }
+      if (decided.get(school)) out.push(id);
+    }
+    return out;
   }
 
   /** Send one batch; returns the tokens Expo says no longer exist. */

@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
+import { toActivityRef, WebhookEvents } from '@/integrations/events';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   CourseAccessService,
@@ -26,6 +27,7 @@ export class GradebookImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
 
   private async plan(courseId: string, csv: string): Promise<ImportPlan> {
@@ -117,8 +119,9 @@ export class GradebookImportService {
     }
 
     const now = new Date();
+    let written: { id: string }[];
     try {
-      await this.prisma.$transaction(
+      written = await this.prisma.$transaction(
         plan.changes.map((c) => {
           // A number marks and lifts any excuse; EX excuses and keeps the
           // score. Feedback and the student's own work are left alone.
@@ -160,6 +163,44 @@ export class GradebookImportService {
       throw new BadRequestException('Failed to import the marks');
     }
 
+    this.emitGrades(userId, courseId, plan.changes, written);
     return { applied: plan.changes.length, unchanged: plan.unchanged };
+  }
+
+  /** grade.recorded for every mark the import changed; fire and forget. */
+  private emitGrades(
+    userId: string,
+    courseId: string,
+    changes: ImportPlan['changes'],
+    written: { id: string }[],
+  ) {
+    const webhooks = this.webhooks;
+    if (!webhooks || changes.length === 0) return;
+    const activityIds = [...new Set(changes.map((c) => c.activityId))];
+    changes.forEach((c, i) => {
+      void webhooks.emitForCourse(courseId, 'grade.recorded', async (course) => {
+        const activities = await this.prisma.activity.findMany({
+          where: { id: { in: activityIds } },
+          select: { id: true, title: true, kind: true, points: true },
+        });
+        const activity = activities.find((a) => a.id === c.activityId);
+        if (!activity) return null;
+        const ref = toActivityRef(activity);
+        return {
+          submission: { id: written[i]?.id ?? null },
+          activity: ref,
+          course,
+          student: await webhooks.student(c.studentId),
+          grade: {
+            score: c.to.excused ? (c.from?.score ?? null) : c.to.score,
+            points: ref.points,
+            status: 'graded',
+            excused: c.to.excused,
+          },
+          gradedBy: await webhooks.staffOrNull(userId),
+          source: 'import',
+        };
+      });
+    });
   }
 }

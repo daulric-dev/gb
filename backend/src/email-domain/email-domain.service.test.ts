@@ -5,10 +5,12 @@ import { promises as dns } from 'node:dns';
 import { createMockCacheService } from '@/test/mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { TEST_IDP } from '@/test/saml-idp';
+import { SsoAuditService } from '@/sso/sso-audit.service';
 import { EmailDomainService } from './email-domain.service';
 
 const SCHOOL = 'school-1';
 const ADMIN = 'admin-1';
+const ORG = { id: 'org-admin', via: 'organisation_admin' as const };
 
 const unverified = {
   id: 'dom-1',
@@ -33,12 +35,23 @@ function build(setup: (prisma: MockPrisma) => void = () => {}) {
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL });
   setup(prisma);
   const cache = createMockCacheService();
+  // Google is set up for SCHOOL only; SAML for every school.
   const registry = {
-    get: (id: string) =>
-      ['google', 'saml'].includes(id) ? { id, label: id, readyFor: () => true } : undefined,
+    resolve: mock(async (id: string, schoolId: string | null) =>
+      id === 'saml' || (id === 'google' && schoolId === SCHOOL)
+        ? { adapter: { id, label: id, readyFor: () => true } }
+        : undefined,
+    ),
   };
-  const service = new EmailDomainService(prisma as any, cache as any, registry as any);
-  return { service, prisma, cache };
+  const alerts = { notify: mock(async () => {}) };
+  const service = new EmailDomainService(
+    prisma as any,
+    cache as any,
+    registry as any,
+    new SsoAuditService(prisma as any),
+    alerts as any,
+  );
+  return { service, prisma, cache, alerts };
 }
 
 const known = (code: string) =>
@@ -436,5 +449,70 @@ describe('EmailDomainService.update (SAML)', () => {
     const { service, prisma } = withRow(verified);
     await service.update(ADMIN, 'dom-1', { ssoProvider: 'saml', ...saml, ssoRequired: true });
     expect(prisma.school_email_domain.update.mock.calls[0][0].data.sso_required).toBe(true);
+  });
+});
+
+describe('EmailDomainService for an explicit school (organisation console)', () => {
+  test('listForSchool and addToSchool use the given school, not the caller\'s', async () => {
+    const { service, prisma } = build();
+    prisma.school_email_domain.create.mockImplementation(async ({ data }: any) => ({
+      ...unverified,
+      ...data,
+    }));
+    await service.listForSchool('school-9');
+    expect(prisma.school_email_domain.findMany.mock.calls[0][0].where).toEqual({ school_id: 'school-9' });
+    await service.addToSchool('school-9', ORG, { domain: 'riverside.edu', audience: 'student' });
+    expect(prisma.school_email_domain.create.mock.calls[0][0].data).toMatchObject({
+      school_id: 'school-9',
+      created_by: 'org-admin',
+    });
+    expect(prisma.user_profile.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("another school's domain is a 404 through the explicit forms", async () => {
+    const { service, prisma } = build();
+    await expect(service.updateInSchool('school-9', 'dom-1', { autoJoin: true }, ORG)).rejects.toThrow('Domain not found');
+    await expect(service.removeFromSchool('school-9', 'dom-1', ORG)).rejects.toThrow('Domain not found');
+    await expect(service.verifyInSchool('school-9', 'dom-1', ORG)).rejects.toThrow('Domain not found');
+    expect(prisma.school_email_domain.findFirst.mock.calls[0][0].where).toEqual({ id: 'dom-1', school_id: 'school-9' });
+  });
+
+  test('listAll carries each school', async () => {
+    const { service, prisma } = build((p) =>
+      p.school_email_domain.findMany.mockResolvedValue([{ ...unverified, school: { name: 'Riverside' } }]),
+    );
+    const [row] = await service.listAll();
+    expect(row).toMatchObject({ schoolId: SCHOOL, schoolName: 'Riverside', domain: 'riverside.edu', verified: false });
+    expect(prisma.school_email_domain.findMany.mock.calls[0][0].where).toBeUndefined();
+  });
+});
+
+describe('EmailDomainService per-school providers', () => {
+  function withRow(schoolId: string) {
+    return build((prisma) => {
+      prisma.school_email_domain.findFirst.mockResolvedValue({ ...unverified, school_id: schoolId });
+      prisma.school_email_domain.update.mockImplementation(async ({ data }: any) => ({
+        ...unverified,
+        school_id: schoolId,
+        ...data,
+      }));
+    });
+  }
+
+  test('a domain may pick a provider its own school has set up', async () => {
+    const { service } = withRow(SCHOOL);
+    const out = await service.updateInSchool(SCHOOL, 'dom-1', { ssoProvider: 'google' }, ORG);
+    expect(out.ssoProvider).toBe('google');
+  });
+
+  test("not one only another school has set up, nor one nobody has", async () => {
+    const { service, prisma } = withRow('school-2');
+    await expect(
+      service.updateInSchool('school-2', 'dom-1', { ssoProvider: 'google' }, ORG),
+    ).rejects.toThrow('That sign-in provider is not set up for this school');
+    await expect(
+      service.updateInSchool('school-2', 'dom-1', { ssoProvider: 'azure' }, ORG),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.school_email_domain.update).not.toHaveBeenCalled();
   });
 });

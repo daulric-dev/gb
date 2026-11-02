@@ -16,10 +16,15 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AdminGuard } from '@/auth/admin.guard';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { EmailDomainService } from './email-domain.service';
 import { AddEmailDomainDto, UpdateEmailDomainDto } from './dto/email-domain.dto';
 
-/** The school admin's list of email domains. */
+/**
+ * The school admin's list of email domains. Every write changes who can sign
+ * in to the school, so it needs a recent step-up confirmation
+ * (`@RequireStepUp()`) and is written to the SSO audit log.
+ */
 @ApiTags('School')
 @ApiBearerAuth()
 @Controller('schools/email-domains')
@@ -32,11 +37,13 @@ export class EmailDomainController {
     return this.domains.list(req.user.id as string);
   }
 
+  @RequireStepUp()
   @Post()
   async add(@Req() req: any, @Body() dto: AddEmailDomainDto) {
     return this.domains.add(req.user.id as string, dto);
   }
 
+  @RequireStepUp()
   @Patch(':id')
   async update(
     @Req() req: any,
@@ -46,6 +53,7 @@ export class EmailDomainController {
     return this.domains.update(req.user.id as string, id, dto);
   }
 
+  @RequireStepUp()
   @Delete(':id')
   @HttpCode(204)
   async remove(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
@@ -54,6 +62,7 @@ export class EmailDomainController {
 
   // A DNS lookup per call; no reason to let it be hammered.
   @Throttle({ 'claim-code': { limit: 20, ttl: 15 * 60 * 1000 } })
+  @RequireStepUp()
   @Post(':id/verify')
   @HttpCode(200)
   async verify(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {

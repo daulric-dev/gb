@@ -1,5 +1,16 @@
 /** Wire types for school email domains (see backend `email-domain` module). */
 
+/**
+ * Where a school's domain routes live: `${apiBase}/email-domains`. The
+ * default is the active school's (`/schools/email-domains`, school admins);
+ * the organisation console passes `organisationSchoolApi(id)`.
+ */
+export const CURRENT_SCHOOL_DOMAINS_BASE = "/schools";
+
+export function emailDomainsApi(apiBase: string = CURRENT_SCHOOL_DOMAINS_BASE): string {
+  return `${apiBase}/email-domains`;
+}
+
 /** "any": students and staff share the domain (e.g. everyone @srmss.edu.gd). */
 export type EmailDomainAudience = "student" | "staff" | "any";
 export type EmailDomainStaffRole = "teacher" | "member";

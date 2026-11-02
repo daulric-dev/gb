@@ -1,6 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { PermissionGuard } from './permission.guard';
+import { computeEffectivePermissions } from './permission.effective';
+import { defaultsForRole } from './permission.catalog';
 import { expectRejection } from '@/test/mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
 
@@ -149,5 +151,42 @@ describe('PermissionGuard', () => {
     const guard = guardWith(exploding, 'student:read', cache);
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
+  });
+
+  test('an organisation admin passes in a school they are not a member of', async () => {
+    const prisma = createMockPrisma();
+    prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
+    const guard = guardWith(prisma, 'school:update');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
+    expect(await guard.canActivate(ctx)).toBe(true);
+  });
+});
+
+describe('computeEffectivePermissions: organisation admins', () => {
+  test('get the full catalog without a membership', async () => {
+    const prisma = createMockPrisma();
+    prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
+    const effective = await computeEffectivePermissions(prisma as any, 'u1', 's1');
+    expect(effective).toEqual({
+      member: true,
+      role: 'admin',
+      keys: [...defaultsForRole('admin')],
+      viaOrganisation: true,
+    });
+  });
+
+  test('outrank a teacher membership in the same school', async () => {
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(membership('teacher'));
+    prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
+    const effective = await computeEffectivePermissions(prisma as any, 'u1', 's1');
+    expect(effective.role).toBe('admin');
+    expect(effective.keys).toContain('course:update');
+  });
+
+  test('a plain stranger stays a non-member', async () => {
+    const prisma = createMockPrisma();
+    const effective = await computeEffectivePermissions(prisma as any, 'u1', 's1');
+    expect(effective).toEqual({ member: false, role: null, keys: [] });
   });
 });

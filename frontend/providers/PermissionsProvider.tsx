@@ -80,12 +80,7 @@ export function usePermissions() {
     throw new Error("usePermissions must be used inside <PermissionsProvider>");
   }
   const data = ctx.data.value;
-
-  const can = (resource: string, action: string): boolean => {
-    if (!data) return false;
-    if (data.isAdmin) return true;
-    return data.permissions.includes(`${resource}:${action}`);
-  };
+  const can = canWith(data);
 
   return {
     can,
@@ -96,5 +91,23 @@ export function usePermissions() {
     permissions: data?.permissions ?? [],
     loading: ctx.loading,
     refresh: ctx.refresh,
+  };
+}
+
+/**
+ * `can` that is simply false outside a <PermissionsProvider> (the
+ * organisation console has none), for components used in both places.
+ */
+export function useOptionalCan(): (resource: string, action: string) => boolean {
+  useSignals();
+  const ctx = useContext(PermissionsContext);
+  return canWith(ctx?.data.value ?? null);
+}
+
+function canWith(data: MyPermissions | null) {
+  return (resource: string, action: string): boolean => {
+    if (!data) return false;
+    if (data.isAdmin) return true;
+    return data.permissions.includes(`${resource}:${action}`);
   };
 }

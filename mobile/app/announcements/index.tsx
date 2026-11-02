@@ -24,13 +24,14 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { AnnouncementForm } from "@/features/announcements/AnnouncementForm";
 import { ReaderAvatars } from "@/features/announcements/ReaderAvatars";
 import type { Announcement } from "@/features/announcements/types";
+import { withFeature } from "@/components/layout/FeatureGate";
 
 function authorName(a: Announcement): string {
   const name = `${a.author?.first_name ?? ""} ${a.author?.last_name ?? ""}`.trim();
   return name || "Staff";
 }
 
-export default function AnnouncementsScreen() {
+function AnnouncementsScreen() {
   const router = useRouter();
   const toast = useToast();
   const { colors } = useTheme();
@@ -231,3 +232,5 @@ const styles = StyleSheet.create({
     padding: 6,
   },
 });
+
+export default withFeature("announcements", "Announcements", AnnouncementsScreen);

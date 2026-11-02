@@ -61,7 +61,7 @@ What each path writes:
 | Delete an attendance session (`AttendanceService.remove`) | `attendance_session` / `admin` | delete (cascades its attendance records) |
 | Retention purge ([`src/retention`](../retention/README.md)) | `file`, `folder`, `chat_message`, `discussion_reply` / `retention_purge`, actor `system` | delete (files with objects); answered discussion placeholders lose `author_user_profile_id` |
 
-Not logged, on purpose: deleting content that is not personal data (modules, pages, activities - refused when they have work - rubrics, grade scales, terms, announcements, roles, email domains, join codes); roster changes inside a course (`course_student` / `course_staff` removal - access changes, not erasures; a student with work is only marked `dropped`); push-token removal; expired sessions and sign-in codes (a restore signs everyone out anyway, BACKUPS.md step 4); quiz-answer replacement during an attempt. Billing invoices are financial records and are not erased.
+Not logged, on purpose: deleting content that is not personal data (modules, pages, activities - refused when they have work - rubrics, grade scales, terms, announcements, roles, email domains, join codes); roster changes inside a course (`course_student` / `course_staff` removal - access changes, not erasures; a student with work is only marked `dropped`); push-token removal; expired sessions and sign-in codes (a restore signs everyone out anyway, BACKUPS.md step 4); quiz-answer replacement during an attempt.
 
 ## The storage copy (surviving a restore)
 

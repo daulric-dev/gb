@@ -90,7 +90,7 @@ All under `AuthGuard` + `StudentGuard`, scoped to the signed-in account:
 
 | Method | Route | Body / query | Returns |
 |--------|-------|--------------|---------|
-| GET | `/portal/me/notifications` | `limit` (1-100, default 30), `before` (ISO), `unread` (bool) | Newest first: `{ id, kind, courseId, courseName, activityId, announcementId, topicId, title, body, readAt, createdAt }[]` |
+| QUERY | `/portal/me/notifications` | JSON body: `limit` (1-100, default 30), `before` (ISO), `unread` (bool) | Newest first: `{ id, kind, courseId, courseName, activityId, announcementId, topicId, title, body, readAt, createdAt }[]` |
 | GET | `/portal/me/notifications/unread-count` | | `{ count }` |
 | POST | `/portal/me/notifications/read` | `{ ids: uuid[] }` (max 200) | 204; ids that are not the caller's are ignored |
 | POST | `/portal/me/notifications/read-all` | | 204 |

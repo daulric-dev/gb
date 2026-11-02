@@ -98,6 +98,8 @@ model school {
   max_upload_mb                               Int?
   /// Storage key of the school's logo under images/school-logos/; null shows the app mark.
   logo_path                                   String?
+  /// Feature keys the school's admin switched off (see src/features). A school can only switch off what the organisation allows.
+  disabled_features                           String[]              @default([])
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]
@@ -116,9 +118,11 @@ model school {
   user_profile_user_profile_school_idToschool user_profile[]        @relation("user_profile_school_idToschool")
   school_join_code                            school_join_code?
   student                                     student[]
-  subscription                                subscription?
-  invoice                                     invoice[]
-  payment_event                               payment_event[]
+  organisation_invite                         organisation_invite[]
+  school_sso_provider                         school_sso_provider[]
+  sso_audit_log                               sso_audit_log[]
+  school_webhook                              school_webhook[]
+  integration_audit_log                       integration_audit_log[]
 
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")
@@ -300,6 +304,10 @@ model user_profile {
   discussion_topic                                                  discussion_topic[]
   discussion_reply                                                  discussion_reply[]
   discussion_read                                                   discussion_read[]
+  organisation_admin                                                organisation_admin?        @relation("organisation_admin_user_idTouser_profile")
+  organisation_admin_created                                        organisation_admin[]       @relation("organisation_admin_created_byTouser_profile")
+  organisation_invite_sent                                          organisation_invite[]      @relation("organisation_invite_invited_byTouser_profile")
+  organisation_invite_accepted                                      organisation_invite[]      @relation("organisation_invite_accepted_byTouser_profile")
 
   @@index([school_id], map: "idx_user_profile_school")
   @@schema("public")
@@ -369,8 +377,18 @@ enum role {
 }
 
 enum schooltype {
+  preschool
   primary
+  middle
   secondary
+  all_through
+  sixth_form
+  college
+  university
+  vocational
+  special_education
+  online
+  other
 
   @@schema("public")
 }

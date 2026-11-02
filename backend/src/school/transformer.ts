@@ -5,10 +5,6 @@ export function v1SchoolList(data: School[]): School[] {
   return data;
 }
 
-export function v1SchoolDetail(raw: School): School {
-  return raw;
-}
-
 export function v1SchoolUploadLimit(raw: UploadLimit): UploadLimit {
   return raw;
 }

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { FeatureService } from '@/features/feature.service';
 import { ChatService } from './chat.service';
 
 interface CreatedShare {
@@ -22,22 +23,45 @@ interface CreatedShare {
 export class ChatSystemService {
   private readonly logger = new Logger(ChatSystemService.name);
 
-  constructor(private readonly chat: ChatService) {}
+  constructor(
+    private readonly chat: ChatService,
+    private readonly features: FeatureService,
+  ) {}
 
   /**
    * For each direct (user) share of a file, drop a "file shared with you"
    * message with an inline "Accept & view" action into the owner↔recipient DM.
    * Role/course shares are skipped — they have no single DM target (the file
-   * manager's own notification still covers them).
+   * manager's own notification still covers them). Nothing is posted while
+   * the school has `messaging` off, and students only get one with
+   * `student_messaging` on (they could not read it otherwise).
    */
   async notifyFileShares(
     ownerId: string,
     file: { id: string; name: string; school_id: string },
     shares: CreatedShare[],
   ): Promise<void> {
-    for (const share of shares) {
-      if (share.principal_type !== 'user') continue;
-      if (share.principal_id === ownerId) continue;
+    const direct = shares.filter(
+      (s) => s.principal_type === 'user' && s.principal_id !== ownerId,
+    );
+    if (direct.length === 0) return;
+
+    let skip: Set<string>;
+    try {
+      const features = await this.features.effective(file.school_id);
+      if (!features.messaging) return;
+      skip = features.student_messaging
+        ? new Set()
+        : await this.chat.studentAccountsAmong(direct.map((s) => s.principal_id));
+    } catch (err) {
+      this.logger.error(
+        `file_share chat messages skipped (file ${file.id}): ${(err as Error).message}`,
+      );
+      return;
+    }
+
+    for (const share of direct) {
+      if (skip.has(share.principal_id)) continue;
       try {
         const conversation = await this.chat.ensureDirectConversationRow(
           file.school_id,

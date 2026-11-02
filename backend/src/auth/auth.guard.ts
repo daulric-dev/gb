@@ -16,6 +16,8 @@ interface AuthenticatedRequest extends FastifyRequest {
     email?: string;
     /** The session making this request (Signed-in devices marks it "This device"). */
     sessionId?: string;
+    /** Step-up: ms epoch until which the session may change SSO settings (StepUpGuard). */
+    elevatedUntil?: number | null;
   };
 }
 
@@ -69,6 +71,7 @@ export class AuthGuard implements CanActivate {
         id: user.id,
         email: user.email,
         sessionId: session.sessionId,
+        elevatedUntil: session.elevatedUntil,
       };
 
       return true;

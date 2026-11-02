@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals-react";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import type { CourseNotification } from "@/lib/courses/types";
 
 /** Unread course notices for the signed-in student (the portal bell). */
@@ -17,7 +17,7 @@ export async function refreshCourseNoticeUnread() {
 }
 
 export function listCourseNotices(limit = 20) {
-  return api<CourseNotification[]>(`/portal/me/notifications?limit=${limit}`);
+  return apiQuery<CourseNotification[]>("/portal/me/notifications", { limit });
 }
 
 export async function markCourseNoticesRead(ids: string[]) {

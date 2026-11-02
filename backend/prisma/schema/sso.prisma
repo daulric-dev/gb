@@ -1,0 +1,52 @@
+/// A school's own sign-in app for one OAuth provider, set by the school's
+/// admin (`/api/schools/current/sso/providers`) or an organisation admin
+/// (`/api/organisation/schools/:id/sso/providers`). Provider = adapter id
+/// in src/sso/sso.registry.ts that needs a client (`google`, `azure`); SAML
+/// lives on school_email_domain. No row = the school uses the install-wide
+/// env credentials (SSO_PROVIDERS, GOOGLE_CLIENT_ID, ...), if any; a row,
+/// even a switched-off one, replaces them for that school. `client_secret_enc`
+/// is AES-256-GCM ciphertext under a key derived from AUTH_SECRET, bound to
+/// the school and provider (src/sso/sso-secret.ts): rotating AUTH_SECRET
+/// means re-entering the secrets.
+model school_sso_provider {
+  school_id         String   @db.Uuid
+  /// google | azure
+  provider          String
+  enabled           Boolean  @default(false)
+  client_id         String?
+  client_secret_enc String?
+  /// Non-secret per-provider settings (none yet for Google or Microsoft).
+  settings          Json     @default("{}")
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+  /// Who last saved it (no foreign key: the setting outlives the account).
+  updated_by        String?  @db.Uuid
+  school            school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([school_id, provider])
+  @@schema("public")
+}
+
+/// One change to a school's single sign-on settings (email domains, their
+/// provider / SAML / Microsoft tenant / Require SSO, the school's own sign-in
+/// apps), written in the same transaction as the change. `domain_id` and
+/// `actor_id` have no foreign key: the entry outlives the domain and the
+/// account. `changes` is `{ field: { before, after } }` plus context and never
+/// holds a secret (certificate SHA-256 fingerprints; client secrets only
+/// "set" / "cleared"). See src/sso/sso-audit.service.ts.
+model sso_audit_log {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id  String   @db.Uuid
+  domain_id  String?  @db.Uuid
+  domain     String?
+  actor_id   String?  @db.Uuid
+  /// school_admin | organisation_admin
+  actor_via  String
+  /// domain_added | domain_removed | domain_verified | domain_settings_changed | provider_changed | sso_required_changed | saml_changed | azure_tenant_changed | app_changed | app_secret_changed | app_enabled | app_disabled
+  action     String
+  changes    Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  school     school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([school_id, created_at(sort: Desc), id(sort: Desc)], map: "sso_audit_log_school_created_idx")
+  @@schema("public")
+}

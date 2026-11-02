@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ZipArchive } from 'archiver';
 import { basename } from 'node:path';
@@ -23,6 +24,11 @@ import {
   ts,
 } from './activity.mapper';
 import { loadAssessments, loadRubric } from './rubric.service';
+import {
+  scoreValue,
+  toActivityRef,
+  WebhookEvents,
+} from '@/integrations/events';
 
 const STUDENT_ACTIVITY_SELECT = {
   id: true,
@@ -82,7 +88,47 @@ export class SubmissionService {
     private readonly prisma: PrismaService,
     private readonly files: FileManagerService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly webhooks?: WebhookEvents,
   ) {}
+
+  // ── webhooks ──────────────────────────────────────────────────────────────
+
+  /**
+   * grade.recorded after a mark (or excuse) committed. Fire and forget: the
+   * payload is only built when the school has a webhook for it.
+   */
+  private emitGrade(
+    activityId: string,
+    marked: ReturnType<SubmissionService['toMarked']>,
+    userId: string,
+    source: 'teacher' | 'excuse',
+  ) {
+    const webhooks = this.webhooks;
+    if (!webhooks) return;
+    void (async () => {
+      const activity = await webhooks.activity(activityId);
+      if (!activity) return;
+      const row = await this.prisma.activity.findUnique({
+        where: { id: activityId },
+        select: { course_id: true },
+      });
+      if (!row?.course_id) return;
+      await webhooks.emitForCourse(row.course_id, 'grade.recorded', async (course) => ({
+        submission: { id: marked.id },
+        activity,
+        course,
+        student: await webhooks.student(marked.studentId),
+        grade: {
+          score: marked.score,
+          points: activity.points,
+          status: marked.status,
+          excused: marked.excused,
+        },
+        gradedBy: await webhooks.staffOrNull(userId),
+        source,
+      }));
+    })().catch(() => undefined);
+  }
 
   // ── student side ──────────────────────────────────────────────────────────
 
@@ -852,6 +898,17 @@ export class SubmissionService {
       throw new ConflictException('You have already submitted this');
     }
 
+    const handedIn = data;
+    void this.webhooks?.emitForCourse(activity.course_id, 'submission.handed_in', async (course) => ({
+      submission: {
+        id: handedIn.id,
+        submittedAt: (handedIn.submitted_at ?? new Date()).toISOString(),
+      },
+      activity: toActivityRef(activity),
+      course,
+      student: await this.webhooks!.student(studentId),
+    }));
+
     return {
       id: data.id,
       status: data.status,
@@ -1004,6 +1061,22 @@ export class SubmissionService {
     }
 
     const row = data[0];
+
+    void this.webhooks?.emitForCourse(activity.course_id, 'quiz.completed', async (course) => {
+      const ref = toActivityRef(activity);
+      return {
+        submission: { id: draft.id, attempt: row?.attempts_used ?? null },
+        activity: ref,
+        course,
+        student: await this.webhooks!.student(studentId),
+        grade: {
+          score: scoreValue(row?.score),
+          points: row?.points === undefined ? ref.points : scoreValue(row.points),
+          status: 'graded',
+          excused: false,
+        },
+      };
+    });
 
     return {
       score: row?.score === undefined ? null : scoreOrNull(row.score),
@@ -1209,13 +1282,15 @@ export class SubmissionService {
       );
     }
 
-    return this.writeSubmission(activityId, studentId, {
+    const marked = await this.writeSubmission(activityId, studentId, {
       status: 'graded',
       score: input.score,
       feedback: input.feedback ?? null,
       graded_at: new Date(),
       graded_by: userId,
     });
+    this.emitGrade(activityId, marked, userId, 'teacher');
+    return marked;
   }
 
   /**
@@ -1285,6 +1360,8 @@ export class SubmissionService {
       fields.graded_by = userId;
     }
 
-    return this.writeSubmission(activityId, studentId, fields);
+    const marked = await this.writeSubmission(activityId, studentId, fields);
+    this.emitGrade(activityId, marked, userId, 'excuse');
+    return marked;
   }
 }

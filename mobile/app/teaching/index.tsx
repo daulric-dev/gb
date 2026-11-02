@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BookOpen, ChevronRight } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -25,7 +25,7 @@ export default function TeachingCoursesScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    setCourses(await api<StaffCourse[]>("/courses").catch(() => null));
+    setCourses(await apiQuery<StaffCourse[]>("/courses").catch(() => null));
   }, []);
 
   useEffect(() => {

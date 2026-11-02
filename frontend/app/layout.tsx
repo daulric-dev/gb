@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { HapticsProvider } from "@/components/layout/haptics-provider";
 import { AuthProvider } from "@/providers/AuthProvider";
+import { StepUpDialogHost } from "@/components/account/step-up-dialog";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -34,7 +35,11 @@ export default async function RootLayout({children}: {children: React.ReactNode}
         >
           <TooltipProvider delay={0}>
             <HapticsProvider />
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              {children}
+              {/* "Confirm it's you" before single sign-on changes (lib/step-up.ts). */}
+              <StepUpDialogHost />
+            </AuthProvider>
             <Toaster richColors position="top-right" />
           </TooltipProvider>
         </ThemeProvider>

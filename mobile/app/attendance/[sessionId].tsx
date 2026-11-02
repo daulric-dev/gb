@@ -17,10 +17,11 @@ import {
   type PortalOpenAttendance,
 } from "@/lib/attendance";
 import { CheckedInCard } from "@/features/attendance/CheckedInCard";
+import { withFeature } from "@/components/layout/FeatureGate";
 
 const CODE_LENGTH = 4;
 
-export default function CheckInScreen() {
+function CheckInScreen() {
   const router = useRouter();
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { colors, clay } = useTheme();
@@ -289,3 +290,5 @@ const styles = StyleSheet.create({
   hidden: { position: "absolute", width: 1, height: 1, opacity: 0 },
   hint: { flexDirection: "row", alignItems: "center", gap: 6 },
 });
+
+export default withFeature("attendance", "Attendance", CheckInScreen);

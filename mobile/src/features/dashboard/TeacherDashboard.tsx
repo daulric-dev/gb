@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { BookOpen, Hand, Users } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import type { CourseSummary } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -28,7 +28,7 @@ export function TeacherDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    api<CourseSummary[]>("/courses")
+    apiQuery<CourseSummary[]>("/courses")
       .then((data) => !cancelled && setCourses(data))
       .catch(() => !cancelled && setCourses([]))
       .finally(() => !cancelled && setLoading(false));

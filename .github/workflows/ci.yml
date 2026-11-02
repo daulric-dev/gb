@@ -54,10 +54,12 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
       - name: Check results
-        run: |
-          if [ "${{ needs.build.result }}" != "success" ]; then
-            echo "CI failed: build=${{ needs.build.result }}"
-            exit 1
-          fi
-          echo "All checks passed"
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: bash .github/scripts/ci-check-results.sh

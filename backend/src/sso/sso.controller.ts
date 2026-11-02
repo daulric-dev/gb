@@ -57,7 +57,10 @@ class HandoffDto {
 export class SsoController {
   constructor(private readonly sso: SsoService) {}
 
-  /** The providers this deployment offers, for the login buttons. */
+  /**
+   * Login buttons usable without knowing the school (install-wide env apps).
+   * A school's own providers come from `discover` once the email is known.
+   */
   @Get('providers')
   providers() {
     return this.sso.providers();

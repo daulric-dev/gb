@@ -31,7 +31,7 @@ export interface FolderItem {
   updatedAt: string;
 }
 
-/** Response of GET /files/folders/contents. */
+/** Response of QUERY /files/folders/contents. */
 export interface FolderContents {
   folder: { id: string; name: string; parentId: string | null } | null;
   breadcrumb: FolderItem[];

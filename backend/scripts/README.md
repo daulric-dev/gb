@@ -23,13 +23,13 @@ bun run seed:demo --fresh      # delete the demo school and every @demo.test acc
 bun run seed:demo otp <email>  # print a sign-in code for an account (no mail)
 ```
 
-Creates **Riverside Academy**. Accounts, profiles, school membership and the roster go straight into the database (what onboarding would have done). Everything course-shaped then goes through the real API as the teacher or student who would do it - a grade scale, courses with staff and students, assignment groups, modules, pages, an uploaded file, activities and quiz questions, rubrics, discussions and replies, submissions, quiz attempts and marks, the course join code, course and school announcements - so seeding also exercises those endpoints. Two verified email domains and three past weeks of Biology attendance are written directly (there is no DNS for `demo.test`, and the API can only open a session now).
+Creates **Riverside Academy**. Accounts, profiles, school membership and the roster go straight into the database (what onboarding would have done), and so does the organisation: if the install has none yet it creates **Riverside Education Trust** (what first-run setup, `POST /api/setup`, would have done), and `admin@demo.test` becomes an organisation admin either way (the row goes with the account on `--fresh`; the organisation stays). Everything course-shaped then goes through the real API as the teacher or student who would do it - a grade scale, courses with staff and students, assignment groups, modules, pages, an uploaded file, activities and quiz questions, rubrics, discussions and replies, submissions, quiz attempts and marks, the course join code, course and school announcements - so seeding also exercises those endpoints. Two verified email domains and three past weeks of Biology attendance are written directly (there is no DNS for `demo.test`, and the API can only open a session now).
 
 Demo accounts (sign in at `http://localhost:3000/login`, read the code from Mailpit at `http://127.0.0.1:8025` or use `bun run seed:demo otp <email>`):
 
 | Email | Name | Role |
 | --- | --- | --- |
-| `admin@demo.test` | Grace Okafor | School admin, sees every course |
+| `admin@demo.test` | Grace Okafor | School admin (sees every course) and organisation admin |
 | `teacher@demo.test` | Maya Patel | Teaches Biology 101 and World History (draft) |
 | `teacher2@demo.test` | Leo Brooks | Teaches Algebra I and Creative Writing (archived) |
 | `ta@demo.test` | Ana Ruiz | TA in Biology 101 |
@@ -46,7 +46,7 @@ bun run seed:demo --fresh   # once, with the API running
 bun run smoke
 ```
 
-Signs in as `teacher`, `ta`, `admin`, `student` and `student2` from the demo school and walks the main flows, printing `PASS` / `FAIL` per check and exiting non-zero on any failure: profile and school structure (date formats, permissions), courses and course files through the portal, the gradebook, grading extras (CSV import, drop lowest, rubrics), the student portal, the calendar and new-work notices, attendance (code and QR), email domains and SSO discovery, announcements and chat, discussions, course copy and templates, and billing. With `BILLING_ENABLED=true` it runs the billing flow and then restores the school's subscription and removes the invoices it created (and, with `USE_REDIS=true`, drops the cached `billing:ent:<schoolId>` entitlement); with billing off it checks that every `/billing` and `/platform` route is 404.
+Signs in as `teacher`, `ta`, `admin`, `student` and `student2` from the demo school and walks the main flows, printing `PASS` / `FAIL` per check and exiting non-zero on any failure: profile and school structure (date formats, permissions), courses and course files through the portal, the gradebook, grading extras (CSV import, drop lowest, rubrics), the student portal, the calendar and new-work notices, attendance (code and QR), email domains and SSO discovery, announcements and chat, discussions, course copy and templates, and the organisation: `GET /setup/status` is public and reports done, a second `POST /setup` is a 409, `admin` is an organisation admin (`is_org_admin` on `/auth/me`) and the teacher and student get 403 on `/organisation`, the overview and the schools list (with the demo school's admin and counts), `POST /schools` and the old `/billing` and `/platform` routes are 404, and a school created with `POST /organisation/schools` gets its system roles and the TA as admin without making the organisation admin a member; appointing the teacher demotes the TA to teacher, an unknown email is a 404, and the school can be deactivated (then deleted straight from the database).
 
 The last section checks GDPR erasure: the teacher deletes a new file and a chat message, the erasure-log entries are checked (ids only, right actor and reason), `retention-purge.ts --retention-days 0 --only <those two ids>` is run (dry run first) and must remove both rows and the stored object with `retention_purge` entries, then a restore is simulated - the two rows put back and their log entries deleted, after waiting for them to reach object storage - and `erasure-replay.ts --since <start of the section>` must remove the rows again from the storage copy and restore the log entries; a second replay must report `0 applied`. Its erasure-log entries stay (the log is append-only).
 
@@ -68,9 +68,7 @@ Needs the API running with `ALLOW_DEV_LOGIN=true`; it does **not** need the demo
 6. **Staff API refused** - `/students`, `/dashboard/summary`, `/schools/members`, `/permissions/catalog` and `/schools/join-code` are 403 for the student; `/permissions/me` reports a student with no permissions.
 7. **Revoking** - staff revoke the code (204), the status shows no live code, and redeeming it is now a 400.
 
-Billing: the fixture school has no subscription, which the API treats as writable, so the script passes with `BILLING_ENABLED` on or off.
-
-**Clean-up** runs in a `finally`, so it happens even when a check fails or the script throws: it deletes the school (cascading to its years, terms, courses and their content, students, join codes, memberships and billing rows), the three accounts by email (cascading to profiles, sessions and identities) and their sign-in codes. The last check compares the `school`, `app_user` and `student` row counts with those taken before the run. Emails carry a timestamp, so runs never collide.
+**Clean-up** runs in a `finally`, so it happens even when a check fails or the script throws: it deletes the school (cascading to its years, terms, courses and their content, students, join codes and memberships), the three accounts by email (cascading to profiles, sessions and identities) and their sign-in codes. The last check compares the `school`, `app_user` and `student` row counts with those taken before the run. Emails carry a timestamp, so runs never collide.
 
 ## `retention-purge.ts` - soft-delete purge, now
 

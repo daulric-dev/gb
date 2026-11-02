@@ -4,9 +4,9 @@ Request bodies and query strings for `file-manager.controller.ts`. They are vali
 
 | File | Defines | Used by | Validation |
 | --- | --- | --- | --- |
-| `list-files.query.dto.ts` | `ListFilesQueryDto` (re-exports `FileListFilter`) | `GET /api/files` | `filter`: optional `own`, `shared` or `all` (default `all`). `page`: optional int, at least 1. `pageSize`: optional int, 1 to 100. |
+| `list-files.query.dto.ts` | `ListFilesQueryDto` (re-exports `FileListFilter`) | `QUERY /api/files` (JSON body) | `filter`: optional `own`, `shared` or `all` (default `all`). `page`: optional int, at least 1. `pageSize`: optional int, 1 to 100. |
 | `list-files.filter.ts` | `FileListFilter` enum | the DTO above, and `FileManagerService.list()` | Plain enum with no decorators, so the domain code can import it without class-validator |
-| `browse-folder.query.dto.ts` | `BrowseFolderQueryDto` | `GET /api/files/folders/contents` | `folderId`: optional UUID; omit for the root |
+| `browse-folder.query.dto.ts` | `BrowseFolderQueryDto` | `QUERY /api/files/folders/contents` (JSON body) | `folderId`: optional UUID; omit for the root |
 | `create-folder.dto.ts` | `CreateFolderDto` | `POST /api/files/folders` | `name`: string, 1 to 120 characters. `parentId`: optional UUID. |
 | `rename-folder.dto.ts` | `RenameFolderDto` | `PATCH /api/files/folders/:folderId` | `name`: string, 1 to 120 characters |
 | `move-folder.dto.ts` | `MoveFolderDto` | `PATCH /api/files/folders/:folderId/move` | `parentId`: UUID, or `null` for the root |

@@ -263,6 +263,7 @@ export class CourseCopyService {
       throw new BadRequestException('Failed to copy the course');
     }
 
+    this.courses.announceCreated?.(created.id, userId);
     return {
       ...this.courses.toCourse(created),
       role: 'teacher' as const,

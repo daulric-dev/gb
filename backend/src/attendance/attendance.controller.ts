@@ -15,6 +15,8 @@ import {
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { AttendanceService } from './attendance.service';
 import { AttendanceRealtime } from './attendance.realtime';
 import { OpenAttendanceDto, SetAttendanceRecordDto } from './dto/attendance.dto';
@@ -28,7 +30,8 @@ import { openEventStream } from './sse';
 @ApiTags('Attendance')
 @ApiBearerAuth()
 @Controller('courses/:courseId/attendance')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureGuard)
+@RequireFeature('attendance')
 export class AttendanceController {
   constructor(
     private readonly attendance: AttendanceService,

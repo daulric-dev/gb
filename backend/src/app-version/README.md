@@ -41,6 +41,8 @@ None. Configuration is read once at boot.
 
 All optional; unset means no requirement. A malformed version or a non-https store URL throws at boot in production (fail closed) and is warned about and ignored in development. A `latest` below the `minimum` is raised to the minimum with a warning. Raise the minimum only after the new build is live in both stores, or users are locked out with nothing to update to.
 
+The list endpoints moved to HTTP `QUERY` (docs/content/backend/http-query.md); builds from before that send `GET` and get 404s on those screens, so the minimum should be raised to the first build using `QUERY` once it is in both stores.
+
 ## Files
 
 | File | Purpose |

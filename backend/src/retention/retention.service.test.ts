@@ -16,6 +16,7 @@ const ENV = [
   'SOFT_DELETE_RETENTION_DAYS_CHAT_MESSAGES',
   'RETENTION_PURGE_BATCH_SIZE',
   'RETENTION_PURGE_MAX_MINUTES',
+  'WEBHOOK_DELIVERY_RETENTION_DAYS',
 ];
 let saved: Record<string, string | undefined>;
 beforeEach(() => {
@@ -184,6 +185,33 @@ describe('other kinds', () => {
     expect(tx.discussion_reply.updateMany.mock.calls[0][0].data).toEqual({ author_user_profile_id: null, body: '' });
     const kinds = tx.erasure_log.create.mock.calls.map((c: any) => c[0].data.replay.steps[0].op);
     expect(kinds).toEqual(['delete', 'update']);
+  });
+
+  test('webhook deliveries older than WEBHOOK_DELIVERY_RETENTION_DAYS are deleted in batches', async () => {
+    const { prisma, service } = setup();
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([{ id: U(10) }, { id: U(11) }]).mockResolvedValue([]);
+    prisma.webhook_delivery.deleteMany.mockResolvedValue({ count: 2 });
+    const report = await service.purge({ now: NOW });
+    expect(report.webhookDeliveries).toBe(2);
+    expect(prisma.webhook_delivery.findMany.mock.calls[0][0].where).toEqual({
+      created_at: { lt: new Date(NOW.getTime() - 30 * DAY) },
+    });
+    expect(prisma.webhook_delivery.deleteMany.mock.calls[0][0]).toEqual({ where: { id: { in: [U(10), U(11)] } } });
+
+    process.env.WEBHOOK_DELIVERY_RETENTION_DAYS = '7';
+    const second = setup();
+    await second.service.purge({ now: NOW });
+    expect(second.prisma.webhook_delivery.findMany.mock.calls[0][0].where.created_at.lt).toEqual(
+      new Date(NOW.getTime() - 7 * DAY),
+    );
+  });
+
+  test('a dry run only counts webhook deliveries', async () => {
+    const { prisma, service } = setup();
+    prisma.webhook_delivery.count.mockResolvedValue(4);
+    const report = await service.purge({ now: NOW, dryRun: true });
+    expect(report.webhookDeliveries).toBe(4);
+    expect(prisma.webhook_delivery.deleteMany).not.toHaveBeenCalled();
   });
 
   test('expired sessions, old sign-in codes and unused remembered devices are cleared (not logged)', async () => {

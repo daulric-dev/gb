@@ -38,12 +38,12 @@ Students are stored in the `student` schema (not `public`).
 
 All endpoints require `AuthGuard`. Students are automatically scoped to the user's school.
 
-### `GET /api/students`
+### `QUERY /api/students`
 
-Returns all students for the user's school.
+Returns all students for the user's school. The filters are a JSON request body ([HTTP QUERY](./http-query.md)); an empty body returns everyone.
 
-**Query Parameters:**
-| Param | Required | Description |
+**Body:**
+| Field | Required | Description |
 |-------|----------|-------------|
 | `search` | No | Search by first or last name (case-insensitive partial match) |
 

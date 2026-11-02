@@ -5,7 +5,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { insecureCookieWarning, isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
-import { registerWebhookRawBody } from './billing/webhooks/raw-body';
+import { acceptEmptyQueryBodies, CORS_METHODS } from './common/http-query';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -22,9 +22,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
   );
 
   await app.register(cookie);
-
-  // Billing webhooks verify signatures over the exact bytes received.
-  registerWebhookRawBody(app.getHttpAdapter().getInstance());
 
   console.log(`Running in ${process.env.NODE_ENV} mode`);
 
@@ -51,6 +48,9 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   const raw_instance = app.getHttpAdapter().getInstance();
 
+  // An empty QUERY body means "no filters", not a JSON parse error.
+  acceptEmptyQueryBodies(raw_instance);
+
   raw_instance.get('/', (_, res) => {
     res.send('gb');
   });
@@ -62,7 +62,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
   app.enableCors({
     origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    // QUERY (search and filter lists) is preflighted; it must be listed.
+    methods: CORS_METHODS,
     allowedHeaders: [
       'Content-Type',
       'Authorization',

@@ -9,7 +9,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-/** Create a multi-participant channel. Requires CHAT_CHANNELS_ENABLED. */
+/** Create a multi-participant channel of staff. Requires the chat_channels feature. */
 export class CreateChannelDto {
   @ApiProperty({ maxLength: 120 })
   @IsString()

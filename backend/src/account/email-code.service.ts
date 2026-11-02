@@ -10,6 +10,7 @@ import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MailService } from '@/mail/mail.service';
 import { signInCodeEmail } from './templates/sign-in-code';
+import { stepUpCodeEmail } from './templates/step-up-code';
 import { authSecret } from './secret';
 
 export const CODE_LENGTH = 8;
@@ -33,6 +34,13 @@ const SEND_WINDOW_MS = 15 * 60_000;
 export const MAX_SENDS_PER_EMAIL = 20;
 const EMAIL_SEND_WINDOW_MS = 60 * 60_000;
 
+/**
+ * What a code is for (account.email_code.purpose). A code only works for the
+ * purpose it was sent for: a sign-in code cannot confirm a settings change
+ * (step-up), and a step-up code cannot sign anyone in.
+ */
+export type CodePurpose = 'sign_in' | 'step_up';
+
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -42,9 +50,12 @@ export function normalizeEmail(email: string): string {
  * be reversed by trying all hundred million codes; keyed, a database leak
  * reveals nothing without the secret too.
  */
-export function hashCode(email: string, code: string): string {
+export function hashCode(email: string, code: string, purpose: CodePurpose = 'sign_in'): string {
+  // Sign-in keeps its original input; other purposes are bound into the hash
+  // as well as filtered on, so a row's purpose cannot be swapped.
+  const prefix = purpose === 'sign_in' ? '' : `${purpose}:`;
   return createHmac('sha256', authSecret())
-    .update(`${normalizeEmail(email)}:${code}`)
+    .update(`${prefix}${normalizeEmail(email)}:${code}`)
     .digest('hex');
 }
 
@@ -74,6 +85,11 @@ export function hashClient(ip: string | undefined): string {
  *   Only the per-address cap can stop the owner asking for a code.
  *
  * A code expires after five minutes and is used once.
+ *
+ * The same mechanics and limits serve step-up confirmation (`purpose`
+ * 'step_up', see src/auth/step-up.guard.ts): each purpose is counted, checked
+ * and used up on its own, so neither can stand in for the other or spend the
+ * other's budget.
  */
 @Injectable()
 export class EmailCodeService {
@@ -85,17 +101,17 @@ export class EmailCodeService {
   ) {}
 
   /** Mail a new code to an address. `ip` is the client asking for it. */
-  async send(rawEmail: string, ip?: string): Promise<void> {
+  async send(rawEmail: string, ip?: string, purpose: CodePurpose = 'sign_in'): Promise<void> {
     const email = normalizeEmail(rawEmail);
     const client = hashClient(ip);
     const now = Date.now();
 
     const [fromClient, toAddress] = await Promise.all([
       this.prisma.email_code.count({
-        where: { email, ip_hash: client, created_at: { gt: new Date(now - SEND_WINDOW_MS) } },
+        where: { email, purpose, ip_hash: client, created_at: { gt: new Date(now - SEND_WINDOW_MS) } },
       }),
       this.prisma.email_code.count({
-        where: { email, created_at: { gt: new Date(now - EMAIL_SEND_WINDOW_MS) } },
+        where: { email, purpose, created_at: { gt: new Date(now - EMAIL_SEND_WINDOW_MS) } },
       }),
     ]);
     if (fromClient >= MAX_SENDS_PER_CLIENT) {
@@ -107,18 +123,19 @@ export class EmailCodeService {
     if (toAddress >= MAX_SENDS_PER_EMAIL) {
       // Possibly not this client's doing: say what happened, not "you".
       throw new HttpException(
-        'Too many sign-in codes have been sent to this address in the last hour. ' +
+        `Too many ${purpose === 'sign_in' ? 'sign-in' : 'confirmation'} codes have been sent to this address in the last hour. ` +
           'Use a code already sent, or try again later.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    const code = await this.issue(email, ip);
+    const code = await this.issue(email, ip, purpose);
+    const message = purpose === 'sign_in' ? signInCodeEmail(code) : stepUpCodeEmail(code);
 
     try {
-      await this.mail.send({ to: email, ...signInCodeEmail(code) });
+      await this.mail.send({ to: email, ...message });
     } catch (err) {
-      this.logger.error(`Sign-in code email failed: ${(err as Error).message}`);
+      this.logger.error(`${purpose} code email failed: ${(err as Error).message}`);
       throw new BadRequestException('Failed to send the code. Try again shortly.');
     }
   }
@@ -128,14 +145,15 @@ export class EmailCodeService {
    * codes keep working. `send` mails it; the dev-only sign-in endpoint hands
    * it straight back to local scripts.
    */
-  async issue(rawEmail: string, ip?: string): Promise<string> {
+  async issue(rawEmail: string, ip?: string, purpose: CodePurpose = 'sign_in'): Promise<string> {
     const email = normalizeEmail(rawEmail);
     const code = String(randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, '0');
 
     await this.prisma.email_code.create({
       data: {
         email,
-        code_hash: hashCode(email, code),
+        purpose,
+        code_hash: hashCode(email, code, purpose),
         expires_at: new Date(Date.now() + CODE_TTL_MS),
         ip_hash: hashClient(ip),
       },
@@ -149,7 +167,12 @@ export class EmailCodeService {
    * failure is the same 401 so responses say nothing about which part was
    * wrong. `ip` is the client guessing.
    */
-  async verify(rawEmail: string, code: string, ip?: string): Promise<string> {
+  async verify(
+    rawEmail: string,
+    code: string,
+    ip?: string,
+    purpose: CodePurpose = 'sign_in',
+  ): Promise<string> {
     const email = normalizeEmail(rawEmail);
     const client = hashClient(ip);
     const invalid = new UnauthorizedException('Invalid or expired code');
@@ -160,6 +183,7 @@ export class EmailCodeService {
     const live = await this.prisma.email_code.findMany({
       where: {
         email,
+        purpose,
         consumed_at: null,
         expires_at: { gt: now },
         attempts: { lt: MAX_TOTAL_ATTEMPTS },
@@ -194,7 +218,7 @@ export class EmailCodeService {
       select: { id: true, code_hash: true },
     });
 
-    const given = Buffer.from(hashCode(email, code.trim()), 'hex');
+    const given = Buffer.from(hashCode(email, code.trim(), purpose), 'hex');
     let match: string | undefined;
     // Compare against every code, matched or not, so timing says nothing
     // about which (or whether an earlier one) matched.
@@ -212,9 +236,9 @@ export class EmailCodeService {
       data: { consumed_at: usedAt },
     });
     if (used.count !== 1) throw invalid;
-    // Signed in: the address's other codes are no longer needed.
+    // Done: the address's other codes for this purpose are no longer needed.
     await this.prisma.email_code.updateMany({
-      where: { email, consumed_at: null },
+      where: { email, purpose, consumed_at: null },
       data: { consumed_at: usedAt },
     });
 

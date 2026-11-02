@@ -83,14 +83,22 @@ export function ssoErrorMessage(raw: string | null | undefined): string | null {
   return GENERIC_ERROR;
 }
 
+/** Names for the built-in providers, when no provider list is at hand. */
+const PROVIDER_NAMES: Record<string, string> = {
+  google: "Google",
+  azure: "Microsoft",
+  saml: "SAML",
+};
+
 /** How the admin screens name a provider ("your school (SSO)" reads oddly there). */
 export function ssoProviderName(provider: SsoProvider | undefined, id: string): string {
   if (provider?.kind === "saml" || (!provider && id === "saml")) return "SAML";
-  return provider ? provider.label : id;
+  return provider ? provider.label : (PROVIDER_NAMES[id] ?? id);
 }
 
 /**
- * What a school's SAML identity provider needs to know about us. The API
+ * What a school's SAML identity provider needs to know about us, when the
+ * API's own answer (the school's provider list) is not loaded. The API
  * serves the metadata and receives assertions at the ACS URL. The entity ID is
  * the API's `SAML_SP_ENTITY_ID`; it defaults to the metadata URL, and
  * `NEXT_PUBLIC_SAML_SP_ENTITY_ID` must match the API when that is overridden.

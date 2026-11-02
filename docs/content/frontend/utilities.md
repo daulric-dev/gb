@@ -30,6 +30,14 @@ The main export. Makes authenticated JSON requests to the backend.
 - Sends `credentials: "include"` so the browser forwards the `gb_session` cookie on every request
 - The frontend never reads or attaches a token - the backend's `AuthGuard` validates the session cookie on every authenticated request and slides its expiry
 
+### `apiQuery<T>(path, filters?, options?)` Function
+
+For the API's search and filter lists, which take the HTTP `QUERY` method ([HTTP QUERY](../backend/http-query.md)): sends `method: "QUERY"` with `filters` as the JSON body (`{}` when omitted, so there is always a body and a `Content-Type`). Everything else - headers, cookies, 401 and `FEATURE_DISABLED` handling - is `api()`'s. There is no response cache, so different filters to one path are separate reads. Used for `/courses`, `/students`, `/files`, `/files/folders/contents`, chat history (`lib/chat.ts`), portal notices (`lib/portal-notifications.ts`), organisation schools and invites (`listOrganisationSchools`, `listInvites` in `lib/organisation.ts`) and SSO activity (`listSsoAudit` in `lib/sso-audit.ts`).
+
+```ts
+const students = await apiQuery<Student[]>("/students", { search: "ada" });
+```
+
 ### 401 Handling
 
 If the API returns a `401 Unauthorized`, the frontend redirects to `/login`. There is no client-side refresh retry - there is no token to refresh, so a 401 means the session itself is gone (expired, revoked, or the cookie was cleared).

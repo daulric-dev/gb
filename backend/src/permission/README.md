@@ -14,7 +14,7 @@ The catalog only covers school-wide surfaces. Work inside a course (content, mar
 
 | Method | Path | Guard | What it does |
 | --- | --- | --- | --- |
-| GET | `/api/permissions/me` | `AuthGuard` (any signed-in user) | The caller's effective permissions in their active school: `{ schoolId, role, accountType, isAdmin, permissions }`. Students and users with no school get an empty list. |
+| GET | `/api/permissions/me` | `AuthGuard` (any signed-in user) | The caller's effective permissions in their active school: `{ schoolId, role, accountType, isAdmin, viaOrganisation, permissions }`. An organisation admin reads as `isAdmin: true` with the full catalog in any school (`viaOrganisation: true`). Students and users with no school get an empty list. |
 | GET | `/api/permissions/catalog` | `AuthGuard` + `AdminGuard` | The code-defined catalog (`resource`, `action`, `key`, `description`) |
 | GET | `/api/permissions/roles` | `AuthGuard` + `AdminGuard` | Roles in the admin's school, system roles first, then by name |
 | POST | `/api/permissions/roles` | `AuthGuard` + `AdminGuard` | Create a custom role (`CreateRoleDto`). A duplicate name is a 400. |
@@ -52,11 +52,11 @@ The management routes use `AdminGuard` rather than `PermissionGuard`, because ga
   1. With no metadata, the guard lets the request through.
   2. Without `request.user`, it fails closed (403).
   3. It resolves the school from `:schoolId`, else from the course in `:courseId`, else from the user's active school (`user_profile.school_id`).
-  4. It loads the effective set. A non-member gets 403 "not a member of this school"; a missing key gets 403 `Missing permission: <key>`.
+  4. It loads the effective set. A non-member gets 403 "not a member of this school" (an organisation admin always counts as a member); a missing key gets 403 `Missing permission: <key>`.
 - **`permission.effective.ts`**:
-  - `computeEffectivePermissions(prisma, userId, schoolId)`.
+  - `computeEffectivePermissions(prisma, userId, schoolId)`. **Organisation admins** (`isOrgAdmin` from `src/organisation/org-admin.ts`: a `public.organisation_admin` row or a verified email in `ORG_ADMIN_EMAILS`) administer every school: they get `{ member: true, role: 'admin', keys: <full catalog>, viaOrganisation: true }` in any school, with or without a membership. This is the single place that rule lives; `PermissionGuard`, `CourseAccessService`, the dashboard and `/permissions/me` all follow from it.
   - `loadEffectivePermissions(prisma, cache, userId, schoolId)`, the same with a cache in front: key `perm:eff:<userId>:<schoolId>`, TTL `PERM_TTL` = 45 s.
-  - Also exports `permCacheKey()` and `PERM_CACHE_PREFIX`.
+  - Also exports `permCacheKey()`, `userPermCachePrefix()` (all of one user's sets; dropped on switching the active school and when an organisation admin is added or removed) and `PERM_CACHE_PREFIX`.
 - **`permission.catalog.ts`**:
   - `RESOURCES` and `ACTIONS`, and `actionsFor()`.
   - `permKey()`, `PERMISSION_CATALOG`, `PERMISSION_KEYS` and `isPermissionKey()`.
@@ -86,7 +86,7 @@ Keys are `<resource>:<action>`, and a key exists only when something enforces it
 | `grade-scale:update` | Edit grade scales | | | `grade-scale.controller.ts` (also `AdminGuard`) |
 | `grade-scale:delete` | Delete grade scales | | | `grade-scale.controller.ts` (also `AdminGuard`) |
 | `school:read` | View school settings | yes | yes | `school.controller.ts` |
-| `school:update` | Edit school settings | | | `billing.controller.ts` (plan, payment, invoices) |
+| `school:update` | Edit school settings | | | `school.controller.ts` (upload limit, logo) |
 | `announcement:create` | Create announcements | yes | | `announcement.controller.ts` |
 | `announcement:read` | View announcements | yes | yes | `announcement.controller.ts` |
 | `announcement:update` | Edit announcements | yes | | `announcement.controller.ts` |
@@ -104,14 +104,14 @@ A custom role can grant any of these keys on top of the base role's defaults. Sy
 
 ## Used by
 
-- **`PermissionGuard` + `@RequirePermission`**: the controllers in the table above, which are `academic-year`, `announcement`, `billing`, `chat`, `course` (`course.controller.ts`, `course-copy.controller.ts`), `file-manager`, `grade-scale`, `school`, `student`, `student-account/school-join-code.controller.ts` and `term`.
+- **`PermissionGuard` + `@RequirePermission`**: the controllers in the table above, which are `academic-year`, `announcement`, `chat`, `course` (`course.controller.ts`, `course-copy.controller.ts`), `file-manager`, `grade-scale`, `school`, `student`, `student-account/school-join-code.controller.ts` and `term`.
 - **`loadEffectivePermissions`**:
   - `course/access/course-access.service.ts`: `course:update` means course admin.
   - `course/course.service.ts`: sees all courses.
   - `course/course-copy.service.ts`: `course:create`.
   - `dashboard/dashboard.service.ts`: admin view.
 - **`permCacheKey`**: `email-domain/email-domain.service.ts` clears a user's cached set after a domain auto-join.
-- **`PermissionModule`** is imported by `src/app.module.ts` and `src/billing/billing.module.ts`.
+- **`PermissionModule`** is imported by `src/app.module.ts`. `src/organisation` uses `permCacheKey` to drop the cached permissions of users whose school role it changes.
 - **Front end**:
   - `frontend/providers/PermissionsProvider.tsx` calls `GET /permissions/me` for UI gating.
   - `frontend/app/dashboard/roles/` (the page, `RoleFormDialog.tsx`, `PermissionsEditor.tsx`) uses the role and catalog routes.

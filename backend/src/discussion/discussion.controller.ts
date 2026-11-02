@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { FeatureGuard } from '@/features/feature.guard';
+import { RequireFeature } from '@/features/require-feature.decorator';
 import { DiscussionService } from './discussion.service';
 import {
   CreateReplyDto,
@@ -30,7 +32,8 @@ import {
 @ApiTags('Discussions')
 @ApiBearerAuth()
 @Controller('courses/:courseId/discussions')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureGuard)
+@RequireFeature('discussions')
 export class DiscussionController {
   constructor(private readonly discussions: DiscussionService) {}
 

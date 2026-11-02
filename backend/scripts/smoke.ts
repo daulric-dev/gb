@@ -7,7 +7,7 @@
  * Walks the main flows as real users - courses, gradebook, the student
  * portal, attendance (code and QR), email domains and sign-in discovery - and
  * prints PASS/FAIL per check. Exits non-zero on any failure. Cleans up what
- * it creates. Run it after each step of the platform migration.
+ * it creates. Run it after each change to the platform.
  *
  * Signs in through the API's dev-only code endpoint, so the API must run with
  * ALLOW_DEV_LOGIN=true. Work that gets marked cannot be deleted through the
@@ -106,10 +106,10 @@ async function main() {
   check('teacher can create courses', perms.status === 200 && perms.data.permissions.includes('course:create'), perms.data);
 
   // ── courses ───────────────────────────────────────────────────────────────
-  const courses = await teacher('GET', '/courses');
+  const courses = await teacher('QUERY', '/courses', {});
   const bio = courses.data.find?.((c: any) => c.name === 'Biology 101');
   check('teacher lists Biology 101', courses.status === 200 && !!bio, courses.data);
-  check('admin sees every course', (await admin('GET', '/courses')).data.every?.((c: any) => c.role === 'admin'));
+  check('admin sees every course', (await admin('QUERY', '/courses', {})).data.every?.((c: any) => c.role === 'admin'));
   check('TA cannot change settings (403)', (await ta('PATCH', `/courses/${bio.id}`, { name: 'x' })).status === 403);
   const modules = await teacher('GET', `/courses/${bio.id}/modules`);
   check('modules with items', modules.status === 200 && modules.data[0]?.items?.length > 0, modules.data);
@@ -139,7 +139,7 @@ async function main() {
   } else {
     check('a published module to link into', !!publishedModule, modules.data);
   }
-  const search = await teacher('GET', '/students?search=Jor');
+  const search = await teacher('QUERY', '/students', { search: 'Jor' });
   check('student search (no 400)', search.status === 200, search.data);
   const people = await teacher('GET', `/courses/${bio.id}/people`);
   check('people: 12 students', people.status === 200 && people.data.students.length === 12, people.data.students?.length);
@@ -245,7 +245,7 @@ async function main() {
   /** Notices are written after the request returns; give them a moment. */
   const noticeFor = async (match: (n: any) => boolean) => {
     for (let i = 0; i < 20; i++) {
-      const r = await student('GET', '/portal/me/notifications?unread=true');
+      const r = await student('QUERY', '/portal/me/notifications', { unread: true });
       const hit = r.data?.find?.(match);
       if (hit) return hit;
       await new Promise((res) => setTimeout(res, 150));
@@ -263,7 +263,7 @@ async function main() {
       check('notification unread count', count.status === 200 && count.data.count >= 1, count.data);
       if (notice) {
         check('mark a notification read', (await student('POST', '/portal/me/notifications/read', { ids: [notice.id] })).status === 204);
-        const after = await student('GET', '/portal/me/notifications?unread=true');
+        const after = await student('QUERY', '/portal/me/notifications', { unread: true });
         check('read notice leaves the unread list', !after.data.some((n: any) => n.id === notice.id), after.data);
       }
     } finally {
@@ -349,7 +349,7 @@ async function main() {
         // Wait for the second reply's refresh of the same notice.
         const notice = await noticeFor((n) => n.kind === 'discussion_reply' && n.topicId === ownTopic && n.body?.includes('Second'));
         check('topic author is notified of replies (discussion_reply, topicId)', !!notice && notice.courseId === bio.id, notice);
-        const all = (await student('GET', '/portal/me/notifications?unread=true')).data.filter((n: any) => n.topicId === ownTopic);
+        const all = (await student('QUERY', '/portal/me/notifications', { unread: true })).data.filter((n: any) => n.topicId === ownTopic);
         check('replies coalesce into one unread notice', all.length === 1, all);
       }
     } finally {
@@ -442,123 +442,47 @@ async function main() {
   }
   check('copied courses cleaned up', (await db.course.count({ where: { id: { in: made } } })) === 0);
 
-  // ── billing (hosted platform only) ────────────────────────────────────────
-  // Runs the full flow when the API has BILLING_ENABLED=true; otherwise checks
-  // that every billing and platform route is absent.
-  const billingStatus = await teacher('GET', '/billing/status');
-  check('billing status answers', billingStatus.status === 200 && typeof billingStatus.data?.enabled === 'boolean', billingStatus.data);
-  const webhookPost = (provider: string) =>
-    fetch(`${API}/billing/webhooks/${provider}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-  if (!billingStatus.data?.enabled) {
-    check('billing off: status reports nothing', billingStatus.data?.readOnly === false && billingStatus.data?.status === null, billingStatus.data);
-    check('billing off: /billing is 404', (await admin('GET', '/billing')).status === 404);
-    check('billing off: /billing/checkout is 404', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'stripe' })).status === 404);
-    check('billing off: /platform/me is 404', (await admin('GET', '/platform/me')).status === 404);
-    check('billing off: /platform/overview is 404', (await admin('GET', '/platform/overview')).status === 404);
-    check('billing off: webhooks are 404', (await webhookPost('stripe')).status === 404);
-  } else {
-    const schoolId: string = me.data.school.id;
-    const snapshot = await db.subscription.findUnique({ where: { school_id: schoolId } });
-    const invoicesBefore = new Set((await db.invoice.findMany({ where: { school_id: schoolId }, select: { id: true } })).map((i) => i.id));
-    const smokeCourses: string[] = [];
-    try {
-      check('billing on: school is writable (trialing/active)', ['trialing', 'active'].includes(billingStatus.data.status) && billingStatus.data.readOnly === false, billingStatus.data);
-      const studentStatus = await student('GET', '/billing/status');
-      check('student sees billing status', studentStatus.status === 200 && studentStatus.data.enabled === true && studentStatus.data.readOnly === false, studentStatus.data);
-      check('teacher cannot open school billing (403)', (await teacher('GET', '/billing')).status === 403);
-      const summary = await admin('GET', '/billing');
-      check('admin billing summary', summary.status === 200 && summary.data.billableUsers > 0 && summary.data.prices?.perUserCents > 0 && Array.isArray(summary.data.providers) && typeof summary.data.paymentsConfigured === 'boolean', summary.data);
-      // Stripe is the only provider: nothing else is ever offered.
-      check('only Stripe can be offered', summary.data.providers.every((p: any) => p.id === 'stripe') && summary.data.paymentsConfigured === summary.data.providers.length > 0, summary.data.providers);
-      if (!summary.data.paymentsConfigured) {
-        // No Stripe keys on this deployment: checkout says so clearly instead of failing obscurely.
-        const notConfigured = await admin('POST', '/billing/checkout', { plan: 'flat' });
-        check('checkout without Stripe configured is 503 with a clear message', notConfigured.status === 503 && /not configured/i.test(String(notConfigured.data?.message ?? '')), notConfigured.data);
-        check('Stripe webhook without Stripe configured (404)', (await webhookPost('stripe')).status === 404);
-      } else {
-        check('unsigned Stripe webhook is rejected (400)', (await webhookPost('stripe')).status === 400);
-        check('unknown provider at checkout (400)', (await admin('POST', '/billing/checkout', { plan: 'flat', provider: 'nope' })).status === 400);
-        // A real checkout needs Stripe's hosted page; drive it by hand in the
-        // Stripe sandbox (backend/src/billing/STRIPE.md, step 8).
-      }
-      for (const removed of ['manual', 'wipay', 'paypal', 'paddle']) {
-        const res = await admin('POST', '/billing/checkout', { plan: 'per_user', provider: removed });
-        check(`removed provider "${removed}" is refused at checkout`, res.status === 400 || res.status === 503, res.data);
-      }
-      check('pay-invoice route is gone (404)', (await admin('POST', `/billing/invoices/${crypto.randomUUID()}/pay`, { provider: 'stripe' })).status === 404);
-      const schoolInvoices = await admin('GET', '/billing/invoices');
-      check('school invoices list', schoolInvoices.status === 200 && Array.isArray(schoolInvoices.data), schoolInvoices.data);
+  // ── organisation (one per install, running several schools) ──────────────
+  // seed:demo sets the organisation up and makes admin@demo.test its admin.
+  const setupStatus = await fetch(`${API}/setup/status`, { headers: { 'X-API-Version': '1' } });
+  const setupBody = (await setupStatus.json().catch(() => null)) as { needsSetup?: boolean } | null;
+  check('setup status is public and reports done', setupStatus.status === 200 && setupBody?.needsSetup === false, setupBody);
+  check('setup cannot run twice (409)', (await admin('POST', '/setup', { organisationName: 'Again' })).status === 409);
+  const adminMe = await admin('GET', '/auth/me');
+  check('admin@demo.test is an organisation admin', adminMe.data?.is_org_admin === true && typeof adminMe.data?.organisation?.name === 'string', adminMe.data);
+  check('teacher is not an organisation admin', me.data?.is_org_admin === false, me.data?.is_org_admin);
+  check('teacher gets 403 on /organisation', (await teacher('GET', '/organisation')).status === 403);
+  check('student gets 403 on /organisation/schools', (await student('QUERY', '/organisation/schools', {})).status === 403);
+  const overview = await admin('GET', '/organisation/overview');
+  check('organisation overview', overview.status === 200 && overview.data.schools > 0 && isNum(overview.data.staff) && isNum(overview.data.students), overview.data);
+  const orgSchools = await admin('QUERY', '/organisation/schools', { search: (me.data.school.name ?? '').slice(0, 4) });
+  const demoRow = orgSchools.data?.find?.((s: any) => s.id === me.data.school.id);
+  check('organisation schools finds the demo school with its admin and counts', orgSchools.status === 200 && demoRow?.admin?.email === 'admin@demo.test' && demoRow.staffCount > 0 && demoRow.studentCount > 0, demoRow);
+  const admins = await admin('GET', '/organisation/admins');
+  check('organisation admins list', admins.status === 200 && admins.data.some?.((a: any) => a.email === 'admin@demo.test'), admins.data);
+  check('POST /schools is gone (404)', (await admin('POST', '/schools', { name: 'Smoke', schoolType: 'primary' })).status === 404);
+  check('billing routes are gone (404)', (await teacher('GET', '/billing/status')).status === 404 && (await admin('GET', '/platform/me')).status === 404);
 
-      check('the removed manual provider has no webhook (404)', (await webhookPost('manual')).status === 404);
-      check('the removed WiPay provider has no webhook (404)', (await webhookPost('wipay')).status === 404);
-      check('webhook browser-return GET is gone (404)', (await fetch(`${API}/billing/webhooks/stripe`)).status === 404);
-      check('unknown provider webhook (404)', (await webhookPost('nope')).status === 404);
-
-      const teacherMe = await teacher('GET', '/platform/me');
-      check('teacher is not a platform admin', teacherMe.status === 200 && teacherMe.data.isPlatformAdmin === false, teacherMe.data);
-      check('non-admin gets 404 on /platform/overview', (await teacher('GET', '/platform/overview')).status === 404);
-      check('non-admin gets 404 on /platform/invoices', (await student('GET', '/platform/invoices')).status === 404);
-      const adminMe = await admin('GET', '/platform/me');
-      check('admin@demo.test is a platform admin', adminMe.data?.isPlatformAdmin === true, adminMe.data);
-      const overview = await admin('GET', '/platform/overview');
-      check('platform overview', overview.status === 200 && overview.data.schools > 0 && overview.data.paymentsConfigured === summary.data.paymentsConfigured && !('openInvoices' in overview.data), overview.data);
-      const platformSchools = await admin('GET', `/platform/schools?search=${encodeURIComponent((me.data.school.name ?? '').slice(0, 4))}`);
-      check('platform schools search finds the demo school', platformSchools.status === 200 && platformSchools.data.some?.((s: any) => s.schoolId === schoolId && typeof s.billableUsers === 'number'), platformSchools.data);
-      const openList = await admin('GET', '/platform/invoices?status=open');
-      check('platform lists open invoices', openList.status === 200 && Array.isArray(openList.data) && openList.data.every((i: any) => i.status === 'open' && !!i.schoolId), openList.data?.length);
-      // Invoice-mode machinery and the provider switches are gone.
-      check('invoice sweep route is gone (404)', (await admin('POST', '/platform/invoices/generate')).status === 404);
-      check('void route is gone (404)', (await admin('POST', `/platform/invoices/${crypto.randomUUID()}/void`, {})).status === 404);
-      check('platform providers page is gone (404)', (await admin('GET', '/platform/providers')).status === 404);
-      check('provider switch is gone (404)', (await admin('PATCH', '/platform/providers/stripe', { enabled: true })).status === 404);
-
-      check('offline mark-paid is gone (404)', (await admin('POST', `/platform/invoices/${crypto.randomUUID()}/mark-paid`, { method: 'bank_transfer' })).status === 404);
-      const detail = await admin('GET', `/platform/schools/${schoolId}`);
-      check('platform school detail has invoices', detail.status === 200 && Array.isArray(detail.data.invoices), detail.data?.invoices?.length);
-
-      // Lapse the school: trial over, nothing paid. The comp call with a past
-      // date changes nothing but flushes the cached entitlement.
-      await db.subscription.update({ where: { school_id: schoolId }, data: { status: 'trialing', plan: null, provider: null, trial_ends_at: new Date(Date.now() - 86_400_000), current_period_end: null, comp_until: null } });
-      await admin('POST', `/platform/schools/${schoolId}/comp`, { until: '2000-01-01', note: 'smoke' });
-      const lapsed = await teacher('GET', '/billing/status');
-      check('lapsed school is read-only', lapsed.data?.readOnly === true && lapsed.data.status === 'read_only', lapsed.data);
-      const blocked = await teacher('POST', '/courses', { name: 'Smoke blocked course' });
-      if (blocked.data?.id) smokeCourses.push(blocked.data.id);
-      check('teacher POST is refused with 402 SUBSCRIPTION_REQUIRED', blocked.status === 402 && blocked.data?.code === 'SUBSCRIPTION_REQUIRED' && blocked.data?.statusCode === 402, blocked);
-      check('student POST is refused with 402', (await student('POST', '/portal/me/courses/join', { joinCode: 'NOPE00' })).status === 402);
-      check('reads still work while read-only', (await teacher('GET', '/courses')).status === 200);
-      check('billing still works while read-only', (await admin('GET', '/billing')).data?.readOnly === true);
-      check('marking notices read still works', (await student('POST', '/portal/me/notifications/read-all')).status !== 402);
-
-      const extended = await admin('POST', `/platform/schools/${schoolId}/extend-trial`, { days: 1 });
-      check('platform admin extends the trial', extended.status === 200 && extended.data.readOnly === false && extended.data.status === 'trialing', extended.data);
-      const allowed = await teacher('POST', '/courses', { name: 'Smoke unblocked course' });
-      if (allowed.data?.id) smokeCourses.push(allowed.data.id);
-      check('teacher can write again', allowed.status === 201, allowed.status);
-
-      // Lapse again, then recover with a comp instead.
-      await db.subscription.update({ where: { school_id: schoolId }, data: { trial_ends_at: new Date(Date.now() - 86_400_000) } });
-      await admin('POST', `/platform/schools/${schoolId}/comp`, { until: '2000-01-01', note: 'smoke' });
-      check('lapsed again is read-only', (await teacher('GET', '/billing/status')).data?.readOnly === true);
-      const comped = await admin('POST', `/platform/schools/${schoolId}/comp`, { until: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10), note: 'smoke' });
-      check('platform admin comps the school', comped.status === 200 && comped.data.readOnly === false, comped.data);
-      check('comped school is writable', (await teacher('GET', '/billing/status')).data?.readOnly === false);
-    } finally {
-      for (const id of smokeCourses) await admin('DELETE', `/courses/${id}`);
-      await db.invoice.deleteMany({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } });
-      if (snapshot) {
-        const { id: _id, school_id: _school, ...fields } = snapshot;
-        await db.subscription.update({ where: { school_id: schoolId }, data: fields });
-      }
-      // The API caches each school's entitlement for a minute; with Redis,
-      // drop it so the restored row is what the next request sees.
-      if (process.env.USE_REDIS === 'true' && process.env.REDIS_URL) {
-        const redis = new (await import('bun')).RedisClient(process.env.REDIS_URL);
-        await redis.del(`billing:ent:${schoolId}`).catch(() => undefined);
-        redis.close();
-      }
-    }
-    check('billing state restored', (await db.invoice.count({ where: { school_id: schoolId, id: { notIn: [...invoicesBefore] } } })) === 0 && (await teacher('GET', '/billing/status')).data?.readOnly === false);
+  let orgSchoolId: string | undefined;
+  try {
+    const created = await admin('POST', '/organisation/schools', { name: 'Smoke Org School', schoolType: 'primary', adminEmail: 'ta@demo.test' });
+    orgSchoolId = created.data?.id;
+    check('organisation admin creates a school with an admin', created.status === 201 && created.data.admin?.email === 'ta@demo.test' && created.data.isActive === true, created.data);
+    const roles = orgSchoolId ? await db.school_role.count({ where: { school_id: orgSchoolId, is_system: true } }) : 0;
+    check('new school has its system roles', roles > 0, roles);
+    const creatorMember = orgSchoolId ? await db.school_management.count({ where: { school_id: orgSchoolId, user_profile: { email: 'admin@demo.test' } } }) : 1;
+    check('the organisation admin is not made a member', creatorMember === 0, creatorMember);
+    const appointed = await admin('PUT', `/organisation/schools/${orgSchoolId}/admin`, { email: 'teacher@demo.test' });
+    check('appointing a new admin', appointed.status === 200 && appointed.data.admin?.email === 'teacher@demo.test', appointed.data);
+    const demoted = orgSchoolId ? await db.school_management.findFirst({ where: { school_id: orgSchoolId, user_profile: { email: 'ta@demo.test' } }, select: { role: true } }) : null;
+    check('the previous admin is now a teacher', demoted?.role === 'teacher', demoted);
+    check('appointing an unknown email (404)', (await admin('PUT', `/organisation/schools/${orgSchoolId}/admin`, { email: 'nobody-smoke@demo.test' })).status === 404);
+    const deactivated = await admin('PATCH', `/organisation/schools/${orgSchoolId}`, { isActive: false });
+    check('deactivating a school', deactivated.status === 200 && deactivated.data.isActive === false, deactivated.data);
+    const inactive = await admin('QUERY', '/organisation/schools', { status: 'inactive' });
+    check('inactive filter lists it', inactive.data?.some?.((s: any) => s.id === orgSchoolId), inactive.data);
+  } finally {
+    if (orgSchoolId) await db.school.delete({ where: { id: orgSchoolId } }).catch((e) => console.error('clean-up org school', e));
   }
 
   // ── GDPR erasure log, retention purge and replay ──────────────────────────

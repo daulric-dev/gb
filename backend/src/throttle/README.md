@@ -32,7 +32,6 @@ Two rules drive it:
 - `src/auth/auth.controller.ts` - `auth-strict` on `otp/send` (5/h) and `otp/verify` (10 per 15 min), `auth-ip` on the same (300/h, 600 per 15 min), `claim-code` on `join-school`, `default` on account deletion (3/h).
 - `src/sso/sso.controller.ts` - `auth-ip` on `discover`, `saml/acs`, `:provider/start`, `handoff`.
 - `claim-code` on guessable codes: `src/student-portal/student-portal.controller.ts` (course join), `src/email-domain/email-domain.controller.ts`, `src/attendance/portal-attendance.controller.ts`, `src/attendance/scan-claim.controller.ts`.
-- `src/billing/webhooks/billing-webhook.controller.ts` uses `@SkipThrottle()` (provider webhooks).
 
 ## Depends on
 

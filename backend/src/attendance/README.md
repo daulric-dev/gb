@@ -19,7 +19,7 @@ Only the call that actually sets `closed_at` sends the "closed" events.
 
 ### HTTP routes
 
-**`AttendanceController`** (`/api/courses/:courseId/attendance`) is guarded by `AuthGuard`. Access is the caller's role in the course, checked with `CourseAccessService.require()`. All ids must be UUIDs.
+**`AttendanceController`** (`/api/courses/:courseId/attendance`) is guarded by `AuthGuard` and `FeatureGuard` (the `attendance` feature; [`src/features`](../features/README.md)). `PortalAttendanceController` (including `/portal/me/stream`) needs it too, and the public `POST /attendance/scan-claim` checks it for the session's course's school. Pushes go through `PushService`, which skips schools with `push_notifications` off. Access is the caller's role in the course, checked with `CourseAccessService.require()`. All ids must be UUIDs.
 
 | Method | Path | Who may call | What it does |
 |--------|------|--------------|--------------|

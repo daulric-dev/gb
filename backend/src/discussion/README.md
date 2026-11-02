@@ -6,6 +6,8 @@ Course discussion forums. A course has topics (a title and a Markdown body) and 
 
 ### HTTP routes
 
+Both controllers also use `FeatureGuard` with the `discussions` feature (403 `FEATURE_DISABLED` while off; [`src/features`](../features/README.md)).
+
 Staff side, `DiscussionController`, `AuthGuard` plus a course-role check (`CourseAccessService.require` with `STAFF_ROLES`: admin, teacher or TA). A caller with no role in the course gets `404`.
 
 | Method | Path | Who | What it does |

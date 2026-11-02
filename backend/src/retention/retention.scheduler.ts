@@ -9,9 +9,8 @@ const FIRST_TICK_MS = 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Runs the retention purge on a timer in every API instance, like the
- * billing scheduler: a Postgres advisory lock makes sure only one instance
- * purges at a time. Every tick (15 min) also retries the erasure-log export,
+ * Runs the retention purge on a timer in every API instance. A Postgres
+ * advisory lock makes sure only one instance purges at a time. Every tick (15 min) also retries the erasure-log export,
  * so an entry whose copy to object storage failed is not left behind.
  *
  * The purge is due once `RETENTION_PURGE_INTERVAL_HOURS` (default 24) have
@@ -59,7 +58,7 @@ export class RetentionScheduler implements OnModuleInit, OnModuleDestroy {
     return new Date(now).getUTCHours() === runHourUtc();
   }
 
-  /** Same pattern as BillingScheduler.withLock: a transaction-scoped advisory lock. */
+  /** A transaction-scoped advisory lock: one instance runs `work` at a time. */
   async withLock(name: string, work: () => Promise<void>): Promise<boolean> {
     return this.prisma.$transaction(
       async (tx) => {

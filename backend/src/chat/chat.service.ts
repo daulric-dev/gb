@@ -14,7 +14,8 @@ import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 import { ChatRealtimeService } from './chat-realtime.service';
 import { MessageCipher } from './message-cipher.service';
-import { ChatEventType, channelsEnabled } from './chat.constants';
+import { ChatEventType } from './chat.constants';
+import { FeatureService } from '@/features/feature.service';
 import type {
   ChatConversation,
   ChatMessage,
@@ -54,6 +55,15 @@ const PROFILE_SELECT = {
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v: string) => UUID.test(v);
+
+/** Who is acting in chat: a student account or staff, and their school. */
+interface ChatActor {
+  id: string;
+  schoolId: string | null;
+  isStudent: boolean;
+  /** The linked student record, for a student account. */
+  studentId: string | null;
+}
 
 interface ConversationRow {
   id: string;
@@ -114,8 +124,10 @@ interface MessageRow {
 }
 
 /**
- * Direct messaging between users of the same school, plus a feature-flagged
- * base for channels. Postgres is the source of truth; every write also fans a
+ * Direct messaging between users of the same school, plus channels for staff
+ * (the `chat_channels` feature). Students take part only with the
+ * `student_messaging` feature: they message the staff who teach them, reply
+ * to staff, and never message each other. Postgres is the source of truth; every write also fans a
  * realtime event out over the Redis bus (see ChatRealtimeService).
  */
 @Injectable()
@@ -127,24 +139,70 @@ export class ChatService {
     private readonly realtime: ChatRealtimeService,
     private readonly cipher: MessageCipher,
     private readonly erasure: ErasureLogService,
+    private readonly features: FeatureService,
   ) {}
 
-  /** The caller's school; a user without one is a server error, as before. */
-  private async schoolOf(userId: string): Promise<string> {
-    const schoolId = await userSchoolId(this.prisma, userId);
-    if (!schoolId) {
+  /** The caller and their school; no school is a server error, as before. */
+  private async callerOf(
+    userId: string,
+  ): Promise<ChatActor & { schoolId: string }> {
+    const me = await this.actorOf(userId);
+    if (!me.schoolId) {
       throw new Error(`Could not resolve school for user ${userId}`);
     }
-    return schoolId;
+    return { ...me, schoolId: me.schoolId };
   }
 
   // ── Users you can message ──────────────────────────────────────────────────
 
-  /** Active users in the caller's school, excluding the caller. */
+  /**
+   * Who the caller can start a conversation with, excluding the caller.
+   * Staff: active staff of their school, plus (with `student_messaging`)
+   * the students they teach. A student (only with `student_messaging`): the
+   * staff who teach a course they are actively enrolled in.
+   */
   async listMessageableUsers(userId: string): Promise<ChatParticipant[]> {
-    const schoolId = await this.schoolOf(userId);
+    const me = await this.callerOf(userId);
+    const schoolId = me.schoolId;
+
+    let where: Prisma.user_profileWhereInput;
+    if (me.isStudent) {
+      await this.features.assertEnabled(schoolId, 'student_messaging');
+      const teachers = me.studentId
+        ? await this.teachersOf(me.studentId, schoolId)
+        : [];
+      where = {
+        id: { in: teachers.filter((id) => id !== userId) },
+        school_id: schoolId,
+        is_active: true,
+        account_type: 'staff',
+      };
+    } else {
+      const studentsOn = await this.features.isEnabled(
+        schoolId,
+        'student_messaging',
+      );
+      const taught = studentsOn
+        ? await this.taughtStudentUserIds(userId, schoolId)
+        : [];
+      where = {
+        school_id: schoolId,
+        is_active: true,
+        id: { not: userId },
+        OR: [
+          // Staff need a membership: an organisation admin managing this
+          // school (active school, no membership) is not one of its staff.
+          {
+            account_type: 'staff',
+            school_management: { some: { school_id: schoolId } },
+          },
+          ...(taught.length > 0 ? [{ id: { in: taught } }] : []),
+        ],
+      };
+    }
+
     const data = await this.prisma.user_profile.findMany({
-      where: { school_id: schoolId, is_active: true, id: { not: userId } },
+      where,
       orderBy: { first_name: 'asc' },
       select: PROFILE_SELECT,
     });
@@ -173,6 +231,12 @@ export class ChatService {
         select: CONVERSATION_SELECT,
       })
     ).map(toConversationRow);
+    // Channels are for staff: a student never sees one.
+    const visible = rows.some((r) => r.type === 'channel')
+      ? (await this.actorOf(userId)).isStudent
+        ? rows.filter((r) => r.type !== 'channel')
+        : rows
+      : rows;
 
     // Unread counts for the whole set resolve in one round-trip (RPC) rather
     // than one COUNT query per conversation. Participants likewise batch.
@@ -185,7 +249,7 @@ export class ChatService {
     // Message previews are still fetched per-conversation (in parallel); a
     // windowed DISTINCT-ON RPC would collapse these too if it becomes hot.
     return Promise.all(
-      rows.map(async (conv) => {
+      visible.map(async (conv) => {
         const lastMessage = await this.lastMessageFor(conv.id);
         return this.presentConversation(
           conv,
@@ -206,15 +270,16 @@ export class ChatService {
       throw new BadRequestException('You cannot message yourself');
     }
 
-    const schoolId = await this.schoolOf(userId);
-    const otherSchoolId = await this.resolveSchool(otherUserId);
-    if (otherSchoolId !== schoolId) {
+    const me = await this.callerOf(userId);
+    const schoolId = me.schoolId;
+    const other = isUuid(otherUserId) ? await this.actorOf(otherUserId) : null;
+    if (!other || other.schoolId !== schoolId) {
       throw new ForbiddenException('That user is not in your school');
     }
 
     const directKey = ChatService.directKey(userId, otherUserId);
-
     const existing = await this.findDirect(schoolId, directKey);
+    await this.assertDirectAllowed(me, other, schoolId, !!existing);
     if (existing) return this.summarize(existing, userId);
 
     let created: ConversationRow;
@@ -287,6 +352,7 @@ export class ChatService {
     body: string,
   ): Promise<ChatMessage> {
     const conversation = await this.assertMember(userId, conversationId);
+    await this.assertCanPost(userId, conversation);
     return this.postMessage({
       conversation,
       senderId: userId,
@@ -570,29 +636,38 @@ export class ChatService {
     return present;
   }
 
-  // ── Channels (feature-flagged) ──────────────────────────────────────────────
+  // ── Channels (the chat_channels feature) ──────────────────────────────────────────────
 
   async createChannel(
     userId: string,
     title: string,
     memberIds: string[],
   ): Promise<ChatConversation> {
-    if (!channelsEnabled()) {
-      throw new ForbiddenException('Channels are not enabled');
+    const me = await this.callerOf(userId);
+    const schoolId = me.schoolId;
+    if (me.isStudent) {
+      throw new ForbiddenException('Channels are for staff');
     }
-    const schoolId = await this.schoolOf(userId);
+    await this.features.assertEnabled(schoolId, 'chat_channels');
 
-    // Same rule as direct messages: members come from the creator's school.
+    // Members are staff of the creator's school; students never join one.
     const invited = [...new Set(memberIds)].filter((id) => id !== userId);
     if (invited.length > 0) {
       const sameSchool = invited.every(isUuid)
         ? await this.prisma.user_profile.findMany({
-            where: { id: { in: invited }, school_id: schoolId },
+            where: {
+              id: { in: invited },
+              school_id: schoolId,
+              account_type: 'staff',
+              school_management: { some: { school_id: schoolId } },
+            },
             select: { id: true },
           })
         : [];
       if (sameSchool.length !== invited.length) {
-        throw new ForbiddenException('Channel members must be in your school');
+        throw new ForbiddenException(
+          'Channel members must be staff in your school',
+        );
       }
     }
 
@@ -661,7 +736,164 @@ export class ChatService {
     if (!membership) {
       throw new ForbiddenException('You are not in this conversation');
     }
-    return this.loadConversation(conversationId);
+    const conversation = await this.loadConversation(conversationId);
+    if (
+      conversation.type === 'channel' &&
+      (await this.actorOf(userId)).isStudent
+    ) {
+      throw new ForbiddenException('Channels are for staff');
+    }
+    return conversation;
+  }
+
+  // ── Who may message whom ───────────────────────────────────────────────────
+
+  /** A user's school and whether they are a student account. */
+  private async actorOf(userId: string): Promise<ChatActor> {
+    const profile = await this.prisma.user_profile.findUnique({
+      where: { id: userId },
+      select: { school_id: true, account_type: true },
+    });
+    const isStudent = profile?.account_type === 'student';
+    let schoolId = profile?.school_id ?? null;
+    let studentId: string | null = null;
+    if (isStudent) {
+      const student = await this.prisma.student.findFirst({
+        where: { user_profile_id: userId },
+        select: { id: true, school_id: true },
+      });
+      studentId = student?.id ?? null;
+      schoolId = schoolId ?? student?.school_id ?? null;
+    }
+    return { id: userId, schoolId, isStudent, studentId };
+  }
+
+  /** The ids among `userIds` that belong to student accounts. */
+  async studentAccountsAmong(userIds: string[]): Promise<Set<string>> {
+    const ids = userIds.filter(isUuid);
+    if (ids.length === 0) return new Set();
+    const rows = await this.prisma.user_profile.findMany({
+      where: { id: { in: ids }, account_type: 'student' },
+      select: { id: true },
+    });
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /** Staff (profile ids) teaching a course the student is actively in. */
+  private async teachersOf(studentId: string, schoolId: string) {
+    const rows = await this.prisma.course_staff.findMany({
+      where: {
+        course: {
+          school_id: schoolId,
+          course_student: { some: { student_id: studentId, status: 'active' } },
+        },
+      },
+      select: { user_profile_id: true },
+    });
+    return [...new Set(rows.map((r) => r.user_profile_id))];
+  }
+
+  /** Student accounts actively enrolled in a course this staff member teaches. */
+  private async taughtStudentUserIds(staffId: string, schoolId: string) {
+    const rows = await this.prisma.student.findMany({
+      where: {
+        school_id: schoolId,
+        user_profile_id: { not: null },
+        NOT: { is_active: false },
+        course_student: {
+          some: {
+            status: 'active',
+            course: {
+              school_id: schoolId,
+              course_staff: { some: { user_profile_id: staffId } },
+            },
+          },
+        },
+      },
+      select: { user_profile_id: true },
+    });
+    return [
+      ...new Set(
+        rows.map((r) => r.user_profile_id).filter((id): id is string => !!id),
+      ),
+    ];
+  }
+
+  /** Whether the staff member teaches the student (an active enrolment). */
+  private async teaches(
+    staffId: string,
+    studentUserId: string,
+    schoolId: string,
+  ): Promise<boolean> {
+    const count = await this.prisma.course_staff.count({
+      where: {
+        user_profile_id: staffId,
+        course: {
+          school_id: schoolId,
+          course_student: {
+            some: { status: 'active', student: { user_profile_id: studentUserId } },
+          },
+        },
+      },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Starting a DM: staff with staff always; anything with a student needs
+   * `student_messaging`, and the staff member must teach the student. Two
+   * students never. An existing staff/student DM may be reopened without
+   * the teaching check (the reply rule), while the feature is on.
+   */
+  private async assertDirectAllowed(
+    me: ChatActor,
+    other: ChatActor,
+    schoolId: string,
+    exists: boolean,
+  ): Promise<void> {
+    if (!me.isStudent && !other.isStudent) return;
+    if (me.isStudent && other.isStudent) {
+      throw new ForbiddenException('Students cannot message each other');
+    }
+    await this.features.assertEnabled(schoolId, 'student_messaging');
+    if (exists) return;
+    if (me.isStudent) {
+      if (!(await this.teaches(other.id, me.id, schoolId))) {
+        throw new ForbiddenException('You can only message your teachers');
+      }
+    } else if (!(await this.teaches(me.id, other.id, schoolId))) {
+      throw new ForbiddenException('You can only message students you teach');
+    }
+  }
+
+  /**
+   * Posting to a conversation the caller belongs to. Channels need
+   * `chat_channels` and are for staff. In a DM a student may only write to
+   * staff (the reply rule: teaching is not re-checked), and anything a
+   * student would read needs `student_messaging`.
+   */
+  private async assertCanPost(
+    userId: string,
+    conversation: ConversationRow,
+  ): Promise<void> {
+    if (conversation.type === 'channel') {
+      await this.features.assertEnabled(conversation.school_id, 'chat_channels');
+      return;
+    }
+    const others = (await this.memberIds(conversation.id)).filter(
+      (id) => id !== userId,
+    );
+    const students = await this.studentAccountsAmong([userId, ...others]);
+    const meStudent = students.has(userId);
+    const otherStudent = others.some((id) => students.has(id));
+    if (!meStudent && !otherStudent) return;
+    if (meStudent && (otherStudent || others.length === 0)) {
+      throw new ForbiddenException('Students cannot message each other');
+    }
+    await this.features.assertEnabled(
+      conversation.school_id,
+      'student_messaging',
+    );
   }
 
   private async loadOwnMessage(

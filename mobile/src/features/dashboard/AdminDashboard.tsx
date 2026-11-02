@@ -6,7 +6,7 @@ import {
   Users,
   UsersRound,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import type {
   AcademicYear,
@@ -45,7 +45,7 @@ export function AdminDashboard({ schoolName }: { schoolName: string }) {
     Promise.all([
       api<AcademicYear | null>("/academic-years/active").catch(() => null),
       api<SchoolMember[]>("/schools/members").catch(() => []),
-      api<SchoolStudent[]>("/students").catch(() => []),
+      apiQuery<SchoolStudent[]>("/students").catch(() => []),
       api<JoinRequest[]>("/schools/join-requests").catch(() => []),
     ])
       .then(([year, mems, studs, reqs]) => {

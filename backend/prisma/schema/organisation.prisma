@@ -1,0 +1,61 @@
+/// The organisation that runs this install (one per deployment; it may run
+/// several schools). A unique index on a constant (`organisation_singleton`,
+/// in the migration) keeps it to one row. No row yet = first-run setup.
+model organisation {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  /// Platform feature overrides (key -> on/off) over the catalog defaults in
+  /// src/features/feature.catalog.ts. Unknown keys are ignored.
+  features   Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+/// Who may manage the organisation: create schools, appoint their admins.
+/// Accounts listed in ORG_ADMIN_EMAILS count too without a row here.
+model organisation_admin {
+  user_id      String        @id @db.Uuid
+  created_at   DateTime      @default(now()) @db.Timestamptz(6)
+  created_by   String?       @db.Uuid
+  user_profile user_profile  @relation("organisation_admin_user_idTouser_profile", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  creator      user_profile? @relation("organisation_admin_created_byTouser_profile", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([created_by])
+  @@schema("public")
+}
+
+/// An invite for someone with no account yet: a school's admin
+/// (school_admin, school_id set) or an organisation admin
+/// (organisation_admin, school_id null). The first sign-in that proves the
+/// email applies every open, unexpired invite for it (src/organisation/
+/// invite.service.ts). Open = accepted_at and revoked_at both null. The
+/// migration adds partial unique indexes Prisma cannot express: one open
+/// school_admin invite per school (organisation_invite_open_school_admin)
+/// and one open organisation_admin invite per email
+/// (organisation_invite_open_organisation_admin), plus CHECKs on kind, on
+/// school_id matching kind, and on the email being lower-cased.
+model organisation_invite {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Lower-cased and trimmed, like account.app_user.email.
+  email       String
+  /// school_admin | organisation_admin
+  kind        String
+  school_id   String?       @db.Uuid
+  invited_by  String?       @db.Uuid
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  /// 14 days after it was sent or last resent.
+  expires_at  DateTime      @default(dbgenerated("(CURRENT_TIMESTAMP + '14 days'::interval)")) @db.Timestamptz(6)
+  accepted_at DateTime?     @db.Timestamptz(6)
+  accepted_by String?       @db.Uuid
+  revoked_at  DateTime?     @db.Timestamptz(6)
+  school      school?       @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  inviter     user_profile? @relation("organisation_invite_invited_byTouser_profile", fields: [invited_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  accepter    user_profile? @relation("organisation_invite_accepted_byTouser_profile", fields: [accepted_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([email], map: "organisation_invite_open_email_idx")
+  @@index([invited_by], map: "organisation_invite_invited_by_idx")
+  @@index([accepted_by], map: "organisation_invite_accepted_by_idx")
+  @@schema("public")
+}

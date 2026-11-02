@@ -630,7 +630,7 @@ When you want to stop supporting an old version:
 
 ## Pagination (Opt-in Feature)
 
-Separately from header-based versioning, list endpoints can support **pagination** via query parameters. Pagination is not a version change -- it's an opt-in feature available within any API version.
+Separately from header-based versioning, list endpoints can support **pagination** via fields of the JSON request body (these lists are [HTTP QUERY](./http-query.md) routes). Pagination is not a version change -- it's an opt-in feature available within any API version.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -668,8 +668,8 @@ There is no shared paginator: each endpoint implements both modes itself with Pr
 
 | Endpoint | Supported |
 |----------|-----------|
-| `GET /api/students` | Yes |
-| `GET /api/files` | Offset only (`page`, `pageSize`); its own `{ data, meta }` envelope without `nextCursor` |
+| `QUERY /api/students` | Yes |
+| `QUERY /api/files` | Offset only (`page`, `pageSize`); its own `{ data, meta }` envelope without `nextCursor` |
 
 ---
 

@@ -91,6 +91,13 @@ describe('CourseAccessService', () => {
       expect(await service.roleIn('u1', course())).toBe('admin');
     });
 
+    test('an organisation admin is course admin without a membership', async () => {
+      membership(null);
+      staffRow(null);
+      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
+      expect(await service.roleIn('u1', course())).toBe('admin');
+    });
+
     test('a custom role granting course:update makes a member an admin', async () => {
       prisma.school_management.findFirst.mockResolvedValue({
         role: 'member',

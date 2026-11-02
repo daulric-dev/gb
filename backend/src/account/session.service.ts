@@ -32,6 +32,8 @@ export const RENEW_AFTER_MS = 24 * 60 * 60_000;
  */
 export const LOST_ROTATION_GRACE_MS = 24 * 60 * 60_000;
 const CACHE_TTL_S = 60;
+/** How long a step-up confirmation lets a session change SSO settings. */
+export const STEP_UP_WINDOW_MS = 10 * 60_000;
 /** A second cache purge after revoking, for a lookup that was mid-flight. */
 const REPURGE_AFTER_MS = 1000;
 
@@ -42,7 +44,7 @@ export type RevokeReason =
   | 'signed_out_others'
   | 'signed_out_all'
   | 'admin'
-  | 'platform_admin'
+  | 'organisation_admin'
   | 'token_reuse'
   | 'account_deleted'
   | 'deactivated'
@@ -64,6 +66,8 @@ export interface SessionUser {
   sessionId: string;
   userId: string;
   email: string;
+  /** Step-up: ms epoch until which this session may change SSO settings; null if not confirmed. */
+  elevatedUntil: number | null;
 }
 
 /** A cached lookup; `expiresAt` (ms) keeps a cached session from outliving its expiry. */
@@ -177,6 +181,7 @@ const SESSION_SELECT = {
   user_agent: true,
   device: true,
   method: true,
+  elevated_until: true,
   app_user: { select: { id: true, email: true, disabled_at: true } },
 } as const;
 
@@ -205,7 +210,11 @@ const SESSION_SELECT = {
  *   `Origin` (a browser always sends one on a cross-site request), so script
  *   on a web page cannot mint itself a bearer token from its cookie.
  * - **Cache.** Lookups are cached for a minute under `session:<hash>`; every
- *   revocation deletes those keys, so it takes effect at once.
+ *   revocation deletes those keys, so it takes effect at once, and so does a
+ *   step-up confirmation (`elevate`).
+ * - **Step-up.** `elevated_until` lets the session change single sign-on
+ *   settings for STEP_UP_WINDOW_MS after an emailed code is confirmed
+ *   (src/auth/step-up.guard.ts).
  */
 @Injectable()
 export class SessionService {
@@ -274,7 +283,12 @@ export class SessionService {
 
     const cached = (await this.cache.get(cacheKey)) as CachedSession | null;
     if (cached && (!cached.expiresAt || cached.expiresAt > Date.now())) {
-      return { sessionId: cached.sessionId, userId: cached.userId, email: cached.email };
+      return {
+        sessionId: cached.sessionId,
+        userId: cached.userId,
+        email: cached.email,
+        elevatedUntil: cached.elevatedUntil ?? null,
+      };
     }
 
     // The current token, or the one the last rotation replaced.
@@ -297,6 +311,7 @@ export class SessionService {
       sessionId: row.id,
       userId: row.app_user.id,
       email: row.app_user.email,
+      elevatedUntil: row.elevated_until ? row.elevated_until.getTime() : null,
     };
 
     if (row.token_hash !== hash) {
@@ -404,6 +419,23 @@ export class SessionService {
         ip,
       });
     }
+  }
+
+  /**
+   * Step-up: let a live session change single sign-on settings for the next
+   * STEP_UP_WINDOW_MS, and drop its cached lookups so the next request sees
+   * it. Returns when it ends.
+   */
+  async elevate(sessionId: string, now = Date.now()): Promise<Date> {
+    const until = new Date(now + STEP_UP_WINDOW_MS);
+    const rows = await this.prisma.session.updateManyAndReturn({
+      where: { id: sessionId, revoked_at: null },
+      data: { elevated_until: until },
+      select: { token_hash: true, previous_token_hash: true },
+    });
+    if (rows.length === 0) throw new NotFoundException('Session not found');
+    await this.purgeCached(rows);
+    return until;
   }
 
   /** A user's live sessions, the current one first. */

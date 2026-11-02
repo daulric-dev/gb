@@ -15,15 +15,17 @@ import { CourseBannerBackdrop } from "@/components/courses/course-banner";
 import { teacherNames, type PortalCourseDetail } from "../../_components/types";
 import { EmptyState } from "../../_components/portal-ui";
 import { CourseProvider } from "./_components/course-context";
+import { useFeatures } from "@/hooks/use-features";
+import type { FeatureKey } from "@/lib/features";
 
-const TABS = [
+const ALL_TABS: { slug: string; label: string; feature?: FeatureKey }[] = [
   { slug: "", label: "Home" },
   { slug: "modules", label: "Modules" },
   { slug: "assignments", label: "Assignments" },
   { slug: "grades", label: "Grades" },
-  { slug: "attendance", label: "Attendance" },
-  { slug: "announcements", label: "Announcements" },
-  { slug: "discussions", label: "Discussions" },
+  { slug: "attendance", label: "Attendance", feature: "attendance" },
+  { slug: "announcements", label: "Announcements", feature: "announcements" },
+  { slug: "discussions", label: "Discussions", feature: "discussions" },
 ];
 
 export default function PortalCourseLayout({
@@ -36,6 +38,8 @@ export default function PortalCourseLayout({
   const params = useParams<{ courseId: string }>();
   const courseId = params?.courseId ?? "";
   const pathname = usePathname() ?? "";
+  const { hasFeature } = useFeatures();
+  const TABS = ALL_TABS.filter((t) => !t.feature || hasFeature(t.feature));
 
   const course = useSignal<PortalCourseDetail | null>(null);
   const loading = useSignal(true);

@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
-import { loginPath, NEXT_PARAM, safeNextPath } from "@/lib/routing";
+import {
+  loginPath,
+  NEXT_PARAM,
+  ORGANISATION_PATH,
+  safeNextPath,
+} from "@/lib/routing";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
@@ -32,7 +37,7 @@ const SLOT = "size-9 text-base font-medium sm:size-11 sm:text-xl";
 function VerifyOtpForm() {
   useSignals();
   const router = useRouter();
-  const { refresh } = useAuth();
+  const { profile, refresh } = useAuth();
   const searchParams = useSearchParams();
   const email = searchParams?.get("email") || "";
   // Same-origin path to return to once signed in (validated, never a URL).
@@ -66,7 +71,11 @@ function VerifyOtpForm() {
 
       const isStudent = data.user.account_type === "student";
 
-      if (data.user.is_onboarded) {
+      const me = profile.value;
+      if (me?.is_org_admin && !me.school) {
+        // Organisation admins without a school skip onboarding entirely.
+        router.push(next ?? ORGANISATION_PATH);
+      } else if (data.user.is_onboarded) {
         router.push(next ?? (isStudent ? "/portal" : "/dashboard"));
       } else if (data.user.first_name) {
         // Named but school-less: they still have to join one. Sending them
@@ -85,7 +94,7 @@ function VerifyOtpForm() {
     } finally {
       loading.value = false;
     }
-  }, [code, email, error, loading, next, refresh, router]);
+  }, [code, email, error, loading, next, profile, refresh, router]);
 
   // Submitting is the obvious next step once the last digit lands, so do it
   // rather than making them reach for the button.

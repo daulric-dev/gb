@@ -1,5 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { loginPath, safeNextPath } from "@/lib/routing";
+import {
+  homePathFor,
+  loginPath,
+  ORGANISATION_PATH,
+  safeNextPath,
+  SETUP_PATH,
+  setupRedirectPath,
+} from "@/lib/routing";
+import type { UserProfile } from "@/providers/AuthProvider";
+
+function profile(overrides: Partial<UserProfile> = {}): UserProfile {
+  return {
+    id: "u1",
+    email: "a@example.com",
+    first_name: "Ada",
+    last_name: "Lovelace",
+    role: "teacher",
+    account_type: "staff",
+    avatar_url: null,
+    school_management: null,
+    school: { id: "s1", name: "North High" },
+    is_org_admin: false,
+    organisation: { name: "Northside Trust" },
+    ...overrides,
+  };
+}
 
 describe("safeNextPath", () => {
   test("keeps same-origin paths with query and hash", () => {
@@ -61,5 +86,61 @@ describe("loginPath", () => {
     );
     const next = new URL(path, "http://x").searchParams.get("next");
     expect(safeNextPath(next)).toBe("/portal/attendance/scan?s=1&t=2");
+  });
+});
+
+describe("homePathFor", () => {
+  test("signed out goes to login", () => {
+    expect(homePathFor(null)).toBe("/login");
+  });
+
+  test("staff and students with a school go to their app", () => {
+    expect(homePathFor(profile())).toBe("/dashboard");
+    expect(homePathFor(profile({ account_type: "student" }))).toBe("/portal");
+  });
+
+  test("unnamed users onboard; named school-less users pick a school", () => {
+    expect(homePathFor(profile({ first_name: null, school: null }))).toBe("/onboard");
+    expect(homePathFor(profile({ school: null }))).toBe("/schools");
+  });
+
+  test("an organisation admin without a school goes to the console", () => {
+    expect(homePathFor(profile({ is_org_admin: true, school: null }))).toBe(
+      ORGANISATION_PATH,
+    );
+    // Even before onboarding: they need not pick staff or student.
+    expect(
+      homePathFor(
+        profile({ is_org_admin: true, school: null, first_name: null, account_type: null }),
+      ),
+    ).toBe(ORGANISATION_PATH);
+  });
+
+  test("an organisation admin who belongs to a school keeps their school home", () => {
+    expect(homePathFor(profile({ is_org_admin: true }))).toBe("/dashboard");
+  });
+
+  test("a profile without the organisation fields routes as before", () => {
+    const legacy = profile({ school: null });
+    delete legacy.is_org_admin;
+    delete legacy.organisation;
+    expect(homePathFor(legacy)).toBe("/schools");
+  });
+});
+
+describe("setupRedirectPath", () => {
+  test("sends a user who may set up to setup from every entry point", () => {
+    expect(setupRedirectPath(true, "/dashboard")).toBe(SETUP_PATH);
+    expect(setupRedirectPath(true, "/schools")).toBe(SETUP_PATH);
+    expect(setupRedirectPath(true, "/onboard")).toBe(SETUP_PATH);
+  });
+
+  test("stays put for users who may not set up, or while unknown", () => {
+    expect(setupRedirectPath(false, "/dashboard")).toBeNull();
+    expect(setupRedirectPath(null, "/dashboard")).toBeNull();
+  });
+
+  test("never redirects the setup page to itself", () => {
+    expect(setupRedirectPath(true, SETUP_PATH)).toBeNull();
   });
 });

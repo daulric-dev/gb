@@ -1,0 +1,83 @@
+name: Release
+
+# Packages the frontend, backend and docs sources (plus the root workspace
+# files needed to install them with Bun) into one zip for self-hosting schools.
+# A version tag publishes a GitHub Release; a manual run is a dry run that only
+# uploads the zip as a workflow artifact.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for the dry-run zip (e.g. 1.2.3) - nothing is published"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: bash .github/scripts/release-resolve-version.sh
+
+      - name: Build zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash .github/scripts/release-build-zip.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradebook-${{ steps.version.outputs.version }}
+          path: |
+            gradebook-${{ steps.version.outputs.version }}.zip
+            SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Before the download: checkout cleans the workspace, which would
+      # otherwise delete the downloaded zip.
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: gradebook-${{ needs.package.outputs.version }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: bash .github/scripts/release-publish.sh

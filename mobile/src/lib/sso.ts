@@ -26,6 +26,11 @@ export interface SuggestedProfile {
   avatarUrl: string | null;
 }
 
+/**
+ * Buttons that work before the user types an address: the server's
+ * install-wide apps only. A school's own providers (and SAML) come from
+ * `discoverSso` once the email is known.
+ */
 export function fetchSsoProviders(): Promise<SsoProvider[]> {
   return api<SsoProvider[]>("/auth/sso/providers", { skipAuthRedirect: true });
 }

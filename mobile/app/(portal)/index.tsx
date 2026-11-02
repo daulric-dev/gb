@@ -11,7 +11,6 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
-import { ReadOnlyBanner } from "@/features/billing/ReadOnlyBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +31,7 @@ import { studentCourseHref } from "@/lib/course";
 import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
 import { CourseThumb } from "@/features/course/CourseBanner";
 import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
+import { useFeatures } from "@/lib/use-features";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
@@ -39,6 +39,8 @@ import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
  */
 export default function PortalHomeScreen() {
   const { profile } = useAuth();
+  const { hasFeature } = useFeatures();
+  const attendanceOn = hasFeature("attendance");
   const router = useRouter();
   const { colors } = useTheme();
   const [me, setMe] = useState<PortalMe | null>(null);
@@ -84,16 +86,19 @@ export default function PortalHomeScreen() {
         logoUrl={profile?.school?.logo_url ?? me?.school?.logoUrl}
         name={profile?.school?.name}
       />
-      <ReadOnlyBanner />
-      <Button
-        size="lg"
-        icon={<ScanLine color={colors.primaryForeground} size={20} />}
-        onPress={() => router.push("/attendance/scan")}
-      >
-        Scan attendance QR
-      </Button>
+      {attendanceOn && (
+        <>
+          <Button
+            size="lg"
+            icon={<ScanLine color={colors.primaryForeground} size={20} />}
+            onPress={() => router.push("/attendance/scan")}
+          >
+            Scan attendance QR
+          </Button>
 
-      <OpenAttendanceCards refreshKey={refreshKey} />
+          <OpenAttendanceCards refreshKey={refreshKey} />
+        </>
+      )}
 
       <View style={styles.stats}>
         <StatCard

@@ -13,8 +13,9 @@ import {
   uploadSchoolLogo,
   UploadError,
 } from "@/lib/files/upload";
+import { CURRENT_SCHOOL_API } from "@/lib/organisation";
 import { useAuth } from "@/providers/AuthProvider";
-import { usePermissions } from "@/providers/PermissionsProvider";
+import { useOptionalCan } from "@/providers/PermissionsProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -22,22 +23,50 @@ import { Card } from "@/components/ui/card";
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 /**
- * The school's logo (school:update only), shown in the sidebar and the
- * student portal in place of the app mark. The current logo comes from the
- * signed-in profile; after a change the profile is reloaded so every place
- * that shows it updates.
+ * The school's logo, shown in the sidebar and the student portal in place of
+ * the app mark. By default the active school's (school:update only): the
+ * current logo comes from the signed-in profile, and after a change the
+ * profile is reloaded so every place that shows it updates. The organisation
+ * console passes one school's `apiBase`, `canEdit` and current `logoUrl`.
  */
-export function SchoolLogoSettings() {
+export function SchoolLogoSettings({
+  apiBase = CURRENT_SCHOOL_API,
+  canEdit,
+  logoUrl: givenLogoUrl,
+}: {
+  apiBase?: string;
+  canEdit?: boolean;
+  /** The school's logo when it is not the active school's (null: none). */
+  logoUrl?: string | null;
+} = {}) {
   useSignals();
-  const { can } = usePermissions();
-  const { profile, refresh } = useAuth();
+  const can = useOptionalCan();
+  const { profile, refresh, refreshSilently } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
   const uploading = useSignal(false);
   const removing = useSignal(false);
+  /** Set after a change on another school's logo (undefined: unchanged). */
+  const changed = useSignal<string | null | undefined>(undefined);
+  const current = apiBase === CURRENT_SCHOOL_API;
 
-  if (!can("school", "update") || !profile.value?.school) return null;
-  const logoUrl = profile.value.school.logo_url ?? null;
+  if (!(canEdit ?? can("school", "update"))) return null;
+  if (current && !profile.value?.school) return null;
+  const logoUrl = current
+    ? (profile.value?.school?.logo_url ?? null)
+    : changed.value !== undefined
+      ? changed.value
+      : (givenLogoUrl ?? null);
   const busy = uploading.value || removing.value;
+
+  /** The profile embeds the active school's logo (maybe this school's). */
+  async function afterChange(url: string | null) {
+    if (current) {
+      await refresh();
+    } else {
+      changed.value = url;
+      void refreshSilently();
+    }
+  }
 
   const failed = (err: unknown, fallback: string) =>
     toast.error(
@@ -57,8 +86,8 @@ export function SchoolLogoSettings() {
     }
     uploading.value = true;
     try {
-      await uploadSchoolLogo(file, file.name);
-      await refresh();
+      const url = await uploadSchoolLogo(file, file.name, undefined, apiBase);
+      await afterChange(url);
       toast.success("School logo updated");
     } catch (err) {
       failed(err, "Failed to upload the logo");
@@ -70,8 +99,8 @@ export function SchoolLogoSettings() {
   async function remove() {
     removing.value = true;
     try {
-      await api("/schools/current/logo", { method: "DELETE" });
-      await refresh();
+      await api(`${apiBase}/logo`, { method: "DELETE" });
+      await afterChange(null);
       toast.success("School logo removed");
     } catch (err) {
       failed(err, "Failed to remove the logo");
@@ -84,7 +113,7 @@ export function SchoolLogoSettings() {
     <Card className="p-6">
       <h2 className="text-lg font-semibold">School logo</h2>
       <p className="text-sm text-muted-foreground mb-4">
-        Shown to everyone in your school in the sidebar and the student
+        Shown to everyone in the school in the sidebar and the student
         portal. JPEG, PNG or WebP, up to 2MB; a square image works best.
       </p>
 

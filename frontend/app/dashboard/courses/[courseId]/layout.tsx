@@ -41,6 +41,7 @@ import {
 import { CourseBannerBackdrop } from "@/components/courses/course-banner";
 import { CourseStatusBadge } from "../_components/CourseStatusBadge";
 import { CourseContext } from "./_components/course-context";
+import { useFeatures } from "@/hooks/use-features";
 
 export default function CourseLayout({
   children,
@@ -51,6 +52,7 @@ export default function CourseLayout({
   const params = useParams<{ courseId: string }>();
   const courseId = params?.courseId ?? "";
   const pathname = usePathname() ?? "";
+  const { hasFeature } = useFeatures();
 
   const course = useSignal<Course | null>(null);
   const loading = useSignal(true);
@@ -135,10 +137,16 @@ export default function CourseLayout({
     { href: `${base}/modules`, label: "Modules", icon: Layers },
     { href: `${base}/assignments`, label: "Assignments", icon: ClipboardList },
     { href: `${base}/pages`, label: "Pages", icon: FileText },
-    { href: `${base}/announcements`, label: "Announcements", icon: Megaphone },
-    { href: `${base}/discussions`, label: "Discussions", icon: MessagesSquare },
+    ...(hasFeature("announcements")
+      ? [{ href: `${base}/announcements`, label: "Announcements", icon: Megaphone }]
+      : []),
+    ...(hasFeature("discussions")
+      ? [{ href: `${base}/discussions`, label: "Discussions", icon: MessagesSquare }]
+      : []),
     { href: `${base}/people`, label: "People", icon: Users },
-    { href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck },
+    ...(hasFeature("attendance")
+      ? [{ href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck }]
+      : []),
     { href: `${base}/grades`, label: "Grades", icon: BarChart3 },
     ...(canManage
       ? [{ href: `${base}/settings`, label: "Settings", icon: Settings }]

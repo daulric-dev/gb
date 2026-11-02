@@ -9,6 +9,11 @@ Notable changes to the codebase, grouped by date.
 
 Each entry below links to a dedicated page with the full writeup - what changed, why, what to deploy, and any behavior changes downstream consumers should know about.
 
+## 2026-11-02
+
+- [Self-hosted organisations; billing removed](./2026-11-02/organisation.md) - each install is run by one organisation with several schools: public `GET /api/setup/status` and `POST /api/setup` (first-run setup), organisation admins (`ORG_ADMIN_EMAILS` or `public.organisation_admin`) with `/api/organisation` routes to create schools and appoint their admins, `is_org_admin` and `organisation` on `/auth/me`. `POST /api/schools`, `DEDICATED_DEPLOYMENT` and all billing (Stripe, `/billing`, `/platform`, the `billing` schema) are removed. Migrations `20261102100000_organisation`, `20261102100100_drop_billing`.
+- [HTTP QUERY for search and filter lists](./2026-11-02/http-query.md) - courses, students, files, folder contents, chat history, portal notices, organisation schools and invites and the SSO activity log moved from `GET` + query string to `QUERY` + JSON body (no GET fallback; old mobile builds break on those screens, raise `MOBILE_MIN_VERSION`). CORS allows `QUERY`; web and mobile use `apiQuery()`.
+
 ## 2026-10-26
 
 - [Session security](./2026-10-26/session-security.md) - sessions end at most `SESSION_MAX_AGE_DAYS` (90) after sign-in; **Signed-in devices** (`GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id`, `revoke-others`, `revoke-all`) on the web settings pages (new student `/portal/settings`) and in the app; admins can sign a member out (`POST /api/schools/members/:membershipId/sessions/revoke`, platform `POST /api/platform/users/:userId/sessions/revoke`); revocation is immediate (cache entries deleted). The token rotates at each daily renewal (cookie or `X-Session-Token`, on any status), the replaced one works for `SESSION_ROTATION_GRACE_SECONDS` (120), and after that its reuse revokes the session. "New sign-in" and "Suspicious activity" emails (`SESSION_ALERTS_ENABLED`). The app sends `X-GradeBook-Device`. Migration `20261026100000_session_hardening` (`account.session` columns, `account.known_device`).

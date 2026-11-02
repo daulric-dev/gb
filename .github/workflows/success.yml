@@ -38,22 +38,15 @@ jobs:
       - name: Prepare manual dispatch status output
         if: ${{ github.event_name == 'workflow_dispatch' }}
         id: status_manual
-        run: |
-          echo "all_success=true" >> "$GITHUB_OUTPUT"
-          echo "has_failures=false" >> "$GITHUB_OUTPUT"
-          echo "details=- Manual workflow_dispatch test run" >> "$GITHUB_OUTPUT"
-          echo "head_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "event_name=workflow_dispatch" >> "$GITHUB_OUTPUT"
-          echo "run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
-          echo "changes_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/success-manual-status.sh
 
       - name: Show notification decision
-        run: |
-          echo "workflow event: ${{ github.event_name }}"
-          echo "all_success: ${{ steps.status.outputs.all_success || steps.status_manual.outputs.all_success }}"
-          echo "has_failures: ${{ steps.status.outputs.has_failures || steps.status_manual.outputs.has_failures }}"
-          echo "details:"
-          echo "${{ steps.status.outputs.details || steps.status_manual.outputs.details }}"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ALL_SUCCESS: ${{ steps.status.outputs.all_success || steps.status_manual.outputs.all_success }}
+          HAS_FAILURES: ${{ steps.status.outputs.has_failures || steps.status_manual.outputs.has_failures }}
+          DETAILS: ${{ steps.status.outputs.details || steps.status_manual.outputs.details }}
+        run: bash .github/scripts/success-show-decision.sh
 
       - name: Send Discord success notification
         if: ${{ steps.status.outputs.all_success == 'true' || steps.status_manual.outputs.all_success == 'true' }}

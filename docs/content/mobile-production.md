@@ -71,6 +71,7 @@ eas build --profile production --platform all
 2. `AUTH_COOKIE_DOMAIN` set if the API is not a subdomain of the web app's two-label domain.
 3. `EXPO_PUBLIC_API_URL` set in the build profile, HTTPS, no `/api`.
 4. Build, install, and confirm **sign-in persists across an app restart** - that is the check that proves the cookie was accepted.
+5. The search and filter lists (courses, students, files, chat history, notices) use the HTTP `QUERY` method. Builds from before that send `GET` and get 404s, so once the first QUERY build is live in both stores raise `MOBILE_MIN_VERSION` to it. See [HTTP QUERY](./backend/http-query.md).
 
 ## Known gaps
 
