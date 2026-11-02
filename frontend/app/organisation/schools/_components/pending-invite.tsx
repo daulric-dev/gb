@@ -4,7 +4,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Loader2, RotateCw, X } from "lucide-react";
 import {
-  errorMessage,
   inviteExpired,
   inviteExpiryLabel,
   resendInvite,
@@ -12,6 +11,7 @@ import {
   type InviteSummary,
 } from "@/lib/organisation";
 import { Button } from "@/components/ui/button";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Resend (14 more days, emailed again) and Cancel for one open invite.
@@ -33,7 +33,7 @@ export function InviteActions({
       toast.success(`Invite to ${invite.email} sent again`);
       onChanged();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to resend the invite"));
+      toast.error(userMessage(err, "Failed to resend the invite"));
     } finally {
       setBusy(null);
     }
@@ -47,7 +47,7 @@ export function InviteActions({
       toast.success(`Invite to ${invite.email} cancelled`);
       onChanged();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to cancel the invite"));
+      toast.error(userMessage(err, "Failed to cancel the invite"));
     } finally {
       setBusy(null);
     }

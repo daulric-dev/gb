@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AlertCircle, FileUp, Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { GradebookImportPlan } from "@/lib/courses/types";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 type Mark = { score: number | null; excused: boolean } | null;
 
@@ -73,7 +74,7 @@ export function ImportGradesDialog({
       fileName.value = file.name;
       plan.value = preview;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not read that file");
+      toast.error(userMessage(err, "Could not read that file"));
       reset();
     } finally {
       working.value = false;
@@ -95,7 +96,7 @@ export function ImportGradesDialog({
       onImportedAction();
       onOpenChangeAction(false);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Import failed");
+      toast.error(userMessage(err, "Import failed"));
     } finally {
       working.value = false;
     }

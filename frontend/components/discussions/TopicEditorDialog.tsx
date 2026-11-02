@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { DiscussionTopic } from "@/lib/courses/discussions";
 import { MarkdownEditor } from "@/app/dashboard/courses/[courseId]/_components/MarkdownEditor";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 type Editable = Pick<
   DiscussionTopic,
@@ -93,7 +94,7 @@ export function TopicEditorDialog({
       onOpenChangeAction(false);
       onSavedAction(saved);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       saving.value = false;
     }

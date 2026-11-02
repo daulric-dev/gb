@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import type { SchoolRole } from "./types";
+import { userMessage } from "@/lib/errors";
 
 export function RoleFormDialog({
   open,
@@ -69,9 +70,7 @@ export function RoleFormDialog({
       onOpenChange(false);
       onSaved();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to save role",
-      );
+      toast.error(userMessage(err, "Failed to save role"));
     } finally {
       saving.value = false;
     }

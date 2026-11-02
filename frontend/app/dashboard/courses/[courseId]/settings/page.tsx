@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Lock, Trash2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { CourseStatus } from "@/lib/courses/types";
 import {
   loadCalendar,
@@ -51,6 +51,7 @@ import { ImportContentDialog } from "../../_components/ImportContentDialog";
 import { Switch } from "@/components/ui/switch";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useFeatures } from "@/hooks/use-features";
+import { userMessage } from "@/lib/errors";
 
 const STATUS_ITEMS: { value: CourseStatus; label: string; hint: string }[] = [
   { value: "draft", label: "Draft", hint: "Hidden from students" },
@@ -130,7 +131,7 @@ export default function CourseSettingsPage() {
       toast.success("Settings saved");
       await reload();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       saving.value = false;
     }
@@ -149,7 +150,7 @@ export default function CourseSettingsPage() {
       await reload();
     } catch (err) {
       // 409: a course with students can't become a template.
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       togglingTemplate.value = false;
     }
@@ -163,7 +164,7 @@ export default function CourseSettingsPage() {
       router.push("/dashboard/courses");
     } catch (err) {
       // 409: work has been handed in; the API says to archive first.
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
       confirmDelete.value = false;
     } finally {
       deleting.value = false;

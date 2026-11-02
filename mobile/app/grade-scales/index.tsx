@@ -9,7 +9,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -28,6 +28,7 @@ import type {
   GradeScaleSummary,
   GradeScaleType,
 } from "@/features/grade-scales/types";
+import { userMessage } from "@/lib/errors";
 
 const TYPE_LABEL: Record<GradeScaleType, string> = {
   letter: "Letter (A–F)",
@@ -94,7 +95,7 @@ export default function GradeScalesScreen() {
       toast.success("Default scale updated");
       await fetchScales();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to set default");
+      toast.error(userMessage(err, "Failed to set default"));
     } finally {
       setSettingDefault(null);
     }
@@ -109,7 +110,7 @@ export default function GradeScalesScreen() {
       setConfirmDelete(null);
       await fetchScales();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete scale");
+      toast.error(userMessage(err, "Failed to delete scale"));
     } finally {
       setDeleting(false);
     }

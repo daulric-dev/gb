@@ -24,7 +24,7 @@ export async function downloadAndOpen(
       credentials: "include",
     });
   } catch {
-    throw new ApiError(0, "Can't reach the server. Check your connection.");
+    throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
   }
   await rememberSessionToken(res);
   if (!res.ok) {

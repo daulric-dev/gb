@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Megaphone, Pencil, Plus, Trash2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useProfile } from "@/providers/AuthProvider";
 import { Markdown } from "@/components/markdown";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -36,6 +36,7 @@ import {
   announcementAuthor,
   type CourseAnnouncement,
 } from "../_components/types";
+import { userMessage } from "@/lib/errors";
 
 function formatWhen(iso: string | null) {
   if (!iso) return "";
@@ -104,7 +105,7 @@ export default function CourseAnnouncementsPage() {
       dialogOpen.value = false;
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       saving.value = false;
     }
@@ -117,7 +118,7 @@ export default function CourseAnnouncementsPage() {
       toast.success("Announcement deleted");
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     }
   }
 

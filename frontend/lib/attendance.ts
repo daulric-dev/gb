@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, buildUrl } from "@/lib/api";
+import { FriendlyError, safeText, userMessage } from "@/lib/errors";
 import type { AttendanceMethod, AttendanceStatus } from "@/lib/courses/types";
 
 // ── Labels and colours ──────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ export interface Position {
 export function getCurrentPosition(timeoutMs = 15_000): Promise<Position> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      reject(new Error("This browser cannot share its location."));
+      reject(new FriendlyError("This browser cannot share its location."));
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -151,7 +152,7 @@ export function getCurrentPosition(timeoutMs = 15_000): Promise<Position> {
           longitude: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
         }),
-      (err) => reject(new Error(geolocationMessage(err))),
+      (err) => reject(new FriendlyError(geolocationMessage(err))),
       { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
     );
   });
@@ -174,20 +175,13 @@ function geolocationMessage(err: GeolocationPositionError): string {
 
 /** A readable message for a failed check-in. */
 export function checkInErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 429) {
-      return err.message && err.message !== "Too Many Requests"
-        ? err.message
-        : "Too many wrong codes. Ask your teacher to mark you.";
-    }
-    if (err.status === 409 || err.status === 400 || err.status === 403) {
-      return err.message || "Could not check you in.";
-    }
-    if (err.status === 0) return err.message;
-    return err.message || "Could not check you in.";
+  if (err instanceof ApiError && err.status === 429) {
+    const text = safeText(err.message);
+    return text && text !== "Too Many Requests"
+      ? text
+      : "Too many wrong codes. Ask your teacher to mark you.";
   }
-  if (err instanceof Error) return err.message;
-  return "Could not check you in.";
+  return userMessage(err, "Could not check you in.");
 }
 
 // ── Server-sent events ──────────────────────────────────────────────────────

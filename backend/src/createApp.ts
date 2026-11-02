@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { insecureCookieWarning, isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 import { acceptEmptyQueryBodies, CORS_METHODS } from './common/http-query';
+import { AppExceptionFilter } from './common/exception.filter';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -45,6 +46,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
       transform: true,
     }),
   );
+  
+  app.useGlobalFilters(new AppExceptionFilter(app.getHttpAdapter()));
 
   const raw_instance = app.getHttpAdapter().getInstance();
 

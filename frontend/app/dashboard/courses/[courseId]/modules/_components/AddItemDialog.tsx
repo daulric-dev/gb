@@ -13,7 +13,7 @@ import {
   MessagesSquare,
   Paperclip,
 } from "lucide-react";
-import { api, apiQuery, ApiError } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import type {
   Activity,
   CoursePage,
@@ -46,6 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { userMessage } from "@/lib/errors";
 
 const TYPES: { type: ModuleItemType; label: string; icon: typeof FileText }[] = [
   { type: "page", label: "Page", icon: FileText },
@@ -175,7 +176,7 @@ export function AddItemDialog({
       onOpenChangeAction(false);
       onAddedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to add");
+      toast.error(userMessage(err, "Failed to add"));
     } finally {
       saving.value = false;
     }

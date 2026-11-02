@@ -20,7 +20,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChevronsDownUp, ChevronsUpDown, Layers, Loader2, Plus } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,7 @@ import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { ModuleCard } from "./_components/ModuleCard";
 import { AddItemDialog } from "./_components/AddItemDialog";
+import { userMessage } from "@/lib/errors";
 
 /** The one text prompt used for new modules and renames. */
 type TextPrompt =
@@ -99,7 +100,7 @@ export default function CourseModulesPage() {
   }, [load]);
 
   function fail(err: unknown, fallback: string) {
-    toast.error(err instanceof ApiError ? err.message : fallback);
+    toast.error(userMessage(err, fallback));
     load();
   }
 
@@ -133,7 +134,7 @@ export default function CourseModulesPage() {
       prompt.value = null;
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       saving.value = false;
     }

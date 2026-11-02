@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { BarChart3, Download, Loader2, Search, Upload } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { downloadFromUrl } from "@/lib/download";
 import type {
   Activity,
@@ -35,6 +35,7 @@ import {
 import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { ImportGradesDialog } from "./_components/ImportGradesDialog";
+import { userMessage } from "@/lib/errors";
 
 interface Column {
   group: {
@@ -163,7 +164,7 @@ export default function CourseGradesPage() {
         `${safe}-grades.csv`,
       );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Export failed");
+      toast.error(userMessage(err, "Export failed"));
     } finally {
       exporting.value = false;
     }

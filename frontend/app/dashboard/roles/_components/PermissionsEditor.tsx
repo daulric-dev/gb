@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import type { CatalogEntry, SchoolRole } from "./types";
+import { userMessage } from "@/lib/errors";
 
 const ACTION_ORDER: CatalogEntry["action"][] = [
   "read",
@@ -114,9 +115,7 @@ export function PermissionsEditor({
       onOpenChangeAction(false);
       onSavedAction();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to save permissions",
-      );
+      toast.error(userMessage(err, "Failed to save permissions"));
     } finally {
       saving.value = false;
     }

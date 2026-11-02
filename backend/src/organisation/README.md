@@ -12,7 +12,7 @@ An **organisation admin** is a signed-in user with a row in `public.organisation
 
 | Method | Path | Guard | What it does |
 | --- | --- | --- | --- |
-| GET | `/api/setup/status` | Public | `{ needsSetup }`: true while no organisation exists. Clients ask before sign-in. |
+| GET | `/api/setup/status` | Public | `{ needsSetup, organisation: { name } \| null }`: whether setup is pending, and the organisation name for the home page. Clients ask before sign-in. |
 | GET | `/api/setup/eligibility` | `AuthGuard` | `{ needsSetup, canSetUp }`: whether setup is pending and whether this user may run it (the same rule as `POST /api/setup`). The web app sends every signed-in user with `canSetUp` to `/setup` from each entry point; others see a "not set up yet" notice on `/setup`. |
 | POST | `/api/setup` | `AuthGuard` | Body `{ organisationName }` (1-120 characters, trimmed). Creates the organisation and makes the caller its first admin in one transaction, under an advisory lock, with the `organisation_singleton` index as the backstop: 409 when it already exists (a lost race too). Who may: with `ORG_ADMIN_EMAILS` set, only a listed verified email; otherwise, on an install with no schools, the first signed-in user; on an install that already has schools (an upgrade), only someone who owns or administers one (or a listed email); anyone else gets 403 "Only a school administrator on this server, or an email listed in ORG_ADMIN_EMAILS, can finish setting up GradeBook. Sign in as one, or add your email to ORG_ADMIN_EMAILS and restart the server." Clears every cached profile. Returns `{ id, name, createdAt }`. |
 | GET | `/api/organisation` | `AuthGuard`, `OrganisationAdminGuard` | `{ id, name, createdAt }`; 404 before setup. |

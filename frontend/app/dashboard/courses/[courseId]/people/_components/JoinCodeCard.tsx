@@ -13,7 +13,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -25,6 +25,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { joinUrl } from "@/lib/course-join";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Students with an account can join the course themselves with this code from
@@ -55,7 +56,7 @@ export function JoinCodeCard({
       toast.success(joinCode ? "New code generated" : "Join code enabled");
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to generate");
+      toast.error(userMessage(err, "Failed to generate"));
     } finally {
       working.value = false;
     }
@@ -68,7 +69,7 @@ export function JoinCodeCard({
       toast.success("Join code disabled");
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to disable");
+      toast.error(userMessage(err, "Failed to disable"));
     } finally {
       working.value = false;
     }

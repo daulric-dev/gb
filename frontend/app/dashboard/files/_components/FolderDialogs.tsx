@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import type { FileItem, FolderItem } from "./types";
+import { userMessage } from "@/lib/errors";
 
 /** Create a folder inside `parentId` (null = root). */
 export function NewFolderDialog({
@@ -59,9 +60,7 @@ export function NewFolderDialog({
       onCreated();
       onOpenChange(false);
     } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : "Failed to create folder",
-      );
+      toast.error(userMessage(e, "Failed to create folder"));
     } finally {
       busy.value = false;
     }
@@ -132,7 +131,7 @@ export function RenameFolderDialog({
       onRenamed();
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to rename folder");
+      toast.error(userMessage(e, "Failed to rename folder"));
     } finally {
       busy.value = false;
     }

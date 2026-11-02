@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   emailDomainsApi,
   type EmailDomain,
@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 const ROLE_ITEMS = [
   { value: "teacher", label: "Teacher" },
@@ -100,11 +101,10 @@ export function DomainFormDialog({
       onSavedAction(saved);
     } catch (err) {
       toast.error(
-        err instanceof ApiError
-          ? err.message
-          : existing
-            ? "Failed to update the domain"
-            : "Failed to add the domain",
+        userMessage(
+          err,
+          existing ? "Failed to update the domain" : "Failed to add the domain",
+        ),
       );
     } finally {
       saving.value = false;

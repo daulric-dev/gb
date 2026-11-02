@@ -18,7 +18,6 @@ import { useToast } from "@/providers/ToastProvider";
 import { formatScore, roundScore } from "@/lib/format-number";
 import { downloadAndOpen } from "@/lib/open-file";
 import {
-  errorMessage,
   href,
   type ActivityRubric,
   type RubricAssessment,
@@ -26,6 +25,7 @@ import {
   type TeacherSubmissionRow,
 } from "@/lib/course";
 import { RubricView } from "@/features/course/RubricView";
+import { userMessage } from "@/lib/errors";
 
 /** A mark as typed: digits with at most two decimals. */
 const SCORE_RE = /^\d+(\.\d{1,2})?$/;
@@ -178,7 +178,7 @@ export default function MarkSubmissionScreen() {
       const res = await load();
       resetForm(res?.subs, res?.r ?? null);
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to save the mark"));
+      toast.error(userMessage(err, "Failed to save the mark"));
     } finally {
       setSaving(false);
     }
@@ -196,7 +196,7 @@ export default function MarkSubmissionScreen() {
       const res = await load();
       resetForm(res?.subs, res?.r ?? null);
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to update"));
+      toast.error(userMessage(err, "Failed to update"));
     } finally {
       setExcusing(false);
     }
@@ -212,7 +212,7 @@ export default function MarkSubmissionScreen() {
         sub.fileName ?? "submission",
       );
     } catch (err) {
-      toast.error(errorMessage(err, "Could not open the file"));
+      toast.error(userMessage(err, "Could not open the file"));
     } finally {
       setOpeningFile(false);
     }

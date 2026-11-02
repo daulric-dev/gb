@@ -5,7 +5,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2, Plus } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { PortalCourseCard } from "@/lib/courses/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 export function JoinCourseDialog({
   onJoined,
@@ -54,9 +55,7 @@ export function JoinCourseDialog({
       onJoined?.(course);
       router.push(`/portal/courses/${course.id}`);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Could not join that course",
-      );
+      toast.error(userMessage(err, "Could not join that course"));
     } finally {
       joining.value = false;
     }

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { Input } from "@/components/ui/Input";
 import { TextArea } from "@/components/ui/TextArea";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import type { SchoolRole } from "./types";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Create or edit a custom role (name + description). Pass `role` to edit;
@@ -47,7 +48,7 @@ export function RoleForm({
       }
       onSuccess();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save role");
+      toast.error(userMessage(err, "Failed to save role"));
     } finally {
       setLoading(false);
     }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Inbox, Loader2, RotateCw } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   DELIVERY_PAGE,
   deliveryStatusText,
@@ -35,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DeliveryStatusBadge, when } from "./status-badge";
+import { userMessage } from "@/lib/errors";
 
 /**
  * One webhook's deliveries, newest first, filtered by status and event type:
@@ -74,7 +75,7 @@ export function WebhookDeliveries({
       .catch((err) => {
         if (!live) return;
         setRows([]);
-        setError(err instanceof ApiError ? err.message : "Failed to load deliveries");
+        setError(userMessage(err, "Failed to load deliveries"));
       });
     return () => {
       live = false;
@@ -90,7 +91,7 @@ export function WebhookDeliveries({
       setRows((list) => [...(list ?? []), ...page]);
       setMore(page.length === DELIVERY_PAGE);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load deliveries");
+      setError(userMessage(err, "Failed to load deliveries"));
     } finally {
       setLoadingMore(false);
     }
@@ -211,7 +212,7 @@ function DeliveryDialog({
     if (!deliveryId) return;
     getDelivery(apiBase, deliveryId)
       .then(setDetail)
-      .catch((err) => toast.error(err instanceof ApiError ? err.message : "Failed to load the delivery"));
+      .catch((err) => toast.error(userMessage(err, "Failed to load the delivery")));
   }, [apiBase, deliveryId]);
 
   async function redeliver() {
@@ -227,7 +228,7 @@ function DeliveryDialog({
       setDetail(sent);
       onRedeliveredAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to send it again");
+      toast.error(userMessage(err, "Failed to send it again"));
     } finally {
       setSending(false);
     }

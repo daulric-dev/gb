@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api";
+import { FriendlyError } from "@/lib/errors";
 
 /**
  * Direct uploads to object storage with a presigned URL.
@@ -28,8 +29,11 @@ export interface UploadedFile {
   status: string;
 }
 
-/** A failed transfer to storage (not an API error - storage answers in XML). */
-export class UploadError extends Error {
+/**
+ * A failed transfer to storage (not an API error - storage answers in XML).
+ * Its messages are written for the user, so `userMessage` shows them.
+ */
+export class UploadError extends FriendlyError {
   constructor(
     message: string,
     /** HTTP status from storage; 0 when the request never completed. */

@@ -11,6 +11,7 @@ import { homePathFor, isStudentProfile, loginPath } from "@/lib/routing";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
+import { userMessage } from "@/lib/errors";
 
 type State =
   | { kind: "working" }
@@ -91,9 +92,7 @@ export default function JoinCoursePage() {
             : "Could not join the course",
           body: notFound
             ? "Your teacher may have turned self-enrolment off or issued a new code. Ask them for the current one."
-            : err instanceof ApiError
-              ? err.message
-              : "Something went wrong. Try again in a moment.",
+            : userMessage(err, "Something went wrong. Try again in a moment."),
           href: "/portal/courses",
           action: "Go to my courses",
         });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ArrowLeftRight, Check } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -12,6 +12,7 @@ import { Text } from "@/components/ui/Text";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
+import { userMessage } from "@/lib/errors";
 
 /** One row of GET /me/schools. */
 interface MySchool {
@@ -69,7 +70,7 @@ export function SwitchSchool({ refreshKey = 0 }: { refreshKey?: number }) {
       toast.success(`Switched to ${school.name ?? "school"}`);
       router.replace("/(tabs)");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not switch school");
+      toast.error(userMessage(err, "Could not switch school"));
     } finally {
       setBusy(null);
     }

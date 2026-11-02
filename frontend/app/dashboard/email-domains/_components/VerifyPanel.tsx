@@ -4,10 +4,11 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, RefreshCw } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { emailDomainsApi, type EmailDomain } from "@/lib/email-domains";
 import { Button } from "@/components/ui/button";
 import { CopyRow } from "./CopyRow";
+import { userMessage } from "@/lib/errors";
 
 /** DNS instructions for an unverified domain, plus the "Check now" action. */
 export function VerifyPanel({
@@ -35,8 +36,7 @@ export function VerifyPanel({
       toast.success(`${updated.domain} verified`);
       onVerifiedAction(updated);
     } catch (err) {
-      error.value =
-        err instanceof ApiError ? err.message : "Failed to verify the domain";
+      error.value = userMessage(err, "Failed to verify the domain");
     } finally {
       checking.value = false;
     }

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Check, Loader2, Search } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { SchoolMember } from "@/app/dashboard/staff/_components/types";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 function memberName(m: SchoolMember) {
   return (
@@ -80,7 +81,7 @@ export function AddStaffDialog({
       onOpenChangeAction(false);
       onAddedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to add");
+      toast.error(userMessage(err, "Failed to add"));
     } finally {
       saving.value = false;
     }

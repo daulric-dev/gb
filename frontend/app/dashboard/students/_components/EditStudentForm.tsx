@@ -1,7 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type Student } from "./types";
+import { userMessage } from "@/lib/errors";
 
 export function EditStudentForm({
   student,
@@ -50,7 +51,7 @@ export function EditStudentForm({
       toast.success("Student updated");
       onSuccess();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to update";
+      const msg = userMessage(err, "Failed to update");
       toast.error(msg);
     } finally {
       loading.value = false;

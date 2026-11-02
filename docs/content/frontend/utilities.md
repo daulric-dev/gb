@@ -71,15 +71,24 @@ class ApiError extends Error {
 }
 ```
 
-Used throughout the app for error handling:
+Never show `err.message` directly. Every toast, alert and inline error goes through `userMessage(err, fallback)` from `lib/errors.ts`:
 ```typescript
 try {
   await api("/something", { method: "POST", body: data });
 } catch (err) {
-  const msg = err instanceof ApiError ? err.message : "Something went wrong";
-  toast.error(msg);
+  toast.error(userMessage(err, "Failed to save"));
 }
 ```
+
+### `lib/errors.ts`
+
+| Export | What it does |
+|--------|--------------|
+| `userMessage(err, fallback)` | An `ApiError` 4xx: the API's message (the first one for a validation list) when it is safe text, else `fallback` (a 429 falls back to `RATE_LIMIT_MESSAGE`). A 5xx: `GENERIC_ERROR_MESSAGE`, plus `Reference: <errorId>` when the API sent one. No response (`ApiError` status 0, or a fetch `TypeError`): `NETWORK_ERROR_MESSAGE`. A `FriendlyError` (including `UploadError` and the location errors in `lib/attendance.ts`): its message when safe. Anything else: `fallback`. |
+| `safeText(text)` | One trimmed line of at most 200 characters, or `null` for non-strings, blank text, multi-line dumps and anything that looks internal: stack frames, Prisma text and codes, SQL/Postgres errors, `ECONN…`, `TypeError`/`ReferenceError`/`SyntaxError`, `…Exception:`, JSON parse errors, HTML pages, source file paths, Nest's `Cannot GET /…`. |
+| `FriendlyError` | An `Error` whose message was written for the user. |
+
+Route errors are caught by `app/error.tsx`, `app/dashboard/error.tsx`, `app/portal/error.tsx` and `app/organisation/error.tsx` (all render `components/layout/error-fallback.tsx`) and, for the root layout, `app/global-error.tsx`. They show a fixed message, "Try again" (`retry()`), and `error.digest` as a reference; the error itself only goes to the console. `mobile/src/lib/errors.ts` applies the same rules in the app.
 
 ---
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal, useComputed } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
@@ -19,6 +19,7 @@ import type { JoinRequest, SchoolMember, StaffSectionRole } from "./_components/
 import { RoleSection } from "./_components/RoleSection";
 import { PendingRequestsTab } from "./_components/PendingRequestsTab";
 import { MemberRolesDialog } from "./_components/MemberRolesDialog";
+import { userMessage } from "@/lib/errors";
 
 const ROLE_ORDER: StaffSectionRole[] = ["admin", "teacher", "member", "custom"];
 
@@ -156,8 +157,7 @@ export default function StaffPage() {
       members.value = members.value.filter((m) => m.id !== member.id);
       toast.success(`${name} has been removed.`);
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Failed to remove member";
+      const message = userMessage(err, "Failed to remove member");
       toast.error(message);
     } finally {
       removingId.value = null;
@@ -182,7 +182,7 @@ export default function StaffPage() {
           : `Signed ${name} out of ${revoked} device${revoked === 1 ? "" : "s"}.`,
       );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to sign out");
+      toast.error(userMessage(err, "Failed to sign out"));
     }
   }, []);
 

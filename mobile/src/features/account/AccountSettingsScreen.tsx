@@ -3,8 +3,8 @@ import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, GraduationCap, LogOut, Trash2 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
-import { uploadAvatar, UploadError } from "@/lib/upload";
+import { api } from "@/lib/api";
+import { uploadAvatar } from "@/lib/upload";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme, type ThemeMode } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -22,6 +22,7 @@ import { getInitials, capitalize } from "@/lib/utils";
 import { SignedInDevices } from "@/features/account/SignedInDevices";
 import { SwitchSchool } from "@/features/account/SwitchSchool";
 import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
+import { userMessage } from "@/lib/errors";
 
 /**
  * The signed-in person's account: picture, name, appearance, devices, log out
@@ -82,7 +83,7 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       await refresh();
       toast.success("Profile updated");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to update profile");
+      toast.error(userMessage(err, "Failed to update profile"));
     } finally {
       setSaving(false);
     }
@@ -116,11 +117,7 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       await refresh();
       toast.success("Profile picture updated");
     } catch (err) {
-      toast.error(
-        err instanceof ApiError || err instanceof UploadError
-          ? err.message
-          : "Failed to upload image",
-      );
+      toast.error(userMessage(err, "Failed to upload image"));
     } finally {
       setUploading(false);
     }
@@ -135,7 +132,7 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       await refresh();
       router.replace("/(auth)/schools");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to leave school");
+      toast.error(userMessage(err, "Failed to leave school"));
       setLeaving(false);
     }
   }
@@ -149,7 +146,7 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       await logout();
       router.replace("/(auth)/login");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete account");
+      toast.error(userMessage(err, "Failed to delete account"));
       setDeleting(false);
     }
   }

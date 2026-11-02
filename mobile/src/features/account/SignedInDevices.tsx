@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { LogOut, Monitor, Smartphone } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/course";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { userMessage } from "@/lib/errors";
 
 /** One row of GET /auth/sessions. */
 export interface SignedInSession {
@@ -74,7 +75,7 @@ export function SignedInDevices({ refreshKey = 0 }: { refreshKey?: number }) {
       toast.success(`Signed out ${session.device}`);
       await load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to sign out");
+      toast.error(userMessage(err, "Failed to sign out"));
     } finally {
       setBusy(null);
     }
@@ -93,7 +94,7 @@ export function SignedInDevices({ refreshKey = 0 }: { refreshKey?: number }) {
       setConfirmOthers(false);
       await load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to sign out");
+      toast.error(userMessage(err, "Failed to sign out"));
     } finally {
       setBusy(null);
     }

@@ -7,7 +7,7 @@ import {
   Mail,
   Search,
 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { homeRouteFor, isStudentProfile } from "@/lib/routing";
 import { JoinCodeForm } from "@/components/auth/JoinCodeForm";
@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { userMessage } from "@/lib/errors";
 
 interface School {
   id: string;
@@ -175,9 +176,7 @@ export default function SchoolsScreen() {
         toast.success(`Join request sent — waiting for admin approval.`);
       }
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to request to join",
-      );
+      toast.error(userMessage(err, "Failed to request to join"));
       setJoiningId(null);
     }
   }
@@ -200,9 +199,7 @@ export default function SchoolsScreen() {
         toast.success(`Join request sent — waiting for admin approval.`);
       }
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to join the school",
-      );
+      toast.error(userMessage(err, "Failed to join the school"));
       setDomainJoining(false);
     }
   }

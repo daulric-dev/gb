@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { ChevronRight, FileText, Loader2, Plus } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { CoursePage, CoursePageSummary } from "@/lib/courses/types";
 import { formatDate } from "@/lib/courses/format";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/empty";
 import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
+import { userMessage } from "@/lib/errors";
 
 export default function CoursePagesPage() {
   useSignals();
@@ -68,7 +69,7 @@ export default function CoursePagesPage() {
       creating.value = false;
       router.push(`${base}/pages/${page.id}?edit=1`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to create");
+      toast.error(userMessage(err, "Failed to create"));
     } finally {
       saving.value = false;
     }
@@ -84,7 +85,7 @@ export default function CoursePagesPage() {
         body: { isPublished },
       });
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
       load();
     }
   }

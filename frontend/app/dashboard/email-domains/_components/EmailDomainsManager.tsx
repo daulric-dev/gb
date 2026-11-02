@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { AtSign, KeyRound, Loader2, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   AUDIENCE_LABEL,
   emailDomainsApi,
@@ -31,6 +31,7 @@ import {
 import { DomainFormDialog } from "./DomainFormDialog";
 import { VerifyPanel } from "./VerifyPanel";
 import { SsoPanel } from "./SsoPanel";
+import { userMessage } from "@/lib/errors";
 
 /**
  * One school's email domains (add, verify with the DNS record, edit audience
@@ -111,9 +112,7 @@ export function EmailDomainsManager({
       toast.success(`${target.domain} removed`);
       removing.value = null;
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to remove the domain",
-      );
+      toast.error(userMessage(err, "Failed to remove the domain"));
     } finally {
       removeBusy.value = false;
     }

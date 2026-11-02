@@ -11,6 +11,10 @@ import { ToastProvider } from "@/providers/ToastProvider";
 import { NotificationRouter } from "@/providers/NotificationRouter";
 import { UpdateGate } from "@/features/app-update/UpdateGate";
 import { setUnauthorizedHandler } from "@/lib/api";
+import { ErrorScreen } from "@/components/layout/ErrorScreen";
+
+/** A render error anywhere shows a friendly screen with "Try again", never the error text. */
+export { ErrorScreen as ErrorBoundary };
 
 function RootNavigator() {
   const { scheme, colors } = useTheme();

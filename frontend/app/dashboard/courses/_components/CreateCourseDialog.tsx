@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Plus } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type {
   CopiedCourse,
   Course,
@@ -40,6 +40,7 @@ import {
   type DateChoice,
 } from "./CopyDateFields";
 import { useFeatures } from "@/hooks/use-features";
+import { userMessage } from "@/lib/errors";
 
 const BLANK = "blank";
 
@@ -115,7 +116,7 @@ export function CreateCourseDialog({
       open.value = false;
       router.push(`/dashboard/courses/${course.id}`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to create");
+      toast.error(userMessage(err, "Failed to create"));
     } finally {
       saving.value = false;
     }
@@ -144,7 +145,7 @@ export function CreateCourseDialog({
       open.value = false;
       router.push(`/dashboard/courses/${course.id}`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to create");
+      toast.error(userMessage(err, "Failed to create"));
     } finally {
       saving.value = false;
     }

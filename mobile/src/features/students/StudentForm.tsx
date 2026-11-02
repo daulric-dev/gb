@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import type { Student } from "@/lib/types";
 import { Input } from "@/components/ui/Input";
@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { DateField } from "@/components/ui/DateField";
 import { Text } from "@/components/ui/Text";
+import { userMessage } from "@/lib/errors";
 
 type Gender = "male" | "female";
 
@@ -56,7 +57,7 @@ export function StudentForm({
       toast.success("Student updated");
       onSuccess();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       setLoading(false);
     }

@@ -25,6 +25,7 @@ import {
   type SsoDiscovery,
   type SsoProvider,
 } from "@/lib/sso";
+import { userMessage } from "@/lib/errors";
 
 /**
  * email: type an address. choice: the address's school offers single sign-on
@@ -144,8 +145,7 @@ function LoginEmailForm() {
           return;
         }
       }
-      const message =
-        err instanceof ApiError ? err.message : "Failed to send OTP";
+      const message = userMessage(err, "Failed to send OTP");
       toast.error(message);
     } finally {
       loading.value = false;

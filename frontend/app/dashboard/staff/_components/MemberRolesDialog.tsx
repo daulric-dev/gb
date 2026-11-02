@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Loader2 } from "lucide-react";
 import type { SchoolMember } from "./types";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { userMessage } from "@/lib/errors";
 
 interface CustomRole {
   id: string;
@@ -100,9 +101,7 @@ export function MemberRolesDialog({
       onRolesChangedAction?.();
     } catch (err) {
       baseRole.value = member.role;
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to update role",
-      );
+      toast.error(userMessage(err, "Failed to update role"));
     } finally {
       baseRoleSaving.value = false;
     }
@@ -125,9 +124,7 @@ export function MemberRolesDialog({
       await refreshPermissions();
       onRolesChangedAction?.();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to update role",
-      );
+      toast.error(userMessage(err, "Failed to update role"));
     } finally {
       togglingId.value = null;
     }

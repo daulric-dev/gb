@@ -32,6 +32,7 @@ import {
 } from "@/lib/attendance";
 import { CheckedInCard } from "@/features/attendance/CheckedInCard";
 import { parseJoinQr } from "@/lib/course-join";
+import { userMessage } from "@/lib/errors";
 
 const HINT_MS = 2_500;
 const VIEWFINDER = 240;
@@ -138,7 +139,7 @@ export default function ScanAttendanceScreen() {
       }
       setPhase({
         kind: "error",
-        message: err instanceof Error ? err.message : "Couldn't check you in",
+        message: userMessage(err, "Couldn't check you in"),
       });
     }
   }, []);
@@ -181,9 +182,7 @@ export default function ScanAttendanceScreen() {
           message:
             err instanceof ApiError && err.status === 404
               ? "This join code doesn't work any more. Your teacher may have turned self-enrolment off or issued a new code."
-              : err instanceof Error
-                ? err.message
-                : "Couldn't join the course",
+              : userMessage(err, "Couldn't join the course"),
         });
       }
     },

@@ -4,11 +4,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Loader2, LogOut } from "lucide-react";
 import {
-  errorMessage,
   revokedMessage,
   revokeUserSessions,
 } from "@/lib/organisation";
 import { Button } from "@/components/ui/button";
+import { userMessage } from "@/lib/errors";
 
 /** Signs one user out of every device, after a confirm. */
 export function SignOutSessionsButton({
@@ -29,7 +29,7 @@ export function SignOutSessionsButton({
       const res = await revokeUserSessions(userId);
       toast.success(revokedMessage(who, res?.revoked));
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to sign out"));
+      toast.error(userMessage(err, "Failed to sign out"));
     } finally {
       setBusy(false);
     }

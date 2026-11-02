@@ -1,4 +1,4 @@
-import { api, apiQuery, ApiError } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { ORGANISATION_PATH } from "@/lib/routing";
 
 /** Shapes of the organisation-admin API (`/api/organisation/*`). */
@@ -151,11 +151,6 @@ export function schoolTypeLabel(type: string | null | undefined): string {
 /** "Name (email)", or just the email when there is no name. */
 export function personLabel(p: { name: string | null; email: string }): string {
   return p.name ? `${p.name} (${p.email})` : p.email;
-}
-
-/** An ApiError's message, or a fallback. */
-export function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof ApiError && err.message ? err.message : fallback;
 }
 
 /** POST /organisation/users/:userId/sessions/revoke. */

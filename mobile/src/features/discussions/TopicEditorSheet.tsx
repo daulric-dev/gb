@@ -9,7 +9,8 @@ import { TextArea } from "@/components/ui/TextArea";
 import { Switch } from "@/components/ui/Switch";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
-import { errorMessage, type DiscussionTopic } from "@/lib/course";
+import { type DiscussionTopic } from "@/lib/course";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Start a topic, or edit one (pass `topic`). Staff also set the moderation
@@ -76,7 +77,7 @@ export function TopicEditorSheet({
         onSaved(created?.id ?? null);
       }
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to save the topic"));
+      toast.error(userMessage(err, "Failed to save the topic"));
     } finally {
       setSaving(false);
     }

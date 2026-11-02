@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { api, ApiError, isNetworkError } from "@/lib/api";
+import { api, isNetworkError } from "@/lib/api";
 import { homeRouteFor } from "@/lib/routing";
 import { checkForUpdate, lastKnownStoreUrl, openStore } from "@/lib/app-update";
 import {
@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
+import { userMessage } from "@/lib/errors";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -131,7 +132,7 @@ export default function LoginScreen() {
           return;
         }
       }
-      setError(err instanceof ApiError ? err.message : "Failed to send OTP");
+      setError(userMessage(err, "Failed to send OTP"));
     } finally {
       setBusy(null);
     }
@@ -151,7 +152,7 @@ export default function LoginScreen() {
       found = await discoverSso(trimmed);
     } catch (err) {
       if (isNetworkError(err)) {
-        setError((err as ApiError).message);
+        setError(userMessage(err, "Can't reach the server."));
         setBusy(null);
         return;
       }

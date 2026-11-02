@@ -13,7 +13,7 @@ import { normalizeEmail } from '@/account/email-code.service';
 import { isUniqueViolation } from '@/common/db-values';
 import { permCacheKey, userPermCachePrefix } from '@/permission/permission.effective';
 import type { Prisma } from '@/generated/prisma/client';
-import { isEnvOrgAdmin, orgAdminEmails } from './org-admin';
+import { isEnvOrgAdmin, organisationSummary, orgAdminEmails } from './org-admin';
 import type {
   CreateOrganisationSchoolDto,
   UpdateOrganisationSchoolDto,
@@ -94,9 +94,13 @@ export class OrganisationService {
 
   // --- setup ---------------------------------------------------------------
 
+  /**
+   * Public: whether setup is pending, and the organisation's name for the
+   * install's home page (null before setup). Nothing else is exposed.
+   */
   async status() {
-    const count = await this.prisma.organisation.count();
-    return { needsSetup: count === 0 };
+    const organisation = await organisationSummary(this.prisma);
+    return { needsSetup: organisation === null, organisation };
   }
 
   /**

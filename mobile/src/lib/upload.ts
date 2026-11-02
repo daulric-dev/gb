@@ -1,5 +1,6 @@
 import { api, ApiError, buildUrl } from "@/lib/api";
 import { File } from "expo-file-system";
+import { FriendlyError } from "@/lib/errors";
 
 export interface PickedFile {
   uri: string;
@@ -18,8 +19,11 @@ interface UploadTicket {
   maxBytes: number;
 }
 
-/** A failed transfer to storage (storage answers in XML, not API JSON). */
-export class UploadError extends Error {
+/**
+ * A failed transfer to storage (storage answers in XML, not API JSON). Its
+ * messages are written for the user, so `userMessage` shows them.
+ */
+export class UploadError extends FriendlyError {
   constructor(
     message: string,
     /** HTTP status from storage; 0 when the request never completed. */

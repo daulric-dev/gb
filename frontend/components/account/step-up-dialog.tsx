@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
-import { ApiError, setStepUpHandler } from "@/lib/api";
+import { setStepUpHandler } from "@/lib/api";
 import {
   cleanStepUpCode,
   createStepUpPrompt,
@@ -26,6 +26,7 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import { userMessage } from "@/lib/errors";
 
 const RESEND_COOLDOWN = 30;
 
@@ -69,7 +70,7 @@ export function StepUpDialogHost() {
       await sendStepUpCode();
       startCooldown();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to send the code");
+      setError(userMessage(err, "Failed to send the code"));
     } finally {
       setSending(false);
     }
@@ -100,7 +101,7 @@ export function StepUpDialogHost() {
         await verifyStepUpCode(value);
         prompt.confirmed();
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Verification failed");
+        setError(userMessage(err, "Verification failed"));
         setCode("");
       } finally {
         setVerifying(false);

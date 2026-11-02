@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Sheet } from "@/components/ui/Sheet";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { CustomRole, SchoolMember } from "./types";
 import { memberName } from "./types";
+import { userMessage } from "@/lib/errors";
 
 export function MemberRolesSheet({
   open,
@@ -72,7 +73,7 @@ export function MemberRolesSheet({
       });
       onRolesChanged?.();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to update role");
+      toast.error(userMessage(err, "Failed to update role"));
     } finally {
       setTogglingId(null);
     }

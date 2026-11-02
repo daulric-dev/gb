@@ -23,6 +23,7 @@ import {
   type AttendanceSessionDetail,
 } from "@/lib/attendance";
 import { withFeature } from "@/components/layout/FeatureGate";
+import { userMessage } from "@/lib/errors";
 
 const POLL_MS = 5_000;
 /** Fetch the next QR frame just after the current one rotates. */
@@ -115,11 +116,7 @@ function TakeAttendanceScreen() {
       });
       setSession(detail);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError || err instanceof Error
-          ? err.message
-          : "Couldn't open attendance",
-      );
+      toast.error(userMessage(err, "Couldn't open attendance"));
     } finally {
       setWorking(false);
     }
@@ -136,7 +133,7 @@ function TakeAttendanceScreen() {
       setSession(detail);
       toast.success("Attendance closed");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't close");
+      toast.error(userMessage(err, "Couldn't close"));
     } finally {
       setWorking(false);
     }

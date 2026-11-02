@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { capitalize } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { CatalogEntry, PermissionAction, SchoolRole } from "./types";
+import { userMessage } from "@/lib/errors";
 
 const ACTION_ORDER: PermissionAction[] = ["read", "create", "update", "delete"];
 const ACTION_LABEL: Record<PermissionAction, string> = {
@@ -94,9 +95,7 @@ export function PermissionsEditor({
       toast.success(`Permissions updated for ${role.name}`);
       onSaved();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to save permissions",
-      );
+      toast.error(userMessage(err, "Failed to save permissions"));
     } finally {
       setSaving(false);
     }

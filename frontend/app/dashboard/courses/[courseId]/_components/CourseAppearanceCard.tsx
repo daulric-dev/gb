@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Check, ImagePlus, Loader2, Trash2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import { userMessage } from "@/lib/errors";
 import {
   bannerGradient,
   COURSE_BANNER_COLORS,
@@ -17,7 +18,6 @@ import {
   imageFileProblem,
   IMAGE_UPLOAD_TYPES,
   uploadCourseBanner,
-  UploadError,
 } from "@/lib/files/upload";
 import { cn } from "@/lib/utils";
 import { CourseBannerBackdrop } from "@/components/courses/course-banner";
@@ -34,12 +34,6 @@ import { useCourse } from "./course-context";
 
 /** Matches the backend's COURSE_BANNER_MAX_BYTES. */
 const MAX_BANNER_BYTES = 5 * 1024 * 1024;
-
-function errorMessage(err: unknown, fallback: string) {
-  return err instanceof ApiError || err instanceof UploadError
-    ? err.message
-    : fallback;
-}
 
 /**
  * The course banner: a colour preset (or Auto, derived from the id) and an
@@ -65,7 +59,7 @@ export function CourseAppearanceCard({ className }: { className?: string }) {
       });
       await reload();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to change the colour"));
+      toast.error(userMessage(err, "Failed to change the colour"));
     } finally {
       savingColor.value = null;
     }
@@ -89,7 +83,7 @@ export function CourseAppearanceCard({ className }: { className?: string }) {
       await reload();
       toast.success("Cover image updated");
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to upload the image"));
+      toast.error(userMessage(err, "Failed to upload the image"));
     } finally {
       uploading.value = false;
     }
@@ -102,7 +96,7 @@ export function CourseAppearanceCard({ className }: { className?: string }) {
       await reload();
       toast.success("Cover image removed");
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to remove the image"));
+      toast.error(userMessage(err, "Failed to remove the image"));
     } finally {
       removing.value = false;
     }

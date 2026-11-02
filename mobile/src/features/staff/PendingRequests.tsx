@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Check, UsersRound, X } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { formatDate } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { JoinRequest, MemberRole } from "./types";
 import { requestName } from "./types";
+import { userMessage } from "@/lib/errors";
 
 const ROLE_OPTIONS: { value: MemberRole; label: string }[] = [
   { value: "member", label: "Member" },
@@ -60,7 +61,7 @@ export function PendingRequests({
       toast.success(`${requestName(selected)} has been approved as ${selectedRole}.`);
       onApproved?.();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to approve request");
+      toast.error(userMessage(err, "Failed to approve request"));
     } finally {
       setActionLoading(false);
     }
@@ -75,7 +76,7 @@ export function PendingRequests({
       onChange(requests.filter((r) => r.id !== request.id));
       toast.success(`${requestName(request)}'s request has been rejected.`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to reject request");
+      toast.error(userMessage(err, "Failed to reject request"));
     } finally {
       setActionLoading(false);
     }

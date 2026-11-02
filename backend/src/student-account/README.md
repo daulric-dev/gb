@@ -25,7 +25,7 @@ Redeeming the code is **not** a route here: it is `POST /api/auth/join-school` i
 - `StudentMembershipService` (exported):
   - `issueCode(actorUserId, ttlDays?)`, `revokeCode(actorUserId)`, `getCodeStatus(actorUserId)` - scoped to the actor's active school.
   - `joinByCode(userId, rawCode)` - normalises case and dashes, rejects a wrong length without a database call, calls `public.redeem_school_join_code(user, hash)`, and maps its errors: `already_in_a_school` -> 409, `profile_not_found` -> 400 "Complete your profile first", `invalid_join_code` -> 400 (the same message as a wrong-length code). The code is **not** consumed; it stays valid for other students until it expires or is revoked. Returns `{ studentId, schoolId }`.
-  - A missing database function (Postgres `42883`) produces an error telling you to apply the pending migrations.
+  - A missing database function (Postgres `42883`) is logged with a note to apply the pending migrations; the user gets a plain 400 "Joining by code is unavailable right now. Please try again later."
 
 ## Used by
 

@@ -31,7 +31,6 @@ import { GradeBar } from "@/features/grades/GradeBits";
 import { AnnouncementForm } from "@/features/announcements/AnnouncementForm";
 import {
   canManage,
-  errorMessage,
   href,
   initials,
   type CourseAnnouncement,
@@ -45,6 +44,7 @@ import { ModuleList } from "./ModuleList";
 import { AnnouncementList } from "./AnnouncementList";
 import { useSection } from "./useSection";
 import { useOpenModuleItem } from "./useOpenModuleItem";
+import { userMessage } from "@/lib/errors";
 
 interface SectionProps {
   course: StaffCourse;
@@ -98,7 +98,7 @@ export function StaffModulesSection({ course, refreshKey }: SectionProps) {
       toast.success(m.isPublished ? "Module unpublished" : "Module published");
       await reload();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to update the module"));
+      toast.error(userMessage(err, "Failed to update the module"));
     } finally {
       setToggling(null);
     }
@@ -206,7 +206,7 @@ export function StaffAnnouncementsSection({ course, refreshKey }: SectionProps) 
       setDeleting(null);
       await reload();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to delete"));
+      toast.error(userMessage(err, "Failed to delete"));
     } finally {
       setBusy(false);
     }

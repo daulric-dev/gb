@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   formatLimitMb,
   uploadLimitStops,
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { userMessage } from "@/lib/errors";
 
 /**
  * The school's largest upload, picked on a slider that snaps to set stops up
@@ -68,9 +69,7 @@ export function UploadLimitSettings({
       draft.value = res.uploadLimitMb;
       toast.success(`Uploads are now limited to ${formatLimitMb(res.uploadLimitMb)}`);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to update the upload limit",
-      );
+      toast.error(userMessage(err, "Failed to update the upload limit"));
     } finally {
       saving.value = false;
     }

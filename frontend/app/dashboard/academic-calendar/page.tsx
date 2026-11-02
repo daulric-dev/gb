@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useComputed, useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import { EditYearForm } from "./_components/EditYearForm";
 import { TermsTab } from "./_components/TermsTab";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { PermissionDenied } from "@/components/dashboard/permission-denied";
+import { userMessage } from "@/lib/errors";
 
 export default function AcademicYearsPage() {
   useSignals();
@@ -62,8 +63,7 @@ export default function AcademicYearsPage() {
       toast.success("Academic year activated");
       fetchYears();
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : "Failed to activate";
+      const msg = userMessage(err, "Failed to activate");
       toast.error(msg);
     }
   }
@@ -74,8 +74,7 @@ export default function AcademicYearsPage() {
       toast.success("Academic year deactivated");
       fetchYears();
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : "Failed to deactivate";
+      const msg = userMessage(err, "Failed to deactivate");
       toast.error(msg);
     }
   }

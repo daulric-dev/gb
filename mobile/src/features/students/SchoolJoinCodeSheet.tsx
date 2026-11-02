@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { KeyRound, ShieldAlert } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { Sheet } from "@/components/ui/Sheet";
@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { userMessage } from "@/lib/errors";
 
 interface SchoolCodeStatus {
   activeCode: { expiresAt: string; issuedAt: string | null } | null;
@@ -72,9 +73,7 @@ export function SchoolJoinCodeSheet({
       setIssuedCode(result.code);
       await load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to issue join code",
-      );
+      toast.error(userMessage(err, "Failed to issue join code"));
     } finally {
       setWorking(false);
     }
@@ -88,9 +87,7 @@ export function SchoolJoinCodeSheet({
       toast.success("Join code revoked");
       await load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to revoke join code",
-      );
+      toast.error(userMessage(err, "Failed to revoke join code"));
     } finally {
       setWorking(false);
     }

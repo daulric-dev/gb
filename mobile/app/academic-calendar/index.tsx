@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { CalendarDays, Pencil, Plus } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -23,6 +23,7 @@ import {
   sortYearsActiveFirst,
   type AcademicYear,
 } from "@/features/academic-calendar/types";
+import { userMessage } from "@/lib/errors";
 
 type TabValue = "years" | "terms";
 
@@ -75,7 +76,7 @@ export default function AcademicCalendarScreen() {
       );
       await fetchYears();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : `Failed to ${action}`);
+      toast.error(userMessage(err, `Failed to ${action}`));
     } finally {
       setTogglingId(null);
     }

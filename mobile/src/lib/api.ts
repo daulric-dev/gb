@@ -145,7 +145,8 @@ async function fetchOrThrow(
   try {
     return await fetch(input, init);
   } catch {
-    throw new ApiError(0, "Can't reach the server. Check your connection.");
+    // Same text as NETWORK_ERROR_MESSAGE in lib/errors.ts.
+    throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
   }
 }
 

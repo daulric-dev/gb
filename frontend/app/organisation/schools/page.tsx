@@ -16,7 +16,6 @@ import {
   UserCog,
 } from "lucide-react";
 import {
-  errorMessage,
   organisationSchoolPath,
   personLabel,
   listOrganisationSchools,
@@ -56,6 +55,7 @@ import {
   toggleSchoolActive,
   useOpenSchoolDashboard,
 } from "./_components/school-actions";
+import { userMessage } from "@/lib/errors";
 
 const STATUSES: { value: SchoolStatusFilter; label: string }[] = [
   { value: "all", label: "All schools" },
@@ -113,7 +113,7 @@ export default function OrganisationSchoolsPage() {
         .catch((err) => {
           if (!cancelled) {
             setRows([]);
-            toast.error(errorMessage(err, "Failed to load schools"));
+            toast.error(userMessage(err, "Failed to load schools"));
           }
         });
     }, 250);

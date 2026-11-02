@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { CalendarDays, Pencil, Plus, Trash2 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TermForm } from "./TermForm";
 import { termLabel, type AcademicYear, type Term } from "./types";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Terms tab: pick an academic year, then view / create / edit / delete its
@@ -84,7 +85,7 @@ export function TermsTab({
       setConfirmDelete(null);
       fetchTerms();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     } finally {
       setDeleting(false);
     }

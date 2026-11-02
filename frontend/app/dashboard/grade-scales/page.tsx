@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-heade
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { ScaleForm } from "./_components/ScaleForm";
 import type { GradeScaleDetail, GradeScaleSummary } from "./_components/types";
+import { userMessage } from "@/lib/errors";
 
 const TYPE_LABEL: Record<string, string> = {
   letter: "Letter (A–F)",
@@ -60,7 +61,7 @@ export default function GradeScalesPage() {
       toast.success("Default scale updated");
       fetchScales();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to set default";
+      const msg = userMessage(err, "Failed to set default");
       toast.error(msg);
     } finally {
       settingDefault.value = null;
@@ -74,7 +75,7 @@ export default function GradeScalesPage() {
       toast.success("Scale deleted");
       fetchScales();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to delete scale";
+      const msg = userMessage(err, "Failed to delete scale");
       toast.error(msg);
     }
   };

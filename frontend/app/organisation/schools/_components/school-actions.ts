@@ -2,11 +2,11 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useSwitchSchool } from "@/hooks/use-my-schools";
 import {
-  errorMessage,
   revokedMessage,
   revokeUserSessions,
   type OrganisationSchool,
 } from "@/lib/organisation";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Activate or deactivate a school (deactivating asks first). Resolves true
@@ -30,7 +30,7 @@ export async function toggleSchoolActive(school: OrganisationSchool): Promise<bo
     toast.success(`${school.name} ${next ? "activated" : "deactivated"}`);
     return true;
   } catch (err) {
-    toast.error(errorMessage(err, "Failed to update the school"));
+    toast.error(userMessage(err, "Failed to update the school"));
     return false;
   }
 }
@@ -47,7 +47,7 @@ export async function signOutSchoolAdmin(school: OrganisationSchool): Promise<vo
     const res = await revokeUserSessions(admin.userId);
     toast.success(revokedMessage(who, res?.revoked));
   } catch (err) {
-    toast.error(errorMessage(err, "Failed to sign out"));
+    toast.error(userMessage(err, "Failed to sign out"));
   }
 }
 

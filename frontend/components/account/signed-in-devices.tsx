@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Laptop, Loader2, LogOut, Smartphone } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   DEVICES_ANCHOR,
   isMobileDevice,
@@ -25,6 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Signed-in devices: every live session of this account (this one marked),
@@ -73,7 +74,7 @@ export function SignedInDevices() {
       toast.success(`Signed out ${session.device}`);
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to sign out");
+      toast.error(userMessage(err, "Failed to sign out"));
     } finally {
       setBusy(null);
     }
@@ -92,7 +93,7 @@ export function SignedInDevices() {
       setConfirmOpen(false);
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to sign out");
+      toast.error(userMessage(err, "Failed to sign out"));
     } finally {
       setBusy(null);
     }

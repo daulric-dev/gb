@@ -188,6 +188,18 @@ describe('ImagesService.completeResumableUpload (content checks)', () => {
     expect(res.avatar_url).toBeDefined();
   });
 
+  test('a staged object that is missing does not echo its storage path', async () => {
+    const err = await expectRejection(
+      makeService({ exists: false }, cache).completeResumableUpload(
+        'u',
+        'uploads/avatars/u.png',
+      ),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).not.toContain('uploads/avatars');
+    expect((err as Error).message).toContain('upload could not be found');
+  });
+
   test('rejects a missing content type', async () => {
     expect(
       await expectRejection(complete(pngBytes(), '')),

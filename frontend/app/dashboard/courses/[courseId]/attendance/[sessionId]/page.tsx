@@ -84,6 +84,7 @@ import {
   QR_CAPTION,
   useQrFrame,
 } from "../_components/attendance-qr";
+import { userMessage } from "@/lib/errors";
 
 const POLL_MS = 10_000;
 const STATUS_ITEMS = ATTENDANCE_STATUSES.map((s) => ({
@@ -248,7 +249,7 @@ export default function AttendanceSessionPage() {
       toast.success("Attendance closed");
       void stopPresenting();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not close");
+      toast.error(userMessage(err, "Could not close"));
     } finally {
       closing.value = false;
     }
@@ -269,7 +270,7 @@ export default function AttendanceSessionPage() {
         detail.value = { ...cur, roster, counts: countRoster(roster) };
       }
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not update");
+      toast.error(userMessage(err, "Could not update"));
     } finally {
       const next = { ...saving.value };
       delete next[studentId];
@@ -284,7 +285,7 @@ export default function AttendanceSessionPage() {
       toast.success("Session deleted");
       router.push(`${base}/attendance`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not delete");
+      toast.error(userMessage(err, "Could not delete"));
       deleting.value = false;
     }
   }

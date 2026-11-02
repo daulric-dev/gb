@@ -190,7 +190,7 @@ function TextBubble({
             : "bg-muted text-foreground",
         )}
       >
-        <p className={cn("whitespace-pre-wrap break-words", deleted && "italic opacity-70")}>
+        <p className={cn("whitespace-pre-wrap wrap-break-word", deleted && "italic opacity-70")}>
           {deleted ? "Message deleted" : message.body}
         </p>
         <span
