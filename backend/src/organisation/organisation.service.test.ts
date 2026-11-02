@@ -57,13 +57,16 @@ describe('OrganisationService', () => {
 
   describe('status', () => {
     test('needs setup without an organisation', async () => {
-      prisma.organisation.count.mockResolvedValue(0);
-      expect(await service.status()).toEqual({ needsSetup: true });
+      prisma.organisation.findFirst.mockResolvedValue(null);
+      expect(await service.status()).toEqual({ needsSetup: true, organisation: null });
     });
 
     test('done once the organisation exists', async () => {
-      prisma.organisation.count.mockResolvedValue(1);
-      expect(await service.status()).toEqual({ needsSetup: false });
+      prisma.organisation.findFirst.mockResolvedValue({ name: 'Northside Trust' });
+      expect(await service.status()).toEqual({
+        needsSetup: false,
+        organisation: { name: 'Northside Trust' },
+      });
     });
   });
 

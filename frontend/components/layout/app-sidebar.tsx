@@ -222,9 +222,6 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
               <span className="text-lg font-bold tracking-tight truncate block">
                 GradeBook
               </span>
-              <span className="text-[10px] text-muted-foreground/60 -mt-1 block">
-                by daulric.dev
-              </span>
             </div>
           )}
         </Link>
