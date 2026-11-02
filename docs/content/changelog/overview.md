@@ -12,6 +12,7 @@ Each entry below links to a dedicated page with the full writeup - what changed,
 ## 2026-11-02
 
 - [Self-hosted organisations; billing removed](./2026-11-02/organisation.md) - each install is run by one organisation with several schools: public `GET /api/setup/status` and `POST /api/setup` (first-run setup), organisation admins (`ORG_ADMIN_EMAILS` or `public.organisation_admin`) with `/api/organisation` routes to create schools and appoint their admins, `is_org_admin` and `organisation` on `/auth/me`. `POST /api/schools`, `DEDICATED_DEPLOYMENT` and all billing (Stripe, `/billing`, `/platform`, the `billing` schema) are removed. Migrations `20261102100000_organisation`, `20261102100100_drop_billing`.
+- [HTTP QUERY for search and filter lists](./2026-11-02/http-query.md) - courses, students, files, folder contents, chat history, portal notices, organisation schools and invites and the SSO activity log moved from `GET` + query string to `QUERY` + JSON body (no GET fallback; old mobile builds break on those screens, raise `MOBILE_MIN_VERSION`). CORS allows `QUERY`; web and mobile use `apiQuery()`.
 
 ## 2026-10-26
 

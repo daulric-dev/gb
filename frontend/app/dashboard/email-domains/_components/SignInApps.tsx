@@ -90,7 +90,7 @@ function ProviderRow({
     try {
       const saved = await api<SchoolSsoProvider>(
         `${ssoProvidersApi(apiBase)}/${encodeURIComponent(p.key)}`,
-        { method: "PUT", body },
+        { method: "PUT", body, stepUp: true },
       );
       toast.success(`${saved.label} saved`);
       onSaved(saved);

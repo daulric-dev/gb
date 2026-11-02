@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -98,8 +98,7 @@ export function FolderBrowser({
 
   function load(id: string | null) {
     loading.value = true;
-    const q = id ? `?folderId=${id}` : "";
-    api<FolderContents>(`/files/folders/contents${q}`)
+    apiQuery<FolderContents>("/files/folders/contents", id ? { folderId: id } : {})
       .then((data) => (contents.value = data))
       .catch(() => toast.error("Failed to load folder"))
       .finally(() => (loading.value = false));

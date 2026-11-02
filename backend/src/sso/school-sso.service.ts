@@ -6,7 +6,19 @@ import {
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { SsoRegistry } from './sso.registry';
-import { SsoSettingsService, type SsoSettingWrite } from './sso-settings.service';
+import {
+  SsoSettingsService,
+  type SsoSettingBefore,
+  type SsoSettingWrite,
+} from './sso-settings.service';
+import {
+  diff,
+  secretState,
+  SsoAuditService,
+  type SsoActor,
+  type SsoAuditEntry,
+} from './sso-audit.service';
+import { SsoAlertService } from './sso-alert.service';
 import { apiBase, oidcRedirectUri, samlAcsUrl } from './sso.config';
 import { SamlAdapter } from './adapters/saml.adapter';
 import type { SsoAdapter, SsoSettingField } from './sso.types';
@@ -54,6 +66,50 @@ export interface SchoolSsoProviderUpdate {
 const MAX_SETTING = 512;
 
 /**
+ * The audit entries for one save of a school's sign-in app: on/off, client ID
+ * and settings, and the secret - as "set" / "cleared", never its value.
+ */
+export function appSaveEntries(
+  key: string,
+  before: SsoSettingBefore | null,
+  write: SsoSettingWrite,
+): SsoAuditEntry[] {
+  const entries: SsoAuditEntry[] = [];
+  const app = { app: key };
+  const wasEnabled = before ? before.enabled : null;
+  if (wasEnabled !== write.enabled) {
+    entries.push({
+      action: write.enabled ? 'app_enabled' : 'app_disabled',
+      changes: { ...app, enabled: { before: wasEnabled, after: write.enabled } },
+    });
+  }
+  const fields = diff(
+    { clientId: before?.clientId ?? null, settings: before?.settings ?? null },
+    {
+      clientId: write.clientId !== undefined ? write.clientId : (before?.clientId ?? null),
+      settings: write.settings !== undefined ? write.settings : (before?.settings ?? null),
+    },
+  );
+  if (fields) entries.push({ action: 'app_changed', changes: { ...app, ...fields } });
+  if (write.clientSecret !== undefined) {
+    const had = !!before?.secretStored;
+    const has = write.clientSecret !== null;
+    // Typing a new secret over a saved one is a change too; clearing
+    // nothing is not.
+    if (had || has) {
+      entries.push({
+        action: 'app_secret_changed',
+        changes: {
+          ...app,
+          clientSecret: { before: had ? secretState(true) : null, after: secretState(has) },
+        },
+      });
+    }
+  }
+  return entries;
+}
+
+/**
  * A school's own sign-in apps (Google, Microsoft): on/off, OAuth client ID
  * and write-only secret. Shared by the school admin's routes
  * (`/schools/current/sso/providers`) and the organisation console's
@@ -68,6 +124,8 @@ export class SchoolSsoService {
   constructor(
     private readonly registry: SsoRegistry,
     private readonly settings: SsoSettingsService,
+    private readonly audit: SsoAuditService,
+    private readonly alerts: SsoAlertService,
   ) {}
 
   async list(schoolId: string, req?: FastifyRequest): Promise<SchoolSsoProviderItem[]> {
@@ -116,7 +174,7 @@ export class SchoolSsoService {
     schoolId: string,
     key: string,
     dto: SchoolSsoProviderUpdate,
-    actorId: string,
+    actor: SsoActor,
     req?: FastifyRequest,
   ): Promise<SchoolSsoProviderItem> {
     const adapter = this.registry.adapter(key);
@@ -169,16 +227,21 @@ export class SchoolSsoService {
       }
     }
 
+    let entries: SsoAuditEntry[] = [];
     try {
-      await this.settings.save(schoolId, key, write, actorId);
+      await this.settings.save(schoolId, key, write, actor.id, async (tx, before) => {
+        entries = appSaveEntries(key, before, write);
+        await this.audit.record(tx, schoolId, actor, entries);
+      });
     } catch (err) {
       this.logger.error(
         `Failed to save school ${schoolId}'s ${key} sign-in app: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to save the sign-in settings');
     }
+    if (entries.length) void this.alerts.notify(schoolId, actor, entries).catch(() => undefined);
     this.logger.log(
-      `User ${actorId} updated school ${schoolId}'s ${key} sign-in app (enabled: ${write.enabled})`,
+      `User ${actor.id} updated school ${schoolId}'s ${key} sign-in app (enabled: ${write.enabled})`,
     );
     return this.item(schoolId, adapter, req);
   }

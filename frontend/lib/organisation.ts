@@ -1,4 +1,4 @@
-import { api, ApiError } from "@/lib/api";
+import { api, apiQuery, ApiError } from "@/lib/api";
 import { ORGANISATION_PATH } from "@/lib/routing";
 
 /** Shapes of the organisation-admin API (`/api/organisation/*`). */
@@ -83,7 +83,7 @@ export interface InviteSummary {
 
 export type InviteKind = "school_admin" | "organisation_admin";
 
-/** GET /organisation/invites?kind=. */
+/** QUERY /organisation/invites (`{ kind }` in the body). */
 export interface OrganisationInvite extends InviteSummary {
   kind: InviteKind;
   school: { id: string; name: string } | null;
@@ -124,14 +124,23 @@ export function organisationSchoolPath(schoolId: string): string {
 
 export type SchoolStatusFilter = "active" | "inactive" | "all";
 
-/** Query string for GET /organisation/schools; empty parts are left out. */
-export function schoolsQuery(search: string, status: SchoolStatusFilter): string {
-  const params = new URLSearchParams();
+export interface SchoolsFilters {
+  search?: string;
+  status?: Exclude<SchoolStatusFilter, "all">;
+}
+
+/** The QUERY /organisation/schools body; empty parts are left out. */
+export function schoolsFilters(search: string, status: SchoolStatusFilter): SchoolsFilters {
+  const filters: SchoolsFilters = {};
   const q = search.trim();
-  if (q) params.set("search", q);
-  if (status !== "all") params.set("status", status);
-  const qs = params.toString();
-  return `/organisation/schools${qs ? `?${qs}` : ""}`;
+  if (q) filters.search = q;
+  if (status !== "all") filters.status = status;
+  return filters;
+}
+
+/** QUERY /organisation/schools: every school, or those matching the filters. */
+export function listOrganisationSchools(search: string, status: SchoolStatusFilter) {
+  return apiQuery<OrganisationSchool[]>("/organisation/schools", schoolsFilters(search, status));
 }
 
 export function schoolTypeLabel(type: string | null | undefined): string {
@@ -165,9 +174,14 @@ export function revokedMessage(who: string, revoked: number | undefined): string
     : `Signed ${who} out of ${revoked} device${revoked === 1 ? "" : "s"}.`;
 }
 
-/** GET /organisation/invites, optionally of one kind. */
-export function invitesPath(kind?: InviteKind): string {
-  return `/organisation/invites${kind ? `?kind=${kind}` : ""}`;
+/** The QUERY /organisation/invites body: one kind, or every open invite. */
+export function invitesFilters(kind?: InviteKind): { kind?: InviteKind } {
+  return kind ? { kind } : {};
+}
+
+/** QUERY /organisation/invites, optionally of one kind. */
+export function listInvites(kind?: InviteKind) {
+  return apiQuery<OrganisationInvite[]>("/organisation/invites", invitesFilters(kind));
 }
 
 /** DELETE /organisation/invites/:id. */

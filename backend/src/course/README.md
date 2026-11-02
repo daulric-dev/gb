@@ -18,7 +18,7 @@ All routes use `AuthGuard`. `CourseController` and `CourseCopyController` also u
 
 | Method | Path | Who | What it does |
 |--------|------|-----|--------------|
-| GET | `/api/courses?status&termId&academicYearId` | Signed-in staff | The caller's courses in their school, sorted by name, each with `role` and active `studentCount`. Holders of `course:update` see every course as `admin`; others see the courses they teach or assist. |
+| QUERY | `/api/courses` (body `{ status?, termId?, academicYearId? }`) | Signed-in staff | The caller's courses in their school, sorted by name, each with `role` and active `studentCount`. Holders of `course:update` see every course as `admin`; others see the courses they teach or assist. |
 | POST | `/api/courses` | `course:create` | Create a course; the creator becomes its teacher in the same transaction. Year, term and grade scale must belong to the school, and a term must be in the chosen year (a term alone implies its year). |
 | GET | `/api/courses/:courseId` | Staff role | One course with `role` and `studentCount`. Every course response (list, detail, create, update, copy, templates) also carries `bannerColor` (a preset key or null) and `bannerImageUrl` (null without a cover). |
 | PATCH | `/api/courses/:courseId` | Manage role | Update name, code, description, status, year, term, grade scale, `isTemplate`, `bannerColor` (one of `COURSE_BANNER_COLORS` in `course-appearance.ts`, or null for the id-derived gradient). Turning a course into a template is refused while it has non-dropped students and clears its join code. |
@@ -113,13 +113,13 @@ Web (`frontend/`):
 - People: `app/dashboard/courses/[courseId]/people/page.tsx` with `_components/AddStaffDialog.tsx`, `AddStudentsDialog.tsx`, `JoinCodeCard.tsx`.
 - Modules: `app/dashboard/courses/[courseId]/modules/page.tsx` and `_components/AddItemDialog.tsx`, `ModuleItemRow.tsx`.
 - Pages: `app/dashboard/courses/[courseId]/pages/page.tsx` and `pages/[pageId]/page.tsx`.
-- Files: `lib/files/content.ts` opens `/courses/:courseId/files/:fileId`. `app/dashboard/files/_components/ShareDialog.tsx` lists courses (`GET /courses`) to share with.
+- Files: `lib/files/content.ts` opens `/courses/:courseId/files/:fileId`. `app/dashboard/files/_components/ShareDialog.tsx` lists courses (`QUERY /courses`) to share with.
 - Types: `lib/courses/types.ts`.
 
 Mobile (`mobile/`):
 
 - Banners: `src/features/course/CourseBanner.tsx` and `appearance.ts` (display only; editing is web-only).
-- `app/teaching/index.tsx`, `app/teaching/[courseId]/index.tsx`, `src/features/dashboard/TeacherDashboard.tsx` (course lists and detail; the dashboard calls `GET /courses`), `src/features/course/StaffSections.tsx` (modules, people), `src/lib/course.ts`, `app/teaching/[courseId]/page/[pageId].tsx` and `src/features/course/PageScreen.tsx` (pages), `src/features/course/useOpenModuleItem.ts` (course files), `src/features/files/ShareSheet.tsx`.
+- `app/teaching/index.tsx`, `app/teaching/[courseId]/index.tsx`, `src/features/dashboard/TeacherDashboard.tsx` (course lists and detail; the dashboard calls `QUERY /courses`), `src/features/course/StaffSections.tsx` (modules, people), `src/lib/course.ts`, `app/teaching/[courseId]/page/[pageId].tsx` and `src/features/course/PageScreen.tsx` (pages), `src/features/course/useOpenModuleItem.ts` (course files), `src/features/files/ShareSheet.tsx`.
 
 Scripts: `backend/scripts/seed-demo.ts` builds demo courses, staff, students, join codes, modules, items and pages through these routes; `backend/scripts/smoke.ts` exercises courses, people, join codes, modules and items, templates, copy, import and course files.
 

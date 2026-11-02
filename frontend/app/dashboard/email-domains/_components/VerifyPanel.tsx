@@ -30,7 +30,7 @@ export function VerifyPanel({
     try {
       const updated = await api<EmailDomain>(
         `${emailDomainsApi(apiBase)}/${domain.id}/verify`,
-        { method: "POST" },
+        { method: "POST", stepUp: true },
       );
       toast.success(`${updated.domain} verified`);
       onVerifiedAction(updated);

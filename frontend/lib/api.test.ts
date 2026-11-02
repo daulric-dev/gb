@@ -6,6 +6,7 @@ globalThis.window ??= globalThis as unknown as Window & typeof globalThis;
 import {
   ApiError,
   api,
+  apiQuery,
   setFeatureDisabledHandler,
   setUnauthorizedHandler,
 } from "@/lib/api";
@@ -197,7 +198,7 @@ describe("FEATURE_DISABLED handling", () => {
   });
 
   test("throws an ApiError carrying code, feature and message", async () => {
-    const error = (await api("/files").catch((e: unknown) => e)) as ApiError;
+    const error = (await apiQuery("/files").catch((e: unknown) => e)) as ApiError;
     expect(error).toBeInstanceOf(ApiError);
     expect(error.status).toBe(403);
     expect(error.code).toBe("FEATURE_DISABLED");
@@ -208,7 +209,7 @@ describe("FEATURE_DISABLED handling", () => {
   test("calls the registered handler", async () => {
     const seen: string[] = [];
     setFeatureDisabledHandler((e) => seen.push(e.feature ?? ""));
-    await api("/files").catch(() => {});
+    await apiQuery("/files").catch(() => {});
     expect(seen).toEqual(["files"]);
   });
 
@@ -218,7 +219,58 @@ describe("FEATURE_DISABLED handling", () => {
     ) as unknown as typeof fetch;
     let called = 0;
     setFeatureDisabledHandler(() => (called += 1));
-    await api("/files").catch(() => {});
+    await apiQuery("/files").catch(() => {});
     expect(called).toBe(0);
+  });
+});
+
+describe("apiQuery()", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = mock(
+      async () => new Response(JSON.stringify([{ id: "c1" }]), { status: 200 }),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const lastCall = () => (globalThis.fetch as MockedFetch).mock.calls.at(-1)!;
+
+  test("sends QUERY with the filters as a JSON body, not in the URL", async () => {
+    const rows = await apiQuery<{ id: string }[]>("/courses", { status: "published" });
+    expect(rows).toEqual([{ id: "c1" }]);
+
+    const [url, init] = lastCall();
+    expect(url).toBe(`${BASE_URL}/courses`);
+    expect(init.method).toBe("QUERY");
+    expect(init.body).toBe(JSON.stringify({ status: "published" }));
+    expect(init.headers["Content-Type"]).toBe("application/json");
+    expect(init.headers["X-API-Version"]).toBe("1");
+    expect(init.credentials).toBe("include");
+  });
+
+  test("no filters is an empty JSON object, never a missing body", async () => {
+    await apiQuery("/students");
+    const [, init] = lastCall();
+    expect(init.method).toBe("QUERY");
+    expect(init.body).toBe("{}");
+    expect(init.headers["Content-Type"]).toBe("application/json");
+  });
+
+  test("keeps the other options (headers, skipAuthRedirect)", async () => {
+    await apiQuery("/files", { filter: "own" }, { headers: { "X-Test": "1" } });
+    const [, init] = lastCall();
+    expect(init.headers["X-Test"]).toBe("1");
+    expect(init.body).toBe(JSON.stringify({ filter: "own" }));
+  });
+
+  test("api() passes a QUERY body through as-is", async () => {
+    await api("/files/folders/contents", { method: "QUERY", body: { folderId: "f1" } });
+    const [, init] = lastCall();
+    expect(init.method).toBe("QUERY");
+    expect(init.body).toBe(JSON.stringify({ folderId: "f1" }));
   });
 });

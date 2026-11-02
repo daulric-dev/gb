@@ -12,10 +12,22 @@ export function buildUrl(path: string): string {
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   skipAuthRedirect?: boolean;
+  /**
+   * Opt in to step-up: when the API answers `403 { code: 'STEP_UP_REQUIRED' }`
+   * (changing single sign-on settings), ask the registered step-up handler
+   * to confirm it's the user, then send the request once more. Without a
+   * handler, or if the user cancels, the 403 is thrown as usual.
+   */
+  stepUp?: boolean;
 };
+
+/** The API's code for "confirm it's you first" (backend `@RequireStepUp()`). */
+export const STEP_UP_REQUIRED = "STEP_UP_REQUIRED";
 
 let unauthorizedHandler: (() => void) | null = null;
 let featureDisabledHandler: ((error: ApiError) => void) | null = null;
+let stepUpHandler: (() => Promise<boolean>) | null = null;
+let pendingStepUp: Promise<boolean> | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
@@ -31,6 +43,27 @@ export function setFeatureDisabledHandler(
   handler: ((error: ApiError) => void) | null,
 ) {
   featureDisabledHandler = handler;
+}
+
+/**
+ * Registered by the step-up dialog (`StepUpDialogHost`): show "Confirm it's
+ * you", resolve true once the code is verified, false if dismissed.
+ */
+export function setStepUpHandler(handler: (() => Promise<boolean>) | null) {
+  stepUpHandler = handler;
+}
+
+/** Ask the user to confirm, once for any number of requests waiting at the same time. */
+function confirmStepUp(): Promise<boolean> {
+  if (!stepUpHandler) return Promise.resolve(false);
+  if (!pendingStepUp) {
+    pendingStepUp = stepUpHandler()
+      .catch(() => false)
+      .finally(() => {
+        pendingStepUp = null;
+      });
+  }
+  return pendingStepUp;
 }
 
 function redirectToLogin() {
@@ -77,7 +110,7 @@ export async function api<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { body, headers: customHeaders, skipAuthRedirect, ...rest } = options;
+  const { body, headers: customHeaders, skipAuthRedirect, stepUp, ...rest } = options;
 
   const headers: Record<string, string> = {
     "X-API-Version": "1",
@@ -97,7 +130,14 @@ export async function api<T = unknown>(
 
   if (res.status === 401) handleUnauthorized(skipAuthRedirect ?? false);
 
-  if (!res.ok) throw await errorFrom(res);
+  if (!res.ok) {
+    const error = await errorFrom(res);
+    // Retried once: a second STEP_UP_REQUIRED is thrown, never looped on.
+    if (stepUp && error.code === STEP_UP_REQUIRED && (await confirmStepUp())) {
+      return api<T>(path, { ...options, stepUp: false });
+    }
+    throw error;
+  }
 
   const text = await res.text();
   try {
@@ -105,6 +145,24 @@ export async function api<T = unknown>(
   } catch {
     return text as T;
   }
+}
+
+/**
+ * HTTP QUERY: a safe, idempotent read with its filters in a JSON body instead
+ * of the URL. The API's search and filter lists take it (courses, students,
+ * files, chat history, notices, organisation schools and invites, SSO
+ * activity); a GET to those paths is a 404. `filters` defaults to `{}`, so
+ * every QUERY carries a JSON body and the API sees "no filters", never a
+ * missing body. QUERY is not CORS-safelisted, so the browser sends a
+ * preflight first. There is no response cache here: two QUERYs to one path
+ * with different bodies are two different reads.
+ */
+export function apiQuery<T = unknown>(
+  path: string,
+  filters: object = {},
+  options: Omit<RequestOptions, "method" | "body"> = {},
+): Promise<T> {
+  return api<T>(path, { ...options, method: "QUERY", body: filters });
 }
 
 export class ApiError extends Error {

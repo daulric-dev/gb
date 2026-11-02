@@ -77,7 +77,8 @@ The app bootstrap logic lives in `src/createApp.ts`; `src/main.ts` is its only c
 - **Global prefix**: `api` - all routes are prefixed with this
 - **Swagger**: Available at `/docs`
 - **Validation**: Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform` enabled
-- **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`)
+- **CORS**: Allows requests from `FRONTEND_URL` environment variable (defaults to `http://localhost:3000`), with the methods in `CORS_METHODS` (GET, QUERY, POST, PUT, PATCH, DELETE, OPTIONS)
+- **HTTP QUERY**: search and filter lists are `QUERY` routes with a JSON body; an empty QUERY body is read as `{}` (`acceptEmptyQueryBodies`). See [http-query.md](./http-query.md)
 - **No multipart parser**: no route accepts file bytes; clients upload straight to storage with presigned URLs
 
 `createApp()` calls `app.init()` but does **not** call `app.listen()`. `src/main.ts` calls `createApp()` then `app.listen()` on `PORT` (default 3001), bound to `0.0.0.0`.
@@ -128,7 +129,7 @@ AppModule
 └── CacheModule (global - exports CacheService with memory or Redis store)
 ```
 
-> See [versioning.md](./versioning.md) for how API versioning and pagination work.
+> See [versioning.md](./versioning.md) for how API versioning and pagination work, and [http-query.md](./http-query.md) for the QUERY list endpoints.
 
 ## Database Access
 

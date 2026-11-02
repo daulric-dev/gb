@@ -16,6 +16,15 @@ import { permCacheKey } from '@/permission/permission.effective';
 import { SsoRegistry } from '@/sso/sso.registry';
 import { normalizeCertificate } from '@/sso/adapters/saml.adapter';
 import {
+  certificateFingerprint,
+  diff,
+  SsoAuditService,
+  type SsoActor,
+  type SsoAuditAction,
+  type SsoAuditEntry,
+} from '@/sso/sso-audit.service';
+import { SsoAlertService } from '@/sso/sso-alert.service';
+import {
   domainOfEmail,
   isFreeMailDomain,
   normalizeDomain,
@@ -112,6 +121,61 @@ const hasSamlConfig = (d: {
   saml_certificate: string | null;
 }) => !!(d.saml_entry_point && d.saml_issuer && d.saml_certificate);
 
+type DomainFields = Pick<
+  DomainRecord,
+  | 'audience'
+  | 'auto_join'
+  | 'staff_role'
+  | 'sso_provider'
+  | 'sso_required'
+  | 'azure_tenant_id'
+  | 'saml_entry_point'
+  | 'saml_issuer'
+  | 'saml_certificate'
+>;
+
+/** A domain's settings as the audit log records them: no certificate, its fingerprint. */
+function auditSnapshot(d: DomainFields): Record<string, unknown> {
+  return {
+    audience: d.audience,
+    autoJoin: d.auto_join,
+    staffRole: d.staff_role,
+    ssoProvider: d.sso_provider,
+    ssoRequired: d.sso_required,
+    azureTenantId: d.azure_tenant_id,
+    samlEntryPoint: d.saml_entry_point,
+    samlIssuer: d.saml_issuer,
+    samlCertificate: certificateFingerprint(d.saml_certificate),
+  };
+}
+
+/** Which audit action each group of domain fields is logged under. */
+const AUDIT_GROUPS: [SsoAuditAction, string[]][] = [
+  ['domain_settings_changed', ['audience', 'autoJoin', 'staffRole']],
+  ['provider_changed', ['ssoProvider']],
+  ['sso_required_changed', ['ssoRequired']],
+  ['azure_tenant_changed', ['azureTenantId']],
+  ['saml_changed', ['samlEntryPoint', 'samlIssuer', 'samlCertificate']],
+];
+
+const pick = (o: Record<string, unknown>, keys: string[]) =>
+  Object.fromEntries(keys.map((k) => [k, o[k]]));
+
+/** One audit entry per group of fields an update really changed. */
+export function domainUpdateEntries(
+  before: DomainFields & { id: string; domain: string },
+  after: DomainFields,
+): SsoAuditEntry[] {
+  const b = auditSnapshot(before);
+  const a = auditSnapshot(after);
+  const entries: SsoAuditEntry[] = [];
+  for (const [action, keys] of AUDIT_GROUPS) {
+    const changes = diff(pick(b, keys), pick(a, keys));
+    if (changes) entries.push({ action, domainId: before.id, domain: before.domain, changes });
+  }
+  return entries;
+}
+
 export interface AddDomainInput {
   domain: string;
   audience: DomainAudience;
@@ -160,7 +224,14 @@ export class EmailDomainService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly sso: SsoRegistry,
+    private readonly audit: SsoAuditService,
+    private readonly alerts: SsoAlertService,
   ) {}
+
+  /** Mail the school's admins about a committed change; never awaited, never throws. */
+  private alert(schoolId: string, actor: SsoActor, entries: SsoAuditEntry[]) {
+    if (entries.length) void this.alerts.notify(schoolId, actor, entries).catch(() => undefined);
+  }
 
   /** Local stacks cannot publish DNS for demo.test; production always checks. */
   private skipsDnsCheck(): boolean {
@@ -216,7 +287,9 @@ export class EmailDomainService {
   // `list`/`add`/`update`/`remove`/`verify` act on the school admin's active
   // school; the `...ForSchool` forms take the school explicitly, for the
   // organisation console (src/organisation/sign-in.controller.ts), which
-  // checks the school exists first.
+  // checks the school exists first. Every write logs to public.sso_audit_log
+  // in its own transaction (SsoAuditService) and, for the changes that
+  // matter, emails the school's admins after it commits (SsoAlertService).
 
   async list(adminUserId: string) {
     return this.listForSchool(await this.adminSchool(adminUserId));
@@ -262,11 +335,11 @@ export class EmailDomainService {
 
   async add(adminUserId: string, input: AddDomainInput) {
     const schoolId = await this.adminSchool(adminUserId);
-    return this.addToSchool(schoolId, adminUserId, input);
+    return this.addToSchool(schoolId, { id: adminUserId, via: 'school_admin' }, input);
   }
 
-  /** `actorId` is recorded as the domain's creator. */
-  async addToSchool(schoolId: string, actorId: string, input: AddDomainInput) {
+  /** The actor is recorded as the domain's creator. */
+  async addToSchool(schoolId: string, actor: SsoActor, input: AddDomainInput) {
     const domain = normalizeDomain(input.domain);
     if (!domain) {
       throw new BadRequestException('Enter a domain like riverside.edu');
@@ -289,19 +362,30 @@ export class EmailDomainService {
 
     let data: DomainRecord;
     try {
-      data = await this.prisma.school_email_domain.create({
-        data: {
-          school_id: schoolId,
-          domain,
-          audience: input.audience,
-          // Students always join outright; staff (including on a shared
-          // domain) need approval unless the admin says otherwise.
-          auto_join: input.autoJoin ?? input.audience === 'student',
-          staff_role: input.staffRole ?? 'teacher',
-          verification_token: randomBytes(16).toString('hex'),
-          created_by: actorId,
-        },
-        select: DOMAIN_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.school_email_domain.create({
+          data: {
+            school_id: schoolId,
+            domain,
+            audience: input.audience,
+            // Students always join outright; staff (including on a shared
+            // domain) need approval unless the admin says otherwise.
+            auto_join: input.autoJoin ?? input.audience === 'student',
+            staff_role: input.staffRole ?? 'teacher',
+            verification_token: randomBytes(16).toString('hex'),
+            created_by: actor.id,
+          },
+          select: DOMAIN_SELECT,
+        });
+        await this.audit.record(tx, schoolId, actor, [
+          {
+            action: 'domain_added',
+            domainId: created.id,
+            domain: created.domain,
+            changes: diff({}, pick(auditSnapshot(created), ['audience', 'autoJoin', 'staffRole'])) ?? {},
+          },
+        ]);
+        return created;
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -316,10 +400,18 @@ export class EmailDomainService {
   }
 
   async update(adminUserId: string, id: string, patch: UpdateDomainInput) {
-    return this.updateInSchool(await this.adminSchool(adminUserId), id, patch);
+    return this.updateInSchool(await this.adminSchool(adminUserId), id, patch, {
+      id: adminUserId,
+      via: 'school_admin',
+    });
   }
 
-  async updateInSchool(schoolId: string, id: string, patch: UpdateDomainInput) {
+  async updateInSchool(
+    schoolId: string,
+    id: string,
+    patch: UpdateDomainInput,
+    actor: SsoActor,
+  ) {
     const row = await this.loadOwn(schoolId, id);
 
     const changes: Prisma.school_email_domainUncheckedUpdateInput = {};
@@ -435,38 +527,64 @@ export class EmailDomainService {
     }
 
     let data: DomainRecord;
+    let entries: SsoAuditEntry[] = [];
     try {
-      data = await this.prisma.school_email_domain.update({
-        where: { id },
-        data: changes,
-        select: DOMAIN_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.school_email_domain.update({
+          where: { id },
+          data: changes,
+          select: DOMAIN_SELECT,
+        });
+        entries = domainUpdateEntries(row, updated);
+        await this.audit.record(tx, schoolId, actor, entries);
+        return updated;
       });
-    } catch {
+    } catch (error) {
+      this.logger.error(`Failed to update email domain: ${(error as Error).message}`);
       throw new BadRequestException('Failed to update the domain');
     }
+    this.alert(schoolId, actor, entries);
     return this.toDomain(toDomainRow(data));
   }
 
   /** Removing a domain stops new joins; nobody already in is removed. */
   async remove(adminUserId: string, id: string) {
-    await this.removeFromSchool(await this.adminSchool(adminUserId), id);
+    await this.removeFromSchool(await this.adminSchool(adminUserId), id, {
+      id: adminUserId,
+      via: 'school_admin',
+    });
   }
 
-  async removeFromSchool(schoolId: string, id: string) {
-    await this.loadOwn(schoolId, id);
+  async removeFromSchool(schoolId: string, id: string, actor: SsoActor) {
+    const row = await this.loadOwn(schoolId, id);
     try {
-      await this.prisma.school_email_domain.deleteMany({ where: { id } });
-    } catch {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.school_email_domain.deleteMany({ where: { id } });
+        // What the domain was set to, so the log still says after it is gone.
+        await this.audit.record(tx, schoolId, actor, [
+          {
+            action: 'domain_removed',
+            domainId: row.id,
+            domain: row.domain,
+            changes: diff(auditSnapshot(row), {}) ?? {},
+          },
+        ]);
+      });
+    } catch (error) {
+      this.logger.error(`Failed to remove email domain: ${(error as Error).message}`);
       throw new BadRequestException('Failed to remove the domain');
     }
   }
 
   /** Look for the TXT record and, if it is there, take the domain. */
   async verify(adminUserId: string, id: string) {
-    return this.verifyInSchool(await this.adminSchool(adminUserId), id);
+    return this.verifyInSchool(await this.adminSchool(adminUserId), id, {
+      id: adminUserId,
+      via: 'school_admin',
+    });
   }
 
-  async verifyInSchool(schoolId: string, id: string) {
+  async verifyInSchool(schoolId: string, id: string, actor: SsoActor) {
     const row = await this.loadOwn(schoolId, id);
     if (row.verified_at) return this.toDomain(row);
 
@@ -488,10 +606,21 @@ export class EmailDomainService {
 
     let data: DomainRecord;
     try {
-      data = await this.prisma.school_email_domain.update({
-        where: { id },
-        data: { verified_at: new Date() },
-        select: DOMAIN_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const verified = await tx.school_email_domain.update({
+          where: { id },
+          data: { verified_at: new Date() },
+          select: DOMAIN_SELECT,
+        });
+        await this.audit.record(tx, schoolId, actor, [
+          {
+            action: 'domain_verified',
+            domainId: row.id,
+            domain: row.domain,
+            changes: { verified: { before: false, after: true } },
+          },
+        ]);
+        return verified;
       });
     } catch (error) {
       if (isUniqueViolation(error)) {

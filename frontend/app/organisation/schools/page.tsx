@@ -15,12 +15,11 @@ import {
   Settings2,
   UserCog,
 } from "lucide-react";
-import { api } from "@/lib/api";
 import {
   errorMessage,
   organisationSchoolPath,
   personLabel,
-  schoolsQuery,
+  listOrganisationSchools,
   schoolTypeLabel,
   type OrganisationSchool,
   type SchoolStatusFilter,
@@ -100,7 +99,7 @@ export default function OrganisationSchoolsPage() {
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      api<OrganisationSchool[]>(schoolsQuery(search, status))
+      listOrganisationSchools(search, status)
         .then((data) => {
           if (cancelled) return;
           const list = Array.isArray(data) ? data : [];

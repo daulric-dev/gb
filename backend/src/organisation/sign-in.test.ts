@@ -15,6 +15,7 @@ import { SsoSettingsService } from '@/sso/sso-settings.service';
 import { SsoRegistry } from '@/sso/sso.registry';
 import { SchoolSsoService } from '@/sso/school-sso.service';
 import { decryptSsoSecret } from '@/sso/sso-secret';
+import { SsoAuditService } from '@/sso/sso-audit.service';
 import { OrganisationAdminGuard } from './organisation-admin.guard';
 import { SignInController } from './sign-in.controller';
 
@@ -58,15 +59,34 @@ function setup() {
     rows[i] = { ...rows[i], ...data };
     return rows[i];
   });
-  prisma.school_sso_provider.create.mockImplementation(async ({ data }: any) => {
-    rows.push({ updated_at: new Date(), settings: {}, ...data });
-    return rows.at(-1);
+  prisma.school_sso_provider.createMany.mockImplementation(async ({ data }: any) => {
+    let count = 0;
+    for (const row of data) {
+      if (rows.some((r) => r.school_id === row.school_id && r.provider === row.provider)) continue;
+      rows.push({ updated_at: new Date(), settings: {}, ...row });
+      count++;
+    }
+    return { count };
+  });
+  const audit: any[] = [];
+  prisma.sso_audit_log.createMany.mockImplementation(async ({ data }: any) => {
+    audit.push(...data);
+    return { count: data.length };
   });
   const settings = new SsoSettingsService(prisma as any);
   const registry = new SsoRegistry(settings);
-  const service = new SchoolSsoService(registry, settings);
-  return { service, rows, registry };
+  const alerts = { notify: mock(async () => {}) };
+  const service = new SchoolSsoService(
+    registry,
+    settings,
+    new SsoAuditService(prisma as any),
+    alerts as any,
+  );
+  return { service, rows, registry, audit, alerts, prisma };
 }
+
+/** A school admin acting on their own school. */
+const A = (id: string) => ({ id, via: 'school_admin' as const });
 
 const byKey = (items: { key: string }[]) => Object.fromEntries(items.map((i) => [i.key, i])) as any;
 
@@ -91,6 +111,7 @@ describe('SignInController', () => {
       [
         'GET sign-in/domains',
         'GET schools/:id/sso/providers',
+        'QUERY schools/:id/sso/audit',
         'PUT schools/:id/sso/providers/:key',
         'GET schools/:id/email-domains',
         'POST schools/:id/email-domains',
@@ -120,7 +141,7 @@ describe('SignInController', () => {
       removeFromSchool: mock(async () => {}),
       verifyInSchool: mock(async () => ({})),
     };
-    const c = new SignInController(schoolSso, domains as any, { requireSchool } as any);
+    const c = new SignInController(schoolSso, domains as any, { requireSchool } as any, {} as any);
     return { c, domains, requireSchool, schoolSso };
   }
 
@@ -130,15 +151,16 @@ describe('SignInController', () => {
     const { c, domains, requireSchool } = controller();
     await c.schoolDomains(S);
     await c.addSchoolDomain(req, S, { domain: 'riverside.edu', audience: 'staff' });
-    await c.updateSchoolDomain(S, D, { autoJoin: true });
-    await c.removeSchoolDomain(S, D);
-    await c.verifySchoolDomain(S, D);
+    await c.updateSchoolDomain(req, S, D, { autoJoin: true });
+    await c.removeSchoolDomain(req, S, D);
+    await c.verifySchoolDomain(req, S, D);
     expect(requireSchool).toHaveBeenCalledTimes(5);
     expect(domains.listForSchool.mock.calls[0]).toEqual([S] as any);
-    expect(domains.addToSchool.mock.calls[0]).toEqual([S, 'org-admin', { domain: 'riverside.edu', audience: 'staff' }] as any);
-    expect(domains.updateInSchool.mock.calls[0]).toEqual([S, D, { autoJoin: true }] as any);
-    expect(domains.removeFromSchool.mock.calls[0]).toEqual([S, D] as any);
-    expect(domains.verifyInSchool.mock.calls[0]).toEqual([S, D] as any);
+    const org = { id: 'org-admin', via: 'organisation_admin' };
+    expect(domains.addToSchool.mock.calls[0]).toEqual([S, org, { domain: 'riverside.edu', audience: 'staff' }] as any);
+    expect(domains.updateInSchool.mock.calls[0]).toEqual([S, D, { autoJoin: true }, org] as any);
+    expect(domains.removeFromSchool.mock.calls[0]).toEqual([S, D, org] as any);
+    expect(domains.verifyInSchool.mock.calls[0]).toEqual([S, D, org] as any);
   });
 
   test('an unknown school is a 404 and touches no domain', async () => {
@@ -148,7 +170,7 @@ describe('SignInController', () => {
       }),
     );
     await expect(c.schoolDomains(S)).rejects.toThrow(NotFoundException);
-    await expect(c.updateSchoolDomain(S, D, { autoJoin: true })).rejects.toThrow(NotFoundException);
+    await expect(c.updateSchoolDomain(req, S, D, { autoJoin: true })).rejects.toThrow(NotFoundException);
     expect(domains.listForSchool).not.toHaveBeenCalled();
     expect(domains.updateInSchool).not.toHaveBeenCalled();
   });
@@ -160,12 +182,17 @@ describe('per-school sign-in app routes', () => {
   test('organisation admins: any school, by id', async () => {
     const schoolSso = { list: mock(async () => []), update: mock(async () => ({})) };
     const requireSchool = mock(async () => {});
-    const c = new SignInController(schoolSso as any, {} as any, { requireSchool } as any);
+    const c = new SignInController(schoolSso as any, {} as any, { requireSchool } as any, {} as any);
     await c.schoolProviders(req, S);
     await c.updateSchoolProvider(req, OTHER, 'google', { enabled: false });
     expect(requireSchool.mock.calls).toEqual([[S], [OTHER]] as any);
     expect((schoolSso.list.mock.calls[0] as any[])[0]).toBe(S);
-    expect((schoolSso.update.mock.calls[0] as any[]).slice(0, 4)).toEqual([OTHER, 'google', { enabled: false }, 'org-admin']);
+    expect((schoolSso.update.mock.calls[0] as any[]).slice(0, 4)).toEqual([
+      OTHER,
+      'google',
+      { enabled: false },
+      { id: 'org-admin', via: 'organisation_admin' },
+    ]);
   });
 
   test('organisation admins: an unknown school is a 404 and saves nothing', async () => {
@@ -173,7 +200,7 @@ describe('per-school sign-in app routes', () => {
     const requireSchool = mock(async () => {
       throw new NotFoundException('School not found');
     });
-    const c = new SignInController(schoolSso as any, {} as any, { requireSchool } as any);
+    const c = new SignInController(schoolSso as any, {} as any, { requireSchool } as any, {} as any);
     await expect(c.schoolProviders(req, S)).rejects.toThrow(NotFoundException);
     await expect(c.updateSchoolProvider(req, S, 'google', { enabled: true })).rejects.toThrow(NotFoundException);
     expect(schoolSso.list).not.toHaveBeenCalled();
@@ -195,11 +222,16 @@ describe('per-school sign-in app routes', () => {
     const prisma = createMockPrisma();
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: OTHER });
     const schoolSso = { list: mock(async () => []), update: mock(async () => ({})) };
-    const c = new SchoolController({} as any, {} as any, {} as any, prisma as any, {} as any, {} as any, schoolSso as any);
+    const c = new SchoolController({} as any, {} as any, {} as any, prisma as any, {} as any, {} as any, schoolSso as any, {} as any);
     await c.getSsoProviders({ user: { id: 'admin-2' } });
     await c.updateSsoProvider({ user: { id: 'admin-2' } }, 'google', { enabled: false });
     expect((schoolSso.list.mock.calls[0] as any[])[0]).toBe(OTHER);
-    expect((schoolSso.update.mock.calls[0] as any[]).slice(0, 4)).toEqual([OTHER, 'google', { enabled: false }, 'admin-2']);
+    expect((schoolSso.update.mock.calls[0] as any[]).slice(0, 4)).toEqual([
+      OTHER,
+      'google',
+      { enabled: false },
+      { id: 'admin-2', via: 'school_admin' },
+    ]);
 
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: null });
     await expect(c.getSsoProviders({ user: { id: 'nobody' } })).rejects.toThrow(BadRequestException);
@@ -242,7 +274,7 @@ describe('SchoolSsoService', () => {
       S,
       'azure',
       { enabled: true, clientId: 'ms-id', clientSecret: 'ms-very-secret' },
-      'org-admin',
+      A('org-admin'),
     );
     expect(JSON.stringify(item)).not.toContain('ms-very-secret');
     const listed = JSON.stringify(await service.list(S));
@@ -257,36 +289,36 @@ describe('SchoolSsoService', () => {
 
   test("one school's app does not change another's", async () => {
     const { service } = setup();
-    await service.update(S, 'google', { enabled: false }, 'admin');
+    await service.update(S, 'google', { enabled: false }, A('admin'));
     expect(byKey(await service.list(S)).google).toMatchObject({ configSource: 'school', available: false });
     expect(byKey(await service.list(OTHER)).google).toMatchObject({ configSource: 'env', available: true });
   });
 
   test('enabling without complete credentials is a 400 - the env does not count once the school has its own', async () => {
     const { service, rows } = setup();
-    await expect(service.update(S, 'azure', { enabled: true }, 'a')).rejects.toThrow(
+    await expect(service.update(S, 'azure', { enabled: true }, A('a'))).rejects.toThrow(
       "Add Microsoft's client ID and client secret before turning it on",
     );
-    await expect(service.update(S, 'google', { enabled: true, clientId: 'school-id' }, 'a')).rejects.toThrow(
+    await expect(service.update(S, 'google', { enabled: true, clientId: 'school-id' }, A('a'))).rejects.toThrow(
       BadRequestException,
     );
     // A first save without `enabled` starts the school's app switched off.
-    const item = await service.update(S, 'google', { clientId: 'school-id' }, 'a');
+    const item = await service.update(S, 'google', { clientId: 'school-id' }, A('a'));
     expect(item).toMatchObject({ enabled: false, available: false, configSource: 'school', secretSource: null });
     // Clearing the secret of an enabled app is refused too.
-    await service.update(S, 'google', { enabled: true, clientSecret: 's' }, 'a');
-    await expect(service.update(S, 'google', { clientSecret: '' }, 'a')).rejects.toThrow(BadRequestException);
+    await service.update(S, 'google', { enabled: true, clientSecret: 's' }, A('a'));
+    await expect(service.update(S, 'google', { clientSecret: '' }, A('a'))).rejects.toThrow(BadRequestException);
     expect(rows).toHaveLength(1);
   });
 
   test('validates per provider', async () => {
     const { service } = setup();
-    await expect(service.update(S, 'nope', { enabled: true }, 'a')).rejects.toThrow(NotFoundException);
-    await expect(service.update(S, 'google', {}, 'a')).rejects.toThrow('Nothing to update');
+    await expect(service.update(S, 'nope', { enabled: true }, A('a'))).rejects.toThrow(NotFoundException);
+    await expect(service.update(S, 'google', {}, A('a'))).rejects.toThrow('Nothing to update');
     await expect(
-      service.update(S, 'azure', { enabled: true, clientId: 'has space', clientSecret: 'x' }, 'a'),
+      service.update(S, 'azure', { enabled: true, clientId: 'has space', clientSecret: 'x' }, A('a')),
     ).rejects.toThrow('cannot contain spaces');
-    await expect(service.update(S, 'saml', { enabled: true }, 'a')).rejects.toThrow('set up on each email domain');
-    await expect(service.update(S, 'google', { settings: { entityId: 'x' } }, 'a')).rejects.toThrow('has no setting');
+    await expect(service.update(S, 'saml', { enabled: true }, A('a'))).rejects.toThrow('set up on each email domain');
+    await expect(service.update(S, 'google', { settings: { entityId: 'x' } }, A('a'))).rejects.toThrow('has no setting');
   });
 });

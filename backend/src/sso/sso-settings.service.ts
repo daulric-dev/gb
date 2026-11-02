@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
-import { isUniqueViolation } from '@/common/db-values';
 import type { SsoAdapter, SsoProviderConfig } from './sso.types';
 import { decryptSsoSecret, encryptSsoSecret } from './sso-secret';
 
@@ -30,6 +29,14 @@ export interface SsoSettingWrite {
   clientId?: string | null;
   clientSecret?: string | null;
   settings?: Record<string, string>;
+}
+
+/** A school's row as it stood before a save, for the audit log. Never the secret. */
+export interface SsoSettingBefore {
+  enabled: boolean;
+  clientId: string | null;
+  secretStored: boolean;
+  settings: Record<string, string>;
 }
 
 /**
@@ -169,12 +176,20 @@ export class SsoSettingsService {
     return { config: adapter.envConfig(), source: 'env' };
   }
 
-  /** Save a school's row for a provider (secret encrypted) and reload it. */
+  /**
+   * Save a school's row for a provider (secret encrypted) and reload it.
+   * `inTransaction` runs in the same transaction, after the write, with the
+   * row as it was (null: none) - the audit log's hook.
+   */
   async save(
     schoolId: string,
     provider: string,
     write: SsoSettingWrite,
-    actorId: string,
+    actorId: string | null,
+    inTransaction?: (
+      tx: Prisma.TransactionClient,
+      before: SsoSettingBefore | null,
+    ) => Promise<void>,
   ): Promise<void> {
     const data: Prisma.school_sso_providerUncheckedUpdateInput = {
       enabled: write.enabled,
@@ -191,32 +206,45 @@ export class SsoSettingsService {
     if (write.settings !== undefined) data.settings = write.settings;
 
     const where = { school_id_provider: { school_id: schoolId, provider } };
-    const update = () => this.prisma.school_sso_provider.update({ where, data });
-    const existing = await this.prisma.school_sso_provider.findUnique({
-      where,
-      select: { school_id: true },
-    });
-    if (existing) {
-      await update();
-    } else {
-      try {
-        await this.prisma.school_sso_provider.create({
-          data: {
-            school_id: schoolId,
-            provider,
-            enabled: write.enabled,
-            client_id: write.clientId ?? null,
-            client_secret_enc: (data.client_secret_enc as string | null | undefined) ?? null,
-            settings: write.settings ?? {},
-            updated_by: actorId,
-          },
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.school_sso_provider.findUnique({
+        where,
+        select: { enabled: true, client_id: true, client_secret_enc: true, settings: true },
+      });
+      if (existing) {
+        await tx.school_sso_provider.update({ where, data });
+      } else {
+        // ON CONFLICT DO NOTHING rather than catching a unique violation,
+        // which would abort the transaction. Saved at the same moment by
+        // someone else: apply ours on top.
+        const { count } = await tx.school_sso_provider.createMany({
+          data: [
+            {
+              school_id: schoolId,
+              provider,
+              enabled: write.enabled,
+              client_id: write.clientId ?? null,
+              client_secret_enc: (data.client_secret_enc as string | null | undefined) ?? null,
+              settings: write.settings ?? {},
+              updated_by: actorId,
+            },
+          ],
+          skipDuplicates: true,
         });
-      } catch (err) {
-        // Saved at the same moment by someone else: apply ours on top.
-        if (!isUniqueViolation(err)) throw err;
-        await update();
+        if (count === 0) await tx.school_sso_provider.update({ where, data });
       }
-    }
+      await inTransaction?.(
+        tx,
+        existing
+          ? {
+              enabled: existing.enabled,
+              clientId: existing.client_id?.trim() || null,
+              secretStored: !!existing.client_secret_enc,
+              settings: stringMap(existing.settings),
+            }
+          : null,
+      );
+    });
     // A load that started before the write would bring back the old rows.
     const inFlight = this.loading.get(schoolId);
     if (inFlight) await inFlight.catch(() => undefined);

@@ -66,70 +66,84 @@ to no one does not create an account either: the sign-in is refused with
 
 ## Setting up a school's single sign-on
 
-Single sign-on is set up **per school**. In the organisation console, open
-**Schools > <school>**: its **Single sign-on** section lists the school's
-email domains (add, verify with the DNS TXT record shown, remove) and, for
-each domain, who it is for (audience, auto-join, staff role), its sign-in
-provider (Google Workspace; Microsoft Entra with the school's tenant ID; or
-SAML with the school's IdP sign-on URL, entity ID and certificate, plus our
-metadata URL, ACS URL and entity ID to copy), **Require single sign-on**,
-and a **Test sign-in** link (the provider's start URL for an address on the
-domain - open it in a private window, since finishing it signs that browser
-in). Providers the server has no sign-in app for are listed as not set up,
-with a link to Settings > Sign-in apps. The school's own admin has the same
-section as **Email domains** in the school dashboard (same components, their
-own school's routes). The organisation **Overview** shows every school's
-domains in a small table linking to each school.
+Single sign-on is set up **per school**: each school has its own SSO
+configuration, if it has one. The section is the same everywhere it appears:
 
-## Turning on a provider (sign-in apps)
+- the school admin's **Settings > Single sign-on** (`/dashboard/settings`)
+  and **Email Domains** (`/dashboard/email-domains`) pages, for the active
+  school (needs `school:update`);
+- **Organisation console > Schools > <school>** for organisation admins, for
+  any school.
 
-The apps every school's SSO runs through are server-wide and secondary:
-**organisation console > Settings > Sign-in apps**
-(`/organisation/settings#sign-in-apps`). Each provider has a row with an on/off
-switch, the client ID and client secret (Google, Microsoft), the redirect URI
-to paste into the provider's console (with a copy button), and for SAML the
-metadata URL, ACS URL and entity ID to give identity providers. A provider is
-**available** - offered on the login page and in each domain's provider
-picker - when it is switched on and has a complete client ID and secret
-(SAML needs none). Saves take effect without a restart: this instance at
-once, other instances within about 30 seconds.
+A school with nothing set up shows "This school signs in with email codes.
+Set up SSO if it has Google Workspace, Microsoft or a SAML provider." The
+section has two parts.
 
-Only organisation admins can set up sign-in apps.
+**Sign-in apps** - the school's own Google and Microsoft apps. Each row has
+an on/off switch, the client ID, a write-only client secret, the redirect URI
+to copy into the provider, and a status: *Not set up* by default, *On*,
+*On - server's app* (the install-wide fallback below), *Setup incomplete* or
+*Off*. Turning one on without a client ID and secret is refused. Saves take
+effect without a restart (this instance at once, others within ~30 s).
+
+**Email domains** - add, verify with the DNS TXT record shown, remove, and
+for each domain: who it is for (audience, auto-join, staff role), its sign-in
+provider - only providers available to *this* school (its own apps, the
+server's fallback app, or SAML with the school's IdP sign-on URL, entity ID
+and certificate plus our metadata URL, ACS URL and entity ID to copy) -
+Microsoft tenant ID, **Require single sign-on**, and a **Test sign-in** link
+(open it in a private window, since finishing it signs that browser in). The
+organisation **Overview** lists every school's domains.
 
 **Secrets.** The client secret is write-only: the API never returns it, only
-`hasSecret` and `secretSource` (`database`, `env` or none), so the console
-shows "Saved" or "From server config". It is stored in
-`public.sso_provider_setting.client_secret_enc`, encrypted with AES-256-GCM
-under a key derived from `AUTH_SECRET` (HKDF-SHA256, its own info string).
-**Rotating `AUTH_SECRET` makes saved secrets unreadable**: the console then
-says so, the provider falls back to the env secret (if any) or becomes
-unavailable, and an organisation admin must enter the secret again.
+`hasSecret` and `secretSource` (`school`, `env` or none). It is stored in
+`public.school_sso_provider.client_secret_enc`, encrypted with AES-256-GCM
+under a key derived from `AUTH_SECRET` (HKDF-SHA256) with the school id and
+provider as additional data, so a ciphertext copied to another school's or
+provider's row does not decrypt. **Rotating `AUTH_SECRET` makes saved secrets
+unreadable**: the page says so and the provider is unavailable for that
+school until the secret is entered again.
 
-**Environment fallback.** The env vars below still work, and an install
-that never saves anything in the console behaves exactly as before. Once a
-provider has been saved in the console, its row decides whether it is on
-(`SSO_PROVIDERS` no longer matters for it), and each of its client ID,
-secret and settings comes from the row when set there, else from the env.
-Clearing a field in the console (empty value) brings the env value back.
+**How a sign-in picks the app.** The address's verified domain gives the
+school; the school's own row for the provider decides. `/start` keeps the
+school id in the pending sign-in, and the callback exchanges the code with
+the same school's client - never another school's. Google's `hd` check and
+Microsoft's per-domain tenant check are unchanged.
 
-The routes behind the page (organisation admins only, 403 otherwise):
-`GET /api/organisation/sign-in/providers`,
-`PUT /api/organisation/sign-in/providers/:key` (body `{ enabled?, clientId?,
-clientSecret?, settings? }`; empty string clears a field; turning a provider
-on without a complete client ID and secret is a 400),
-`GET /api/organisation/sign-in/domains`, and
-`GET/POST /api/organisation/schools/:id/email-domains`,
-`PATCH/DELETE .../email-domains/:domainId`,
-`POST .../email-domains/:domainId/verify` with the same bodies and rules as a
-school admin's `/api/schools/email-domains` routes. See
-`backend/src/organisation/README.md`.
+**Install-wide fallback (optional).** The env vars below are used only for a
+school that has **no row** for that provider - so an env-only install keeps
+working without any school saving anything. Once a school saves its own
+Google (or Microsoft) settings, even switched off, its row alone applies for
+that provider; the env never fills a gap. The login page's provider buttons
+(shown before anyone types an email) list only these env apps; a school's own
+providers are offered after the user types their email ("Continue").
+
+The routes (see `backend/src/school/README.md` and
+`backend/src/organisation/README.md`):
+
+- school admin (`school:update`, active school):
+  `GET /api/schools/current/sso/providers`,
+  `PUT /api/schools/current/sso/providers/:key`, and the
+  `/api/schools/email-domains` routes;
+- organisation admin (any school; 404 for an unknown one):
+  `GET /api/organisation/schools/:id/sso/providers`,
+  `PUT /api/organisation/schools/:id/sso/providers/:key`,
+  `GET/POST /api/organisation/schools/:id/email-domains`,
+  `PATCH/DELETE .../email-domains/:domainId`,
+  `POST .../email-domains/:domainId/verify`, and
+  `GET /api/organisation/sign-in/domains` (every school's domains).
+
+Provider items are `{ key, label, kind, enabled, available, configSource,
+clientId, hasSecret, secretSource, settings, redirectUri, saml, notes, ... }`;
+the PUT body is `{ enabled?, clientId?, clientSecret?, settings? }` (secret
+write-only, `""` clears a field).
 
 Env-only setup (fallback):
 
 ```env
 # backend/.env
 API_URL=https://api.example.com     # redirect URIs are built from this
-SSO_PROVIDERS=google,azure,saml
+SSO_PROVIDERS=google,azure          # env apps for schools without their own
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 MICROSOFT_CLIENT_ID=...
@@ -140,16 +154,17 @@ MICROSOFT_CLIENT_SECRET=...
 
 The redirect URI for both OpenID providers is
 `${API_URL}/api/auth/sso/callback` (locally
-`http://localhost:3001/api/auth/sso/callback`).
+`http://localhost:3001/api/auth/sso/callback`) - the same for every school.
 
 ### Google Workspace
 
-1. Google Cloud console > APIs & Services > OAuth consent screen: set it up
-   (External, so every school's Workspace can sign in).
+1. Google Cloud console (the school's own project) > APIs & Services >
+   OAuth consent screen: set it up (*Internal* is enough for the school's
+   Workspace; an install-wide env app must be *External*).
 2. Credentials > Create credentials > OAuth client ID > *Web application*.
 3. Authorised redirect URI: `${API_URL}/api/auth/sso/callback`.
-4. Paste the client ID and secret into the Google row in the organisation
-   console (Settings > Sign-in apps) and switch it on - or, as a fallback, set
+4. Paste the client ID and secret into the Google row of the school's
+   Sign-in apps and switch it on - or, as an install-wide fallback, set
    `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and add `google` to
    `SSO_PROVIDERS`.
 
@@ -163,14 +178,15 @@ not placed in a school.
 ### Microsoft 365 / Entra ID
 
 1. Azure portal > Microsoft Entra ID > App registrations > New registration.
-   Supported account types: *Accounts in any organizational directory*
-   (multitenant), so every school's tenant can sign in.
+   Supported account types: *Accounts in this organizational directory
+   only* is enough for a school's own app (sign-in always goes to the
+   school's tenant); an install-wide env app must be multitenant.
 2. Redirect URI, platform *Web*: `${API_URL}/api/auth/sso/callback`.
 3. Certificates & secrets > New client secret.
 4. Paste the application (client) ID and the secret value into the
-   Microsoft row in the organisation console (Settings > Sign-in apps) and switch it on -
-   or, as a fallback, set `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`
-   and add `azure` to `SSO_PROVIDERS`.
+   Microsoft row of the school's Sign-in apps and switch it on - or, as an
+   install-wide fallback, set `MICROSOFT_CLIENT_ID` /
+   `MICROSOFT_CLIENT_SECRET` and add `azure` to `SSO_PROVIDERS`.
 
 Each school admin enters their **tenant ID** on the email domain (Entra ID >
 Overview > Tenant ID). Every Microsoft sign-in goes to that school's own
@@ -188,17 +204,20 @@ be switched on without a tenant ID.
 
 ### SAML (ADFS, Okta, ClassLink, Google Workspace SAML, Entra SAML, ...)
 
-Switch on SAML 2.0 in the organisation console (Settings > Sign-in apps) (or add `saml` to
-`SSO_PROVIDERS`). Nothing else is configured by the organisation: each
-school connects its own IdP on its email domain (from its dashboard, or by
-an organisation admin from the school's page in the console).
+SAML needs no app and no switch: each school connects its own IdP on its
+email domain (from its dashboard, or by an organisation admin from the
+school's page in the console). There is **one SAML service provider for the
+install** (one entity ID and ACS URL); per-school entity IDs would break
+every IdP already set up with it, so each school's IdP gets the same SP
+details and the assertion is checked against that domain's own certificate
+and issuer.
 
 What the school gives its IdP (shown on the admin page):
 
 | | |
 | --- | --- |
 | Metadata URL | `${API_URL}/api/auth/sso/saml/metadata` |
-| Entity ID (audience) | the same URL, unless set on the SAML row in Settings > Sign-in apps (or `SAML_SP_ENTITY_ID`); set `NEXT_PUBLIC_SAML_SP_ENTITY_ID` on the web app to match so the domain page shows it |
+| Entity ID (audience) | the same URL, unless `SAML_SP_ENTITY_ID` is set (the domain page shows the API's value) |
 | ACS (reply) URL | `${API_URL}/api/auth/sso/saml/acs` (HTTP-POST) |
 | NameID | the user's email address (persistent or email format preferred) |
 | Attributes | optional: `givenName`/`sn`, `firstName`/`lastName`, or the `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/{givenname,surname,emailaddress}` claims |
@@ -222,7 +241,8 @@ it on the admin page before the old one stops being used.
 
 ## School settings
 
-Admin > Email Domains, on a verified domain (`PATCH /api/schools/email-domains/:id`):
+Admin > Email Domains, on a verified domain (`PATCH /api/schools/email-domains/:id`;
+needs a [step-up confirmation](#protecting-sso-settings)):
 
 - **Sign-in provider** (`ssoProvider`) - which provider the school uses.
 - **Microsoft tenant ID** (`azureTenantId`) - required for Microsoft.
@@ -232,8 +252,88 @@ Admin > Email Domains, on a verified domain (`PATCH /api/schools/email-domains/:
 - **Require single sign-on** (`ssoRequired`) - email codes are refused for
   the domain, so disabling someone's school account ends their access here.
   Can only be switched on once the domain is verified and the provider is set
-  up. A required provider that the deployment turns off, or that is not fully
+  up. A required provider that the school turns off, or that is not fully
   set up, does not lock anyone out: email codes work again.
+
+## Protecting SSO settings
+
+Single sign-on settings decide who can sign in as whom: whoever can point a
+domain at an identity provider they control (a SAML entry point and
+certificate, a Microsoft tenant, or the school's own Google / Microsoft app)
+can sign in as anyone on that domain. School admins and organisation admins
+can both change them, so every change is guarded three ways.
+
+### Confirm it's you (step-up)
+
+Every route that changes SSO settings needs a recent confirmation: adding,
+editing, verifying or removing an email domain, and saving a sign-in app -
+from the school's settings and from the organisation console alike. Reads
+never do.
+
+- Without one the API answers `403 { "code": "STEP_UP_REQUIRED", "message":
+  "Confirm it's you to change single sign-on settings." }`.
+- `POST /api/auth/step-up/send` emails an 8-digit code to the **signed-in
+  user's own address**; `POST /api/auth/step-up/verify` with `{ "code" }`
+  confirms it. The session that confirmed (only that one) may then change
+  SSO settings for **10 minutes** (`account.session.elevated_until`).
+- Step-up codes are ordinary email codes with their own purpose: same
+  expiry (5 minutes, single use), send caps and per-client attempt limits
+  as sign-in codes, counted separately, and not interchangeable - a sign-in
+  code cannot confirm a change and a step-up code cannot sign in.
+- On the web, the SSO section's requests opt in (`api(path, { stepUp: true
+  })`): a `STEP_UP_REQUIRED` answer opens the "Confirm it's you" dialog,
+  which sends the code straight away and retries the original request once
+  the code is verified. The mobile app cannot change SSO settings.
+- Development: with `ALLOW_DEV_LOGIN=true` (never in production),
+  `POST /api/auth/dev/step-up-code` returns a code for the signed-in user
+  instead of mailing it, like `POST /api/auth/dev/code` does for sign-in.
+
+### Audit log
+
+Every change is written to `public.sso_audit_log` in the same database
+transaction as the change, so there is an entry exactly when the change
+happened: who (`actor`), from which console (`actorVia`: `school_admin` or
+`organisation_admin`), which domain, and what changed as `{ field: {
+before, after } }`. Secrets never reach the log: SAML certificates are
+recorded as SHA-256 fingerprints (as identity providers display them), client
+secrets only as `set` / `cleared`. Entries outlive the domain and the
+account; they go with the school.
+
+| Action | When |
+| --- | --- |
+| `domain_added`, `domain_removed`, `domain_verified` | A domain is added, removed (with what it was set to), or verified |
+| `domain_settings_changed` | Audience, auto-join or staff role |
+| `provider_changed`, `sso_required_changed`, `azure_tenant_changed`, `saml_changed` | A domain's sign-in settings |
+| `app_enabled`, `app_disabled`, `app_changed`, `app_secret_changed` | A school's Google / Microsoft app: on/off, client ID or settings, secret |
+
+Read it under **Single sign-on > Activity** (school settings, and each
+school's page in the organisation console), or from the API, newest first,
+50 at a time (`limit` up to 200, `before` = the id of the last entry shown):
+
+- `QUERY /api/schools/current/sso/audit` - the school's admin, active school.
+- `QUERY /api/organisation/schools/:id/sso/audit` - organisation admins, any school.
+
+Both take `{ "limit": 1-200 (default 50), "before": "<last entry id>" }` as a JSON body (see [HTTP QUERY](./backend/http-query.md)).
+
+### Alert emails
+
+After a change commits, the school's admin and every organisation admin
+(`public.organisation_admin`, plus accounts with a verified email in
+`ORG_ADMIN_EMAILS`) get one "Single sign-on settings changed for <School>"
+email per request - the person who made the change included, as
+confirmation. It says who, when and what changed (field names, values,
+certificate fingerprints - never secrets) and links to the school's
+single sign-on settings (`FRONTEND_URL`'s first origin +
+`/dashboard/settings` for the school's admin, the school's organisation
+page for organisation admins). It is sent for:
+
+- the SAML sign-on URL, entity ID or certificate;
+- a domain's sign-in provider or Microsoft tenant;
+- **Require single sign-on** turned off;
+- a sign-in app's client ID or secret, or the app turned on or off.
+
+Without SMTP the alert is skipped (and logged); a failed send is logged and
+never fails the change.
 
 ## Adding another provider
 
@@ -244,15 +344,14 @@ interface SsoAdapter {
   id: string;            // stored on school_email_domain.sso_provider and account.identity
   label: string;         // "Continue with <label>"
   kind: 'oauth' | 'saml';
-  adminLabel?: string; adminNotes?: string;     // organisation console card
+  adminLabel?: string; adminNotes?: string;     // the school's Sign-in apps row
   needsClient: boolean;                         // OAuth client ID + secret?
-  settingFields: SsoSettingField[];             // non-secret console settings
-  envConfig(): SsoProviderConfig;               // what the env vars say
-  useConfig(source): void; config(): SsoProviderConfig; // live config (console over env)
-  isEnabled(): boolean;                         // switched on + complete credentials
+  settingFields: SsoSettingField[];             // non-secret per-school settings
+  envConfig(): SsoProviderConfig;               // the install-wide env fallback
+  available(config): boolean;                   // switched on + complete credentials
   readyFor(domain): boolean;                    // has this school set it up?
-  start(ctx): Promise<{ url, secrets }>;        // provider sign-in URL
-  complete(ctx): Promise<SsoIdentity>;          // check the response
+  start(ctx): Promise<{ url, secrets }>;        // ctx.config = this school's app
+  complete(ctx): Promise<SsoIdentity>;          // same school's app as start
   profileFrom(claims): SsoProfile;              // names from claims/attributes
   vouchesForDomain(identity, domain): boolean;  // may this sign-in join a school?
   verifiesEmail?(identity): boolean;            // may it link by address?
@@ -290,13 +389,13 @@ export class KeycloakAdapter extends OidcAdapter {
 
 Register it in `createAdapters()` in `backend/src/sso/sso.registry.ts` and
 register the redirect URI `${API_URL}/api/auth/sso/callback` with the
-provider. It then gets its own row in the organisation console (Settings > Sign-in apps),
-where its client ID and secret are entered and it is switched on; env vars
-plus `SSO_PROVIDERS` remain the fallback. Read credentials through
-`this.clientId()` / `this.clientSecret()` / `this.config()`, never
-`process.env` directly, so console settings apply. The login pages, the
-admin picker and the console read the list from the API, so no frontend
-change is needed.
+provider. It then gets a row in every school's Sign-in apps (allow its id in
+`school_sso_provider`'s `provider` CHECK with a migration), where a school
+enters its client ID and secret; env vars plus `SSO_PROVIDERS` remain the
+install-wide fallback. Read credentials from `ctx.config` in `start` /
+`complete`, never `process.env` directly, so each school's app applies. The
+login pages and the admin screens read the lists from the API, so no
+frontend change is needed.
 
 `vouchesForDomain` is the security boundary: it decides whether an identity
 from that provider may join a school by its email domain. Base it on

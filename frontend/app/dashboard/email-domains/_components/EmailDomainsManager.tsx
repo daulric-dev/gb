@@ -106,7 +106,7 @@ export function EmailDomainsManager({
     if (!target) return;
     removeBusy.value = true;
     try {
-      await api(`${emailDomainsApi(apiBase)}/${target.id}`, { method: "DELETE" });
+      await api(`${emailDomainsApi(apiBase)}/${target.id}`, { method: "DELETE", stepUp: true });
       domains.value = domains.value.filter((d) => d.id !== target.id);
       toast.success(`${target.domain} removed`);
       removing.value = null;

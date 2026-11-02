@@ -6,7 +6,7 @@ import {
   Param,
   Patch,
   Post,
-  Query,
+  QueryMethod,
   Req,
   Res,
   UseGuards,
@@ -177,11 +177,11 @@ export class ChatController {
   }
 
   @RequirePermission('chat', 'read')
-  @Get('conversations/:id/messages')
+  @QueryMethod('conversations/:id/messages')
   async listMessages(
     @Req() req: any,
     @Param('id') id: string,
-    @Query() query: ListMessagesQueryDto,
+    @Body() query: ListMessagesQueryDto,
   ) {
     const userId = req.user.id as string;
     return this.chat.listMessages(userId, id, {

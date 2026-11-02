@@ -21,9 +21,9 @@ Shared types for paginated list endpoints: a query DTO and a result envelope. Th
 
 ## Used by
 
-- `src/student/dto/list-students.query.dto.ts` extends `PaginationQueryDto` for `GET /api/students`.
+- `src/student/dto/list-students.query.dto.ts` extends `PaginationQueryDto` for `QUERY /api/students` (paging fields in the JSON body).
 - `src/student/student.service.ts` and `src/student/transformer.ts` use `PaginationQueryDto` and `PaginatedResult` and implement both modes themselves with Prisma.
-- `file-manager` returns a similar `{ data, meta }` envelope from `GET /api/files?page=` but defines it locally (no `nextCursor`).
+- `file-manager` returns a similar `{ data, meta }` envelope from `QUERY /api/files` with `page` in the body but defines it locally (no `nextCursor`).
 
 ## Depends on
 

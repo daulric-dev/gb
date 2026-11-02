@@ -61,7 +61,7 @@ describe('OrganisationController', () => {
         'GET admins',
         'POST admins',
         'DELETE admins/:userId',
-        'GET schools',
+        'QUERY schools',
         'POST schools',
         'GET schools/:id',
         'PATCH schools/:id',

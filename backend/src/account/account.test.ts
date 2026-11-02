@@ -14,6 +14,7 @@ import {
   RENEW_AFTER_MS,
   SESSION_COOKIE,
   SESSION_TTL_MS,
+  STEP_UP_WINDOW_MS,
   SessionService,
   rotatedToken,
   sessionTokenFrom,
@@ -967,5 +968,106 @@ describe('AccountService: SSO and unverified accounts', () => {
       ),
     ).toEqual({ id: 'u1', email: 'jo@school.edu' });
     expect(prisma.app_user.create).not.toHaveBeenCalled();
+  });
+});
+
+// ── Step-up ──────────────────────────────────────────────────────────────
+
+describe('EmailCodeService: step-up codes', () => {
+  test('a step-up code is mailed as a confirmation, stored with its purpose and a purpose-bound hash', async () => {
+    const { codes, sent, service } = emailCodes();
+    await service.send('jo@school.edu', VICTIM, 'step_up');
+    expect((sent[0] as any).subject).toBe('Confirm a GradeBook settings change');
+    const code = /(\d{8})/.exec(sent[0].text)![1];
+    expect(codes[0].purpose).toBe('step_up');
+    expect(codes[0].code_hash).toBe(hashCode('jo@school.edu', code, 'step_up'));
+    expect(codes[0].code_hash).not.toBe(hashCode('jo@school.edu', code));
+  });
+
+  test('a sign-in code cannot confirm a step-up', async () => {
+    const { service, issue } = emailCodes();
+    const signIn = await issue('jo@school.edu');
+    await expect(service.verify('jo@school.edu', signIn, VICTIM, 'step_up')).rejects.toThrow('Invalid');
+    // ...and the sign-in code still works for signing in.
+    expect(await service.verify('jo@school.edu', signIn, VICTIM)).toBe('jo@school.edu');
+  });
+
+  test('a step-up code cannot sign in', async () => {
+    const { service } = emailCodes();
+    const stepUp = await service.issue('jo@school.edu', VICTIM, 'step_up');
+    await expect(service.verify('jo@school.edu', stepUp, VICTIM)).rejects.toThrow('Invalid');
+    expect(await service.verify('jo@school.edu', stepUp, VICTIM, 'step_up')).toBe('jo@school.edu');
+  });
+
+  test('confirming a step-up uses up only step-up codes', async () => {
+    const { service, codes, issue } = emailCodes();
+    await issue('jo@school.edu');
+    const stepUp = await service.issue('jo@school.edu', VICTIM, 'step_up');
+    await service.verify('jo@school.edu', stepUp, VICTIM, 'step_up');
+    expect(codes.find((c) => c.purpose === 'sign_in')!.consumed_at).toBeNull();
+    await expect(service.verify('jo@school.edu', stepUp, VICTIM, 'step_up')).rejects.toThrow('Invalid');
+  });
+
+  test('step-up has the same per-client attempt limit', async () => {
+    const { service } = emailCodes();
+    const code = await service.issue('jo@school.edu', VICTIM, 'step_up');
+    for (let i = 0; i < MAX_ATTEMPTS_PER_CLIENT; i++) {
+      await expect(service.verify('jo@school.edu', wrong(code), ATTACKER, 'step_up')).rejects.toThrow('Invalid');
+    }
+    await expect(service.verify('jo@school.edu', code, ATTACKER, 'step_up')).rejects.toThrow('Invalid');
+    expect(await service.verify('jo@school.edu', code, VICTIM, 'step_up')).toBe('jo@school.edu');
+  });
+
+  test('send caps are counted per purpose', async () => {
+    const { service } = emailCodes();
+    for (let i = 0; i < MAX_SENDS_PER_CLIENT; i++) await service.send('jo@school.edu', VICTIM, 'step_up');
+    await expect(service.send('jo@school.edu', VICTIM, 'step_up')).rejects.toThrow('Wait a few minutes');
+    // Asking for confirmation codes does not stop the owner signing in.
+    await service.send('jo@school.edu', VICTIM);
+  });
+});
+
+describe('SessionService: step-up', () => {
+  function elevatable() {
+    const t = sessions();
+    t.prisma.session.updateManyAndReturn.mockImplementation(async ({ where, data }: any) => {
+      const hit = t.rows.filter((r) => matches(r, where));
+      for (const r of hit) Object.assign(r, data);
+      return hit.map((r) => ({ token_hash: r.token_hash, previous_token_hash: r.previous_token_hash }));
+    });
+    return t;
+  }
+
+  test('a new session is not elevated', async () => {
+    const t = elevatable();
+    const token = await t.signIn();
+    expect((await t.service.resolve(t.viaCookie(token)))!.elevatedUntil).toBeNull();
+  });
+
+  test('elevate sets ten minutes on this session only and drops its cached lookup at once', async () => {
+    const t = elevatable();
+    const token = await t.signIn();
+    const other = await t.signIn();
+    // Cached, not elevated.
+    expect((await t.service.resolve(t.viaCookie(token)))!.elevatedUntil).toBeNull();
+    expect(t.cache._store.has(`session:${sha(token)}`)).toBe(true);
+
+    const now = Date.now();
+    const until = await t.service.elevate('s1', now);
+    expect(until.getTime()).toBe(now + STEP_UP_WINDOW_MS);
+    expect(t.rows[0].elevated_until.getTime()).toBe(now + STEP_UP_WINDOW_MS);
+    expect(t.cache._store.has(`session:${sha(token)}`)).toBe(false);
+
+    expect((await t.service.resolve(t.viaCookie(token)))!.elevatedUntil).toBe(now + STEP_UP_WINDOW_MS);
+    // Served from the cache next time, still elevated.
+    expect((await t.service.resolve(t.viaCookie(token)))!.elevatedUntil).toBe(now + STEP_UP_WINDOW_MS);
+    expect((await t.service.resolve(t.viaCookie(other)))!.elevatedUntil).toBeNull();
+  });
+
+  test('a revoked session cannot be elevated', async () => {
+    const t = elevatable();
+    await t.signIn();
+    t.rows[0].revoked_at = new Date();
+    await expect(t.service.elevate('s1')).rejects.toThrow('Session not found');
   });
 });

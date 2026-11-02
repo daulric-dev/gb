@@ -9,7 +9,7 @@ import {
   errorMessage,
   inviteExpired,
   inviteExpiryLabel,
-  invitesPath,
+  listInvites,
   personLabel,
   type AddedAdmin,
   type OrganisationAdmin,
@@ -49,7 +49,7 @@ export default function OrganisationAdminsPage() {
         toast.error(errorMessage(err, "Failed to load administrators"));
       });
     // People invited who have not signed in yet.
-    api<OrganisationInvite[]>(invitesPath("organisation_admin"))
+    listInvites("organisation_admin")
       .then((data) => setInvites(Array.isArray(data) ? data : []))
       .catch(() => setInvites([]));
   }, []);

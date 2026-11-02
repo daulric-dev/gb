@@ -477,7 +477,7 @@ export interface PortalCalendarItem extends CalendarItem {
 
 export type CourseNotificationKind = "activity_published" | "announcement";
 
-/** A notice in the portal bell (`GET /portal/me/notifications`). */
+/** A notice in the portal bell (`QUERY /portal/me/notifications`). */
 export interface CourseNotification {
   id: string;
   kind: CourseNotificationKind;

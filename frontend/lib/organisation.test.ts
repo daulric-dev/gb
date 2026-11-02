@@ -3,9 +3,9 @@ import {
   CURRENT_SCHOOL_API,
   organisationSchoolApi,
   organisationSchoolPath,
-  schoolsQuery,
+  schoolsFilters,
   appointedMessage,
-  invitesPath,
+  invitesFilters,
   inviteExpired,
   inviteExpiryLabel,
 } from "@/lib/organisation";
@@ -36,23 +36,22 @@ describe("organisationSchoolPath", () => {
   });
 });
 
-describe("schoolsQuery", () => {
+describe("schoolsFilters", () => {
   test("leaves out empty parts", () => {
-    expect(schoolsQuery("  ", "all")).toBe("/organisation/schools");
-    expect(schoolsQuery(" north ", "inactive")).toBe(
-      "/organisation/schools?search=north&status=inactive",
-    );
+    expect(schoolsFilters("  ", "all")).toEqual({});
+    expect(schoolsFilters(" north ", "inactive")).toEqual({
+      search: "north",
+      status: "inactive",
+    });
   });
 });
 
 describe("invites", () => {
   const now = Date.parse("2026-11-01T10:00:00Z");
 
-  test("the list path, optionally of one kind", () => {
-    expect(invitesPath()).toBe("/organisation/invites");
-    expect(invitesPath("organisation_admin")).toBe(
-      "/organisation/invites?kind=organisation_admin",
-    );
+  test("the list filters, optionally of one kind", () => {
+    expect(invitesFilters()).toEqual({});
+    expect(invitesFilters("organisation_admin")).toEqual({ kind: "organisation_admin" });
   });
 
   test("expired once expiresAt has passed", () => {

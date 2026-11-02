@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -28,8 +28,7 @@ export default function StudentsPage() {
   const joinCodeOpen = useSignal(false);
 
   const fetchStudents = useCallback((query?: string) => {
-    const params = query ? `?search=${encodeURIComponent(query)}` : "";
-    api<Student[]>(`/students${params}`)
+    apiQuery<Student[]>("/students", query ? { search: query } : {})
       .then((data) => (students.value = data))
       .catch(() => toast.error("Failed to load students"))
       .finally(() => (loading.value = false));

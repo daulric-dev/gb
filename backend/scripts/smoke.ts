@@ -106,10 +106,10 @@ async function main() {
   check('teacher can create courses', perms.status === 200 && perms.data.permissions.includes('course:create'), perms.data);
 
   // ── courses ───────────────────────────────────────────────────────────────
-  const courses = await teacher('GET', '/courses');
+  const courses = await teacher('QUERY', '/courses', {});
   const bio = courses.data.find?.((c: any) => c.name === 'Biology 101');
   check('teacher lists Biology 101', courses.status === 200 && !!bio, courses.data);
-  check('admin sees every course', (await admin('GET', '/courses')).data.every?.((c: any) => c.role === 'admin'));
+  check('admin sees every course', (await admin('QUERY', '/courses', {})).data.every?.((c: any) => c.role === 'admin'));
   check('TA cannot change settings (403)', (await ta('PATCH', `/courses/${bio.id}`, { name: 'x' })).status === 403);
   const modules = await teacher('GET', `/courses/${bio.id}/modules`);
   check('modules with items', modules.status === 200 && modules.data[0]?.items?.length > 0, modules.data);
@@ -139,7 +139,7 @@ async function main() {
   } else {
     check('a published module to link into', !!publishedModule, modules.data);
   }
-  const search = await teacher('GET', '/students?search=Jor');
+  const search = await teacher('QUERY', '/students', { search: 'Jor' });
   check('student search (no 400)', search.status === 200, search.data);
   const people = await teacher('GET', `/courses/${bio.id}/people`);
   check('people: 12 students', people.status === 200 && people.data.students.length === 12, people.data.students?.length);
@@ -245,7 +245,7 @@ async function main() {
   /** Notices are written after the request returns; give them a moment. */
   const noticeFor = async (match: (n: any) => boolean) => {
     for (let i = 0; i < 20; i++) {
-      const r = await student('GET', '/portal/me/notifications?unread=true');
+      const r = await student('QUERY', '/portal/me/notifications', { unread: true });
       const hit = r.data?.find?.(match);
       if (hit) return hit;
       await new Promise((res) => setTimeout(res, 150));
@@ -263,7 +263,7 @@ async function main() {
       check('notification unread count', count.status === 200 && count.data.count >= 1, count.data);
       if (notice) {
         check('mark a notification read', (await student('POST', '/portal/me/notifications/read', { ids: [notice.id] })).status === 204);
-        const after = await student('GET', '/portal/me/notifications?unread=true');
+        const after = await student('QUERY', '/portal/me/notifications', { unread: true });
         check('read notice leaves the unread list', !after.data.some((n: any) => n.id === notice.id), after.data);
       }
     } finally {
@@ -349,7 +349,7 @@ async function main() {
         // Wait for the second reply's refresh of the same notice.
         const notice = await noticeFor((n) => n.kind === 'discussion_reply' && n.topicId === ownTopic && n.body?.includes('Second'));
         check('topic author is notified of replies (discussion_reply, topicId)', !!notice && notice.courseId === bio.id, notice);
-        const all = (await student('GET', '/portal/me/notifications?unread=true')).data.filter((n: any) => n.topicId === ownTopic);
+        const all = (await student('QUERY', '/portal/me/notifications', { unread: true })).data.filter((n: any) => n.topicId === ownTopic);
         check('replies coalesce into one unread notice', all.length === 1, all);
       }
     } finally {
@@ -452,10 +452,10 @@ async function main() {
   check('admin@demo.test is an organisation admin', adminMe.data?.is_org_admin === true && typeof adminMe.data?.organisation?.name === 'string', adminMe.data);
   check('teacher is not an organisation admin', me.data?.is_org_admin === false, me.data?.is_org_admin);
   check('teacher gets 403 on /organisation', (await teacher('GET', '/organisation')).status === 403);
-  check('student gets 403 on /organisation/schools', (await student('GET', '/organisation/schools')).status === 403);
+  check('student gets 403 on /organisation/schools', (await student('QUERY', '/organisation/schools', {})).status === 403);
   const overview = await admin('GET', '/organisation/overview');
   check('organisation overview', overview.status === 200 && overview.data.schools > 0 && isNum(overview.data.staff) && isNum(overview.data.students), overview.data);
-  const orgSchools = await admin('GET', `/organisation/schools?search=${encodeURIComponent((me.data.school.name ?? '').slice(0, 4))}`);
+  const orgSchools = await admin('QUERY', '/organisation/schools', { search: (me.data.school.name ?? '').slice(0, 4) });
   const demoRow = orgSchools.data?.find?.((s: any) => s.id === me.data.school.id);
   check('organisation schools finds the demo school with its admin and counts', orgSchools.status === 200 && demoRow?.admin?.email === 'admin@demo.test' && demoRow.staffCount > 0 && demoRow.studentCount > 0, demoRow);
   const admins = await admin('GET', '/organisation/admins');
@@ -479,7 +479,7 @@ async function main() {
     check('appointing an unknown email (404)', (await admin('PUT', `/organisation/schools/${orgSchoolId}/admin`, { email: 'nobody-smoke@demo.test' })).status === 404);
     const deactivated = await admin('PATCH', `/organisation/schools/${orgSchoolId}`, { isActive: false });
     check('deactivating a school', deactivated.status === 200 && deactivated.data.isActive === false, deactivated.data);
-    const inactive = await admin('GET', '/organisation/schools?status=inactive');
+    const inactive = await admin('QUERY', '/organisation/schools', { status: 'inactive' });
     check('inactive filter lists it', inactive.data?.some?.((s: any) => s.id === orgSchoolId), inactive.data);
   } finally {
     if (orgSchoolId) await db.school.delete({ where: { id: orgSchoolId } }).catch((e) => console.error('clean-up org school', e));

@@ -146,6 +146,7 @@ export function SsoPanel({
     try {
       const saved = await api<EmailDomain>(`${emailDomainsApi(apiBase)}/${domain.id}`, {
         method: "PATCH",
+        stepUp: true,
         body: {
           ssoProvider: chosen,
           azureTenantId: tenantValue || null,

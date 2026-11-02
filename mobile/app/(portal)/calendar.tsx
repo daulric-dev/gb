@@ -11,7 +11,7 @@ import {
   MessagesSquare,
   PenLine,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -136,7 +136,10 @@ function PortalCalendarScreen() {
       api<PortalCalendarItem[]>(`/portal/me/calendar?${qs}`)
         .then(setItems)
         .catch(() => setItems([])),
-      api<CourseNotification[]>("/portal/me/notifications?unread=true&limit=10")
+      apiQuery<CourseNotification[]>("/portal/me/notifications", {
+        unread: true,
+        limit: 10,
+      })
         .then(setNotices)
         .catch(() => setNotices([])),
     ]);

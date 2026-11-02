@@ -9,7 +9,7 @@ import {
   Patch,
   Post,
   Put,
-  Query,
+  QueryMethod,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -28,6 +28,7 @@ import { VersioningService } from '@/versioning/versioning.service';
 import {
   AdminEmailDto,
   CreateOrganisationSchoolDto,
+  ListOrganisationSchoolsQueryDto,
   SetupDto,
   UpdateOrganisationDto,
   UpdateOrganisationSchoolDto,
@@ -121,9 +122,10 @@ export class OrganisationController {
     return this.organisation.removeAdmin(req.user.id, userId);
   }
 
-  @Get('schools')
-  schools(@Query('search') search?: string, @Query('status') status?: string) {
-    return this.organisation.schools(search, status || 'all');
+  /** QUERY: `search` and `status` in the JSON body; empty lists every school. */
+  @QueryMethod('schools')
+  schools(@Body() dto: ListOrganisationSchoolsQueryDto) {
+    return this.organisation.schools(dto.search, dto.status ?? 'all');
   }
 
   @Post('schools')

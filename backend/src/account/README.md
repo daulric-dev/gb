@@ -20,27 +20,29 @@ None.
   Built so that someone who knows an address cannot lock its owner out: nothing they do from their own client address spends the owner's budget.
   - `send(email, ip)` allows 5 codes per (address, client) in 15 minutes (`MAX_SENDS_PER_CLIENT`) and 20 per address in an hour from anywhere (`MAX_SENDS_PER_EMAIL`, against email bombing; its 429 says codes were sent to the address, not that the caller asked too often). It issues a code and mails it with `MailService` using the `templates/sign-in-code.ts` email.
   - `issue(email, ip?)` creates a code without sending it. Earlier codes keep working. The client is stored only as a keyed hash (`hashClient`). The dev-only `POST /api/auth/dev/code` route uses it.
+  - **Purpose.** Every code has a `purpose` (`account.email_code.purpose`): `sign_in` (the default) or `step_up` (`send/issue/verify(..., 'step_up')`, the "Confirm it's you" code before changing single sign-on settings; see [src/auth](../auth/README.md)). Sends are counted, live codes looked up and codes used up per purpose, and a non-sign-in purpose is bound into the hash too, so a sign-in code never confirms a step-up and a step-up code never signs in. Step-up codes are mailed with `templates/step-up-code.ts`.
   - `verify(email, code, ip)` tries the code against every live (unused, unexpired) code for the address and, on a match, consumes all of them. Each guess first takes an attempt at every live code, conditionally: per (code, client) in `account.email_code_attempt` (`MAX_ATTEMPTS_PER_CLIENT`, 5) and in total in `email_code.attempts` (`MAX_TOTAL_ATTEMPTS`, 25, which ends the code for everyone). With at most 20 codes an hour, that is at most 500 guesses an hour at 1 in 10^8 each. Codes are valid for 5 minutes, compared in constant time, and the matched code is consumed with a conditional update so it signs in once. Every failure is the same 401.
 - **`SessionService`**: HttpOnly cookie sessions for the web, bearer tokens for the mobile app. `sessionTokenFrom(req)` reads the `gb_session` cookie, else an `Authorization: Bearer <token>` header (same token). When a sign-in request carries `X-GradeBook-Client: native` and no `Origin` header, `create()` also returns the new token in an `X-Session-Token` response header (with `Cache-Control: no-store`); the app keeps it in the device keychain (`mobile/src/lib/session-token.ts`), because native cookie storage drops `Secure` cookies over http and is unreliable across LAN addresses.
   - `create(reply, req, userId, method)` stores a session row (holding only a SHA-256 hash of the token, plus the user agent, a device label, the IP and `absolute_expires_at`), updates `app_user.last_sign_in_at` and sets the `gb_session` cookie. The device label comes from `device-label.ts` ("Chrome on macOS"; for the app, the `X-GradeBook-Device` header: "GradeBook app on iPhone 15 (iOS 19.0)"). When this device label + method was not seen for the user in 90 days (`account.known_device`, or for sessions from before device labels, the same user agent) and it is not the account's first sign-in, it fires a **"New sign-in to GradeBook"** email (fire and forget).
   - **Lifetime.** The expiry slides by 30 days (`SESSION_TTL_MS`) but is always capped at `absolute_expires_at`, `SESSION_MAX_AGE_DAYS` (default 90) after sign-in. Past either, the session is dead: 401, cookie cleared, and the app drops its token.
-  - `resolve(req, reply?)` returns `{ sessionId, userId, email }` or `null`. Lookups are cached for 60 seconds under `session:<hash>`, with the expiry in the entry so a cached session never outlives it. Revoked, expired or disabled sessions clear the cookie.
+  - `resolve(req, reply?)` returns `{ sessionId, userId, email, elevatedUntil }` or `null`. Lookups are cached for 60 seconds under `session:<hash>`, with the expiry in the entry so a cached session never outlives it. Revoked, expired or disabled sessions clear the cookie.
   - **Rotation.** When a session is used more than a day after its last renewal, `resolve()` renews it and **replaces the token**: one conditional `updateMany` on the current hash moves it to `previous_token_hash`, stores the new hash and sets `rotated_at`, `last_seen_at` and the new (capped) expiry. The new token (`rotatedToken(old)`, derived from the old one with `AUTH_SECRET`) goes out as the cookie for a cookie session and as `X-Session-Token` (with `Cache-Control: no-store`) for a bearer-token session only, on whatever status the response ends with. Two requests renewing at once derive the same token, so only one update wins and both hand out the same token.
   - **Grace and reuse.** The replaced token keeps working for `SESSION_ROTATION_GRACE_SECONDS` (default 120) after `rotated_at`, and each such request gets the current token again. Presented later, it still recovers the session (current token handed over again) for up to `LOST_ROTATION_GRACE_MS` (24 h) when the client plainly never got the rotation: the request has the session's user agent and the new token was never presented (`rotation_confirmed_at` null; set on its first use, and the new token is not cached until then). Otherwise it must be a copy: the whole session is revoked (`revoked_reason = 'token_reuse'`), the cookie cleared, a warning logged and a **"Suspicious activity"** email sent. Tokens older than the previous one match no row: a plain 401.
   - `list(userId, currentSessionId)`: the user's live sessions for Signed-in devices (`SessionSummary`: id, current, method, device, ip, createdAt, lastSeenAt, expiresAt; never hashes).
   - `revokeOwn(userId, sessionId, currentSessionId)` (404 for anyone else's), `revokeOthers(userId, currentSessionId)`, `revoke(req, reply, reason?)` (this device) and `revokeAll(userId, reason?)` (everywhere; returns the count). Every revocation stores `revoked_reason` and deletes the `session:<hash>` cache entries of the current **and** previous token, then once more a second later (for a lookup that was mid-flight), so it takes effect on the next request.
+  - `elevate(sessionId)` (step-up): sets the live session's `elevated_until` to now + `STEP_UP_WINDOW_MS` (10 minutes) and drops its cached lookups (current and previous token, then again a second later), so the next request sees it; 404 for a revoked or unknown session. `resolve` carries `elevatedUntil` (ms, or null) from the row or the cache; the window is compared when used, so a cached entry never extends it.
   - `clearCookie(reply)` for controllers that end the current session.
 - **`SessionAlertService`**: the security emails. `newSignIn()` and `tokenReuse()` look up the address, pick the link (`<FRONTEND_URL>/portal/settings#devices` for students, `/dashboard/settings#devices` for staff) and send through `MailService`. Off with `SESSION_ALERTS_ENABLED=false`; skipped (logged) when SMTP is not configured; never throws.
 
 ### Other exported helpers
 
 - `session.service.ts`:
-  - `SESSION_COOKIE` (`'gb_session'`), `SESSION_TTL_MS` (30 days), `RENEW_AFTER_MS` (1 day), `RevokeReason`, `SessionSummary`.
+  - `SESSION_COOKIE` (`'gb_session'`), `SESSION_TTL_MS` (30 days), `RENEW_AFTER_MS` (1 day), `STEP_UP_WINDOW_MS` (10 minutes), `RevokeReason`, `SessionSummary`.
   - `rotatedToken(token)` (the token a rotation replaces `token` with) and `deviceFingerprint(method, device)`.
   - `isIssuedSessionToken(token)` checks the HMAC tag on a cookie value without touching the database. The rate limiter uses it to give real sessions their own bucket.
-- `email-code.service.ts`: `CODE_LENGTH` (8), `normalizeEmail()` (trim and lowercase), `hashCode()` (an HMAC-SHA256 of `email:code` keyed with the auth secret), `hashClient()` (the same for a client address) and the caps `MAX_ATTEMPTS_PER_CLIENT`, `MAX_TOTAL_ATTEMPTS`, `MAX_SENDS_PER_CLIENT`, `MAX_SENDS_PER_EMAIL`.
+- `email-code.service.ts`: `CODE_LENGTH` (8), `normalizeEmail()` (trim and lowercase), `CodePurpose`, `hashCode(email, code, purpose?)` (an HMAC-SHA256 of `email:code`, prefixed with the purpose for anything but sign-in, keyed with the auth secret), `hashClient()` (the same for a client address) and the caps `MAX_ATTEMPTS_PER_CLIENT`, `MAX_TOTAL_ATTEMPTS`, `MAX_SENDS_PER_CLIENT`, `MAX_SENDS_PER_EMAIL`.
 - `secret.ts`: `authSecret()` returns `AUTH_SECRET`. It throws in production when the secret is missing or shorter than 32 characters. In development it falls back to a fixed insecure value and logs a warning once.
-- `templates/`: `signInCodeEmail(code)`, `newSignInEmail(...)`, `tokenReuseEmail(...)`. See [templates/README.md](./templates/README.md).
+- `templates/`: `signInCodeEmail(code)`, `stepUpCodeEmail(code)`, `newSignInEmail(...)`, `tokenReuseEmail(...)`. See [templates/README.md](./templates/README.md).
 - `device-label.ts`: `deviceLabel(userAgent, deviceHeader?, native?)` and `DEVICE_HEADER`.
 - `session.config.ts`: `sessionMaxAgeMs()`, `rotationGraceMs()`, `sessionAlertsEnabled()`, `KNOWN_DEVICE_WINDOW_MS` (90 days).
 
@@ -52,7 +54,8 @@ None.
   - `AccountService.userForVerifiedEmail()` after a code is verified;
   - `SessionService.create()` to start the session and `SessionService.revokeAll()` on account deletion;
   - `SESSION_TTL_MS` to report the session expiry.
-- `src/auth/auth.guard.ts` calls `SessionService.resolve()` on every guarded request (and puts `sessionId` on `req.user`) and `revoke()` for deactivated profiles. `src/auth/auth.controller.ts` calls `revoke()` on `POST /api/auth/logout` and `list`, `revokeOwn`, `revokeOthers`, `revokeAll` for the `/api/auth/sessions` routes.
+- `src/auth/auth.guard.ts` calls `SessionService.resolve()` on every guarded request (and puts `sessionId` and `elevatedUntil` on `req.user`) and `revoke()` for deactivated profiles. `src/auth/auth.controller.ts` calls `revoke()` on `POST /api/auth/logout` and `list`, `revokeOwn`, `revokeOthers`, `revokeAll` for the `/api/auth/sessions` routes.
+- `src/auth/step-up.service.ts` calls `EmailCodeService.send/verify/issue(..., 'step_up')` and `SessionService.elevate()`.
 - `src/school/school.service.ts` (`revokeMemberSessions`) and `src/organisation/organisation.service.ts` (`revokeUserSessions`, reason `organisation_admin`) call `revokeAll()` for admins signing someone out.
 - `src/retention/retention.service.ts` purges ended sessions and unused `known_device` rows (`KNOWN_DEVICE_WINDOW_MS`).
 - `src/sso/sso.service.ts` calls `AccountService.userForIdentity()` and `SessionService.create()` (for the provider sign-in and the mobile handoff).
@@ -73,8 +76,8 @@ These tables are in the `account` Postgres schema, defined in [`prisma/schema/ac
 
 - `account.app_user`: read and written (create, `email_verified_at`, `last_sign_in_at`).
 - `account.identity`: read and written by `userForIdentity`.
-- `account.email_code`: read and written by `EmailCodeService` (`ip_hash` and `account.email_code_attempt`, wrong guesses per code and client, added by `20261027130000_sign_in_codes`).
-- `account.session`: read and written by `SessionService` (columns added by `20261026100000_session_hardening`: `absolute_expires_at`, `previous_token_hash` (unique), `rotated_at`, `revoked_reason`, `device`).
+- `account.email_code`: read and written by `EmailCodeService` (`ip_hash` and `account.email_code_attempt`, wrong guesses per code and client, added by `20261027130000_sign_in_codes`; `purpose`, CHECK `sign_in` / `step_up`, added by `20261103130000_sso_audit`).
+- `account.session`: read and written by `SessionService` (columns added by `20261026100000_session_hardening`: `absolute_expires_at`, `previous_token_hash` (unique), `rotated_at`, `revoked_reason`, `device`; `elevated_until` by `20261103130000_sso_audit`).
 - `account.known_device`: `(user_id, fingerprint)` with `first_seen_at` / `last_seen_at`, refreshed at sign-in and each rotation; no IPs or user agents.
 
 ## Configuration
@@ -100,7 +103,7 @@ These tables are in the `account` Postgres schema, defined in [`prisma/schema/ac
 | `session.config.ts` | The session settings read from the environment. |
 | `device-label.ts` | `deviceLabel()`: friendly device names from the user agent or the app's device header. |
 | `secret.ts` | `authSecret()`. |
-| `templates/` | The sign-in code, new sign-in and token reuse emails. See [templates/README.md](./templates/README.md). |
+| `templates/` | The sign-in code, step-up code, new sign-in and token reuse emails. See [templates/README.md](./templates/README.md). |
 | `account.test.ts` | Tests for `EmailCodeService`, `SessionService`, `SessionAlertService` and `deviceLabel`. |
 
 ## Tests
@@ -112,6 +115,8 @@ cd backend && bun test src/account
 `account.test.ts` covers:
 
 - **Codes**: an 8-digit code is sent and the previous one retired; sending is refused after five codes in the window; a correct code works only once; a wrong code counts an attempt; expired codes and exhausted attempts are refused.
+- **Step-up codes**: mailed as a confirmation with a purpose-bound hash; a sign-in code cannot confirm a step-up and a step-up code cannot sign in; confirming uses up only step-up codes; the same per-client attempt limit; send caps counted per purpose.
+- **Step-up sessions**: a new session is not elevated; `elevate` sets ten minutes on that session only, drops its cached lookup at once and the next lookups (database, then cache) carry it; a revoked session cannot be elevated.
 - **Sessions** (against an in-memory session table): only a hash of the token is stored, with the device label and both expiries; `SESSION_MAX_AGE_DAYS` caps the first expiry; the app gets its token in a header; `resolve` caches the user, and a cached entry never outlives its expiry; revoked, expired, past-the-absolute-lifetime and disabled sessions return null and clear the cookie; sliding renewal is capped at the absolute lifetime.
 - **Rotation**: the daily renewal issues a new token (cookie for the web, `X-Session-Token` for a bearer token); the replaced token works within the grace period and gets the new token again; after it, the whole session is revoked (`token_reuse`), the user is alerted and the new token dies too; an older token is a plain 401; two concurrent renewals rotate once and hand out the same token.
 - **Signed-in devices**: listing (own live sessions, current first, no hashes); revoking your own session, someone else's is a 404; revoke-others; revocation drops the cache entries; logout.

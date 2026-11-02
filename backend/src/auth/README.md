@@ -23,6 +23,9 @@ All paths start with `/api/auth`. "Public" means no guard, though the routes are
 | DELETE | `/api/auth/sessions/:id` | `AuthGuard` | Signs out one of the caller's sessions (`{ revoked: 1, current }`). Another user's session, or one already ended, is a 404. Revoking the current session is a logout (the cookie is cleared). |
 | POST | `/api/auth/sessions/revoke-others` | `AuthGuard` | Signs out every other session of the caller (`{ revoked }`). |
 | POST | `/api/auth/sessions/revoke-all` | `AuthGuard` | Signs out every session including this one and clears the cookie (`{ revoked }`). |
+| POST | `/api/auth/step-up/send` | `AuthGuard`. Throttled like `otp/send`. | Step-up: emails an 8-digit "Confirm it's you" code to the **session's** address (never one from the body). A `step_up`-purpose `EmailCodeService` code: same expiry and send caps as sign-in, counted separately. `{ sent: true }`. |
+| POST | `/api/auth/step-up/verify` | `AuthGuard`. Throttled like `otp/verify`. | Body `{ code }` (`VerifyStepUpDto`). Checks the code (a sign-in code is refused, and a step-up code cannot sign in) with the same per-client and total attempt limits, then sets this session's `elevated_until` to now + 10 minutes and drops its cached lookup. `{ elevatedUntil }`; a wrong code is a **400** (not 401: the session is fine). |
+| POST | `/api/auth/dev/step-up-code` | `AuthGuard`. Hidden from Swagger. | **Dev only**, like `dev/code`: `{ code }` for the signed-in user instead of mailing it. 404 unless `NODE_ENV !== 'production'` and `ALLOW_DEV_LOGIN=true`. |
 | GET | `/api/auth/avatar` | `AuthGuard` | Streams the caller's avatar image (`ImagesService.getImageFromUserProfile`), cached privately for an hour. |
 | POST | `/api/auth/avatar/resumable` | `AuthGuard` | Starts an avatar upload: a presigned PUT ticket straight to storage (`CreateResumableUploadDto` from `src/images/dto`). |
 | POST | `/api/auth/avatar/complete` | `AuthGuard` | Checks the uploaded image and sets it as the avatar (`CompleteUploadDto`). |
@@ -42,8 +45,10 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 
 ### Services / exports
 
-- **`AuthGuard`** (exported). It resolves the session with `SessionService.resolve(req, reply)`, so a dead session clears its cookie. It then checks `user_profile.is_active`: only an explicit `false` blocks, and in that case the session is revoked and the guard answers 401. A user with no profile yet is let through, because they are still onboarding. On success it sets `req.user = { id, email, sessionId }` (`sessionId` marks "This device" in Signed-in devices). Any unexpected error becomes a 401.
+- **`AuthGuard`** (exported). It resolves the session with `SessionService.resolve(req, reply)`, so a dead session clears its cookie. It then checks `user_profile.is_active`: only an explicit `false` blocks, and in that case the session is revoked and the guard answers 401. A user with no profile yet is let through, because they are still onboarding. On success it sets `req.user = { id, email, sessionId, elevatedUntil }` (`sessionId` marks "This device" in Signed-in devices; `elevatedUntil` is the step-up window, ms or null). Any unexpected error becomes a 401.
 - **`AdminGuard`** (not provided by the module; controllers list it in `@UseGuards` after `AuthGuard`). It allows the caller only when `user_profile.role === 'admin'`, the profile is active, it has a `school_id`, **and** there is a `school_management` row with role `admin` for that school. That membership row is the source of truth. An **organisation admin** (`isOrgAdmin` from `src/organisation/org-admin.ts`) with an active profile and an active school passes too, with or without a membership: they administer every school in the install.
+- **`@RequireStepUp()` / `StepUpGuard`** (`step-up.guard.ts`). For routes that change single sign-on settings: after the route's own guards (who may act is decided first), 403 `{ statusCode: 403, code: 'STEP_UP_REQUIRED', message: "Confirm it's you to change single sign-on settings." }` unless `req.user.elevatedUntil` is in the future. On every email-domain write and sign-in app `PUT`, in both the school admin's and the organisation console's routes; never on reads. The web app's `api(path, { stepUp: true })` opens the "Confirm it's you" dialog on that code and retries.
+- **`StepUpService`** (internal). `send`, `verify`, `devCode` behind `step-up.controller.ts`.
 - **`ActiveSchoolService`** (internal). `list(userId)` and `switch(userId, schoolId)` behind the `/api/me` routes above.
 - **`AuthService`** (internal). Methods: `sendOtp`, `devCode`, `verifyOtp`, `getProfile`, `onboard`, `updateProfile`, `deleteAccount`. It also exports the helper `devLoginAllowed()`.
 
@@ -108,7 +113,7 @@ Schemas: [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma) and 
 
 | Variable | Default | Used for |
 |----------|---------|----------|
-| `ALLOW_DEV_LOGIN` | unset (off) | Set to `true` outside production to enable `POST /api/auth/dev/code`. |
+| `ALLOW_DEV_LOGIN` | unset (off) | Set to `true` outside production to enable `POST /api/auth/dev/code` and `POST /api/auth/dev/step-up-code`. |
 | `NODE_ENV` | | `production` always disables the dev code route. |
 | `ORG_ADMIN_EMAILS` | unset | Read through `src/organisation/org-admin.ts`: a listed, verified email makes the profile's `is_org_admin` true. |
 
@@ -118,11 +123,14 @@ Schemas: [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma) and 
 
 | File | Purpose |
 |------|---------|
-| `auth.module.ts` | Imports `ImagesModule`, `StudentAccountModule` and `EmailDomainModule`. Provides `AuthService` and `AuthGuard`, and exports `AuthGuard`. |
+| `auth.module.ts` | Imports `ImagesModule`, `StudentAccountModule` and `EmailDomainModule`. Provides `AuthService`, `AuthGuard`, `ActiveSchoolService` and `StepUpService`, and exports `AuthGuard`. |
 | `auth.controller.ts` | The `/api/auth/*` routes above. |
 | `auth.service.ts` | Sign-in, profile, onboarding and account deletion logic, plus `devLoginAllowed()`. |
 | `auth.guard.ts` | `AuthGuard`: session and active-profile check. |
 | `admin.guard.ts` | `AdminGuard`: school admin check. |
+| `step-up.guard.ts` | `StepUpGuard`, `@RequireStepUp()`, `STEP_UP_REQUIRED`. |
+| `step-up.service.ts`, `step-up.controller.ts` | The step-up routes above. |
+| `step-up.test.ts` | Guard 403 shape and window expiry, placement on every SSO write route (both consoles) and not on reads, send/verify use the `step_up` purpose and elevate only this session, wrong code elevates nothing, dev route dev-only. Purpose separation, attempt limits and the session cache are tested in `src/account/account.test.ts`. |
 | `transformer.ts` | Versioned response shapes. |
 | `dto/` | Request bodies. See [dto/README.md](./dto/README.md). |
 | `auth.service.test.ts` | Tests for `AuthService`. |

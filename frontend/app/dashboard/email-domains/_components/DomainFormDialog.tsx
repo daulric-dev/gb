@@ -85,9 +85,11 @@ export function DomainFormDialog({
         ? await api<EmailDomain>(`${emailDomainsApi(apiBase)}/${existing.id}`, {
             method: "PATCH",
             body: { audience: audience.value, ...staffFields },
+            stepUp: true,
           })
         : await api<EmailDomain>(emailDomainsApi(apiBase), {
             method: "POST",
+            stepUp: true,
             body: {
               domain: domain.value.trim(),
               audience: audience.value,

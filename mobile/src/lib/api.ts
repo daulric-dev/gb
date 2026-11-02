@@ -205,6 +205,23 @@ export async function api<T = unknown>(
   }
 }
 
+/**
+ * HTTP QUERY: a safe, idempotent read with its filters in a JSON body instead
+ * of the URL. The API's search and filter lists take it (courses, students,
+ * files, chat history, notices); a GET to those paths is a 404. React
+ * Native's fetch sends a custom method and its body as-is. `filters`
+ * defaults to `{}`, so every QUERY carries a JSON body. Builds from before
+ * QUERY still send GET to these paths and fail: raise MOBILE_MIN_VERSION to
+ * the first build with this (docs/content/backend/http-query.md).
+ */
+export function apiQuery<T = unknown>(
+  path: string,
+  filters: object = {},
+  options: Omit<RequestOptions, "method" | "body"> = {},
+): Promise<T> {
+  return api<T>(path, { ...options, method: "QUERY", body: filters });
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

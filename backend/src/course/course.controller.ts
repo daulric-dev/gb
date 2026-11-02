@@ -8,7 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Query,
+  QueryMethod,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -50,8 +50,9 @@ export class CourseController {
     private readonly prisma: PrismaService,
   ) {}
 
-  @Get()
-  async list(@Req() req: any, @Query() query: ListCoursesQueryDto) {
+  /** QUERY /courses: filters in the JSON body (empty body = every course). */
+  @QueryMethod()
+  async list(@Req() req: any, @Body() query: ListCoursesQueryDto) {
     return this.courses.list(req.user.id as string, query);
   }
 

@@ -7,7 +7,7 @@ as a single schema (`prisma.config.ts` points here).
 | --- | --- | --- |
 | `main.prisma` | - | Generator and datasource only |
 | `school.prisma` | `public` | Schools, user profiles, membership, roles and permissions, academic years and terms, announcements, email domains, push devices |
-| `account.prisma` | `account` | Our own auth: users, sessions, known devices (new sign-in alerts), email sign-in codes, linked SSO identities |
+| `account.prisma` | `account` | Our own auth: users, sessions (with the step-up window `elevated_until`), known devices (new sign-in alerts), email codes (`purpose` `sign_in` / `step_up`), linked SSO identities |
 | `course.prisma` | `course` | Courses, staff and students, modules and items, pages, assignment groups, attendance, course notifications |
 | `discussion.prisma` | `course` | Discussion topics, replies, read markers, per-course discussion settings |
 | `grading.prisma` | `grading` | Activities, quizzes, submissions, rubrics and rubric assessments, grade scales |
@@ -16,7 +16,7 @@ as a single schema (`prisma.config.ts` points here).
 | `chat.prisma` | `chat` | Conversations, members, messages |
 | `compliance.prisma` | `compliance` | The GDPR erasure log (`erasure_log`): ids-only record of every erasure, replayed after a backup restore (see `src/erasure`) |
 | `organisation.prisma` | `public` | The organisation that self-hosts the install (`organisation`, one row; the singleton index is in the migration, Prisma cannot express it; `features` holds its platform feature overrides) its admins (`organisation_admin`) and invites for people without an account yet (`organisation_invite`; its partial unique indexes are in the migration). `school.disabled_features` (in `school.prisma`) holds a school's opt-outs; see `src/features`. |
-| `sso.prisma` | `public` | Sign-in provider settings saved from the organisation console (`sso_provider_setting`: on/off, client ID, encrypted client secret, non-secret `extra`); see `src/sso`. |
+| `sso.prisma` | `public` | Each school's own sign-in apps (`school_sso_provider`, keyed by school and provider `google`/`azure`: on/off, client ID, client secret encrypted and bound to the school and provider, non-secret `settings`); no row = the env fallback. The SSO audit log (`sso_audit_log`): one row per change to a school's SSO settings, never a secret. See `src/sso`. |
 
 ## Changing the schema
 

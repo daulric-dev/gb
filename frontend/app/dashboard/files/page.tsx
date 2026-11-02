@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { markFilesRead } from "@/lib/file-notifications";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -56,7 +56,7 @@ export default function FilesPage() {
   const fetchFiles = useCallback((f: Filter) => {
     if (f === "own") return;
     loading.value = true;
-    api<FileItem[]>(`/files?filter=${f}`)
+    apiQuery<FileItem[]>("/files", { filter: f })
       .then((data) => (files.value = data))
       .catch(() => toast.error("Failed to load files"))
       .finally(() => (loading.value = false));

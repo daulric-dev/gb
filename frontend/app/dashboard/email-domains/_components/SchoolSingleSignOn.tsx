@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { KeyRound } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -12,11 +12,14 @@ import {
 } from "@/lib/sign-in-providers";
 import { EmailDomainsManager } from "./EmailDomainsManager";
 import { SignInApps } from "./SignInApps";
+import { SsoActivity } from "./SsoActivity";
 
 /**
  * One school's single sign-on, end to end: its own sign-in apps (Google,
  * Microsoft) and its email domains, each picking one of the providers the
- * school has available. Used on the school admin's Settings and Email
+ * school has available, and the Activity log of changes to them. Changes
+ * need a step-up confirmation (`stepUp: true` on the API calls; the dialog
+ * is `StepUpDialogHost`). Used on the school admin's Settings and Email
  * domains pages (the active school) and on a school's page in the
  * organisation console (`apiBase` = `organisationSchoolApi(id)`).
  */
@@ -40,11 +43,21 @@ export function SchoolSingleSignOn({
       });
   }, [apiBase]);
 
-  const onSaved = useCallback(
-    (saved: SchoolSsoProvider) =>
-      setProviders((list) => list?.map((p) => (p.key === saved.key ? saved : p)) ?? list),
-    [],
-  );
+  // Bumped after every change, so Activity shows it.
+  const [activityKey, setActivityKey] = useState(0);
+  const domainsLoaded = useRef(false);
+
+  const onSaved = useCallback((saved: SchoolSsoProvider) => {
+    setProviders((list) => list?.map((p) => (p.key === saved.key ? saved : p)) ?? list);
+    setActivityKey((k) => k + 1);
+  }, []);
+
+  const onDomainsChange = useCallback((list: EmailDomain[]) => {
+    setDomains(list);
+    // The first call is the initial load, not a change.
+    if (domainsLoaded.current) setActivityKey((k) => k + 1);
+    domainsLoaded.current = true;
+  }, []);
 
   const emailCodesOnly =
     providers !== null && domains !== null && usesEmailCodesOnly(providers, domains);
@@ -65,8 +78,9 @@ export function SchoolSingleSignOn({
         apiBase={apiBase}
         schoolName={schoolName}
         providers={providers}
-        onDomainsChangeAction={setDomains}
+        onDomainsChangeAction={onDomainsChange}
       />
+      <SsoActivity apiBase={apiBase} refreshKey={activityKey} />
     </div>
   );
 }

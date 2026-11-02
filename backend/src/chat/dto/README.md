@@ -9,7 +9,7 @@ Request body and query classes for the chat routes. Nest's global `ValidationPip
 | `create-conversation.dto.ts` | `CreateConversationDto` | `POST /api/chat/conversations` | `userId`: UUID of the other user. |
 | `create-channel.dto.ts` | `CreateChannelDto` | `POST /api/chat/channels` | `title`: string, 1-120 chars. `memberIds`: non-empty array of at most 200 UUIDs. Members must be staff of the caller's school; needs the `chat_channels` feature. |
 | `send-message.dto.ts` | `SendMessageDto` | `POST /api/chat/conversations/:id/messages` and `PATCH /api/chat/messages/:id` | `body`: string, 1-4000 chars. |
-| `list-messages.query.dto.ts` | `ListMessagesQueryDto` | `GET /api/chat/conversations/:id/messages` (query) | `before`: optional ISO 8601 timestamp (messages strictly before it). `limit`: optional integer 1-100, converted from the query string with `@Type(() => Number)`; the service defaults it to 30. |
+| `list-messages.query.dto.ts` | `ListMessagesQueryDto` | `QUERY /api/chat/conversations/:id/messages` (JSON body) | `before`: optional ISO 8601 timestamp (messages strictly before it). `limit`: optional integer 1-100, a JSON number (`@Type(() => Number)` also accepts a numeric string); the service defaults it to 30. |
 | `message-action.dto.ts` | `MessageActionDto` | `POST /api/chat/messages/:id/action` | `action`: `accept` or `dismiss`; the controller maps it to the `accepted` / `dismissed` action state. |
 
 ## Adding a new DTO

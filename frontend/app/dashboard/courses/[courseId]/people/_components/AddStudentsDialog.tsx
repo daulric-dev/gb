@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Search } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, apiQuery, ApiError } from "@/lib/api";
 import type { Student } from "@/app/dashboard/students/_components/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -51,7 +51,7 @@ export function AddStudentsDialog({
     search.value = "";
     selected.value = new Set();
     loading.value = true;
-    api<Student[]>("/students")
+    apiQuery<Student[]>("/students")
       .then((data) => (roster.value = data))
       .catch(() => toast.error("Failed to load students"))
       .finally(() => (loading.value = false));

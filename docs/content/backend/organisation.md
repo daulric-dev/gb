@@ -43,7 +43,7 @@ All under `/api/organisation`, behind `AuthGuard` and `OrganisationAdminGuard` (
 | GET | `/organisation/admins` | | `[{ userId, email, name, createdAt, fromEnv }]` (accounts from `ORG_ADMIN_EMAILS` have `fromEnv: true`) |
 | POST | `/organisation/admins` | `{ email }` | the new admin with `invited: null`; with no account for the email, `{ invited: { id, email, expiresAt } }` (see [Invites](#invites)) |
 | DELETE | `/organisation/admins/:userId` | | `{ removed: true }`; `400` for the last admin from the database, or for an admin who is only in `ORG_ADMIN_EMAILS` |
-| GET | `/organisation/schools?search=&status=active\|inactive\|all` | | `[{ id, name, code, schoolType, isActive, createdAt, admin: { userId, email, name } \| null, staffCount, studentCount, pendingAdminInvite: { id, email, expiresAt } \| null }]` |
+| QUERY | `/organisation/schools` | body `{ search?, status?: active\|inactive\|all }` | `[{ id, name, code, schoolType, isActive, createdAt, admin: { userId, email, name } \| null, staffCount, studentCount, pendingAdminInvite: { id, email, expiresAt } \| null }]` |
 | POST | `/organisation/schools` | `{ name, code?, schoolType?, adminEmail? }` | the school row; the caller is not made a member; `adminEmail` is appointed (or invited) as with `PUT .../admin`; plus `invited` |
 | GET | `/organisation/schools/:id` | | the school row plus `logoUrl`; `404` for an unknown school |
 | PATCH | `/organisation/schools/:id` | `{ name?, code?, schoolType?, isActive? }` | the school row |
@@ -53,14 +53,15 @@ All under `/api/organisation`, behind `AuthGuard` and `OrganisationAdminGuard` (
 | DELETE | `/organisation/schools/:id/logo` | | `{ logoUrl: null }` |
 | GET / PATCH | `/organisation/schools/:id/features` | PATCH: `{ features: { [key]: boolean } }` | as `/schools/current/features`, for that school |
 | PUT | `/organisation/schools/:id/admin` | `{ email }` | the school row plus `invited: { id, email, expiresAt } \| null`: an email with no account is invited instead |
-| GET | `/organisation/invites?kind=school_admin\|organisation_admin` | | open invites: `[{ id, kind, email, school, invitedBy, createdAt, expiresAt, expired }]` |
+| QUERY | `/organisation/invites` | body `{ kind?: school_admin\|organisation_admin }` | open invites: `[{ id, kind, email, school, invitedBy, createdAt, expiresAt, expired }]` |
 | DELETE | `/organisation/invites/:id` | | `{ revoked: true }`; `404` once accepted or revoked |
 | POST | `/organisation/invites/:id/resend` | | `{ id, email, expiresAt }`: 14 more days, emailed again |
 | POST | `/organisation/users/:userId/sessions/revoke` | | `{ revoked }` |
 | GET | `/organisation/features` | | `[{ key, label, description, enabled, default, requires }]` |
 | PATCH | `/organisation/features` | `{ features: { [key]: boolean } }` | the same list; `400` for an unknown key |
-| GET | `/organisation/sign-in/providers` | | `[{ key, label, enabled, available, clientId, hasSecret, secretSource, settings, redirectUri, saml, notes, ... }]` - never a secret |
-| PUT | `/organisation/sign-in/providers/:key` | `{ enabled?, clientId?, clientSecret?, settings? }` (secret write-only; `""` clears) | the same item; `400` when turned on without complete credentials |
+| GET | `/organisation/schools/:id/sso/providers` | | one school's providers `[{ key, label, enabled, available, configSource, clientId, hasSecret, secretSource, settings, redirectUri, saml, notes, ... }]` - never a secret; `404` for an unknown school |
+| PUT | `/organisation/schools/:id/sso/providers/:key` | `{ enabled?, clientId?, clientSecret?, settings? }` (secret write-only; `""` clears) | the same item; `400` when turned on without the school's own client ID and secret, or for `saml`; `403 STEP_UP_REQUIRED` without a recent step-up (also on the email-domain writes) |
+| QUERY | `/organisation/schools/:id/sso/audit` | body `{ limit?, before? }` | the school's SSO activity, newest first `[{ id, createdAt, action, domain, actor, actorVia, changes }]`; `404` for an unknown school |
 | GET | `/organisation/sign-in/domains` | | every school's email domains with `schoolId`, `schoolName` |
 | GET / POST | `/organisation/schools/:id/email-domains` | POST: as `/schools/email-domains` | as `/schools/email-domains`, for that school |
 | PATCH / DELETE | `/organisation/schools/:id/email-domains/:domainId` | PATCH: as `/schools/email-domains/:id` | the domain / `204` |
@@ -72,7 +73,7 @@ The organisation switches platform features (messaging, student messaging, chann
 
 ### Single sign-on
 
-Single sign-on is configured per school: each school's console page has a **Single sign-on** section (the same components as the school admin's *Email domains* page, with `apiBase` `/organisation/schools/<id>`) to add, verify and remove its email domains and, per domain, set audience, auto-join, staff role, provider (Google, Microsoft with tenant ID, SAML with the IdP details and our SP details to copy), "Require single sign-on", and a test sign-in link. The **Overview** lists every school's domains with links. The server-wide sign-in apps are secondary, under **Settings → Sign-in apps**: turn Google, Microsoft and SAML on or off, enter the Google/Microsoft client ID and secret (stored encrypted with a key derived from `AUTH_SECRET`; never shown again, only "Saved" or "From server config"), and copy the redirect URI and SAML service-provider details. A school's section names the providers without an app and links there. Settings saved there override the `SSO_PROVIDERS` / `GOOGLE_*` / `MICROSOFT_*` / `SAML_SP_ENTITY_ID` env vars, which remain the fallback. See [Single sign-on](../sso.md).
+Single sign-on is configured per school: each school's console page has a **Single sign-on** section (the same components as the school admin's *Settings > Single sign-on* and *Email domains* pages, with `apiBase` `/organisation/schools/<id>`). It has the school's own **Sign-in apps** - Google and Microsoft, each with an on/off switch, client ID, write-only client secret (stored encrypted, bound to the school; shown only as "Saved"), the redirect URI to copy and a status ("Not set up" by default) - and its **email domains**: add, verify, remove and, per domain, audience, auto-join, staff role, provider (only those available to the school: its own apps, the server's env fallback, or SAML with the IdP details and our SP details to copy), Microsoft tenant ID, "Require single sign-on" and a test sign-in link. The **Overview** lists every school's domains with links. The `SSO_PROVIDERS` / `GOOGLE_*` / `MICROSOFT_*` env vars are an optional install-wide fallback for schools that have not saved their own app. See [Single sign-on](../sso.md).
 
 ### Appointing a school admin
 

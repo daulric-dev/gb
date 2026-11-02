@@ -1,20 +1,20 @@
 import {
-  BadRequestException,
+  Body,
   Controller,
   Delete,
-  Get,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
-  Query,
+  QueryMethod,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { OrganisationAdminGuard } from './organisation-admin.guard';
-import { INVITE_KINDS, InviteService, type InviteKind } from './invite.service';
+import { InviteService } from './invite.service';
+import { ListInvitesQueryDto } from './dto/organisation.dto';
 
 type Req = { user: { id: string } };
 
@@ -30,13 +30,13 @@ type Req = { user: { id: string } };
 export class InviteController {
   constructor(private readonly invites: InviteService) {}
 
-  /** ?kind=school_admin|organisation_admin narrows it; all open ones otherwise. */
-  @Get()
-  list(@Query('kind') kind?: string) {
-    if (kind && !(INVITE_KINDS as readonly string[]).includes(kind)) {
-      throw new BadRequestException(`kind must be one of ${INVITE_KINDS.join(', ')}`);
-    }
-    return this.invites.list(kind as InviteKind | undefined);
+  /**
+   * QUERY with `{ "kind": "school_admin" | "organisation_admin" }` narrows it;
+   * an empty body lists every open invite. An unknown kind is a 400.
+   */
+  @QueryMethod()
+  list(@Body() dto: ListInvitesQueryDto) {
+    return this.invites.list(dto.kind);
   }
 
   @Delete(':id')

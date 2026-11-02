@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Search } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { apiQuery } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
@@ -74,11 +74,11 @@ export default function StudentsScreen() {
 
   const fetchStudents = useCallback(
     async (query?: string) => {
-      const params = query
-        ? `?search=${encodeURIComponent(query)}`
-        : "";
       try {
-        const data = await api<Student[]>(`/students${params}`);
+        const data = await apiQuery<Student[]>(
+          "/students",
+          query ? { search: query } : {},
+        );
         setStudents(data);
       } catch {
         toast.error("Failed to load students");

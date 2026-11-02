@@ -45,9 +45,15 @@ function settingsOver(rows: any[] = []) {
     rows[i] = { ...rows[i], ...data };
     return rows[i];
   });
-  prisma.school_sso_provider.create.mockImplementation(async ({ data }: any) => {
-    rows.push({ updated_at: new Date(), updated_by: null, settings: {}, ...data });
-    return rows.at(-1);
+  // save() inserts with ON CONFLICT DO NOTHING (createMany + skipDuplicates).
+  prisma.school_sso_provider.createMany.mockImplementation(async ({ data }: any) => {
+    let count = 0;
+    for (const r of data) {
+      if (rows.some((x) => x.school_id === r.school_id && x.provider === r.provider)) continue;
+      rows.push({ updated_at: new Date(), updated_by: null, settings: {}, ...r });
+      count++;
+    }
+    return { count };
   });
   const settings = new SsoSettingsService(prisma as any);
   const registry = new SsoRegistry(settings);

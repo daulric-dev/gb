@@ -105,7 +105,7 @@ All routes are under `/chat`, guarded by `AuthGuard`, `FeatureGuard` (the `messa
 | `GET` | `/chat/conversations` | `chat:read` | Your conversations, newest first, with preview + unread |
 | `POST` | `/chat/conversations` | `chat:create` | Start (or reuse) a DM: `{ userId }` (rules for students below) |
 | `POST` | `/chat/channels` | `chat:create` | Create a channel of staff (the `chat_channels` feature; never students) |
-| `GET` | `/chat/conversations/:id/messages` | `chat:read` | History, newest first; cursor via `?before=<iso>&limit=` |
+| `QUERY` | `/chat/conversations/:id/messages` | `chat:read` | History, newest first; cursor via the JSON body `{ before?: <iso>, limit? }` |
 | `POST` | `/chat/conversations/:id/messages` | `chat:create` | Send text: `{ body }` |
 | `POST` | `/chat/conversations/:id/read` | `chat:update` | Advance your read marker |
 | `PATCH` | `/chat/messages/:id` | `chat:update` | Edit your own message: `{ body }` |

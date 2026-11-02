@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Put,
+  QueryMethod,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -34,6 +35,9 @@ import { FeatureService } from '@/features/feature.service';
 import { UpdateFeaturesDto } from '@/features/feature.dto';
 import { SchoolSsoService } from '@/sso/school-sso.service';
 import { UpdateSchoolSsoProviderDto } from '@/sso/school-sso.dto';
+import { SsoAuditService } from '@/sso/sso-audit.service';
+import { ListSsoAuditQueryDto } from '@/sso/sso-audit.dto';
+import { RequireStepUp } from '@/auth/step-up.guard';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
@@ -48,6 +52,7 @@ export class SchoolController {
     private readonly logos: SchoolLogoService,
     private readonly features: FeatureService,
     private readonly schoolSso: SchoolSsoService,
+    private readonly ssoAudit: SsoAuditService,
   ) {}
 
   @Get()
@@ -124,8 +129,12 @@ export class SchoolController {
     return this.schoolSso.list(schoolId, req as FastifyRequest);
   }
 
-  /** Save one of the active school's sign-in apps. */
+  /**
+   * Save one of the active school's sign-in apps. Needs a recent step-up
+   * confirmation; logged to the SSO audit log.
+   */
   @RequirePermission('school', 'update')
+  @RequireStepUp()
   @Put('current/sso/providers/:key')
   async updateSsoProvider(
     @Req() req: any,
@@ -134,7 +143,28 @@ export class SchoolController {
   ) {
     const userId = req.user.id as string;
     const schoolId = await this.activeSchool(userId);
-    return this.schoolSso.update(schoolId, key, dto, userId, req as FastifyRequest);
+    return this.schoolSso.update(
+      schoolId,
+      key,
+      dto,
+      { id: userId, via: 'school_admin' },
+      req as FastifyRequest,
+    );
+  }
+
+  /**
+   * The active school's single sign-on activity, newest first: `limit`
+   * (default 50, at most 200) and `before` (the id of the last entry shown).
+   */
+  @RequirePermission('school', 'update')
+  @UseGuards(AdminGuard)
+  @QueryMethod('current/sso/audit')
+  async getSsoAudit(@Req() req: any, @Body() dto: ListSsoAuditQueryDto) {
+    const schoolId = await this.activeSchool(req.user.id as string);
+    return this.ssoAudit.list(schoolId, {
+      limit: dto.limit,
+      before: dto.before,
+    });
   }
 
   /**

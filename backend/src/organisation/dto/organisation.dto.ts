@@ -9,6 +9,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { INVITE_KINDS, type InviteKind } from '../invite.service';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -113,4 +114,30 @@ export class UpdateOrganisationSchoolDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export const SCHOOL_STATUS_FILTERS = ['active', 'inactive', 'all'] as const;
+export type SchoolStatusFilter = (typeof SCHOOL_STATUS_FILTERS)[number];
+
+/** QUERY /organisation/schools: the body; an empty body lists every school. */
+export class ListOrganisationSchoolsQueryDto {
+  @ApiPropertyOptional({ description: 'Matches the name or code' })
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
+  @ApiPropertyOptional({ enum: SCHOOL_STATUS_FILTERS, default: 'all' })
+  @IsOptional()
+  @IsIn(SCHOOL_STATUS_FILTERS)
+  status?: SchoolStatusFilter = 'all';
+}
+
+/** QUERY /organisation/invites: narrow to one kind; all open ones otherwise. */
+export class ListInvitesQueryDto {
+  @ApiPropertyOptional({ enum: INVITE_KINDS })
+  @IsOptional()
+  @IsIn(INVITE_KINDS)
+  kind?: InviteKind;
 }

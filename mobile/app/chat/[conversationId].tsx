@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Send } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { downloadAndOpen } from "@/lib/open-file";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
@@ -84,8 +84,9 @@ function ChatThreadScreen() {
 
   const loadMessages = useCallback(() => {
     if (!conversationId) return Promise.resolve();
-    return api<ChatMessage[]>(
-      `/chat/conversations/${conversationId}/messages?limit=${PAGE_LIMIT}`,
+    return apiQuery<ChatMessage[]>(
+      `/chat/conversations/${conversationId}/messages`,
+      { limit: PAGE_LIMIT },
     )
       .then((page) => {
         // API returns newest-first; store oldest-first, merged + deduped.

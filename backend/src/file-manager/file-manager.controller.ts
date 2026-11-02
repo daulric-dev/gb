@@ -6,7 +6,7 @@ import {
   Param,
   Patch,
   Post,
-  Query,
+  QueryMethod,
   Req,
   Res,
   UseGuards,
@@ -48,9 +48,10 @@ export class FileManagerController {
     private readonly folders: FolderService,
   ) {}
 
+  /** QUERY /files: `filter` and paging in the JSON body. */
   @RequirePermission('file', 'read')
-  @Get()
-  async list(@Req() req: any, @Query() query: ListFilesQueryDto) {
+  @QueryMethod()
+  async list(@Req() req: any, @Body() query: ListFilesQueryDto) {
     const userId: string = req.user.id;
     return this.files.list(userId, query.filter, {
       page: query.page,
@@ -85,8 +86,8 @@ export class FileManagerController {
 
   @RequirePermission('file', 'read')
   @RequireFeature('files')
-  @Get('folders/contents')
-  async browseFolder(@Req() req: any, @Query() query: BrowseFolderQueryDto) {
+  @QueryMethod('folders/contents')
+  async browseFolder(@Req() req: any, @Body() query: BrowseFolderQueryDto) {
     const userId: string = req.user.id;
     return this.files.browseFolder(userId, query.folderId ?? null);
   }
