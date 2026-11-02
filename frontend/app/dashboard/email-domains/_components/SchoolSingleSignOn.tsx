@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { KeyRound } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { EmailDomain } from "@/lib/email-domains";
 import {
   ssoProvidersApi,
@@ -13,6 +13,7 @@ import {
 import { EmailDomainsManager } from "./EmailDomainsManager";
 import { SignInApps } from "./SignInApps";
 import { SsoActivity } from "./SsoActivity";
+import { userMessage } from "@/lib/errors";
 
 /**
  * One school's single sign-on, end to end: its own sign-in apps (Google,
@@ -39,7 +40,7 @@ export function SchoolSingleSignOn({
       .then((list) => setProviders(Array.isArray(list) ? list : []))
       .catch((err) => {
         setProviders([]);
-        toast.error(err instanceof ApiError ? err.message : "Failed to load sign-in apps");
+        toast.error(userMessage(err, "Failed to load sign-in apps"));
       });
   }, [apiBase]);
 

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Download, Loader2 } from "lucide-react";
-import { api, apiQuery, ApiError } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import type {
   CopyCounts,
   Course,
@@ -35,6 +35,7 @@ import {
   EMPTY_DATE_CHOICE,
   type DateChoice,
 } from "./CopyDateFields";
+import { userMessage } from "@/lib/errors";
 
 interface SourceOption {
   value: string;
@@ -150,7 +151,7 @@ export function ImportContentDialog({
       toast.success(`Imported content from ${source?.name ?? "the course"}`);
       await onImportedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to import");
+      toast.error(userMessage(err, "Failed to import"));
       step.value = "choose";
     } finally {
       saving.value = false;

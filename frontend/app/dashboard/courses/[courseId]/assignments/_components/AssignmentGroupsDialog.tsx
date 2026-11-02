@@ -21,7 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Loader2, Plus, Trash2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { AssignmentGroup } from "@/lib/courses/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 /** "" means unweighted; otherwise a number 0-100. */
 function parseWeight(raw: string): number | null | undefined {
@@ -269,9 +270,7 @@ export function AssignmentGroupsDialog({
       newWeight.value = "";
       onChangedAction();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to add group",
-      );
+      toast.error(userMessage(err, "Failed to add group"));
     } finally {
       working.value = false;
     }
@@ -285,7 +284,7 @@ export function AssignmentGroupsDialog({
       });
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
       onChangedAction();
     }
   }
@@ -303,7 +302,7 @@ export function AssignmentGroupsDialog({
       });
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to remove");
+      toast.error(userMessage(err, "Failed to remove"));
     }
   }
 
@@ -323,7 +322,7 @@ export function AssignmentGroupsDialog({
       });
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to reorder");
+      toast.error(userMessage(err, "Failed to reorder"));
     } finally {
       order.value = null;
     }

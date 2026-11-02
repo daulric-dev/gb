@@ -249,7 +249,7 @@ export class StudentMembershipService {
           `redeem_school_join_code is missing from the database. Apply the pending migrations. Detail: ${(error as Error).message}`,
         );
         throw new BadRequestException(
-          'Joining by code is unavailable: the database is missing redeem_school_join_code. Apply the pending migrations.',
+          'Joining by code is unavailable right now. Please try again later.',
         );
       }
 

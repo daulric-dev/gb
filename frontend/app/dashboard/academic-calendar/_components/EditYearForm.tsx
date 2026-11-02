@@ -1,13 +1,14 @@
 "use client";
 
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AcademicYear } from "./types";
+import { userMessage } from "@/lib/errors";
 
 interface EditYearFormProps {
   year: AcademicYear;
@@ -36,7 +37,7 @@ export function EditYearForm({ year, onSuccess }: EditYearFormProps) {
       toast.success("Academic year updated");
       onSuccess();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to update";
+      const msg = userMessage(err, "Failed to update");
       toast.error(msg);
     } finally {
       loading.value = false;

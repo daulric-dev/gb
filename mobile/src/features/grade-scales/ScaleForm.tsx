@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Plus, Trash2 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Input } from "@/components/ui/Input";
@@ -15,6 +15,7 @@ import type {
   GradeScaleDetail,
   GradeScaleType,
 } from "./types";
+import { userMessage } from "@/lib/errors";
 
 /**
  * A band as edited in the form. Numeric fields are held as strings so the
@@ -188,7 +189,7 @@ export function ScaleForm({
       }
       onSaved();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save scale");
+      toast.error(userMessage(err, "Failed to save scale"));
     } finally {
       setSaving(false);
     }

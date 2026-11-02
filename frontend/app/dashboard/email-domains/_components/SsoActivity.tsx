@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { History, Loader2 } from "lucide-react";
-import { ApiError } from "@/lib/api";
 import {
   ACTION_LABEL,
   auditActor,
@@ -23,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { userMessage } from "@/lib/errors";
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
@@ -64,7 +64,7 @@ export function SsoActivity({
       .catch((err) => {
         if (!live) return;
         setEntries([]);
-        setError(err instanceof ApiError ? err.message : "Failed to load activity");
+        setError(userMessage(err, "Failed to load activity"));
       });
     return () => {
       live = false;
@@ -80,7 +80,7 @@ export function SsoActivity({
       setEntries((list) => [...(list ?? []), ...page]);
       setMore(page.length === SSO_AUDIT_PAGE);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load activity");
+      setError(userMessage(err, "Failed to load activity"));
     } finally {
       setLoadingMore(false);
     }

@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { userMessage } from "@/lib/errors";
 
 /**
  * First-run setup: a signed-in user names the organisation that runs this
@@ -71,7 +72,7 @@ export default function SetupPage() {
       if (err instanceof ApiError && err.status === 403) {
         setWaiting(true);
         setError({
-          message: err.message || "You are not allowed to set up this install.",
+          message: userMessage(err, "You are not allowed to set up this install."),
           forbidden: true,
         });
       } else if (err instanceof ApiError && err.status === 409) {
@@ -81,8 +82,7 @@ export default function SetupPage() {
         router.replace(homePathFor(profile.value));
       } else {
         setError({
-          message:
-            err instanceof ApiError && err.message ? err.message : "Setup failed. Try again.",
+          message: userMessage(err, "Setup failed. Try again."),
           forbidden: false,
         });
       }

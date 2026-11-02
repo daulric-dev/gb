@@ -28,6 +28,18 @@ frontend's design system and core flows.
 | `AuthProvider` (signals)   | `src/providers/AuthProvider` (context)         |
 | `sonner` toasts            | `src/providers/ToastProvider`                  |
 | `recharts`                 | `src/components/charts` (`react-native-svg`) |
+| `lib/errors.ts`            | `src/lib/errors.ts` (same rules)               |
+
+Every toast, alert and inline error goes through `userMessage(err, fallback)`
+in `src/lib/errors.ts`: a 4xx shows the API's message when it is plain text
+(stack frames, Prisma/SQL text, file paths, `TypeError`s, JSON parse errors and
+HTML pages are rejected, and long text is cut to 200 characters); a 5xx shows
+"Something went wrong. Please try again." plus the API's `errorId` as a
+reference; a request with no response shows "Can't reach the server…";
+anything else shows the fallback. Errors thrown with messages written for the
+user (`FriendlyError`, e.g. `UploadError` and the location errors) are shown.
+A render error shows `src/components/layout/ErrorScreen.tsx` (exported as the
+root `ErrorBoundary` from `app/_layout.tsx`) with "Try again".
 
 The search and filter lists (courses, students, files, folder contents, chat
 history, notices) use the HTTP `QUERY` method: `apiQuery(path, filters)` in

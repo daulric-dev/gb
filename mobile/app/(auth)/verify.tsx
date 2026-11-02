@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { OtpInput } from "@/components/ui/OtpInput";
 import { Text } from "@/components/ui/Text";
+import { userMessage } from "@/lib/errors";
 
 const CODE_LENGTH = 8;
 const RESEND_COOLDOWN = 60;
@@ -109,7 +110,7 @@ export default function VerifyScreen() {
     } catch (err) {
       // Shown against the boxes rather than only as a toast: a toast slides
       // away, and the next thing they do is retype the code right here.
-      setError(err instanceof ApiError ? err.message : "Verification failed");
+      setError(userMessage(err, "Verification failed"));
       setCode("");
       // A wrong code may be typed again after a resend; allow it.
       submittedCode.current = null;
@@ -134,9 +135,7 @@ export default function VerifyScreen() {
       setError(null);
       startCooldown();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to resend code",
-      );
+      toast.error(userMessage(err, "Failed to resend code"));
     } finally {
       setResending(false);
     }

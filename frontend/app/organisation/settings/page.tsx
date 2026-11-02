@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { errorMessage, type Organisation } from "@/lib/organisation";
+import { type Organisation } from "@/lib/organisation";
 import { useAuth } from "@/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgHeader } from "../_components/org-header";
+import { userMessage } from "@/lib/errors";
 
 export default function OrganisationSettingsPage() {
   const { refresh } = useAuth();
@@ -31,7 +32,7 @@ export default function OrganisationSettingsPage() {
         setOrg(data);
         setName(data?.name ?? "");
       })
-      .catch((err) => toast.error(errorMessage(err, "Failed to load the organisation")));
+      .catch((err) => toast.error(userMessage(err, "Failed to load the organisation")));
   }, []);
 
   async function save(e: React.FormEvent) {
@@ -52,7 +53,7 @@ export default function OrganisationSettingsPage() {
       // The name shows in the app chrome, which reads it from the profile.
       void refresh();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to rename the organisation"));
+      toast.error(userMessage(err, "Failed to rename the organisation"));
     } finally {
       setSaving(false);
     }

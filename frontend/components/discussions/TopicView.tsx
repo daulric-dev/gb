@@ -35,6 +35,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TopicEditorDialog } from "./TopicEditorDialog";
 import { formatWhen } from "./TopicList";
+import { userMessage } from "@/lib/errors";
 
 function Byline({
   author,
@@ -167,7 +168,7 @@ export function TopicView({
       await load();
       return true;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to post");
+      toast.error(userMessage(err, "Failed to post"));
       return false;
     }
   }
@@ -179,7 +180,7 @@ export function TopicView({
       await load();
       return true;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
       return false;
     }
   }
@@ -190,7 +191,7 @@ export function TopicView({
       await api(`${path}/replies/${replyId}`, { method: "DELETE" });
       await load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     }
   }
 
@@ -202,7 +203,7 @@ export function TopicView({
       toast.success("Topic deleted");
       router.push(backHref);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     }
   }
 

@@ -3,7 +3,8 @@ import { Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { useToast } from "@/providers/ToastProvider";
 import { downloadAndOpen } from "@/lib/open-file";
-import { errorMessage, href, type ModuleItem } from "@/lib/course";
+import { href, type ModuleItem } from "@/lib/course";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Opens a module item the way it should be opened on a phone: pages,
@@ -60,7 +61,7 @@ export function useOpenModuleItem(courseId: string, audience: "student" | "staff
               item.title,
             );
           } catch (err) {
-            toast.error(errorMessage(err, "Could not open this file"));
+            toast.error(userMessage(err, "Could not open this file"));
           } finally {
             setOpeningFile(null);
           }

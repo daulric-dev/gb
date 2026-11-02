@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type {
   Rubric,
   RubricAssessment,
@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 /** PUT /activities/:id/submissions/:studentId/rubric */
 export interface RubricMarkResult {
@@ -160,7 +161,7 @@ export function RubricMarkDialog({
       onSavedAction(result);
       onOpenChangeAction(false);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save mark");
+      toast.error(userMessage(err, "Failed to save mark"));
     } finally {
       working.value = false;
     }

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { ChevronRight, FolderClosed, FolderPlus, Upload } from "lucide-react-native";
-import { api, apiQuery, ApiError } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { uploadMyFile } from "@/lib/upload";
 import { uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -29,6 +29,7 @@ import type {
   FolderItem,
 } from "@/features/files/types";
 import { withFeature } from "@/components/layout/FeatureGate";
+import { userMessage } from "@/lib/errors";
 
 const TABS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
@@ -167,7 +168,7 @@ function FilesScreen() {
       toast.success("File uploaded");
       reload();
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Upload failed");
+      toast.error(userMessage(err, "Upload failed"));
     } finally {
       setUploading(false);
     }
@@ -195,7 +196,7 @@ function FilesScreen() {
       setNewFolderOpen(false);
       reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Failed to create folder");
+      toast.error(userMessage(e, "Failed to create folder"));
     }
   };
 
@@ -210,7 +211,7 @@ function FilesScreen() {
       setRenameFolder(null);
       reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Failed to rename folder");
+      toast.error(userMessage(e, "Failed to rename folder"));
     }
   };
 

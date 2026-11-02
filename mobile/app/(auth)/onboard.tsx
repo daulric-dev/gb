@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth, type UserProfile } from "@/providers/AuthProvider";
 import { homeRouteFor } from "@/lib/routing";
 import { fetchSuggestedProfile } from "@/lib/sso";
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Text } from "@/components/ui/Text";
+import { userMessage } from "@/lib/errors";
 
 type AccountType = "staff" | "student";
 
@@ -80,7 +81,7 @@ export default function OnboardScreen() {
       if (joined) toast.success(`You've joined ${joined.name}`);
       router.replace(homeRouteFor(updated ?? null));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Onboarding failed");
+      toast.error(userMessage(err, "Onboarding failed"));
     } finally {
       setLoading(false);
     }

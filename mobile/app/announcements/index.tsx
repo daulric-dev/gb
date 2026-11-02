@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Megaphone, Pencil, Plus, Trash2 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useAuth } from "@/providers/AuthProvider";
@@ -25,6 +25,7 @@ import { AnnouncementForm } from "@/features/announcements/AnnouncementForm";
 import { ReaderAvatars } from "@/features/announcements/ReaderAvatars";
 import type { Announcement } from "@/features/announcements/types";
 import { withFeature } from "@/components/layout/FeatureGate";
+import { userMessage } from "@/lib/errors";
 
 function authorName(a: Announcement): string {
   const name = `${a.author?.first_name ?? ""} ${a.author?.last_name ?? ""}`.trim();
@@ -80,7 +81,7 @@ function AnnouncementsScreen() {
       setConfirmDelete(null);
       fetchAnnouncements();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     } finally {
       setDeleting(false);
     }

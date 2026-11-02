@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -23,6 +23,7 @@ import { useSetupGate } from "@/lib/setup";
 import type { SsoSuggestedProfile } from "@/lib/sso";
 import { cn } from "@/lib/utils";
 import { GraduationCap, Briefcase } from "lucide-react";
+import { userMessage } from "@/lib/errors";
 
 type AccountType = "staff" | "student";
 
@@ -111,8 +112,7 @@ export default function OnboardPage() {
       if (school) toast.success(`You've joined ${school.name}`);
       router.push(homePathFor(next));
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Onboarding failed";
+      const message = userMessage(err, "Onboarding failed");
       toast.error(message);
     } finally {
       loading.value = false;

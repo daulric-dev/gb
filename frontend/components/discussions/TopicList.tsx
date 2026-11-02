@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Lock, MessagesSquare, Pin, Plus } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   authorName,
   type DiscussionList,
@@ -28,6 +28,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { TopicEditorDialog } from "./TopicEditorDialog";
+import { userMessage } from "@/lib/errors";
 
 export function formatWhen(iso: string | null) {
   if (!iso) return "";
@@ -84,7 +85,7 @@ export function TopicList({
         data.value = { ...data.value, studentsCanCreateTopics: on };
       }
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     }
   }
 

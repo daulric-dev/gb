@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 import {
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
+import { userMessage } from "@/lib/errors";
 
 /** Codes are issued as 12 characters shown in three groups: RXKT-9WMB-2FQH. */
 const CODE_LENGTH = 12;
@@ -60,9 +61,7 @@ export function JoinCodeForm() {
       toast.success("You have joined the school");
       router.replace("/(portal)");
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Could not redeem that code",
-      );
+      toast.error(userMessage(err, "Could not redeem that code"));
     } finally {
       setLoading(false);
     }

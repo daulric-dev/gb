@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { ClipboardList, FileText, Loader2, NotebookPen } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type {
   Activity,
   ActivityKind,
@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
+import { userMessage } from "@/lib/errors";
 
 const KINDS: {
   kind: ActivityKind;
@@ -127,7 +128,7 @@ export function CreateActivityDialog({
       // Straight into editing: a quiz needs questions before it can publish.
       router.push(`/dashboard/courses/${courseId}/assignments/${created.id}`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to create");
+      toast.error(userMessage(err, "Failed to create"));
     } finally {
       saving.value = false;
     }

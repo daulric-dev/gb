@@ -6,7 +6,6 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   appointedMessage,
-  errorMessage,
   inviteExpired,
   inviteExpiryLabel,
   listInvites,
@@ -32,6 +31,7 @@ import {
 import { OrgHeader } from "../_components/org-header";
 import { SignOutSessionsButton } from "../_components/sign-out-sessions";
 import { InviteActions } from "../schools/_components/pending-invite";
+import { userMessage } from "@/lib/errors";
 
 export default function OrganisationAdminsPage() {
   const { profile } = useProfile();
@@ -46,7 +46,7 @@ export default function OrganisationAdminsPage() {
       .then((data) => setRows(Array.isArray(data) ? data : []))
       .catch((err) => {
         setRows([]);
-        toast.error(errorMessage(err, "Failed to load administrators"));
+        toast.error(userMessage(err, "Failed to load administrators"));
       });
     // People invited who have not signed in yet.
     listInvites("organisation_admin")
@@ -72,7 +72,7 @@ export default function OrganisationAdminsPage() {
       setEmail("");
       load();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to add the administrator"));
+      toast.error(userMessage(err, "Failed to add the administrator"));
     } finally {
       setAdding(false);
     }
@@ -89,7 +89,7 @@ export default function OrganisationAdminsPage() {
       toast.success(`${who} is no longer an administrator`);
       load();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to remove the administrator"));
+      toast.error(userMessage(err, "Failed to remove the administrator"));
     } finally {
       setRemovingId(null);
     }

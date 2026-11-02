@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import {
   appointedMessage,
-  errorMessage,
   personLabel,
   SCHOOL_TYPES,
   type AppointedSchool,
@@ -28,6 +27,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { userMessage } from "@/lib/errors";
 
 type SchoolForm = {
   name: string;
@@ -143,7 +143,7 @@ function SchoolFormBody({
       onSaved();
     } catch (err) {
       toast.error(
-        errorMessage(err, editing ? "Failed to update the school" : "Failed to add the school"),
+        userMessage(err, editing ? "Failed to update the school" : "Failed to add the school"),
       );
     } finally {
       setSaving(false);
@@ -300,7 +300,7 @@ function AppointAdminForm({
       onClose();
       onAppointed();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to appoint the admin"));
+      toast.error(userMessage(err, "Failed to appoint the admin"));
     } finally {
       setSaving(false);
     }

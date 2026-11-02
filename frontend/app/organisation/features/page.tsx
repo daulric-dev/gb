@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { errorMessage } from "@/lib/organisation";
 import {
   applyFeatureToggle,
   changedFeatures,
@@ -22,6 +21,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgHeader } from "../_components/org-header";
+import { userMessage } from "@/lib/errors";
 
 function toMap(list: OrganisationFeature[]): Record<string, boolean> {
   return Object.fromEntries(list.map((f) => [f.key, f.enabled]));
@@ -39,7 +39,7 @@ export default function OrganisationFeaturesPage() {
         setFeatures(list);
         setDraft(toMap(list));
       })
-      .catch((err) => toast.error(errorMessage(err, "Failed to load features")));
+      .catch((err) => toast.error(userMessage(err, "Failed to load features")));
   }, []);
 
   const changes = features ? changedFeatures(toMap(features), draft) : {};
@@ -59,7 +59,7 @@ export default function OrganisationFeaturesPage() {
       // The admin's own school may have just gained or lost something.
       void refreshSilently();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to save features"));
+      toast.error(userMessage(err, "Failed to save features"));
     } finally {
       setSaving(false);
     }

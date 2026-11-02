@@ -196,11 +196,15 @@ describe('StudentMembershipService.joinByCode', () => {
     expect(String((err as Error).message)).toContain('Invalid or expired');
   });
 
-  test('a missing migration says so', async () => {
+  test('a missing migration is logged, and the user gets a plain message', async () => {
     const { svc } = joiner(
       raised('function public.redeem_school_join_code does not exist', '42883'),
     );
     const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
-    expect(String((err as Error).message)).toContain('pending migrations');
+    expect(err).toBeInstanceOf(BadRequestException);
+    const message = String((err as Error).message);
+    expect(message).toBe('Joining by code is unavailable right now. Please try again later.');
+    expect(message).not.toContain('redeem_school_join_code');
+    expect(message).not.toContain('migration');
   });
 });

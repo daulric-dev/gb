@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Join a course with the code a teacher shares: typed here, or scanned from
@@ -62,9 +63,7 @@ export function JoinCourseSheet({
       setError(
         err instanceof ApiError && err.status === 404
           ? "No open course uses that code. Check it with your teacher - it may have been turned off or replaced."
-          : err instanceof ApiError
-            ? err.message
-            : "Could not join the course",
+          : userMessage(err, "Could not join the course"),
       );
     } finally {
       setJoining(false);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { termLabel, type AcademicYear, type Term } from "./types";
 import { CreateTermForm } from "./CreateTermForm";
 import { EditTermForm } from "./EditTermForm";
 import { usePermissions } from "@/providers/PermissionsProvider";
+import { userMessage } from "@/lib/errors";
 
 
 function YearSectionSkeleton() {
@@ -93,7 +94,7 @@ export function TermsTab({
       toast.success("Term deleted");
       fetchAllTerms();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to delete";
+      const msg = userMessage(err, "Failed to delete");
       toast.error(msg);
     }
   }

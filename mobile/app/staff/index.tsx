@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { UsersRound } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
 import { useAuth } from "@/providers/AuthProvider";
@@ -20,6 +20,7 @@ import type {
   SchoolMember,
 } from "@/features/staff/types";
 import { memberName } from "@/features/staff/types";
+import { userMessage } from "@/lib/errors";
 
 const ROLE_ORDER: MemberRole[] = ["admin", "teacher", "member"];
 
@@ -98,7 +99,7 @@ export default function StaffScreen() {
       toast.success(`${memberName(member.user)} has been removed.`);
       setConfirmRemove(null);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to remove member");
+      toast.error(userMessage(err, "Failed to remove member"));
     } finally {
       setRemovingId(null);
     }

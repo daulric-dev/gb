@@ -15,7 +15,7 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { ActivityRubric, AssignmentGroup } from "@/lib/courses/types";
 import {
   ACTIVITY_KIND_LABEL,
@@ -65,6 +65,7 @@ import {
   ActivityStatusBadge,
 } from "../_components/ActivityStatusBadge";
 import type { ActivityDetail, SubmissionRow } from "../_components/types";
+import { userMessage } from "@/lib/errors";
 
 const UNGROUPED = "none";
 
@@ -146,7 +147,7 @@ export default function CourseActivityPage() {
       load();
       return true;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
       return false;
     } finally {
       working.value = false;
@@ -199,7 +200,7 @@ export default function CourseActivityPage() {
       load();
       loadSubmissions();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : `Failed to ${path}`);
+      toast.error(userMessage(err, `Failed to ${path}`));
     } finally {
       working.value = false;
     }
@@ -211,7 +212,7 @@ export default function CourseActivityPage() {
       toast.success("Deleted");
       backToList();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     }
   }
 
@@ -224,7 +225,7 @@ export default function CourseActivityPage() {
       });
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to add");
+      toast.error(userMessage(err, "Failed to add"));
     } finally {
       working.value = false;
     }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Copy, KeyRound, Loader2 } from "lucide-react";
+import { userMessage } from "@/lib/errors";
 
 interface SchoolCodeStatus {
   activeCode: { expiresAt: string; issuedAt: string | null } | null;
@@ -80,9 +81,7 @@ export function SchoolJoinCodeDialog({
       issuedCode.value = result.code;
       load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to issue join code",
-      );
+      toast.error(userMessage(err, "Failed to issue join code"));
     } finally {
       working.value = false;
     }
@@ -96,9 +95,7 @@ export function SchoolJoinCodeDialog({
       toast.success("Join code revoked");
       load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to revoke join code",
-      );
+      toast.error(userMessage(err, "Failed to revoke join code"));
     } finally {
       working.value = false;
     }

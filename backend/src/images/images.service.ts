@@ -288,8 +288,9 @@ export class ImagesService {
 
     const head = await this.storage.exists(key);
     if (!head) {
+      this.logger.warn(`Staged image "${stagingPath}" not found`);
       throw new BadRequestException(
-        `File at "${stagingPath}" not found. Upload may not be complete yet.`,
+        'The upload could not be found. It may not be complete yet; try again.',
       );
     }
 

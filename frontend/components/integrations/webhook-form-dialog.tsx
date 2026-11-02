@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   draftOf,
   draftProblem,
@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Add a webhook (existing = null) or change one: name, URL (a warning for
@@ -90,7 +91,7 @@ export function WebhookFormDialog({
       }
       onOpenChangeAction(false);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save the webhook");
+      toast.error(userMessage(err, "Failed to save the webhook"));
     } finally {
       setSaving(false);
     }

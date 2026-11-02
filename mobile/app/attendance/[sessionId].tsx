@@ -18,6 +18,7 @@ import {
 } from "@/lib/attendance";
 import { CheckedInCard } from "@/features/attendance/CheckedInCard";
 import { withFeature } from "@/components/layout/FeatureGate";
+import { userMessage } from "@/lib/errors";
 
 const CODE_LENGTH = 4;
 
@@ -93,8 +94,7 @@ function CheckInScreen() {
         );
         setSession(result);
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Couldn't check you in";
+        const message = userMessage(err, "Couldn't check you in");
         setError(message);
         if (err instanceof ApiError) {
           if (err.status === 429) setLocked(true);

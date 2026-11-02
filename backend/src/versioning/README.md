@@ -9,7 +9,7 @@ Only version 1 exists today, and every v1 transformer is a pass-through. The web
 - **HTTP routes** - none.
 - **Services / exports** - `VersioningModule` is `@Global()` and exports `VersioningService`:
   - `register(namespace, { [version]: fn })` and `registerAll(prefix, { key: { [version]: fn } })` - namespaces are `<prefix>.<key>`, e.g. `student.list`.
-  - `resolve(req, namespace)` - the transformer for the request's `X-API-Version`, or the latest when there is no header. 400 when the namespace has no transformers, the header is not an integer, or that version is not registered for the namespace.
+  - `resolve(req, namespace)` - the transformer for the request's `X-API-Version`, or the latest when there is no header. A namespace with no transformers is a wiring bug: it throws a plain `Error`, which the global exception filter logs and answers as a generic 500. 400 when the header is not an integer, or that version is not registered for the namespace.
   - `getRegisteredNamespaces()`, `getVersions(namespace)`.
 - **Other**
   - `VersioningGuard` - registered globally as an `APP_GUARD` in `src/app.module.ts`, so it runs on every route. A missing header passes. A header that is not a positive integer, or is higher than the highest version registered anywhere, is a 400. (Per-namespace checks happen later, in `resolve`.)

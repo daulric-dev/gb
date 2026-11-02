@@ -6,12 +6,12 @@ import { toast } from "sonner";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import { userMessage } from "@/lib/errors";
 import {
   imageFileProblem,
   IMAGE_UPLOAD_TYPES,
   uploadSchoolLogo,
-  UploadError,
 } from "@/lib/files/upload";
 import { CURRENT_SCHOOL_API } from "@/lib/organisation";
 import { useAuth } from "@/providers/AuthProvider";
@@ -69,11 +69,7 @@ export function SchoolLogoSettings({
   }
 
   const failed = (err: unknown, fallback: string) =>
-    toast.error(
-      err instanceof ApiError || err instanceof UploadError
-        ? err.message
-        : fallback,
-    );
+    toast.error(userMessage(err, fallback));
 
   async function upload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

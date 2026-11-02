@@ -13,7 +13,7 @@ import {
   Trash2,
   Webhook as WebhookIcon,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { isFeatureDisabledError } from "@/lib/features";
 import {
   EVENT_TYPES_PATH,
@@ -35,6 +35,7 @@ import { SecretOnceDialog } from "./secret-once-dialog";
 import { WebhookDeliveries } from "./webhook-deliveries";
 import { IntegrationActivity } from "./integration-activity";
 import { DeliveryStatusBadge, when } from "./status-badge";
+import { userMessage } from "@/lib/errors";
 
 /**
  * One school's integrations: its webhooks (several allowed, each with its
@@ -68,7 +69,7 @@ export function SchoolIntegrations({
       .catch((err) => {
         if (!live) return;
         if (isFeatureDisabledError(err)) setOff(true);
-        else toast.error(err instanceof ApiError ? err.message : "Failed to load webhooks");
+        else toast.error(userMessage(err, "Failed to load webhooks"));
         setHooks([]);
       });
     return () => {
@@ -199,7 +200,7 @@ function WebhookRow({
     try {
       await fn();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : `Failed to ${label}`);
+      toast.error(userMessage(err, `Failed to ${label}`));
     } finally {
       setBusy(null);
     }

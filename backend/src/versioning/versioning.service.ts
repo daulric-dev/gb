@@ -34,9 +34,9 @@ export class VersioningService {
     const map = this.registry.get(namespace);
 
     if (!map || map.size === 0) {
-      throw new BadRequestException(
-        `No transformers registered for "${namespace}"`,
-      );
+      // A wiring bug, not the client's: the global filter logs it and
+      // answers a generic 500.
+      throw new Error(`No transformers registered for "${namespace}"`);
     }
 
     const latest = Math.max(...map.keys());

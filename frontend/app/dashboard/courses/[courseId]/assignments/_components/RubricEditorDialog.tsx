@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { Rubric } from "@/lib/courses/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 interface DraftRating {
   label: string;
@@ -171,7 +172,7 @@ export function RubricEditorDialog({
       onSavedAction(saved);
       onOpenChangeAction(false);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       working.value = false;
     }

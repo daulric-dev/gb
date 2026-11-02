@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, LocateFixed, MapPin } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { getCurrentPosition, type Position } from "@/lib/attendance";
 import type { AttendanceSessionDetail } from "@/lib/courses/types";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { userMessage } from "@/lib/errors";
 
 const QUICK_MINUTES = [2, 5, 10, 15];
 const RADII = [50, 100, 200, 500];
@@ -76,7 +77,7 @@ export function TakeAttendanceDialog({
     } catch (err) {
       position.value = null;
       checkLocation.value = false;
-      toast.error(err instanceof Error ? err.message : "Could not get location");
+      toast.error(userMessage(err, "Could not get location"));
     } finally {
       locating.value = false;
     }
@@ -117,9 +118,7 @@ export function TakeAttendanceDialog({
       onOpenChangeAction(false);
       router.push(`${base}/attendance/${session.id}`);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Could not start attendance",
-      );
+      toast.error(userMessage(err, "Could not start attendance"));
     } finally {
       saving.value = false;
     }

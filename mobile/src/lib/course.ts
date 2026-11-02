@@ -345,12 +345,3 @@ export function timeAgo(value: string | null | undefined): string {
   });
 }
 
-/** The API's message when there is one, else the fallback. */
-export function errorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) {
-    return err.name === "ApiError" || err.name === "UploadError"
-      ? err.message
-      : fallback;
-  }
-  return fallback;
-}

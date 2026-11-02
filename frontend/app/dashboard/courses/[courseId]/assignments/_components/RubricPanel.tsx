@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Copy, Pencil, Plus, Table2, Unlink } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { ActivityRubric, Rubric } from "@/lib/courses/types";
 import { RubricGrid } from "@/components/rubric/RubricGrid";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { RubricEditorDialog } from "./RubricEditorDialog";
+import { userMessage } from "@/lib/errors";
 
 /**
  * The activity's rubric: what is attached, and (for the teacher) picking one
@@ -71,7 +72,7 @@ export function RubricPanel({
       toast.success(rubricId ? "Rubric attached" : "Rubric detached");
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       working.value = false;
     }
@@ -87,7 +88,7 @@ export function RubricPanel({
       loadRubrics();
       editing.value = made;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to copy");
+      toast.error(userMessage(err, "Failed to copy"));
     } finally {
       working.value = false;
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import { QuestionForm, type QuestionPayload } from "./QuestionForm";
 import { QUESTION_KIND_LABEL, type QuizQuestion } from "./types";
+import { userMessage } from "@/lib/errors";
 
 /**
  * One quiz question: read-only until the teacher opens it, then the same
@@ -52,7 +53,7 @@ export function QuestionCard({
       toast.success("Question saved");
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       saving.value = false;
     }
@@ -65,7 +66,7 @@ export function QuestionCard({
       });
       onChangedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to remove");
+      toast.error(userMessage(err, "Failed to remove"));
     }
   }
 

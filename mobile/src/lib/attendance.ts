@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import * as Location from "expo-location";
+import { FriendlyError } from "@/lib/errors";
 
 export type AttendanceStatus = "present" | "late" | "absent" | "excused";
 export type AttendanceMethod = "self" | "teacher" | "auto" | "qr";
@@ -188,7 +189,7 @@ const LOCATION_TIMEOUT_MS = 15_000;
 export async function currentLocation(): Promise<LocationFix> {
   const permission = await Location.requestForegroundPermissionsAsync();
   if (!permission.granted) {
-    throw new Error(
+    throw new FriendlyError(
       "Location is off for GradeBook. Allow it in Settings to check in.",
     );
   }
@@ -196,7 +197,7 @@ export async function currentLocation(): Promise<LocationFix> {
     Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
     new Promise<never>((_, reject) =>
       setTimeout(
-        () => reject(new Error("Couldn't find your location. Try again.")),
+        () => reject(new FriendlyError("Couldn't find your location. Try again.")),
         LOCATION_TIMEOUT_MS,
       ),
     ),

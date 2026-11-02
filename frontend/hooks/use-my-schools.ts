@@ -10,7 +10,7 @@ import {
   switchActiveSchool,
   type MySchool,
 } from "@/lib/active-school";
-import { errorMessage } from "@/lib/organisation";
+import { userMessage } from "@/lib/errors";
 
 /**
  * The schools the signed-in staff member can switch between, reloaded when
@@ -48,7 +48,7 @@ export function useSwitchSchool() {
       router.push(path);
       router.refresh();
     } catch (err) {
-      toast.error(errorMessage(err, "Could not switch school"));
+      toast.error(userMessage(err, "Could not switch school"));
     } finally {
       setSwitching(null);
     }

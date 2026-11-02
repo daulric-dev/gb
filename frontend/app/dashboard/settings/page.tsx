@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useProfile } from "@/providers/AuthProvider";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { SchoolIntegrationSettings } from "./_components/school-integration-sett
 import { AccountSettings } from "@/components/account/account-settings";
 import { useMySchools } from "@/hooks/use-my-schools";
 import { managingViaOrganisation } from "@/lib/active-school";
+import { userMessage } from "@/lib/errors";
 
 export default function SettingsPage() {
   useSignals();
@@ -37,8 +38,7 @@ export default function SettingsPage() {
       toast.success("You have left the school.");
       router.push("/schools")
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Failed to leave school";
+      const message = userMessage(err, "Failed to leave school");
       toast.error(message);
       leaving.value = false;
     }

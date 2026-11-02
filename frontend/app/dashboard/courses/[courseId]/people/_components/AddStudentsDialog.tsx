@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, Search } from "lucide-react";
-import { api, apiQuery, ApiError } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import type { Student } from "@/app/dashboard/students/_components/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { userMessage } from "@/lib/errors";
 
 function studentName(s: Student) {
   return `${s.first_name ?? ""} ${s.last_name ?? ""}`.trim() || "Unnamed";
@@ -98,7 +99,7 @@ export function AddStudentsDialog({
       onOpenChangeAction(false);
       onAddedAction();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to enrol");
+      toast.error(userMessage(err, "Failed to enrol"));
     } finally {
       saving.value = false;
     }

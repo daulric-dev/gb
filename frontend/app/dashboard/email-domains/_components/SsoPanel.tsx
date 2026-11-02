@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { ExternalLink, KeyRound, Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { emailDomainsApi, type EmailDomain } from "@/lib/email-domains";
 import {
   isHttpsUrl,
@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { userMessage } from "@/lib/errors";
 
 /** Select value standing for "no provider" (Base UI items need a string). */
 const NONE = "none";
@@ -162,9 +163,7 @@ export function SsoPanel({
       toast.success(`Sign-in settings saved for ${domain.domain}`);
       onSavedAction(saved);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to save sign-in settings",
-      );
+      toast.error(userMessage(err, "Failed to save sign-in settings"));
     } finally {
       saving.value = false;
     }

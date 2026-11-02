@@ -1,6 +1,6 @@
 "use client";
 
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Check, Loader2, UserPlus, X } from "lucide-react";
 import type { JoinRequest } from "./types";
+import { userMessage } from "@/lib/errors";
 
 type Role = "admin" | "teacher" | "member" | null;
 type CustomRole = { id: string; name: string };
@@ -127,8 +128,7 @@ export function PendingRequestsTab({
       );
       onApproved?.();
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Failed to approve request";
+      const message = userMessage(err, "Failed to approve request");
       toast.error(message);
     } finally {
       actionLoading.value = false;
@@ -144,8 +144,7 @@ export function PendingRequestsTab({
       onChange(requests.filter((r) => r.id !== request.id));
       toast.success(`${getRequestName(request)}'s request has been rejected.`);
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Failed to reject request";
+      const message = userMessage(err, "Failed to reject request");
       toast.error(message);
     } finally {
       actionLoading.value = false;

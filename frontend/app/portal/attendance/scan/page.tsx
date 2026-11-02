@@ -131,7 +131,7 @@ function ScanCheckIn() {
         return;
       }
       if (err.status === 400 && /location/i.test(err.message)) {
-        setState({ kind: "location", session, error: err.message });
+        setState({ kind: "location", session, error: checkInErrorMessage(err) });
         return;
       }
       setState({

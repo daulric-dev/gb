@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { History, Loader2 } from "lucide-react";
-import { ApiError } from "@/lib/api";
 import {
   AUDIT_ACTION_LABEL,
   AUDIT_PAGE,
@@ -23,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { when } from "./status-badge";
+import { userMessage } from "@/lib/errors";
 
 const VIA: Record<IntegrationAuditEntry["actorVia"], string> = {
   school_admin: "School admin",
@@ -52,7 +52,7 @@ export function IntegrationActivity({ apiBase, refreshKey = 0 }: { apiBase?: str
       .catch((err) => {
         if (!live) return;
         setEntries([]);
-        setError(err instanceof ApiError ? err.message : "Failed to load activity");
+        setError(userMessage(err, "Failed to load activity"));
       });
     return () => {
       live = false;
@@ -68,7 +68,7 @@ export function IntegrationActivity({ apiBase, refreshKey = 0 }: { apiBase?: str
       setEntries((list) => [...(list ?? []), ...page]);
       setMore(page.length === AUDIT_PAGE);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load activity");
+      setError(userMessage(err, "Failed to load activity"));
     } finally {
       setLoadingMore(false);
     }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   applyFeatureToggle,
   changedFeatures,
@@ -16,6 +16,7 @@ import { FeatureToggleList } from "@/components/features/feature-toggle-list";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { userMessage } from "@/lib/errors";
 
 const ORG_LOCKED = "Turned off by your organisation";
 
@@ -58,7 +59,7 @@ function SchoolFeatureCard({ path }: { path: string }) {
       })
       .catch((err) =>
         toast.error(
-          err instanceof ApiError ? err.message : "Failed to load features",
+          userMessage(err, "Failed to load features"),
         ),
       );
   }, [path]);
@@ -80,9 +81,7 @@ function SchoolFeatureCard({ path }: { path: string }) {
       // Navigation everywhere reads the profile's features.
       void refreshSilently();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to save features",
-      );
+      toast.error(userMessage(err, "Failed to save features"));
     } finally {
       setSaving(false);
     }

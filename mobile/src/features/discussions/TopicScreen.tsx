@@ -24,7 +24,6 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { useToast } from "@/providers/ToastProvider";
 import {
   authorName,
-  errorMessage,
   initials,
   timeAgo,
   type DiscussionAuthor,
@@ -32,6 +31,7 @@ import {
   type DiscussionTopic,
 } from "@/lib/course";
 import { TopicEditorSheet } from "./TopicEditorSheet";
+import { userMessage } from "@/lib/errors";
 
 type Composer =
   | { mode: "reply"; parent: DiscussionReply | null }
@@ -143,7 +143,7 @@ export function TopicScreen({
       setDraft("");
       await load();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to post"));
+      toast.error(userMessage(err, "Failed to post"));
     } finally {
       setPosting(false);
     }
@@ -165,7 +165,7 @@ export function TopicScreen({
       setConfirm(null);
       await load();
     } catch (err) {
-      toast.error(errorMessage(err, "Failed to delete"));
+      toast.error(userMessage(err, "Failed to delete"));
     } finally {
       setDeleting(false);
     }

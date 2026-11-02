@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { uploadFile } from "@/lib/files/upload";
 import { formatMb, uploadSizeError, useUploadLimit } from "@/lib/files/upload-limit";
 import { useSignal } from "@preact/signals-react";
@@ -33,6 +33,7 @@ import { Markdown } from "@/components/markdown";
 import { RubricGrid } from "@/components/rubric/RubricGrid";
 import { cn } from "@/lib/utils";
 import { dueLabel, type PortalWorkDetail } from "../../_components/work-types";
+import { userMessage } from "@/lib/errors";
 
 export default function PortalWorkDetailPage() {
   useSignals();
@@ -110,7 +111,7 @@ export default function PortalWorkDetailPage() {
       written.value = {};
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to submit");
+      toast.error(userMessage(err, "Failed to submit"));
     } finally {
       working.value = false;
     }
@@ -137,13 +138,7 @@ export default function PortalWorkDetailPage() {
       toast.success("File attached — hand in when you are ready");
       load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Failed to upload",
-      );
+      toast.error(userMessage(err, "Failed to upload"));
     } finally {
       uploading.value = false;
       uploadProgress.value = 0;
@@ -167,7 +162,7 @@ export default function PortalWorkDetailPage() {
       toast.success("Handed in");
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to hand in");
+      toast.error(userMessage(err, "Failed to hand in"));
     } finally {
       working.value = false;
     }

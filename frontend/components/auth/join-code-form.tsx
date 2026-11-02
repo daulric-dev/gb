@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/providers/AuthProvider";
+import { userMessage } from "@/lib/errors";
 
 /** Codes are issued as 12 characters shown in three groups: RXKT-9WMB-2FQH. */
 const CODE_LENGTH = 12;
@@ -61,8 +62,7 @@ export function JoinCodeForm() {
       toast.success("You have joined the school");
       router.push("/portal");
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Could not redeem that code";
+      const message = userMessage(err, "Could not redeem that code");
       toast.error(message);
     } finally {
       loading.value = false;

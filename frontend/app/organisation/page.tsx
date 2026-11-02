@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
-  errorMessage,
   type OrganisationOverview,
 } from "@/lib/organisation";
 import { StatCard } from "@/app/dashboard/_components/StatCard";
 import { OrgHeader } from "./_components/org-header";
 import { SchoolDomains } from "./_components/school-domains";
+import { userMessage } from "@/lib/errors";
 
 type Tile = {
   icon: LucideIcon;
@@ -39,7 +39,7 @@ export default function OrganisationOverviewPage() {
   useEffect(() => {
     api<OrganisationOverview>("/organisation/overview")
       .then(setOverview)
-      .catch((err) => toast.error(errorMessage(err, "Failed to load overview")));
+      .catch((err) => toast.error(userMessage(err, "Failed to load overview")));
   }, []);
 
   return (

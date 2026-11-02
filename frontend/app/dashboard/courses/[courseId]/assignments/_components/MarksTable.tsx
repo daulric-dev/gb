@@ -13,7 +13,7 @@ import {
   Table2,
   Users,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { downloadFromUrl } from "@/lib/download";
 import type {
   ActivityKind,
@@ -54,6 +54,7 @@ import {
 import type { SubmissionRow } from "./types";
 import { RubricMarkDialog } from "./RubricMarkDialog";
 import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
+import { userMessage } from "@/lib/errors";
 
 /** What the grade and excuse endpoints answer with. */
 interface MarkResult {
@@ -171,7 +172,7 @@ export function MarksTable({
       replace(result);
       return true;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save mark");
+      toast.error(userMessage(err, "Failed to save mark"));
       return false;
     } finally {
       savingId.value = null;
@@ -189,7 +190,7 @@ export function MarksTable({
       toast.success(excused ? `${row.name} excused` : "Counting again");
       excusing.value = null;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       working.value = false;
     }

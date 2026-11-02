@@ -54,6 +54,7 @@ import {
   RenameFolderDialog,
   MoveFileDialog,
 } from "./FolderDialogs";
+import { userMessage } from "@/lib/errors";
 
 type DragInfo = { kind: "file" | "folder"; name: string };
 
@@ -122,7 +123,7 @@ export function FolderBrowser({
       toast.success("Moved");
       load(folderId.value);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to move file");
+      toast.error(userMessage(e, "Failed to move file"));
     }
   }
 
@@ -135,7 +136,7 @@ export function FolderBrowser({
       toast.success("Moved");
       load(folderId.value);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to move folder");
+      toast.error(userMessage(e, "Failed to move folder"));
     }
   }
 

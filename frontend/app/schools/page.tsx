@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import { homePathFor, isStudentProfile, ORGANISATION_PATH } from "@/lib/routing";
 import { useSetupGate } from "@/lib/setup";
@@ -30,6 +30,7 @@ import {
   LogOut,
   Search,
 } from "lucide-react";
+import { userMessage } from "@/lib/errors";
 
 interface School {
   id: string;
@@ -182,9 +183,7 @@ export default function SchoolsPage() {
         `Join request sent for ${match.schoolName} - waiting for admin approval.`,
       );
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to join the school",
-      );
+      toast.error(userMessage(err, "Failed to join the school"));
     } finally {
       domainJoining.value = false;
     }
@@ -223,7 +222,7 @@ export default function SchoolsPage() {
         );
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to submit join request";
+      const message = userMessage(err, "Failed to submit join request");
       toast.error(message);
       joiningId.value = null;
     }

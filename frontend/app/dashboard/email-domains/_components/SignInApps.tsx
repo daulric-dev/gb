@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   clientIdHint,
   draftOf,
@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { CopyRow } from "./CopyRow";
+import { userMessage } from "@/lib/errors";
 
 /**
  * One school's own sign-in apps: a row each for Google and Microsoft with an
@@ -95,7 +96,7 @@ function ProviderRow({
       toast.success(`${saved.label} saved`);
       onSaved(saved);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : `Failed to save ${p.label}`);
+      toast.error(userMessage(err, `Failed to save ${p.label}`));
     } finally {
       setSaving(false);
     }

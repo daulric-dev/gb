@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { ArrowLeft, Loader2, Pencil, Trash2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { CoursePage } from "@/lib/courses/types";
 import { formatDate } from "@/lib/courses/format";
 import { Markdown } from "@/components/markdown";
@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useCourse } from "../../_components/course-context";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
+import { userMessage } from "@/lib/errors";
 
 export default function CoursePageDetail() {
   useSignals();
@@ -86,7 +87,7 @@ export default function CoursePageDetail() {
       router.replace(`${base}/pages/${pageId}`);
       toast.success("Page saved");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       saving.value = false;
     }
@@ -103,7 +104,7 @@ export default function CoursePageDetail() {
       toast.success(isPublished ? "Published" : "Unpublished");
     } catch (err) {
       page.value = { ...page.value, isPublished: !isPublished };
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     }
   }
 
@@ -113,7 +114,7 @@ export default function CoursePageDetail() {
       toast.success("Page deleted");
       router.push(`${base}/pages`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     }
   }
 

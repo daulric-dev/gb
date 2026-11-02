@@ -14,7 +14,7 @@ import {
   Plus,
   Radio,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { downloadFromUrl } from "@/lib/download";
 import type {
   AttendanceCourseSummary,
@@ -59,6 +59,7 @@ import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { CountBadges } from "./_components/attendance-ui";
 import { TakeAttendanceDialog } from "./_components/TakeAttendanceDialog";
+import { userMessage } from "@/lib/errors";
 
 export default function CourseAttendancePage() {
   useSignals();
@@ -101,7 +102,7 @@ export default function CourseAttendancePage() {
         `${safe}-attendance.csv`,
       );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Export failed");
+      toast.error(userMessage(err, "Export failed"));
     } finally {
       exporting.value = false;
     }

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { TextArea } from "@/components/ui/TextArea";
 import type { Announcement } from "./types";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Create or edit an announcement. Pass `announcement` to edit; otherwise a new
@@ -52,7 +53,7 @@ export function AnnouncementForm({
       }
       onSuccess();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to save");
+      toast.error(userMessage(err, "Failed to save"));
     } finally {
       setLoading(false);
     }

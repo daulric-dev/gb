@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Lock, Pencil, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { usePermissions } from "@/providers/PermissionsProvider";
@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { RoleForm } from "@/features/roles/RoleForm";
 import { PermissionsEditor } from "@/features/roles/PermissionsEditor";
 import type { CatalogEntry, SchoolRole } from "@/features/roles/types";
+import { userMessage } from "@/lib/errors";
 
 export default function RolesScreen() {
   const router = useRouter();
@@ -77,7 +78,7 @@ export default function RolesScreen() {
       toast.success(`"${confirmDelete.name}" deleted`);
       setConfirmDelete(null);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete role");
+      toast.error(userMessage(err, "Failed to delete role"));
     } finally {
       setDeleting(false);
     }

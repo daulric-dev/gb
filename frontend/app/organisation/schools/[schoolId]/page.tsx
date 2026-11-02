@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import {
-  errorMessage,
   organisationSchoolApi,
   personLabel,
   schoolTypeLabel,
@@ -34,6 +33,7 @@ import { SignOutSessionsButton } from "../../_components/sign-out-sessions";
 import { AppointAdminDialog, SchoolFormDialog } from "../_components/school-dialogs";
 import { toggleSchoolActive, useOpenSchoolDashboard } from "../_components/school-actions";
 import { PendingAdminInvite } from "../_components/pending-invite";
+import { userMessage } from "@/lib/errors";
 
 const SCHOOLS_PATH = `${ORGANISATION_PATH}/schools`;
 
@@ -67,7 +67,7 @@ export default function OrganisationSchoolPage() {
         if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
           setMissing(true);
         } else {
-          toast.error(errorMessage(err, "Failed to load the school"));
+          toast.error(userMessage(err, "Failed to load the school"));
         }
       });
     return () => {

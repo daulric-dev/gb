@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import type {
   GradeScaleDetail,
   GradeScaleType,
 } from "./types";
+import { userMessage } from "@/lib/errors";
 
 function emptyBand(): BandInput {
   return {
@@ -156,7 +157,7 @@ export function ScaleForm({
       }
       onSavedAction();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to save scale";
+      const msg = userMessage(err, "Failed to save scale");
       toast.error(msg);
     } finally {
       saving.value = false;

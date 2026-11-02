@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { api, ApiError } from "@/lib/api";
-import { uploadAvatar, UploadError } from "@/lib/files/upload";
+import { api } from "@/lib/api";
+import { uploadAvatar } from "@/lib/files/upload";
 import { useAuth } from "@/providers/AuthProvider";
 import { AvatarCropDialog } from "@/components/dashboard/avatar-crop-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Camera, Loader2, Trash2 } from "lucide-react";
 import { SignedInDevices } from "@/components/account/signed-in-devices";
+import { userMessage } from "@/lib/errors";
 
 interface AccountProfile {
   id: string;
@@ -104,8 +105,7 @@ export function AccountSettings({
       toast.success("Profile updated");
       void refreshSilently();
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Failed to update profile";
+      const message = userMessage(err, "Failed to update profile");
       toast.error(message);
     } finally {
       saving.value = false;
@@ -119,8 +119,7 @@ export function AccountSettings({
       toast.success("Account deleted");
       router.push("/login");
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Failed to delete account";
+      const message = userMessage(err, "Failed to delete account");
       toast.error(message);
       deleting.value = false;
     }
@@ -155,11 +154,7 @@ export function AccountSettings({
       cropSrc.value = null;
       void refreshSilently();
     } catch (err) {
-      const message =
-        err instanceof ApiError || err instanceof UploadError
-          ? err.message
-          : "Failed to upload image";
-      toast.error(message);
+      toast.error(userMessage(err, "Failed to upload image"));
     } finally {
       uploading.value = false;
     }

@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { CheckCircle2, Paperclip, Upload } from "lucide-react-native";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -25,6 +25,7 @@ import { formatMb, uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { formatScore } from "@/lib/format-number";
 import { Markdown } from "@/components/ui/Markdown";
 import { RubricView } from "@/features/course/RubricView";
+import { userMessage } from "@/lib/errors";
 
 export default function WorkDetailScreen() {
   const router = useRouter();
@@ -97,7 +98,7 @@ export default function WorkDetailScreen() {
       setWritten({});
       await load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to submit");
+      toast.error(userMessage(err, "Failed to submit"));
     } finally {
       setWorking(false);
     }
@@ -121,7 +122,7 @@ export default function WorkDetailScreen() {
       toast.success("Handed in");
       await load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to hand in");
+      toast.error(userMessage(err, "Failed to hand in"));
     } finally {
       setWorking(false);
     }
@@ -155,13 +156,7 @@ export default function WorkDetailScreen() {
       );
       await load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Failed to upload",
-      );
+      toast.error(userMessage(err, "Failed to upload"));
     } finally {
       setUploading(false);
     }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { Plus, Megaphone, Pencil, Trash2 } from "lucide-react";
 import type { Announcement } from "./_components/types";
 import { AnnouncementForm } from "./_components/AnnouncementForm";
 import { ReaderAvatars } from "./_components/ReaderAvatars";
+import { userMessage } from "@/lib/errors";
 
 function formatWhen(iso: string | null) {
   if (!iso) return "";
@@ -76,7 +77,7 @@ export default function AnnouncementsPage() {
       toast.success("Announcement deleted");
       fetchAnnouncements();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete");
+      toast.error(userMessage(err, "Failed to delete"));
     }
   };
 

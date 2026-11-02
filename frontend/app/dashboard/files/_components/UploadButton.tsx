@@ -2,13 +2,13 @@
 
 import { useRef } from "react";
 import { toast } from "sonner";
-import { ApiError } from "@/lib/api";
 import { uploadFile } from "@/lib/files/upload";
 import { uploadSizeError, useUploadLimit } from "@/lib/files/upload-limit";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
+import { userMessage } from "@/lib/errors";
 
 export function UploadButton({
   onUploaded,
@@ -55,13 +55,7 @@ export function UploadButton({
     } catch (err) {
       // The scan and the signature check both report through here, so the
       // reason is worth showing rather than a flat "upload failed".
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Upload failed",
-      );
+      toast.error(userMessage(err, "Upload failed"));
     } finally {
       uploading.value = false;
       progress.value = 0;

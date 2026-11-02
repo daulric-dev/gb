@@ -16,7 +16,7 @@ import {
   Send,
   Users,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { Activity, CourseModule } from "@/lib/courses/types";
 import { ACTIVITY_KIND_LABEL, formatDate, formatDue } from "@/lib/courses/format";
 import { Markdown } from "@/components/markdown";
@@ -29,6 +29,7 @@ import {
   announcementAuthor,
   type CourseAnnouncement,
 } from "./_components/types";
+import { userMessage } from "@/lib/errors";
 
 function Stat({
   icon: Icon,
@@ -117,7 +118,7 @@ export default function CourseHomePage() {
       toast.success("Published. Enrolled students can see it now.");
       await reload();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to publish");
+      toast.error(userMessage(err, "Failed to publish"));
     } finally {
       publishing.value = false;
     }

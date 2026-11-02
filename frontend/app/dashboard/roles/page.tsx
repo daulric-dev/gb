@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { usePermissions } from "@/providers/PermissionsProvider";
@@ -28,6 +28,7 @@ import {
 import { RoleFormDialog } from "./_components/RoleFormDialog";
 import { PermissionsEditor } from "./_components/PermissionsEditor";
 import type { CatalogEntry, SchoolRole } from "./_components/types";
+import { userMessage } from "@/lib/errors";
 
 export default function RolesPage() {
   useSignals();
@@ -87,9 +88,7 @@ export default function RolesPage() {
       roles.value = roles.value.filter((r) => r.id !== role.id);
       toast.success(`"${role.name}" deleted`);
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to delete role",
-      );
+      toast.error(userMessage(err, "Failed to delete role"));
     } finally {
       deletingId.value = null;
     }

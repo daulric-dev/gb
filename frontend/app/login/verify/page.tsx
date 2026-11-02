@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/providers/AuthProvider";
 import {
   loginPath,
@@ -23,6 +23,7 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import { userMessage } from "@/lib/errors";
 
 const RESEND_COOLDOWN = 60;
 const CODE_LENGTH = 8;
@@ -85,8 +86,7 @@ function VerifyOtpForm() {
         router.push("/onboard");
       }
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Verification failed";
+      const message = userMessage(err, "Verification failed");
       // Shown in place rather than only as a toast: the toast disappears, and
       // the next thing they do is retype the code right here.
       error.value = message;
@@ -130,9 +130,7 @@ function VerifyOtpForm() {
       error.value = null;
       startCooldown();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Failed to resend code",
-      );
+      toast.error(userMessage(err, "Failed to resend code"));
     } finally {
       resending.value = false;
     }

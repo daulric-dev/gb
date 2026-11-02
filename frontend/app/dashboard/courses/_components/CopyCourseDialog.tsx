@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Copy, Loader2 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { CopiedCourse, Course } from "@/lib/courses/types";
 import type { TermOption, YearOption } from "@/lib/courses/calendar";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   EMPTY_DATE_CHOICE,
   type DateChoice,
 } from "./CopyDateFields";
+import { userMessage } from "@/lib/errors";
 
 /**
  * Copy a course into a new draft course: everything a teacher built, none of
@@ -90,7 +91,7 @@ export function CopyCourseDialog({
       open.value = false;
       router.push(`/dashboard/courses/${copy.id}`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to copy");
+      toast.error(userMessage(err, "Failed to copy"));
     } finally {
       saving.value = false;
     }

@@ -1,6 +1,6 @@
 # Common helpers (`src/common`)
 
-Small helper functions shared by many backend services. This folder is not a Nest module: nothing is registered or injected, files are imported directly with `@/common/...`. It holds converters that keep API responses in the JSON shapes clients expect now that the data layer is Prisma, and a lookup for the school a user is currently working in.
+Small helper functions shared by many backend services, plus the global exception filter. This folder is not a Nest module: nothing is injected, files are imported directly with `@/common/...`. It holds converters that keep API responses in the JSON shapes clients expect now that the data layer is Prisma, and a lookup for the school a user is currently working in.
 
 ## What it provides
 
@@ -31,6 +31,18 @@ HTTP `QUERY` support for the search and filter lists (see [docs/content/backend/
 
 `http-query.test.ts` checks every converted route (QUERY metadata, `@Body()` DTO, empty-body defaults, 400s) and, through `fastify.inject`, that a QUERY body reaches a handler, that an empty one is every default, that the old GET is a 404 and that the CORS preflight allows QUERY.
 
+### `exception.filter.ts`
+
+The app's global exception filter, registered in `createApp.ts` with `app.useGlobalFilters(new AppExceptionFilter(app.getHttpAdapter()))`. Clients must never see stack traces, Prisma or SQL text, or file paths.
+
+| Export | What it does |
+|--------|--------------|
+| `AppExceptionFilter` | `HttpException`s (validation 400s, throttler 429s, 404s from routing, custom bodies such as `FEATURE_DISABLED`, `STEP_UP_REQUIRED`, `update_required`) go through Nest's default handling unchanged, as do 4xx errors from Fastify or `http-errors` (bad JSON, body too large). Anything else is logged in full (`[errorId] METHOD /path failed` plus the stack, context `ExceptionsHandler`) and answered `500 { statusCode: 500, message: GENERIC_ERROR_MESSAGE, errorId }`. A response already sent (SSE, `@Res()` routes that hijacked the reply) is only ended. |
+| `GENERIC_ERROR_MESSAGE` | `'Something went wrong. Please try again.'` |
+| `newErrorId()` | 8 hex characters; quote it to find the log line. |
+
+Services must not build an `HttpException` from raw error text (`err.message`, `String(err)`): log the detail and throw a fixed, human message.
+
 ### `user-school.ts`
 
 | Export | What it does |
@@ -43,7 +55,7 @@ HTTP `QUERY` support for the search and filter lists (see [docs/content/backend/
 
 `user-school.ts` is imported by: `calendar/calendar.service.ts`, `chat/chat.controller.ts`, `chat/chat.service.ts`, `course/course-copy.service.ts`, `course/course.service.ts`, `dashboard/dashboard.service.ts`, `email-domain/email-domain.service.ts`, `file-manager/file-manager.service.ts`, `file-manager/folder.service.ts`, `permission/permission.service.ts`, `student/student.service.ts`, `term/term.service.ts`.
 
-`http-query.ts` is imported by `createApp.ts`.
+`http-query.ts` and `exception.filter.ts` are imported by `createApp.ts`.
 
 Nothing outside `backend/src` uses these files.
 
@@ -66,8 +78,9 @@ None.
 |------|---------|
 | `db-values.ts` | Response value converters and Prisma/Postgres error-code helpers. |
 | `user-school.ts` | `userSchoolId` lookup of the caller's current school. |
+| `exception.filter.ts` | `AppExceptionFilter`: generic 500s with an error id for unknown errors. |
 | `school-membership.ts` | `setSchoolMembership(tx, userId, schoolId, role)`: create or update a `school_management` row without Prisma `upsert` (the partial one-admin-per-school index makes its ON CONFLICT fail with 42P10). Used by organisation appoint-admin and join-request approval. |
-| `db-values.test.ts`, `user-school.test.ts` | Unit tests (see Tests). |
+| `db-values.test.ts`, `user-school.test.ts`, `exception.filter.test.ts` | Unit tests (see Tests). |
 
 ## Tests
 
@@ -76,6 +89,7 @@ cd backend && bun test src/common
 ```
 
 - `db-values.test.ts` - `dateOnly` (UTC day, null/undefined, invalid `Date` throws), `isoDate`, `num` (Decimal, bigint, numeric string, zero kept, non-numeric becomes `NaN`), `isUniqueViolation` / `isForeignKeyViolation` (Prisma `P2002`/`P2003`, SQLSTATE in `meta.code`, driver-adapter `originalCode`, plain pg errors, and that a `P2002`-coded object that is not a Prisma error is ignored), `isNotFound` (only a real Prisma `P2025`), `pgCode` precedence and SQLSTATE-shape filtering, and `raisedMessage` formatting.
+- `exception.filter.test.ts` - through `fastify.inject`: a `TypeError`, Prisma text and a thrown string become the generic 500 with an `errorId` that appears in the log; `HttpException`s, `FEATURE_DISABLED` / `STEP_UP_REQUIRED` / `update_required` bodies, throttler 429s and validation 400s are unchanged; route 404s, bad JSON (400) and too-large bodies (413) keep their status; a hijacked response is ended, not rewritten.
 - `user-school.test.ts` - `userSchoolId` returns the profile's school, `null` for no profile or no school, passes the query shape, and propagates database errors.
 
 ## Adding a helper

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Search, Trash2, UserPlus, Users } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type {
   CoursePeople,
   CourseStaffMember,
@@ -50,6 +50,7 @@ import { SectionHeader } from "../_components/SectionHeader";
 import { JoinCodeCard } from "./_components/JoinCodeCard";
 import { AddStaffDialog } from "./_components/AddStaffDialog";
 import { AddStudentsDialog } from "./_components/AddStudentsDialog";
+import { userMessage } from "@/lib/errors";
 
 const ROLE_ITEMS = [
   { value: "teacher", label: "Teacher" },
@@ -93,7 +94,7 @@ export default function CoursePeoplePage() {
       toast.success("Role updated");
       load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to update");
+      toast.error(userMessage(err, "Failed to update"));
       load();
     }
   }
@@ -116,7 +117,7 @@ export default function CoursePeoplePage() {
       load();
       if (r.kind === "student") void reload();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to remove");
+      toast.error(userMessage(err, "Failed to remove"));
     }
   }
 
