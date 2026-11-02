@@ -15,6 +15,7 @@ import { UploadLimitSettings } from "./_components/upload-limit-settings";
 import { SchoolLogoSettings } from "./_components/school-logo-settings";
 import { SchoolFeatureSettings } from "./_components/school-feature-settings";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
+import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { AccountSettings } from "@/components/account/account-settings";
 import { useMySchools } from "@/hooks/use-my-schools";
 import { managingViaOrganisation } from "@/lib/active-school";
@@ -57,6 +58,8 @@ export default function SettingsPage() {
       <SchoolFeatureSettings />
 
       <SchoolSsoSettings />
+
+      <SchoolIntegrationSettings />
 
       <AccountSettings
         profileExtra={

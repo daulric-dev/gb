@@ -24,6 +24,10 @@ All under `/api`. Path parameters stay in the path; every filter is optional, an
 | `QUERY /organisation/invites` | `ListInvitesQueryDto` | `kind` (`school_admin` / `organisation_admin`) |
 | `QUERY /schools/current/sso/audit` | `ListSsoAuditQueryDto` | `limit` (1-200, default 50), `before` (UUID of the last entry shown) |
 | `QUERY /organisation/schools/:id/sso/audit` | `ListSsoAuditQueryDto` | as above |
+| `QUERY /schools/current/webhooks/:id/deliveries` | `ListDeliveriesQueryDto` | `status` (`pending` / `succeeded` / `failed` / `abandoned`), `eventType`, `limit` (1-200, default 50), `before` (UUID of the last delivery shown) |
+| `QUERY /organisation/schools/:schoolId/webhooks/:id/deliveries` | `ListDeliveriesQueryDto` | as above |
+| `QUERY /schools/current/webhooks/audit` | `ListIntegrationAuditQueryDto` | `limit` (1-200, default 50), `before` (UUID) |
+| `QUERY /organisation/schools/:schoolId/webhooks/audit` | `ListIntegrationAuditQueryDto` | as above |
 
 Responses, guards, permissions, feature guards, throttling and `X-API-Version` handling are unchanged. An unknown property or a bad value is a **400** (the global `ValidationPipe` runs with `whitelist` and `forbidNonWhitelisted`).
 

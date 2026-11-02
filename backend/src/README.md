@@ -51,6 +51,7 @@ There is no row-level security in the database: guards and service code are the 
 | [grade-scale](./grade-scale/README.md) | Grade scales and bands (percentage to letter). |
 | [grading](./grading/README.md) | Activities (quiz, assignment, offline), submissions, assignment groups, rubrics, gradebook and CSV import. |
 | [images](./images/README.md) | Avatar uploads (direct and presigned) and the public avatar route. |
+| [integrations](./integrations/README.md) | School webhooks: signed event POSTs to school-chosen URLs (`WebhookEvents.emit`), retries, auto-disable, delivery log and audit; the `integrations` feature. Routes: `/schools/current/webhooks`, `/organisation/schools/:schoolId/webhooks`, `/webhooks/event-types`. |
 | [mail](./mail/README.md) | Global `MailService` over SMTP (nodemailer). |
 | [notifications](./notifications/README.md) | Push device registration and Expo push delivery. |
 | [organisation](./organisation/README.md) | The organisation that self-hosts the install: public first-run setup (`/setup`), organisation admins (`ORG_ADMIN_EMAILS` or `organisation_admin` rows) and their routes to create schools, appoint school admins and sign users out (`/organisation`). |
@@ -60,7 +61,7 @@ There is no row-level security in the database: guards and service code are the 
 | [prisma](./prisma/README.md) | Global `PrismaService`: Prisma 7 with the `pg` driver adapter. |
 | [queue](./queue/README.md) | Background job for file share notifications on BullMQ, or inline without Redis. |
 | [realtime](./realtime/README.md) | Redis (or in-process) pub/sub bus and presence tracking for SSE features. |
-| [retention](./retention/README.md) | Daily purge (advisory-locked) of soft-deleted files, folders, chat messages and discussion replies past `SOFT_DELETE_RETENTION_DAYS`, expired sessions and sign-in codes, and old erasure-log entries; `bun run retention:purge`. |
+| [retention](./retention/README.md) | Daily purge (advisory-locked) of soft-deleted files, folders, chat messages and discussion replies past `SOFT_DELETE_RETENTION_DAYS`, expired sessions and sign-in codes, old erasure-log entries and webhook deliveries; `bun run retention:purge`. |
 | [school](./school/README.md) | Schools, staff membership, join requests, members. |
 | [sso](./sso/README.md) | Single sign-on with our own OpenID Connect (Google, Microsoft) and SAML; adapter registry. |
 | [storage](./storage/README.md) | Global `StorageService` for S3-compatible object storage and presigned URLs. |

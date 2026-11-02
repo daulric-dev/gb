@@ -29,6 +29,7 @@ import { UploadLimitSettings } from "@/app/dashboard/settings/_components/upload
 import { SchoolLogoSettings } from "@/app/dashboard/settings/_components/school-logo-settings";
 import { SchoolFeatureSettings } from "@/app/dashboard/settings/_components/school-feature-settings";
 import { SchoolSingleSignOn } from "@/app/dashboard/email-domains/_components/SchoolSingleSignOn";
+import { SchoolIntegrations } from "@/components/integrations/school-integrations";
 import { SignOutSessionsButton } from "../../_components/sign-out-sessions";
 import { AppointAdminDialog, SchoolFormDialog } from "../_components/school-dialogs";
 import { toggleSchoolActive, useOpenSchoolDashboard } from "../_components/school-actions";
@@ -190,6 +191,30 @@ export default function OrganisationSchoolPage() {
           key={`sso-${school.id}`}
           apiBase={apiBase}
           schoolName={school.name}
+        />
+      </Card>
+
+      <Card id="integrations" className="space-y-4 p-6">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold">Integrations</h2>
+          <p className="text-sm text-muted-foreground">
+            Webhooks that send {school.name}&apos;s grades, attendance, people
+            and course events to its own systems.
+          </p>
+        </div>
+        <SchoolIntegrations
+          key={`integrations-${school.id}`}
+          apiBase={apiBase}
+          disabledHint={
+            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              Integrations are turned off. Turn on &ldquo;Integrations
+              (webhooks)&rdquo; in{" "}
+              <Link href="/organisation/features" className="underline">
+                Organisation → Features
+              </Link>{" "}
+              (and in this school&apos;s features above) to add webhooks.
+            </p>
+          }
         />
       </Card>
 

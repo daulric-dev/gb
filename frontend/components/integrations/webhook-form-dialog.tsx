@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -55,12 +55,9 @@ export function WebhookFormDialog({
   onCreatedAction: (result: WebhookWithSecret) => void;
   onSavedAction: (webhook: Webhook) => void;
 }) {
+  // Fresh fields each time: the parent remounts this (key) when it opens.
   const [draft, setDraft] = useState<WebhookDraft>(() => draftOf(existing));
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) setDraft(draftOf(existing));
-  }, [open, existing]);
 
   const set = (patch: Partial<WebhookDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const problem = draftProblem(draft);

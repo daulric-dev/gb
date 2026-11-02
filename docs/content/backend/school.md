@@ -316,4 +316,4 @@ The limit uploads in the active school are checked against, so clients can refus
 | `/onboard/pending` | Users with a pending request | Polls `/auth/me` every 10s and auto-redirects to `/dashboard` once approved. |
 | `/dashboard/staff` (Pending Members tab) | Admins only | Lists pending join requests with approve (with role picker) / reject actions. |
 | Sidebar → "Change School" | Any user | Submits a join request to switch schools. Does not change the active school until approved. |
-| `/dashboard/settings` | Any user | School selector goes through the join-request flow; name updates apply immediately. |
+| `/dashboard/settings` | Any user | School selector goes through the join-request flow; name updates apply immediately. School admins also get the school's settings sections, including **Integrations** (webhooks, once the organisation turns the `integrations` feature on - see [Webhooks](./webhooks.md)). |

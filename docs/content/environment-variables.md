@@ -72,6 +72,19 @@ Each install is self-hosted by one organisation, which may run several schools. 
 | --- | --- | --- | --- |
 | `ORG_ADMIN_EMAILS` | No | - | Comma list of account emails (verified) that are organisation admins without a row in `public.organisation_admin`. While set, only these accounts may run first-run setup (`POST /api/setup`). |
 
+### Integrations (webhooks)
+
+Only used while the organisation has the `integrations` feature on. See [Webhooks](./backend/webhooks.md).
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `WEBHOOK_MAX_ATTEMPTS` | No | `8` | Attempts per delivery (the first included) before it is given up (`abandoned`). The default spreads them over about 24 hours. |
+| `WEBHOOK_MAX_CONSECUTIVE_FAILURES` | No | `50` | Failed attempts in a row after which a webhook switches itself off and the school's admins are emailed. |
+| `WEBHOOK_DELIVERY_RETENTION_DAYS` | No | `30` | Days a delivery (and its payload, which holds personal data) is kept; purged by the daily retention job. |
+| `WEBHOOK_POLL_INTERVAL_MS` | No | `5000` | How often each API instance looks for due deliveries when Redis is off. With `USE_REDIS=true` a BullMQ queue sends them and the database is checked once a minute as a backstop. |
+
+`AUTH_SECRET` also keys the encryption of webhook signing secrets: changing it makes them unreadable (rotate each webhook's secret afterwards).
+
 ### Data retention and erasure log
 
 GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/src/erasure/README.md` and [Backups & GDPR](./backups.md)). A daily job purges rows that were soft-deleted longer ago than the retention period, and every erasure is written to `compliance.erasure_log` (ids only) and copied to object storage so it survives a database restore.
@@ -135,7 +148,7 @@ USE_REDIS=false
 | `DATABASE_URL`                                      | `src/prisma/prisma.service.ts`     | Prisma client (`pg` driver adapter); also `prisma.config.ts` |
 | `S3_*`                                              | `src/storage/storage.service.ts`   | Object storage client and presigned URLs                     |
 | `SMTP_*`, `MAIL_FROM`                               | `src/mail/`                        | Outgoing email                                               |
-| `AUTH_SECRET`                                       | `src/account/secret.ts`            | Hashes of sign-in codes and session tokens; key for SSO secrets (`src/sso/sso-secret.ts`) |
+| `AUTH_SECRET`                                       | `src/account/secret.ts`            | Hashes of sign-in codes and session tokens; key for SSO secrets (`src/sso/sso-secret.ts`) and webhook signing secrets (`src/integrations/webhooks/webhook-secret.ts`) |
 | `SESSION_MAX_AGE_DAYS`, `SESSION_ROTATION_GRACE_SECONDS`, `SESSION_ALERTS_ENABLED` | `src/account/session.config.ts` | Session lifetime, token rotation grace, security emails |
 | `GOOGLE_*`, `MICROSOFT_*`, `SAML_SP_ENTITY_ID`      | `src/sso/`                         | SSO adapters                                                 |
 | `FRONTEND_URL`                                      | `src/createApp.ts`                 | CORS `origin` configuration                                  |
@@ -144,6 +157,7 @@ USE_REDIS=false
 | `REDIS_URL`                                         | `src/cache/cache.service.ts`       | Redis connection URL for `ioredis`                           |
 | `RETENTION_PURGE_*`, `SOFT_DELETE_RETENTION_DAYS*` | `src/retention/retention.config.ts` | Daily purge of soft-deleted data                             |
 | `ERASURE_LOG_*`                                     | `src/erasure/erasure.config.ts`    | Erasure-log storage copy and retention                       |
+| `WEBHOOK_*`                                         | `src/integrations/config/webhook.config.ts` | Webhook retries, auto-disable, delivery retention, poll interval |
 
 ---
 
