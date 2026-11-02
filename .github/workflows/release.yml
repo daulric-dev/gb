@@ -37,31 +37,12 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="${INPUT_VERSION#v}"
-          fi
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "Invalid version: '$version'" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/release-resolve-version.sh
 
       - name: Build zip
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          name="gradebook-$VERSION"
-          # git archive only takes tracked files: no node_modules, build
-          # output or .env files.
-          git archive --format=zip --prefix="$name/" -o "$name.zip" HEAD \
-            frontend backend docs \
-            package.json bun.lock turbo.json tsconfig.json README.md LICENSE.md
-          sha256sum "$name.zip" > SHA256SUMS
-          cat SHA256SUMS
-          ls -lh "$name.zip"
+        run: bash .github/scripts/release-build-zip.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -81,6 +62,13 @@ jobs:
       contents: write
 
     steps:
+      # Before the download: checkout cleans the workspace, which would
+      # otherwise delete the downloaded zip.
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
@@ -92,11 +80,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.package.outputs.version }}
-        run: |
-          prerelease=()
-          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$TAG" "gradebook-$VERSION.zip" SHA256SUMS \
-            --verify-tag \
-            --title "GradeBook $VERSION" \
-            --generate-notes \
-            "${prerelease[@]}"
+        run: bash .github/scripts/release-publish.sh

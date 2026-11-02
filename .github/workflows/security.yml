@@ -85,8 +85,7 @@ jobs:
         continue-on-error: true
 
       - name: Run TruffleHog (report file)
-        run: |
-          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:3.97.9 git file:///repo --only-verified 2>&1 | tee trufflehog-report.txt || true
+        run: bash .github/scripts/security-trufflehog-report.sh
         continue-on-error: true
 
       - name: Upload secret detection reports
