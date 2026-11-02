@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { buildUrl } from "@/lib/api";
 import {
   FileText,
   GraduationCap,
@@ -29,11 +30,8 @@ import {
 } from "@/lib/chat";
 import { PresenceDot } from "./PresenceDot";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
 function fileContentUrl(fileId: string) {
-  return `${API_BASE}/api/files/${fileId}/content`;
+  return buildUrl(`/files/${encodeURIComponent(fileId)}/content`);
 }
 
 function messageTime(iso: string) {

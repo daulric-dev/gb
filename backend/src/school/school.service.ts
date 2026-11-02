@@ -416,6 +416,11 @@ export class SchoolService {
             await tx.school_management.deleteMany({
               where: { id: { in: gone.map((m) => m.id) } },
             });
+            // Leaving a school ends its chats for this user: no more reading,
+            // posting or live events from that school's conversations.
+            await tx.conversation_member.deleteMany({
+              where: { user_id: userId, conversation: { school_id: schoolId } },
+            });
             await this.erasure.record(tx, {
               kind: 'school_membership',
               subjectTable: 'public.school_management',
@@ -494,7 +499,8 @@ export class SchoolService {
     }
 
     // The membership, detaching the user (only if this was their active
-    // school) and the erasure-log entry commit together.
+    // school), their chat memberships in it and the erasure-log entry commit
+    // together.
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.school_management.deleteMany({
@@ -503,6 +509,13 @@ export class SchoolService {
         await tx.user_profile.updateMany({
           where: { id: membership.user_id, school_id: membership.school_id },
           data: { school_id: null, role: null },
+        });
+        // A removed member loses that school's chats with the membership.
+        await tx.conversation_member.deleteMany({
+          where: {
+            user_id: membership.user_id,
+            conversation: { school_id: membership.school_id },
+          },
         });
         await this.erasure.record(tx, {
           kind: 'school_membership',

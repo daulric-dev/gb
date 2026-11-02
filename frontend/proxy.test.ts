@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { NextRequest } from "next/server";
-import { proxy, SESSION_COOKIE } from "./proxy";
+import { getMiddlewareMatchers } from "next/dist/build/analysis/get-page-static-info";
+import { config, proxy, SESSION_COOKIE } from "./proxy";
 
 const ORIGIN = "http://app.test";
 
@@ -110,6 +111,38 @@ describe("proxy - CSP", () => {
       expect(img).toContain("https://cdn.example.com");
     } finally {
       keys.forEach((k, i) => (env[k] = prev[i]));
+    }
+  });
+});
+
+describe("proxy matcher", () => {
+  // Compiled the way Next compiles it at build time.
+  const matchers = getMiddlewareMatchers(config.matcher, {} as never).map(
+    (m: { regexp: string }) => new RegExp(m.regexp),
+  );
+  const runsOn = (path: string) => matchers.some((re) => re.test(path));
+
+  test("app routes run the proxy, dotted segments included", () => {
+    for (const path of ["/", "/dashboard", "/portal/x.y", "/portal/courses/v1.2/modules", "/login", "/scan/a.b.c"]) {
+      expect(runsOn(path)).toBe(true);
+    }
+  });
+
+  test("Next assets and static files are skipped", () => {
+    for (const path of [
+      "/_next/static/chunks/main.js",
+      "/_next/image",
+      "/favicon.ico",
+      "/icons/logo.png",
+      "/icons/logo.svg",
+      "/icon.png",
+      "/robots.txt",
+      "/sitemap.xml",
+      "/manifest.webmanifest",
+      "/fonts/a.woff2",
+      "/api/health",
+    ]) {
+      expect(runsOn(path)).toBe(false);
     }
   });
 });

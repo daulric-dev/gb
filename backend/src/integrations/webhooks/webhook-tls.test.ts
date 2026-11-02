@@ -59,7 +59,7 @@ describe('fetch TLS options', () => {
     expect(fetchTlsOptions('http://10.0.0.5/x', { verify: false, ca: 'PEM' })).toBeUndefined();
   });
 
-  test('sendWebhook hands them to fetch and reports tlsVerified', async () => {
+  test('sendWebhook passes TLS settings to the transport and reports tlsVerified', async () => {
     const seen: WebhookFetchInit[] = [];
     const fetchImpl = async (_u: string, init: WebhookFetchInit) => {
       seen.push(init);
@@ -72,13 +72,15 @@ describe('fetch TLS options', () => {
   });
 });
 
-// Live: Bun's fetch against a local HTTPS server with a self-signed certificate.
+// Live: the HTTPS transport against a local server with a self-signed certificate.
 const pair = selfSignedCert();
 const other = pair ? selfSignedCert('Some other CA') : null;
 describe.skipIf(!pair || typeof Bun === 'undefined')('live HTTPS delivery (self-signed certificate)', () => {
   let server: ReturnType<typeof Bun.serve>;
   let url: string;
+  const previousAllowPrivate = process.env.WEBHOOK_ALLOW_PRIVATE;
   beforeAll(() => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
     server = Bun.serve({
       port: 0,
       hostname: '127.0.0.1',
@@ -89,6 +91,8 @@ describe.skipIf(!pair || typeof Bun === 'undefined')('live HTTPS delivery (self-
   });
   afterAll(() => {
     void server.stop(true);
+    if (previousAllowPrivate === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    else process.env.WEBHOOK_ALLOW_PRIVATE = previousAllowPrivate;
   });
 
   test('verification on (default): the self-signed certificate is refused', async () => {

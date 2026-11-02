@@ -66,6 +66,18 @@ describe('signing and headers', () => {
 });
 
 describe('sendWebhook', () => {
+  test('blocks private webhook destinations by default', async () => {
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    try {
+      const result = await sendWebhook(REQ);
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('private or reserved');
+    } finally {
+      if (previous !== undefined) process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+    }
+  });
+
   test('POSTs the exact body, does not follow redirects, and treats 2xx as success', async () => {
     const fetchImpl = mock(async (_url: string, _init: RequestInit) => new Response('ok', { status: 200 }));
     const r = await sendWebhook(REQ, fetchImpl);

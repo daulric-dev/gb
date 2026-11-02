@@ -81,10 +81,15 @@ function next(request: NextRequest): NextResponse {
   return response;
 }
 
+// Skips Next's own assets and real static files only, by extension. A bare
+// "contains a dot" rule would also skip routes like /portal/x.y, leaving them
+// with no CSP and no signed-out redirect. Must stay a literal (statically
+// analysed at build time).
 export const config = {
   matcher: [
     {
-      source: "/((?!api|_next/static|_next/image|_next/data|favicon\\.ico|.*\\..*).*)",
+      source:
+        "/((?!api|_next/static|_next/image|_next/data|favicon\\.ico|.*\\.(?:png|jpe?g|gif|webp|avif|svg|ico|css|js|map|txt|xml|webmanifest|woff2?|ttf|otf|eot)$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

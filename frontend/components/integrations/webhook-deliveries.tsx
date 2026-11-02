@@ -41,10 +41,12 @@ import {
 import { DeliveryStatusBadge, when } from "./status-badge";
 import { userMessage } from "@/lib/errors";
 
+const LIVE_REFRESH_MS = 2_000;
+
 /**
  * One webhook's deliveries, newest first, filtered by status and event type:
- * status, event, time, HTTP status, duration. A row opens the payload, the
- * receiver's response and the attempts, with Redeliver.
+ * status, event, time, HTTP status, duration. The list refreshes while the
+ * webhook is expanded; a row opens the payload, response and attempts.
  */
 export function WebhookDeliveries({
   apiBase,
@@ -69,20 +71,42 @@ export function WebhookDeliveries({
 
   useEffect(() => {
     let live = true;
-    listDeliveries(apiBase, webhookId, { status, eventType })
-      .then((page) => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshRows = async () => {
+      try {
+        const page = await listDeliveries(
+          apiBase,
+          webhookId,
+          { status, eventType },
+          controller.signal,
+        );
         if (!live) return;
-        setRows(page);
+        setRows((current) => {
+          if (!current) return page;
+          const currentPageIds = new Set(page.map((delivery) => delivery.id));
+          return [
+            ...page,
+            ...current.filter((delivery) => !currentPageIds.has(delivery.id)),
+          ];
+        });
         setMore(page.length === DELIVERY_PAGE);
         setError(null);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!live) return;
-        setRows([]);
+        setRows((current) => current ?? []);
         setError(userMessage(err, "Failed to load deliveries"));
-      });
+      } finally {
+        if (live) timer = setTimeout(() => void refreshRows(), LIVE_REFRESH_MS);
+      }
+    };
+
+    void refreshRows();
     return () => {
       live = false;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [apiBase, webhookId, status, eventType, refreshKey]);
 
@@ -105,6 +129,14 @@ export function WebhookDeliveries({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <h4 className="mr-auto text-sm font-medium">Deliveries</h4>
+        <span
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+          title="Updates while this webhook is expanded"
+          aria-label="Live delivery updates"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+          Live
+        </span>
         <NativeSelect
           size="sm"
           value={status}

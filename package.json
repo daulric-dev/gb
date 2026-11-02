@@ -2,13 +2,11 @@
     "name": "gb",
     "devDependencies": {
         "@types/bun": "^1.4.4",
-        "turbo": "^2.11.10"
+        "turbo": "^2.11.10",
+        "typescript": "^6.0.3"
     },
     "private": true,
     "packageManager": "bun@1.4.4",
-    "bin": {
-        "gb": "./command/index.ts"
-    },
     "scripts": {
         "preload": "docker compose -f ./docker-compose.dev.yml up -d --wait && bun run db:setup",
         "postload": "docker compose -f ./docker-compose.dev.yml down",
@@ -40,19 +38,16 @@
     "workspaces": ["backend", "frontend", "docs", "mobile"],
     "overrides": {
         "webpackbar": "^7.0.0",
-        "react": "19.2.7",
-        "react-dom": "19.2.7",
+        "react": "19.3.0",
+        "react-dom": "19.3.0",
         "fastify": "^5.12.1",
         "multer": "^2.5.0",
         "body-parser": "^2.4.0",
         "undici": "^7.30.1",
         "sharp": "^0.35.5",
         "zod": "^4.6.7",
-        "deepmerge": "4.1.2",
+        "deepmerge": "^4.3.1",
         "glob": "^14.0.3",
         "minimatch": "^11.0.3"
-    },
-    "dependencies": {
-        "typescript": "^6.0.3"
     }
 }

@@ -80,6 +80,7 @@ Only used while the organisation has the `integrations` feature on. See [Webhook
 | --- | --- | --- | --- |
 | `WEBHOOK_MAX_ATTEMPTS` | No | `8` | Attempts per delivery (the first included) before it is given up (`abandoned`). The default spreads them over about 24 hours. |
 | `WEBHOOK_MAX_CONSECUTIVE_FAILURES` | No | `50` | Failed attempts in a row after which a webhook switches itself off and the school's admins are emailed. |
+| `WEBHOOK_ALLOW_PRIVATE` | No | `false` | Allow webhook deliveries to private, loopback, and reserved IP addresses. Keep disabled unless trusted school integrations need private-network access. DNS results are checked and pinned for each send. |
 | `WEBHOOK_DELIVERY_RETENTION_DAYS` | No | `30` | Days a delivery (and its payload, which holds personal data) is kept; purged by the daily retention job. |
 | `WEBHOOK_POLL_INTERVAL_MS` | No | `5000` | How often each API instance looks for due deliveries when Redis is off. With `USE_REDIS=true` a BullMQ queue sends them and the database is checked once a minute as a backstop. |
 
@@ -136,9 +137,6 @@ USE_REDIS=false
 # school as a student. Required in production.
 #   openssl rand -base64 32
 # STUDENT_CLAIM_CODE_PEPPER=base64-of-32-bytes
-
-# Dedicated deployment (single-school instance)
-# DEDICATED_DEPLOYMENT=true
 ```
 
 ### Where Each Variable Is Used
@@ -157,7 +155,7 @@ USE_REDIS=false
 | `REDIS_URL`                                         | `src/cache/cache.service.ts`       | Redis connection URL for `ioredis`                           |
 | `RETENTION_PURGE_*`, `SOFT_DELETE_RETENTION_DAYS*` | `src/retention/retention.config.ts` | Daily purge of soft-deleted data                             |
 | `ERASURE_LOG_*`                                     | `src/erasure/erasure.config.ts`    | Erasure-log storage copy and retention                       |
-| `WEBHOOK_*`                                         | `src/integrations/config/webhook.config.ts` | Webhook retries, auto-disable, delivery retention, poll interval |
+| `WEBHOOK_*`                                         | `src/integrations/config/webhook.config.ts`, `src/integrations/delivery/webhook-destination.ts` | Webhook destination restrictions, retries, auto-disable, delivery retention, poll interval |
 
 ---
 
@@ -209,7 +207,6 @@ Continuous archiving / point-in-time recovery (self-hosted `db` + `db-backup`, `
 | Variable                           | Required | Default                 | Description                                                                                                                                                                         |
 | ---------------------------------- | -------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | No       | `http://localhost:3001` | Backend API base URL (without `/api` - that's appended automatically)                                                                                                               |
-| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | No       | `false`                 | Set to `true` for single-school dedicated instances. Hides school selector on onboarding and school switcher in the sidebar. Must match the backend `DEDICATED_DEPLOYMENT` setting. |
 | `NEXT_PUBLIC_SAML_SP_ENTITY_ID`    | No       | API metadata URL        | The SAML entity ID the email-domain admin shows schools. Set it only when the backend's `SAML_SP_ENTITY_ID` is overridden, to the same value. |
 | `NEXT_PUBLIC_STORAGE_URL`          | **Prod** | -                       | Origin browsers upload to with presigned URLs: the origin of the backend's `S3_PUBLIC_ENDPOINT` (or `S3_ENDPOINT`), e.g. `http://127.0.0.1:8333` in dev, `https://<account-id>.r2.cloudflarestorage.com` in production. Added to the production CSP (`connect-src`, `img-src`); without it uploads are blocked. |
 | `NEXT_PUBLIC_IMAGES_URL`           | When `S3_PUBLIC_URL` is set | -                | Origin avatars, course covers and school logos are served from when the backend's `S3_PUBLIC_URL` points at a CDN/bucket host. Added to the production CSP `img-src` and to the hosts Markdown images may load from; images from any other host render as a link instead of loading. Without it, avatars on that host do not load. |
@@ -218,9 +215,6 @@ Continuous archiving / point-in-time recovery (self-hosted `db` + `db-backup`, `
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
-
-# Dedicated deployment (single-school instance)
-# NEXT_PUBLIC_DEDICATED_DEPLOYMENT=true
 ```
 
 ### Where It Is Used
@@ -228,7 +222,6 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 | Variable                           | File                                                        | Usage                                                       |
 | ---------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | `lib/api.ts`                                                | Constructs the API base URL as `${NEXT_PUBLIC_API_URL}/api` |
-| `NEXT_PUBLIC_DEDICATED_DEPLOYMENT` | `app/onboard/page.tsx`, `components/layout/app-sidebar.tsx` | Hides school selection UI on dedicated instances            |
 | `NEXT_PUBLIC_STORAGE_URL`          | `next.config.ts`                                            | Allows direct uploads to object storage in the CSP          |
 | `NEXT_PUBLIC_SAML_SP_ENTITY_ID`    | `lib/sso.ts`                                                | SP entity ID shown in Email domains > SAML                  |
 

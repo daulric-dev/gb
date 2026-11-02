@@ -32,7 +32,7 @@ WORKDIR /app/backend
 
 USER bun
 
-EXPOSE 3004
+EXPOSE 3001
 # Apply pending Prisma migrations, then start the API. `prisma migrate deploy`
 # takes an advisory lock, so replicas starting together are safe. Set
 # MIGRATE_ON_START=false to run migrations as a separate release step instead

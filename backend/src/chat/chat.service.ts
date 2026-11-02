@@ -16,6 +16,7 @@ import { ChatRealtimeService } from './chat-realtime.service';
 import { MessageCipher } from './message-cipher.service';
 import { ChatEventType } from './chat.constants';
 import { FeatureService } from '@/features/feature.service';
+import { isOrgAdmin } from '@/organisation/org-admin';
 import type {
   ChatConversation,
   ChatMessage,
@@ -63,6 +64,9 @@ interface ChatActor {
   isStudent: boolean;
   /** The linked student record, for a student account. */
   studentId: string | null;
+  /** That record's school, and whether it is still active. */
+  studentSchoolId: string | null;
+  studentActive: boolean;
 }
 
 interface ConversationRow {
@@ -219,7 +223,11 @@ export class ChatService {
 
   /** The caller's conversations, most-recent first, with previews + unread. */
   async listConversations(userId: string): Promise<ChatConversation[]> {
-    const membershipRows = await this.membershipsOf(userId);
+    // Only the active school's conversations: those of a school the caller
+    // has switched away from cannot be opened (see assertMember).
+    const me = await this.actorOf(userId);
+    if (!me.schoolId) return [];
+    const membershipRows = await this.membershipsOf(userId, me.schoolId);
     const ids = membershipRows.map((m) => m.conversation_id);
 
     if (ids.length === 0) return [];
@@ -232,32 +240,28 @@ export class ChatService {
       })
     ).map(toConversationRow);
     // Channels are for staff: a student never sees one.
-    const visible = rows.some((r) => r.type === 'channel')
-      ? (await this.actorOf(userId)).isStudent
-        ? rows.filter((r) => r.type !== 'channel')
-        : rows
+    const visible = me.isStudent
+      ? rows.filter((r) => r.type !== 'channel')
       : rows;
+    if (visible.length === 0) return [];
+    const visibleIds = visible.map((r) => r.id);
 
-    // Unread counts for the whole set resolve in one round-trip (RPC) rather
-    // than one COUNT query per conversation. Participants likewise batch.
-    const [participantsByConversation, unreadByConversation] =
+    // Unread counts, participants and previews each resolve in one
+    // round-trip for the whole set rather than one query per conversation.
+    const [participantsByConversation, unreadByConversation, lastByConversation] =
       await Promise.all([
-        this.participantsFor(ids),
+        this.participantsFor(visibleIds),
         this.unreadCountsFor(userId, membershipRows),
+        this.lastMessagesFor(visibleIds),
       ]);
 
-    // Message previews are still fetched per-conversation (in parallel); a
-    // windowed DISTINCT-ON RPC would collapse these too if it becomes hot.
-    return Promise.all(
-      visible.map(async (conv) => {
-        const lastMessage = await this.lastMessageFor(conv.id);
-        return this.presentConversation(
-          conv,
-          participantsByConversation.get(conv.id) ?? [],
-          lastMessage,
-          unreadByConversation.get(conv.id) ?? 0,
-        );
-      }),
+    return visible.map((conv) =>
+      this.presentConversation(
+        conv,
+        participantsByConversation.get(conv.id) ?? [],
+        lastByConversation.get(conv.id) ?? null,
+        unreadByConversation.get(conv.id) ?? 0,
+      ),
     );
   }
 
@@ -280,37 +284,21 @@ export class ChatService {
     const directKey = ChatService.directKey(userId, otherUserId);
     const existing = await this.findDirect(schoolId, directKey);
     await this.assertDirectAllowed(me, other, schoolId, !!existing);
-    if (existing) return this.summarize(existing, userId);
-
-    let created: ConversationRow;
-    try {
-      created = await this.insertConversation({
-        school_id: schoolId,
-        type: 'direct',
-        direct_key: directKey,
-        created_by: userId,
-      });
-    } catch (err) {
-      // Lost a race to the unique (school_id, direct_key) index — reuse theirs.
-      const raced = await this.findDirect(schoolId, directKey);
-      if (raced) return this.summarize(raced, userId);
-      this.logger.error(`Failed to create DM: ${(err as Error).message}`);
-      throw new BadRequestException('Failed to start conversation');
+    if (existing) {
+      await this.repairDirectMembers(existing, [userId, otherUserId]);
+      return this.summarize(existing, userId);
     }
 
-    try {
-      await this.prisma.conversation_member.createMany({
-        data: [
-          { conversation_id: created.id, user_id: userId, role: 'owner' },
-          { conversation_id: created.id, user_id: otherUserId, role: 'member' },
-        ],
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to add DM members: ${(err as Error).message}`,
-      );
-      throw new BadRequestException('Failed to start conversation');
-    }
+    const opened = await this.createDirect(
+      schoolId,
+      directKey,
+      userId,
+      otherUserId,
+    );
+    if (!opened) throw new BadRequestException('Failed to start conversation');
+    // Lost a race to the unique (school_id, direct_key) index: reuse theirs.
+    if (!opened.created) return this.summarize(opened.row, userId);
+    const created = opened.row;
 
     const summary = await this.summarize(created, userId);
     // Both sides should see the new conversation appear immediately.
@@ -454,12 +442,15 @@ export class ChatService {
 
   /** Total unread messages across all of the caller's conversations. */
   async totalUnread(userId: string): Promise<{ count: number }> {
-    const rows = await this.membershipsOf(userId);
+    const { schoolId } = await this.actorOf(userId);
+    if (!schoolId) return { count: 0 };
+    const rows = await this.membershipsOf(userId, schoolId);
     if (rows.length === 0) return { count: 0 };
 
+    // The RPC counts every conversation; only the active school's count.
     const counts = await this.unreadCountsFor(userId, rows);
     let total = 0;
-    for (const n of counts.values()) total += n;
+    for (const m of rows) total += counts.get(m.conversation_id) ?? 0;
     return { count: total };
   }
 
@@ -555,34 +546,83 @@ export class ChatService {
 
     const directKey = ChatService.directKey(userA, userB);
     const existing = await this.findDirect(schoolId, directKey);
-    if (existing) return existing;
-
-    let created: ConversationRow;
-    try {
-      created = await this.insertConversation({
-        school_id: schoolId,
-        type: 'direct',
-        direct_key: directKey,
-        created_by: userA,
-      });
-    } catch {
-      const raced = await this.findDirect(schoolId, directKey);
-      if (raced) return raced;
-      throw new BadRequestException('Failed to open conversation');
+    if (existing) {
+      await this.repairDirectMembers(existing, [userA, userB]);
+      return existing;
     }
 
-    await this.prisma.conversation_member
-      .createMany({
-        data: [
-          { conversation_id: created.id, user_id: userA, role: 'owner' },
-          { conversation_id: created.id, user_id: userB, role: 'member' },
-        ],
-      })
-      .catch((err: Error) =>
-        this.logger.error(`Failed to add DM members: ${err.message}`),
-      );
+    const opened = await this.createDirect(schoolId, directKey, userA, userB);
+    if (!opened) throw new BadRequestException('Failed to open conversation');
+    return opened.row;
+  }
 
-    return created;
+  /**
+   * Create a DM with both members in one statement (a nested create commits
+   * atomically), so a DM can never exist without its members. On a lost race
+   * to the unique (school_id, direct_key) index the winner is reused, with any
+   * missing member added back. Null when neither worked.
+   */
+  private async createDirect(
+    schoolId: string,
+    directKey: string,
+    owner: string,
+    member: string,
+  ): Promise<{ row: ConversationRow; created: boolean } | null> {
+    try {
+      const row = toConversationRow(
+        await this.prisma.conversation.create({
+          data: {
+            school_id: schoolId,
+            type: 'direct',
+            direct_key: directKey,
+            created_by: owner,
+            conversation_member: {
+              create: [
+                { user_id: owner, role: 'owner' },
+                { user_id: member, role: 'member' },
+              ],
+            },
+          },
+          select: CONVERSATION_SELECT,
+        }),
+      );
+      return { row, created: true };
+    } catch (err) {
+      const raced = await this.findDirect(schoolId, directKey);
+      if (raced) {
+        await this.repairDirectMembers(raced, [owner, member]);
+        return { row: raced, created: false };
+      }
+      this.logger.error(`Failed to create DM: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Add back whichever of a DM's two members is missing (a DM created before
+   * members were inserted atomically could have lost them). Best effort.
+   */
+  private async repairDirectMembers(
+    conv: ConversationRow,
+    userIds: string[],
+  ): Promise<void> {
+    try {
+      const present = new Set(await this.memberIds(conv.id));
+      const missing = userIds.filter((id) => !present.has(id));
+      if (missing.length === 0) return;
+      await this.prisma.conversation_member.createMany({
+        data: missing.map((id) => ({
+          conversation_id: conv.id,
+          user_id: id,
+          role: id === conv.created_by ? 'owner' : 'member',
+        })),
+        skipDuplicates: true,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to repair DM members: ${(err as Error).message}`,
+      );
+    }
   }
 
   /** Set a system message's action state and fan the change out. */
@@ -737,13 +777,53 @@ export class ChatService {
       throw new ForbiddenException('You are not in this conversation');
     }
     const conversation = await this.loadConversation(conversationId);
-    if (
-      conversation.type === 'channel' &&
-      (await this.actorOf(userId)).isStudent
-    ) {
+    const me = await this.actorOf(userId);
+    // A member row alone is not enough: the conversation must belong to the
+    // caller's active school, and they must still belong to that school.
+    if (!(await this.inSchool(me, conversation.school_id))) {
+      throw new ForbiddenException('You are not in this conversation');
+    }
+    if (conversation.type === 'channel' && me.isStudent) {
       throw new ForbiddenException('Channels are for staff');
     }
     return conversation;
+  }
+
+  /**
+   * Whether the user may still use chat in `schoolId`: it is their active
+   * school, and they belong to it (an active student record there; for staff,
+   * a membership, or being an organisation admin). The SSE stream re-checks
+   * this on each heartbeat so a removed member stops receiving the school's
+   * events.
+   */
+  async canUseSchool(userId: string, schoolId: string): Promise<boolean> {
+    return this.inSchool(await this.actorOf(userId), schoolId);
+  }
+
+  /**
+   * Whose presence the user may see: null for staff (the whole school), else
+   * the staff a student can message (their teachers).
+   */
+  async presenceAudience(userId: string): Promise<Set<string> | null> {
+    const me = await this.actorOf(userId);
+    if (!me.isStudent) return null;
+    if (!me.studentId || !me.schoolId) return new Set();
+    return new Set(await this.teachersOf(me.studentId, me.schoolId));
+  }
+
+  private async inSchool(me: ChatActor, schoolId: string): Promise<boolean> {
+    if (!me.schoolId || me.schoolId !== schoolId) return false;
+    if (me.isStudent) {
+      return (
+        !!me.studentId && me.studentSchoolId === schoolId && me.studentActive
+      );
+    }
+    const membership = await this.prisma.school_management.findFirst({
+      where: { user_id: me.id, school_id: schoolId },
+      select: { id: true },
+    });
+    if (membership) return true;
+    return isOrgAdmin(this.prisma, me.id).catch(() => false);
   }
 
   // ── Who may message whom ───────────────────────────────────────────────────
@@ -757,15 +837,26 @@ export class ChatService {
     const isStudent = profile?.account_type === 'student';
     let schoolId = profile?.school_id ?? null;
     let studentId: string | null = null;
+    let studentSchoolId: string | null = null;
+    let studentActive = false;
     if (isStudent) {
       const student = await this.prisma.student.findFirst({
         where: { user_profile_id: userId },
-        select: { id: true, school_id: true },
+        select: { id: true, school_id: true, is_active: true },
       });
       studentId = student?.id ?? null;
-      schoolId = schoolId ?? student?.school_id ?? null;
+      studentSchoolId = student?.school_id ?? null;
+      studentActive = !!student && student.is_active !== false;
+      schoolId = schoolId ?? studentSchoolId;
     }
-    return { id: userId, schoolId, isStudent, studentId };
+    return {
+      id: userId,
+      schoolId,
+      isStudent,
+      studentId,
+      studentSchoolId,
+      studentActive,
+    };
   }
 
   /** The ids among `userIds` that belong to student accounts. */
@@ -943,11 +1034,13 @@ export class ChatService {
     );
   }
 
+  /** The user's memberships in conversations of one school. */
   private async membershipsOf(
     userId: string,
+    schoolId: string,
   ): Promise<{ conversation_id: string; last_read_at: string | null }[]> {
     const rows = await this.prisma.conversation_member.findMany({
-      where: { user_id: userId },
+      where: { user_id: userId, conversation: { school_id: schoolId } },
       select: { conversation_id: true, last_read_at: true },
     });
     return rows.map((m) => ({
@@ -984,6 +1077,49 @@ export class ChatService {
       select: MESSAGE_SELECT,
     });
     return data ? this.presentMessage(toMessageRow(data)) : null;
+  }
+
+  /**
+   * The newest message of each conversation in one round-trip: a LATERAL
+   * LIMIT 1 per id, which walks idx_message_conversation (conversation_id,
+   * created_at DESC) rather than every message. Falls back to one query per
+   * conversation if the raw query fails.
+   */
+  private async lastMessagesFor(
+    conversationIds: string[],
+  ): Promise<Map<string, ChatMessage>> {
+    const map = new Map<string, ChatMessage>();
+    if (conversationIds.length === 0) return map;
+    try {
+      const rows = await this.prisma.$queryRaw<
+        Parameters<typeof toMessageRow>[0][]
+      >`
+        SELECT m.id, m.conversation_id, m.sender_id, m.type::text AS type,
+               m.body, m.metadata, m.action_state::text AS action_state,
+               m.created_at, m.edited_at, m.deleted_at
+        FROM unnest(${conversationIds}::uuid[]) AS c(id)
+        CROSS JOIN LATERAL (
+          SELECT * FROM chat.message
+          WHERE conversation_id = c.id
+          ORDER BY created_at DESC NULLS FIRST
+          LIMIT 1
+        ) m`;
+      for (const row of rows) {
+        map.set(row.conversation_id, this.presentMessage(toMessageRow(row)));
+      }
+      return map;
+    } catch (err) {
+      this.logger.warn(
+        `batched last-message query failed, falling back to per-conversation: ${String(err)}`,
+      );
+      const entries = await Promise.all(
+        conversationIds.map(
+          async (id) => [id, await this.lastMessageFor(id)] as const,
+        ),
+      );
+      for (const [id, message] of entries) if (message) map.set(id, message);
+      return map;
+    }
   }
 
   private async unreadCountsFor(

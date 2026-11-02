@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,7 +11,7 @@ import { ZipArchive } from 'archiver';
 import { basename } from 'node:path';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
-import { pgCode, raisedMessage } from '@/common/db-values';
+import { isUniqueViolation, pgCode, raisedMessage } from '@/common/db-values';
 import { roundScore, scoreOrNull } from './round';
 import { FileManagerService } from '@/file-manager/file-manager.service';
 import {
@@ -537,11 +538,13 @@ export class SubmissionService {
 
   /** The draft a student works in; created on first touch. */
   private async ensureDraft(studentId: string, activityId: string) {
-    const existing = await this.prisma.submission.findFirst({
-      where: { activity_id: activityId, student_id: studentId },
-      select: DRAFT_SELECT,
-    });
+    const find = () =>
+      this.prisma.submission.findFirst({
+        where: { activity_id: activityId, student_id: studentId },
+        select: DRAFT_SELECT,
+      });
 
+    const existing = await find();
     if (existing) return existing;
 
     try {
@@ -554,6 +557,12 @@ export class SubmissionService {
         select: DRAFT_SELECT,
       });
     } catch (error) {
+      // Two first touches at once (a double click, two tabs): the loser hits
+      // the (activity, student) key, and the winner's draft is the one to use.
+      if (isUniqueViolation(error)) {
+        const created = await find();
+        if (created) return created;
+      }
       this.logger.error(
         `Failed to open submission: ${(error as Error).message}`,
       );
@@ -985,34 +994,56 @@ export class SubmissionService {
       options.map((o) => [o.id, o.question_id]),
     );
 
-    const accepted = answers.filter(
+    const valid = answers.filter(
       (a) =>
         kindById.has(a.questionId) &&
         (kindById.get(a.questionId) === 'short_answer' ||
           !a.optionId ||
           questionOfOption.get(a.optionId) === a.questionId),
     );
+    // One answer per question: (submission, question) is unique, so a repeated
+    // question would fail the whole submit. The last one sent wins.
+    const accepted = [
+      ...new Map(valid.map((a) => [a.questionId, a])).values(),
+    ];
 
-    // Clear the previous attempt first: upserting alone would leave answers to
-    // questions this attempt skipped, silently scoring them again.
-    if (used > 0) {
-      await this.prisma.quiz_answer.deleteMany({
-        where: { submission_id: draft.id },
-      });
-    }
+    let data: {
+      score: Prisma.Decimal | null;
+      points: Prisma.Decimal | null;
+      attempts_used: number | null;
+    }[];
+    try {
+      // The answers and the score that is worked out from them commit
+      // together or not at all. The row lock is taken first, so a second
+      // submit waits here and then sees the attempt this one used, and any
+      // refusal inside submit_quiz rolls the new answers back with it.
+      data = await this.prisma.$transaction(async (tx) => {
+        const [locked] = await tx.$queryRaw<
+          { attempt_count: number | null; graded_by: string | null }[]
+        >`
+          select attempt_count, graded_by
+          from grading.submission
+          where id = ${draft.id}::uuid
+          for update
+        `;
+        if (!locked) throw new NotFoundException('Activity not found');
+        if (locked.graded_by) {
+          throw new BadRequestException(
+            'Your teacher has marked this quiz, so it cannot be retaken',
+          );
+        }
+        if (limit !== null && (locked.attempt_count ?? 0) >= limit) {
+          throw new ConflictException('You have no attempts left');
+        }
 
-    if (accepted.length > 0) {
-      // An upsert on (submission, question): replace any answer already
-      // stored for these questions, in one transaction.
-      try {
-        await this.prisma.$transaction([
-          this.prisma.quiz_answer.deleteMany({
-            where: {
-              submission_id: draft.id,
-              question_id: { in: accepted.map((a) => a.questionId) },
-            },
-          }),
-          this.prisma.quiz_answer.createMany({
+        // Clear the previous attempt first: replacing only the answers sent
+        // would leave answers to questions this attempt skipped, silently
+        // scoring them again.
+        await tx.quiz_answer.deleteMany({
+          where: { submission_id: draft.id },
+        });
+        if (accepted.length > 0) {
+          await tx.quiz_answer.createMany({
             data: accepted.map((a) => {
               const isText = kindById.get(a.questionId) === 'short_answer';
               return {
@@ -1022,26 +1053,15 @@ export class SubmissionService {
                 text_answer: isText ? (a.text?.trim() ?? null) : null,
               };
             }),
-          }),
-        ]);
-      } catch (error) {
-        this.logger.error(
-          `Failed to record answers: ${(error as Error).message}`,
-        );
-        throw new BadRequestException('Failed to record your answers');
-      }
-    }
+          });
+        }
 
-    let data: {
-      score: Prisma.Decimal | null;
-      points: Prisma.Decimal | null;
-      attempts_used: number | null;
-    }[];
-    try {
-      data = await this.prisma.$queryRaw`
-        select * from grading.submit_quiz(${draft.id}::uuid, ${studentId}::uuid)
-      `;
+        return tx.$queryRaw`
+          select * from grading.submit_quiz(${draft.id}::uuid, ${studentId}::uuid)
+        `;
+      });
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       const detail = `${pgCode(error) ?? ''} ${raisedMessage(error)}`;
       if (detail.includes('no_attempts_left')) {
         throw new ConflictException('You have no attempts left');
@@ -1233,11 +1253,12 @@ export class SubmissionService {
       Prisma.submissionUncheckedCreateInput,
       'activity_id' | 'student_id'
     >,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     const now = new Date();
     let data;
     try {
-      data = await this.prisma.submission.upsert({
+      data = await db.submission.upsert({
         where: {
           activity_id_student_id: {
             activity_id: activityId,
@@ -1282,13 +1303,46 @@ export class SubmissionService {
       );
     }
 
-    const marked = await this.writeSubmission(activityId, studentId, {
-      status: 'graded',
-      score: input.score,
-      feedback: input.feedback ?? null,
-      graded_at: new Date(),
-      graded_by: userId,
-    });
+    let marked: ReturnType<SubmissionService['toMarked']>;
+    try {
+      marked = await this.prisma.$transaction(async (tx) => {
+        // Pairs with the lock in ActivityService.update: the points cannot
+        // be lowered between this check and the write. (The row was read a
+        // moment ago; should it be gone the upsert fails on its key.)
+        const [locked] = await tx.$queryRaw<{ points: Prisma.Decimal }[]>`
+          select points from grading.activity
+          where id = ${activityId}::uuid
+          for share
+        `;
+        const max = Number(locked?.points ?? activity.points);
+        if (input.score > max) {
+          throw new BadRequestException(`Score must be between 0 and ${max}`);
+        }
+
+        const written = await this.writeSubmission(
+          activityId,
+          studentId,
+          {
+            status: 'graded',
+            score: input.score,
+            feedback: input.feedback ?? null,
+            graded_at: new Date(),
+            graded_by: userId,
+          },
+          tx,
+        );
+        // A bare score replaces any rubric marking: levels left behind would
+        // show the student how a mark was reached that is no longer theirs.
+        await tx.rubric_assessment.deleteMany({
+          where: { submission_id: written.id },
+        });
+        return written;
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Failed to save the mark: ${(error as Error).message}`);
+      throw new BadRequestException('Failed to save the mark');
+    }
     this.emitGrade(activityId, marked, userId, 'teacher');
     return marked;
   }

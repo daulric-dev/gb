@@ -6,7 +6,12 @@ import { FeatureService } from '@/features/feature.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { decryptWebhookHeaderValue, decryptWebhookSecret } from '@/integrations/webhooks/webhook-secret';
 import { redactValues } from '@/integrations/webhooks/webhook-headers';
-import { sendWebhook, type FetchLike, type WebhookAttempt } from '@/integrations/delivery/webhook-sender';
+import {
+  safeWebhookFetch,
+  sendWebhook,
+  type FetchLike,
+  type WebhookAttempt,
+} from '@/integrations/delivery/webhook-sender';
 import {
   backoffMs,
   CLAIM_BATCH,
@@ -68,7 +73,7 @@ const WEBHOOK_SELECT = {
 export class WebhookDeliveryService {
   private readonly logger = new Logger(WebhookDeliveryService.name);
   /** Injectable for tests. */
-  fetchImpl: FetchLike = (url, init) => fetch(url, init);
+  fetchImpl: FetchLike = safeWebhookFetch;
   random: () => number = Math.random;
 
   constructor(

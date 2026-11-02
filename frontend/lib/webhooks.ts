@@ -464,8 +464,17 @@ export function deliveryFilters(f: DeliveryFilters = {}): Record<string, string 
   return out;
 }
 
-export function listDeliveries(apiBase: string | undefined, webhookId: string, f: DeliveryFilters = {}) {
-  return apiQuery<WebhookDelivery[]>(`${webhooksApi(apiBase)}/${webhookId}/deliveries`, deliveryFilters(f));
+export function listDeliveries(
+  apiBase: string | undefined,
+  webhookId: string,
+  f: DeliveryFilters = {},
+  signal?: AbortSignal,
+) {
+  return apiQuery<WebhookDelivery[]>(
+    `${webhooksApi(apiBase)}/${webhookId}/deliveries`,
+    deliveryFilters(f),
+    signal ? { signal } : {},
+  );
 }
 
 export function getDelivery(apiBase: string | undefined, deliveryId: string) {

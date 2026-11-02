@@ -10,10 +10,8 @@ import { X509Certificate } from 'node:crypto';
  * transit: audited, alerted, and marked on each delivery). Plain http URLs
  * have no TLS; these settings do not apply to them.
  *
- * The sender passes them to Bun's fetch (`tls: { rejectUnauthorized, ca }`):
- * the backend runs under Bun (start:prod, start:dev, tests). Node's fetch
- * ignores the option, which fails safe (verification stays on with the
- * public roots).
+ * The sender passes them to Node's HTTPS request (`rejectUnauthorized` and
+ * `ca`), which Bun supports in the backend's Node-compatible runtime.
  */
 
 export const MAX_CA_BYTES = 64 * 1024;
@@ -78,7 +76,7 @@ export interface WebhookTls {
   ca: string | null;
 }
 
-/** What Bun's fetch takes as `tls`. */
+/** TLS options consumed by the webhook HTTPS transport. */
 export interface FetchTlsOptions {
   rejectUnauthorized: boolean;
   ca?: string;

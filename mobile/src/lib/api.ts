@@ -10,6 +10,7 @@ import {
   rememberSessionToken,
   setSessionToken,
 } from "@/lib/session-token";
+import { clearPushState } from "@/lib/push-state";
 
 const API_PORT = 3001;
 
@@ -116,7 +117,12 @@ async function handleUnauthorized(
         `storedNow=${current ? (current === sentToken ? "same" : "different") : "none"}`,
     );
   }
-  if (stillCurrent) await setSessionToken(null);
+  if (stillCurrent) {
+    await setSessionToken(null);
+    // The session is gone, and the API unbinds its push token with it; drop
+    // ours so the next sign-in registers afresh.
+    clearPushState();
+  }
   // A request that went out signed-out says nothing about the session we
   // have now, so it doesn't sign the app out either.
   if (!skipAuthRedirect && (stillCurrent || current === null)) {

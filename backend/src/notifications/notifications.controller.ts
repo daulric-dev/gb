@@ -21,11 +21,19 @@ import { RegisterPushDeviceDto } from './dto/push-device.dto';
 export class NotificationsController {
   constructor(private readonly push: PushService) {}
 
-  /** Register (or take over) this device's token for the caller. */
+  /**
+   * Register this device's token for the caller's session. Taking over a
+   * token another user holds needs that user's sign-in to have ended.
+   */
   @Post('devices')
   @HttpCode(204)
   async register(@Req() req: any, @Body() dto: RegisterPushDeviceDto) {
-    await this.push.register(req.user.id as string, dto.token, dto.platform);
+    await this.push.register(
+      req.user.id as string,
+      dto.token,
+      dto.platform,
+      (req.user.sessionId as string | undefined) ?? null,
+    );
   }
 
   @Delete('devices/:token')

@@ -1,7 +1,12 @@
 import { createHmac } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
+import type { IncomingMessage } from 'node:http';
+import type { LookupFunction } from 'node:net';
+import { request as httpsRequest } from 'node:https';
 import { DELIVERY_TIMEOUT_MS, RESPONSE_EXCERPT_BYTES } from '@/integrations/config/webhook.config';
 import { WEBHOOK_API_VERSION } from '@/integrations/events/webhook-event-types';
 import { fetchTlsOptions, type FetchTlsOptions, type WebhookTls } from '@/integrations/webhooks/webhook-tls';
+import { resolveWebhookDestination } from './webhook-destination';
 
 export const USER_AGENT = 'GradeBook-Webhooks/1';
 
@@ -65,9 +70,106 @@ export interface WebhookAttempt {
   tlsVerified: boolean | null;
 }
 
-/** RequestInit plus Bun's `tls` option (certificate checks, CA bundle). */
+/** Request settings plus TLS verification options for the Node HTTPS transport. */
 export type WebhookFetchInit = RequestInit & { tls?: FetchTlsOptions };
 export type FetchLike = (url: string, init: WebhookFetchInit) => Promise<Response>;
+
+export const safeWebhookFetch: FetchLike = async (target, init) => {
+  const url = new URL(target);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Webhook URL must use HTTP or HTTPS');
+  }
+  const destination = await resolveUntilAborted(url.hostname, init.signal);
+  const headers = new Headers(init.headers);
+  headers.set('accept-encoding', 'identity');
+  const options = {
+    method: init.method,
+    headers: Object.fromEntries(headers.entries()),
+    signal: init.signal ?? undefined,
+    agent: false,
+    lookup: pinnedLookup(destination.address, destination.family),
+    ...(url.protocol === 'https:'
+      ? {
+          rejectUnauthorized: init.tls?.rejectUnauthorized ?? true,
+          ...(init.tls?.ca ? { ca: init.tls.ca } : {}),
+        }
+      : {}),
+  };
+  return new Promise<Response>((resolve, reject) => {
+    const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(
+      url,
+      options,
+      (incoming) => {
+        const responseHeaders = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (value === undefined) continue;
+          for (const item of Array.isArray(value) ? value : [value]) {
+            responseHeaders.append(name, item);
+          }
+        }
+        const status = incoming.statusCode ?? 502;
+        const hasBody = status !== 204 && status !== 205 && status !== 304;
+        const body = hasBody ? responseBody(incoming) : null;
+        if (!hasBody) incoming.resume();
+        resolve(
+          new Response(body, {
+            status,
+            statusText: incoming.statusMessage,
+            headers: responseHeaders,
+          }),
+        );
+      },
+    );
+    request.on('error', reject);
+    if (typeof init.body === 'string') request.write(init.body);
+    request.end();
+  });
+};
+
+function responseBody(incoming: IncomingMessage): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      incoming.on('readable', () => {
+        let chunk: Buffer | null;
+        while ((chunk = incoming.read()) !== null) {
+          controller.enqueue(new Uint8Array(chunk));
+        }
+      });
+      incoming.once('end', () => controller.close());
+      incoming.once('error', (error) => controller.error(error));
+    },
+    cancel() {
+      incoming.destroy();
+    },
+  });
+}
+
+function pinnedLookup(address: string, family: number): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      callback(null, [{ address, family }]);
+    } else {
+      callback(null, address, family);
+    }
+  };
+}
+
+function resolveUntilAborted(
+  hostname: string,
+  signal: AbortSignal | null | undefined,
+): Promise<{ address: string; family: number }> {
+  if (!signal) return resolveWebhookDestination(hostname);
+  if (signal.aborted) {
+    return Promise.reject(new Error('Webhook request was aborted'));
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new Error('Webhook request was aborted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    resolveWebhookDestination(hostname).then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', onAbort);
+    });
+  });
+}
 
 /** Reads at most `limit` bytes of a body, then lets the rest go. */
 async function readExcerpt(res: Response, limit: number): Promise<string | null> {
@@ -101,7 +203,7 @@ async function readExcerpt(res: Response, limit: number): Promise<string | null>
  */
 export async function sendWebhook(
   req: WebhookRequest,
-  fetchImpl: FetchLike = fetch,
+  fetchImpl: FetchLike = safeWebhookFetch,
   timeoutMs = DELIVERY_TIMEOUT_MS,
 ): Promise<WebhookAttempt> {
   const timestamp = req.timestamp ?? Math.floor(Date.now() / 1000);

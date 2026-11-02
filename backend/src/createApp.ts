@@ -7,6 +7,7 @@ import { insecureCookieWarning, isOriginAllowed } from './config/origins';
 import cookie from '@fastify/cookie';
 import { acceptEmptyQueryBodies, CORS_METHODS } from './common/http-query';
 import { AppExceptionFilter } from './common/exception.filter';
+import { HealthService } from './health/health.service';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -58,8 +59,9 @@ export async function createApp(): Promise<NestFastifyApplication> {
     res.send('gb');
   });
 
-  raw_instance.get('/health', (req, res) => {
-    res.status(200).send('ok');
+  raw_instance.get('/health', async (_, res) => {
+    const health = await app.get(HealthService).check();
+    res.status(health.status === 'ok' ? 200 : 503).send(health);
   });
 
   app.enableCors({

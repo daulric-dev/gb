@@ -489,7 +489,8 @@ describe('SubmissionService student access', () => {
 
     const result = await service.submitQuiz('stu-1', 'act-1', []);
     expect(result).toEqual({ score: 5, points: 20 });
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    // The row lock, then submit_quiz.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(prisma.grade.create).not.toHaveBeenCalled();
     expect(prisma.grade.upsert).not.toHaveBeenCalled();
   });
@@ -558,6 +559,232 @@ describe('SubmissionService student access', () => {
     });
     const err = await service.submitQuiz('stu-1', 'act-1', []).catch((e) => e);
     expect(err).toBeInstanceOf(BadRequestException);
+  });
+
+  /**
+   * A quiz with two choice questions and one short answer, whose raw calls
+   * are the submission row lock and then submit_quiz. `order` records every
+   * write and raw call as it happens.
+   */
+  function quizTables(
+    over: {
+      draft?: any;
+      locked?: any;
+      maxAttempts?: number | null;
+      submit?: () => Promise<any>;
+    } = {},
+  ) {
+    const order: string[] = [];
+    const setup = (p: MockPrisma) => {
+      studentTables({
+        activity: {
+          ...ACTIVITY,
+          kind: 'quiz',
+          max_attempts: over.maxAttempts === undefined ? null : over.maxAttempts,
+        },
+        submission: over.draft ?? {
+          id: 'sub-1',
+          status: 'draft',
+          attempt_count: 0,
+          graded_by: null,
+        },
+      })(p);
+      p.quiz_question.findMany.mockResolvedValue([
+        { id: 'q-1', kind: 'multiple_choice' },
+        { id: 'q-2', kind: 'true_false' },
+        { id: 'q-3', kind: 'short_answer' },
+      ]);
+      p.quiz_option.findMany.mockResolvedValue([
+        { id: 'o-1a', question_id: 'q-1' },
+        { id: 'o-1b', question_id: 'q-1' },
+        { id: 'o-2a', question_id: 'q-2' },
+      ]);
+      p.quiz_answer.deleteMany.mockImplementation(async () => {
+        order.push('delete answers');
+        return { count: 0 };
+      });
+      p.quiz_answer.createMany.mockImplementation(async () => {
+        order.push('write answers');
+        return { count: 0 };
+      });
+      p.$queryRaw.mockImplementation(async (strings: string[]) => {
+        if (strings.join('?').includes('submit_quiz')) {
+          order.push('submit_quiz');
+          if (over.submit) return over.submit();
+          return [{ score: 10, points: 20, attempts_used: 1 }];
+        }
+        order.push('lock');
+        return [over.locked ?? { attempt_count: 0, graded_by: null }];
+      });
+    };
+    return { order, setup };
+  }
+
+  test('quiz answers are written and scored in one transaction, after the row lock', async () => {
+    const { order, setup } = quizTables();
+    const { service, prisma } = build(setup);
+
+    await service.submitQuiz('stu-1', 'act-1', [
+      { questionId: 'q-1', optionId: 'o-1a' },
+    ]);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(typeof prisma.$transaction.mock.calls[0][0]).toBe('function');
+    expect(order).toEqual([
+      'lock',
+      'delete answers',
+      'write answers',
+      'submit_quiz',
+    ]);
+    const lockSql = (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+    expect(lockSql).toContain('grading.submission');
+    expect(lockSql).toContain('for update');
+    // Every earlier answer goes, not just those to questions sent this time.
+    expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
+      submission_id: 'sub-1',
+    });
+  });
+
+  test('a repeated question keeps only its last answer', async () => {
+    const { setup } = quizTables();
+    const { service, prisma } = build(setup);
+
+    await service.submitQuiz('stu-1', 'act-1', [
+      { questionId: 'q-1', optionId: 'o-1a' },
+      { questionId: 'q-3', text: ' first ' },
+      { questionId: 'q-1', optionId: 'o-1b' },
+      { questionId: 'q-3', text: ' second ' },
+      // Another question's option is still not an answer here.
+      { questionId: 'q-2', optionId: 'o-1a' },
+    ]);
+
+    expect(prisma.quiz_answer.createMany.mock.calls[0][0].data).toEqual([
+      {
+        submission_id: 'sub-1',
+        question_id: 'q-1',
+        option_id: 'o-1b',
+        text_answer: null,
+      },
+      {
+        submission_id: 'sub-1',
+        question_id: 'q-3',
+        option_id: null,
+        text_answer: 'second',
+      },
+    ]);
+  });
+
+  test('a submit that lost the race for the last attempt writes no answers', async () => {
+    // Both read attempt_count 0; by the time this one holds the lock the
+    // other has used the only attempt.
+    const { order, setup } = quizTables({
+      maxAttempts: 1,
+      locked: { attempt_count: 1, graded_by: null },
+    });
+    const { service, prisma } = build(setup);
+
+    const err = await service
+      .submitQuiz('stu-1', 'act-1', [{ questionId: 'q-1', optionId: 'o-1a' }])
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.message).toBe('You have no attempts left');
+    expect(order).toEqual(['lock']);
+    expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();
+  });
+
+  test('a quiz marked by the teacher while the student answered writes no answers', async () => {
+    const { order, setup } = quizTables({
+      locked: { attempt_count: 1, graded_by: 'teacher-1' },
+    });
+    const { service } = build(setup);
+
+    const err = await service
+      .submitQuiz('stu-1', 'act-1', [{ questionId: 'q-1', optionId: 'o-1a' }])
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(order).toEqual(['lock']);
+  });
+
+  test('a refusal inside submit_quiz fails the transaction holding the answers', async () => {
+    const { setup } = quizTables({
+      submit: () =>
+        Promise.reject(
+          new Prisma.PrismaClientKnownRequestError(
+            'Raw query failed: activity_not_open',
+            {
+              code: 'P2010',
+              clientVersion: 'test',
+              meta: { code: 'P0024', message: 'activity_not_open' },
+            },
+          ),
+        ),
+    });
+    let rolledBack = false;
+    const { service } = build((p) => {
+      setup(p);
+      const run = p.$transaction.getMockImplementation()!;
+      p.$transaction.mockImplementation((arg: any) =>
+        Promise.resolve(run(arg)).catch((e) => {
+          rolledBack = true;
+          throw e;
+        }),
+      );
+    });
+
+    const err = await service
+      .submitQuiz('stu-1', 'act-1', [{ questionId: 'q-1', optionId: 'o-1a' }])
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.message).toBe('This quiz is closed');
+    expect(rolledBack).toBe(true);
+  });
+
+  test('two first touches at once share the one draft', async () => {
+    const { service, prisma } = build((p) => {
+      studentTables({
+        activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
+      })(p);
+      // Missing on the first look; the other request's row on the second.
+      p.submission.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({
+          id: 'sub-other',
+          status: 'draft',
+          attempt_count: 0,
+          graded_by: null,
+        });
+      p.submission.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+      p.$queryRaw.mockImplementation(async (strings: string[]) =>
+        strings.join('?').includes('submit_quiz')
+          ? [{ score: 0, points: 20, attempts_used: 1 }]
+          : [{ attempt_count: 0, graded_by: null }],
+      );
+    });
+
+    await service.submitQuiz('stu-1', 'act-1', []);
+    expect(prisma.submission.create).toHaveBeenCalledTimes(1);
+    expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
+      submission_id: 'sub-other',
+    });
+  });
+
+  test('a draft that cannot be created for any other reason is a 400', async () => {
+    const { service } = build((p) => {
+      studentTables({
+        activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
+      })(p);
+      p.submission.findFirst.mockResolvedValue(null);
+      p.submission.create.mockRejectedValue(new Error('connection reset'));
+    });
+    await expect(
+      service.submitQuiz('stu-1', 'act-1', []),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   test('finaliseUploadedFile refuses a closed assignment', async () => {
@@ -670,6 +897,36 @@ describe('SubmissionService marking', () => {
     expect(result.score).toBe(15);
     expect(prisma.grade.upsert).not.toHaveBeenCalled();
     expect(prisma.grade.create).not.toHaveBeenCalled();
+  });
+
+  test('a bare score clears the rubric levels from an earlier rubric mark', async () => {
+    const { service, prisma } = build(markTables({ existing: { id: 'sub-1' } }));
+
+    await service.grade('user-1', 'act-1', 'stu-1', { score: 12 });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.rubric_assessment.deleteMany.mock.calls[0][0].where).toEqual(
+      { submission_id: 'sub-1' },
+    );
+  });
+
+  test('the score is checked against the points under a share lock', async () => {
+    const { service, prisma } = build((p) => {
+      markTables()(p);
+      // Lowered to 10 since the activity was first read at 20.
+      p.$queryRaw.mockResolvedValue([{ points: 10 }]);
+    });
+
+    const err = await service
+      .grade('user-1', 'act-1', 'stu-1', { score: 15 })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err.message).toBe('Score must be between 0 and 10');
+    const lockSql = (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
+    expect(lockSql).toContain('grading.activity');
+    expect(lockSql).toContain('for share');
+    expect(prisma.submission.upsert).not.toHaveBeenCalled();
+    expect(prisma.rubric_assessment.deleteMany).not.toHaveBeenCalled();
   });
 
   test('a TA can mark', async () => {

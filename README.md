@@ -78,7 +78,7 @@ gb/
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) 1.3+
+- [Bun](https://bun.sh) 1.4.4+
 - [Docker](https://www.docker.com) (for local Postgres, Redis, S3 and Mailpit)
 
 ### 1. Install dependencies

@@ -24,7 +24,7 @@ The backend is the only thing that holds secrets. The web and mobile clients tal
 
 ### Prerequisites
 
-- **Bun 1.3.13** - the version in `packageManager`. Other 1.x versions generally work; that one is what CI and the Docker image use.
+- **Bun 1.4.4** - the version in `packageManager`. Other 1.x versions generally work; that one is what CI and the Docker image use.
 - **Docker**, running. Postgres, Redis, S3 storage and the mail catcher run as containers from `docker-compose.dev.yml`.
 
 You do **not** need any hosted service to develop. The local stack is a complete one.
@@ -214,8 +214,6 @@ bun run db:pull          # introspect the database into the .prisma files
 bun run db:studio        # Prisma Studio
 bun run seed:demo        # demo school (API running); --fresh to replace it
 bun run smoke            # end-to-end API check (API running)
-
-bun run gb <command>     # repo CLI - status, commit, branch, PR
 ```
 
 **The Prisma client is generated, not committed** (`backend/src/generated/prisma`). `bun install`, `bun test` and `build` regenerate it, and `db:migrate` does too; after pulling someone else's schema change, `bun run db:setup` applies it and `bun install` (or `bunx prisma generate` in `backend/`) refreshes the client.

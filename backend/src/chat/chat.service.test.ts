@@ -126,7 +126,15 @@ describe('ChatService', () => {
         ? { id: `rec-${where.user_profile_id}`, school_id: 'school-1' }
         : null,
     );
+    // Staff hold a membership of their profile's school.
+    prisma.school_management.findFirst.mockImplementation(async ({ where }) =>
+      !students.has(where.user_id) && schools[where.user_id] === where.school_id
+        ? { id: `sm-${where.user_id}` }
+        : null,
+    );
     prisma.conversation.findUnique.mockResolvedValue(convRow());
+    // Last-message previews: no batched rows unless a test sets them.
+    prisma.$queryRaw.mockImplementation(async () => []);
     prisma.message.create.mockImplementation(async ({ data }) =>
       msgRow({
         id: MSG,
@@ -232,16 +240,20 @@ describe('ChatService', () => {
 
       const res = await service.getOrCreateDirect(ME, YOU);
 
+      // Conversation and both members in one nested (atomic) create.
       expect(prisma.conversation.create.mock.calls[0][0].data).toEqual({
         school_id: 'school-1',
         type: 'direct',
         direct_key: `${ME}:${YOU}`,
         created_by: ME,
+        conversation_member: {
+          create: [
+            { user_id: ME, role: 'owner' },
+            { user_id: YOU, role: 'member' },
+          ],
+        },
       });
-      expect(prisma.conversation_member.createMany.mock.calls[0][0].data).toEqual([
-        { conversation_id: CONV, user_id: ME, role: 'owner' },
-        { conversation_id: CONV, user_id: YOU, role: 'member' },
-      ]);
+      expect(prisma.conversation_member.createMany).not.toHaveBeenCalled();
       expect(res).toMatchObject({
         id: CONV,
         type: 'direct',
@@ -257,14 +269,43 @@ describe('ChatService', () => {
     });
 
     test('a lost create race reuses the conversation that won', async () => {
+      memberOf(ME, YOU);
       prisma.conversation.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(convRow({ id: CONV }));
       prisma.conversation.create.mockRejectedValue(new Error('unique'));
       const res = await service.getOrCreateDirect(ME, YOU);
       expect(res.id).toBe(CONV);
+      // The winner already has both members: nothing to repair.
       expect(prisma.conversation_member.createMany).not.toHaveBeenCalled();
       expect(realtime.publishToUsers).not.toHaveBeenCalled();
+    });
+
+    test('a race winner missing a member is repaired', async () => {
+      memberOf(ME);
+      prisma.conversation.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(convRow({ id: CONV }));
+      prisma.conversation.create.mockRejectedValue(new Error('unique'));
+      await service.getOrCreateDirect(ME, YOU);
+      expect(prisma.conversation_member.createMany.mock.calls[0][0]).toEqual({
+        data: [{ conversation_id: CONV, user_id: YOU, role: 'member' }],
+        skipDuplicates: true,
+      });
+    });
+
+    test('reopening a DM left without members adds them back', async () => {
+      memberOf();
+      prisma.conversation.findFirst.mockResolvedValue(convRow());
+      await service.getOrCreateDirect(YOU, ME);
+      expect(prisma.conversation_member.createMany.mock.calls[0][0]).toEqual({
+        data: [
+          { conversation_id: CONV, user_id: YOU, role: 'member' },
+          { conversation_id: CONV, user_id: ME, role: 'owner' },
+        ],
+        skipDuplicates: true,
+      });
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
     });
 
     test('a create failure with no winner is a 400', async () => {
@@ -273,11 +314,11 @@ describe('ChatService', () => {
       expect((err as Error).message).toBe('Failed to start conversation');
     });
 
-    test('a member insert failure is a 400 and nothing is published', async () => {
-      prisma.conversation.create.mockResolvedValue(convRow());
-      prisma.conversation_member.createMany.mockRejectedValue(new Error('db'));
+    test('a failed nested create (no winner) is a 400 and nothing is published', async () => {
+      prisma.conversation.create.mockRejectedValue(new Error('member fk'));
       const err = await expectRejection(service.getOrCreateDirect(ME, YOU));
       expect(err).toBeInstanceOf(BadRequestException);
+      expect(prisma.conversation_member.createMany).not.toHaveBeenCalled();
       expect(realtime.publishToUsers).not.toHaveBeenCalled();
     });
   });
@@ -379,6 +420,58 @@ describe('ChatService', () => {
       prisma.conversation.findUnique.mockResolvedValue(null);
       const err = await expectRejection(service.markRead(ME, CONV));
       expect(err).toBeInstanceOf(NotFoundException);
+    });
+
+    test('a member row in another school is not enough (school switched)', async () => {
+      memberOf(ME);
+      prisma.conversation.findUnique.mockResolvedValue(
+        convRow({ school_id: 'school-2' }),
+      );
+      const err = await expectRejection(service.listMessages(ME, CONV));
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(prisma.message.findMany).not.toHaveBeenCalled();
+    });
+
+    test('staff removed from the school (no membership) lose access', async () => {
+      memberOf(ME, YOU);
+      prisma.school_management.findFirst.mockResolvedValue(null);
+      const read = await expectRejection(service.listMessages(ME, CONV));
+      expect(read).toBeInstanceOf(ForbiddenException);
+      const post = await expectRejection(service.sendMessage(ME, CONV, 'hi'));
+      expect(post).toBeInstanceOf(ForbiddenException);
+      expect(prisma.message.create).not.toHaveBeenCalled();
+      expect(prisma.school_management.findFirst.mock.calls[0][0].where).toEqual({
+        user_id: ME,
+        school_id: 'school-1',
+      });
+    });
+
+    test('an organisation admin without a membership keeps access', async () => {
+      memberOf(ME, YOU);
+      prisma.school_management.findFirst.mockResolvedValue(null);
+      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: ME });
+      prisma.message.findMany.mockResolvedValue([]);
+      expect(await service.listMessages(ME, CONV)).toEqual([]);
+    });
+
+    test('a deactivated student record loses access', async () => {
+      featureState.student_messaging = true;
+      memberOf(ME, STU);
+      prisma.student.findFirst.mockResolvedValue({
+        id: `rec-${STU}`,
+        school_id: 'school-1',
+        is_active: false,
+      });
+      const err = await expectRejection(service.listMessages(STU, CONV));
+      expect(err).toBeInstanceOf(ForbiddenException);
+    });
+
+    test('canUseSchool mirrors the school check', async () => {
+      expect(await service.canUseSchool(ME, 'school-1')).toBe(true);
+      expect(await service.canUseSchool(ME, 'school-2')).toBe(false);
+      expect(await service.canUseSchool(STU, 'school-1')).toBe(true);
+      prisma.school_management.findFirst.mockResolvedValue(null);
+      expect(await service.canUseSchool(ME, 'school-1')).toBe(false);
     });
 
     test('markRead is 403 for a non-member', async () => {
@@ -700,12 +793,24 @@ describe('ChatService', () => {
         { id: ME, first_name: 'Me', last_name: null, avatar_url: null },
         { id: YOU, first_name: 'You', last_name: null, avatar_url: 'a.png' },
       ]);
-      prisma.$queryRaw.mockResolvedValue([{ conversation_id: CONV, unread: 2 }]);
-      prisma.message.findFirst.mockImplementation(async ({ where }) =>
-        where.conversation_id === CONV ? msgRow() : null,
+      prisma.$queryRaw.mockImplementation(async (sql: TemplateStringsArray) =>
+        sql.join('?').includes('unread_counts')
+          ? [{ conversation_id: CONV, unread: 2 }]
+          : [msgRow()],
       );
 
       const res = await service.listConversations(ME);
+      // Previews come from one batched query for the visible ids, not one
+      // findFirst per conversation.
+      expect(prisma.message.findFirst).not.toHaveBeenCalled();
+      const previewCall = prisma.$queryRaw.mock.calls.find(
+        (c) => !(c[0] as string[]).join('?').includes('unread_counts'),
+      )!;
+      expect(previewCall.slice(1)).toEqual([[C2, CONV]]);
+      // Memberships are scoped to the caller's active school.
+      expect(
+        prisma.conversation_member.findMany.mock.calls[0][0].where,
+      ).toEqual({ user_id: ME, conversation: { school_id: 'school-1' } });
       expect(res.map((c) => c.id)).toEqual([C2, CONV]);
       expect(prisma.conversation.findMany.mock.calls[0][0].orderBy).toEqual({
         last_message_at: { sort: 'desc', nulls: 'first' },
@@ -721,6 +826,26 @@ describe('ChatService', () => {
         { userId: ME, firstName: 'Me', lastName: null, avatarUrl: null },
         { userId: YOU, firstName: 'You', lastName: null, avatarUrl: 'a.png' },
       ]);
+    });
+
+    test('previews fall back to one query per conversation if the batch fails', async () => {
+      prisma.conversation_member.findMany.mockImplementation(async ({ where }) =>
+        where.user_id ? [{ conversation_id: CONV, last_read_at: null }] : [],
+      );
+      prisma.conversation.findMany.mockResolvedValue([convRow()]);
+      prisma.$queryRaw.mockImplementation(async (sql: TemplateStringsArray) => {
+        if (sql.join('?').includes('unread_counts')) return [];
+        throw new Error('no lateral');
+      });
+      prisma.message.findFirst.mockResolvedValue(msgRow());
+      const [c] = await service.listConversations(ME);
+      expect(c.lastMessage?.body).toBe('hello');
+      expect(prisma.message.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    test('a caller without an active school has no conversations', async () => {
+      expect(await service.listConversations('nobody')).toEqual([]);
+      expect(prisma.conversation_member.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -845,11 +970,15 @@ describe('ChatService', () => {
     test('ensureDirect creates one with A as owner, without publishing', async () => {
       prisma.conversation.create.mockResolvedValue(convRow());
       await service.ensureDirectConversationRow('school-1', ME, YOU);
-      expect(prisma.conversation.create.mock.calls[0][0].data.created_by).toBe(ME);
-      expect(prisma.conversation_member.createMany.mock.calls[0][0].data).toEqual([
-        { conversation_id: CONV, user_id: ME, role: 'owner' },
-        { conversation_id: CONV, user_id: YOU, role: 'member' },
-      ]);
+      const data = prisma.conversation.create.mock.calls[0][0].data;
+      expect(data.created_by).toBe(ME);
+      expect(data.conversation_member).toEqual({
+        create: [
+          { user_id: ME, role: 'owner' },
+          { user_id: YOU, role: 'member' },
+        ],
+      });
+      expect(prisma.conversation_member.createMany).not.toHaveBeenCalled();
       expect(realtime.publishToUsers).not.toHaveBeenCalled();
     });
 
@@ -885,8 +1014,20 @@ describe('ChatService', () => {
       expect(err).toBeInstanceOf(ForbiddenException);
     });
 
-    test('ensureDirect swallows a member insert failure', async () => {
-      prisma.conversation.create.mockResolvedValue(convRow());
+    test('ensureDirect repairs an existing DM that lost a member', async () => {
+      memberOf(YOU);
+      prisma.conversation.findFirst.mockResolvedValue(convRow());
+      expect(
+        (await service.ensureDirectConversationRow('school-1', YOU, ME)).id,
+      ).toBe(CONV);
+      expect(prisma.conversation_member.createMany.mock.calls[0][0].data).toEqual([
+        { conversation_id: CONV, user_id: ME, role: 'owner' },
+      ]);
+    });
+
+    test('ensureDirect: a failed repair is logged, the row still returned', async () => {
+      memberOf();
+      prisma.conversation.findFirst.mockResolvedValue(convRow());
       prisma.conversation_member.createMany.mockRejectedValue(new Error('db'));
       expect(
         (await service.ensureDirectConversationRow('school-1', ME, YOU)).id,
@@ -1051,6 +1192,15 @@ describe('ChatService', () => {
       featureState.chat_channels = false;
       const post: any = await expectRejection(service.sendMessage(ME, CONV, 'hi'));
       expect(post.getResponse().feature).toBe('chat_channels');
+    });
+
+    test('presence audience: staff unfiltered, students only their teachers', async () => {
+      expect(await service.presenceAudience(ME)).toBeNull();
+      prisma.course_staff.findMany.mockResolvedValue([
+        { user_profile_id: ME },
+        { user_profile_id: YOU },
+      ]);
+      expect(await service.presenceAudience(STU)).toEqual(new Set([ME, YOU]));
     });
 
     test('a student never sees channel conversations in their list', async () => {

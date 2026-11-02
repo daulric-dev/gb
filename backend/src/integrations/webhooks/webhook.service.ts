@@ -189,9 +189,9 @@ type DeliveryRow = Prisma.webhook_deliveryGetPayload<{ select: typeof DELIVERY_S
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * A webhook URL: syntax only. Any http(s) URL is accepted, private and
- * internal addresses included - self-hosted schools call systems on their own
- * network - so there is no address filtering. Returns the normalised URL.
+ * A webhook URL's syntax is checked here. Its resolved address is checked and
+ * pinned at send time, with private destinations opt-in for trusted installs.
+ * Returns the normalised URL.
  */
 export function normaliseWebhookUrl(raw: string): string {
   const value = raw.trim();

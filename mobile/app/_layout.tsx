@@ -11,6 +11,7 @@ import { ToastProvider } from "@/providers/ToastProvider";
 import { NotificationRouter } from "@/providers/NotificationRouter";
 import { UpdateGate } from "@/features/app-update/UpdateGate";
 import { setUnauthorizedHandler } from "@/lib/api";
+import { clearOpenedFiles } from "@/lib/open-file";
 import { ErrorScreen } from "@/components/layout/ErrorScreen";
 
 /** A render error anywhere shows a friendly screen with "Try again", never the error text. */
@@ -20,9 +21,13 @@ function RootNavigator() {
   const { scheme, colors } = useTheme();
   const router = useRouter();
 
-  // Mirror the web app's global 401 → /login behaviour.
+  // Mirror the web app's global 401 → /login behaviour. Signed out by the
+  // server: drop the previous session's downloaded files, as logout does.
   useEffect(() => {
-    setUnauthorizedHandler(() => router.replace("/(auth)/login"));
+    setUnauthorizedHandler(() => {
+      clearOpenedFiles();
+      router.replace("/(auth)/login");
+    });
     return () => setUnauthorizedHandler(null);
   }, [router]);
 
