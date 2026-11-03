@@ -120,7 +120,7 @@ bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-comp
 
 `bun run postload` stops them. `bun run db:setup` applies pending migrations on its own. Sign-in emails land in Mailpit at http://127.0.0.1:8025.
 
-See [`docs/content/environment-variables.md`](docs/content/environment-variables.md) for every variable, and [`docs/content/developer-guide.md`](docs/content/developer-guide.md) for the full path from clone to deployed.
+See [`docs/content/environment-variables.md`](docs/content/environment-variables.md) for every variable, [`docs/content/hosting-requirements.md`](docs/content/hosting-requirements.md) for hosting and sizing requirements, and [`docs/content/developer-guide.md`](docs/content/developer-guide.md) for the full path from clone to deployed.
 
 ### 4. Run the dev servers
 
@@ -191,11 +191,15 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 | `bun run lint`                                                           | Lint all projects                     |
 | `bun test` / `bun run test`                                             | Run all tests in workspace-isolated processes |
 | `bun run test:frontend` / `test:backend`                               | Run one project's tests               |
+| `bun audit`                                                              | Check installed dependencies for known vulnerabilities |
+| `bun run release <bump>`                                                 | Tag and publish a major, minor, or patch release from `main` |
 | `bun run preview`                                                        | Run in production mode                |
 | `bun run db:setup` / `db:deploy`                                       | Apply pending Prisma migrations       |
 | `bun run db:migrate --name <change>`                                     | Create and apply a migration from `.prisma` edits |
 | `bun run db:pull` / `db:studio`                                        | Introspect the database / open Prisma Studio |
 | `bun run seed:demo` / `smoke`                                          | Load demo data / end-to-end API check (API running) |
+
+The release ZIP contains the frontend, backend, and docs workspaces, but omits test and spec files and test directories.
 
 You can also use `turbo` directly:
 
