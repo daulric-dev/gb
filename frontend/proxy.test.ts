@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { NextRequest } from "next/server";
 import { getMiddlewareMatchers } from "next/dist/build/analysis/get-page-static-info";
+import { contentSecurityPolicy, createNonce } from "./lib/csp";
 import { config, proxy, SESSION_COOKIE } from "./proxy";
 
 const ORIGIN = "http://app.test";
@@ -79,39 +80,25 @@ describe("proxy - signed in", () => {
 });
 
 describe("proxy - CSP", () => {
-  test("production responses carry a fresh nonce CSP without unsafe-inline scripts", () => {
-    const env = process.env as Record<string, string | undefined>;
-    const prev = env.NODE_ENV;
-    env.NODE_ENV = "production";
-    try {
-      const a = run("/").headers.get("content-security-policy") ?? "";
-      const b = run("/").headers.get("content-security-policy") ?? "";
-      const script = a.split("; ").find((d) => d.startsWith("script-src")) ?? "";
-      expect(script).toMatch(/'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
-      expect(script).not.toContain("unsafe-inline");
-      expect(a).not.toBe(b);
-    } finally {
-      env.NODE_ENV = prev;
-    }
+  test("production policies carry a fresh nonce without unsafe-inline scripts", () => {
+    const a = contentSecurityPolicy(createNonce());
+    const b = contentSecurityPolicy(createNonce());
+    const script = a.split("; ").find((d) => d.startsWith("script-src")) ?? "";
+    expect(script).toMatch(/'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
+    expect(script).not.toContain("unsafe-inline");
+    expect(a).not.toBe(b);
   });
 
   test("img-src allows only this site and the origins we host images on", () => {
-    const env = process.env as Record<string, string | undefined>;
-    const keys = ["NODE_ENV", "NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_IMAGES_URL"];
-    const prev = keys.map((k) => env[k]);
-    env.NODE_ENV = "production";
-    env.NEXT_PUBLIC_API_URL = "https://api.example.com";
-    env.NEXT_PUBLIC_IMAGES_URL = "https://cdn.example.com/images";
-    try {
-      const csp = run("/").headers.get("content-security-policy") ?? "";
-      const img = csp.split("; ").find((d) => d.startsWith("img-src")) ?? "";
-      expect(img.split(" ")).not.toContain("https:");
-      expect(img).toContain("'self' blob: data:");
-      expect(img).toContain("https://api.example.com");
-      expect(img).toContain("https://cdn.example.com");
-    } finally {
-      keys.forEach((k, i) => (env[k] = prev[i]));
-    }
+    const csp = contentSecurityPolicy("test", {
+      NEXT_PUBLIC_API_URL: "https://api.example.com",
+      NEXT_PUBLIC_IMAGES_URL: "https://cdn.example.com/images",
+    });
+    const img = csp.split("; ").find((d) => d.startsWith("img-src")) ?? "";
+    expect(img.split(" ")).not.toContain("https:");
+    expect(img).toContain("'self' blob: data:");
+    expect(img).toContain("https://api.example.com");
+    expect(img).toContain("https://cdn.example.com");
   });
 });
 

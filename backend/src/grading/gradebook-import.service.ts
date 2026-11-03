@@ -244,31 +244,35 @@ export class GradebookImportService {
     };
 
     for (let start = 0; start < changes.length; start += EMIT_BATCH) {
-      await Promise.all(
-        changes.slice(start, start + EMIT_BATCH).map((c, offset) => {
+      const batch = changes
+        .slice(start, start + EMIT_BATCH)
+        .flatMap((c, offset) => {
           const ref = refs.get(c.activityId);
-          if (!ref) return 0;
+          if (!ref) return [];
           const submissionId = written[start + offset]?.id ?? null;
-          return webhooks.emitForCourse(
-            courseId,
-            GRADE_RECORDED,
-            async (courseRef) => ({
-              submission: { id: submissionId },
-              activity: ref,
-              course: courseRef,
-              student: await student(c.studentId),
-              grade: {
-                score: c.to.excused ? (c.from?.score ?? null) : c.to.score,
-                points: ref.points,
-                status: 'graded',
-                excused: c.to.excused,
-              },
-              gradedBy,
-              source: 'import',
-            }),
-          );
-        }),
-      );
+          return [
+            webhooks.emitForCourse(
+              courseId,
+              GRADE_RECORDED,
+              async (courseRef) => ({
+                submission: { id: submissionId },
+                activity: ref,
+                course: courseRef,
+                student: await student(c.studentId),
+                grade: {
+                  score: c.to.excused ? (c.from?.score ?? null) : c.to.score,
+                  points: ref.points,
+                  status: 'graded',
+                  excused: c.to.excused,
+                },
+                gradedBy,
+                source: 'import',
+              }),
+            ),
+          ];
+        });
+
+      await Promise.all(batch);
     }
   }
 }

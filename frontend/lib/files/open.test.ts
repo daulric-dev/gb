@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   isInlineSafeType,
   openOrDownloadFile,
@@ -6,6 +7,13 @@ import {
   safeExternalUrl,
   sanitizeLinks,
 } from "./open";
+
+const registeredDomHere = !GlobalRegistrator.isRegistered;
+if (registeredDomHere) GlobalRegistrator.register();
+
+afterAll(async () => {
+  if (registeredDomHere) await GlobalRegistrator.unregister();
+});
 
 describe("isInlineSafeType", () => {
   test("PDFs and plain raster images open inline", () => {

@@ -35,17 +35,13 @@ describe("isTrustedImageSrc", () => {
 
 describe("trustedImageOrigins", () => {
   test("reads the API, storage and image CDN origins, deduplicated", () => {
-    const env = process.env as Record<string, string | undefined>;
-    const keys = ["NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_STORAGE_URL", "NEXT_PUBLIC_IMAGES_URL"];
-    const prev = keys.map((k) => env[k]);
-    env.NEXT_PUBLIC_API_URL = "https://api.example.com";
-    env.NEXT_PUBLIC_STORAGE_URL = "https://files.example.com/some/path";
-    env.NEXT_PUBLIC_IMAGES_URL = "https://api.example.com/";
-    try {
-      expect(trustedImageOrigins()).toEqual(["https://api.example.com", "https://files.example.com"]);
-    } finally {
-      keys.forEach((k, i) => (env[k] = prev[i]));
-    }
+    expect(
+      trustedImageOrigins({
+        NEXT_PUBLIC_API_URL: "https://api.example.com",
+        NEXT_PUBLIC_STORAGE_URL: "https://files.example.com/some/path",
+        NEXT_PUBLIC_IMAGES_URL: "https://api.example.com/",
+      }),
+    ).toEqual(["https://api.example.com", "https://files.example.com"]);
   });
 
   test("urlOrigin ignores unset and malformed values", () => {

@@ -1,0 +1,3 @@
+# Keep workspace suites in separate processes so each uses its own test setup.
+[test]
+root = "./test-runner"

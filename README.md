@@ -189,7 +189,7 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 | `bun run build`                                                          | Build all projects (cached)           |
 | `bun run build:frontend` / `build:backend`                             | Build one project                     |
 | `bun run lint`                                                           | Lint all projects                     |
-| `bun run test`                                                           | Run all tests                         |
+| `bun test` / `bun run test`                                             | Run all tests in workspace-isolated processes |
 | `bun run test:frontend` / `test:backend`                               | Run one project's tests               |
 | `bun run preview`                                                        | Run in production mode                |
 | `bun run db:setup` / `db:deploy`                                       | Apply pending Prisma migrations       |
