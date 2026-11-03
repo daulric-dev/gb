@@ -46,6 +46,9 @@ jobs:
           name: "Vercel - gbv2-frontend: lint"
 
       - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.example.invalid
+          NEXT_PUBLIC_STORAGE_URL: https://storage.example.invalid
         run: bunx turbo run build
 
   gate:
