@@ -3,11 +3,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { MailService } from '@/mail/mail.service';
 import { primaryOrigin } from '@/config/origins';
 import { SsoAlertService } from '@/sso/sso-alert.service';
-import { webhookDisabledEmail } from '@/integrations/alerts/webhook-alert.email';
+import { webhookDisabledEmail, webhookTlsDisabledEmail } from '@/integrations/alerts/webhook-alert.email';
 
 /**
  * Emails the school's admin and every organisation admin when a webhook
- * switches itself off. Recipients are the same as for single sign-on alerts
+ * switches itself off, or when its TLS verification is turned off. Recipients are the same as for single sign-on alerts
  * (SsoAlertService.recipients). Never throws; without SMTP it logs and skips.
  */
 @Injectable()
@@ -26,9 +26,30 @@ export class WebhookAlertService {
     failures: number,
     at = new Date(),
   ): Promise<void> {
+    await this.sendAll(schoolId, 'webhook switched-off', (school, settingsUrl) =>
+      webhookDisabledEmail({ school, webhook: webhook.name, failures, at, settingsUrl }),
+    );
+  }
+
+  /** Certificate checks were turned off for a webhook: deliveries can be intercepted. */
+  async tlsVerificationDisabled(
+    schoolId: string,
+    webhook: { id: string; name: string },
+    at = new Date(),
+  ): Promise<void> {
+    await this.sendAll(schoolId, 'TLS verification off', (school, settingsUrl) =>
+      webhookTlsDisabledEmail({ school, webhook: webhook.name, at, settingsUrl }),
+    );
+  }
+
+  private async sendAll(
+    schoolId: string,
+    what: string,
+    build: (school: string, settingsUrl: string) => { subject: string; text: string; html: string },
+  ): Promise<void> {
     try {
       if (!this.mail.configured()) {
-        this.logger.log(`Email is not configured; skipped the webhook switched-off alert for school ${schoolId}`);
+        this.logger.log(`Email is not configured; skipped the ${what} alert for school ${schoolId}`);
         return;
       }
       const [school, recipients] = await Promise.all([
@@ -40,13 +61,7 @@ export class WebhookAlertService {
         const settingsUrl = r.orgAdmin
           ? `${origin}/organisation/schools/${schoolId}#integrations`
           : `${origin}/dashboard/settings#integrations`;
-        const message = webhookDisabledEmail({
-          school: school?.name ?? 'your school',
-          webhook: webhook.name,
-          failures,
-          at,
-          settingsUrl,
-        });
+        const message = build(school?.name ?? 'your school', settingsUrl);
         try {
           await this.mail.send({ to: r.email, ...message });
         } catch (err) {

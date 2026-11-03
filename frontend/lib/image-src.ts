@@ -7,6 +7,13 @@ export function urlOrigin(url: string | undefined): string | null {
   }
 }
 
+export interface PublicImageEnvironment {
+  [key: string]: string | undefined;
+  NEXT_PUBLIC_API_URL?: string;
+  NEXT_PUBLIC_STORAGE_URL?: string;
+  NEXT_PUBLIC_IMAGES_URL?: string;
+}
+
 /**
  * Origins, besides this site, that serve images we host ourselves:
  * - the API (`NEXT_PUBLIC_API_URL`): avatars, course covers and school logos
@@ -18,11 +25,13 @@ export function urlOrigin(url: string | undefined): string | null {
  * Both the CSP `img-src` and the Markdown renderer allow exactly these, so
  * nothing on a page can make a student's browser fetch from a third party.
  */
-export function trustedImageOrigins(): string[] {
+export function trustedImageOrigins(
+  env: PublicImageEnvironment = process.env,
+): string[] {
   return [
-    urlOrigin(process.env.NEXT_PUBLIC_API_URL),
-    urlOrigin(process.env.NEXT_PUBLIC_STORAGE_URL),
-    urlOrigin(process.env.NEXT_PUBLIC_IMAGES_URL),
+    urlOrigin(env.NEXT_PUBLIC_API_URL),
+    urlOrigin(env.NEXT_PUBLIC_STORAGE_URL),
+    urlOrigin(env.NEXT_PUBLIC_IMAGES_URL),
   ].filter((o, i, all): o is string => !!o && all.indexOf(o) === i);
 }
 

@@ -24,7 +24,7 @@ function setup(opts: { feature?: boolean; hooks?: { id: string }[] } = {}) {
 }
 
 describe('WebhookEvents.emit', () => {
-  test('queues one delivery per subscribed webhook with the same envelope', async () => {
+  test('queues one delivery per subscribed webhook with the same three-key envelope', async () => {
     const { events, prisma, deliveries, worker } = setup();
     expect(await events.emit(SCHOOL, 'course.created', DATA)).toBe(2);
     expect(prisma.school_webhook.findMany.mock.calls[0][0].where).toEqual({
@@ -35,13 +35,14 @@ describe('WebhookEvents.emit', () => {
     const rows = prisma.webhook_delivery.createManyAndReturn.mock.calls[0][0].data;
     expect(rows.map((r: any) => r.webhook_id)).toEqual(['h-1', 'h-2']);
     expect(rows[0].event_id).toBe(rows[1].event_id);
-    expect(rows[0].payload).toMatchObject({
-      id: rows[0].event_id,
-      type: 'course.created',
-      apiVersion: 1,
-      school: { id: SCHOOL, name: 'Riverside' },
-      data: DATA,
+    expect(rows[0].event_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(rows[0].payload).toEqual({
+      event_type: 'course.created',
+      message: 'Maths was created',
+      data: { school: { id: SCHOOL, name: 'Riverside' }, ...DATA },
     });
+    expect(Object.keys(rows[0].payload)).toEqual(['event_type', 'message', 'data']);
+    expect(Object.keys(rows[0].payload.data)[0]).toBe('school');
     expect(deliveries.schedule).toHaveBeenCalledWith(['d-0', 'd-1']);
     expect(worker.kick).toHaveBeenCalled();
   });
@@ -82,6 +83,7 @@ describe('WebhookEvents.emit', () => {
     await events.emitForCourse(DATA.course.id, 'course.archived', (course) => ({ course }));
     const row = prisma.webhook_delivery.createManyAndReturn.mock.calls[0][0].data[0];
     expect(row.school_id).toBe(SCHOOL);
-    expect(row.payload.data).toEqual({ course: DATA.course });
+    expect(row.payload.data).toEqual({ school: { id: SCHOOL, name: 'Riverside' }, course: DATA.course });
+    expect(row.payload.message).toBe('Maths was archived');
   });
 });

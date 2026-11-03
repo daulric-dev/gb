@@ -130,12 +130,52 @@ export default function AttendanceSessionPage() {
 
   const sessionPath = `/courses/${course.id}/attendance/sessions/${sessionId}`;
 
+  // Requests can finish out of order, and a roster update can arrive over SSE
+  // (or from setStatus) while a load is in flight. Only the newest load is
+  // applied, and entries that landed during it are laid back over its result
+  // so a slower read can't roll them back.
+  const loadSeq = useRef(0);
+  const liveEdits = useRef(new Map<string, AttendanceRosterEntry>());
+
+  const applyEntry = useCallback(
+    (entry: AttendanceRosterEntry) => {
+      liveEdits.current.set(entry.studentId, entry);
+      const cur = detail.value;
+      if (!cur) return;
+      const exists = cur.roster.some((r) => r.studentId === entry.studentId);
+      const roster = exists
+        ? cur.roster.map((r) =>
+            r.studentId === entry.studentId ? { ...r, ...entry } : r,
+          )
+        : [...cur.roster, entry];
+      detail.value = { ...cur, roster, counts: countRoster(roster) };
+    },
+    [detail],
+  );
+
   const load = useCallback(async () => {
     if (!sessionId) return;
+    const seq = ++loadSeq.current;
+    liveEdits.current = new Map();
     try {
-      detail.value = await api<AttendanceSessionDetail>(sessionPath);
+      const fresh = await api<AttendanceSessionDetail>(sessionPath);
+      if (seq !== loadSeq.current) return;
+      const edits = liveEdits.current;
+      if (edits.size > 0) {
+        const roster = fresh.roster.map((r) => {
+          const e = edits.get(r.studentId);
+          return e ? { ...r, ...e } : r;
+        });
+        for (const e of edits.values()) {
+          if (!roster.some((r) => r.studentId === e.studentId)) roster.push(e);
+        }
+        detail.value = { ...fresh, roster, counts: countRoster(roster) };
+      } else {
+        detail.value = fresh;
+      }
       missing.value = false;
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       if (
         err instanceof ApiError &&
         (err.status === 404 || err.status === 403)
@@ -144,7 +184,7 @@ export default function AttendanceSessionPage() {
         detail.value = null;
       }
     } finally {
-      loading.value = false;
+      if (seq === loadSeq.current) loading.value = false;
     }
   }, [sessionId, sessionPath, detail, missing, loading]);
 
@@ -177,17 +217,7 @@ export default function AttendanceSessionPage() {
       events: {
         "attendance.record": (data) => {
           const entry = data as AttendanceRosterEntry;
-          const cur = detail.value;
-          if (!cur || !entry?.studentId) return;
-          const exists = cur.roster.some(
-            (r) => r.studentId === entry.studentId,
-          );
-          const roster = exists
-            ? cur.roster.map((r) =>
-                r.studentId === entry.studentId ? entry : r,
-              )
-            : [...cur.roster, entry];
-          detail.value = { ...cur, roster, counts: countRoster(roster) };
+          if (entry?.studentId) applyEntry(entry);
         },
         "attendance.closed": () => void load(),
       },
@@ -198,7 +228,7 @@ export default function AttendanceSessionPage() {
       close();
       stopPolling();
     };
-  }, [isOpen, sessionId, sessionPath, load, detail]);
+  }, [isOpen, sessionId, sessionPath, load, applyEntry]);
 
   // When the countdown runs out, re-read: the API finalises expired sessions
   // on read. Once per closesAt so a slow sweep cannot loop us.
@@ -240,12 +270,16 @@ export default function AttendanceSessionPage() {
   async function closeNow() {
     closing.value = true;
     try {
-      detail.value = await api<AttendanceSessionDetail>(
+      const closed = await api<AttendanceSessionDetail>(
         `${sessionPath}/close`,
         {
           method: "POST",
         },
       );
+      // Newer than any read still in flight.
+      loadSeq.current += 1;
+      detail.value = closed;
+      loading.value = false;
       toast.success("Attendance closed");
       void stopPresenting();
     } catch (err) {
@@ -262,13 +296,7 @@ export default function AttendanceSessionPage() {
         `${sessionPath}/records/${studentId}`,
         { method: "PATCH", body: { status } },
       );
-      const cur = detail.value;
-      if (cur) {
-        const roster = cur.roster.map((r) =>
-          r.studentId === studentId ? { ...r, ...entry } : r,
-        );
-        detail.value = { ...cur, roster, counts: countRoster(roster) };
-      }
+      applyEntry({ ...entry, studentId });
     } catch (err) {
       toast.error(userMessage(err, "Could not update"));
     } finally {

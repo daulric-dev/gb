@@ -1,4 +1,8 @@
-import { trustedImageOrigins, urlOrigin } from "./image-src";
+import {
+  trustedImageOrigins,
+  urlOrigin,
+  type PublicImageEnvironment,
+} from "./image-src";
 
 // Object storage (S3-compatible): uploads PUT straight to it with presigned
 // URLs from the API, so its origin must be allowed for fetch/XHR.
@@ -15,12 +19,15 @@ export function createNonce(): string {
  * scripts). Only enforced in production: local dev reaches the API and
  * Storage on arbitrary localhost / LAN ports and Next's dev runtime needs eval.
  */
-export function contentSecurityPolicy(nonce: string): string {
+export function contentSecurityPolicy(
+  nonce: string,
+  env: PublicImageEnvironment = process.env,
+): string {
   // The browser talks to the API (fetch + chat SSE) and the storage endpoint.
   const connectSrc = [
     "'self'",
-    urlOrigin(process.env.NEXT_PUBLIC_API_URL),
-    storageOrigin,
+    urlOrigin(env.NEXT_PUBLIC_API_URL),
+    urlOrigin(env.NEXT_PUBLIC_STORAGE_URL),
   ].filter(Boolean);
 
   // Only images we host: avatars, course covers and school logos come from
@@ -28,7 +35,7 @@ export function contentSecurityPolicy(nonce: string): string {
   // No `https:` - Markdown that
   // points at any other host renders as a link (components/markdown.tsx), so
   // a post cannot carry a tracking pixel that logs readers' IPs.
-  const imgSrc = ["'self'", "blob:", "data:", ...trustedImageOrigins()];
+  const imgSrc = ["'self'", "blob:", "data:", ...trustedImageOrigins(env)];
 
   return [
     "default-src 'self'",

@@ -59,6 +59,19 @@ export class ChatAccessGuard implements CanActivate {
     );
     if (staffOnly) throw new ForbiddenException('Channels are for staff');
 
+    // As StudentGuard: the linked student record must exist and be active
+    // (deactivating a student only flips student.is_active).
+    const student = await this.prisma.student.findFirst({
+      where: { user_profile_id: userId },
+      select: { id: true, is_active: true },
+    });
+    if (!student?.id) {
+      throw new ForbiddenException('No student record is linked to this account');
+    }
+    if (student.is_active === false) {
+      throw new ForbiddenException('This student record is inactive');
+    }
+
     const schoolId = await this.features.schoolOfUser(userId);
     if (!schoolId) {
       throw new ForbiddenException('No student record is linked to this account');

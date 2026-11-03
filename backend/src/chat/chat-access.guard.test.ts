@@ -20,8 +20,15 @@ function setup(opts: {
   accountType: 'staff' | 'student';
   studentMessaging?: boolean;
   staffRole?: string | null;
+  /** The linked student record (students); defaults to an active one. */
+  student?: { id: string; school_id: string; is_active: boolean } | null;
 }) {
   const prisma = createMockPrisma();
+  prisma.student.findFirst.mockResolvedValue(
+    opts.student === undefined
+      ? { id: 'rec-1', school_id: 'school-1', is_active: true }
+      : opts.student,
+  );
   prisma.user_profile.findUnique.mockResolvedValue({
     account_type: opts.accountType,
     is_active: true,
@@ -77,6 +84,23 @@ describe('ChatAccessGuard', () => {
     ]) {
       expect(await guard.canActivate(context(route, 'stu'))).toBe(true);
     }
+  });
+
+  test('a deactivated student record cannot chat', async () => {
+    const guard = setup({
+      accountType: 'student',
+      studentMessaging: true,
+      student: { id: 'rec-1', school_id: 'school-1', is_active: false },
+    });
+    const err = await expectRejection(guard.canActivate(context('sendMessage', 'stu')));
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect((err as Error).message).toBe('This student record is inactive');
+  });
+
+  test('a student account with no linked record cannot chat', async () => {
+    const guard = setup({ accountType: 'student', studentMessaging: true, student: null });
+    const err = await expectRejection(guard.canActivate(context('listConversations', 'stu')));
+    expect((err as Error).message).toBe('No student record is linked to this account');
   });
 
   test('students never create channels', async () => {

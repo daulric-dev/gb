@@ -263,10 +263,18 @@ describe('ActivityService.update', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
+  /** The activity row as the points change locks it. */
+  const lockedAs = (kind: string, points: number) => (p: MockPrisma) =>
+    p.$queryRaw.mockResolvedValue([{ kind, points }]);
+
+  /** The SQL text of a tagged raw call. */
+  const sql = (call: any[]) => (call[0] as string[]).join('?');
+
   test('refuses to lower points below a mark already given', async () => {
-    const { service, prisma } = build((p) =>
-      p.submission.findFirst.mockResolvedValue({ id: 'sub-1' }),
-    );
+    const { service, prisma } = build((p) => {
+      lockedAs('assignment', 20)(p);
+      p.submission.findFirst.mockResolvedValue({ id: 'sub-1' });
+    });
     await expect(
       service.update('user-1', 'act-1', { points: 10 }),
     ).rejects.toThrow(BadRequestException);
@@ -276,11 +284,82 @@ describe('ActivityService.update', () => {
   });
 
   test('lowers points when every mark still fits', async () => {
-    const { service, prisma } = build((p) =>
-      p.submission.findFirst.mockResolvedValue(null),
-    );
+    const { service, prisma } = build((p) => {
+      lockedAs('assignment', 20)(p);
+      p.submission.findFirst.mockResolvedValue(null);
+    });
     await service.update('user-1', 'act-1', { points: 15 });
     expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(15);
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  test('the mark check and the update share one transaction under a row lock', async () => {
+    const order: string[] = [];
+    const { service, prisma } = build((p) => {
+      p.$queryRaw.mockImplementation(async (...call: any[]) => {
+        order.push(sql(call).includes('for update') ? 'lock' : 'raw');
+        return [{ kind: 'assignment', points: 20 }];
+      });
+      p.submission.findFirst.mockImplementation(async () => {
+        order.push('check');
+        return null;
+      });
+      p.activity.update.mockImplementation(async ({ data }: any) => {
+        order.push('update');
+        return { ...ACTIVITY, ...data };
+      });
+    });
+    await service.update('user-1', 'act-1', { points: 30 });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['lock', 'check', 'update']);
+  });
+
+  test("changing a quiz's points rescales its automatic scores only", async () => {
+    const { service, prisma } = build((p) => {
+      lockedAs('quiz', 10)(p);
+      p.submission.findFirst.mockResolvedValue(null);
+    });
+    await service.update('user-1', 'act-1', { points: 20 });
+
+    // Teacher marks are left alone, so only they must fit the new points.
+    const where = prisma.submission.findFirst.mock.calls[0][0].where;
+    expect(where).toEqual({
+      activity_id: 'act-1',
+      score: { gt: 20 },
+      graded_by: { not: null },
+    });
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    const call = prisma.$executeRaw.mock.calls[0];
+    expect(sql(call)).toContain('graded_by is null');
+    expect(sql(call)).toContain('set score = score *');
+    expect(call.slice(1)).toEqual([20, 10, 'act-1']);
+    expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(20);
+  });
+
+  test('a teacher mark above the new quiz points still refuses the change', async () => {
+    const { service, prisma } = build((p) => {
+      lockedAs('quiz', 20)(p);
+      p.submission.findFirst.mockResolvedValue({ id: 'sub-1' });
+    });
+    await expect(
+      service.update('user-1', 'act-1', { points: 10 }),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(prisma.activity.update).not.toHaveBeenCalled();
+  });
+
+  test('saving the same quiz points rescales nothing', async () => {
+    const { service, prisma } = build(lockedAs('quiz', 10));
+    await service.update('user-1', 'act-1', { points: 10 });
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  test('a change that leaves the points alone takes no lock', async () => {
+    const { service, prisma } = build();
+    await service.update('user-1', 'act-1', { title: 'New title' });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.submission.findFirst).not.toHaveBeenCalled();
   });
 
   test('an activity with no course is not found', async () => {

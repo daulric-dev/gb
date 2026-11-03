@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchSubmissionFileBlob } from "@/lib/files/content";
+import { sanitizeLinks } from "@/lib/files/open";
 
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024;
 
@@ -97,6 +98,9 @@ export function SubmissionFileViewerDialog({
             renderComments: false,
             useBase64URL: true,
           });
+          // docx-preview copies hyperlink targets from the file verbatim, so
+          // a student's document could carry a javascript: link.
+          sanitizeLinks(container);
           if (active) previewType.value = "docx";
           return;
         }

@@ -1,6 +1,10 @@
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+/// Expression index (SQL only, Prisma cannot declare it): UNIQUE
+/// assignment_group_course_name_key ON (course_id, lower(name)) - one group
+/// name per course, ignoring case (0_baseline). Kept by migrations, not by
+/// this file: never drop it when diffing.
 model assignment_group {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   course_id    String     @db.Uuid
@@ -298,5 +302,7 @@ model course_notification {
   @@index([user_profile_id], map: "course_notification_user_unread_idx", where: raw("(read_at IS NULL)"))
   @@index([course_id], map: "course_notification_course_id_idx")
   @@index([discussion_topic_id], map: "course_notification_discussion_topic_id_idx")
+  @@index([activity_id], map: "course_notification_activity_id_idx")
+  @@index([announcement_id], map: "course_notification_announcement_id_idx")
   @@schema("course")
 }

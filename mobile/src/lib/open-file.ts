@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { File, Paths } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { ApiError, buildUrl } from "@/lib/api";
 import { authHeaders, rememberSessionToken } from "@/lib/session-token";
@@ -12,6 +12,7 @@ import { authHeaders, rememberSessionToken } from "@/lib/session-token";
  * the app's networking stack, not Safari's. So the bytes are fetched here, with
  * the session, written to the cache directory, and the share sheet - which
  * includes Quick Look on iOS and "Open with" on Android - takes it from there.
+ * Copies live in their own cache folder, emptied on logout (clearOpenedFiles).
  */
 export async function downloadAndOpen(
   path: string,
@@ -48,7 +49,9 @@ export async function downloadAndOpen(
   }
 
   // One file per name: re-opening replaces the earlier copy.
-  const file = new File(Paths.cache, safeName(name));
+  const dir = openedFilesDir();
+  dir.create({ intermediates: true, idempotent: true });
+  const file = new File(dir, safeName(name));
   if (file.exists) file.delete();
   file.create();
   file.write(bytes);
@@ -57,6 +60,25 @@ export async function downloadAndOpen(
     throw new Error("This device cannot open files");
   }
   await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: name });
+}
+
+/** Where downloadAndOpen keeps its copies: school files, not to outlive the session. */
+function openedFilesDir(): Directory {
+  return new Directory(Paths.cache, "opened-files");
+}
+
+/**
+ * Delete every file downloadAndOpen saved, so the next person on this device
+ * can't find a previous account's documents in the cache. Never throws.
+ */
+export function clearOpenedFiles(): void {
+  if (Platform.OS === "web") return;
+  try {
+    const dir = openedFilesDir();
+    if (dir.exists) dir.delete();
+  } catch (err) {
+    console.warn("Could not clear opened files", err);
+  }
 }
 
 /** `inline; filename*=UTF-8''a%20b.pdf` or `inline; filename="a b.pdf"`. */

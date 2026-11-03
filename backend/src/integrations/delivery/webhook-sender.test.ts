@@ -6,8 +6,10 @@ const REQ = {
   url: 'http://10.0.0.5:8080/hooks',
   secret: 'whsec_test',
   deliveryId: 'd-1',
+  eventId: 'e-1',
+  schoolId: 's-1',
   eventType: 'grade.recorded',
-  body: '{"id":"e-1","type":"grade.recorded"}',
+  body: '{"event_type":"grade.recorded","message":"Ada Lovelace received 18/20 for Essay in Maths","data":{}}',
   timestamp: 1_790_000_000,
 };
 
@@ -20,20 +22,62 @@ describe('signing and headers', () => {
     expect(signWebhook(REQ.secret, REQ.timestamp + 1, REQ.body)).not.toBe(signWebhook(REQ.secret, REQ.timestamp, REQ.body));
   });
 
-  test('every delivery header', () => {
+  test('every delivery header: the event metadata that is not in the body', () => {
     expect(webhookHeaders(REQ, REQ.timestamp)).toEqual({
       'Content-Type': 'application/json',
       'User-Agent': USER_AGENT,
       'X-GradeBook-Event': 'grade.recorded',
+      'X-GradeBook-Event-Id': 'e-1',
+      'X-GradeBook-School-Id': 's-1',
+      'X-GradeBook-Api-Version': '1',
       'X-GradeBook-Delivery': 'd-1',
       'X-GradeBook-Timestamp': String(REQ.timestamp),
       'X-GradeBook-Signature': signWebhook(REQ.secret, REQ.timestamp, REQ.body),
     });
     expect(USER_AGENT).toBe('GradeBook-Webhooks/1');
   });
+
+  test("custom headers are added as they are; GradeBook's own always win", () => {
+    const h = webhookHeaders(
+      {
+        ...REQ,
+        headers: {
+          Authorization: 'Bearer abc',
+          'X-API-Key': 'k1',
+          'X-GradeBook-Signature': 'forged',
+          'X-GradeBook-Event-Id': 'forged',
+          'X-GradeBook-School-Id': 'forged',
+        },
+      },
+      REQ.timestamp,
+    );
+    expect(h['X-GradeBook-Event-Id']).toBe('e-1');
+    expect(h['X-GradeBook-School-Id']).toBe('s-1');
+    expect(h.Authorization).toBe('Bearer abc');
+    expect(h['X-API-Key']).toBe('k1');
+    expect(h['X-GradeBook-Signature']).toBe(signWebhook(REQ.secret, REQ.timestamp, REQ.body));
+  });
+
+  test('a custom signing secret signs the same way', () => {
+    const own = 'my-own-receiver-secret-1234';
+    const expected = createHmac('sha256', own).update(`${REQ.timestamp}.${REQ.body}`).digest('hex');
+    expect(webhookHeaders({ ...REQ, secret: own }, REQ.timestamp)['X-GradeBook-Signature']).toBe(`v1=${expected}`);
+  });
 });
 
 describe('sendWebhook', () => {
+  test('blocks private webhook destinations by default', async () => {
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    try {
+      const result = await sendWebhook(REQ);
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('private or reserved');
+    } finally {
+      if (previous !== undefined) process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+    }
+  });
+
   test('POSTs the exact body, does not follow redirects, and treats 2xx as success', async () => {
     const fetchImpl = mock(async (_url: string, _init: RequestInit) => new Response('ok', { status: 200 }));
     const r = await sendWebhook(REQ, fetchImpl);

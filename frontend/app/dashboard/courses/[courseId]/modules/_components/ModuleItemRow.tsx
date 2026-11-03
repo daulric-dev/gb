@@ -23,6 +23,7 @@ import {
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { formatDue } from "@/lib/courses/format";
 import { fetchStaffCourseFileBlob } from "@/lib/files/content";
+import { openOrDownloadFile, safeExternalUrl } from "@/lib/files/open";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -66,7 +67,8 @@ function itemHref(item: ModuleItem, base: string): string | null {
     case "activity":
       return item.activityId ? `${base}/assignments/${item.activityId}` : null;
     case "link":
-      return item.url;
+      // Teacher-supplied: only http(s) is ever rendered as a link.
+      return safeExternalUrl(item.url);
     case "discussion":
       return item.discussionTopicId
         ? `${base}/discussions/${item.discussionTopicId}`
@@ -112,19 +114,16 @@ export function ModuleItemRow({
   const external = item.itemType === "link";
 
   // Files open through the course, so a colleague's linked file opens too.
+  // Only PDFs and plain images open in a tab; anything else downloads, since
+  // a blob: URL would render HTML/SVG on the app's origin.
   async function openFile(fileId: string) {
-    // Open the tab synchronously so popup blockers allow it, then point it
-    // at the file once the bytes arrive.
-    const win = window.open("", "_blank");
     opening.value = true;
     try {
-      const blob = await fetchStaffCourseFileBlob(courseId, fileId);
-      const url = URL.createObjectURL(blob);
-      if (win) win.location.href = url;
-      else window.location.href = url;
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await openOrDownloadFile(
+        () => fetchStaffCourseFileBlob(courseId, fileId),
+        item.title,
+      );
     } catch {
-      win?.close();
       toast.error("This file could not be opened. It may have been deleted.");
     } finally {
       opening.value = false;

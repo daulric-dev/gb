@@ -6,11 +6,11 @@ stores, what breaks without it, and which environment variables wire it up.
 
 | File | Purpose |
 | --- | --- |
-| [`infrastructure/docker-compose.yml`](./docker-compose.yml) | Production / staging: the API image's release step, Redis, the database backup sidecar, and an optional Postgres (with continuous backup) for a single box |
+| [`infrastructure/docker-compose.yml`](./docker-compose.yml) | Production / staging: three API replicas behind nginx, Redis, the database backup sidecar, and an optional Postgres (with continuous backup) for a single box |
 | [`docker-compose.dev.yml`](../docker-compose.dev.yml) (repo root) | Local development: Postgres, Redis, S3 (SeaweedFS) and Mailpit |
 
-The API itself is built from [`infrastructure/Dockerfile`](./Dockerfile) and run
-by the hosting platform (it starts with `bun dist/src/main`). See
+The API is built from [`infrastructure/Dockerfile`](./Dockerfile) and run by
+the production Compose stack behind its bundled nginx reverse proxy. See
 [The API container](#the-api-container) below.
 
 ## At a glance
@@ -21,6 +21,7 @@ by the hosting platform (it starts with `bun dist/src/main`). See
 | [Redis](#redis-redis) | `redis:7.4-alpine` | `redis` | `redis` | Optional for one instance, **yes** for more than one | `src/cache/`, `src/realtime/`, `src/queue/` |
 | [S3 object storage](#s3-object-storage-s3) | `chrislusf/seaweedfs:4.48` | `s3` | not included (use any S3 provider) | **Yes** | `src/storage/` → `src/file-manager/`, `src/images/` |
 | [Mailpit / SMTP](#mailpit--smtp-mailpit) | `axllent/mailpit:v1.27` | `mailpit` | not included (use any SMTP server) | **Yes** (sign-in sends email) | `src/mail/` → `src/account/email-code.service.ts` |
+| [API + nginx](#the-api-container) | API image + `nginx:1.28-alpine` | - | `app1`-`app3` + `nginx` | **Yes** | `backend/src/` |
 | [migrate](#migrate-release-step) | the API image | - | `migrate` (profile `release`) | Only with `MIGRATE_ON_START=false` | `backend/prisma/migrations/` |
 | [backup](#database-backups-backup-db-backup) | `infrastructure/backup/` (Postgres 18 client, age, rclone, supercronic) | `backup` (profile `backup`) | `backup` (runs by default) | **Yes** in production | None: reads the database, writes an S3 bucket |
 
@@ -303,9 +304,10 @@ pending migrations itself before starting, and this service is not needed.
 `x-app` anchor (build from `infrastructure/Dockerfile`, `env_file: .env`, wait
 for Redis to be healthy, health check against `GET /health`) and shared
 environment in `x-app-env` (`USE_REDIS=true`, `REDIS_URL`,
-`CHAT_CHANNELS_ENABLED=false`). The file itself only runs `migrate`,
-`redis` and `backup`; the API is run by the hosting platform from the image that CI builds
-from `infrastructure/Dockerfile`.
+`CHAT_CHANNELS_ENABLED=false`). It starts three API replicas (`app1`-`app3`)
+behind nginx. Nginx listens on `NGINX_HTTP_PORT` (default `80`); terminate TLS
+at a trusted upstream proxy or configure the TLS server in
+`infrastructure/nginx/default.conf` before exposing it directly.
 
 The image (Bun 1.4.4, Alpine):
 
@@ -321,10 +323,8 @@ Microsoft client ids), push notifications (Expo), chat encryption
 (`CHAT_ENCRYPTION_KEY` or the `CHAT_ENCRYPTION_KEYS` ring) and organisation
 admins by email (`ORG_ADMIN_EMAILS`).
 
-`infrastructure/nginx/` holds an nginx config that load-balances three replicas
-named `app1`-`app3` and turns off buffering for the SSE streams. No compose file
-currently defines those replicas; use it as a starting point if you put nginx in
-front of several API containers yourself.
+`infrastructure/nginx/` holds the nginx config that load-balances the three
+replicas and disables buffering for SSE streams.
 
 ---
 

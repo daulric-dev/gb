@@ -1,20 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Inbox, Loader2, RotateCw } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   DELIVERY_PAGE,
+  deliveryHeaders,
   deliveryStatusText,
   getDelivery,
   listDeliveries,
+  payloadMessage,
+  payloadSchoolId,
   webhooksApi,
   type DeliveryStatus,
   type EventTypeCatalog,
   type WebhookDelivery,
   type WebhookDeliveryDetail,
 } from "@/lib/webhooks";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,10 +41,12 @@ import {
 import { DeliveryStatusBadge, when } from "./status-badge";
 import { userMessage } from "@/lib/errors";
 
+const LIVE_REFRESH_MS = 2_000;
+
 /**
  * One webhook's deliveries, newest first, filtered by status and event type:
- * status, event, time, HTTP status, duration. A row opens the payload, the
- * receiver's response and the attempts, with Redeliver.
+ * status, event, time, HTTP status, duration. The list refreshes while the
+ * webhook is expanded; a row opens the payload, response and attempts.
  */
 export function WebhookDeliveries({
   apiBase,
@@ -65,20 +71,42 @@ export function WebhookDeliveries({
 
   useEffect(() => {
     let live = true;
-    listDeliveries(apiBase, webhookId, { status, eventType })
-      .then((page) => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshRows = async () => {
+      try {
+        const page = await listDeliveries(
+          apiBase,
+          webhookId,
+          { status, eventType },
+          controller.signal,
+        );
         if (!live) return;
-        setRows(page);
+        setRows((current) => {
+          if (!current) return page;
+          const currentPageIds = new Set(page.map((delivery) => delivery.id));
+          return [
+            ...page,
+            ...current.filter((delivery) => !currentPageIds.has(delivery.id)),
+          ];
+        });
         setMore(page.length === DELIVERY_PAGE);
         setError(null);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!live) return;
-        setRows([]);
+        setRows((current) => current ?? []);
         setError(userMessage(err, "Failed to load deliveries"));
-      });
+      } finally {
+        if (live) timer = setTimeout(() => void refreshRows(), LIVE_REFRESH_MS);
+      }
+    };
+
+    void refreshRows();
     return () => {
       live = false;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [apiBase, webhookId, status, eventType, refreshKey]);
 
@@ -101,6 +129,14 @@ export function WebhookDeliveries({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <h4 className="mr-auto text-sm font-medium">Deliveries</h4>
+        <span
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+          title="Updates while this webhook is expanded"
+          aria-label="Live delivery updates"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+          Live
+        </span>
         <NativeSelect
           size="sm"
           value={status}
@@ -159,7 +195,14 @@ export function WebhookDeliveries({
                   <TableCell>
                     <DeliveryStatusBadge status={d.status} />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{d.eventType}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {d.eventType}
+                    {d.tlsVerified === false && (
+                      <Badge variant="destructive" className="ml-2 font-sans" title="Sent without checking the certificate">
+                        TLS not verified
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                     {when(d.createdAt)}
                   </TableCell>
@@ -262,6 +305,12 @@ function DeliveryDialog({
                   <dd>{when(detail.nextAttemptAt)}</dd>
                 </>
               )}
+              {detail.tlsVerified === false && (
+                <>
+                  <dt className="text-muted-foreground">TLS</dt>
+                  <dd className="text-destructive">Sent without verifying the certificate</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">HTTP status</dt>
               <dd>{detail.lastStatusCode ?? "—"}</dd>
               <dt className="text-muted-foreground">Duration</dt>
@@ -273,8 +322,24 @@ function DeliveryDialog({
                 </>
               )}
             </dl>
+            {payloadMessage(detail.payload) && (
+              <p className="rounded-md border bg-muted/30 p-2 text-sm">{payloadMessage(detail.payload)}</p>
+            )}
             <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Payload</p>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Headers (besides signature and timestamp)</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border bg-muted/50 p-2 font-mono text-xs">
+                {deliveryHeaders(detail, payloadSchoolId(detail.payload)).map(([name, value]) => (
+                  <Fragment key={name}>
+                    <dt className="text-muted-foreground">{name}</dt>
+                    <dd className="break-all">{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                Body (<code>event_type</code>, <code>message</code>, <code>data</code>)
+              </p>
               <pre className="max-h-72 overflow-auto rounded-md border bg-muted/50 p-2 text-xs">
                 {JSON.stringify(detail.payload, null, 2)}
               </pre>

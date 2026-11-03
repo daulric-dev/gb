@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -263,19 +264,9 @@ export class ActivityService {
     }
     if (patch.instructions !== undefined)
       changes.instructions = patch.instructions;
-    if (patch.points !== undefined) {
-      // A mark above the new total would read as over 100% everywhere.
-      const over = await this.prisma.submission.findFirst({
-        where: { activity_id: activityId, score: { gt: patch.points } },
-        select: { id: true },
-      });
-      if (over) {
-        throw new BadRequestException(
-          `Some marks are above ${patch.points} points; change them before lowering the points`,
-        );
-      }
-      changes.points = patch.points;
-    }
+    // Checked against the marks, and quiz scores rescaled, inside the update
+    // below.
+    if (patch.points !== undefined) changes.points = patch.points;
     if (patch.dueAt !== undefined) changes.due_at = toTimestamp(patch.dueAt);
     if (patch.assignmentGroupId !== undefined) {
       if (patch.assignmentGroupId) {
@@ -317,12 +308,18 @@ export class ActivityService {
 
     let data;
     try {
-      data = await this.prisma.activity.update({
-        where: { id: activityId },
-        data: changes,
-        select: ACTIVITY_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        if (patch.points !== undefined) {
+          await this.changePoints(tx, activityId, patch.points);
+        }
+        return tx.activity.update({
+          where: { id: activityId },
+          data: changes,
+          select: ACTIVITY_SELECT,
+        });
       });
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       this.logger.error(
         `Failed to update activity: ${(error as Error).message}`,
       );
@@ -330,6 +327,62 @@ export class ActivityService {
     }
 
     return toActivity(data);
+  }
+
+  /**
+   * Make way for new points, in the transaction that saves them.
+   *
+   * The activity row is locked first; marking takes a share lock on it
+   * (SubmissionService.grade), so no mark can be written against the old
+   * points between the check here and the commit.
+   *
+   * submit_quiz stores a quiz's automatic score already scaled to the points,
+   * so those scores are rescaled by new/old to stay the same fraction. A mark
+   * a teacher entered or imported (graded_by set) is theirs and is left as
+   * it is, which is why it must still fit under the new points.
+   */
+  private async changePoints(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    points: number,
+  ) {
+    const [locked] = await tx.$queryRaw<
+      { kind: string; points: Prisma.Decimal | number }[]
+    >`
+      select kind, points from grading.activity
+      where id = ${activityId}::uuid
+      for update
+    `;
+    if (!locked) throw new NotFoundException('Activity not found');
+
+    const old = Number(locked.points);
+    const rescale = locked.kind === 'quiz' && old > 0 && old !== points;
+
+    // A mark above the new total would read as over 100% everywhere.
+    const over = await tx.submission.findFirst({
+      where: {
+        activity_id: activityId,
+        score: { gt: points },
+        ...(rescale ? { graded_by: { not: null } } : {}),
+      },
+      select: { id: true },
+    });
+    if (over) {
+      throw new BadRequestException(
+        `Some marks are above ${points} points; change them before lowering the points`,
+      );
+    }
+
+    if (rescale) {
+      await tx.$executeRaw`
+        update grading.submission
+        set score = score * ${points}::numeric / ${old}::numeric,
+            updated_at = now()
+        where activity_id = ${activityId}::uuid
+          and graded_by is null
+          and score is not null
+      `;
+    }
   }
 
   /**

@@ -30,6 +30,7 @@ import {
   CreateWebhookDto,
   ListDeliveriesQueryDto,
   ListIntegrationAuditQueryDto,
+  RotateSecretDto,
   UpdateWebhookDto,
 } from '@/integrations/webhooks/dto/webhook.dto';
 import { eventTypeCatalog } from '@/integrations/events/webhook-event-types';
@@ -126,8 +127,12 @@ export class SchoolWebhookController {
   @RequireStepUp()
   @Post(':id/rotate-secret')
   @HttpCode(200)
-  async rotate(@Req() req: Req, @Param('id', new ParseUUIDPipe()) id: string) {
-    return this.webhooks.rotateSecret(await this.school(req), id, asSchoolAdmin(req));
+  async rotate(
+    @Req() req: Req,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: RotateSecretDto,
+  ) {
+    return this.webhooks.rotateSecret(await this.school(req), id, asSchoolAdmin(req), dto.signingSecret);
   }
 
   /** Sends a `ping` now. No step-up: it changes nothing. Audit-logged. */

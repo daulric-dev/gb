@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
-import { encryptWebhookSecret } from '@/integrations/webhooks/webhook-secret';
+import { encryptWebhookHeaderValue, encryptWebhookSecret } from '@/integrations/webhooks/webhook-secret';
 import { IntegrationAuditService } from '@/integrations/audit/integration-audit.service';
 import { envelopeBody, WebhookDeliveryService } from './webhook-delivery.service';
 import { signWebhook } from './webhook-sender';
@@ -18,13 +18,22 @@ afterEach(() => {
   process.env.AUTH_SECRET = saved.AUTH_SECRET;
 });
 
+const EVENT = '44444444-4444-4444-8444-444444444444';
+const COURSE = { id: '55555555-5555-4555-8555-555555555555', name: 'Maths', code: null };
+// Keys out of order, as jsonb hands them back.
 const payload = {
-  data: { message: 'hi' },
+  data: { course: COURSE, createdBy: null, school: { id: SCHOOL, name: 'Riverside' } },
+  message: 'Maths was created',
+  event_type: 'course.created',
+};
+/** A delivery stored before the three-key body. */
+const legacyPayload = {
+  data: { course: COURSE, createdBy: null },
   school: { id: SCHOOL, name: 'Riverside' },
   createdAt: '2026-11-04T09:00:00.000Z',
   apiVersion: 1,
   type: 'course.created',
-  id: '44444444-4444-4444-8444-444444444444',
+  id: EVENT,
 };
 
 function setup(opts: {
@@ -34,6 +43,12 @@ function setup(opts: {
   failures?: number;
   status?: number;
   secretEnc?: string;
+  headers?: { id: string; name: string; value_enc: string }[];
+  body?: string;
+  payload?: unknown;
+  url?: string;
+  verifyTls?: boolean;
+  ca?: string | null;
 } = {}) {
   const prisma: MockPrisma = createMockPrisma();
   const tx = createMockPrisma();
@@ -42,16 +57,20 @@ function setup(opts: {
     id: HOOK,
     school_id: SCHOOL,
     name: 'SIS',
-    url: 'http://sis.internal/hooks',
+    url: opts.url ?? 'http://sis.internal/hooks',
     secret_enc: opts.secretEnc ?? encryptWebhookSecret({ schoolId: SCHOOL, webhookId: HOOK }, 'whsec_x'),
     enabled: opts.enabled ?? true,
+    verify_tls: opts.verifyTls ?? true,
+    tls_ca_cert: opts.ca ?? null,
+    headers: opts.headers ?? [],
   };
   prisma.webhook_delivery.findUnique.mockResolvedValue({
     id: DELIVERY,
     webhook_id: HOOK,
     school_id: SCHOOL,
+    event_id: EVENT,
     event_type: 'course.created',
-    payload,
+    payload: opts.payload ?? payload,
     status: 'pending',
     attempts: opts.attempts ?? 0,
     webhook: hook,
@@ -74,7 +93,7 @@ function setup(opts: {
   const calls: { url: string; init: RequestInit }[] = [];
   service.fetchImpl = async (url, init) => {
     calls.push({ url, init });
-    return new Response('received', { status: opts.status ?? 200 });
+    return new Response(opts.body ?? 'received', { status: opts.status ?? 200 });
   };
   service.random = () => 0.5;
   const updates = () => prisma.webhook_delivery.update.mock.calls.map((c: any[]) => c[0].data);
@@ -97,10 +116,50 @@ describe('WebhookDeliveryService.attempt', () => {
     const h = calls[0].init.headers as Record<string, string>;
     const body = calls[0].init.body as string;
     expect(body).toBe(envelopeBody(payload));
-    expect(JSON.parse(body).type).toBe(h['X-GradeBook-Event']);
-    expect(Object.keys(JSON.parse(body))).toEqual(['id', 'type', 'apiVersion', 'createdAt', 'school', 'data']);
+    expect(Object.keys(JSON.parse(body))).toEqual(['event_type', 'message', 'data']);
+    expect(JSON.parse(body).event_type).toBe(h['X-GradeBook-Event']);
     expect(h['X-GradeBook-Signature']).toBe(signWebhook('whsec_x', Number(h['X-GradeBook-Timestamp']), body));
     expect(h['X-GradeBook-Delivery']).toBe(DELIVERY);
+    expect(h['X-GradeBook-Event-Id']).toBe(EVENT);
+    expect(h['X-GradeBook-School-Id']).toBe(SCHOOL);
+    expect(h['X-GradeBook-Api-Version']).toBe('1');
+    // Already in the new shape: the stored payload is left alone.
+    expect(data.payload).toBeUndefined();
+  });
+
+  test('TLS: http has none (tls_verified null); https verifies by default, or not when off, recorded per attempt', async () => {
+    const http = setup({ verifyTls: false });
+    await http.service.attempt(DELIVERY);
+    expect((http.calls[0].init as any).tls).toBeUndefined();
+    expect(http.updates()[0].tls_verified).toBeNull();
+
+    const on = setup({ url: 'https://sis.example/hooks', ca: 'PEM' });
+    await on.service.attempt(DELIVERY);
+    expect((on.calls[0].init as any).tls).toEqual({ rejectUnauthorized: true, ca: 'PEM' });
+    expect(on.updates()[0].tls_verified).toBe(true);
+
+    const off = setup({ url: 'https://sis.example/hooks', verifyTls: false });
+    await off.service.sendNow(DELIVERY);
+    expect((off.calls[0].init as any).tls).toEqual({ rejectUnauthorized: false });
+    expect(off.updates()[0].tls_verified).toBe(false);
+  });
+
+  test('a delivery queued in the old shape is sent (and stored) as the three-key envelope', async () => {
+    const { service, calls, updates } = setup({ payload: legacyPayload, status: 500 });
+    await service.attempt(DELIVERY);
+    const body = calls[0].init.body as string;
+    const sent = JSON.parse(body);
+    expect(Object.keys(sent)).toEqual(['event_type', 'message', 'data']);
+    expect(sent).toEqual({
+      event_type: 'course.created',
+      message: 'Maths was created',
+      data: { school: { id: SCHOOL, name: 'Riverside' }, course: COURSE, createdBy: null },
+    });
+    const h = calls[0].init.headers as Record<string, string>;
+    expect(h['X-GradeBook-Event-Id']).toBe(EVENT);
+    expect(h['X-GradeBook-Signature']).toBe(signWebhook('whsec_x', Number(h['X-GradeBook-Timestamp']), body));
+    // Written back with the outcome (retry included), so the row shows what was sent.
+    expect(updates()[0].payload).toEqual(sent);
   });
 
   test('a failure is retried later with backoff, queued in Redis mode, and counted', async () => {
@@ -175,5 +234,51 @@ describe('WebhookDeliveryService.attempt', () => {
     prisma.$queryRaw.mockResolvedValueOnce([{ id: DELIVERY }]);
     await service.processOne(DELIVERY);
     expect(calls).toHaveLength(1);
+  });
+
+  test('custom headers are sent as name: value on scheduled attempts and on sendNow (test, redeliver)', async () => {
+    const H1 = '55555555-5555-4555-8555-555555555555';
+    const H2 = '66666666-6666-4666-8666-666666666666';
+    const headers = [
+      { id: H1, name: 'Authorization', value_enc: encryptWebhookHeaderValue({ schoolId: SCHOOL, webhookId: HOOK, headerId: H1 }, 'Bearer tok-123') },
+      { id: H2, name: 'X-API-Key', value_enc: encryptWebhookHeaderValue({ schoolId: SCHOOL, webhookId: HOOK, headerId: H2 }, 'key-456') },
+    ];
+    for (const run of ['attempt', 'sendNow'] as const) {
+      const { service, calls } = setup({ headers });
+      await service[run](DELIVERY);
+      const h = calls[0].init.headers as Record<string, string>;
+      expect(h.Authorization).toBe('Bearer tok-123');
+      expect(h['X-API-Key']).toBe('key-456');
+      // GradeBook's own headers are still there and signed as before.
+      expect(h['X-GradeBook-Signature']).toBe(signWebhook('whsec_x', Number(h['X-GradeBook-Timestamp']), calls[0].init.body as string));
+      expect(h['Content-Type']).toBe('application/json');
+    }
+  });
+
+  test('header values are redacted from the stored response excerpt and error', async () => {
+    const H1 = '55555555-5555-4555-8555-555555555555';
+    const headers = [
+      { id: H1, name: 'X-API-Key', value_enc: encryptWebhookHeaderValue({ schoolId: SCHOOL, webhookId: HOOK, headerId: H1 }, 'super-secret-key') },
+    ];
+    const { service, updates } = setup({ headers, status: 401, body: 'bad key: super-secret-key' });
+    await service.sendNow(DELIVERY);
+    const stored = updates()[0];
+    expect(stored.response_excerpt).toBe('bad key: [redacted]');
+    expect(JSON.stringify(updates())).not.toContain('super-secret-key');
+    // Request headers are never written to the delivery row.
+    expect(Object.keys(stored)).not.toContain('headers');
+  });
+
+  test("a header value that can't be decrypted (moved to another header, or AUTH_SECRET changed) is a failure, not a send", async () => {
+    const H1 = '55555555-5555-4555-8555-555555555555';
+    const other = '77777777-7777-4777-8777-777777777777';
+    const headers = [
+      { id: H1, name: 'X-API-Key', value_enc: encryptWebhookHeaderValue({ schoolId: SCHOOL, webhookId: HOOK, headerId: other }, 'k') },
+    ];
+    const { service, updates, calls } = setup({ headers });
+    await service.sendNow(DELIVERY);
+    expect(calls).toHaveLength(0);
+    expect(updates()[0].last_error).toContain('X-API-Key');
+    expect(updates()[0].last_error).toContain('enter it again');
   });
 });

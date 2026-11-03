@@ -541,11 +541,21 @@ export class SessionService {
       select: { id: true, token_hash: true, previous_token_hash: true },
     });
     if (rows.length === 0) return 0;
+    const ids = rows.map((r) => r.id);
     const { count } = await this.prisma.session.updateMany({
-      where: { id: { in: rows.map((r) => r.id) }, revoked_at: null },
+      where: { id: { in: ids }, revoked_at: null },
       data: { revoked_at: new Date(), revoked_reason: reason },
     });
     await this.purgeCached(rows);
+    // Their push devices go too. Sessions revoked elsewhere (or expired) are
+    // skipped at send time and their devices deleted with the session.
+    try {
+      await this.prisma.push_device.deleteMany({ where: { session_id: { in: ids } } });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to remove push devices of revoked sessions: ${(err as Error).message}`,
+      );
+    }
     return count;
   }
 

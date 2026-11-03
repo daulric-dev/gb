@@ -11,6 +11,7 @@ import { getSessionToken, setSessionToken } from "@/lib/session-token";
 import { api, ApiError, setFeatureDisabledHandler } from "@/lib/api";
 import { resolveFeatures } from "@/lib/features";
 import { registerForPush, unregisterPush } from "@/lib/push";
+import { clearOpenedFiles } from "@/lib/open-file";
 
 export interface UserProfile {
   id: string;
@@ -132,7 +133,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const userId = profile?.id ?? null;
   const pushOn = resolveFeatures(profile?.features).push_notifications;
   useEffect(() => {
-    if (userId && pushOn) void registerForPush();
+    if (!userId) return;
+    // Switched off while signed in: hand this device's token back too.
+    if (pushOn) void registerForPush();
+    else void unregisterPush();
   }, [userId, pushOn]);
 
   // A feature was switched off while the app was open: re-read the profile
@@ -164,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* clear local state regardless of network result */
     }
     await setSessionToken(null);
+    clearOpenedFiles();
     setProfile(null);
   }, []);
 

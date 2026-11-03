@@ -1,0 +1,66 @@
+import { describe, expect, test } from 'bun:test';
+import { resolveWebhookDestination } from './webhook-destination';
+
+describe('resolveWebhookDestination', () => {
+  test('allows public IPv4 and IPv6 addresses', async () => {
+    expect(await resolveWebhookDestination('8.8.8.8')).toEqual({
+      address: '8.8.8.8',
+      family: 4,
+    });
+    expect(await resolveWebhookDestination('2606:4700:4700::1111')).toEqual({
+      address: '2606:4700:4700::1111',
+      family: 6,
+    });
+  });
+
+  test('blocks private, loopback, link-local, and reserved addresses', async () => {
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'false';
+    try {
+      for (const address of [
+        '10.0.0.1',
+        '127.0.0.1',
+        '169.254.169.254',
+        '192.168.1.1',
+        '::1',
+        'fe80::1',
+        'fc00::1',
+        '::ffff:127.0.0.1',
+      ]) {
+        await expect(resolveWebhookDestination(address)).rejects.toThrow(
+          'private or reserved',
+        );
+      }
+    } finally {
+      if (previous === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+      else process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+    }
+  });
+
+  test('rejects a hostname if any DNS answer is private', async () => {
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'false';
+    try {
+      await expect(
+        resolveWebhookDestination('hooks.example', async () => [
+          { address: '8.8.8.8', family: 4 },
+          { address: '10.0.0.1', family: 4 },
+        ]),
+      ).rejects.toThrow('private or reserved');
+    } finally {
+      if (previous === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+      else process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+    }
+  });
+
+  test('uses the first validated DNS address as the pinned destination', async () => {
+    const resolved = await resolveWebhookDestination(
+      'hooks.example',
+      async () => [
+        { address: '8.8.8.8', family: 4 },
+        { address: '2606:4700:4700::1111', family: 6 },
+      ],
+    );
+    expect(resolved).toEqual({ address: '8.8.8.8', family: 4 });
+  });
+});

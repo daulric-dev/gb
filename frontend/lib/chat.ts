@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals-react";
-import { api, apiQuery } from "@/lib/api";
+import { api, apiQuery, buildUrl } from "@/lib/api";
 
 // Types (mirror the backend chat DTOs)
 
@@ -172,9 +172,24 @@ export async function actOnMessage(
 let source: EventSource | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let presenceTimer: ReturnType<typeof setInterval> | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+/** Consecutive stream failures since the last successful open. */
 let errorCount = 0;
+/** Set between connectChat and disconnectChat; a pending reconnect checks it. */
+let wanted = false;
 
-const STREAM_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/chat/stream`;
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+
+/**
+ * How long to wait before reconnect `attempt` (1-based): exponential from 1s,
+ * capped at 30s, with "equal jitter" (half fixed, half random) so a server
+ * restart doesn't get every open tab back at the same instant.
+ */
+export function reconnectDelay(attempt: number, random: () => number = Math.random): number {
+  const exp = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.max(0, attempt - 1));
+  return Math.round(exp / 2 + random() * (exp / 2));
+}
 
 function closeStream() {
   if (!source) return;
@@ -185,7 +200,8 @@ function closeStream() {
 export function connectChat(userId: string) {
   currentUserId = userId;
   if (typeof window === "undefined") return;
-  if (source) return;
+  wanted = true;
+  if (source || reconnectTimer) return;
 
   void refreshConversations();
   void refreshChatUnread();
@@ -197,15 +213,25 @@ export function connectChat(userId: string) {
     presenceTimer = setInterval(() => void refreshPresence(), 45_000);
   }
 
+  openStream();
+}
+
+function openStream() {
   try {
-    source = new EventSource(STREAM_URL, { withCredentials: true });
+    source = new EventSource(buildUrl("/chat/stream"), { withCredentials: true });
   } catch {
-    startPollingFallback();
+    handleStreamError();
     return;
   }
 
   source.onopen = () => {
     chatConnected.value = true;
+    // Back after an outage: pull whatever was missed while we were away.
+    if (errorCount > 0) {
+      void refreshConversations();
+      void refreshChatUnread();
+      void refreshPresence();
+    }
     errorCount = 0;
     stopPollingFallback();
   };
@@ -234,15 +260,37 @@ export function connectChat(userId: string) {
     onlineUsers.value = next;
   });
 
-  source.onerror = () => {
-    closeStream();
-    chatConnected.value = false;
-    errorCount += 1;
-    if (errorCount >= 3) startPollingFallback();
-  };
+  source.onerror = handleStreamError;
+}
+
+/**
+ * The stream dropped (or never opened). We close it ourselves rather than
+ * leave it to the browser's retry, so: poll right away to stay current, and
+ * reopen the stream with backoff until it sticks.
+ */
+function handleStreamError() {
+  closeStream();
+  chatConnected.value = false;
+  errorCount += 1;
+  startPollingFallback();
+  scheduleReconnect();
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer || !wanted) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (wanted && !source) openStream();
+  }, reconnectDelay(errorCount));
 }
 
 export function disconnectChat() {
+  wanted = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  errorCount = 0;
   closeStream();
   chatConnected.value = false;
   stopPollingFallback();

@@ -167,10 +167,32 @@ describe('ErasureReplayService', () => {
     const { prisma, log } = fakeDb({});
     const replay = new ErasureReplayService(prisma as any, createFakeStorage() as any);
     const e = signed(entry(U(1), '2026-10-25T00:00:00Z', plan.of(plan.del('chat.message', { id: [U(5)] }))));
-    expect((await replay.replay([e])).results[0].restoredLogRow).toBe(true);
-    expect(log.has(U(1))).toBe(true);
-    expect(prisma.erasure_log.createMany.mock.calls[0][0].skipDuplicates).toBe(true);
-    expect((await replay.replay([e])).results[0].restoredLogRow).toBe(false);
+
+    const first = await replay.replay([e]);
+    expect(first).toMatchObject({
+      applied: 1,
+      unchanged: 0,
+      failed: 0,
+      results: [{ id: U(1), restoredLogRow: true }],
+    });
+    expect([...log]).toEqual([U(1)]);
+
+    const second = await replay.replay([e]);
+    expect(second).toMatchObject({
+      applied: 0,
+      unchanged: 1,
+      failed: 0,
+      results: [{ id: U(1), restoredLogRow: false }],
+    });
+    expect([...log]).toEqual([U(1)]);
+
+    expect(prisma.erasure_log.createMany).toHaveBeenCalledTimes(2);
+    for (const [args] of prisma.erasure_log.createMany.mock.calls) {
+      expect(args).toMatchObject({
+        skipDuplicates: true,
+        data: [{ id: U(1) }],
+      });
+    }
   });
 
   test('an invalid plan fails that entry only', async () => {

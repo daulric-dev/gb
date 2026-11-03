@@ -23,12 +23,16 @@ export type IntegrationAuditAction =
   | 'webhook_auto_disabled'
   | 'secret_rotated'
   | 'test_sent'
-  | 'delivery_redelivered';
+  | 'delivery_redelivered'
+  | 'tls_verification_disabled'
+  | 'tls_verification_enabled'
+  | 'tls_ca_changed';
 
 /**
  * One entry to write. `changes` is `{ field: { before, after } }` plus
  * context; it must never hold the signing secret (rotation logs only that it
- * happened).
+ * happened) or a custom header's value (`headers` lists names added, removed,
+ * renamed and whose value changed).
  */
 export interface IntegrationAuditEntry {
   action: IntegrationAuditAction;
@@ -55,7 +59,7 @@ export const AUDIT_MAX_LIMIT = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Keys that must never reach the log, whatever a caller passes. */
-const SECRET_KEYS = new Set(['secret', 'secret_enc', 'secretEnc', 'signingSecret']);
+const SECRET_KEYS = new Set(['secret', 'secret_enc', 'secretEnc', 'signingSecret', 'value', 'value_enc', 'valueEnc']);
 
 function scrub(changes: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(changes).filter(([k]) => !SECRET_KEYS.has(k)));

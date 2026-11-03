@@ -12,6 +12,7 @@ const SECTIONS: { label: string; dir?: string; items?: string[] }[] = [
       "developer-guide",
       "platform-migration",
       "environment-variables",
+      "hosting-requirements",
       "dedicated-deployment",
       "backups",
       "sso",
@@ -21,7 +22,6 @@ const SECTIONS: { label: string; dir?: string; items?: string[] }[] = [
   { label: "User Guide", dir: "guide" },
   { label: "Backend", dir: "backend" },
   { label: "Frontend", dir: "frontend" },
-  { label: "CLI", dir: "cli" },
 ];
 
 export interface NavItem {

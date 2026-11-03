@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FeatureService } from '@/features/feature.service';
 import type { Prisma } from '@/generated/prisma/client';
-import { validateEventData, WEBHOOK_API_VERSION } from '@/integrations/events/webhook-event-types';
-import { WebhookDeliveryService, type WebhookEnvelope } from '@/integrations/delivery/webhook-delivery.service';
+import { validateEventData } from '@/integrations/events/webhook-event-types';
+import { buildEnvelope } from '@/integrations/events/webhook-envelope';
+import { WebhookDeliveryService } from '@/integrations/delivery/webhook-delivery.service';
 import { WebhookWorker } from '@/integrations/delivery/webhook.worker';
 
 export interface PersonRef {
@@ -36,8 +37,9 @@ type DataSource = EventData | (() => Promise<EventData | null> | EventData | nul
  * webhook subscribes to the type, it stops after two cheap lookups (the
  * feature map is cached) without building the payload.
  *
- * One delivery row per subscribed webhook is written with the same event id;
- * WebhookDeliveryService sends them.
+ * One delivery row per subscribed webhook is written with the same event id
+ * (sent as X-GradeBook-Event-Id) and the same `{ event_type, message, data }`
+ * body, `data` led by the school; WebhookDeliveryService sends them.
  */
 @Injectable()
 export class WebhookEvents {
@@ -67,10 +69,6 @@ export class WebhookEvents {
 
       const built = typeof data === 'function' ? await data() : data;
       if (!built) return 0;
-      const problems = validateEventData(type, built);
-      if (problems.length) {
-        this.logger.warn(`Webhook event ${type} does not match its schema: ${problems.slice(0, 5).join('; ')}`);
-      }
 
       const school = await this.prisma.school.findUnique({
         where: { id: schoolId },
@@ -78,19 +76,19 @@ export class WebhookEvents {
       });
       if (!school) return 0;
 
-      const envelope: WebhookEnvelope = {
-        id: randomUUID(),
-        type,
-        apiVersion: WEBHOOK_API_VERSION,
-        createdAt: new Date().toISOString(),
-        school: { id: school.id, name: school.name ?? '' },
-        data: built,
-      };
+      // Every event's data starts with the school (the builders leave it out).
+      const full: EventData = { school: { id: school.id, name: school.name ?? '' }, ...built };
+      const problems = validateEventData(type, full);
+      if (problems.length) {
+        this.logger.warn(`Webhook event ${type} does not match its schema: ${problems.slice(0, 5).join('; ')}`);
+      }
+      const eventId = randomUUID();
+      const envelope = buildEnvelope(type, full);
       const rows = await this.prisma.webhook_delivery.createManyAndReturn({
         data: hooks.map((h) => ({
           webhook_id: h.id,
           school_id: schoolId,
-          event_id: envelope.id,
+          event_id: eventId,
           event_type: type,
           payload: envelope as unknown as Prisma.InputJsonValue,
           status: 'pending',

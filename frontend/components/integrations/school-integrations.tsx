@@ -18,7 +18,9 @@ import { isFeatureDisabledError } from "@/lib/features";
 import {
   EVENT_TYPES_PATH,
   eventsSummary,
+  headersSummary,
   SUBSCRIBABLE,
+  tlsBadge,
   webhooksApi,
   type EventTypeCatalog,
   type Webhook,
@@ -32,6 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { WebhookFormDialog } from "./webhook-form-dialog";
 import { SecretOnceDialog } from "./secret-once-dialog";
+import { RotateSecretDialog } from "./rotate-secret-dialog";
 import { WebhookDeliveries } from "./webhook-deliveries";
 import { IntegrationActivity } from "./integration-activity";
 import { DeliveryStatusBadge, when } from "./status-badge";
@@ -88,7 +91,8 @@ export function SchoolIntegrations({
   const total = catalog?.eventTypes.filter(SUBSCRIBABLE).length ?? 0;
 
   function created(r: WebhookWithSecret) {
-    setSecret({ value: r.secret, name: r.webhook.name, rotated: false });
+    // A secret the admin entered is not echoed back: nothing to show.
+    if (r.secret) setSecret({ value: r.secret, name: r.webhook.name, rotated: false });
     bump();
   }
 
@@ -140,7 +144,7 @@ export function SchoolIntegrations({
                   setFormOpen(true);
                 }}
                 onRotatedAction={(r) => {
-                  setSecret({ value: r.secret, name: r.webhook.name, rotated: true });
+                  if (r.secret) setSecret({ value: r.secret, name: r.webhook.name, rotated: true });
                   bump();
                 }}
                 onChangedAction={bump}
@@ -193,6 +197,9 @@ function WebhookRow({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
+  const [rotateKey, setRotateKey] = useState(0);
+  const headers = headersSummary(h.headers);
   const base = `${webhooksApi(apiBase)}/${h.id}`;
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -223,10 +230,8 @@ function WebhookRow({
     });
 
   const rotate = () => {
-    if (!window.confirm(`Rotate the signing secret for "${h.name}"? The current secret stops working immediately.`)) return;
-    void run("rotate the secret", async () => {
-      onRotatedAction(await api<WebhookWithSecret>(`${base}/rotate-secret`, { method: "POST", stepUp: true }));
-    });
+    setRotateKey((k) => k + 1);
+    setRotating(true);
   };
 
   const remove = () => {
@@ -252,6 +257,16 @@ function WebhookRow({
             <span className="flex flex-wrap items-center gap-2">
               <span className="truncate font-medium">{h.name}</span>
               <Badge variant="outline">{eventsSummary(h.events, total)}</Badge>
+              {headers && (
+                <Badge variant="outline" title={h.headers.map((x) => x.name).join(", ")}>
+                  {headers}
+                </Badge>
+              )}
+              {tlsBadge(h) && (
+                <Badge variant="destructive" title="Certificate checks are off: deliveries can be intercepted">
+                  {tlsBadge(h)}
+                </Badge>
+              )}
               {!h.enabled && <Badge variant="outline">Off</Badge>}
               {h.lastDelivery && <DeliveryStatusBadge status={h.lastDelivery.status} />}
             </span>
@@ -283,9 +298,22 @@ function WebhookRow({
           The signing secret can no longer be read (the server&apos;s AUTH_SECRET changed). Rotate it.
         </p>
       )}
+      {h.headers.some((x) => x.valueUnreadable) && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          A header value can no longer be read (the server&apos;s AUTH_SECRET changed). Edit the webhook and enter it again.
+        </p>
+      )}
       {h.insecure && (
         <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
           Plain http: payloads travel unencrypted.
+        </p>
+      )}
+      {tlsBadge(h) && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-destructive">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          TLS certificate verification is off: deliveries can be read or changed by anyone between
+          GradeBook and the server. Turn it back on, or trust the server&apos;s CA certificate instead.
         </p>
       )}
 
@@ -318,6 +346,14 @@ function WebhookRow({
           />
         </div>
       )}
+      <RotateSecretDialog
+        key={rotateKey}
+        open={rotating}
+        url={base}
+        webhookName={h.name}
+        onOpenChangeAction={setRotating}
+        onRotatedAction={onRotatedAction}
+      />
     </div>
   );
 }

@@ -13,6 +13,51 @@ export interface WebhookDisabledEmailInput {
  * failures, and a link to its settings. Never the URL's secret parts or the
  * signing secret. Escaped by the shared layout.
  */
+export interface WebhookTlsDisabledEmailInput {
+  school: string;
+  webhook: string;
+  at: Date;
+  settingsUrl: string;
+}
+
+/**
+ * "TLS verification turned off for webhook X": sent when an admin switches
+ * certificate checks off, since deliveries can then be intercepted.
+ */
+export function webhookTlsDisabledEmail(input: WebhookTlsDisabledEmailInput): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const subject = `TLS verification turned off for webhook "${input.webhook}" - deliveries can be intercepted`;
+  const when = formatWhen(input.at);
+  const intro =
+    `Certificate (SSL/TLS) verification was turned off for the webhook "${input.webhook}" of ${input.school}. ` +
+    'Its deliveries can now be read or changed by anyone between GradeBook and the receiving server.';
+  const next =
+    'If this was not you, or it was only for a test, turn "Verify SSL/TLS certificate" back on. ' +
+    "If the receiver uses a self-signed or private-CA certificate, add that CA as the webhook's trusted CA certificate instead.";
+  const footer =
+    'You are getting this because you administer this school or its organisation on GradeBook.';
+  return {
+    subject,
+    text: [intro, `When: ${when}`, next, `Review: ${input.settingsUrl}`, footer].join('\n\n'),
+    html: accountEmailHtml({
+      title: subject,
+      preheader: intro,
+      heading: 'TLS verification turned off',
+      paragraphs: [intro, next],
+      details: [
+        ['Webhook', input.webhook],
+        ['School', input.school],
+        ['When', when],
+      ],
+      button: { label: 'Review integrations', href: input.settingsUrl },
+      footer,
+    }),
+  };
+}
+
 export function webhookDisabledEmail(input: WebhookDisabledEmailInput): {
   subject: string;
   text: string;

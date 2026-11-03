@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fetchCourseFileBlob } from "@/lib/files/content";
+import { openOrDownloadFile, safeExternalUrl } from "@/lib/files/open";
 import { cn } from "@/lib/utils";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { Badge } from "@/components/ui/badge";
@@ -195,11 +196,13 @@ function ModuleItemRow({
     );
   }
 
-  if (item.itemType === "link" && item.url) {
+  // Teacher-supplied: only an http(s) URL is rendered as a link.
+  const linkUrl = item.itemType === "link" ? safeExternalUrl(item.url) : null;
+  if (linkUrl) {
     return (
       <li>
         <a
-          href={item.url}
+          href={linkUrl}
           target="_blank"
           rel="noopener noreferrer"
           style={indent}
@@ -216,18 +219,15 @@ function ModuleItemRow({
   if (item.itemType === "file" && item.fileId) {
     const fileId = item.fileId;
     async function openFile() {
-      // Open the tab synchronously so popup blockers allow it, then point it
-      // at the file once the bytes arrive.
-      const win = window.open("", "_blank");
+      // PDFs and plain images open in a tab; anything else downloads, since a
+      // blob: URL would render HTML/SVG on the app's origin.
       opening.value = true;
       try {
-        const blob = await fetchCourseFileBlob(courseId, fileId);
-        const url = URL.createObjectURL(blob);
-        if (win) win.location.href = url;
-        else window.location.href = url;
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        await openOrDownloadFile(
+          () => fetchCourseFileBlob(courseId, fileId),
+          item.title,
+        );
       } catch {
-        win?.close();
         toast.error("This file could not be opened. Try again, or ask your teacher.");
       } finally {
         opening.value = false;

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
   EVENT_GROUPS,
+  eventMessage,
   eventTypeCatalog,
+  MAX_MESSAGE_LENGTH,
   expandEvents,
   UnknownEventTypeError,
   validateEventData,
@@ -63,12 +65,74 @@ describe('webhook event type catalog', () => {
   test('the validator reports wrong types, missing and extra keys, bad enums and formats', () => {
     const t = WEBHOOK_EVENT_TYPES.find((x) => x.key === 'staff.left')!;
     expect(validateSchema(t.schema, { ...t.example, extra: 1 })).toEqual(['data.extra: not allowed']);
-    expect(validateSchema(t.schema, { staff: t.example.staff })).toEqual(['data.via: required']);
+    expect(validateSchema(t.schema, { school: t.example.school, staff: t.example.staff })).toEqual(['data.via: required']);
     expect(validateSchema(t.schema, { ...t.example, via: 'fired' })[0]).toContain('is not one of');
     expect(
       validateSchema(t.schema, { ...t.example, staff: { ...(t.example.staff as object), id: 'nope' } }),
     ).toEqual(['data.staff.id: not a uuid']);
     expect(validateSchema(t.schema, 'x')).toEqual(['data: expected object, got string']);
     expect(validateEventData('nope', {})).toEqual(['unknown event type "nope"']);
+  });
+});
+
+describe('event messages', () => {
+  test('every example has a schema-valid school and a plain-text message of at most 280 characters', () => {
+    for (const t of WEBHOOK_EVENT_TYPES) {
+      expect(t.example.school).toEqual({ id: expect.any(String), name: expect.any(String) });
+      expect(t.schema.required).toContain('school');
+      const m = eventMessage(t.key, t.example);
+      expect(m.length).toBeGreaterThan(0);
+      expect(m.length).toBeLessThanOrEqual(MAX_MESSAGE_LENGTH);
+      expect(m).not.toMatch(/[<>\n]/);
+    }
+    expect(eventTypeCatalog().eventTypes.every((t) => t.exampleMessage.length > 0)).toBe(true);
+  });
+
+  const message = (key: string) => eventMessage(key, WEBHOOK_EVENT_TYPES.find((t) => t.key === key)!.example);
+
+  test('one example per group reads as a sentence', () => {
+    expect(message('grade.recorded')).toBe('Ada Lovelace received 17.5/20 for Quadratics homework in Year 10 Mathematics');
+    expect(message('submission.handed_in')).toBe('Ada Lovelace handed in Quadratics homework in Year 10 Mathematics');
+    expect(message('attendance.recorded')).toBe('Ada Lovelace was marked late in Year 10 Mathematics');
+    expect(message('attendance.session_closed')).toBe(
+      'Attendance (Period 1) closed in Year 10 Mathematics: 24 present, 2 late, 3 absent, 1 excused',
+    );
+    expect(message('staff.role_changed')).toBe("Grace Hopper's role changed from teacher to admin");
+    expect(message('student.joined_school')).toBe('Ada Lovelace joined Riverside High School with the join code');
+    expect(message('course.archived')).toBe('Year 10 Mathematics was archived');
+    expect(message('announcement.posted')).toBe(
+      'Grace Hopper posted the announcement "Exam timetable published" in Year 10 Mathematics',
+    );
+    expect(message('ping')).toBe('Test event from GradeBook');
+  });
+
+  test('variants: excused, cleared, no points', () => {
+    const base = WEBHOOK_EVENT_TYPES.find((t) => t.key === 'grade.recorded')!.example;
+    const grade = (g: object) => eventMessage('grade.recorded', { ...base, grade: { ...(base.grade as object), ...g } });
+    expect(grade({ excused: true, score: null })).toBe('Ada Lovelace was excused from Quadratics homework in Year 10 Mathematics');
+    expect(grade({ score: null })).toBe("Ada Lovelace's mark for Quadratics homework in Year 10 Mathematics was cleared");
+    expect(grade({ points: null, score: 18 })).toBe('Ada Lovelace received 18 for Quadratics homework in Year 10 Mathematics');
+  });
+
+  test('missing names fall back gracefully; nothing at all falls back to the label', () => {
+    expect(eventMessage('grade.recorded', { grade: { score: 18, points: 20 } })).toBe(
+      'A student received 18/20 for an activity in a course',
+    );
+    expect(eventMessage('attendance.recorded', { student: { firstName: null, lastName: ' ' } })).toBe(
+      'A student was marked for attendance in a course',
+    );
+    expect(eventMessage('staff.left', {})).toBe('A staff member left the school');
+    expect(eventMessage('course.archived', null)).toBe('A course was archived');
+    expect(eventMessage('student.enrolled', { student: { firstName: 'Ada', lastName: null } })).toBe(
+      'Ada was enrolled in a course',
+    );
+    expect(eventMessage('nope', {})).toBe('GradeBook event nope');
+  });
+
+  test('line breaks are collapsed and long messages are cut to 280 characters', () => {
+    const m = eventMessage('course.archived', { course: { name: `Line\none ${'x'.repeat(400)}` } });
+    expect(m.startsWith('Line one x')).toBe(true);
+    expect(m.length).toBe(MAX_MESSAGE_LENGTH);
+    expect(m.endsWith('…')).toBe(true);
   });
 });

@@ -13,6 +13,11 @@ name="gradebook-$VERSION"
 # output or .env files.
 git archive --format=zip --prefix="$name/" -o "$name.zip" HEAD \
   frontend backend docs \
+  ':(exclude,glob)**/*.test.*' \
+  ':(exclude,glob)**/*.spec.*' \
+  ':(exclude,glob)**/__tests__/**' \
+  ':(exclude,glob)**/test/**' \
+  ':(exclude,glob)**/tests/**' \
   package.json bun.lock turbo.json tsconfig.json README.md LICENSE.md
 sha256sum "$name.zip" > SHA256SUMS
 cat SHA256SUMS

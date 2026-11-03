@@ -26,12 +26,14 @@ jobs:
           bun-version: "1.4.4"
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Run Bun audit
         run: bun audit
 
-      # OSV-Scanner (Google)
+      # OSV-Scanner (Google). Report-only: there is no osv-scanner.toml
+      # allowlist for accepted findings yet, so blocking would fail on
+      # known/unfixable transitive advisories. Bun audit and Trivy gate instead.
       - name: Install OSV-Scanner
         run: bash .github/scripts/install-osv-scanner.sh
 
@@ -39,8 +41,8 @@ jobs:
         run: osv-scanner -r . --format table 2>&1 | tee osv-report.txt
         continue-on-error: true
 
-      # Trivy filesystem scan
-      - name: Run Trivy (filesystem)
+      # Trivy filesystem scan: full CRITICAL+HIGH report, then a CRITICAL gate.
+      - name: Run Trivy (filesystem report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -49,6 +51,16 @@ jobs:
           output: trivy-report.txt
           severity: CRITICAL,HIGH
           exit-code: "0"
+
+      - name: Run Trivy (fail on CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: Upload dependency scan reports
         if: always()
@@ -70,23 +82,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Gitleaks
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        env:
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        continue-on-error: true
-
       # TruffleHog
       - name: Run TruffleHog
         uses: trufflesecurity/trufflehog@4dd8831c5f12599465d4d45c3c447b4018a34c85 # v3.97.9
         with:
           extra_args: --only-verified
-        continue-on-error: true
 
+      # Full-history scan; fails the job when a verified secret is found.
       - name: Run TruffleHog (report file)
+        if: always()
         run: bash .github/scripts/security-trufflehog-report.sh
-        continue-on-error: true
 
       - name: Upload secret detection reports
         if: always()
@@ -115,16 +120,21 @@ jobs:
           bun-version: "1.4.4"
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Install Snyk CLI
+        if: env.SNYK_TOKEN != ''
         run: bun add -g snyk@1.1308.3
 
+      # Snyk stays report-only and is skipped when SNYK_TOKEN is not configured
+      # (forks, Dependabot PRs).
       - name: Run Snyk (backend)
+        if: env.SNYK_TOKEN != ''
         continue-on-error: true
         run: snyk test --file=backend/package.json --severity-threshold=high 2>&1 | tee snyk-backend-report.txt
 
       - name: Run Snyk (frontend)
+        if: env.SNYK_TOKEN != ''
         continue-on-error: true
         run: snyk test --file=frontend/package.json --severity-threshold=high 2>&1 | tee snyk-frontend-report.txt
 

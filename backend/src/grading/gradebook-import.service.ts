@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
-import { toActivityRef, WebhookEvents } from '@/integrations/events';
+import {
+  type PersonRef,
+  toActivityRef,
+  WebhookEvents,
+} from '@/integrations/events';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   CourseAccessService,
@@ -10,6 +14,11 @@ import {
   ImportPlan,
   planImport,
 } from './gradebook-import';
+
+const GRADE_RECORDED = 'grade.recorded';
+
+/** grade.recorded events queued at once after an import. */
+const EMIT_BATCH = 10;
 
 /**
  * Bulk marking from a CSV: a preview that changes nothing, then an apply
@@ -176,31 +185,94 @@ export class GradebookImportService {
   ) {
     const webhooks = this.webhooks;
     if (!webhooks || changes.length === 0) return;
-    const activityIds = [...new Set(changes.map((c) => c.activityId))];
-    changes.forEach((c, i) => {
-      void webhooks.emitForCourse(courseId, 'grade.recorded', async (course) => {
-        const activities = await this.prisma.activity.findMany({
-          where: { id: { in: activityIds } },
-          select: { id: true, title: true, kind: true, points: true },
-        });
-        const activity = activities.find((a) => a.id === c.activityId);
-        if (!activity) return null;
-        const ref = toActivityRef(activity);
-        return {
-          submission: { id: written[i]?.id ?? null },
-          activity: ref,
-          course,
-          student: await webhooks.student(c.studentId),
-          grade: {
-            score: c.to.excused ? (c.from?.score ?? null) : c.to.score,
-            points: ref.points,
-            status: 'graded',
-            excused: c.to.excused,
-          },
-          gradedBy: await webhooks.staffOrNull(userId),
-          source: 'import',
-        };
-      });
+    void this.queueGrades(webhooks, userId, courseId, changes, written).catch(
+      (error) =>
+        this.logger.error(
+          `Failed to queue imported grades: ${(error as Error).message}`,
+        ),
+    );
+  }
+
+  /**
+   * One import can change hundreds of marks, and every event costs a handful
+   * of queries. So: stop at once when the school has no grade.recorded
+   * webhook, load what every event shares (the activities, who marked) once,
+   * and queue the events a few at a time rather than all at once, which
+   * would take every connection in the pool.
+   */
+  private async queueGrades(
+    webhooks: WebhookEvents,
+    userId: string,
+    courseId: string,
+    changes: ImportPlan['changes'],
+    written: { id: string }[],
+  ) {
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: { school_id: true },
     });
+    if (!course?.school_id) return;
+    const hook = await this.prisma.school_webhook.findFirst({
+      where: {
+        school_id: course.school_id,
+        enabled: true,
+        events: { has: GRADE_RECORDED },
+      },
+      select: { id: true },
+    });
+    if (!hook) return;
+
+    const activityIds = [...new Set(changes.map((c) => c.activityId))];
+    const [activities, gradedBy] = await Promise.all([
+      this.prisma.activity.findMany({
+        where: { id: { in: activityIds } },
+        select: { id: true, title: true, kind: true, points: true },
+      }),
+      webhooks.staffOrNull(userId),
+    ]);
+    const refs = new Map(activities.map((a) => [a.id, toActivityRef(a)]));
+
+    // A student is in one event per activity they were marked on.
+    const students = new Map<string, Promise<PersonRef>>();
+    const student = (id: string) => {
+      let ref = students.get(id);
+      if (!ref) {
+        ref = webhooks.student(id);
+        students.set(id, ref);
+      }
+      return ref;
+    };
+
+    for (let start = 0; start < changes.length; start += EMIT_BATCH) {
+      const batch = changes
+        .slice(start, start + EMIT_BATCH)
+        .flatMap((c, offset) => {
+          const ref = refs.get(c.activityId);
+          if (!ref) return [];
+          const submissionId = written[start + offset]?.id ?? null;
+          return [
+            webhooks.emitForCourse(
+              courseId,
+              GRADE_RECORDED,
+              async (courseRef) => ({
+                submission: { id: submissionId },
+                activity: ref,
+                course: courseRef,
+                student: await student(c.studentId),
+                grade: {
+                  score: c.to.excused ? (c.from?.score ?? null) : c.to.score,
+                  points: ref.points,
+                  status: 'graded',
+                  excused: c.to.excused,
+                },
+                gradedBy,
+                source: 'import',
+              }),
+            ),
+          ];
+        });
+
+      await Promise.all(batch);
+    }
   }
 }

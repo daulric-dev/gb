@@ -6,8 +6,10 @@ on:
     branches:
       - main
 
+# The ref update is made with the GH_TOKEN PAT, not GITHUB_TOKEN, so the
+# workflow token only needs read access (for checkout).
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   reset-staging:
@@ -27,4 +29,5 @@ jobs:
       - name: Reset staging to main
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash .github/scripts/reset-staging.sh

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { EXPO_PUSH_URL, PushService } from './push.service';
+import {
+  EXPO_PUSH_URL,
+  EXPO_RECEIPTS_URL,
+  PushService,
+  RECEIPT_DELAY_MS,
+  RETRY_DELAYS_MS,
+} from './push.service';
 import { createMockPrisma } from '@/test/prisma-mock';
 
 /** Every school has push notifications on. */
@@ -68,6 +74,98 @@ describe('PushService.sendToUsers', () => {
     expect(deletes[0][0].where).toEqual({ token: { in: [token(2)] } });
   });
 
+  test('only loads devices without a session or with a live one', async () => {
+    const { service, prisma } = setup([token(1)]);
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    const where = prisma.push_device.findMany.mock.calls[0][0].where;
+    expect(where.OR[0]).toEqual({ session_id: null });
+    expect(where.OR[1].session.revoked_at).toBeNull();
+  });
+
+  test('sends with a timeout signal', async () => {
+    const { service, requests } = setup([token(1)]);
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    expect(requests[0].init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('retries 429 and 5xx with backoff, then gives up', async () => {
+    const { service } = setup([token(1)]);
+    const waits: number[] = [];
+    service.sleepImpl = async (ms) => {
+      waits.push(ms);
+    };
+    const statuses = [429, 503];
+    let calls = 0;
+    service.fetchImpl = async (_url, init) => {
+      calls++;
+      const status = statuses.shift();
+      if (status) {
+        return new Response('busy', { status, headers: status === 429 ? { 'retry-after': '3' } : {} });
+      }
+      const messages = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ data: messages.map(() => ({ status: 'ok' })) }), { status: 200 });
+    };
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    expect(calls).toBe(3);
+    expect(waits).toEqual([3000, RETRY_DELAYS_MS[1]]);
+
+    calls = 0;
+    service.fetchImpl = async () => {
+      calls++;
+      return new Response('down', { status: 500 });
+    };
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    expect(calls).toBe(RETRY_DELAYS_MS.length + 1);
+  });
+
+  test('does not retry a 4xx other than 429', async () => {
+    const { service } = setup([token(1)]);
+    let calls = 0;
+    service.fetchImpl = async () => {
+      calls++;
+      return new Response('bad', { status: 400 });
+    };
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    expect(calls).toBe(1);
+  });
+
+  test('checks receipts later and forgets DeviceNotRegistered tokens', async () => {
+    const { service, prisma } = setup([token(1), token(2)], (messages) => ({
+      data: messages.map((m: any) => ({ status: 'ok', id: `ticket-${m.to}` })),
+    }));
+    await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
+    service.onModuleDestroy();
+
+    const receiptCalls: any[] = [];
+    service.fetchImpl = async (url, init) => {
+      receiptCalls.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response(
+        JSON.stringify({
+          data: {
+            [`ticket-${token(1)}`]: { status: 'ok' },
+            [`ticket-${token(2)}`]: { status: 'error', details: { error: 'DeviceNotRegistered' } },
+          },
+        }),
+        { status: 200 },
+      );
+    };
+    // Not due yet: nothing fetched.
+    await service.checkReceipts(Date.now());
+    expect(receiptCalls).toHaveLength(0);
+
+    await service.checkReceipts(Date.now() + RECEIPT_DELAY_MS);
+    service.onModuleDestroy();
+    expect(receiptCalls).toHaveLength(1);
+    expect(receiptCalls[0].url).toBe(EXPO_RECEIPTS_URL);
+    expect(receiptCalls[0].body.ids.sort()).toEqual([`ticket-${token(1)}`, `ticket-${token(2)}`]);
+    const deletes = prisma.push_device.deleteMany.mock.calls;
+    expect(deletes.at(-1)![0].where).toEqual({ token: { in: [token(2)] } });
+
+    // Checked once only.
+    await service.checkReceipts(Date.now() + 2 * RECEIPT_DELAY_MS);
+    expect(receiptCalls).toHaveLength(1);
+  });
+
   test('nothing to do without users or devices', async () => {
     const { service, requests } = setup([]);
     await service.sendToUsers([], { title: 't', body: 'b' });
@@ -99,13 +197,55 @@ describe('PushService.sendToUsers', () => {
 });
 
 describe('PushService devices', () => {
-  test('register upserts on token so it moves to the caller', async () => {
+  test('register creates a new token bound to the caller and session', async () => {
     const prisma = createMockPrisma();
-    await new PushService(prisma as any, featuresOn as any).register('u-2', ' ExpoPushToken[a] ', 'ios');
-    const [args] = prisma.push_device.upsert.mock.calls[0];
-    expect(args.where).toEqual({ token: 'ExpoPushToken[a]' });
-    expect(args.create).toMatchObject({ user_id: 'u-2', token: 'ExpoPushToken[a]', platform: 'ios' });
-    expect(args.update).toMatchObject({ user_id: 'u-2', platform: 'ios' });
+    await new PushService(prisma as any, featuresOn as any).register('u-2', ' ExpoPushToken[a] ', 'ios', 's-2');
+    const [args] = prisma.push_device.create.mock.calls[0];
+    expect(args.data).toMatchObject({ user_id: 'u-2', token: 'ExpoPushToken[a]', platform: 'ios', session_id: 's-2' });
+  });
+
+  const held = (user_id: string, session_id: string | null, session: any = null) => ({
+    user_id,
+    session_id,
+    session,
+  });
+  const live = { revoked_at: null, expires_at: new Date(Date.now() + 60_000), absolute_expires_at: new Date(Date.now() + 60_000) };
+
+  test('register keeps the caller’s own token and rebinds it to the new session', async () => {
+    const prisma = createMockPrisma();
+    prisma.push_device.findUnique.mockResolvedValue(held('u-2', 's-old', live));
+    await new PushService(prisma as any, featuresOn as any).register('u-2', 'ExpoPushToken[a]', 'ios', 's-2');
+    const [args] = prisma.push_device.updateMany.mock.calls[0];
+    expect(args.where).toEqual({ token: 'ExpoPushToken[a]', user_id: 'u-2', session_id: 's-old' });
+    expect(args.data).toMatchObject({ user_id: 'u-2', session_id: 's-2' });
+  });
+
+  test('register leaves another user’s token alone while their session is live', async () => {
+    const prisma = createMockPrisma();
+    prisma.push_device.findUnique.mockResolvedValue(held('u-1', 's-1', live));
+    await new PushService(prisma as any, featuresOn as any).register('u-2', 'ExpoPushToken[a]', 'ios', 's-2');
+    expect(prisma.push_device.updateMany).not.toHaveBeenCalled();
+    expect(prisma.push_device.create).not.toHaveBeenCalled();
+  });
+
+  test('register takes over a token whose holder signed out, or that predates sessions', async () => {
+    for (const row of [
+      held('u-1', 's-1', { ...live, revoked_at: new Date() }),
+      held('u-1', 's-1', { ...live, expires_at: new Date(Date.now() - 1) }),
+      held('u-1', null),
+    ]) {
+      const prisma = createMockPrisma();
+      prisma.push_device.findUnique.mockResolvedValue(row);
+      await new PushService(prisma as any, featuresOn as any).register('u-2', 'ExpoPushToken[a]', 'ios', 's-2');
+      expect(prisma.push_device.updateMany.mock.calls[0][0].data).toMatchObject({ user_id: 'u-2', session_id: 's-2' });
+    }
+  });
+
+  test('register from the same session may rebind', async () => {
+    const prisma = createMockPrisma();
+    prisma.push_device.findUnique.mockResolvedValue(held('u-1', 's-2', live));
+    await new PushService(prisma as any, featuresOn as any).register('u-2', 'ExpoPushToken[a]', 'ios', 's-2');
+    expect(prisma.push_device.updateMany).toHaveBeenCalledTimes(1);
   });
 
   test('unregister only touches the caller’s own token', async () => {

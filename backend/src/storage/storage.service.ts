@@ -81,6 +81,10 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  async checkHealth(): Promise<void> {
+    await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+  }
+
   async put(
     key: string,
     body: Buffer | Uint8Array | string,

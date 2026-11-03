@@ -3,15 +3,13 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { api } from "@/lib/api";
+import { pushState } from "@/lib/push-state";
 
 /** Android channel the backend's attendance pushes are delivered on. */
 export const ATTENDANCE_CHANNEL = "attendance";
 
 /** Android channel for new work and course announcements. */
 export const COURSE_CHANNEL = "coursework";
-
-/** The token this device registered, so logout can hand it back. */
-let registeredToken: string | null = null;
 
 function projectId(): string | undefined {
   return (
@@ -24,8 +22,20 @@ function projectId(): string | undefined {
  * Ask for notification permission, fetch this device's Expo push token and
  * register it with the API. Never throws: push is a convenience, so any
  * failure (simulator, denied permission, no EAS project) just returns null.
+ *
+ * Concurrent calls share one registration, and unregisterPush waits for it,
+ * so a logout can never race ahead of the POST and leave the token bound.
  */
-export async function registerForPush(): Promise<string | null> {
+export function registerForPush(): Promise<string | null> {
+  if (pushState.pending) return pushState.pending;
+  const run = register(pushState.generation).finally(() => {
+    if (pushState.pending === run) pushState.pending = null;
+  });
+  pushState.pending = run;
+  return run;
+}
+
+async function register(generation: number): Promise<string | null> {
   try {
     // Simulators and emulators cannot receive remote pushes, and web push is
     // not wired up.
@@ -65,13 +75,18 @@ export async function registerForPush(): Promise<string | null> {
       projectId: id,
     });
 
+    // Logged out (or push switched off) while we were asking: don't bind.
+    if (generation !== pushState.generation) return null;
+
     await api("/notifications/devices", {
       method: "POST",
       body: { token, platform: Platform.OS === "ios" ? "ios" : "android" },
       skipAuthRedirect: true,
     });
-    registeredToken = token;
-    return token;
+    // Recorded even if withdrawn mid-POST: unregisterPush is waiting on this
+    // and deletes it next.
+    pushState.token = token;
+    return generation === pushState.generation ? token : null;
   } catch (err) {
     console.warn("Push registration failed", err);
     return null;
@@ -83,9 +98,13 @@ export async function registerForPush(): Promise<string | null> {
  * ended - the API only deletes the caller's own token.
  */
 export async function unregisterPush(): Promise<void> {
-  const token = registeredToken;
+  // Stop a registration that hasn't posted yet, and wait out one that has.
+  pushState.bump();
+  const inFlight = pushState.pending;
+  if (inFlight) await inFlight.catch(() => null);
+  const token = pushState.token;
   if (!token) return;
-  registeredToken = null;
+  pushState.token = null;
   try {
     await api(`/notifications/devices/${encodeURIComponent(token)}`, {
       method: "DELETE",

@@ -23,6 +23,17 @@ async function issuedToken(): Promise<string> {
   return service.create(reply as any, { headers: {} } as any, 'u1', 'email-code');
 }
 
+async function withTestAuthSecret<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.AUTH_SECRET;
+  process.env.AUTH_SECRET = 'tracker-test-secret-0123456789-abcdefgh';
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.AUTH_SECRET;
+    else process.env.AUTH_SECRET = previous;
+  }
+}
+
 describe('getClientIp', () => {
   test('uses req.ip, which Fastify resolves from trusted proxy hops', () => {
     expect(getClientIp({ headers: {}, ip: '10.0.0.5' })).toBe('10.0.0.5');
@@ -46,42 +57,42 @@ describe('getClientIp', () => {
 });
 
 describe('getSessionTracker', () => {
-  test('keys an issued session cookie by session', async () => {
+  test('keys an issued session cookie by session', async () => withTestAuthSecret(async () => {
     const a = await issuedToken();
     const b = await issuedToken();
     const ta = getSessionTracker({ cookies: { [SESSION_COOKIE]: a } });
     expect(ta).toBe(`s:${fingerprint(a)}`);
     expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: a, theme: 'x' } })).toBe(ta);
     expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: b } })).not.toBe(ta);
-  });
+  }));
 
-  test('made-up and tampered cookies do not get their own bucket', async () => {
+  test('made-up and tampered cookies do not get their own bucket', async () => withTestAuthSecret(async () => {
     const real = await issuedToken();
     const [random, tag] = real.split('.');
     for (const value of ['rotating-1', 'a.b', `${random}x.${tag}`, `${random}.${tag}x`, '.x']) {
       expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: value } })).toBeUndefined();
     }
-  });
+  }));
 
-  test('does not leak the token', async () => {
+  test('does not leak the token', async () => withTestAuthSecret(async () => {
     const t = await issuedToken();
     expect(getSessionTracker({ cookies: { [SESSION_COOKIE]: t } })).not.toContain(t);
-  });
+  }));
 
-  test('a mobile bearer token gets the same bucket as its cookie', async () => {
+  test('a mobile bearer token gets the same bucket as its cookie', async () => withTestAuthSecret(async () => {
     const t = await issuedToken();
     expect(getSessionTracker({ headers: { authorization: `Bearer ${t}` } })).toBe(
       getSessionTracker({ cookies: { gb_session: t } }),
     );
     expect(getSessionTracker({ headers: { authorization: 'Bearer made.up' } })).toBeUndefined();
-  });
+  }));
 
-  test('ignores other cookies and empty requests', async () => {
+  test('ignores other cookies and empty requests', async () => withTestAuthSecret(async () => {
     const t = await issuedToken();
     expect(getSessionTracker({ cookies: { 'sb-ref-auth-token': t } })).toBeUndefined();
     expect(getSessionTracker({ headers: {} })).toBeUndefined();
     expect(getSessionTracker({})).toBeUndefined();
-  });
+  }));
 });
 
 describe('getEmailIpTracker', () => {

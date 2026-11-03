@@ -50,6 +50,7 @@ import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
 import { IntegrationsModule } from '@/integrations/integrations.module';
+import { HealthService } from '@/health/health.service';
 
 @Module({
   imports: [
@@ -143,6 +144,7 @@ import { IntegrationsModule } from '@/integrations/integrations.module';
   controllers: [AppController],
   providers: [
     AppService,
+    HealthService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

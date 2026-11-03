@@ -56,16 +56,31 @@ export default function CoursePageDetail() {
 
   useEffect(() => {
     if (!pageId) return;
-    api<CoursePage>(`/courses/${course.id}/pages/${pageId}`)
+    // Navigating to another page must not let this one's answer land late.
+    const controller = new AbortController();
+    let ignore = false;
+    loading.value = true;
+    api<CoursePage>(`/courses/${course.id}/pages/${pageId}`, {
+      signal: controller.signal,
+    })
       .then((data) => {
+        if (ignore) return;
         page.value = data;
         // A freshly created page opens straight into the editor.
         const wantsEdit =
           new URLSearchParams(window.location.search).get("edit") === "1";
         if (wantsEdit && canManage) startEditing(data);
       })
-      .catch(() => (page.value = null))
-      .finally(() => (loading.value = false));
+      .catch(() => {
+        if (!ignore) page.value = null;
+      })
+      .finally(() => {
+        if (!ignore) loading.value = false;
+      });
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
   }, [course.id, pageId, canManage, page, loading, startEditing]);
 
   async function save() {

@@ -28,6 +28,7 @@ model file {
   @@index([owner_id, created_at(sort: Desc)], map: "idx_file_owner_active", where: raw("(deleted_at IS NULL)"))
   @@index([owner_id, folder_id], map: "idx_file_owner_folder", where: raw("(deleted_at IS NULL)"))
   @@index([school_id], map: "idx_file_school")
+  @@index([folder_id], map: "idx_file_folder")
   @@index([created_at], map: "idx_file_upload_leftovers", where: raw("(status = ANY (ARRAY['pending'::file_manager.file_status, 'failed'::file_manager.file_status]))"))
   @@schema("file_manager")
 }
@@ -72,6 +73,7 @@ model folder {
   @@unique([owner_id, parent_id, name], map: "idx_folder_unique_child", where: raw("((parent_id IS NOT NULL) AND (deleted_at IS NULL))"))
   @@unique([owner_id, name], map: "idx_folder_unique_root", where: raw("((parent_id IS NULL) AND (deleted_at IS NULL))"))
   @@index([owner_id, parent_id], map: "idx_folder_owner_parent", where: raw("(deleted_at IS NULL)"))
+  @@index([parent_id], map: "idx_folder_parent")
   @@schema("file_manager")
 }
 
@@ -95,6 +97,7 @@ model notification {
   @@unique([user_id, share_id], map: "file_notification_unique_recipient_share")
   @@index([user_id, created_at(sort: Desc)], map: "idx_file_notification_unread", where: raw("(read_at IS NULL)"))
   @@index([user_id, created_at(sort: Desc)], map: "idx_file_notification_user")
+  @@index([file_id], map: "idx_file_notification_file")
   @@schema("file_manager")
 }
 
