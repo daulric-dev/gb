@@ -8,6 +8,8 @@ sidebar_label: Authentication
 
 The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. Sign-in codes and sessions are handled by the backend's own account module (`backend/src/account/`): codes are stored hashed with `AUTH_SECRET`, and a signed-in user holds an **opaque session token in the HTTP-only `gb_session` cookie**, whose hash is stored in the `account.session` table. The mobile app uses the same token as a **bearer token**: it signs in with `X-GradeBook-Client: native`, receives the token in the `X-Session-Token` response header, stores it in the device keychain and sends `Authorization: Bearer <token>` on every request.
 
+The mobile bearer credential is the same opaque server-side session token, not a JWT. Revoking the session invalidates that token; in multi-replica deployments, configure a shared Redis cache so revocation reaches all replicas promptly. See [Mobile authentication](../mobile-production.md#mobile-authentication).
+
 ## Files
 
 | File | Purpose |
@@ -67,7 +69,7 @@ The authentication module handles user login via email OTP (one-time password), 
        POST /auth/sessions/revoke-others and /revoke-all sign devices out at once
 ```
 
-## Session Cookies
+## Browser Session Cookies
 
 The session is a single HTTP-only cookie named `gb_session`. Its value is an opaque token - 256 random bits plus an HMAC tag keyed with `AUTH_SECRET` - and only its SHA-256 hash is stored, in `account.session`, so a database leak hands out no usable sessions. Sessions can be revoked individually (logout, Signed-in devices), all but the current one, or all at once (account deleted or disabled, an admin signing a member out). Every revocation records a `revoked_reason` and deletes the session's cache entries, so it takes effect on the next request.
 

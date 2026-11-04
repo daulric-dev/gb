@@ -12,7 +12,7 @@ Copyright (c) 2026 daulric. All rights reserved.
    - Report discovered issues to **security@daulric.dev**
    - Fork the repository solely for the purpose of submitting bug reports or security findings
 
-3. **No Use, Modification, or Deployment.** You may not use, copy, modify, merge, publish, distribute, sublicense, host, deploy, or sell copies of this software, in whole or in part, without prior written authorization from daulric.
+3. **No Use, Modification, or Deployment.** You may not use, copy, modify, merge, publish, distribute, sublicense, host, deploy, or sell copies of this software, in whole or in part, without prior written authorization from the copyright holder or the designated maintainer. No permission to modify the software or distribute modified versions is granted by access to the source code.
 
 4. **No Redistribution.** You may not redistribute this software or any derivative works based on it, whether in source or compiled form, publicly or privately.
 
@@ -22,7 +22,9 @@ Copyright (c) 2026 daulric. All rights reserved.
 
 7. **No Warranty.** This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the author be liable for any claim, damages, or other liability arising from the use of or inability to use this software.
 
-8. **Termination.** Any unauthorized use of this software automatically terminates any implied permission and may result in legal action.
+8. **No Support or Duty to Fix Issues.** The copyright holder and maintainer have no obligation to provide support, maintenance, updates, or corrections for bugs or other issues. No warranty or promise is made that any issue will be fixed. Any written permission to use, modify, or distribute the software does not create a support or maintenance obligation unless that obligation is explicitly stated in a separate written agreement.
+
+9. **Termination.** Any unauthorized use of this software automatically terminates any implied permission and may result in legal action.
 
 ## Contact
 

@@ -25,14 +25,24 @@ the API from the Expo dev server.
 
 iOS App Transport Security is configured with `NSAllowsArbitraryLoads: false` and `NSAllowsLocalNetworking: true` - cleartext works on the local network for development and nowhere else. A production `http://` URL will fail on iOS with no useful error.
 
-## Auth cookies
+## Mobile authentication
 
-Auth is one httpOnly cookie, `gb_session` (opaque, 30-day sliding expiry), which React Native persists in the platform's native cookie store - no token handling in app code. Two backend settings decide whether that works:
+The API issues an opaque session token (not a JWT). The app receives it in
+`X-Session-Token`, stores it in the device keychain or keystore, and sends it
+as `Authorization: Bearer ...` on API requests. This token represents the
+server-side session; the database stores its hash, and the session can be
+revoked from Signed-in devices. The web app uses the separate `gb_session`
+HTTP-only cookie.
 
-- **`NODE_ENV=production`** makes the cookie `Secure`, so the API must be HTTPS (it already must be, for ATS).
-- **`AUTH_COOKIE_DOMAIN`** sets the cookie's `Domain`. If the derived default does not cover the API's own host, the client **rejects the cookie and every request after login is unauthenticated** - with no error to point at it. See [Environment variables](./environment-variables.md).
+The app also sends `X-GradeBook-Client: native` so the API can identify native
+sign-ins and return the session token safely. Mobile SSO completes through
+`POST /auth/sso/handoff`, which exchanges a one-time code for the same kind of
+server-side session token.
 
-A native client has no frontend domain of its own; it only ever talks to the API host. The `Domain` attribute exists for the **web** app, whose proxy checks for the cookie on its own domain. SSO on mobile ends in `POST /auth/sso/handoff`, which trades a one-time code for the same cookie.
+For multi-replica deployments, set `USE_REDIS=true` and configure every API
+replica with the same `REDIS_URL`. The shared cache lets revocation invalidate
+cached sessions across replicas promptly. Without shared Redis, another
+replica may continue accepting a cached session briefly.
 
 ## Direct uploads
 
@@ -44,7 +54,7 @@ Files upload straight to object storage (S3-compatible) with presigned URLs, so 
 
 ## Opening protected files
 
-Course files and handed-in submissions are served by the API behind the session (`GET /portal/me/courses/:courseId/files/:fileId`, `GET /activities/submissions/:submissionId/file`), so the app cannot just hand their URL to a browser - the browser does not have the `gb_session` cookie. Instead the app fetches the bytes itself (same cookie store as every other request), writes them to the cache directory with `expo-file-system`, and opens the share sheet with `expo-sharing` - Quick Look and "Save to Files" on iOS, "Open with" on Android. Both are native modules, so **a dev client or store build made before they were added must be rebuilt** (`eas build --profile development`, or `bunx expo prebuild` + `pod install` for a local `ios/` build).
+Course files and handed-in submissions are served by the API behind the session (`GET /portal/me/courses/:courseId/files/:fileId`, `GET /activities/submissions/:submissionId/file`), so the app cannot just hand their URL to a browser - the browser does not have the app's bearer token. Instead the app fetches the bytes itself with its session token, writes them to the cache directory with `expo-file-system`, and opens the share sheet with `expo-sharing` - Quick Look and "Save to Files" on iOS, "Open with" on Android. Both are native modules, so **a dev client or store build made before they were added must be rebuilt** (`eas build --profile development`, or `bunx expo prebuild` + `pod install` for a local `ios/` build).
 
 ## Build profiles
 
