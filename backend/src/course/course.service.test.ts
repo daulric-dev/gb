@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import {
   BadRequestException,
   ForbiddenException,
@@ -62,20 +62,25 @@ function db(opts: {
   return prisma;
 }
 
-function service(prisma: MockPrisma) {
+function service(prisma: MockPrisma, auditLog?: any) {
   const cache = createMockCacheService() as any;
   return new CourseService(
     cache,
     new CourseAccessService(cache, prisma as any),
     prisma as any,
     createMockErasureLog() as any,
+    undefined,
+    auditLog,
   );
 }
 
 describe('CourseService.create', () => {
   test('the creator becomes the course teacher', async () => {
     const prisma = db({});
-    const created = await service(prisma).create(USER, { name: '  Maths  ' });
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
+    const created = await service(prisma, auditLog).create(USER, {
+      name: '  Maths  ',
+    });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.course.create.mock.calls[0][0].data).toMatchObject({
@@ -91,6 +96,21 @@ describe('CourseService.create', () => {
     expect(created.role).toBe('teacher');
     expect(created.studentCount).toBe(0);
     expect(created.createdAt).toBe('2026-10-01T00:00:00.000Z');
+    const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0];
+    expect(tx).toBe(prisma);
+    expect([schoolId, actor, entry]).toEqual([
+      'school-1',
+      { id: USER },
+      {
+        entity: 'course',
+        entityId: COURSE,
+        action: 'create',
+        changes: {
+          name: { before: null, after: 'Maths' },
+          code: { before: null, after: 'MAT' },
+        },
+      },
+    ]);
   });
 
   test('a blank name is refused', async () => {
@@ -293,12 +313,22 @@ describe('people', () => {
       {
         user_profile_id: 'u2',
         role: 'ta',
-        user_profile: { first_name: 'T', last_name: 'A', email: 'ta@x', avatar_url: null },
+        user_profile: {
+          first_name: 'T',
+          last_name: 'A',
+          email: 'ta@x',
+          avatar_url: null,
+        },
       },
       {
         user_profile_id: USER,
         role: 'teacher',
-        user_profile: { first_name: 'Te', last_name: 'Acher', email: 't@x', avatar_url: 'a.png' },
+        user_profile: {
+          first_name: 'Te',
+          last_name: 'Acher',
+          email: 't@x',
+          avatar_url: 'a.png',
+        },
       },
     ]);
     prisma.course_student.findMany.mockResolvedValue([
@@ -362,7 +392,10 @@ describe('staff', () => {
     );
     expect(
       await expectRejection(
-        service(prisma).addStaff(USER, COURSE, { userProfileId: 'u2', role: 'ta' }),
+        service(prisma).addStaff(USER, COURSE, {
+          userProfileId: 'u2',
+          role: 'ta',
+        }),
       ),
     ).toBeInstanceOf(NotFoundException);
   });
@@ -402,7 +435,9 @@ describe('enrolment', () => {
   test('a TA cannot enrol students', async () => {
     const prisma = db({ courseRole: 'ta' });
     expect(
-      await expectRejection(service(prisma).enrollStudents(USER, COURSE, ['s1'])),
+      await expectRejection(
+        service(prisma).enrollStudents(USER, COURSE, ['s1']),
+      ),
     ).toBeInstanceOf(ForbiddenException);
   });
 
@@ -478,7 +513,9 @@ describe('templates', () => {
 
   test('a template takes no enrolments', async () => {
     const prisma = db({ courseRole: 'teacher' });
-    prisma.course.findUnique.mockResolvedValue(courseRow({ is_template: true }));
+    prisma.course.findUnique.mockResolvedValue(
+      courseRow({ is_template: true }),
+    );
     const err = await expectRejection(
       service(prisma).enrollStudents(USER, COURSE, ['s1']),
     );

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import {
   BadRequestException,
   ConflictException,
@@ -57,22 +57,147 @@ function service(prisma: MockPrisma) {
   return new DiscussionService(prisma as any, {} as any, createMockErasureLog() as any);
 }
 
+function serviceWithAudit(prisma: MockPrisma, record: ReturnType<typeof mock>) {
+  const auditLog = { record };
+  return new DiscussionService(
+    prisma as any,
+    {} as any,
+    createMockErasureLog() as any,
+    undefined,
+    auditLog as any,
+  );
+}
+
 function seed(prisma: MockPrisma, topic = TOPIC) {
   prisma.discussion_topic.findFirst.mockResolvedValue(topic);
   prisma.discussion_reply.findFirst.mockResolvedValue({
     id: 'reply-1',
     parent_id: null,
     author_user_profile_id: 'student-1',
+    body: 'from student-1',
   });
   prisma.discussion_reply.update.mockImplementation(async ({ data }: any) =>
     reply('reply-1', 'student-1', data),
   );
   prisma.discussion_reply.create.mockImplementation(async ({ data }: any) =>
-    reply('new', data.author_user_profile_id, { parent_id: data.parent_id }),
+    reply('new', data.author_user_profile_id, {
+      parent_id: data.parent_id,
+      body: data.body,
+    }),
   );
 }
 
 describe('DiscussionService', () => {
+  test('topic create, update, and delete are audited in their write transactions', async () => {
+    const prisma = createMockPrisma();
+    const record = mock(async () => {});
+    prisma.discussion_setting.findUnique.mockResolvedValue({
+      students_can_create_topics: true,
+    });
+    prisma.discussion_topic.create.mockImplementation(async ({ data }: any) => ({
+      ...TOPIC,
+      ...data,
+      id: 'new-topic',
+    }));
+    prisma.discussion_topic.findFirst.mockResolvedValue(TOPIC);
+    prisma.discussion_topic.update.mockImplementation(async ({ data }: any) => ({
+      ...TOPIC,
+      ...data,
+    }));
+    const svc = serviceWithAudit(prisma, record);
+
+    await svc.create(ctx('student', 'student-1'), { title: ' Question ', body: 'Details' });
+    expect(record.mock.calls[0][0]).toBe(prisma);
+    expect(record.mock.calls[0][1]).toBe('school-1');
+    expect(record.mock.calls[0][2]).toEqual({ id: 'student-1' });
+    expect(record.mock.calls[0][3]).toMatchObject({
+      entity: 'discussion_topic',
+      entityId: 'new-topic',
+      action: 'create',
+      changes: {
+        title: { before: null, after: 'Question' },
+        body: { before: null, after: 'Details' },
+      },
+    });
+
+    await svc.update(ctx('teacher', 'teacher-1'), 'topic-1', { title: 'Updated' });
+    expect(record.mock.calls[1][0]).toBe(prisma);
+    expect(record.mock.calls[1][3]).toMatchObject({
+      entity: 'discussion_topic',
+      entityId: 'topic-1',
+      action: 'update',
+      changes: { title: { before: 'Cell walls', after: 'Updated' } },
+    });
+
+    await svc.remove(ctx('teacher', 'teacher-1'), 'topic-1');
+    expect(record.mock.calls[2][0]).toBe(prisma);
+    expect(record.mock.calls[2][3]).toMatchObject({
+      entity: 'discussion_topic',
+      entityId: 'topic-1',
+      action: 'delete',
+      changes: { title: { before: 'Cell walls', after: null } },
+    });
+  });
+
+  test('reply create, edit, and deletion are audited transactionally', async () => {
+    const prisma = createMockPrisma();
+    const record = mock(async () => {});
+    seed(prisma);
+    const svc = serviceWithAudit(prisma, record);
+
+    await svc.reply(ctx('student', 'student-1'), 'topic-1', { body: ' New reply ' });
+    expect(record.mock.calls[0][0]).toBe(prisma);
+    expect(record.mock.calls[0][1]).toBe('school-1');
+    expect(record.mock.calls[0][2]).toEqual({ id: 'student-1' });
+    expect(record.mock.calls[0][3]).toMatchObject({
+      entity: 'discussion_reply',
+      entityId: 'new',
+      action: 'create',
+      changes: { body: { before: null, after: 'New reply' } },
+    });
+
+    await svc.updateReply(ctx('student', 'student-1'), 'topic-1', 'reply-1', { body: 'Edited' });
+    expect(record.mock.calls[1][0]).toBe(prisma);
+    expect(record.mock.calls[1][3]).toMatchObject({
+      entity: 'discussion_reply',
+      entityId: 'reply-1',
+      action: 'update',
+      changes: { body: { before: 'from student-1', after: 'Edited' } },
+    });
+
+    prisma.discussion_reply.count.mockResolvedValue(0);
+    await svc.removeReply(ctx('student', 'student-1'), 'topic-1', 'reply-1');
+    expect(record.mock.calls[2][0]).toBe(prisma);
+    expect(record.mock.calls[2][3]).toMatchObject({
+      entity: 'discussion_reply',
+      entityId: 'reply-1',
+      action: 'delete',
+      changes: { body: { before: 'from student-1', after: null } },
+    });
+  });
+
+  test('a reply with children audits the content removal as an update', async () => {
+    const prisma = createMockPrisma();
+    const record = mock(async () => {});
+    seed(prisma);
+    prisma.discussion_reply.count.mockResolvedValue(1);
+    await serviceWithAudit(prisma, record).removeReply(
+      ctx('student', 'student-1'),
+      'topic-1',
+      'reply-1',
+    );
+    expect(record.mock.calls[0][0]).toBe(prisma);
+    expect(record.mock.calls[0][3]).toMatchObject({
+      entity: 'discussion_reply',
+      entityId: 'reply-1',
+      action: 'update',
+      changes: {
+        body: { before: 'from student-1', after: '' },
+        deleted_at: { before: null },
+      },
+    });
+  });
+
   test("a student cannot edit another student's reply", async () => {
     const prisma = createMockPrisma();
     seed(prisma);

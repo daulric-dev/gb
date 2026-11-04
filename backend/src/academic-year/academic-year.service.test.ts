@@ -45,6 +45,7 @@ describe('AcademicYearService', () => {
   beforeEach(() => {
     mockCache = createMockCacheService();
     prisma = setup();
+    prisma.academic_year.findFirstOrThrow.mockResolvedValue(dbYear());
     service = new AcademicYearService(prisma as any, mockCache as any);
   });
 

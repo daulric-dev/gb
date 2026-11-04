@@ -22,18 +22,29 @@ function pngBytes(): Buffer {
 }
 
 function setup(
-  opts: { logoPath?: string | null; stored?: { bytes: Buffer; type: string } } = {},
+  opts: {
+    logoPath?: string | null;
+    stored?: { bytes: Buffer; type: string };
+  } = {},
 ) {
   const stored = opts.stored ?? { bytes: pngBytes(), type: 'image/png' };
   const prisma: MockPrisma = createMockPrisma();
-  prisma.school.findUnique.mockResolvedValue({ logo_path: opts.logoPath ?? null });
+  prisma.school.findUnique.mockResolvedValue({
+    logo_path: opts.logoPath ?? null,
+  });
+  prisma.school.findUniqueOrThrow.mockResolvedValue({
+    logo_path: opts.logoPath ?? null,
+  });
   prisma.school.update.mockResolvedValue({ id: SCHOOL });
   prisma.user_profile.findMany.mockResolvedValue([{ id: 'u1' }, { id: 'u2' }]);
   const storage = {
     put: mock((..._args: any[]) => Promise.resolve()),
     delete: mock((..._args: any[]) => Promise.resolve()),
     exists: mock((..._args: any[]) =>
-      Promise.resolve({ size: stored.bytes.byteLength, contentType: stored.type }),
+      Promise.resolve({
+        size: stored.bytes.byteLength,
+        contentType: stored.type,
+      }),
     ),
     getBuffer: mock((..._args: any[]) => Promise.resolve(stored.bytes)),
     uploadUrl: mock((key: string, ..._rest: any[]) =>
@@ -84,9 +95,9 @@ describe('SchoolLogoService', () => {
   test('a ticket refuses SVG, non-images and anything over 2 MB', async () => {
     const { svc } = setup();
     for (const type of ['image/svg+xml', 'application/pdf']) {
-      expect(await expectRejection(svc.createTicket(SCHOOL, type, 10))).toBeInstanceOf(
-        BadRequestException,
-      );
+      expect(
+        await expectRejection(svc.createTicket(SCHOOL, type, 10)),
+      ).toBeInstanceOf(BadRequestException);
     }
     expect(
       await expectRejection(
@@ -121,7 +132,10 @@ describe('SchoolLogoService', () => {
 
   test('complete rejects bytes that are not the declared image', async () => {
     const { svc, storage, prisma } = setup({
-      stored: { bytes: Buffer.from('<svg onload="x()"></svg>....'), type: 'image/png' },
+      stored: {
+        bytes: Buffer.from('<svg onload="x()"></svg>....'),
+        type: 'image/png',
+      },
     });
     expect(await expectRejection(svc.complete(SCHOOL, STAGED))).toBeInstanceOf(
       BadRequestException,

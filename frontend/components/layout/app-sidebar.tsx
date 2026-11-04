@@ -13,6 +13,7 @@ import { unreadFiles, refreshFileUnread } from "@/lib/file-notifications";
 import { unreadChat, refreshChatUnread } from "@/lib/chat";
 import {
   AtSign,
+  ClipboardClock,
   BookOpen,
   CalendarDays,
   CalendarRange,
@@ -139,6 +140,12 @@ const adminNavItems: NavItem[] = [
     href: "/dashboard/email-domains",
     icon: AtSign,
     adminOnly: true,
+  },
+  {
+    title: "Audit log",
+    href: "/dashboard/audit-log",
+    icon: ClipboardClock,
+    permission: ["audit-log", "read"],
   },
 ];
 
@@ -296,23 +303,22 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             <SidebarGroupLabel>Admin</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {visibleAdminNavItems
-                  .map((item) => {
-                    const Icon = item.icon;
-                    const isActive = navItemActive(pathname ?? "", item.href);
-                    return (
-                      <SidebarMenuItem key={item.href}>
-                        <SidebarMenuButton
-                          render={<Link href={item.href} />}
-                          isActive={isActive}
-                          tooltip={item.title}
-                        >
-                          <Icon className="size-4" />
-                          <span>{item.title}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
+                {visibleAdminNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = navItemActive(pathname ?? "", item.href);
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        render={<Link href={item.href} />}
+                        isActive={isActive}
+                        tooltip={item.title}
+                      >
+                        <Icon className="size-4" />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

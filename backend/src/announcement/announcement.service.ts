@@ -18,6 +18,7 @@ import {
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 /**
  * Newest-first lists return at most this many. The clients take the whole
@@ -104,6 +105,7 @@ export class AnnouncementService {
     private readonly courseAccess: CourseAccessService,
     @Optional() private readonly notices?: CourseNotificationService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** announcement.posted (title only, never the body). Fire and forget. */
@@ -219,8 +221,8 @@ export class AnnouncementService {
 
     let data: Content;
     try {
-      data = toContent(
-        await this.prisma.announcement.create({
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.announcement.create({
           data: {
             school_id,
             author_user_profile_id: userId,
@@ -228,8 +230,18 @@ export class AnnouncementService {
             body: dto.body ?? null,
           },
           select: CONTENT_SELECT,
-        }),
-      );
+        });
+        await this.auditLog?.record(tx, school_id, { id: userId }, {
+          entity: 'announcement',
+          entityId: created.id,
+          action: 'create',
+          changes: auditChanges(null, {
+            title: created.title,
+            body: created.body,
+          }),
+        });
+        return toContent(created);
+      });
     } catch (err) {
       this.logger.error(
         `Failed to create announcement: ${(err as Error).message}`,
@@ -249,8 +261,12 @@ export class AnnouncementService {
 
     let data: Content;
     try {
-      data = toContent(
-        await this.prisma.announcement.update({
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.announcement.findFirst({
+          where: { id, school_id, course_id: null },
+          select: CONTENT_SELECT,
+        });
+        const updated = await tx.announcement.update({
           where: { id },
           data: {
             updated_at: new Date(),
@@ -258,8 +274,20 @@ export class AnnouncementService {
             ...(dto.body !== undefined ? { body: dto.body } : {}),
           },
           select: CONTENT_SELECT,
-        }),
-      );
+        });
+        if (before) {
+          await this.auditLog?.record(tx, school_id, { id: userId }, {
+            entity: 'announcement',
+            entityId: id,
+            action: 'update',
+            changes: auditChanges(
+              { title: before.title, body: before.body },
+              { title: updated.title, body: updated.body },
+            ),
+          });
+        }
+        return toContent(updated);
+      });
     } catch (err) {
       this.logger.error(
         `Failed to update announcement: ${(err as Error).message}`,
@@ -277,15 +305,35 @@ export class AnnouncementService {
     );
 
     try {
-      await this.prisma.announcement.delete({ where: { id } });
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.announcement.findFirst({
+          where: { id, school_id, course_id: null },
+          select: CONTENT_SELECT,
+        });
+        try {
+          await tx.announcement.delete({ where: { id } });
+        } catch (err) {
+          // Already gone (a concurrent delete) was never an error.
+          if (!isNotFound(err)) throw err;
+          return;
+        }
+        if (before) {
+          await this.auditLog?.record(tx, school_id, { id: userId }, {
+            entity: 'announcement',
+            entityId: id,
+            action: 'delete',
+            changes: auditChanges(
+              { title: before.title, body: before.body },
+              null,
+            ),
+          });
+        }
+      });
     } catch (err) {
-      // Already gone (a concurrent delete) was never an error.
-      if (!isNotFound(err)) {
-        this.logger.error(
-          `Failed to delete announcement: ${(err as Error).message}`,
-        );
-        throw new BadRequestException('Failed to delete announcement');
-      }
+      this.logger.error(
+        `Failed to delete announcement: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('Failed to delete announcement');
     }
     await this.cache.delete(contentKey(school_id));
     return { message: 'Announcement deleted' };

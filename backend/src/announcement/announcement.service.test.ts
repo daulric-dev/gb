@@ -17,7 +17,13 @@ const ROW = {
 };
 
 /** Course access is tested on its own; this stand-in hands back a role. */
-function service(prisma: MockPrisma, role: string | null) {
+function service(
+  prisma: MockPrisma,
+  role: string | null,
+  audit: { record: (...args: any[]) => Promise<void> } = {
+    record: async () => undefined,
+  },
+) {
   const access = {
     require: async () => {
       if (!role) throw new NotFoundException('Course not found');
@@ -25,7 +31,14 @@ function service(prisma: MockPrisma, role: string | null) {
     },
   };
   const cache = { delete: async () => undefined };
-  return new AnnouncementService(prisma as any, cache as any, access as any);
+  return new AnnouncementService(
+    prisma as any,
+    cache as any,
+    access as any,
+    undefined,
+    undefined,
+    audit as any,
+  );
 }
 
 function seed(prisma: MockPrisma) {
@@ -52,6 +65,7 @@ describe('AnnouncementService course announcements', () => {
       id: 'ann-1',
       course_id: 'course-1',
     });
+
   });
 
   test("a course teacher can delete a TA's announcement", async () => {
@@ -106,5 +120,53 @@ describe('AnnouncementService course announcements', () => {
       service(prisma, null).deleteForCourse('x', 'course-1', 'ann-1'),
     );
     expect(err).toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('AnnouncementService school announcements audit', () => {
+  test('records create, update and delete in the write transactions', async () => {
+    const prisma = createMockPrisma();
+    const calls: any[][] = [];
+    const audit = {
+      record: async (...args: any[]) => {
+        calls.push(args);
+      },
+    };
+    const schoolAnnouncement = { ...ROW, course_id: null };
+    prisma.user_profile.findUnique.mockResolvedValue({
+      school_id: 'school-1',
+      role: 'admin',
+    });
+    prisma.announcement.findFirst.mockResolvedValue(schoolAnnouncement);
+    prisma.announcement.create.mockResolvedValue(schoolAnnouncement);
+    prisma.announcement.update.mockResolvedValue({
+      ...schoolAnnouncement,
+      title: 'New',
+    });
+    prisma.announcement.delete.mockResolvedValue(schoolAnnouncement);
+
+    const svc = service(prisma, 'admin', audit);
+    await svc.create('admin-1', { title: 'Old' } as any);
+    await svc.update('admin-1', 'ann-1', { title: 'New' });
+    await svc.delete('admin-1', 'ann-1');
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+    expect(calls.map((call) => call[3].action)).toEqual([
+      'create',
+      'update',
+      'delete',
+    ]);
+    expect(calls.map((call) => call[3].entity)).toEqual([
+      'announcement',
+      'announcement',
+      'announcement',
+    ]);
+    expect(calls[0][1]).toBe('school-1');
+    expect(calls[0][2]).toEqual({ id: 'admin-1' });
+    expect(calls[1][3].changes.title).toEqual({
+      before: 'Old',
+      after: 'New',
+    });
+    for (const call of calls) expect(call[0]).toBe(prisma);
   });
 });

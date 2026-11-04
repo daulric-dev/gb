@@ -84,8 +84,8 @@ export class OrganisationController {
   }
 
   @Patch()
-  rename(@Body() dto: UpdateOrganisationDto) {
-    return this.organisation.rename(dto.name);
+  rename(@Req() req: Req, @Body() dto: UpdateOrganisationDto) {
+    return this.organisation.rename(dto.name, req.user.id);
   }
 
   /** Platform features: the organisation's setting for each. */
@@ -95,8 +95,8 @@ export class OrganisationController {
   }
 
   @Patch('features')
-  updateFeatures(@Body() dto: UpdateFeaturesDto) {
-    return this.features.updateOrganisationFeatures(dto.features);
+  updateFeatures(@Req() req: Req, @Body() dto: UpdateFeaturesDto) {
+    return this.features.updateOrganisationFeatures(dto.features, req.user.id);
   }
 
   @Get('overview')
@@ -141,10 +141,11 @@ export class OrganisationController {
 
   @Patch('schools/:id')
   updateSchool(
+    @Req() req: Req,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateOrganisationSchoolDto,
   ) {
-    return this.organisation.updateSchool(id, dto);
+    return this.organisation.updateSchool(id, dto, req.user.id);
   }
 
   @Put('schools/:id/admin')
@@ -178,7 +179,11 @@ export class OrganisationController {
     @Body() dto: UpdateUploadLimitDto,
   ) {
     await this.organisation.requireSchool(id);
-    const raw = await this.uploadLimits.setForSchool(id, dto.maxUploadMb);
+    const raw = await this.uploadLimits.setForSchool(
+      id,
+      dto.maxUploadMb,
+      req.user.id,
+    );
     return this.versioning.resolve(req, 'school.uploadLimit')(raw);
   }
 
@@ -190,11 +195,12 @@ export class OrganisationController {
 
   @Patch('schools/:id/features')
   async updateSchoolFeatures(
+    @Req() req: Req,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateFeaturesDto,
   ) {
     await this.organisation.requireSchool(id);
-    return this.features.updateSchoolFeatures(id, dto.features);
+    return this.features.updateSchoolFeatures(id, dto.features, req.user.id);
   }
 
   @Post('schools/:id/logo/upload-ticket')
@@ -209,17 +215,21 @@ export class OrganisationController {
   @Post('schools/:id/logo/complete')
   @HttpCode(200)
   async schoolLogoComplete(
+    @Req() req: Req,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: CompleteUploadDto,
   ) {
     await this.organisation.requireSchool(id);
-    return this.logos.complete(id, dto.path);
+    return this.logos.complete(id, dto.path, req.user.id);
   }
 
   @Delete('schools/:id/logo')
-  async schoolLogoRemove(@Param('id', new ParseUUIDPipe()) id: string) {
+  async schoolLogoRemove(
+    @Req() req: Req,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
     await this.organisation.requireSchool(id);
-    return this.logos.remove(id);
+    return this.logos.remove(id, req.user.id);
   }
 
   /** Sign any user out of every device (support: a compromised account). */

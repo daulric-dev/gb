@@ -3,9 +3,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { isoDate } from '@/common/db-values';
 import {
   CourseAccessService,
@@ -69,6 +71,7 @@ export class PageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** Every page in the course, without bodies - a list can be long. */
@@ -109,22 +112,44 @@ export class PageService {
     courseId: string,
     input: { title: string; body?: string; isPublished?: boolean },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const title = input.title.trim();
     if (!title) throw new BadRequestException('Give the page a title');
 
     let data: PageRecord;
     try {
-      data = await this.prisma.page.create({
-        data: {
-          course_id: courseId,
-          title,
-          body: input.body ?? '',
-          is_published: input.isPublished ?? false,
-          created_by: userId,
-        },
-        select: PAGE_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.page.create({
+          data: {
+            course_id: courseId,
+            title,
+            body: input.body ?? '',
+            is_published: input.isPublished ?? false,
+            created_by: userId,
+          },
+          select: PAGE_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'page',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              title: created.title,
+              body: created.body,
+              is_published: created.is_published,
+            }),
+          },
+        );
+        return created;
       });
     } catch (error) {
       this.logger.error(`Failed to create page: ${(error as Error).message}`);
@@ -140,7 +165,11 @@ export class PageService {
     pageId: string,
     patch: { title?: string; body?: string; isPublished?: boolean },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const changes: Prisma.pageUncheckedUpdateManyInput = {};
     if (patch.title !== undefined) {
@@ -159,10 +188,42 @@ export class PageService {
 
     let data: PageRecord[];
     try {
-      data = await this.prisma.page.updateManyAndReturn({
-        where: { id: pageId, course_id: courseId },
-        data: changes,
-        select: PAGE_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.page.findFirst({
+          where: { id: pageId, course_id: courseId },
+          select: PAGE_SELECT,
+        });
+        if (!before) return [];
+        const updated = await tx.page.updateManyAndReturn({
+          where: { id: pageId, course_id: courseId },
+          data: changes,
+          select: PAGE_SELECT,
+        });
+        if (updated[0]) {
+          await this.auditLog?.record(
+            tx,
+            course.school_id,
+            { id: userId },
+            {
+              entity: 'page',
+              entityId: updated[0].id,
+              action: 'update',
+              changes: auditChanges(
+                {
+                  title: before.title,
+                  body: before.body,
+                  is_published: before.is_published,
+                },
+                {
+                  title: updated[0].title,
+                  body: updated[0].body,
+                  is_published: updated[0].is_published,
+                },
+              ),
+            },
+          );
+        }
+        return updated;
       });
     } catch (error) {
       this.logger.error(`Failed to update page: ${(error as Error).message}`);
@@ -175,18 +236,49 @@ export class PageService {
 
   /** Module items linking the page go with it (FK cascade). */
   async remove(userId: string, courseId: string, pageId: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
-    let count: number;
+    let deleted: PageRecord | null;
     try {
-      ({ count } = await this.prisma.page.deleteMany({
-        where: { id: pageId, course_id: courseId },
-      }));
+      deleted = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.page.findFirst({
+          where: { id: pageId, course_id: courseId },
+          select: PAGE_SELECT,
+        });
+        if (!before) return null;
+        const { count } = await tx.page.deleteMany({
+          where: { id: pageId, course_id: courseId },
+        });
+        if (count === 0) return null;
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'page',
+            entityId: before.id,
+            action: 'delete',
+            changes: auditChanges(
+              {
+                title: before.title,
+                body: before.body,
+                is_published: before.is_published,
+              },
+              null,
+            ),
+          },
+        );
+        return before;
+      });
     } catch (error) {
       this.logger.error(`Failed to delete page: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete the page');
     }
-    if (count === 0) throw new NotFoundException('Page not found');
+    if (!deleted) throw new NotFoundException('Page not found');
   }
 
   /** Scoped by course, so a page id from another course is simply missing. */

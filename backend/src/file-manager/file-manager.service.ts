@@ -6,11 +6,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import crypto from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma, file_status } from '@/generated/prisma/client';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { userSchoolId } from '@/common/user-school';
 import { num } from '@/common/db-values';
 import { ChatSystemService } from '@/chat/chat-system.service';
@@ -77,6 +79,20 @@ const FILE_COLUMNS = {
 
 type FileRecord = Prisma.fileGetPayload<{ select: typeof FILE_COLUMNS }>;
 
+function fileAuditMetadata(row: {
+  name: string;
+  content_type: string;
+  size_bytes: bigint;
+  folder_id: string | null;
+}) {
+  return {
+    name: row.name,
+    content_type: row.content_type,
+    size_bytes: row.size_bytes.toString(),
+    folder_id: row.folder_id,
+  };
+}
+
 /**
  * Ids come straight from the URL. Postgres rejects a malformed uuid, which
  * the API has always reported as "not found" rather than a server error.
@@ -99,6 +115,7 @@ export class FileManagerService {
     private readonly erasure: ErasureLogService,
     private readonly verifyBudget: ByteBudget,
     private readonly uploadLimits: UploadLimitService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ── Listing ──────────────────────────────────────────────────────────────
@@ -247,11 +264,38 @@ export class FileManagerService {
     await this.loadOwned(userId, fileId);
     if (folderId) await this.folders.getOwned(userId, folderId);
 
-    const data = await this.prisma.file
-      .update({
-        where: { id: fileId },
-        data: { folder_id: folderId, updated_at: new Date() },
-        select: FILE_COLUMNS,
+    const data = await this.prisma
+      .$transaction(async (tx) => {
+        const before = await tx.file.findFirst({
+          where: { id: fileId },
+          select: {
+            name: true,
+            content_type: true,
+            size_bytes: true,
+            folder_id: true,
+          },
+        });
+        if (!before) return null;
+        const updated = await tx.file.update({
+          where: { id: fileId },
+          data: { folder_id: folderId, updated_at: new Date() },
+          select: FILE_COLUMNS,
+        });
+        await this.auditLog?.record(
+          tx,
+          updated.school_id,
+          { id: userId },
+          {
+            entity: 'file',
+            entityId: fileId,
+            action: 'update',
+            changes: auditChanges(
+              fileAuditMetadata(before),
+              fileAuditMetadata(updated),
+            ),
+          },
+        );
+        return updated;
       })
       .catch(() => null);
     if (!data) throw new BadRequestException('Failed to move file');
@@ -356,21 +400,40 @@ export class FileManagerService {
     const storagePath = `${UPLOAD_STAGING_PREFIX}${schoolId}/${userId}/${id}-${this.slug(name)}`;
 
     try {
-      await this.prisma.file.create({
-        data: {
-          id,
-          school_id: schoolId,
-          owner_id: userId,
-          name,
-          bucket: BUCKET,
-          storage_path: storagePath,
-          content_type: contentType,
-          size_bytes: input.sizeBytes,
-          source: 'upload',
-          folder_id: input.folderId ?? null,
-          status: 'pending',
-        },
-        select: { id: true },
+      await this.prisma.$transaction(async (tx) => {
+        const created = await tx.file.create({
+          data: {
+            id,
+            school_id: schoolId,
+            owner_id: userId,
+            name,
+            bucket: BUCKET,
+            storage_path: storagePath,
+            content_type: contentType,
+            size_bytes: input.sizeBytes,
+            source: 'upload',
+            folder_id: input.folderId ?? null,
+            status: 'pending',
+          },
+          select: {
+            id: true,
+            name: true,
+            content_type: true,
+            size_bytes: true,
+            folder_id: true,
+          },
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: userId },
+          {
+            entity: 'file',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, fileAuditMetadata(created)),
+          },
+        );
       });
     } catch (error) {
       this.logger.error(
@@ -640,11 +703,38 @@ export class FileManagerService {
 
   async rename(userId: string, fileId: string, name: string) {
     await this.loadOwned(userId, fileId);
-    const data = await this.prisma.file
-      .update({
-        where: { id: fileId },
-        data: { name: name.slice(0, 255), updated_at: new Date() },
-        select: FILE_COLUMNS,
+    const data = await this.prisma
+      .$transaction(async (tx) => {
+        const before = await tx.file.findFirst({
+          where: { id: fileId },
+          select: {
+            name: true,
+            content_type: true,
+            size_bytes: true,
+            folder_id: true,
+          },
+        });
+        if (!before) return null;
+        const updated = await tx.file.update({
+          where: { id: fileId },
+          data: { name: name.slice(0, 255), updated_at: new Date() },
+          select: FILE_COLUMNS,
+        });
+        await this.auditLog?.record(
+          tx,
+          updated.school_id,
+          { id: userId },
+          {
+            entity: 'file',
+            entityId: fileId,
+            action: 'update',
+            changes: auditChanges(
+              fileAuditMetadata(before),
+              fileAuditMetadata(updated),
+            ),
+          },
+        );
+        return updated;
       })
       .catch(() => null);
     if (!data) throw new BadRequestException('Failed to rename file');
@@ -655,10 +745,34 @@ export class FileManagerService {
     const file = await this.loadOwned(userId, fileId);
     try {
       await this.prisma.$transaction(async (tx) => {
+        const before = await tx.file.findFirst({
+          where: { id: fileId },
+          select: {
+            id: true,
+            school_id: true,
+            name: true,
+            content_type: true,
+            size_bytes: true,
+            folder_id: true,
+          },
+        });
         await tx.file.updateMany({
           where: { id: fileId },
           data: { deleted_at: new Date() },
         });
+        if (before) {
+          await this.auditLog?.record(
+            tx,
+            before.school_id,
+            { id: userId },
+            {
+              entity: 'file',
+              entityId: fileId,
+              action: 'delete',
+              changes: auditChanges(fileAuditMetadata(before), null),
+            },
+          );
+        }
         await this.erasure.record(tx, {
           kind: 'file',
           subjectTable: 'file_manager.file',
@@ -731,13 +845,19 @@ export class FileManagerService {
     shareId: string,
     canDownload: boolean,
   ) {
-    await this.loadOwned(userId, fileId);
-    return this.shares.updateDownload(fileId, shareId, canDownload);
+    const file = await this.loadOwned(userId, fileId);
+    return this.shares.updateDownload(
+      fileId,
+      shareId,
+      canDownload,
+      userId,
+      file.school_id,
+    );
   }
 
   async revokeShare(userId: string, fileId: string, shareId: string) {
-    await this.loadOwned(userId, fileId);
-    return this.shares.revoke(fileId, shareId);
+    const file = await this.loadOwned(userId, fileId);
+    return this.shares.revoke(fileId, shareId, userId, file.school_id);
   }
 
   // ── Internals ────────────────────────────────────────────────────────────

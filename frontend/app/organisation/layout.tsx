@@ -8,6 +8,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  ClipboardClock,
   LayoutDashboard,
   LogOut,
   School,
@@ -33,10 +34,28 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const NAV = [
-  { href: ORGANISATION_PATH, label: "Overview", icon: LayoutDashboard, exact: true },
+  {
+    href: ORGANISATION_PATH,
+    label: "Overview",
+    icon: LayoutDashboard,
+    exact: true,
+  },
   { href: `${ORGANISATION_PATH}/schools`, label: "Schools", icon: School },
-  { href: `${ORGANISATION_PATH}/admins`, label: "Administrators", icon: ShieldCheck },
-  { href: `${ORGANISATION_PATH}/features`, label: "Features", icon: ToggleRight },
+  {
+    href: `${ORGANISATION_PATH}/admins`,
+    label: "Administrators",
+    icon: ShieldCheck,
+  },
+  {
+    href: `${ORGANISATION_PATH}/audit-log`,
+    label: "Audit log",
+    icon: ClipboardClock,
+  },
+  {
+    href: `${ORGANISATION_PATH}/features`,
+    label: "Features",
+    icon: ToggleRight,
+  },
   { href: `${ORGANISATION_PATH}/settings`, label: "Settings", icon: Settings },
 ];
 
@@ -85,7 +104,10 @@ export default function OrganisationLayout({
   const fullName =
     [me.first_name, me.last_name].filter(Boolean).join(" ") || me.email;
   const initials =
-    [me.first_name?.[0], me.last_name?.[0]].filter(Boolean).join("").toUpperCase() ||
+    [me.first_name?.[0], me.last_name?.[0]]
+      .filter(Boolean)
+      .join("")
+      .toUpperCase() ||
     me.email[0]?.toUpperCase() ||
     "?";
 
@@ -102,7 +124,10 @@ export default function OrganisationLayout({
     <div className="min-h-dvh bg-background">
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-          <Link href={ORGANISATION_PATH} className="flex min-w-0 items-center gap-2 overflow-hidden">
+          <Link
+            href={ORGANISATION_PATH}
+            className="flex min-w-0 items-center gap-2 overflow-hidden"
+          >
             <Image
               src="/icons/logo2.png"
               alt=""
@@ -128,10 +153,10 @@ export default function OrganisationLayout({
                 }
               >
                 <Avatar className="size-7">
-                  {me.avatar_url && (
-                    <AvatarImage src={me.avatar_url} alt="" />
-                  )}
-                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                  {me.avatar_url && <AvatarImage src={me.avatar_url} alt="" />}
+                  <AvatarFallback className="text-xs">
+                    {initials}
+                  </AvatarFallback>
                 </Avatar>
                 <span className="hidden max-w-40 truncate sm:inline">
                   {fullName}
@@ -152,7 +177,9 @@ export default function OrganisationLayout({
                   Account settings
                 </DropdownMenuItem>
                 {me.school && (
-                  <DropdownMenuItem onClick={() => router.push(homePathFor(me))}>
+                  <DropdownMenuItem
+                    onClick={() => router.push(homePathFor(me))}
+                  >
                     <ArrowLeft className="mr-2 size-4" />
                     Back to app
                   </DropdownMenuItem>

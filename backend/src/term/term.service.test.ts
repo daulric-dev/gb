@@ -55,6 +55,7 @@ describe('TermService', () => {
     prisma = createMockPrisma();
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
     prisma.academic_year.findFirst.mockResolvedValue({ id: YEAR_ID });
+    prisma.term.findUniqueOrThrow.mockResolvedValue(dbTerm());
     service = new TermService(prisma as any, mockCache as any);
   });
 
@@ -157,9 +158,7 @@ describe('TermService', () => {
     test('uses cache.update to replace record in list', async () => {
       const original = makeTerm();
       prisma.term.findFirst.mockResolvedValue(dbTerm());
-      prisma.term.update.mockResolvedValue(
-        dbTerm({ name: 'Autumn' }),
-      );
+      prisma.term.update.mockResolvedValue(dbTerm({ name: 'Autumn' }));
 
       await mockCache.set(`terms:${YEAR_ID}`, [original], TERM_TTL);
 

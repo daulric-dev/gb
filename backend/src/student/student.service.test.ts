@@ -32,12 +32,23 @@ describe('StudentService', () => {
   let service: StudentService;
   let prisma: MockPrisma;
   let mockCache: ReturnType<typeof createMockCacheService>;
+  let auditCalls: any[];
 
   beforeEach(() => {
     mockCache = createMockCacheService();
     prisma = createMockPrisma();
+    auditCalls = [];
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL_ID });
-    service = new StudentService(prisma as any, mockCache as any);
+    service = new StudentService(
+      prisma as any,
+      mockCache as any,
+      undefined,
+      {
+        record: async (...args: any[]) => {
+          auditCalls.push(args);
+        },
+      } as any,
+    );
   });
 
   describe('findAll', () => {
@@ -117,6 +128,7 @@ describe('StudentService', () => {
   describe('update', () => {
     test('uses cache.update to replace record in list', async () => {
       const original = makeStudent();
+      prisma.student.findFirst.mockResolvedValue(original);
       prisma.student.update.mockResolvedValue(
         makeStudent({ first_name: 'Jane' }),
       );
@@ -131,6 +143,19 @@ describe('StudentService', () => {
       });
       const cached = await mockCache.get(`students:${SCHOOL_ID}`);
       expect(cached[0].first_name).toBe('Jane');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(auditCalls).toHaveLength(1);
+      expect(auditCalls[0][1]).toBe(SCHOOL_ID);
+      expect(auditCalls[0][2]).toEqual({ id: USER_ID });
+      expect(auditCalls[0][3]).toMatchObject({
+        entity: 'student',
+        entityId: 'student-1',
+        action: 'update',
+      });
+      expect(auditCalls[0][3].changes.first_name).toEqual({
+        before: 'John',
+        after: 'Jane',
+      });
     });
 
     test('throws NotFoundException when student not found', () => {
@@ -198,7 +223,12 @@ describe('StudentService.findAllPaginated cursorColumn', () => {
   test('an unknown or inherited column is a 400, not a 500', async () => {
     const prisma = createMockPrisma();
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's1' } as any);
-    const svc = new StudentService(prisma as any, createMockCacheService() as any);
+    const svc = new StudentService(
+      prisma as any,
+      createMockCacheService() as any,
+      undefined,
+      { record: async () => undefined } as any,
+    );
     for (const column of ['nope', 'constructor', '__proto__']) {
       const err = await svc
         .findAllPaginated('u1', { cursorColumn: column, cursor: 'x' } as any)

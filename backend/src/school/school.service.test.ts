@@ -19,7 +19,12 @@ describe('SchoolService', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     mockCache = createMockCacheService();
-    service = new SchoolService(prisma as any, mockCache as any, createMockErasureLog() as any, {} as any);
+    service = new SchoolService(
+      prisma as any,
+      mockCache as any,
+      createMockErasureLog() as any,
+      {} as any,
+    );
   });
 
   describe('findAll', () => {
@@ -103,6 +108,46 @@ describe('SchoolService', () => {
       }
     });
 
+    test('audits durable join-request fields in the creation transaction', async () => {
+      const db = createMockPrisma();
+      db.school.findFirst.mockResolvedValue(school);
+      db.school_join_request.findFirst.mockResolvedValue(null);
+      db.school_join_request.create.mockResolvedValue({
+        id: 'req-audit',
+        user_id: userId,
+        school_id: 's1',
+        status: 'pending',
+      });
+      const auditLog = { record: mock(async () => {}) };
+      const svc = new SchoolService(
+        db as any,
+        createMockCacheService() as any,
+        createMockErasureLog() as any,
+        {} as any,
+        undefined,
+        auditLog as any,
+      );
+
+      await svc.createJoinRequest(userId, 's1', 'private message');
+
+      expect(auditLog.record).toHaveBeenCalledTimes(1);
+      const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0] as any;
+      expect(tx).toBe(db);
+      expect(schoolId).toBe('s1');
+      expect(actor).toEqual({ id: userId });
+      expect(entry).toMatchObject({
+        entity: 'school_join_request',
+        entityId: 'req-audit',
+        action: 'create',
+        changes: {
+          user_id: { before: null, after: userId },
+          school_id: { before: null, after: 's1' },
+          status: { before: null, after: 'pending' },
+        },
+      });
+      expect(entry.changes).not.toHaveProperty('message');
+    });
+
     test('never writes a role anywhere while joining', async () => {
       const { service: svc, db } = makeService({});
       await svc.createJoinRequest(userId, 's1');
@@ -148,7 +193,12 @@ describe('SchoolService', () => {
           role: 'admin',
           created_at: new Date('2026-01-01T00:00:00Z'),
           school: { owner_id: 'u1' },
-          user_profile: { id: 'u1', first_name: 'A', last_name: 'B', avatar_url: null },
+          user_profile: {
+            id: 'u1',
+            first_name: 'A',
+            last_name: 'B',
+            avatar_url: null,
+          },
           school_management_role: [
             { school_role: { id: 'r1', name: 'Librarian', is_system: false } },
             { school_role: { id: 'r2', name: 'teacher', is_system: true } },
@@ -180,16 +230,16 @@ describe('SchoolService', () => {
         status: 'pending',
       });
       expect(
-        await expectRejection(service.approveRequest('admin', 'req', 'teacher')),
+        await expectRejection(
+          service.approveRequest('admin', 'req', 'teacher'),
+        ),
       ).toBeInstanceOf(ForbiddenException);
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     test('upserts membership, mirrors profile and marks approved', async () => {
       prisma.user_profile.findUnique.mockImplementation(async ({ where }) =>
-        where.id === 'admin'
-          ? { school_id: 's1' }
-          : { account_type: 'staff' },
+        where.id === 'admin' ? { school_id: 's1' } : { account_type: 'staff' },
       );
       prisma.school_join_request.findUnique.mockResolvedValue({
         id: 'req',
@@ -211,6 +261,60 @@ describe('SchoolService', () => {
         data: { school_id: 's1', role: 'teacher', is_active: true },
       });
     });
+
+    test('audits the membership role and request status in the approval transaction', async () => {
+      prisma.user_profile.findUnique.mockImplementation(async ({ where }) =>
+        where.id === 'admin' ? { school_id: 's1' } : { account_type: 'staff' },
+      );
+      prisma.school_join_request.findUnique.mockResolvedValue({
+        id: 'req-audit',
+        user_id: 'u2',
+        school_id: 's1',
+        status: 'pending',
+      });
+      prisma.school_management.findUnique.mockResolvedValue(null);
+      prisma.school_management.create.mockResolvedValue({
+        id: 'membership-audit',
+      });
+      prisma.school_join_request.update.mockResolvedValue({
+        id: 'req-audit',
+        status: 'approved',
+      });
+      const auditLog = { record: mock(async () => {}) };
+      const svc = new SchoolService(
+        prisma as any,
+        mockCache as any,
+        createMockErasureLog() as any,
+        {} as any,
+        undefined,
+        auditLog as any,
+      );
+
+      await svc.approveRequest('admin', 'req-audit', 'teacher');
+
+      expect(auditLog.record).toHaveBeenCalledTimes(2);
+      const membershipAudit = auditLog.record.mock.calls[0] as any[];
+      expect(membershipAudit[0]).toBe(prisma);
+      expect(membershipAudit.slice(1)).toMatchObject([
+        's1',
+        { id: 'admin' },
+        {
+          entity: 'school_membership',
+          entityId: 'membership-audit',
+          action: 'create',
+          changes: {
+            role: { before: null, after: 'teacher' },
+            role_ids: { before: null, after: [] },
+          },
+        },
+      ]);
+      expect((auditLog.record.mock.calls[1] as any[])[3]).toMatchObject({
+        entity: 'school_join_request',
+        entityId: 'req-audit',
+        action: 'update',
+        changes: { status: { before: 'pending', after: 'approved' } },
+      });
+    });
   });
 
   describe('revokeMemberSessions', () => {
@@ -228,13 +332,15 @@ describe('SchoolService', () => {
       return { svc, sessions };
     }
 
-    test('signs a member of the admin\'s school out everywhere', async () => {
+    test("signs a member of the admin's school out everywhere", async () => {
       const { svc, sessions } = setup({
         user_id: 'teacher-1',
         school_id: 'school-1',
         school: { owner_id: 'owner-1' },
       });
-      expect(await svc.revokeMemberSessions('admin-1', 'm1')).toEqual({ revoked: 3 });
+      expect(await svc.revokeMemberSessions('admin-1', 'm1')).toEqual({
+        revoked: 3,
+      });
       expect(sessions.revokeAll).toHaveBeenCalledWith('teacher-1', 'admin');
     });
 
@@ -244,26 +350,32 @@ describe('SchoolService', () => {
         school_id: 'school-2',
         school: { owner_id: 'owner-2' },
       });
-      expect(await expectRejection(svc.revokeMemberSessions('admin-1', 'm2'))).toBeInstanceOf(
-        NotFoundException,
-      );
+      expect(
+        await expectRejection(svc.revokeMemberSessions('admin-1', 'm2')),
+      ).toBeInstanceOf(NotFoundException);
       expect(sessions.revokeAll).not.toHaveBeenCalled();
     });
 
     test('an unknown membership is a 404', async () => {
       const { svc } = setup(null);
-      expect(await expectRejection(svc.revokeMemberSessions('admin-1', 'm3'))).toBeInstanceOf(
-        NotFoundException,
-      );
+      expect(
+        await expectRejection(svc.revokeMemberSessions('admin-1', 'm3')),
+      ).toBeInstanceOf(NotFoundException);
     });
 
     test('only the owner can sign the owner out', async () => {
-      const owner = { user_id: 'owner-1', school_id: 'school-1', school: { owner_id: 'owner-1' } };
+      const owner = {
+        user_id: 'owner-1',
+        school_id: 'school-1',
+        school: { owner_id: 'owner-1' },
+      };
       const { svc, sessions } = setup(owner);
-      expect(await expectRejection(svc.revokeMemberSessions('admin-1', 'm4'))).toBeInstanceOf(
-        ForbiddenException,
-      );
-      expect(await svc.revokeMemberSessions('owner-1', 'm4')).toEqual({ revoked: 3 });
+      expect(
+        await expectRejection(svc.revokeMemberSessions('admin-1', 'm4')),
+      ).toBeInstanceOf(ForbiddenException);
+      expect(await svc.revokeMemberSessions('owner-1', 'm4')).toEqual({
+        revoked: 3,
+      });
       expect(sessions.revokeAll).toHaveBeenCalledTimes(1);
     });
   });

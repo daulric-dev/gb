@@ -53,6 +53,7 @@ function stubAccess(role: 'admin' | 'teacher' | 'ta' | null = 'teacher') {
 function build(
   setup: (prisma: MockPrisma) => void = () => {},
   role: 'admin' | 'teacher' | 'ta' | null = 'teacher',
+  auditLog?: { record: (...args: any[]) => Promise<void> },
 ) {
   const prisma = createMockPrisma();
   prisma.activity.findUnique.mockResolvedValue({ ...ACTIVITY });
@@ -66,11 +67,42 @@ function build(
   }));
   setup(prisma);
   const access = stubAccess(role);
-  const service = new ActivityService(prisma as any, access as any);
+  const service = new ActivityService(
+    prisma as any,
+    access as any,
+    undefined,
+    undefined,
+    auditLog as any,
+  );
   return { service, prisma, access };
 }
 
 describe('ActivityService.create', () => {
+  test('records created activity fields in the write transaction', async () => {
+    let args: any[] = [];
+    const auditLog = {
+      record: async (...recordArgs: any[]) => {
+        args = recordArgs;
+      },
+    };
+    const { service, prisma } = build(() => {}, 'teacher', auditLog);
+
+    await service.create('user-1', 'course-1', {
+      kind: 'assignment',
+      title: 'Essay',
+      points: 20,
+      allowText: true,
+    });
+
+    expect(args[0]).toBe(prisma);
+    expect(args[1]).toBe('school-1');
+    expect(args[2]).toEqual({ id: 'user-1' });
+    expect(args[3].entity).toBe('activity');
+    expect(args[3].action).toBe('create');
+    expect(args[3].changes.title).toEqual({ before: null, after: 'Essay' });
+    expect(args[3].changes.points).toEqual({ before: null, after: 20 });
+  });
+
   test('creates in the course and returns the Activity contract', async () => {
     const { service, prisma } = build();
 
@@ -175,9 +207,9 @@ describe('ActivityService.create', () => {
       allowMultipleFiles: true,
     });
 
-    expect(prisma.activity.create.mock.calls[0][0].data.allow_multiple_files).toBe(
-      true,
-    );
+    expect(
+      prisma.activity.create.mock.calls[0][0].data.allow_multiple_files,
+    ).toBe(true);
     expect(result.allowMultipleFiles).toBe(true);
   });
 

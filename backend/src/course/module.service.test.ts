@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import {
   BadRequestException,
   ForbiddenException,
@@ -28,8 +28,12 @@ function fakeAccess(role: CourseRole | null) {
   } as any;
 }
 
-function service(prisma: MockPrisma, role: CourseRole | null = 'teacher') {
-  return new ModuleService(prisma as any, fakeAccess(role));
+function service(
+  prisma: MockPrisma,
+  role: CourseRole | null = 'teacher',
+  auditLog?: any,
+) {
+  return new ModuleService(prisma as any, fakeAccess(role), auditLog);
 }
 
 function item(over: Record<string, any> = {}) {
@@ -68,20 +72,67 @@ const ACTIVITIES: Record<string, any> = {
     due_at: new Date('2026-11-01T12:00:00Z'),
     status: 'published',
   },
-  a2: { id: 'a2', title: 'Quiz', kind: 'quiz', points: 10, due_at: null, status: 'draft' },
+  a2: {
+    id: 'a2',
+    title: 'Quiz',
+    kind: 'quiz',
+    points: 10,
+    due_at: null,
+    status: 'draft',
+  },
 };
 
 const MODULES = [
-  { id: 'm1', course_id: COURSE, title: 'Week 1', position: 0, is_published: true },
-  { id: 'm2', course_id: COURSE, title: 'Week 2', position: 1, is_published: false },
+  {
+    id: 'm1',
+    course_id: COURSE,
+    title: 'Week 1',
+    position: 0,
+    is_published: true,
+  },
+  {
+    id: 'm2',
+    course_id: COURSE,
+    title: 'Week 2',
+    position: 1,
+    is_published: false,
+  },
 ];
 
 const ITEMS = [
   item({ id: 'i1' }),
-  item({ id: 'i2', item_type: 'page', title: null, page_id: 'p1', page: PAGES.p1, position: 1 }),
-  item({ id: 'i3', item_type: 'page', title: null, page_id: 'p2', page: PAGES.p2, position: 2 }),
-  item({ id: 'i4', item_type: 'activity', title: null, activity_id: 'a1', activity: ACTIVITIES.a1, position: 3 }),
-  item({ id: 'i5', item_type: 'activity', title: 'Custom', activity_id: 'a2', activity: ACTIVITIES.a2, position: 4 }),
+  item({
+    id: 'i2',
+    item_type: 'page',
+    title: null,
+    page_id: 'p1',
+    page: PAGES.p1,
+    position: 1,
+  }),
+  item({
+    id: 'i3',
+    item_type: 'page',
+    title: null,
+    page_id: 'p2',
+    page: PAGES.p2,
+    position: 2,
+  }),
+  item({
+    id: 'i4',
+    item_type: 'activity',
+    title: null,
+    activity_id: 'a1',
+    activity: ACTIVITIES.a1,
+    position: 3,
+  }),
+  item({
+    id: 'i5',
+    item_type: 'activity',
+    title: 'Custom',
+    activity_id: 'a2',
+    activity: ACTIVITIES.a2,
+    position: 4,
+  }),
   item({
     id: 'i6',
     item_type: 'file',
@@ -160,8 +211,12 @@ describe('ModuleService.list', () => {
     const ids = modules[0].items.map((i) => i.id);
     expect(ids).toEqual(['i1', 'i2', 'i4', 'i6']);
 
-    expect(prisma.module.findMany.mock.calls[0][0].where.is_published).toBe(true);
-    expect(prisma.module_item.findMany.mock.calls[0][0].where.is_published).toBe(true);
+    expect(prisma.module.findMany.mock.calls[0][0].where.is_published).toBe(
+      true,
+    );
+    expect(
+      prisma.module_item.findMany.mock.calls[0][0].where.is_published,
+    ).toBe(true);
   });
 
   test('a discussion item shows its topic, and only a published one to students', async () => {
@@ -173,14 +228,22 @@ describe('ModuleService.list', () => {
         item_type: 'discussion',
         title: null,
         discussion_topic_id: 't1',
-        discussion_topic: { id: 't1', title: 'Ask anything', is_published: true },
+        discussion_topic: {
+          id: 't1',
+          title: 'Ask anything',
+          is_published: true,
+        },
       }),
       item({
         id: 'd2',
         item_type: 'discussion',
         title: null,
         discussion_topic_id: 't2',
-        discussion_topic: { id: 't2', title: 'Draft prompt', is_published: false },
+        discussion_topic: {
+          id: 't2',
+          title: 'Draft prompt',
+          is_published: false,
+        },
         position: 1,
       }),
     ]);
@@ -216,19 +279,26 @@ describe('ModuleService writes', () => {
   test('a TA cannot create modules', async () => {
     const prisma = content();
     expect(
-      await expectRejection(service(prisma, 'ta').create(USER, COURSE, 'Week 3')),
+      await expectRejection(
+        service(prisma, 'ta').create(USER, COURSE, 'Week 3'),
+      ),
     ).toBeInstanceOf(ForbiddenException);
   });
 
   test('a new module goes after the last one', async () => {
     const prisma = createMockPrisma();
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
     prisma.module.findFirst.mockResolvedValue({ position: 4 });
     prisma.module.create.mockImplementation(async ({ data }: any) => ({
       id: 'm3',
       is_published: false,
       ...data,
     }));
-    const created = await service(prisma).create(USER, COURSE, ' Week 3 ');
+    const created = await service(prisma, 'teacher', auditLog).create(
+      USER,
+      COURSE,
+      ' Week 3 ',
+    );
     expect(prisma.module.create.mock.calls[0][0].data).toEqual({
       course_id: COURSE,
       title: 'Week 3',
@@ -242,6 +312,22 @@ describe('ModuleService writes', () => {
       isPublished: false,
       items: [],
     });
+    const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0];
+    expect(tx).toBe(prisma);
+    expect([schoolId, actor, entry]).toEqual([
+      'school-1',
+      { id: USER },
+      {
+        entity: 'module',
+        entityId: 'm3',
+        action: 'create',
+        changes: {
+          title: { before: null, after: 'Week 3' },
+          position: { before: null, after: 5 },
+          is_published: { before: null, after: false },
+        },
+      },
+    ]);
   });
 
   test('the first module goes at position 0', async () => {
@@ -260,9 +346,9 @@ describe('ModuleService writes', () => {
     prisma.module.findMany.mockResolvedValue([{ id: 'm1' }, { id: 'm2' }]);
     const svc = service(prisma);
     for (const ids of [['m1'], ['m1', 'm1'], ['m1', 'mX']]) {
-      expect(await expectRejection(svc.reorder(USER, COURSE, ids))).toBeInstanceOf(
-        BadRequestException,
-      );
+      expect(
+        await expectRejection(svc.reorder(USER, COURSE, ids)),
+      ).toBeInstanceOf(BadRequestException);
     }
     expect(prisma.module.updateMany).not.toHaveBeenCalled();
   });
@@ -300,7 +386,10 @@ describe('ModuleService items', () => {
     const prisma = withModule();
     expect(
       await expectRejection(
-        service(prisma).createItem(USER, COURSE, 'm1', { itemType: 'page', pageId: 'p9' }),
+        service(prisma).createItem(USER, COURSE, 'm1', {
+          itemType: 'page',
+          pageId: 'p9',
+        }),
       ),
     ).toBeInstanceOf(NotFoundException);
     expect(prisma.page.findFirst.mock.calls[0][0].where).toEqual({
@@ -309,11 +398,14 @@ describe('ModuleService items', () => {
     });
   });
 
-  test('a file must be the caller\'s own, in the course school and not deleted', async () => {
+  test("a file must be the caller's own, in the course school and not deleted", async () => {
     const prisma = withModule();
     expect(
       await expectRejection(
-        service(prisma).createItem(USER, COURSE, 'm1', { itemType: 'file', fileId: 'f9' }),
+        service(prisma).createItem(USER, COURSE, 'm1', {
+          itemType: 'file',
+          fileId: 'f9',
+        }),
       ),
     ).toBeInstanceOf(NotFoundException);
     expect(prisma.file.findFirst.mock.calls[0][0].where).toEqual({
@@ -353,7 +445,11 @@ describe('ModuleService items', () => {
       item({
         ...data,
         id: 'new',
-        discussion_topic: { id: 't1', title: 'Ask anything', is_published: true },
+        discussion_topic: {
+          id: 't1',
+          title: 'Ask anything',
+          is_published: true,
+        },
       }),
     );
     const created = await service(prisma).createItem(USER, COURSE, 'm1', {
@@ -378,7 +474,10 @@ describe('ModuleService items', () => {
     const svc = service(prisma);
     expect(
       await expectRejection(
-        svc.createItem(USER, COURSE, 'm1', { itemType: 'link', url: 'https://x.test' }),
+        svc.createItem(USER, COURSE, 'm1', {
+          itemType: 'link',
+          url: 'https://x.test',
+        }),
       ),
     ).toBeInstanceOf(BadRequestException);
     expect(
@@ -396,7 +495,14 @@ describe('ModuleService items', () => {
       item({
         ...data,
         id: 'new',
-        activity: { id: 'a1', title: 'Essay', kind: 'assignment', points: 20, due_at: null, status: 'draft' },
+        activity: {
+          id: 'a1',
+          title: 'Essay',
+          kind: 'assignment',
+          points: 20,
+          due_at: null,
+          status: 'draft',
+        },
       }),
     );
     const created = await service(prisma).createItem(USER, COURSE, 'm1', {
@@ -427,7 +533,9 @@ describe('ModuleService items', () => {
     prisma.module_item.findFirst.mockResolvedValue(item());
     expect(
       await expectRejection(
-        service(prisma).updateItem(USER, COURSE, 'm1', 'i1', { moduleId: 'm2' }),
+        service(prisma).updateItem(USER, COURSE, 'm1', 'i1', {
+          moduleId: 'm2',
+        }),
       ),
     ).toBeInstanceOf(NotFoundException);
     expect(prisma.module_item.update).not.toHaveBeenCalled();

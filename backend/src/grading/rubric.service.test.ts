@@ -30,7 +30,13 @@ const RUBRIC_ROW = {
       points: 6,
       position: 0,
       rubric_rating: [
-        { id: 'r1', label: 'Strong', description: null, points: 6, position: 0 },
+        {
+          id: 'r1',
+          label: 'Strong',
+          description: null,
+          points: 6,
+          position: 0,
+        },
         { id: 'r2', label: 'Weak', description: null, points: 2, position: 1 },
       ],
     },
@@ -63,7 +69,7 @@ function stubAccess(role: 'teacher' | 'ta' | null = 'teacher') {
     require: async (_u: string, courseId: string, roles: readonly string[]) => {
       if (!role) throw new NotFoundException('Course not found');
       if (!roles.includes(role)) throw new ForbiddenException('nope');
-      return { course: { id: courseId }, role };
+      return { course: { id: courseId, school_id: 'school-1' }, role };
     },
   };
 }
@@ -71,6 +77,7 @@ function stubAccess(role: 'teacher' | 'ta' | null = 'teacher') {
 function build(
   setup: (prisma: MockPrisma) => void = () => {},
   role: 'teacher' | 'ta' | null = 'teacher',
+  auditLog?: { record: (...args: any[]) => Promise<void> },
 ) {
   const prisma = createMockPrisma();
   prisma.activity.findUnique.mockResolvedValue(ACTIVITY);
@@ -88,11 +95,48 @@ function build(
     graded_at: create.graded_at,
   }));
   setup(prisma);
-  const service = new RubricService(prisma as any, stubAccess(role) as any);
+  const service = new RubricService(
+    prisma as any,
+    stubAccess(role) as any,
+    auditLog as any,
+  );
   return { service, prisma };
 }
 
 describe('RubricService.create', () => {
+  test('records rubric structure in the transaction that creates it', async () => {
+    let args: any[] = [];
+    const auditLog = {
+      record: async (...recordArgs: any[]) => {
+        args = recordArgs;
+      },
+    };
+    const { service, prisma } = build(() => {}, 'teacher', auditLog);
+    prisma.rubric.create.mockResolvedValue({ id: 'rub-1' });
+
+    await service.create('user-1', 'course-1', {
+      title: 'Essay rubric',
+      criteria: [
+        {
+          title: 'Argument',
+          points: 6,
+          ratings: [{ label: 'Strong', points: 6 }],
+        },
+      ],
+    });
+
+    expect(args[0]).toBe(prisma);
+    expect(args[1]).toBe('school-1');
+    expect(args[2]).toEqual({ id: 'user-1' });
+    expect(args[3].entity).toBe('rubric');
+    expect(args[3].action).toBe('create');
+    expect(args[3].changes.title).toEqual({
+      before: null,
+      after: 'Essay rubric',
+    });
+    expect(args[3].changes.criteria.after[0].ratings[0].label).toBe('Strong');
+  });
+
   test('writes criteria and levels in order and returns the Rubric contract', async () => {
     const { service, prisma } = build();
     prisma.rubric.create.mockResolvedValue({ id: 'rub-1' });
@@ -136,7 +180,11 @@ describe('RubricService.create', () => {
       service.create('user-1', 'course-1', {
         title: 'R',
         criteria: [
-          { title: 'A', points: 2, ratings: [{ label: 'Too much', points: 3 }] },
+          {
+            title: 'A',
+            points: 2,
+            ratings: [{ label: 'Too much', points: 3 }],
+          },
         ],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -147,7 +195,9 @@ describe('RubricService.create', () => {
     await expect(
       service.create('user-1', 'course-1', {
         title: 'R',
-        criteria: [{ title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] }],
+        criteria: [
+          { title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] },
+        ],
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -160,7 +210,9 @@ describe('RubricService.update', () => {
     });
     await expect(
       service.update('user-1', 'course-1', 'rub-1', {
-        criteria: [{ title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] }],
+        criteria: [
+          { title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] },
+        ],
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
@@ -179,7 +231,9 @@ describe('RubricService.update', () => {
     });
     await expect(
       service.update('user-1', 'course-1', 'rub-1', {
-        criteria: [{ title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] }],
+        criteria: [
+          { title: 'A', points: 1, ratings: [{ label: 'x', points: 1 }] },
+        ],
       }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.$transaction).toHaveBeenCalled();
@@ -362,7 +416,9 @@ describe('RubricService.forActivity', () => {
     const result = await service.forActivity('user-1', 'act-1');
     expect(result.rubric?.id).toBe('rub-1');
     expect(result.assessments).toEqual({
-      'stu-1': [{ criterionId: 'c1', ratingId: 'r1', points: 6, comment: null }],
+      'stu-1': [
+        { criterionId: 'c1', ratingId: 'r1', points: 6, comment: null },
+      ],
     });
   });
 });

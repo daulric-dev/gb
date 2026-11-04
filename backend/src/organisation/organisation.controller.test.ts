@@ -1,7 +1,18 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
-import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { ForbiddenException, NotFoundException, RequestMethod } from '@nestjs/common';
-import { OrganisationController, SetupController } from './organisation.controller';
+import {
+  GUARDS_METADATA,
+  METHOD_METADATA,
+  PATH_METADATA,
+} from '@nestjs/common/constants';
+import {
+  ForbiddenException,
+  NotFoundException,
+  RequestMethod,
+} from '@nestjs/common';
+import {
+  OrganisationController,
+  SetupController,
+} from './organisation.controller';
 import { OrganisationAdminGuard } from './organisation-admin.guard';
 import { AuthGuard } from '@/auth/auth.guard';
 import { SchoolController } from '@/school/school.controller';
@@ -18,7 +29,8 @@ const routes = (controller: any) =>
         name,
         method: Reflect.getMetadata(METHOD_METADATA, handler) as RequestMethod,
         path: Reflect.getMetadata(PATH_METADATA, handler) as string,
-        guards: (Reflect.getMetadata(GUARDS_METADATA, handler) ?? []) as unknown[],
+        guards: (Reflect.getMetadata(GUARDS_METADATA, handler) ??
+          []) as unknown[],
       };
     })
     .filter((r) => r.path !== undefined);
@@ -26,11 +38,15 @@ const routes = (controller: any) =>
 describe('SetupController', () => {
   test('lives at /setup with no class-level guard', () => {
     expect(Reflect.getMetadata(PATH_METADATA, SetupController)).toBe('setup');
-    expect(Reflect.getMetadata(GUARDS_METADATA, SetupController)).toBeUndefined();
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, SetupController),
+    ).toBeUndefined();
   });
 
   test('GET /setup/status is public; POST /setup needs a session', () => {
-    const byName = Object.fromEntries(routes(SetupController).map((r) => [r.name, r]));
+    const byName = Object.fromEntries(
+      routes(SetupController).map((r) => [r.name, r]),
+    );
     expect(byName.status.path).toBe('status');
     expect(byName.status.guards).toEqual([]);
     expect(byName.setup.method).toBe(RequestMethod.POST);
@@ -40,11 +56,12 @@ describe('SetupController', () => {
 
 describe('OrganisationController', () => {
   test('every route needs a session and an organisation admin', () => {
-    expect(Reflect.getMetadata(PATH_METADATA, OrganisationController)).toBe('organisation');
-    expect(Reflect.getMetadata(GUARDS_METADATA, OrganisationController)).toEqual([
-      AuthGuard,
-      OrganisationAdminGuard,
-    ]);
+    expect(Reflect.getMetadata(PATH_METADATA, OrganisationController)).toBe(
+      'organisation',
+    );
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, OrganisationController),
+    ).toEqual([AuthGuard, OrganisationAdminGuard]);
   });
 
   test('exposes the contracted routes', () => {
@@ -82,7 +99,8 @@ describe('OrganisationController', () => {
 describe('schools and billing', () => {
   test('POST /schools is gone: schools are created by organisation admins', () => {
     const posts = routes(SchoolController).filter(
-      (r) => r.method === RequestMethod.POST && (r.path === '/' || r.path === ''),
+      (r) =>
+        r.method === RequestMethod.POST && (r.path === '/' || r.path === ''),
     );
     expect(posts).toEqual([]);
   });
@@ -120,7 +138,9 @@ describe("OrganisationController: one school's settings", () => {
     };
     uploadLimits = {
       forSchool: mock(async () => ({ maxUploadMb: 10 })),
-      setForSchool: mock(async (_id: string, mb: number | null) => ({ maxUploadMb: mb })),
+      setForSchool: mock(async (_id: string, mb: number | null) => ({
+        maxUploadMb: mb,
+      })),
     };
     logos = {
       createTicket: mock(async () => ({ uploadUrl: 'u', path: 'p' })),
@@ -142,10 +162,17 @@ describe("OrganisationController: one school's settings", () => {
     () => c.schoolUploadLimit(req, id),
     () => c.updateSchoolUploadLimit(req, id, { maxUploadMb: 20 } as any),
     () => c.schoolFeatures(id),
-    () => c.updateSchoolFeatures(id, { features: { messaging: false } } as any),
-    () => c.schoolLogoTicket(id, { contentType: 'image/png', totalSize: 10 } as any),
-    () => c.schoolLogoComplete(id, { path: 'uploads/x.png' } as any),
-    () => c.schoolLogoRemove(id),
+    () =>
+      c.updateSchoolFeatures(req, id, {
+        features: { messaging: false },
+      } as any),
+    () =>
+      c.schoolLogoTicket(id, {
+        contentType: 'image/png',
+        totalSize: 10,
+      } as any),
+    () => c.schoolLogoComplete(req, id, { path: 'uploads/x.png' } as any),
+    () => c.schoolLogoRemove(req, id),
   ];
 
   test('a non-organisation-admin is refused (403) before any school route', async () => {
@@ -157,7 +184,9 @@ describe("OrganisationController: one school's settings", () => {
     expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(
       ForbiddenException,
     );
-    for (const r of routes(OrganisationController).filter((r) => r.path.startsWith('schools/:id'))) {
+    for (const r of routes(OrganisationController).filter((r) =>
+      r.path.startsWith('schools/:id'),
+    )) {
       expect(r.guards).toEqual([]);
     }
   });
@@ -166,7 +195,10 @@ describe("OrganisationController: one school's settings", () => {
     organisation.school = mock(async () => {
       throw new NotFoundException('School not found');
     });
-    for (const call of calls(controller, '22222222-2222-4222-8222-222222222222')) {
+    for (const call of calls(
+      controller,
+      '22222222-2222-4222-8222-222222222222',
+    )) {
       expect(await expectRejection(call())).toBeInstanceOf(NotFoundException);
     }
     expect(uploadLimits.forSchool).not.toHaveBeenCalled();
@@ -179,31 +211,59 @@ describe("OrganisationController: one school's settings", () => {
   });
 
   test('GET schools/:id returns the row with its logo', async () => {
-    expect(await controller.school(SCHOOL)).toEqual({ id: SCHOOL, logoUrl: null } as any);
+    expect(await controller.school(SCHOOL)).toEqual({
+      id: SCHOOL,
+      logoUrl: null,
+    } as any);
     expect(organisation.school).toHaveBeenCalledWith(SCHOOL);
   });
 
   test('upload limit delegates with that school and the same transformer', async () => {
-    expect(await controller.schoolUploadLimit(req, SCHOOL)).toEqual({ maxUploadMb: 10 } as any);
+    expect(await controller.schoolUploadLimit(req, SCHOOL)).toEqual({
+      maxUploadMb: 10,
+    } as any);
     expect(uploadLimits.forSchool).toHaveBeenCalledWith(SCHOOL);
-    await controller.updateSchoolUploadLimit(req, SCHOOL, { maxUploadMb: null } as any);
-    expect(uploadLimits.setForSchool).toHaveBeenCalledWith(SCHOOL, null);
+    await controller.updateSchoolUploadLimit(req, SCHOOL, {
+      maxUploadMb: null,
+    } as any);
+    expect(uploadLimits.setForSchool).toHaveBeenCalledWith(
+      SCHOOL,
+      null,
+      req.user.id,
+    );
     expect(versioning.resolve).toHaveBeenCalledWith(req, 'school.uploadLimit');
   });
 
   test('features delegate with that school', async () => {
     await controller.schoolFeatures(SCHOOL);
     expect(features.schoolFeatures).toHaveBeenCalledWith(SCHOOL);
-    await controller.updateSchoolFeatures(SCHOOL, { features: { messaging: false } } as any);
-    expect(features.updateSchoolFeatures).toHaveBeenCalledWith(SCHOOL, { messaging: false });
+    await controller.updateSchoolFeatures(req, SCHOOL, {
+      features: { messaging: false },
+    } as any);
+    expect(features.updateSchoolFeatures).toHaveBeenCalledWith(
+      SCHOOL,
+      { messaging: false },
+      req.user.id,
+    );
   });
 
   test('logo routes delegate with that school', async () => {
-    await controller.schoolLogoTicket(SCHOOL, { contentType: 'image/png', totalSize: 10 } as any);
+    await controller.schoolLogoTicket(SCHOOL, {
+      contentType: 'image/png',
+      totalSize: 10,
+    } as any);
     expect(logos.createTicket).toHaveBeenCalledWith(SCHOOL, 'image/png', 10);
-    await controller.schoolLogoComplete(SCHOOL, { path: 'uploads/x.png' } as any);
-    expect(logos.complete).toHaveBeenCalledWith(SCHOOL, 'uploads/x.png');
-    expect(await controller.schoolLogoRemove(SCHOOL)).toEqual({ logoUrl: null });
-    expect(logos.remove).toHaveBeenCalledWith(SCHOOL);
+    await controller.schoolLogoComplete(req, SCHOOL, {
+      path: 'uploads/x.png',
+    } as any);
+    expect(logos.complete).toHaveBeenCalledWith(
+      SCHOOL,
+      'uploads/x.png',
+      req.user.id,
+    );
+    expect(await controller.schoolLogoRemove(req, SCHOOL)).toEqual({
+      logoUrl: null,
+    });
+    expect(logos.remove).toHaveBeenCalledWith(SCHOOL, req.user.id);
   });
 });

@@ -20,6 +20,7 @@ import { UpdateStudentDto } from './dto/update-student.dto';
 
 import { serializeStudent, type StudentRow } from './student.rows';
 import { optionalImageUrl } from '@/images/public-url';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 const DEFAULT_PAGE_SIZE = 20;
@@ -60,6 +61,7 @@ export class StudentService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   async findAll(userId: string, search?: string) {
@@ -325,21 +327,45 @@ export class StudentService {
         : null;
     if (dto.isActive !== undefined) updateData.is_active = dto.isActive;
     // Marking an active student inactive is the student leaving the school.
-    const leaving =
-      dto.isActive === false &&
-      (await this.prisma.student
-        .findFirst({ where: { id: studentId, school_id: schoolId }, select: { is_active: true } })
-        .then((s) => s?.is_active !== false)
-        .catch(() => false));
-
     let data: StudentRow;
+    let leaving = false;
     try {
-      data = serializeStudent(
-        await this.prisma.student.update({
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.student.findFirst({
+          where: { id: studentId, school_id: schoolId },
+        });
+        const updated = await tx.student.update({
           where: { id: studentId, school_id: schoolId },
           data: updateData,
-        }),
-      );
+        });
+        leaving = dto.isActive === false && before?.is_active !== false;
+        if (before) {
+          await this.auditLog?.record(tx, schoolId, { id: userId }, {
+            entity: 'student',
+            entityId: studentId,
+            action: 'update',
+            changes: auditChanges(
+              {
+                first_name: before.first_name,
+                last_name: before.last_name,
+                gender: before.gender,
+                date_of_birth: before.date_of_birth,
+                enrollment_date: before.enrollment_date,
+                is_active: before.is_active,
+              },
+              {
+                first_name: updated.first_name,
+                last_name: updated.last_name,
+                gender: updated.gender,
+                date_of_birth: updated.date_of_birth,
+                enrollment_date: updated.enrollment_date,
+                is_active: updated.is_active,
+              },
+            ),
+          });
+        }
+        return serializeStudent(updated);
+      });
     } catch (err) {
       if (isNotFound(err)) {
         throw new NotFoundException('Student not found');

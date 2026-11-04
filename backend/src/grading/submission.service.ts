@@ -10,6 +10,7 @@ import {
 import { ZipArchive } from 'archiver';
 import { basename } from 'node:path';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isUniqueViolation, pgCode, raisedMessage } from '@/common/db-values';
 import { roundScore, scoreOrNull } from './round';
@@ -90,6 +91,7 @@ export class SubmissionService {
     private readonly files: FileManagerService,
     private readonly access: CourseAccessService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ── webhooks ──────────────────────────────────────────────────────────────
@@ -114,20 +116,24 @@ export class SubmissionService {
         select: { course_id: true },
       });
       if (!row?.course_id) return;
-      await webhooks.emitForCourse(row.course_id, 'grade.recorded', async (course) => ({
-        submission: { id: marked.id },
-        activity,
-        course,
-        student: await webhooks.student(marked.studentId),
-        grade: {
-          score: marked.score,
-          points: activity.points,
-          status: marked.status,
-          excused: marked.excused,
-        },
-        gradedBy: await webhooks.staffOrNull(userId),
-        source,
-      }));
+      await webhooks.emitForCourse(
+        row.course_id,
+        'grade.recorded',
+        async (course) => ({
+          submission: { id: marked.id },
+          activity,
+          course,
+          student: await webhooks.student(marked.studentId),
+          grade: {
+            score: marked.score,
+            points: activity.points,
+            status: marked.status,
+            excused: marked.excused,
+          },
+          gradedBy: await webhooks.staffOrNull(userId),
+          source,
+        }),
+      );
     })().catch(() => undefined);
   }
 
@@ -149,7 +155,10 @@ export class SubmissionService {
     if (courseIds.length === 0) return new Map();
 
     const courses = await this.prisma.course.findMany({
-      where: { id: { in: courseIds }, status: { in: ['published', 'archived'] } },
+      where: {
+        id: { in: courseIds },
+        status: { in: ['published', 'archived'] },
+      },
       select: { id: true, name: true },
     });
 
@@ -286,7 +295,13 @@ export class SubmissionService {
     if (activity.kind === 'quiz') {
       const qs = await this.prisma.quiz_question.findMany({
         where: { activity_id: activityId },
-        select: { id: true, prompt: true, kind: true, points: true, sort_order: true },
+        select: {
+          id: true,
+          prompt: true,
+          kind: true,
+          points: true,
+          sort_order: true,
+        },
         orderBy: { sort_order: 'asc' },
       });
 
@@ -295,7 +310,12 @@ export class SubmissionService {
       const options = questionIds.length
         ? await this.prisma.quiz_option.findMany({
             where: { question_id: { in: questionIds } },
-            select: { id: true, question_id: true, label: true, sort_order: true },
+            select: {
+              id: true,
+              question_id: true,
+              label: true,
+              sort_order: true,
+            },
             orderBy: { sort_order: 'asc' },
           })
         : [];
@@ -499,13 +519,18 @@ export class SubmissionService {
       throw new NotFoundException('Activity not found');
     }
 
+    let course: Awaited<ReturnType<CourseAccessService['requireStudent']>>;
     try {
-      await this.access.requireStudent(studentId, activity.course_id);
+      course = await this.access.requireStudent(studentId, activity.course_id);
     } catch {
       throw new NotFoundException('Activity not found');
     }
 
-    return activity as typeof activity & { course_id: string };
+    return {
+      ...activity,
+      course_id: activity.course_id,
+      school_id: course.school_id,
+    };
   }
 
   /**
@@ -523,13 +548,9 @@ export class SubmissionService {
     // An archived course stays readable for the record, but archiving does
     // not close its activities, so hand-ins are refused at the course level.
     try {
-      await this.access.requireStudent(
-        studentId,
-        activity.course_id,
-        {
-          allowArchived: false,
-        },
-      );
+      await this.access.requireStudent(studentId, activity.course_id, {
+        allowArchived: false,
+      });
     } catch {
       throw new ConflictException('This course is closed to new work');
     }
@@ -749,13 +770,15 @@ export class SubmissionService {
         id: true,
         activity_id: true,
         file_id: true,
-        submission_file: { select: { file_id: true }, orderBy: { sort_order: 'asc' } },
+        submission_file: {
+          select: { file_id: true },
+          orderBy: { sort_order: 'asc' },
+        },
       },
     });
 
-    const attachedFileIds = submission?.submission_file?.map(
-      ({ file_id }) => file_id,
-    ) ?? [];
+    const attachedFileIds =
+      submission?.submission_file?.map(({ file_id }) => file_id) ?? [];
     if (submission?.file_id && attachedFileIds.length === 0) {
       attachedFileIds.push(submission.file_id);
     }
@@ -835,7 +858,9 @@ export class SubmissionService {
         .replace(/[\\/:*?"<>|\p{Cc}]/gu, '_')
         .slice(0, 180) + '.zip';
     void archive.finalize().catch((error: Error) => {
-      this.logger.error(`Failed to generate submission archive: ${error.message}`);
+      this.logger.error(
+        `Failed to generate submission archive: ${error.message}`,
+      );
     });
     return { archive, archiveName };
   }
@@ -862,7 +887,7 @@ export class SubmissionService {
 
     // A file attached earlier stays attached: handing in text as well must not
     // silently drop it.
-    const fileId = (input.fileId ?? draft.file_id ?? null);
+    const fileId = input.fileId ?? draft.file_id ?? null;
 
     if (!input.textBody?.trim() && !fileId) {
       throw new BadRequestException('Add your work before submitting');
@@ -886,18 +911,55 @@ export class SubmissionService {
     }
 
     let data;
+    const actorId = await this.userIdForStudent(studentId);
     try {
-      [data] = await this.prisma.submission.updateManyAndReturn({
-        // The status guards a second submit racing the first.
-        where: { id: draft.id, status: 'draft' },
-        data: {
-          status: 'submitted',
-          text_body: input.textBody?.trim() ?? null,
-          file_id: fileId,
-          submitted_at: new Date(),
-          updated_at: new Date(),
-        },
-        select: { id: true, status: true, submitted_at: true },
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.submission.findUnique({
+          where: { id: draft.id },
+          select: {
+            id: true,
+            status: true,
+            text_body: true,
+            file_id: true,
+          },
+        });
+        const [submitted] = await tx.submission.updateManyAndReturn({
+          // The status guards a second submit racing the first.
+          where: { id: draft.id, status: 'draft' },
+          data: {
+            status: 'submitted',
+            text_body: input.textBody?.trim() ?? null,
+            file_id: fileId,
+            submitted_at: new Date(),
+            updated_at: new Date(),
+          },
+          select: { id: true, status: true, submitted_at: true },
+        });
+        if (submitted) {
+          await this.auditLog?.record(
+            tx,
+            activity.school_id,
+            { id: actorId },
+            {
+              entity: 'submission',
+              entityId: submitted.id,
+              action: 'update',
+              changes: auditChanges(
+                {
+                  status: before?.status ?? null,
+                  textBody: before?.text_body ?? null,
+                  fileId: before?.file_id ?? null,
+                },
+                {
+                  status: submitted.status,
+                  textBody: input.textBody?.trim() ?? null,
+                  fileId,
+                },
+              ),
+            },
+          );
+        }
+        return submitted;
       });
     } catch {
       data = undefined;
@@ -908,15 +970,19 @@ export class SubmissionService {
     }
 
     const handedIn = data;
-    void this.webhooks?.emitForCourse(activity.course_id, 'submission.handed_in', async (course) => ({
-      submission: {
-        id: handedIn.id,
-        submittedAt: (handedIn.submitted_at ?? new Date()).toISOString(),
-      },
-      activity: toActivityRef(activity),
-      course,
-      student: await this.webhooks!.student(studentId),
-    }));
+    void this.webhooks?.emitForCourse(
+      activity.course_id,
+      'submission.handed_in',
+      async (course) => ({
+        submission: {
+          id: handedIn.id,
+          submittedAt: (handedIn.submitted_at ?? new Date()).toISOString(),
+        },
+        activity: toActivityRef(activity),
+        course,
+        student: await this.webhooks!.student(studentId),
+      }),
+    );
 
     return {
       id: data.id,
@@ -990,9 +1056,7 @@ export class SubmissionService {
           select: { id: true, question_id: true },
         })
       : [];
-    const questionOfOption = new Map(
-      options.map((o) => [o.id, o.question_id]),
-    );
+    const questionOfOption = new Map(options.map((o) => [o.id, o.question_id]));
 
     const valid = answers.filter(
       (a) =>
@@ -1003,9 +1067,7 @@ export class SubmissionService {
     );
     // One answer per question: (submission, question) is unique, so a repeated
     // question would fail the whole submit. The last one sent wins.
-    const accepted = [
-      ...new Map(valid.map((a) => [a.questionId, a])).values(),
-    ];
+    const accepted = [...new Map(valid.map((a) => [a.questionId, a])).values()];
 
     let data: {
       score: Prisma.Decimal | null;
@@ -1074,29 +1136,32 @@ export class SubmissionService {
       if (detail.includes('activity_not_open')) {
         throw new ConflictException('This quiz is closed');
       }
-      this.logger.error(
-        `Quiz submission failed: ${(error as Error).message}`,
-      );
+      this.logger.error(`Quiz submission failed: ${(error as Error).message}`);
       throw new BadRequestException('Failed to submit quiz');
     }
 
     const row = data[0];
 
-    void this.webhooks?.emitForCourse(activity.course_id, 'quiz.completed', async (course) => {
-      const ref = toActivityRef(activity);
-      return {
-        submission: { id: draft.id, attempt: row?.attempts_used ?? null },
-        activity: ref,
-        course,
-        student: await this.webhooks!.student(studentId),
-        grade: {
-          score: scoreValue(row?.score),
-          points: row?.points === undefined ? ref.points : scoreValue(row.points),
-          status: 'graded',
-          excused: false,
-        },
-      };
-    });
+    void this.webhooks?.emitForCourse(
+      activity.course_id,
+      'quiz.completed',
+      async (course) => {
+        const ref = toActivityRef(activity);
+        return {
+          submission: { id: draft.id, attempt: row?.attempts_used ?? null },
+          activity: ref,
+          course,
+          student: await this.webhooks!.student(studentId),
+          grade: {
+            score: scoreValue(row?.score),
+            points:
+              row?.points === undefined ? ref.points : scoreValue(row.points),
+            status: 'graded',
+            excused: false,
+          },
+        };
+      },
+    );
 
     return {
       score: row?.score === undefined ? null : scoreOrNull(row.score),
@@ -1115,12 +1180,26 @@ export class SubmissionService {
   private async requireMarkable(userId: string, activityId: string) {
     const activity = await this.prisma.activity.findUnique({
       where: { id: activityId },
-      select: { id: true, course_id: true, points: true, status: true, kind: true },
+      select: {
+        id: true,
+        course_id: true,
+        points: true,
+        status: true,
+        kind: true,
+      },
     });
 
     if (!activity?.course_id) throw new NotFoundException('Activity not found');
-    await this.access.require(userId, activity.course_id, STAFF_ROLES);
-    return activity as typeof activity & { course_id: string };
+    const { course } = await this.access.require(
+      userId,
+      activity.course_id,
+      STAFF_ROLES,
+    );
+    return {
+      ...activity,
+      course_id: activity.course_id,
+      school_id: course.school_id,
+    };
   }
 
   /**
@@ -1319,6 +1398,15 @@ export class SubmissionService {
           throw new BadRequestException(`Score must be between 0 and ${max}`);
         }
 
+        const before = await tx.submission.findFirst({
+          where: { activity_id: activityId, student_id: studentId },
+          select: {
+            id: true,
+            status: true,
+            score: true,
+            feedback: true,
+          },
+        });
         const written = await this.writeSubmission(
           activityId,
           studentId,
@@ -1336,6 +1424,30 @@ export class SubmissionService {
         await tx.rubric_assessment.deleteMany({
           where: { submission_id: written.id },
         });
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'submission',
+            entityId: written.id,
+            action: before ? 'update' : 'create',
+            changes: auditChanges(
+              before
+                ? {
+                    status: before.status,
+                    score: scoreOrNull(before.score),
+                    feedback: before.feedback,
+                  }
+                : null,
+              {
+                status: written.status,
+                score: written.score,
+                feedback: written.feedback,
+              },
+            ),
+          },
+        );
         return written;
       });
     } catch (error) {
@@ -1414,7 +1526,54 @@ export class SubmissionService {
       fields.graded_by = userId;
     }
 
-    const marked = await this.writeSubmission(activityId, studentId, fields);
+    const marked = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.submission.findFirst({
+        where: { activity_id: activityId, student_id: studentId },
+        select: {
+          id: true,
+          status: true,
+          score: true,
+          feedback: true,
+          excused: true,
+          excused_reason: true,
+        },
+      });
+      const updated = await this.writeSubmission(
+        activityId,
+        studentId,
+        fields,
+        tx,
+      );
+      await this.auditLog?.record(
+        tx,
+        activity.school_id,
+        { id: userId },
+        {
+          entity: 'submission',
+          entityId: updated.id,
+          action: before ? 'update' : 'create',
+          changes: auditChanges(
+            before
+              ? {
+                  status: before.status,
+                  score: scoreOrNull(before.score),
+                  feedback: before.feedback,
+                  excused: before.excused,
+                  excusedReason: before.excused_reason,
+                }
+              : null,
+            {
+              status: updated.status,
+              score: updated.score,
+              feedback: updated.feedback,
+              excused: updated.excused,
+              excusedReason: updated.excusedReason,
+            },
+          ),
+        },
+      );
+      return updated;
+    });
     this.emitGrade(activityId, marked, userId, 'excuse');
     return marked;
   }
