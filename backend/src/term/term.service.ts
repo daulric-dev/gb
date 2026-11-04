@@ -76,6 +76,7 @@ export class TermService {
               entityId: created.id,
               action: 'create',
               changes: auditChanges(null, {
+                academic_year_id: created.academic_year_id,
                 name: created.name,
                 start_date: created.start_date,
                 end_date: created.end_date,

@@ -2,6 +2,9 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Param,
+  ParseUUIDPipe,
+  Post,
   QueryMethod,
   Req,
   UseGuards,
@@ -52,5 +55,10 @@ export class OrganisationAuditLogController {
   @QueryMethod('audit-log')
   list(@Body() dto: ListAuditLogDto) {
     return this.auditLog.list({ limit: dto.limit, before: dto.before });
+  }
+
+  @Post('audit-log/:id/revert')
+  revert(@Req() req: Req, @Param('id', new ParseUUIDPipe()) id: string) {
+    return this.auditLog.revert(id, { id: req.user.id });
   }
 }

@@ -10,7 +10,7 @@ export default function OrganisationAuditLogPage() {
         title="Audit log"
         description="Review changes across every school in your organisation."
       />
-      <AuditLogView endpoint="/organisation/audit-log" />
+      <AuditLogView endpoint="/organisation/audit-log" allowRevert />
     </div>
   );
 }

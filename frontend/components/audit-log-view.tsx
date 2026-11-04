@@ -1,12 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiQuery } from "@/lib/api";
+import { api, apiQuery } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { userMessage } from "@/lib/errors";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type AuditChange = { before: unknown; after: unknown };
 type AuditEntry = {
@@ -43,11 +53,56 @@ function actionLabel(action: string) {
   return action;
 }
 
-export function AuditLogView({ endpoint }: { endpoint: string }) {
+function revertReason(item: AuditEntry): string | null {
+  if (
+    item.entity !== "term" &&
+    item.entity !== "academic_year"
+  ) {
+    return "Reverting this record type is not supported yet.";
+  }
+  if (item.action === "create") {
+    const requiredFields =
+      item.entity === "term"
+        ? ["academic_year_id", "name", "start_date", "end_date", "sort_order"]
+        : ["name", "start_date", "end_date", "is_active"];
+    if (requiredFields.some((field) => !(field in item.changes))) {
+      return "This entry does not contain a complete record snapshot.";
+    }
+    return null;
+  }
+  if (item.action !== "update") {
+    return "The audit entry does not contain enough information to restore a deleted record.";
+  }
+  const fields = Object.keys(item.changes);
+  if (
+    item.entity === "academic_year" &&
+    fields.includes("is_active")
+  ) {
+    return "Change the active academic year explicitly instead.";
+  }
+  const allowedFields =
+    item.entity === "term"
+      ? new Set(["name", "start_date", "end_date", "sort_order"])
+      : new Set(["name", "start_date", "end_date"]);
+  if (fields.length === 0 || fields.some((field) => !allowedFields.has(field))) {
+    return "This entry contains fields that cannot be reverted safely.";
+  }
+  return null;
+}
+
+export function AuditLogView({
+  endpoint,
+  allowRevert = false,
+}: {
+  endpoint: string;
+  allowRevert?: boolean;
+}) {
   const [items, setItems] = useState<AuditEntry[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [pendingRevert, setPendingRevert] = useState<AuditEntry | null>(null);
+  const [reverting, setReverting] = useState(false);
 
   const load = useCallback(
     async (before?: string) => {
@@ -94,6 +149,24 @@ export function AuditLogView({ endpoint }: { endpoint: string }) {
     }
   }
 
+  async function confirmRevert() {
+    if (!pendingRevert) return;
+    setReverting(true);
+    try {
+      await api(`/organisation/audit-log/${pendingRevert.id}/revert`, {
+        method: "POST",
+      });
+      toast.success("Revert completed and recorded in the audit log");
+      setPendingRevert(null);
+      setCursor(null);
+      await load();
+    } catch (error) {
+      toast.error(userMessage(error, "Failed to revert this audit entry"));
+    } finally {
+      setReverting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -132,6 +205,17 @@ export function AuditLogView({ endpoint }: { endpoint: string }) {
                     {item.entityId ? ` · ${item.entityId}` : ""}
                   </p>
                 </div>
+                {allowRevert && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!!revertReason(item)}
+                    title={revertReason(item) ?? undefined}
+                    onClick={() => setPendingRevert(item)}
+                  >
+                    Revert
+                  </Button>
+                )}
               </div>
               <div className="divide-y rounded-md border">
                 {Object.entries(item.changes).map(([field, change]) => (
@@ -162,6 +246,37 @@ export function AuditLogView({ endpoint }: { endpoint: string }) {
             {loadingMore ? "Loading…" : "Load older changes"}
           </Button>
         </div>
+      )}
+      {allowRevert && (
+        <AlertDialog
+          open={pendingRevert !== null}
+          onOpenChange={(open) => {
+            if (!open && !reverting) setPendingRevert(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Revert this change?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This is a dangerous action. It will change or remove the
+                affected record, and the revert itself will be recorded as a
+                new audit entry. Only organisation admins can perform reverts.
+                If the record has changed since this entry, or cannot be
+                safely restored, the request will be rejected.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={reverting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={confirmRevert}
+                disabled={reverting}
+              >
+                {reverting ? "Reverting…" : "Revert change"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

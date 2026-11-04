@@ -59,5 +59,25 @@ high-volume operational state.
 
 School-scoped entries are retained if a school is deleted; the log keeps the
 school name snapshot and the entry remains visible in the organisation-wide
-feed. Audit entries are not currently subject to an automatic time-based
-purge.
+feed. School-scoped entries can also be sent to a school's webhook when the
+webhook explicitly subscribes to **Audit log change**; organisation-wide
+entries are not sent to school webhooks. This sends the redacted before/after
+values and actor details outside the platform, so subscribe only trusted
+receivers. Webhook delivery payloads follow the webhook delivery retention
+policy; audit entries themselves are not currently subject to an automatic
+time-based purge.
+
+## Reverting changes
+
+Organisation administrators can use **Revert** in the organisation audit-log
+view when a safe reversal is supported. A confirmation warns that the action
+can change or remove a record. Reverts are checked against the current record
+to avoid overwriting later changes, and the reversal is itself recorded as a
+new audit entry. The API action is `POST /api/organisation/audit-log/:id/revert`
+and is guarded as an organisation-admin route.
+
+Currently, supported reversals are creation removal and field updates for
+academic years and terms, subject to foreign-key and concurrency checks.
+Deleted-record restoration, academic-year activation changes, and other
+record types are not currently supported; entries that cannot be safely
+reverted are disabled in the view. Redacted fields cannot be restored.

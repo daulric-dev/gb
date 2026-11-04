@@ -46,7 +46,7 @@ The body has **exactly three keys**:
 | ------------ | ------- |
 | `event_type` | The event type, also in the `X-GradeBook-Event` header. Switch on either. |
 | `message`    | One human-readable sentence about the event, built from `data` - e.g. "Ada Lovelace handed in Quadratics homework in Year 10 Mathematics" - ready to post in a chat channel or a log. **Plain text** (at most 280 characters, no line breaks, not HTML-escaped: escape it yourself before putting it in HTML). The wording may change; use `data` for logic. When a name is missing it reads "A student ...", "a course" and so on. |
-| `data`       | The event's data (below), always starting with `school: { id, name }`. Ids plus minimal names: people as `{ id, firstName, lastName, email }` (students by student record id, staff by account id), courses as `{ id, name, code }`, activities as `{ id, title, kind, points }`. Never free text beyond titles - no submission text, feedback or announcement bodies. |
+| `data`       | The event's data (below), always starting with `school: { id, name }`. Ids plus minimal names: people as `{ id, firstName, lastName, email }` (students by student record id, staff by account id), courses as `{ id, name, code }`, activities as `{ id, title, kind, points }`. Other events avoid free text beyond titles - no submission text, feedback or announcement bodies. The opt-in `audit.changed` event is an exception and includes redacted before/after values and actor details. |
 
 Everything else is in the headers:
 
@@ -61,6 +61,19 @@ Everything else is in the headers:
 | `X-GradeBook-Signature`   | `v1=<hex HMAC-SHA256>` - see [Verifying the signature](#verifying-the-signature). |
 
 The full catalog, with each type's JSON Schema, an example and the example's `message` (`exampleMessage`), is also served at `GET /api/webhooks/event-types` (any school admin or organisation admin).
+
+### Audit-log changes
+
+`audit.changed` is an explicit per-webhook subscription in the **Audit log**
+event group. It is not sent unless selected. Each delivery contains the
+school-scoped audit entry's actor, entity, action, timestamp, and redacted
+before/after values. These values may contain personal data, so send them only
+to a trusted receiver over HTTPS. The webhook delivery list and its payload
+follow the configured webhook delivery-retention policy.
+
+Only school-scoped entries are eligible; organisation-wide audit entries are
+not sent to school webhooks. Delivery rows are enqueued in the same database
+transaction as the audit entry, so rolled-back changes are not delivered.
 
 **Before this format** the body was `{ id, type, apiVersion, createdAt, school, data }`. Deliveries stored in that shape (still queued for a retry, or redelivered later) are **converted when sent**: `school` moves into `data`, a `message` is added, and `id` / `apiVersion` travel as the headers above (`createdAt` is dropped; the delivery list keeps when it was created). The converted body is stored, so the delivery list shows what was sent.
 
