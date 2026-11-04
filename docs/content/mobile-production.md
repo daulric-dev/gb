@@ -7,19 +7,19 @@ sidebar_position: 7
 
 The app is Expo (SDK 57 / React Native 0.86) and talks to the same backend as the web app. Nothing about the API differs between the two clients; what differs is how the app is told where the backend is, and that it must be HTTPS.
 
-## Point the build at the backend
+## Connect to a self-hosted instance
 
-`EXPO_PUBLIC_API_URL` is **required for a release build** and must be the backend's public HTTPS origin, with no `/api` suffix:
+On first launch, the app asks for the school's public GradeBook URL (for example
+`https://school.example.com`). The backend must be reachable at
+`https://school.example.com/api` and `/health` must return a healthy response.
+The app validates the URL and saves the selected server on the device. Sign-in,
+SSO, and all later API requests use that instance. A signed-out user can choose
+**Change school server** on the login screen.
 
-```
-EXPO_PUBLIC_API_URL=https://api.example.com
-```
-
-Expo inlines `EXPO_PUBLIC_*` at build time, so it has to be set **when the bundle is built**, not at runtime. In EAS, put it in the profile's `env`; building locally, put it in `mobile/.env`.
-
-In development you leave it unset: the app takes the API host from the Expo dev server it loaded from, so it follows your machine's address and survives a new DHCP lease.
-
-A release build with it unset **throws on launch** with a message saying so. That is deliberate - the alternative is an app that installs, opens, and silently cannot reach anything, because the dev-time fallback is `localhost`, which on a phone means the phone.
+Only enter a server address provided by a trusted school. Sign-in details are
+sent directly to the selected instance. The choice is stored securely on iOS
+and Android; development builds may still use `EXPO_PUBLIC_API_URL` or discover
+the API from the Expo dev server.
 
 ## HTTPS is not optional
 
@@ -63,14 +63,12 @@ eas build --profile production --platform all
 
 `appVersionSource` is `remote`, so EAS holds the build number rather than `app.json`. The user-facing version stays in `app.json` (`expo.version`); the build number underneath it is EAS's to increment, which is what stops two uploads colliding.
 
-`EXPO_PUBLIC_API_URL` is present but **empty** in the `preview` and `production` profiles. It is deliberately not a placeholder like `https://api.example.com`: an unnoticed placeholder builds an app that points confidently at the wrong host, while an empty value leaves the launch guard to fire with a message naming the variable. Fill it in, or set it as an EAS environment variable, before building either profile.
-
 ## Checklist
 
 1. Backend deployed over HTTPS with `NODE_ENV=production`, `AUTH_SECRET`, `DATABASE_URL`, the `S3_*` storage settings, `SMTP_URL`, `CHAT_ENCRYPTION_KEY` and `STUDENT_CLAIM_CODE_PEPPER` set.
 2. `AUTH_COOKIE_DOMAIN` set if the API is not a subdomain of the web app's two-label domain.
-3. `EXPO_PUBLIC_API_URL` set in the build profile, HTTPS, no `/api`.
-4. Build, install, and confirm **sign-in persists across an app restart** - that is the check that proves the cookie was accepted.
+3. Give users the platform's public HTTPS URL; its API must be exposed at `/api`.
+4. Build, install, select the instance, and confirm **sign-in persists across an app restart**.
 5. The search and filter lists (courses, students, files, chat history, notices) use the HTTP `QUERY` method. Builds from before that send `GET` and get 404s, so once the first QUERY build is live in both stores raise `MOBILE_MIN_VERSION` to it. See [HTTP QUERY](./backend/http-query.md).
 
 ## Known gaps

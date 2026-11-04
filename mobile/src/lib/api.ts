@@ -14,9 +14,11 @@ import { clearPushState } from "@/lib/push-state";
 
 const API_PORT = 3001;
 
-function resolveBaseUrl(): string {
+function resolveDevelopmentServerUrl(): string | null {
   const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (configured) return `${configured.replace(/\/$/, "")}/api`;
+  if (__DEV__ && configured) {
+    return configured.replace(/\/api\/?$/, "").replace(/\/$/, "");
+  }
 
   // e.g. "192.168.0.12:8081" — present whenever the app is served by Metro,
   // including a production-mode preview (`expo start --no-dev`). Keyed off
@@ -28,26 +30,36 @@ function resolveBaseUrl(): string {
       ?.debuggerHost;
 
   const host = hostUri?.split(":")[0];
-  if (host) return `http://${host}:${API_PORT}/api`;
-
-  // No override and no Metro: a standalone build. There is no localhost worth
-  // talking to on a phone, so failing here is the only honest option - the
-  // alternative is an app that installs, launches and silently reaches
-  // nothing.
-  throw new Error(
-    "EXPO_PUBLIC_API_URL is required in a standalone build. Set it to the " +
-      "backend's public HTTPS URL (no /api suffix) before building.",
-  );
+  return host ? `http://${host}:${API_PORT}` : null;
 }
 
-const BASE_URL = resolveBaseUrl();
+let apiOrigin: string | null = null;
+
+/** The development server is only a convenience; release builds require a chosen instance. */
+export function developmentServerUrl(): string | null {
+  return resolveDevelopmentServerUrl();
+}
+
+/** Set the selected platform instance at runtime. The API lives under `/api`. */
+export function setApiServerUrl(origin: string | null): void {
+  apiOrigin = origin ? `${origin.replace(/\/+$/, "")}/api` : null;
+}
+
+function baseUrl(): string {
+  if (!apiOrigin) {
+    throw new Error(
+      "Connect to your school's server before making API requests.",
+    );
+  }
+  return apiOrigin;
+}
 
 /** The backend's host (e.g. "api.example.com"), for telling people where it is. */
 export function serverHost(): string {
   try {
-    return new URL(BASE_URL).host;
+    return new URL(baseUrl()).host;
   } catch {
-    return BASE_URL;
+    return apiOrigin ?? "your school server";
   }
 }
 
@@ -55,7 +67,7 @@ export function buildUrl(path: string): string {
   if (!path.startsWith("/")) {
     throw new Error(`API path must start with "/": ${path}`);
   }
-  return `${BASE_URL}${path}`;
+  return `${baseUrl()}${path}`;
 }
 
 type RequestOptions = Omit<RequestInit, "body"> & {

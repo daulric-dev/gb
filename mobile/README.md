@@ -101,7 +101,10 @@ bun run ios | android | web
 
 ### Backend URL
 
-Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL` (no `/api` suffix):
+In a release app, enter the school's public GradeBook URL on first launch
+(for example `https://school.example.com`; the API is expected at `/api`).
+For development, copy `.env.example` to `.env` and optionally set
+`EXPO_PUBLIC_API_URL` (no `/api` suffix):
 
 - iOS simulator: `http://localhost:3001`
 - Android emulator: `http://10.0.2.2:3001`
