@@ -10,6 +10,7 @@ import { developmentServerUrl, setApiServerUrl } from "@/lib/api";
 import {
   checkServerUrl,
   normalizeServerUrl,
+  resolveServerUrl,
   savedServerUrl,
   saveServerUrl,
 } from "@/lib/server-url";
@@ -63,7 +64,7 @@ export function ApiServerProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(async (input: string) => {
     setError(null);
     try {
-      const selected = normalizeServerUrl(input, __DEV__);
+      const selected = await resolveServerUrl(input, __DEV__);
       await checkServerUrl(selected);
       await saveServerUrl(selected);
       // Never send a session token or cached school file to a newly selected instance.

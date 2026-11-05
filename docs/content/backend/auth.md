@@ -8,7 +8,7 @@ sidebar_label: Authentication
 
 The authentication module handles user login via email OTP (one-time password), session management, profile retrieval, and first-time user onboarding. Sign-in codes and sessions are handled by the backend's own account module (`backend/src/account/`): codes are stored hashed with `AUTH_SECRET`, and a signed-in user holds an **opaque session token in the HTTP-only `gb_session` cookie**, whose hash is stored in the `account.session` table. The mobile app uses the same token as a **bearer token**: it signs in with `X-GradeBook-Client: native`, receives the token in the `X-Session-Token` response header, stores it in the device keychain and sends `Authorization: Bearer <token>` on every request.
 
-The mobile bearer credential is the same opaque server-side session token, not a JWT. Revoking the session invalidates that token; in multi-replica deployments, configure a shared Redis cache so revocation reaches all replicas promptly. See [Mobile authentication](../mobile-production.md#mobile-authentication).
+The mobile bearer credential is the same opaque server-side session token, not a JWT. Revoking the session invalidates that token; in multi-replica deployments, configure a shared Redis cache so revocation reaches all replicas promptly. The mobile app can discover a separate backend from the frontend's public `/.well-known/gradebook.json` document; publishing its address does not grant access to accounts or school data. See [Mobile authentication](../mobile-production.md#mobile-authentication).
 
 ## Files
 

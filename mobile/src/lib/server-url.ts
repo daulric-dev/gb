@@ -1,4 +1,5 @@
 const SERVER_URL_KEY = "gb_server_url";
+const DISCOVERY_PATH = "/.well-known/gradebook.json";
 
 export function normalizeServerUrl(input: string, allowHttp = false): string {
   const trimmed = input.trim();
@@ -78,6 +79,7 @@ export async function checkServerUrl(url: string): Promise<void> {
         "That server is unavailable or unhealthy. Check the URL or contact your school.",
       );
     }
+
   } catch (error) {
     if (
       error instanceof Error &&
@@ -92,4 +94,45 @@ export async function checkServerUrl(url: string): Promise<void> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Resolve a public frontend URL to its advertised backend, or use it directly. */
+export async function resolveServerUrl(
+  input: string,
+  allowHttp = false,
+): Promise<string> {
+  const enteredUrl = normalizeServerUrl(input, allowHttp);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let response: Response | null = null;
+  try {
+    response = await fetch(`${enteredUrl}${DISCOVERY_PATH}`, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+      redirect: "error",
+    });
+  } catch {
+    // A direct backend may not publish discovery; its /health check follows.
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response || response.status === 404) return enteredUrl;
+  if (!response.ok) {
+    throw new Error(
+      "Couldn't read this school's server settings. Check the URL or contact your school.",
+    );
+  }
+
+  let config: unknown;
+  try {
+    config = await response.json();
+  } catch {
+    throw new Error("The school server returned invalid connection settings.");
+  }
+  const apiUrl = (config as { apiUrl?: unknown } | null)?.apiUrl;
+  if (typeof apiUrl !== "string") {
+    throw new Error("The school server is missing its API URL setting.");
+  }
+  return normalizeServerUrl(apiUrl, allowHttp);
 }

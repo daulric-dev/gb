@@ -5,7 +5,7 @@ frontend's design system and core flows.
 
 ## Scope (MVP)
 
-- **OTP email auth** — send code → verify 8-digit code → cookie session
+- **OTP email auth** — send code → verify 8-digit code → bearer session token
   (`/auth/otp/send`, `/auth/otp/verify`), matching the web flow exactly.
 - **Dashboard** — admin overview (stats + staff/student donut charts + current
   academic year) and teacher overview (class list with student counts). Users
@@ -101,7 +101,10 @@ bun run ios | android | web
 ### Backend URL
 
 In a release app, enter the school's public GradeBook URL on first launch
-(for example `https://school.example.com`; the API is expected at `/api`).
+(for example `https://school.example.com`). If that is the frontend and the API
+is on a different host, the frontend should publish
+`/.well-known/gradebook.json` with `{"apiUrl":"https://api.school.example.com"}`.
+The app also accepts the backend URL directly.
 For development, copy `.env.example` to `.env` and optionally set
 `EXPO_PUBLIC_API_URL` (no `/api` suffix):
 

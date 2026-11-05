@@ -16,6 +16,23 @@ The app validates the URL and saves the selected server on the device. Sign-in,
 SSO, and all later API requests use that instance. A signed-out user can choose
 **Change school server** on the login screen.
 
+If the frontend and backend have different public hostnames, the frontend
+should publish `/.well-known/gradebook.json` with the API's public origin:
+
+```json
+{ "apiUrl": "https://api.school.example.com" }
+```
+
+The mobile app accepts the frontend URL, reads this file, then checks the
+advertised backend's `/health` endpoint. Direct backend URLs continue to work
+when no discovery file is present. The discovery document is public by design:
+it contains only a server address, not credentials or school data. It does not
+grant account or school access. The backend still enforces email verification,
+configured SSO requirements, school memberships, join codes and join-request
+approval on their respective flows. Keep the frontend's `NEXT_PUBLIC_API_URL`
+set to the public backend origin when building it; this value is exposed in the
+discovery document.
+
 Only enter a server address provided by a trusted school. Sign-in details are
 sent directly to the selected instance. The choice is stored securely on iOS
 and Android; development builds may still use `EXPO_PUBLIC_API_URL` or discover

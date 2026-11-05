@@ -47,12 +47,12 @@ export function ServerSetupScreen({
         <CardHeader style={{ alignItems: "center" }}>
           <CardTitle>Connect to your school</CardTitle>
           <CardDescription>
-            Enter the GradeBook server address provided by your school.
+            Enter your school's GradeBook website or backend address.
           </CardDescription>
         </CardHeader>
         <CardContent style={{ gap: 16 }}>
           <View>
-            <Label>School server URL</Label>
+            <Label>School website or server URL</Label>
             <Input
               placeholder="https://school.example.com"
               value={url}
@@ -70,8 +70,9 @@ export function ServerSetupScreen({
             />
           </View>
           <Text variant="muted" size="sm" style={{ textAlign: "center" }}>
-            Only connect to a server address you trust. Your sign-in details
-            will be sent to that server.
+            A website may publish its backend address at{" "}
+            /.well-known/gradebook.json. Only continue with a school URL you
+            trust; your sign-in details go to its advertised backend.
           </Text>
           {localError || error ? (
             <Text tone="destructive" size="sm" style={{ textAlign: "center" }}>
