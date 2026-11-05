@@ -65,6 +65,8 @@ import {
   ActivityStatusBadge,
 } from "../_components/ActivityStatusBadge";
 import type { ActivityDetail, SubmissionRow } from "../_components/types";
+import { LockdownMonitorSummary } from "../_components/LockdownPresence";
+import { useLiveRoster } from "../_components/use-live-roster";
 import { userMessage } from "@/lib/errors";
 
 const UNGROUPED = "none";
@@ -91,6 +93,7 @@ export default function CourseActivityPage() {
   const draftDueAt = useSignal("");
   const draftAttempts = useSignal("");
   const draftTimeLimit = useSignal("");
+  const draftLockdown = useSignal(false);
   const draftGroup = useSignal("");
   const draftAllowMultipleFiles = useSignal(false);
 
@@ -108,6 +111,30 @@ export default function CourseActivityPage() {
       .then((data) => (submissions.value = data))
       .catch(() => (submissions.value = []));
   }, [activityId, submissions]);
+
+  // Live refresh for lockdown quizzes: keeps the rows on a failed poll.
+  const refreshingRoster = useSignal(false);
+  const refreshRoster = useCallback(async () => {
+    if (!activityId) return;
+    refreshingRoster.value = true;
+    try {
+      submissions.value = await api<SubmissionRow[]>(
+        `/activities/${activityId}/submissions`,
+      );
+    } finally {
+      refreshingRoster.value = false;
+    }
+  }, [activityId, submissions, refreshingRoster]);
+  useLiveRoster({
+    enabled:
+      activity.value?.kind === "quiz" &&
+      !!activity.value.lockdownBrowser &&
+      activity.value.status === "published",
+    hasActiveAttempt: submissions.value.some(
+      (row) => row.submission?.isActiveAttempt,
+    ),
+    refresh: refreshRoster,
+  });
 
   const loadRubric = useCallback(() => {
     if (!activityId) return;
@@ -136,6 +163,7 @@ export default function CourseActivityPage() {
     draftDueAt.value = toLocalInput(a.dueAt);
     draftAttempts.value = String(a.maxAttempts ?? 1);
     draftTimeLimit.value = a.timeLimitMinutes?.toString() ?? "";
+    draftLockdown.value = !!a.lockdownBrowser;
     draftGroup.value = a.assignmentGroupId ?? "";
     draftAllowMultipleFiles.value = a.allowMultipleFiles;
     editing.value = true;
@@ -196,7 +224,11 @@ export default function CourseActivityPage() {
           ? { allowMultipleFiles: draftAllowMultipleFiles.value }
           : {}),
         ...(activity.value?.kind === "quiz"
-          ? { maxAttempts: attempts, timeLimitMinutes: timeLimit }
+          ? {
+              maxAttempts: attempts,
+              timeLimitMinutes: timeLimit,
+              lockdownBrowser: draftLockdown.value,
+            }
           : {}),
       },
       "Saved",
@@ -521,6 +553,20 @@ export default function CourseActivityPage() {
                     placeholder="No time limit"
                   />
                 </div>
+                <div className="flex items-start justify-between gap-3 rounded-md border p-3 sm:col-span-2">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="quizLockdown">Lockdown browser</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Students take it in fullscreen; you see when they leave
+                      the quiz and how often.
+                    </p>
+                  </div>
+                  <Switch
+                    id="quizLockdown"
+                    checked={draftLockdown.value}
+                    onCheckedChange={(value) => (draftLockdown.value = value)}
+                  />
+                </div>
                 </>
               )}
             </div>
@@ -606,6 +652,17 @@ export default function CourseActivityPage() {
         )}
 
         <TabsContent value="marks" className="mt-3">
+          {a.kind === "quiz" && a.lockdownBrowser && !isDraft && (
+            <LockdownMonitorSummary
+              rows={submissions.value}
+              refreshing={refreshingRoster.value}
+              onRefreshAction={() => {
+                void refreshRoster().catch(() =>
+                  toast.error("Could not refresh the roster"),
+                );
+              }}
+            />
+          )}
           <MarksTable
             activityId={activityId}
             kind={a.kind}
@@ -615,6 +672,7 @@ export default function CourseActivityPage() {
             canGrade
             isDraft={isDraft}
             onRowsChangeAction={(rows) => (submissions.value = rows)}
+            lockdownBrowser={a.kind === "quiz" && !!a.lockdownBrowser}
             rubric={a.kind === "quiz" ? null : rubric.value.rubric}
             assessments={rubric.value.assessments}
             onAssessedAction={(studentId, marks) => {

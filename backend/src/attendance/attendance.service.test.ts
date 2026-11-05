@@ -6,7 +6,12 @@ import {
   HttpException,
   NotFoundException,
 } from '@nestjs/common';
-import { AttendanceService, MAX_WRONG_CODES, tally } from './attendance.service';
+import {
+  AttendanceService,
+  MAX_SCAN_CLAIMS_PER_IP,
+  MAX_WRONG_CODES,
+  tally,
+} from './attendance.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
@@ -394,6 +399,51 @@ describe('AttendanceService.checkIn', () => {
     await expect(
       service.checkIn('st-2', s.id, { qrClaim: claim }),
     ).rejects.toThrow('expired');
+  });
+
+  test('one address gets a limited number of claims per session', async () => {
+    const { service, cache } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    const frame = await service.qr(TEACHER, COURSE, s.id);
+    for (let i = 0; i < MAX_SCAN_CLAIMS_PER_IP; i++) {
+      await service.scanClaim(s.id, frame.token, '203.0.113.7');
+    }
+    const err = await service
+      .scanClaim(s.id, frame.token, '203.0.113.7')
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect(err.getStatus()).toBe(429);
+    expect(err.message).toContain('Too many scans');
+
+    // Another address still gets a claim; the counter lasts one claim lifetime.
+    await expect(
+      service.scanClaim(s.id, frame.token, '198.51.100.2'),
+    ).resolves.toHaveProperty('claim');
+    const entry = cache._store.get(
+      `attendance:scan-claims:${s.id}:203.0.113.7`,
+    );
+    expect(entry?.ttl).toBe(5 * 60);
+  });
+
+  test('an expired QR token does not use up the claim budget', async () => {
+    const { service, cache } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    await expect(
+      service.scanClaim(s.id, 'AAAAAAAAAAAAAAAAAAAAAA', '203.0.113.7'),
+    ).rejects.toThrow('expired');
+    expect(cache._store.has(`attendance:scan-claims:${s.id}:203.0.113.7`)).toBe(
+      false,
+    );
+  });
+
+  test('a scan claim is refused when the counter is unavailable', async () => {
+    const { service, cache } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    const frame = await service.qr(TEACHER, COURSE, s.id);
+    cache.incr = () => Promise.reject(new Error('redis down'));
+    await expect(
+      service.scanClaim(s.id, frame.token, '203.0.113.7'),
+    ).rejects.toThrow('unavailable');
   });
 
   test('the same student may retry a claim after a location error', async () => {

@@ -1,8 +1,9 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import { FeatureService } from '@/features/feature.service';
 import { PrismaService } from '@/prisma/prisma.service';
+import { getClientIp, type ThrottlerReq } from '@/throttle/tracker';
 import { AttendanceService } from './attendance.service';
 import { ScanClaimDto } from './dto/attendance.dto';
 
@@ -26,7 +27,7 @@ export class ScanClaimController {
   @Throttle({ 'claim-code': { limit: 300, ttl: 60 * 1000 } })
   @Post('scan-claim')
   @HttpCode(200)
-  async scanClaim(@Body() dto: ScanClaimDto) {
+  async scanClaim(@Body() dto: ScanClaimDto, @Req() req: ThrottlerReq) {
     // Public: the school comes from the session's course. An unknown session
     // falls through to the service's own error.
     const session = await this.prisma.attendance_session
@@ -38,6 +39,11 @@ export class ScanClaimController {
     if (session?.course) {
       await this.features.assertEnabled(session.course.school_id, 'attendance');
     }
-    return this.attendance.scanClaim(dto.sessionId, dto.qrToken);
+    // The service also caps claims per session and client address.
+    return this.attendance.scanClaim(
+      dto.sessionId,
+      dto.qrToken,
+      getClientIp(req),
+    );
   }
 }

@@ -42,8 +42,19 @@ import {
 import { Markdown } from "@/components/markdown";
 import { RubricGrid } from "@/components/rubric/RubricGrid";
 import { cn } from "@/lib/utils";
-import { dueLabel, type PortalWorkDetail } from "../../_components/work-types";
+import {
+  dueLabel,
+  studentDueAt,
+  type PortalWorkDetail,
+} from "../../_components/work-types";
+import { DueDateNotice } from "../../_components/due-notice";
 import { userMessage } from "@/lib/errors";
+import { useQuizLockdown } from "@/hooks/use-quiz-lockdown";
+import { enterFullscreen, exitFullscreen } from "@/lib/quiz-lockdown";
+import {
+  LockdownOverlay,
+  LockdownStartCard,
+} from "../../_components/quiz-lockdown";
 
 export default function PortalWorkDetailPage() {
   useSignals();
@@ -233,6 +244,17 @@ export default function PortalWorkDetailPage() {
       )
     : null;
 
+  // Lockdown quizzes: monitored only while an attempt can still be answered.
+  const lockdown = useQuizLockdown({
+    activityId,
+    enabled:
+      !!work.value?.lockdownBrowser &&
+      work.value.kind === "quiz" &&
+      work.value.status === "published" &&
+      !!work.value.quizAttempt?.startedAt &&
+      secondsRemaining !== 0,
+  });
+
   useEffect(() => {
     if (!deadline || secondsRemaining !== 0 || timeoutHandled.current === deadline) {
       return;
@@ -283,6 +305,16 @@ export default function PortalWorkDetailPage() {
     } finally {
       working.value = false;
     }
+  }
+
+  function startLockdownQuiz() {
+    // Fullscreen needs this click's user gesture, so ask before any await.
+    // Where it is unavailable (iPhone Safari) the quiz starts without it.
+    const fullscreen = enterFullscreen();
+    void startQuiz().then(async () => {
+      await fullscreen;
+      if (!work.value?.quizAttempt?.startedAt) exitFullscreen();
+    });
   }
 
   async function submitQuiz() {
@@ -398,8 +430,12 @@ export default function PortalWorkDetailPage() {
       ? Infinity
       : Math.max(0, (w.maxAttempts || 1) - (w.attemptsUsed ?? 0));
   const canRetake = w.kind === "quiz" && attemptsLeft > 0;
+  // isClosed: past the student's due date, outside a running quiz attempt.
   const open =
-    !offline && w.status === "published" && (!submitted || canRetake);
+    !offline &&
+    w.status === "published" &&
+    !w.isClosed &&
+    (!submitted || canRetake);
   const quizInProgress = !!w.quizAttempt?.startedAt;
   const canStartQuiz = open && !quizInProgress;
   const quizCanAnswer =
@@ -429,7 +465,9 @@ export default function PortalWorkDetailPage() {
     <div className="space-y-6">
       <BackTitleToolbar
         title={w.title}
-        description={`${w.points} points · ${dueLabel(w.dueAt)}`}
+        description={`${w.points} points · ${dueLabel(studentDueAt(w))}${
+          w.hasExtension ? " (extended)" : ""
+        }`}
         onBack={() => router.push(backHref)}
       />
 
@@ -442,6 +480,8 @@ export default function PortalWorkDetailPage() {
           {w.courseName}
         </Link>
       )}
+
+      <DueDateNotice work={w} />
 
       {submitted && (
         <Card className="border-emerald-500/40 bg-emerald-500/5">
@@ -510,8 +550,24 @@ export default function PortalWorkDetailPage() {
           </Card>
         )
       ) : w.kind === "quiz" ? (
-        <div className="space-y-3">
-          {canStartQuiz && (
+        <div className="space-y-3" {...lockdown.guardProps}>
+          {canStartQuiz && w.lockdownBrowser && (
+            <LockdownStartCard
+              details={`${
+                w.timeLimitMinutes
+                  ? `You have ${w.timeLimitMinutes} minutes, and the timer keeps running if you leave.`
+                  : "Your answers are saved as you work."
+              }${
+                w.maxAttempts === 0
+                  ? " Retakes are unlimited."
+                  : ` ${attemptsLeft} attempt${attemptsLeft === 1 ? "" : "s"} available.`
+              }`}
+              startLabel={submitted ? "Start another attempt" : "Start quiz"}
+              busy={working.value}
+              onStartAction={startLockdownQuiz}
+            />
+          )}
+          {canStartQuiz && !w.lockdownBrowser && (
             <Card>
               <CardContent className="space-y-3 py-4">
                 <p className="text-sm font-medium">
@@ -849,6 +905,18 @@ export default function PortalWorkDetailPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      )}
+
+      {lockdown.showOverlay && (
+        <LockdownOverlay
+          state={lockdown.state}
+          timeLeft={
+            secondsRemaining !== null
+              ? `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`
+              : null
+          }
+          onReturnAction={lockdown.returnToQuiz}
+        />
       )}
     </div>
   );

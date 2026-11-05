@@ -128,6 +128,8 @@ export function CreateActivityDialog({
           points: pts,
           dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : undefined,
           timeLimitMinutes: kind.value === "quiz" ? timeLimit : undefined,
+          lockdownBrowser:
+            kind.value === "quiz" ? lockdownBrowser.value : undefined,
           assignmentGroupId: groupId.value || undefined,
           allowFile: kind.value === "assignment" ? allowFile.value : false,
           allowMultipleFiles:
@@ -283,6 +285,23 @@ export function CreateActivityDialog({
                 The timer starts when each student begins an attempt and
                 continues if they leave the quiz.
               </p>
+            </div>
+          )}
+
+          {kind.value === "quiz" && (
+            <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="quizLockdown">Lockdown browser</Label>
+                <p className="text-xs text-muted-foreground">
+                  Students take it in fullscreen; you see when they leave the
+                  quiz and how often.
+                </p>
+              </div>
+              <Switch
+                id="quizLockdown"
+                checked={lockdownBrowser.value}
+                onCheckedChange={(v) => (lockdownBrowser.value = v)}
+              />
             </div>
           )}
 

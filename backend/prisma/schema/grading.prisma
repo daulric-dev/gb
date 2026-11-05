@@ -31,6 +31,7 @@ model activity {
   quiz_question         quiz_question[]
   submission            submission[]
   course_notification   course_notification[]
+  activity_extension    activity_extension[]
 
   @@index([assignment_group_id])
   @@index([course_id])
@@ -166,6 +167,27 @@ model submission {
   @@index([student_id], map: "idx_submission_student")
   @@index([quiz_expires_at], map: "idx_submission_quiz_expires")
   @@index([activity_id, is_away], map: "idx_submission_is_away")
+  @@schema("grading")
+}
+
+/// A later due date for one student on one activity. The student's effective
+/// due date is this when it exists, else the activity's own.
+model activity_extension {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id  String       @db.Uuid
+  student_id   String       @db.Uuid
+  due_at       DateTime     @db.Timestamptz(6)
+  reason       String?
+  created_by   String?      @db.Uuid
+  created_at   DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime     @default(now()) @db.Timestamptz(6)
+  activity     activity     @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student      student      @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile user_profile? @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([activity_id, student_id], map: "activity_extension_activity_student_key")
+  @@index([student_id], map: "idx_activity_extension_student")
+  @@index([created_by], map: "idx_activity_extension_created_by")
   @@schema("grading")
 }
 

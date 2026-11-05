@@ -21,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useTheme } from "@/theme/ThemeProvider";
 import {
   currentLocation,
@@ -63,6 +64,8 @@ export default function ScanAttendanceScreen() {
   );
   /** Set once a code is accepted, so one scan submits exactly once. */
   const handled = useRef(false);
+  // A scanned course join code awaiting the student's go-ahead.
+  const [pendingJoin, setPendingJoin] = useState<string | null>(null);
   /** A location reading started early when an open session needs one. */
   const fix = useRef<Promise<LocationFix> | null>(null);
 
@@ -189,14 +192,24 @@ export default function ScanAttendanceScreen() {
     [router],
   );
 
-  const onJoin = useCallback(
-    (joinCode: string) => {
-      if (handled.current) return;
-      handled.current = true;
-      void joinCourse(joinCode);
-    },
-    [joinCourse],
-  );
+  // Joining enrols the student, so a scanned code is confirmed first: any QR
+  // can carry a join link, and enrolment shouldn't happen behind their back.
+  const onJoin = useCallback((joinCode: string) => {
+    if (handled.current) return;
+    handled.current = true;
+    setPendingJoin(joinCode);
+  }, []);
+
+  const confirmJoin = () => {
+    const joinCode = pendingJoin;
+    setPendingJoin(null);
+    if (joinCode) void joinCourse(joinCode);
+  };
+
+  const cancelJoin = () => {
+    setPendingJoin(null);
+    handled.current = false;
+  };
 
   const scanAgain = () => {
     handled.current = false;
@@ -205,7 +218,19 @@ export default function ScanAttendanceScreen() {
   };
 
   if (phase.kind === "scanning") {
-    return <Scanner onCode={onCode} onJoin={onJoin} onBack={back} />;
+    return (
+      <>
+        <Scanner onCode={onCode} onJoin={onJoin} onBack={back} />
+        <ConfirmDialog
+          open={pendingJoin !== null}
+          title="Join this course?"
+          message={`This QR code will enrol you in a course with the join code ${pendingJoin ?? ""}. Only join if your teacher gave you this code.`}
+          confirmLabel="Join course"
+          onConfirm={confirmJoin}
+          onCancel={cancelJoin}
+        />
+      </>
+    );
   }
 
   if (phase.kind === "submitting") {

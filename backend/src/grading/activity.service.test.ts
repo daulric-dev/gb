@@ -451,6 +451,43 @@ describe('ActivityService.update', () => {
     expect(prisma.submission.findFirst).not.toHaveBeenCalled();
   });
 
+  test('moving an untimed quiz due date moves running attempts without an extension', async () => {
+    const { service, prisma } = build((p) => {
+      const quiz = { ...ACTIVITY, kind: 'quiz', time_limit_minutes: null };
+      p.activity.findUnique.mockResolvedValue(quiz);
+      p.activity.update.mockImplementation(async ({ data }: any) => ({
+        ...quiz,
+        ...data,
+      }));
+    });
+    await service.update('user-1', 'act-1', {
+      dueAt: '2026-12-01T12:00:00.000Z',
+    });
+    const update = prisma.submission.updateMany.mock.calls[0][0];
+    expect(update.where.activity_id).toBe('act-1');
+    expect(update.where.student).toEqual({
+      activity_extension: { none: { activity_id: 'act-1' } },
+    });
+    expect(update.data.quiz_expires_at).toEqual(
+      new Date('2026-12-01T12:00:00.000Z'),
+    );
+  });
+
+  test('changing a timed quiz due date leaves attempts alone', async () => {
+    const { service, prisma } = build((p) => {
+      const quiz = { ...ACTIVITY, kind: 'quiz', time_limit_minutes: 30 };
+      p.activity.findUnique.mockResolvedValue(quiz);
+      p.activity.update.mockImplementation(async ({ data }: any) => ({
+        ...quiz,
+        ...data,
+      }));
+    });
+    await service.update('user-1', 'act-1', {
+      dueAt: '2026-12-01T12:00:00.000Z',
+    });
+    expect(prisma.submission.updateMany).not.toHaveBeenCalled();
+  });
+
   test('an activity with no course is not found', async () => {
     const { service } = build((p) =>
       p.activity.findUnique.mockResolvedValue({ ...ACTIVITY, course_id: null }),

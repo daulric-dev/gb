@@ -12,6 +12,12 @@ export interface PortalWorkItem {
   instructions: string | null;
   points: number;
   dueAt: string | null;
+  /** The student's own due date: their extension, else dueAt. */
+  effectiveDueAt?: string | null;
+  /** A teacher gave this student more time. */
+  hasExtension?: boolean;
+  /** Past the student's due date and not inside a running quiz attempt. */
+  isClosed?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
@@ -34,6 +40,12 @@ export interface PortalWorkDetail {
   instructions: string | null;
   points: number;
   dueAt: string | null;
+  /** The student's own due date: their extension, else dueAt. */
+  effectiveDueAt?: string | null;
+  /** A teacher gave this student more time. */
+  hasExtension?: boolean;
+  /** Past the student's due date and not inside a running quiz attempt. */
+  isClosed?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
@@ -74,6 +86,28 @@ export interface PortalWorkDetail {
     gradedAt: string | null;
     attemptCount: number;
   } | null;
+}
+
+/** The due date that applies to this student: their extension, else the activity's. */
+export function studentDueAt(item: {
+  dueAt: string | null;
+  effectiveDueAt?: string | null;
+}): string | null {
+  return item.effectiveDueAt !== undefined ? item.effectiveDueAt : item.dueAt;
+}
+
+/** The server's refusal once the student's due date has passed, worded locally. */
+export function pastDueMessage(dueAt: string | null): string {
+  if (!dueAt) return "This is closed";
+  const date = new Date(dueAt);
+  if (Number.isNaN(date.getTime())) return "This is closed";
+  const formatted = date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `This was due on ${formatted}. Ask your teacher for an extension`;
 }
 
 export function dueLabel(value: string | null) {
@@ -118,11 +152,13 @@ export function isOutstanding(item: {
 
 /** Upcoming first by due date, undated last. */
 export function byDueDate(
-  a: { dueAt: string | null },
-  b: { dueAt: string | null },
+  a: { dueAt: string | null; effectiveDueAt?: string | null },
+  b: { dueAt: string | null; effectiveDueAt?: string | null },
 ) {
-  const ta = a.dueAt ? new Date(a.dueAt).getTime() : Infinity;
-  const tb = b.dueAt ? new Date(b.dueAt).getTime() : Infinity;
+  const da = studentDueAt(a);
+  const db = studentDueAt(b);
+  const ta = da ? new Date(da).getTime() : Infinity;
+  const tb = db ? new Date(db).getTime() : Infinity;
   return ta - tb;
 }
 
@@ -132,7 +168,8 @@ export type CourseActivityBucket = "upcoming" | "past" | "done";
 export function bucketActivity(a: PortalCourseActivity): CourseActivityBucket {
   const s = a.submission;
   if (s && (s.status !== "draft" || s.excused)) return "done";
-  if (a.kind === "offline") return isOverdue(a.dueAt) ? "past" : "upcoming";
-  if (a.status === "closed" || isOverdue(a.dueAt)) return "past";
+  const due = studentDueAt(a);
+  if (a.kind === "offline") return isOverdue(due) ? "past" : "upcoming";
+  if (a.status === "closed" || isOverdue(due)) return "past";
   return "upcoming";
 }

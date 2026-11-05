@@ -19,6 +19,8 @@ import {
   attemptsLeft,
   dueLabel,
   lateDays,
+  pastDueMessage,
+  studentDueAt,
   type PortalWorkDetail,
 } from "@/lib/work";
 import { uploadSubmissionFile } from "@/lib/upload";
@@ -27,6 +29,11 @@ import { formatScore } from "@/lib/format-number";
 import { Markdown } from "@/components/ui/Markdown";
 import { RubricView } from "@/features/course/RubricView";
 import { userMessage } from "@/lib/errors";
+import { useQuizLockdown } from "@/lib/use-quiz-lockdown";
+import {
+  LockdownOverlay,
+  LockdownStartCard,
+} from "@/features/work/QuizLockdown";
 
 export default function WorkDetailScreen() {
   const router = useRouter();
@@ -115,6 +122,17 @@ export default function WorkDetailScreen() {
         ),
       )
     : null;
+
+  // Lockdown quizzes: monitored only while an attempt can still be answered.
+  const lockdown = useQuizLockdown({
+    activityId,
+    enabled:
+      !!work?.lockdownBrowser &&
+      work.kind === "quiz" &&
+      work.status === "published" &&
+      !!work.quizAttempt?.startedAt &&
+      secondsRemaining !== 0,
+  });
 
   function quizAnswers(
     currentAnswers = answers,
@@ -367,8 +385,12 @@ export default function WorkDetailScreen() {
   const left = attemptsLeft(work);
   const canRetake = left !== null && left > 0;
   const offline = work.kind === "offline";
+  // isClosed: past the student's due date, outside a running quiz attempt.
   const open =
-    !offline && work.status === "published" && (!submitted || canRetake);
+    !offline &&
+    work.status === "published" &&
+    !work.isClosed &&
+    (!submitted || canRetake);
   const quizInProgress = !!work.quizAttempt?.startedAt;
   const canStartQuiz = open && !quizInProgress;
   const quizCanAnswer =
@@ -385,7 +407,7 @@ export default function WorkDetailScreen() {
       : [];
   const submittedLateBy =
     work.kind === "assignment"
-      ? lateDays(work.dueAt, work.submission?.submittedAt ?? null)
+      ? lateDays(studentDueAt(work), work.submission?.submittedAt ?? null)
       : null;
   const unansweredQuestions = work.questions
     .map((question, index) => ({
@@ -414,7 +436,8 @@ export default function WorkDetailScreen() {
       description={[
         work.courseName,
         `${formatScore(work.points)} points`,
-        dueLabel(work.dueAt),
+        dueLabel(studentDueAt(work)) +
+          (work.hasExtension ? " (extended)" : ""),
       ]
         .filter(Boolean)
         .join(" · ")}
@@ -505,7 +528,23 @@ export default function WorkDetailScreen() {
           ) : null
         ) : work.kind === "quiz" ? (
           <View style={{ gap: 12 }}>
-            {canStartQuiz && (
+            {canStartQuiz && work.lockdownBrowser && (
+              <LockdownStartCard
+                details={`${
+                  work.timeLimitMinutes
+                    ? `You have ${work.timeLimitMinutes} minutes, and the timer keeps running if you leave.`
+                    : "Your answers are saved as you work."
+                }${
+                  work.maxAttempts === 0
+                    ? " Retakes are unlimited."
+                    : ` ${left} attempt${left === 1 ? "" : "s"} available.`
+                }`}
+                startLabel={submitted ? "Start another attempt" : "Start quiz"}
+                busy={working}
+                onStart={startQuiz}
+              />
+            )}
+            {canStartQuiz && !work.lockdownBrowser && (
               <Card>
                 <CardContent style={{ gap: 8 }}>
                   <Text weight="500">
@@ -632,6 +671,7 @@ export default function WorkDetailScreen() {
                       placeholder="Type your answer"
                       value={written[q.id] ?? ""}
                       editable={quizCanAnswer}
+                      contextMenuHidden={lockdown.state.active}
                       onChangeText={(value) => {
                         const nextWritten = { ...written, [q.id]: value };
                         setWritten(nextWritten);
@@ -791,6 +831,12 @@ export default function WorkDetailScreen() {
           </Card>
         )}
 
+        {!offline && work.status === "published" && work.isClosed && (
+          <Text variant="muted" size="sm" style={{ textAlign: "center" }}>
+            {pastDueMessage(studentDueAt(work))}.
+          </Text>
+        )}
+
         {!offline && work.status === "closed" && !submitted && (
           <Text variant="muted" size="sm" style={{ textAlign: "center" }}>
             This closed before you handed anything in.
@@ -811,6 +857,15 @@ export default function WorkDetailScreen() {
           onCancel={() => setSubmitConfirmation(false)}
         />
       )}
+      <LockdownOverlay
+        visible={lockdown.showOverlay}
+        timeLeft={
+          secondsRemaining !== null
+            ? `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`
+            : null
+        }
+        onReturn={lockdown.returnToQuiz}
+      />
     </Screen>
   );
 }

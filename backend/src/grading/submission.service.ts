@@ -28,6 +28,15 @@ import {
   ts,
 } from './activity.mapper';
 import { loadAssessments, loadRubric } from './rubric.service';
+import {
+  assertNotPastDue,
+  effectiveDueAt,
+  isPastDue,
+  isQuizAttemptOpen,
+  newQuizAttemptExpiry,
+  pastDueError,
+  studentDueFields,
+} from './due-date';
 import { CacheService } from '@/cache/cache.service';
 import {
   scoreValue,
@@ -192,6 +201,19 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     return new Map(courses.map((c) => [c.id, c.name]));
   }
 
+  /** The due dates a teacher extended for this student, by activity. */
+  private async extensionsFor(
+    studentId: string,
+    activityIds: string[],
+  ): Promise<Map<string, Date>> {
+    if (activityIds.length === 0) return new Map();
+    const rows = await this.prisma.activity_extension.findMany({
+      where: { student_id: studentId, activity_id: { in: activityIds } },
+      select: { activity_id: true, due_at: true },
+    });
+    return new Map(rows.map((r) => [r.activity_id, r.due_at]));
+  }
+
   /**
    * The student's to-do: published and closed work across every course they
    * can see. Drafts are the teacher's working copy; closed work stays so a
@@ -212,25 +234,32 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
     if (rows.length === 0) return [];
 
-    const submissions = await this.prisma.submission.findMany({
-      where: {
-        student_id: studentId,
-        activity_id: { in: rows.map((a) => a.id) },
-      },
-      select: {
-        id: true,
-        activity_id: true,
-        status: true,
-        score: true,
-        excused: true,
-        submitted_at: true,
-        graded_at: true,
-      },
-    });
+    const activityIds = rows.map((a) => a.id);
+    const [submissions, extensions] = await Promise.all([
+      this.prisma.submission.findMany({
+        where: {
+          student_id: studentId,
+          activity_id: { in: activityIds },
+        },
+        select: {
+          id: true,
+          activity_id: true,
+          status: true,
+          score: true,
+          excused: true,
+          submitted_at: true,
+          graded_at: true,
+          quiz_started_at: true,
+          quiz_expires_at: true,
+        },
+      }),
+      this.extensionsFor(studentId, activityIds),
+    ]);
 
     const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
+    const now = Date.now();
 
-    return rows.map((a) => {
+    const items = rows.map((a) => {
       const submission = byActivity.get(a.id);
       const graded = submission?.status === 'graded';
 
@@ -243,6 +272,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         instructions: a.instructions,
         points: Number(a.points),
         dueAt: ts(a.due_at),
+        ...studentDueFields(a.due_at, extensions.get(a.id), submission, now),
         status: a.status,
         allowFile: a.allow_file,
         allowMultipleFiles: a.allow_multiple_files,
@@ -262,6 +292,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
           : null,
       };
     });
+    // The to-do runs on each student's own dates, extensions included.
+    const time = (v: string | null) => (v ? Date.parse(v) : Infinity);
+    return items.sort(
+      (a, b) => time(a.effectiveDueAt) - time(b.effectiveDueAt),
+    );
   }
 
   /** One course's published and closed work, with the student's state on each. */
@@ -276,25 +311,38 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
     if (rows.length === 0) return [];
 
-    const submissions = await this.prisma.submission.findMany({
-      where: {
-        student_id: studentId,
-        activity_id: { in: rows.map((a) => a.id) },
-      },
-      select: {
-        activity_id: true,
-        status: true,
-        score: true,
-        excused: true,
-        feedback: true,
-        submitted_at: true,
-        attempt_count: true,
-      },
-    });
+    const activityIds = rows.map((a) => a.id);
+    const [submissions, extensions] = await Promise.all([
+      this.prisma.submission.findMany({
+        where: {
+          student_id: studentId,
+          activity_id: { in: activityIds },
+        },
+        select: {
+          activity_id: true,
+          status: true,
+          score: true,
+          excused: true,
+          feedback: true,
+          submitted_at: true,
+          attempt_count: true,
+          quiz_started_at: true,
+          quiz_expires_at: true,
+        },
+      }),
+      this.extensionsFor(studentId, activityIds),
+    ]);
 
     const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
+    const now = Date.now();
 
-    return rows.map((a) => toPortalActivity(a, byActivity.get(a.id)));
+    return rows.map((a) => {
+      const submission = byActivity.get(a.id);
+      return {
+        ...toPortalActivity(a, submission),
+        ...studentDueFields(a.due_at, extensions.get(a.id), submission, now),
+      };
+    });
   }
 
   /** The activity itself, with questions but never the correct answers. */
@@ -318,14 +366,17 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         quiz_expires_at: true,
       },
     });
+    // An attempt past its end (its time limit, or the due date for one
+    // without) is submitted with what was saved before showing the result.
     if (
-      submission?.quiz_expires_at &&
-      submission.quiz_expires_at.getTime() <= Date.now()
+      submission?.quiz_started_at &&
+      !isQuizAttemptOpen(submission, activity.effective_due_at)
     ) {
       await this.finalizeExpiredQuizAttempt(
         submission.id,
         studentId,
         activityId,
+        activity.effective_due_at,
       );
       submission = await this.prisma.submission.findFirst({
         where: { activity_id: activityId, student_id: studentId },
@@ -440,6 +491,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       instructions: activity.instructions,
       points: Number(activity.points),
       dueAt: ts(activity.due_at),
+      ...studentDueFields(
+        activity.due_at,
+        activity.extension_due_at,
+        submission,
+      ),
       status: activity.status,
       allowFile: activity.allow_file,
       allowMultipleFiles: activity.allow_multiple_files,
@@ -619,10 +675,23 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('Activity not found');
     }
 
+    const extension = await this.prisma.activity_extension.findUnique({
+      where: {
+        activity_id_student_id: {
+          activity_id: activityId,
+          student_id: studentId,
+        },
+      },
+      select: { due_at: true },
+    });
+
     return {
       ...activity,
       course_id: activity.course_id,
       school_id: course.school_id,
+      extension_due_at: extension?.due_at ?? null,
+      // The date that applies to this student: their extension, if any.
+      effective_due_at: effectiveDueAt(activity.due_at, extension?.due_at),
     };
   }
 
@@ -715,10 +784,9 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         );
       }
       if (locked.quiz_started_at) {
-        if (
-          locked.quiz_expires_at &&
-          locked.quiz_expires_at.getTime() <= Date.now()
-        ) {
+        // An attempt begun in time carries on past the due date until its
+        // own end, so resuming it is always allowed while it runs.
+        if (!isQuizAttemptOpen(locked, activity.effective_due_at)) {
           throw new ConflictException('This quiz attempt has expired');
         }
         return {
@@ -727,6 +795,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
           serverNow: new Date().toISOString(),
         };
       }
+      assertNotPastDue(activity.effective_due_at);
       if (
         activity.max_attempts !== null &&
         locked.attempt_count >= activity.max_attempts
@@ -735,11 +804,13 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       }
 
       const startedAt = new Date();
-      const expiresAt = activity.time_limit_minutes
-        ? new Date(
-            startedAt.getTime() + activity.time_limit_minutes * 60_000,
-          )
-        : null;
+      // With no time limit the attempt ends when the quiz is due, so the
+      // expiry sweep submits it then.
+      const expiresAt = newQuizAttemptExpiry(
+        startedAt,
+        activity.time_limit_minutes,
+        activity.effective_due_at,
+      );
       await tx.quiz_answer.deleteMany({
         where: {
           submission_id: draft.id,
@@ -795,6 +866,9 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         for update
       `;
       if (!locked?.quiz_started_at) {
+        if (isPastDue(activity.effective_due_at)) {
+          throw pastDueError(activity.effective_due_at);
+        }
         throw new ConflictException('Start the quiz before saving answers');
       }
       if (
@@ -804,6 +878,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException(
           'Time is up; your saved answers were submitted',
         );
+      }
+      // An attempt from before this deploy may have no expiry: with no time
+      // limit it ends at the due date.
+      if (!isQuizAttemptOpen(locked, activity.effective_due_at)) {
+        throw pastDueError(activity.effective_due_at);
       }
 
       const accepted = await this.validQuizAnswers(tx, activityId, answers);
@@ -835,6 +914,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     const activity = await this.requireSubmittable(studentId, activityId);
     if (activity.kind !== 'quiz') {
       throw new BadRequestException('This is not a quiz');
+    }
+    // Only lockdown quizzes are monitored; a normal quiz must not collect
+    // tab-switch counts from a client that calls this anyway.
+    if (!activity.lockdown_browser) {
+      return { ok: true };
     }
 
     const draft = await this.prisma.submission.findFirst({
@@ -870,12 +954,16 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     );
 
     if (dto.isAway) {
+      // Count leaving the quiz once per departure: an away client keeps
+      // pinging, and every ping must not add another switch.
       await this.prisma.submission.update({
         where: { id: draft.id },
         data: {
           is_away: true,
-          tab_switch_count: { increment: 1 },
-          last_away_at: now,
+          // A departure, not every away ping: count it and stamp when it began.
+          ...(draft.is_away
+            ? {}
+            : { tab_switch_count: { increment: 1 }, last_away_at: now }),
           updated_at: now,
         },
       });
@@ -997,18 +1085,28 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     submissionId: string,
     studentId: string,
     activityId: string,
+    dueAt: Date | null = null,
   ) {
     const completed = await this.prisma.$transaction(async (tx) => {
       const [locked] = await tx.$queryRaw<
-        { quiz_started_at: Date | null; expired: boolean }[]
+        {
+          quiz_started_at: Date | null;
+          quiz_expires_at: Date | null;
+          expired: boolean;
+        }[]
       >`
-        select quiz_started_at,
+        select quiz_started_at, quiz_expires_at,
                quiz_expires_at is not null and quiz_expires_at <= now() as expired
         from grading.submission
         where id = ${submissionId}::uuid
         for update
       `;
-      if (!locked?.quiz_started_at || !locked.expired) return null;
+      if (!locked?.quiz_started_at) return null;
+      // Ended by its time limit, or (no expiry) by the due date.
+      const ended =
+        locked.expired ||
+        (!locked.quiz_expires_at && isPastDue(dueAt));
+      if (!ended) return null;
       const [row] = await tx.$queryRaw<
         {
           score: Prisma.Decimal | null;
@@ -1150,6 +1248,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    assertNotPastDue(activity.effective_due_at);
 
     await this.assertUploadCapacity(
       draft.id,
@@ -1183,6 +1282,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    // An upload started in time but finished late is not attached.
+    assertNotPastDue(activity.effective_due_at);
     await this.assertUploadCapacity(
       draft.id,
       activity.allow_multiple_files,
@@ -1414,6 +1515,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    assertNotPastDue(activity.effective_due_at);
 
     // A file attached earlier stays attached: handing in text as well must not
     // silently drop it.
@@ -1544,6 +1646,9 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('This quiz is closed');
     }
     if (!draft.quiz_started_at) {
+      if (isPastDue(activity.effective_due_at)) {
+        throw pastDueError(activity.effective_due_at);
+      }
       throw new ConflictException('Start the quiz before submitting');
     }
     let rows: {
@@ -1562,10 +1667,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
             attempt_count: number | null;
             graded_by: string | null;
             quiz_started_at: Date | null;
+            quiz_expires_at: Date | null;
             expired: boolean;
           }[]
         >`
-          select attempt_count, graded_by, quiz_started_at,
+          select attempt_count, graded_by, quiz_started_at, quiz_expires_at,
                  quiz_expires_at is not null and quiz_expires_at <= now() as expired
           from grading.submission
           where id = ${draft.id}::uuid
@@ -1584,12 +1690,22 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
           throw new ConflictException('You have no attempts left');
         }
         if (!locked.quiz_started_at) {
+          if (isPastDue(activity.effective_due_at)) {
+            throw pastDueError(activity.effective_due_at);
+          }
           throw new ConflictException('Start the quiz before submitting');
         }
 
         // Once time expires only server-saved answers count. A last request
         // from the client after the deadline must not extend the attempt.
-        if (!locked.expired) {
+        // The due date is checked here, under the row lock, so it cannot
+        // race a save: an attempt with no expiry (one from before due dates
+        // were enforced) ends at the due date. submit_quiz itself stays
+        // date-blind, because the expiry sweep calls it after the deadline.
+        const ended =
+          locked.expired ||
+          (!locked.quiz_expires_at && isPastDue(activity.effective_due_at));
+        if (!ended) {
           const accepted = await this.validQuizAnswers(
             tx,
             activityId,
@@ -1661,6 +1777,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         points: true,
         status: true,
         kind: true,
+        lockdown_browser: true,
+        due_at: true,
       },
     });
 
@@ -1749,21 +1867,35 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       : [];
 
     const filesBySubmission = await this.submissionFilesById(submissions);
+    const extensions = await this.prisma.activity_extension.findMany({
+      where: { activity_id: activityId },
+      select: {
+        student_id: true,
+        due_at: true,
+        reason: true,
+        created_by: true,
+        created_at: true,
+        updated_at: true,
+      },
+    });
+    const extensionOf = new Map(extensions.map((e) => [e.student_id, e]));
 
     const now = Date.now();
     const rows = await Promise.all(
       students.map(async (s) => {
         const submission = byStudent.get(s.id);
+        const extension = extensionOf.get(s.id);
+        const dueAt = effectiveDueAt(activity.due_at, extension?.due_at);
         const isActiveAttempt =
           activity.kind === 'quiz' &&
           submission?.status === 'draft' &&
-          !!submission.quiz_started_at &&
-          (!submission.quiz_expires_at ||
-            submission.quiz_expires_at.getTime() > now);
+          isQuizAttemptOpen(submission, dueAt, now);
 
         let isAway = false;
         let awayReason: string | null = null;
-        if (isActiveAttempt) {
+        // Only lockdown quizzes send presence; without it every attempt
+        // would read as away once the heartbeat window passed.
+        if (isActiveAttempt && activity.lockdown_browser) {
           const presence = (await this.cache?.get(
             `quiz:presence:${activityId}:${s.id}`,
           )) as
@@ -1797,6 +1929,16 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
             | 'dropped'
             | 'completed'
             | null,
+          effectiveDueAt: ts(dueAt),
+          extension: extension
+            ? {
+                dueAt: ts(extension.due_at) as string,
+                reason: extension.reason ?? null,
+                createdBy: extension.created_by ?? null,
+                createdAt: ts(extension.created_at) as string,
+                updatedAt: ts(extension.updated_at) as string,
+              }
+            : null,
           submission: submission
             ? {
                 id: submission.id,

@@ -15,7 +15,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useTheme } from "@/theme/ThemeProvider";
-import { dueLabel, isOutstanding, type PortalWorkItem } from "@/lib/work";
+import {
+  dueLabel,
+  isOutstanding,
+  studentDueAt,
+  type PortalWorkItem,
+} from "@/lib/work";
 
 function WorkRow({ item }: { item: PortalWorkItem }) {
   const router = useRouter();
@@ -39,7 +44,12 @@ function WorkRow({ item }: { item: PortalWorkItem }) {
           {item.title}
         </Text>
         <Text variant="muted" size="xs">
-          {[item.courseName, `${item.points} points`, dueLabel(item.dueAt)]
+          {[
+            item.courseName,
+            `${item.points} points`,
+            dueLabel(studentDueAt(item)) +
+              (item.hasExtension ? " (extended)" : ""),
+          ]
             .filter(Boolean)
             .join(" · ")}
         </Text>

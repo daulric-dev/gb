@@ -270,6 +270,12 @@ export interface PortalCourseActivity
   extends Omit<Activity, "omitFromFinalGrade" | "createdAt"> {
   /** null when the student has not started it. */
   submission: PortalSubmissionState | null;
+  /** The student's own due date: their extension, else dueAt. */
+  effectiveDueAt?: string | null;
+  /** A teacher gave this student more time. */
+  hasExtension?: boolean;
+  /** Past the student's due date and not inside a running quiz attempt. */
+  isClosed?: boolean;
 }
 
 export interface PortalCourseGrades {

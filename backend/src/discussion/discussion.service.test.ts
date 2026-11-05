@@ -90,7 +90,7 @@ function seed(prisma: MockPrisma, topic = TOPIC) {
 describe('DiscussionService', () => {
   test('topic create, update, and delete are audited in their write transactions', async () => {
     const prisma = createMockPrisma();
-    const record = mock(async () => {});
+    const record = mock(async (..._args: any[]) => {});
     prisma.discussion_setting.findUnique.mockResolvedValue({
       students_can_create_topics: true,
     });
@@ -141,7 +141,7 @@ describe('DiscussionService', () => {
 
   test('reply create, edit, and deletion are audited transactionally', async () => {
     const prisma = createMockPrisma();
-    const record = mock(async () => {});
+    const record = mock(async (..._args: any[]) => {});
     seed(prisma);
     const svc = serviceWithAudit(prisma, record);
 
@@ -178,7 +178,7 @@ describe('DiscussionService', () => {
 
   test('a reply with children audits the content removal as an update', async () => {
     const prisma = createMockPrisma();
-    const record = mock(async () => {});
+    const record = mock(async (..._args: any[]) => {});
     seed(prisma);
     prisma.discussion_reply.count.mockResolvedValue(1);
     await serviceWithAudit(prisma, record).removeReply(

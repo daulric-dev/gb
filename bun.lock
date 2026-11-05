@@ -86,7 +86,7 @@
       "version": "0.0.0",
       "dependencies": {
         "react": "19.3.0",
-        "react-dom": "19.2.7",
+        "react-dom": "19.3.0",
         "react-markdown": "^10.1.0",
         "react-router-dom": "^7.18.4",
         "remark-gfm": "^4.0.1",
@@ -122,7 +122,7 @@
         "qrcode.react": "4.2.0",
         "react": "19.3.0",
         "react-day-picker": "^10.0.2",
-        "react-dom": "19.2.7",
+        "react-dom": "19.3.0",
         "react-easy-crop": "^6.2.4",
         "react-markdown": "10.1.0",
         "react-resizable-panels": "^4.13.1",
@@ -180,7 +180,7 @@
         "expo-web-browser": "~58.0.7",
         "lucide-react-native": "^1.62.0",
         "react": "19.3.0",
-        "react-dom": "19.2.7",
+        "react-dom": "19.3.0",
         "react-native": "0.88.0",
         "react-native-gesture-handler": "~3.3.0",
         "react-native-qrcode-svg": "^6.3.41",
@@ -205,7 +205,7 @@
   ],
   "overrides": {
     "body-parser": "^2.4.0",
-    "deepmerge": "4.1.2",
+    "deepmerge": "^4.3.1",
     "fastify": "^5.12.1",
     "glob": "^14.0.3",
     "minimatch": "^11.0.3",
@@ -2060,7 +2060,7 @@
 
     "deep-is": ["deep-is@0.1.4", "", {}, "sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ=="],
 
-    "deepmerge": ["deepmerge@4.1.2", "", {}, "sha512-9ZXh/8Fp+ggcscoRg324S1aNdGSCl2X1P8F1FPTHbtq3RAxy9ECbU2Wgy2J12r6x/O0BStDlkzcpKK/HptX+Kg=="],
+    "deepmerge": ["deepmerge@4.3.1", "", {}, "sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A=="],
 
     "deepmerge-ts": ["deepmerge-ts@8.0.2", "", {}, "sha512-uqbvqLUMrc6p0MO+WBRtTxY55hmyh94WRwI5a++PZe54X+bfVh59FSN7uWCBCW1CCVjzjnrwzfI8zidE2obMMw=="],
 

@@ -25,6 +25,7 @@ import {
   toTimestamp,
 } from './activity.mapper';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
+import { syncUntimedQuizAttempts } from './extension.service';
 
 type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
 
@@ -185,6 +186,7 @@ export class ActivityService {
       allowText?: boolean;
       maxAttempts?: number;
       timeLimitMinutes?: number | null;
+      lockdownBrowser?: boolean;
     },
   ) {
     const { course } = await this.access.require(
@@ -300,6 +302,7 @@ export class ActivityService {
       allowText?: boolean;
       maxAttempts?: number | null;
       timeLimitMinutes?: number | null;
+      lockdownBrowser?: boolean;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -387,6 +390,20 @@ export class ActivityService {
           data: changes,
           select: ACTIVITY_SELECT,
         });
+        if (patch.dueAt !== undefined) {
+          // Untimed attempts end at the due date; students with their own
+          // extension keep theirs.
+          await syncUntimedQuizAttempts(
+            tx,
+            updated,
+            {
+              student: {
+                activity_extension: { none: { activity_id: activityId } },
+              },
+            },
+            updated.due_at,
+          );
+        }
         await this.auditLog?.record(
           tx,
           activity.school_id,

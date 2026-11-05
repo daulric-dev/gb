@@ -31,6 +31,7 @@ import { AttendanceRealtime } from './attendance.realtime';
 import { withinGeofence } from './geo';
 import {
   newQrSecret,
+  QR_CLAIM_TTL_MS,
   QR_WINDOW_MS,
   qrClaim,
   qrToken,
@@ -89,6 +90,11 @@ const SWEEP_INTERVAL_MS = 30_000;
 export const MAX_WRONG_CODES = 5;
 /** The wrong-code counter outlives the session by this much (seconds). */
 const WRONG_CODE_TTL_MARGIN_S = 10 * 60;
+/**
+ * Scan claims one client address may get per session within a claim's
+ * lifetime. Stops one student handing fresh claims to absent friends.
+ */
+export const MAX_SCAN_CLAIMS_PER_IP = 3;
 
 export interface SessionRow {
   id: string;
@@ -1080,7 +1086,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
    * scan page calls it before it knows who the student is, and all it proves
    * is that someone saw the screen in the last few seconds.
    */
-  async scanClaim(sessionId: string, token: string) {
+  async scanClaim(sessionId: string, token: string, clientIp?: string) {
     const data = await this.findSession(sessionId);
     const now = Date.now();
     if (!data || !isOpen(data, now)) {
@@ -1093,6 +1099,8 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         'That QR code has expired. Scan the one on screen again',
       );
     }
+
+    await this.countScanClaim(sessionId, clientIp);
 
     const { claim, expiresAt } = qrClaim(secret, sessionId, now);
     return { claim, expiresAt: new Date(expiresAt).toISOString() };
@@ -1236,6 +1244,30 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     this.emitRecorded(session, studentId, record, null);
 
     return this.toPortalOpen(session, course.name, status);
+  }
+
+  /**
+   * Count a claim against the caller's address for this session, atomically,
+   * and refuse past MAX_SCAN_CLAIMS_PER_IP. The window is one claim lifetime,
+   * so a single address never holds more than that many live claims.
+   */
+  private async countScanClaim(sessionId: string, clientIp?: string) {
+    const key = `attendance:scan-claims:${sessionId}:${clientIp ?? 'unknown'}`;
+    let claims: number;
+    try {
+      claims = await this.cache.incr(key, Math.ceil(QR_CLAIM_TTL_MS / 1000));
+    } catch (err) {
+      this.logger.error(`Scan-claim counter failed: ${(err as Error).message}`);
+      throw new ServiceUnavailableException(
+        'Check-in is unavailable right now. Try again in a moment',
+      );
+    }
+    if (claims > MAX_SCAN_CLAIMS_PER_IP) {
+      throw new HttpException(
+        'Too many scans from this network. Sign in, then scan the code again',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
   }
 
   /**

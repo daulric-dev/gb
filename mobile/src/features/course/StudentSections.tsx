@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useTheme } from "@/theme/ThemeProvider";
 import { teacherNames, formatDate, type PortalCourseCard } from "@/lib/portal";
-import { dueLabel } from "@/lib/work";
+import { dueLabel, studentDueAt } from "@/lib/work";
 import { formatScore } from "@/lib/format-number";
 import {
   activityGradeState,
@@ -88,7 +88,11 @@ export function WorkRow({ item }: { item: PortalGradeActivity }) {
           {item.title}
         </Text>
         <Text variant="muted" size="xs">
-          {[`${formatScore(item.points)} pts`, dueLabel(item.dueAt)].join(" · ")}
+          {[
+            `${formatScore(item.points)} pts`,
+            dueLabel(studentDueAt(item)) +
+              (item.hasExtension ? " (extended)" : ""),
+          ].join(" · ")}
         </Text>
       </View>
       {state.kind === "graded" ? (
@@ -132,8 +136,10 @@ export function HomeSection({
   const upcoming = (work.data ?? [])
     .filter(isOpen)
     .sort((a, b) => {
-      const ad = a.dueAt ? new Date(a.dueAt).getTime() : Infinity;
-      const bd = b.dueAt ? new Date(b.dueAt).getTime() : Infinity;
+      const da = studentDueAt(a);
+      const db = studentDueAt(b);
+      const ad = da ? new Date(da).getTime() : Infinity;
+      const bd = db ? new Date(db).getTime() : Infinity;
       return ad - bd;
     })
     .slice(0, 5);

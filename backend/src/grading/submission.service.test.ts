@@ -304,7 +304,7 @@ describe('SubmissionService file handling', () => {
     expect(result).toBeTruthy();
   });
 
-  test('an assignment can be submitted after its due date', async () => {
+  test('an assignment cannot be submitted after its due date', async () => {
     const { service, prisma } = build((p) => {
       studentTables({
         activity: {
@@ -312,22 +312,14 @@ describe('SubmissionService file handling', () => {
           due_at: new Date('2026-10-01T12:00:00.000Z'),
         },
       })(p);
-      p.submission.updateManyAndReturn.mockResolvedValue([
-        {
-          id: 'sub-1',
-          status: 'submitted',
-          submitted_at: new Date('2026-10-03T12:00:00.000Z'),
-        },
-      ]);
     });
 
-    const result = await service.submitAssignment('stu-1', 'act-1', {
-      textBody: 'My late work',
-    });
-
-    expect(result.status).toBe('submitted');
-    expect(result.submittedAt).toBe('2026-10-03T12:00:00.000Z');
-    expect(prisma.submission.updateManyAndReturn).toHaveBeenCalledTimes(1);
+    await expect(
+      service.submitAssignment('stu-1', 'act-1', { textBody: 'My late work' }),
+    ).rejects.toThrow(
+      'This was due on 2026-10-01 12:00 UTC. Ask your teacher for an extension',
+    );
+    expect(prisma.submission.updateManyAndReturn).not.toHaveBeenCalled();
   });
 
   test('an empty draft cannot be handed in', async () => {
@@ -1394,7 +1386,7 @@ describe('SubmissionService marking', () => {
     test('submitQuiz ignores client answers when time expired and submits saved answers', async () => {
       const { service, prisma } = build((p) => {
         studentTables({
-          activity: { ...ACTIVITY, kind: 'quiz' },
+          activity: { ...ACTIVITY, kind: 'quiz', lockdown_browser: true },
           submission: {
             id: 'sub-1',
             status: 'draft',
@@ -1477,7 +1469,7 @@ describe('SubmissionService marking', () => {
       const { service, prisma } = build(
         (p) => {
           studentTables({
-            activity: { ...ACTIVITY, kind: 'quiz' },
+            activity: { ...ACTIVITY, kind: 'quiz', lockdown_browser: true },
             submission: {
               id: 'sub-1',
               status: 'draft',
@@ -1517,6 +1509,102 @@ describe('SubmissionService marking', () => {
       });
     });
 
+    test('updateQuizPresence counts a departure once, not every away ping', async () => {
+      const { service, prisma } = build(
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz', lockdown_browser: true },
+          submission: {
+            id: 'sub-1',
+            status: 'draft',
+            quiz_started_at: new Date(Date.now() - 10_000),
+            quiz_expires_at: new Date(Date.now() + 600_000),
+            is_away: true,
+            tab_switch_count: 1,
+          },
+        }),
+        {},
+        stubAccess(),
+        undefined,
+        createMockCacheService(),
+      );
+
+      await service.updateQuizPresence('stu-1', 'act-1', {
+        isAway: true,
+        reason: 'tab_hidden',
+      });
+      const data = prisma.submission.update.mock.calls[0][0].data;
+      expect(data.is_away).toBe(true);
+      expect(data.tab_switch_count).toBeUndefined();
+      expect(data.last_away_at).toBeUndefined();
+    });
+
+    test('updateQuizPresence ignores a quiz without lockdown', async () => {
+      const { service, prisma } = build(
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz', lockdown_browser: false },
+          submission: {
+            id: 'sub-1',
+            status: 'draft',
+            quiz_started_at: new Date(Date.now() - 10_000),
+            quiz_expires_at: new Date(Date.now() + 600_000),
+            is_away: false,
+            tab_switch_count: 0,
+          },
+        }),
+        {},
+        stubAccess(),
+        undefined,
+        createMockCacheService(),
+      );
+
+      expect(
+        await service.updateQuizPresence('stu-1', 'act-1', { isAway: true }),
+      ).toEqual({ ok: true });
+      expect(prisma.submission.update).not.toHaveBeenCalled();
+    });
+
+    test('listForTeacher never flags away on a quiz without lockdown', async () => {
+      const { service } = build(
+        (p) => {
+          p.activity.findUnique.mockResolvedValue({
+            ...PUBLISHED,
+            kind: 'quiz',
+            lockdown_browser: false,
+          });
+          p.course_student.findMany.mockResolvedValue([
+            { student_id: 'stu-1', status: 'active' },
+          ]);
+          p.submission.findMany.mockResolvedValue([
+            {
+              id: 'sub-1',
+              student_id: 'stu-1',
+              status: 'draft',
+              score: null,
+              attempt_count: 0,
+              quiz_started_at: new Date(Date.now() - 120_000),
+              quiz_expires_at: new Date(Date.now() + 600_000),
+              is_away: false,
+              tab_switch_count: 0,
+              last_away_at: null,
+              excused: false,
+            },
+          ]);
+          p.student.findMany.mockResolvedValue([
+            { id: 'stu-1', first_name: 'Eve', last_name: 'Tester' },
+          ]);
+        },
+        {},
+        stubAccess(),
+        undefined,
+        createMockCacheService(),
+      );
+
+      const rows = await service.listForTeacher('user-1', 'act-1');
+      expect(rows[0].submission?.isActiveAttempt).toBe(true);
+      expect(rows[0].submission?.isAway).toBe(false);
+      expect(rows[0].submission?.awayReason).toBeNull();
+    });
+
     test('listForTeacher reports live proctoring and tab switch counts', async () => {
       const cache = createMockCacheService();
       await cache.set(
@@ -1534,6 +1622,7 @@ describe('SubmissionService marking', () => {
           p.activity.findUnique.mockResolvedValue({
             ...PUBLISHED,
             kind: 'quiz',
+            lockdown_browser: true,
           });
           p.course_student.findMany.mockResolvedValue([
             { student_id: 'stu-1', status: 'active' },
