@@ -9,6 +9,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { Readable } from 'node:stream';
 import { SubmissionService } from './submission.service';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { createMockCacheService } from '@/test/mocks';
 
 /**
  * File handling, marking and excusing on submissions.
@@ -62,6 +63,7 @@ function build(
   files: Partial<Record<string, any>> = {},
   access: ReturnType<typeof stubAccess> = stubAccess(),
   auditLog?: { record: (...args: any[]) => Promise<void> },
+  cache?: any,
 ) {
   const prisma = createMockPrisma();
   setup(prisma);
@@ -83,6 +85,7 @@ function build(
     access as any,
     undefined,
     auditLog as any,
+    cache as any,
   );
   return { service, prisma };
 }
@@ -525,12 +528,29 @@ describe('SubmissionService student access', () => {
     const { service, prisma } = build((p) => {
       studentTables({
         activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
-        submission: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+        submission: {
+          id: 'sub-1',
+          status: 'draft',
+          attempt_count: 0,
+          quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+        },
       })(p);
       p.quiz_question.findMany.mockResolvedValue([]);
-      p.$queryRaw.mockResolvedValue([
-        { score: new Prisma.Decimal(5), points: new Prisma.Decimal(20) },
-      ]);
+      p.$queryRaw.mockImplementation(async (strings: string[]) => {
+        if (strings.join('?').includes('submit_quiz')) {
+          return [
+            { score: new Prisma.Decimal(5), points: new Prisma.Decimal(20) },
+          ];
+        }
+        return [
+          {
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+            expired: false,
+          },
+        ];
+      });
     });
 
     const result = await service.submitQuiz('stu-1', 'act-1', []);
@@ -551,13 +571,31 @@ describe('SubmissionService student access', () => {
     for (const [message, expected] of [
       ['no_attempts_left', 'You have no attempts left'],
       ['activity_not_open', 'This quiz is closed'],
+      ['quiz_attempt_not_started', 'Start the quiz before submitting'],
     ]) {
       const { service } = build((p) => {
         studentTables({
           activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
-          submission: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+          submission: {
+            id: 'sub-1',
+            status: 'draft',
+            attempt_count: 0,
+            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+          },
         })(p);
-        p.$queryRaw.mockRejectedValue(raised(message));
+        p.$queryRaw.mockImplementation(async (strings: string[]) => {
+          if (strings.join('?').includes('submit_quiz')) {
+            throw raised(message);
+          }
+          return [
+            {
+              attempt_count: 0,
+              graded_by: null,
+              quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+              expired: false,
+            },
+          ];
+        });
       });
       const err = await service
         .submitQuiz('stu-1', 'act-1', [])
@@ -576,6 +614,7 @@ describe('SubmissionService student access', () => {
           status: 'graded',
           attempt_count: 1,
           graded_by: 'teacher-1',
+          quiz_started_at: new Date('2026-11-05T10:00:00Z'),
         },
       }),
     );
@@ -589,19 +628,34 @@ describe('SubmissionService student access', () => {
     const { service } = build((p) => {
       studentTables({
         activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
-        submission: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+        submission: {
+          id: 'sub-1',
+          status: 'draft',
+          attempt_count: 0,
+          quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+        },
       })(p);
       p.quiz_question.findMany.mockResolvedValue([]);
-      p.$queryRaw.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError(
-          'Raw query failed: already_marked',
+      p.$queryRaw.mockImplementation(async (strings: string[]) => {
+        if (strings.join('?').includes('submit_quiz')) {
+          throw new Prisma.PrismaClientKnownRequestError(
+            'Raw query failed: already_marked',
+            {
+              code: 'P2010',
+              clientVersion: 'test',
+              meta: { code: 'P0025', message: 'already_marked' },
+            },
+          );
+        }
+        return [
           {
-            code: 'P2010',
-            clientVersion: 'test',
-            meta: { code: 'P0025', message: 'already_marked' },
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+            expired: false,
           },
-        ),
-      );
+        ];
+      });
     });
     const err = await service.submitQuiz('stu-1', 'act-1', []).catch((e) => e);
     expect(err).toBeInstanceOf(BadRequestException);
@@ -634,6 +688,7 @@ describe('SubmissionService student access', () => {
           status: 'draft',
           attempt_count: 0,
           graded_by: null,
+          quiz_started_at: new Date('2026-11-05T10:00:00Z'),
         },
       })(p);
       p.quiz_question.findMany.mockResolvedValue([
@@ -661,7 +716,14 @@ describe('SubmissionService student access', () => {
           return [{ score: 10, points: 20, attempts_used: 1 }];
         }
         order.push('lock');
-        return [over.locked ?? { attempt_count: 0, graded_by: null }];
+        return [
+          over.locked ?? {
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+            expired: false,
+          },
+        ];
       });
     };
     return { order, setup };
@@ -689,6 +751,7 @@ describe('SubmissionService student access', () => {
     // Every earlier answer goes, not just those to questions sent this time.
     expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
       submission_id: 'sub-1',
+      quiz_question: { activity_id: 'act-1' },
     });
   });
 
@@ -726,7 +789,12 @@ describe('SubmissionService student access', () => {
     // other has used the only attempt.
     const { order, setup } = quizTables({
       maxAttempts: 1,
-      locked: { attempt_count: 1, graded_by: null },
+      locked: {
+        attempt_count: 1,
+        graded_by: null,
+        quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+        expired: false,
+      },
     });
     const { service, prisma } = build(setup);
 
@@ -742,7 +810,12 @@ describe('SubmissionService student access', () => {
 
   test('a quiz marked by the teacher while the student answered writes no answers', async () => {
     const { order, setup } = quizTables({
-      locked: { attempt_count: 1, graded_by: 'teacher-1' },
+      locked: {
+        attempt_count: 1,
+        graded_by: 'teacher-1',
+        quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+        expired: false,
+      },
     });
     const { service } = build(setup);
 
@@ -798,6 +871,7 @@ describe('SubmissionService student access', () => {
         status: 'draft',
         attempt_count: 0,
         graded_by: null,
+        quiz_started_at: new Date('2026-11-05T10:00:00Z'),
       });
       p.submission.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -808,7 +882,14 @@ describe('SubmissionService student access', () => {
       p.$queryRaw.mockImplementation(async (strings: string[]) =>
         strings.join('?').includes('submit_quiz')
           ? [{ score: 0, points: 20, attempts_used: 1 }]
-          : [{ attempt_count: 0, graded_by: null }],
+          : [
+              {
+                attempt_count: 0,
+                graded_by: null,
+                quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+                expired: false,
+              },
+            ],
       );
     });
 
@@ -816,6 +897,7 @@ describe('SubmissionService student access', () => {
     expect(prisma.submission.create).toHaveBeenCalledTimes(1);
     expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
       submission_id: 'sub-other',
+      quiz_question: { activity_id: 'act-1' },
     });
   });
 
@@ -1101,5 +1183,293 @@ describe('SubmissionService marking', () => {
     expect(list[1].submission!.excused).toBe(true);
     expect(list[1].submission!.excusedReason).toBe('Ill');
     expect(list[1].submission!.score).toBe(10);
+  });
+
+  describe('quiz attempts, draft saves, and timers', () => {
+    test('startQuizAttempt starts an attempt and calculates expiresAt from time limit', async () => {
+      const { service, prisma } = build((p) => {
+        studentTables({
+          activity: {
+            ...ACTIVITY,
+            kind: 'quiz',
+            time_limit_minutes: 30,
+            max_attempts: 2,
+          },
+          submission: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          {
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: null,
+            quiz_expires_at: null,
+          },
+        ]);
+      });
+
+      const res = await service.startQuizAttempt('stu-1', 'act-1');
+      expect(res.startedAt).toBeDefined();
+      expect(res.expiresAt).toBeDefined();
+      const duration = Date.parse(res.expiresAt!) - Date.parse(res.startedAt);
+      expect(duration).toBe(30 * 60 * 1000);
+      expect(prisma.quiz_answer.deleteMany).toHaveBeenCalled();
+      expect(prisma.submission.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-1' },
+          data: expect.objectContaining({
+            quiz_started_at: expect.any(Date),
+            quiz_expires_at: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    test('startQuizAttempt on untimed quiz leaves expiresAt null', async () => {
+      const { service, prisma } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz', time_limit_minutes: null },
+          submission: { id: 'sub-1', status: 'draft', attempt_count: 0 },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          {
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: null,
+            quiz_expires_at: null,
+          },
+        ]);
+      });
+
+      const res = await service.startQuizAttempt('stu-1', 'act-1');
+      expect(res.startedAt).toBeDefined();
+      expect(res.expiresAt).toBeNull();
+      expect(prisma.submission.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            quiz_expires_at: null,
+          }),
+        }),
+      );
+    });
+
+    test('startQuizAttempt on in-progress attempt returns existing timestamps without resetting', async () => {
+      const started = new Date(Date.now() - 60_000);
+      const expires = new Date(Date.now() + 600_000);
+      const { service, prisma } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz', time_limit_minutes: 30 },
+          submission: {
+            id: 'sub-1',
+            status: 'draft',
+            quiz_started_at: started,
+            quiz_expires_at: expires,
+          },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          {
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: started,
+            quiz_expires_at: expires,
+          },
+        ]);
+      });
+
+      const res = await service.startQuizAttempt('stu-1', 'act-1');
+      expect(res.startedAt).toBe(started.toISOString());
+      expect(res.expiresAt).toBe(expires.toISOString());
+      expect(prisma.submission.update).not.toHaveBeenCalled();
+      expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
+    });
+
+    test('startQuizAttempt refuses closed quiz or exhausted attempts', async () => {
+      const { service: closedService } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz', status: 'closed' },
+        })(p);
+      });
+      await expect(
+        closedService.startQuizAttempt('stu-1', 'act-1'),
+      ).rejects.toThrow('This quiz is closed');
+
+      const { service: exhaustedService } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz', max_attempts: 1 },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          {
+            attempt_count: 1,
+            graded_by: null,
+            quiz_started_at: null,
+            quiz_expires_at: null,
+          },
+        ]);
+      });
+      await expect(
+        exhaustedService.startQuizAttempt('stu-1', 'act-1'),
+      ).rejects.toThrow('You have no attempts left');
+    });
+
+    test('saveQuizAnswers requires started attempt and persists accepted answers', async () => {
+      const { service: unstartedService } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz' },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          { quiz_started_at: null, quiz_expires_at: null },
+        ]);
+      });
+      await expect(
+        unstartedService.saveQuizAnswers('stu-1', 'act-1', []),
+      ).rejects.toThrow('Start the quiz before saving answers');
+
+      const { service, prisma } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz' },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          {
+            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+            quiz_expires_at: new Date(Date.now() + 600_000),
+          },
+        ]);
+        p.quiz_question.findMany.mockResolvedValue([
+          { id: 'q-1', kind: 'multiple_choice' },
+          { id: 'q-2', kind: 'short_answer' },
+        ]);
+        p.quiz_option.findMany.mockResolvedValue([
+          { id: 'opt-1', question_id: 'q-1' },
+        ]);
+      });
+
+      const res = await service.saveQuizAnswers('stu-1', 'act-1', [
+        { questionId: 'q-1', optionId: 'opt-1' },
+        { questionId: 'q-2', text: '  my answer  ' },
+        { questionId: 'unknown', text: 'ignored' },
+      ]);
+
+      expect(res.savedAt).toBeDefined();
+      expect(prisma.quiz_answer.deleteMany).toHaveBeenCalledWith({
+        where: {
+          submission_id: 'sub-1',
+          quiz_question: { activity_id: 'act-1' },
+        },
+      });
+      expect(prisma.quiz_answer.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            submission_id: 'sub-1',
+            question_id: 'q-1',
+            option_id: 'opt-1',
+            text_answer: null,
+          },
+          {
+            submission_id: 'sub-1',
+            question_id: 'q-2',
+            option_id: null,
+            text_answer: 'my answer',
+          },
+        ],
+      });
+    });
+
+    test('saveQuizAnswers refuses save when time has expired', async () => {
+      const { service } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz' },
+        })(p);
+        p.$queryRaw.mockResolvedValue([
+          {
+            quiz_started_at: new Date('2026-11-05T09:00:00Z'),
+            quiz_expires_at: new Date('2026-11-05T09:30:00Z'),
+          },
+        ]);
+      });
+
+      await expect(
+        service.saveQuizAnswers('stu-1', 'act-1', []),
+      ).rejects.toThrow('Time is up; your saved answers were submitted');
+    });
+
+    test('submitQuiz ignores client answers when time expired and submits saved answers', async () => {
+      const { service, prisma } = build((p) => {
+        studentTables({
+          activity: { ...ACTIVITY, kind: 'quiz' },
+          submission: {
+            id: 'sub-1',
+            status: 'draft',
+            quiz_started_at: new Date('2026-11-05T09:00:00Z'),
+          },
+        })(p);
+        p.$queryRaw.mockImplementation(async (strings: string[]) => {
+          if (strings.join('?').includes('submit_quiz')) {
+            return [
+              {
+                score: new Prisma.Decimal(10),
+                points: new Prisma.Decimal(10),
+                attempts_used: 1,
+              },
+            ];
+          }
+          return [
+            {
+              attempt_count: 0,
+              graded_by: null,
+              quiz_started_at: new Date('2026-11-05T09:00:00Z'),
+              expired: true,
+            },
+          ];
+        });
+      });
+
+      const res = await service.submitQuiz('stu-1', 'act-1', [
+        { questionId: 'q-1', optionId: 'opt-1' },
+      ]);
+      expect(res).toEqual({ score: 10, points: 10 });
+      // When expired, client answers are not written.
+      expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();
+    });
+
+    test('validQuizAnswers caches question structure and avoids repeat database lookups', async () => {
+      const cache = createMockCacheService();
+      const { service, prisma } = build(
+        (p) => {
+          studentTables({
+            activity: { ...ACTIVITY, kind: 'quiz' },
+          })(p);
+          p.$queryRaw.mockResolvedValue([
+            {
+              quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+              quiz_expires_at: new Date(Date.now() + 600_000),
+            },
+          ]);
+          p.quiz_question.findMany.mockResolvedValue([
+            { id: 'q-1', kind: 'multiple_choice' },
+          ]);
+          p.quiz_option.findMany.mockResolvedValue([
+            { id: 'opt-1', question_id: 'q-1' },
+          ]);
+        },
+        {},
+        stubAccess(),
+        undefined,
+        cache,
+      );
+
+      // First call fetches from database and caches
+      await service.saveQuizAnswers('stu-1', 'act-1', [
+        { questionId: 'q-1', optionId: 'opt-1' },
+      ]);
+      expect(prisma.quiz_question.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.quiz_option.findMany).toHaveBeenCalledTimes(1);
+
+      // Second call uses cached quiz structure without querying quiz_question/option
+      await service.saveQuizAnswers('stu-1', 'act-1', [
+        { questionId: 'q-1', optionId: 'opt-1' },
+      ]);
+      expect(prisma.quiz_question.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.quiz_option.findMany).toHaveBeenCalledTimes(1);
+    });
   });
 });

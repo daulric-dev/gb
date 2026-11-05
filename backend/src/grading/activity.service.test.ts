@@ -134,11 +134,44 @@ describe('ActivityService.create', () => {
         'allowMultipleFiles',
         'allowText',
         'maxAttempts',
+        'timeLimitMinutes',
         'omitFromFinalGrade',
         'rubricId',
         'createdAt',
       ].sort(),
     );
+  });
+
+  test('creates a quiz with a time limit and validates bounds', async () => {
+    const { service, prisma } = build();
+    await service.create('user-1', 'course-1', {
+      kind: 'quiz',
+      title: 'Timed Quiz',
+      points: 10,
+      timeLimitMinutes: 45,
+    });
+    expect(prisma.activity.create.mock.calls[0][0].data.time_limit_minutes).toBe(
+      45,
+    );
+
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'assignment',
+        title: 'Timed Assignment',
+        points: 10,
+        allowText: true,
+        timeLimitMinutes: 30,
+      }),
+    ).rejects.toThrow('Only quizzes can have a time limit');
+
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'quiz',
+        title: 'Timed Quiz Invalid',
+        points: 10,
+        timeLimitMinutes: 0,
+      }),
+    ).rejects.toThrow('Time limit must be between 1 and 1440 minutes');
   });
 
   test('a TA cannot create work', async () => {

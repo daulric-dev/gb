@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -66,6 +67,15 @@ export class CreateActivityDto {
   @IsInt()
   @Min(0)
   maxAttempts?: number;
+
+  /** Optional quiz timer in minutes; null/omitted means untimed. */
+  @ApiPropertyOptional({ example: 30, minimum: 1, maximum: 1440, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  timeLimitMinutes?: number | null;
 }
 
 /** Excuse one student from one piece of work, keeping any mark they have. */
@@ -136,6 +146,14 @@ export class UpdateActivityDto {
   @IsInt()
   @Min(0)
   maxAttempts?: number | null;
+
+  @ApiPropertyOptional({ example: 30, minimum: 1, maximum: 1440, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  timeLimitMinutes?: number | null;
 }
 
 export class QuestionOptionDto {
@@ -217,6 +235,15 @@ export class QuizAnswerDto {
 }
 
 export class SubmitQuizDto {
+  @ApiProperty({ type: [QuizAnswerDto] })
+  @IsArray()
+  @ArrayMaxSize(MAX_ANSWERS)
+  @ValidateNested({ each: true })
+  @Type(() => QuizAnswerDto)
+  answers!: QuizAnswerDto[];
+}
+
+export class SaveQuizAnswersDto {
   @ApiProperty({ type: [QuizAnswerDto] })
   @IsArray()
   @ArrayMaxSize(MAX_ANSWERS)

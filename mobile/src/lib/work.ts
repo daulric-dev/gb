@@ -49,7 +49,14 @@ export interface PortalWorkDetail {
   courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
+  timeLimitMinutes: number | null;
   attemptsUsed: number;
+  quizAttempt: {
+    startedAt: string;
+    expiresAt: string | null;
+    serverNow: string;
+    answers: { questionId: string; optionId: string | null; text: string | null }[];
+  } | null;
   questions: {
     id: string;
     prompt: string;

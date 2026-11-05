@@ -20,10 +20,10 @@ The mobile app has the same course screen: tap a course on **Home** and switch b
 **To-do** lists everything set for you across courses, by due date.
 
 - **Assignments** - attach a file, type an answer, or both. Attaching is not handing in: press **Hand in** when you are ready.
-- **Quizzes** - answer and submit; the score appears straight away. If retakes are allowed, **Try again** appears after your result. Correct answers are never shown.
+- **Quizzes** - track how many questions you have answered and see which ones still need an answer. Once all are answered, confirm before submitting; the confirmation explains how the submission affects your attempts. The score appears straight away. If retakes are allowed, **Try again** appears after your result. Correct answers are never shown.
 - **Offline work** - done on paper; your teacher records the mark here.
 
-Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes are answered and submitted the same way, with **Try again** when retakes are allowed.
+Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes show answer progress and unanswered question numbers, and ask you to confirm before submission. **Try again** appears when retakes are allowed.
 
 ## Calendar and notifications
 

@@ -183,6 +183,8 @@ export interface Activity {
   allowText: boolean;
   /** 0 means unlimited. */
   maxAttempts: number;
+  /** null means the quiz is untimed. */
+  timeLimitMinutes: number | null;
   omitFromFinalGrade: boolean;
   /** The course rubric marking uses; quizzes never have one. */
   rubricId: string | null;

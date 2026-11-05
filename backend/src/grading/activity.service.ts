@@ -184,6 +184,7 @@ export class ActivityService {
       allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number;
+      timeLimitMinutes?: number | null;
     },
   ) {
     const { course } = await this.access.require(
@@ -200,6 +201,19 @@ export class ActivityService {
     if (input.kind === 'assignment' && !input.allowFile && !input.allowText) {
       throw new BadRequestException(
         'An assignment must accept a file, text, or both',
+      );
+    }
+    if (input.kind !== 'quiz' && input.timeLimitMinutes != null) {
+      throw new BadRequestException('Only quizzes can have a time limit');
+    }
+    if (
+      input.timeLimitMinutes != null &&
+      (!Number.isInteger(input.timeLimitMinutes) ||
+        input.timeLimitMinutes < 1 ||
+        input.timeLimitMinutes > 1440)
+    ) {
+      throw new BadRequestException(
+        'Time limit must be between 1 and 1440 minutes',
       );
     }
     if (input.allowMultipleFiles && !input.allowFile) {
@@ -224,6 +238,10 @@ export class ActivityService {
             assignment_group_id: input.assignmentGroupId ?? null,
             max_attempts:
               input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
+            time_limit_minutes:
+              input.kind === 'quiz'
+                ? (input.timeLimitMinutes ?? null)
+                : null,
             kind: input.kind,
             title,
             instructions: input.instructions ?? null,
@@ -276,6 +294,7 @@ export class ActivityService {
       allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number | null;
+      timeLimitMinutes?: number | null;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -323,6 +342,22 @@ export class ActivityService {
     }
     if (patch.maxAttempts !== undefined) {
       changes.max_attempts = patch.maxAttempts || null;
+    }
+    if (patch.timeLimitMinutes !== undefined) {
+      if (activity.kind !== 'quiz' && patch.timeLimitMinutes !== null) {
+        throw new BadRequestException('Only quizzes can have a time limit');
+      }
+      if (
+        patch.timeLimitMinutes !== null &&
+        (!Number.isInteger(patch.timeLimitMinutes) ||
+          patch.timeLimitMinutes < 1 ||
+          patch.timeLimitMinutes > 1440)
+      ) {
+        throw new BadRequestException(
+          'Time limit must be between 1 and 1440 minutes',
+        );
+      }
+      changes.time_limit_minutes = patch.timeLimitMinutes;
     }
 
     if (Object.keys(changes).length === 0) {
@@ -381,6 +416,7 @@ export class ActivityService {
       allowMultipleFiles: activity.allow_multiple_files,
       allowText: activity.allow_text,
       maxAttempts: activity.max_attempts,
+      timeLimitMinutes: activity.time_limit_minutes,
       omitFromFinalGrade: activity.omit_from_final_grade,
       rubricId: activity.rubric_id,
     };

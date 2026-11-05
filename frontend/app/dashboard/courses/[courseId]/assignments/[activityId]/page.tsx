@@ -90,6 +90,7 @@ export default function CourseActivityPage() {
   const draftPoints = useSignal("");
   const draftDueAt = useSignal("");
   const draftAttempts = useSignal("");
+  const draftTimeLimit = useSignal("");
   const draftGroup = useSignal("");
   const draftAllowMultipleFiles = useSignal(false);
 
@@ -134,6 +135,7 @@ export default function CourseActivityPage() {
     draftPoints.value = String(a.points);
     draftDueAt.value = toLocalInput(a.dueAt);
     draftAttempts.value = String(a.maxAttempts ?? 1);
+    draftTimeLimit.value = a.timeLimitMinutes?.toString() ?? "";
     draftGroup.value = a.assignmentGroupId ?? "";
     draftAllowMultipleFiles.value = a.allowMultipleFiles;
     editing.value = true;
@@ -169,6 +171,17 @@ export default function CourseActivityPage() {
       toast.error("Attempts must be 0 or more");
       return;
     }
+    const timeLimit = draftTimeLimit.value.trim()
+      ? Number(draftTimeLimit.value)
+      : null;
+    if (
+      activity.value?.kind === "quiz" &&
+      timeLimit !== null &&
+      (!Number.isInteger(timeLimit) || timeLimit < 1 || timeLimit > 1440)
+    ) {
+      toast.error("Time limit must be between 1 and 1440 minutes");
+      return;
+    }
 
     const ok = await patch(
       {
@@ -182,7 +195,9 @@ export default function CourseActivityPage() {
         ...(activity.value?.kind === "assignment"
           ? { allowMultipleFiles: draftAllowMultipleFiles.value }
           : {}),
-        ...(activity.value?.kind === "quiz" ? { maxAttempts: attempts } : {}),
+        ...(activity.value?.kind === "quiz"
+          ? { maxAttempts: attempts, timeLimitMinutes: timeLimit }
+          : {}),
       },
       "Saved",
     );
@@ -479,6 +494,7 @@ export default function CourseActivityPage() {
                 </Select>
               </div>
               {a.kind === "quiz" && (
+                <>
                 <div className="space-y-1">
                   <Label htmlFor="activityAttempts" className="text-xs">
                     Attempts (0 = unlimited)
@@ -491,6 +507,21 @@ export default function CourseActivityPage() {
                     onChange={(e) => (draftAttempts.value = e.target.value)}
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label htmlFor="quizTimeLimit" className="text-xs">
+                    Time limit (minutes)
+                  </Label>
+                  <Input
+                    id="quizTimeLimit"
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={draftTimeLimit.value}
+                    onChange={(e) => (draftTimeLimit.value = e.target.value)}
+                    placeholder="No time limit"
+                  />
+                </div>
+                </>
               )}
             </div>
             <div className="flex justify-end gap-2">

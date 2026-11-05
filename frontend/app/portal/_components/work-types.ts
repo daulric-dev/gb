@@ -41,7 +41,14 @@ export interface PortalWorkDetail {
   courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
+  timeLimitMinutes: number | null;
   attemptsUsed: number;
+  quizAttempt: {
+    startedAt: string;
+    expiresAt: string | null;
+    serverNow: string;
+    answers: { questionId: string; optionId: string | null; text: string | null }[];
+  } | null;
   /** How the work is marked, shown before and after marking. */
   rubric?: Rubric | null;
   /** The levels this student was given; only once the mark is final. */
