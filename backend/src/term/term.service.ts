@@ -14,6 +14,7 @@ import { serializeTerm, type TermRow } from './term.rows';
 import { CacheService } from '@/cache/cache.service';
 import { CreateTermDto } from './dto/create-term.dto';
 import { UpdateTermDto } from './dto/update-term.dto';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 const TERM_TTL = 60 * 60 * 24 * 30;
 
@@ -34,6 +35,7 @@ export class TermService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly auditLog?: AuditLogService,
   ) {}
 
   async create(userId: string, dto: CreateTermDto) {
@@ -45,6 +47,7 @@ export class TermService {
     if (!name) throw new BadRequestException('Give the term a name');
 
     await this.assertYearInUserSchool(userId, dto.academicYearId);
+    const schoolId = await this.requireSchoolId(userId);
 
     const sortOrder =
       dto.sortOrder ??
@@ -54,14 +57,34 @@ export class TermService {
     let term: TermRow;
     try {
       term = serializeTerm(
-        await this.prisma.term.create({
-          data: {
-            academic_year_id: dto.academicYearId,
-            name,
-            start_date: parseDateOnly(dto.startDate),
-            end_date: parseDateOnly(dto.endDate),
-            sort_order: sortOrder,
-          },
+        await this.prisma.$transaction(async (tx) => {
+          const created = await tx.term.create({
+            data: {
+              academic_year_id: dto.academicYearId,
+              name,
+              start_date: parseDateOnly(dto.startDate),
+              end_date: parseDateOnly(dto.endDate),
+              sort_order: sortOrder,
+            },
+          });
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: 'term',
+              entityId: created.id,
+              action: 'create',
+              changes: auditChanges(null, {
+                academic_year_id: created.academic_year_id,
+                name: created.name,
+                start_date: created.start_date,
+                end_date: created.end_date,
+                sort_order: created.sort_order,
+              }),
+            },
+          );
+          return created;
         }),
       );
     } catch (err) {
@@ -126,6 +149,7 @@ export class TermService {
     // findOne enforces school scope; if the term isn't in the caller's school,
     // this throws NotFoundException before any write happens.
     const current = await this.findOne(userId, termId);
+    const schoolId = await this.requireSchoolId(userId);
 
     // Check the dates as they will be after the update, so moving only one
     // end cannot cross the other.
@@ -155,9 +179,39 @@ export class TermService {
     let data: TermRow;
     try {
       data = serializeTerm(
-        await this.prisma.term.update({
-          where: { id: termId },
-          data: updateData,
+        await this.prisma.$transaction(async (tx) => {
+          const before = await tx.term.findUniqueOrThrow({
+            where: { id: termId },
+          });
+          const updated = await tx.term.update({
+            where: { id: termId },
+            data: updateData,
+          });
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: 'term',
+              entityId: termId,
+              action: 'update',
+              changes: auditChanges(
+                {
+                  name: before.name,
+                  start_date: before.start_date,
+                  end_date: before.end_date,
+                  sort_order: before.sort_order,
+                },
+                {
+                  name: updated.name,
+                  start_date: updated.start_date,
+                  end_date: updated.end_date,
+                  sort_order: updated.sort_order,
+                },
+              ),
+            },
+          );
+          return updated;
         }),
       );
     } catch (err) {
@@ -183,7 +237,29 @@ export class TermService {
     const current = await this.findOne(userId, termId);
 
     try {
-      await this.prisma.term.deleteMany({ where: { id: termId } });
+      const schoolId = await this.requireSchoolId(userId);
+      await this.prisma.$transaction(async (tx) => {
+        await tx.term.deleteMany({ where: { id: termId } });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: userId },
+          {
+            entity: 'term',
+            entityId: termId,
+            action: 'delete',
+            changes: auditChanges(
+              {
+                name: current.name,
+                start_date: current.start_date,
+                end_date: current.end_date,
+                sort_order: current.sort_order,
+              },
+              null,
+            ),
+          },
+        );
+      });
     } catch (err) {
       if (isForeignKeyViolation(err)) {
         throw new ConflictException(

@@ -95,7 +95,11 @@ export class SchoolController {
   async updateUploadLimit(@Req() req: any, @Body() dto: UpdateUploadLimitDto) {
     const userId: string = req.user.id;
     const schoolId = await this.activeSchool(userId);
-    const raw = await this.uploadLimits.setForSchool(schoolId, dto.maxUploadMb);
+    const raw = await this.uploadLimits.setForSchool(
+      schoolId,
+      dto.maxUploadMb,
+      userId,
+    );
     return this.versioning.resolve(req, 'school.uploadLimit')(raw);
   }
 
@@ -115,7 +119,11 @@ export class SchoolController {
   @Patch('current/features')
   async updateFeatures(@Req() req: any, @Body() dto: UpdateFeaturesDto) {
     const schoolId = await this.activeSchool(req.user.id as string);
-    return this.features.updateSchoolFeatures(schoolId, dto.features);
+    return this.features.updateSchoolFeatures(
+      schoolId,
+      dto.features,
+      req.user.id as string,
+    );
   }
 
   /**
@@ -184,7 +192,7 @@ export class SchoolController {
   @HttpCode(200)
   async logoComplete(@Req() req: any, @Body() dto: CompleteUploadDto) {
     const schoolId = await this.activeSchool(req.user.id as string);
-    return this.logos.complete(schoolId, dto.path);
+    return this.logos.complete(schoolId, dto.path, req.user.id as string);
   }
 
   /** Remove the logo; clients fall back to the app mark. */
@@ -192,7 +200,7 @@ export class SchoolController {
   @Delete('current/logo')
   async logoRemove(@Req() req: any) {
     const schoolId = await this.activeSchool(req.user.id as string);
-    return this.logos.remove(schoolId);
+    return this.logos.remove(schoolId, req.user.id as string);
   }
 
   @Post('leave')

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isUniqueViolation } from '@/common/db-values';
 import {
@@ -54,6 +55,7 @@ export class AssignmentGroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    private readonly auditLog?: AuditLogService,
   ) {}
 
   /** Every group in a course, in display order. Used by the gradebook too. */
@@ -101,7 +103,11 @@ export class AssignmentGroupService {
       dropHighest?: number;
     },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const name = input.name.trim();
     if (!name) throw new BadRequestException('Give the group a name');
@@ -113,21 +119,45 @@ export class AssignmentGroupService {
     });
 
     try {
-      const data = await this.prisma.assignment_group.create({
-        data: {
-          course_id: courseId,
-          name,
-          weight: input.weight ?? null,
-          drop_lowest: input.dropLowest ?? 0,
-          drop_highest: input.dropHighest ?? 0,
-          position: (last?.position ?? -1) + 1,
-        },
-        select: GROUP_SELECT,
+      const data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.assignment_group.create({
+          data: {
+            course_id: courseId,
+            name,
+            weight: input.weight ?? null,
+            drop_lowest: input.dropLowest ?? 0,
+            drop_highest: input.dropHighest ?? 0,
+            position: (last?.position ?? -1) + 1,
+          },
+          select: GROUP_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'assignment_group',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, this.groupAuditFields(created)),
+          },
+        );
+        return created;
       });
       return toAssignmentGroup(data);
     } catch (error) {
       this.nameConflict(error);
     }
+  }
+
+  private groupAuditFields(group: any) {
+    return {
+      name: group.name,
+      weight: group.weight === null ? null : Number(group.weight),
+      position: group.position,
+      dropLowest: group.drop_lowest,
+      dropHighest: group.drop_highest,
+    };
   }
 
   async update(
@@ -141,7 +171,11 @@ export class AssignmentGroupService {
       dropHighest?: number;
     },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const changes: Prisma.assignment_groupUpdateManyMutationInput = {};
     if (patch.name !== undefined) {
@@ -161,10 +195,34 @@ export class AssignmentGroupService {
 
     let data;
     try {
-      [data] = await this.prisma.assignment_group.updateManyAndReturn({
-        where: { id: groupId, course_id: courseId },
-        data: changes,
-        select: GROUP_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.assignment_group.findFirst({
+          where: { id: groupId, course_id: courseId },
+          select: GROUP_SELECT,
+        });
+        if (!before) return undefined;
+        const [updated] = await tx.assignment_group.updateManyAndReturn({
+          where: { id: groupId, course_id: courseId },
+          data: changes,
+          select: GROUP_SELECT,
+        });
+        if (updated) {
+          await this.auditLog?.record(
+            tx,
+            course.school_id,
+            { id: userId },
+            {
+              entity: 'assignment_group',
+              entityId: groupId,
+              action: 'update',
+              changes: auditChanges(
+                this.groupAuditFields(before),
+                this.groupAuditFields(updated),
+              ),
+            },
+          );
+        }
+        return updated;
       });
     } catch (error) {
       this.nameConflict(error);
@@ -175,13 +233,40 @@ export class AssignmentGroupService {
 
   /** Its activities fall back to Ungrouped (FK on delete set null). */
   async remove(userId: string, courseId: string, groupId: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
-    let count: number;
+    let count = 0;
     try {
-      ({ count } = await this.prisma.assignment_group.deleteMany({
-        where: { id: groupId, course_id: courseId },
-      }));
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.assignment_group.findFirst({
+          where: { id: groupId, course_id: courseId },
+          select: GROUP_SELECT,
+        });
+        if (!before) {
+          count = 0;
+          return;
+        }
+        ({ count } = await tx.assignment_group.deleteMany({
+          where: { id: groupId, course_id: courseId },
+        }));
+        if (count > 0) {
+          await this.auditLog?.record(
+            tx,
+            course.school_id,
+            { id: userId },
+            {
+              entity: 'assignment_group',
+              entityId: groupId,
+              action: 'delete',
+              changes: auditChanges(this.groupAuditFields(before), null),
+            },
+          );
+        }
+      });
     } catch (error) {
       this.logger.error(
         `Failed to delete assignment group: ${(error as Error).message}`,
@@ -199,27 +284,50 @@ export class AssignmentGroupService {
    * list cannot drop a group off the end.
    */
   async reorder(userId: string, courseId: string, groupIds: string[]) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
-    const current = await this.loadForCourse(courseId);
-    const known = new Set(current.map((g) => g.id) as Array<string>);
+    const current: ReturnType<typeof toAssignmentGroup>[] =
+      await this.loadForCourse(courseId);
+    const known = new Set<string>(current.map((g) => g.id));
     if (groupIds.some((id) => !known.has(id))) {
       throw new NotFoundException('Assignment group not found');
     }
 
     const sent = [...new Set(groupIds)];
-    const rest = current.map((g) => g.id).filter((id: string) => !sent.includes(id));
+    const rest = current
+      .map((g) => g.id)
+      .filter((id: string) => !sent.includes(id));
     const order = [...sent, ...rest];
 
     try {
-      await this.prisma.$transaction(
-        order.map((id, i) =>
-          this.prisma.assignment_group.updateMany({
-            where: { id, course_id: courseId },
-            data: { position: i },
-          }),
-        ),
-      );
+      await this.prisma.$transaction(async (tx) => {
+        await Promise.all(
+          order.map((id, i) =>
+            tx.assignment_group.updateMany({
+              where: { id, course_id: courseId },
+              data: { position: i },
+            }),
+          ),
+        );
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'assignment_group',
+            entityId: null,
+            action: 'update',
+            changes: auditChanges(
+              Object.fromEntries(current.map((g) => [g.id, g.position])),
+              Object.fromEntries(order.map((id, i) => [id, i])),
+            ),
+          },
+        );
+      });
     } catch (error) {
       this.logger.error(
         `Failed to reorder groups: ${(error as Error).message}`,

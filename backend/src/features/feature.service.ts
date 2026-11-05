@@ -17,6 +17,7 @@ import {
   type FeatureMap,
 } from './feature.catalog';
 import { FeatureDisabledException } from './feature-disabled.exception';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 /** Short: a change is invalidated on this replica, and others catch up. */
 const FEATURE_TTL = 30; // seconds
@@ -60,6 +61,7 @@ export class FeatureService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly auditLog?: AuditLogService,
   ) {}
 
   // --- lookups ---------------------------------------------------------------
@@ -120,6 +122,7 @@ export class FeatureService {
   /** Merge `{ key: boolean }` into the organisation's overrides. */
   async updateOrganisationFeatures(
     patch: FeaturePatch,
+    actorId?: string,
   ): Promise<OrganisationFeatureRow[]> {
     const changes = validatePatch(patch);
     const org = await this.prisma.organisation.findFirst({
@@ -136,14 +139,36 @@ export class FeatureService {
     }
     Object.assign(stored, changes);
 
-    await this.prisma.organisation.update({
-      where: { id: org.id },
-      data: {
-        features: stored,
-        updated_at: new Date(),
-      },
+    const before = organisationSettings(org.features);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.organisation.update({
+        where: { id: org.id },
+        data: {
+          features: stored,
+          updated_at: new Date(),
+        },
+      });
+      if (actorId) {
+        const keys = Object.keys(changes) as FeatureKey[];
+        await this.auditLog?.record(
+          tx,
+          null,
+          { id: actorId },
+          {
+            entity: 'platform_features',
+            entityId: org.id,
+            action: 'update',
+            changes: auditChanges(
+              Object.fromEntries(keys.map((key) => [key, before[key]])),
+              Object.fromEntries(keys.map((key) => [key, changes[key]])),
+            ),
+          },
+        );
+      }
     });
-    this.logger.log(`Organisation features changed: ${JSON.stringify(changes)}`);
+    this.logger.log(
+      `Organisation features changed: ${JSON.stringify(changes)}`,
+    );
     await this.invalidate();
     return this.organisationFeatures();
   }
@@ -174,10 +199,16 @@ export class FeatureService {
   async updateSchoolFeatures(
     schoolId: string,
     patch: FeaturePatch,
+    actorId?: string,
   ): Promise<SchoolFeatureRow[]> {
     const changes = validatePatch(patch);
-    const available = effectiveForOrganisation(await this.organisationSettings());
-    for (const [key, on] of Object.entries(changes) as [FeatureKey, boolean][]) {
+    const available = effectiveForOrganisation(
+      await this.organisationSettings(),
+    );
+    for (const [key, on] of Object.entries(changes) as [
+      FeatureKey,
+      boolean,
+    ][]) {
       if (on && !available[key]) {
         throw new BadRequestException(
           `${featureDefinition(key).label} is turned off for your organisation`,
@@ -196,12 +227,38 @@ export class FeatureService {
       if (on) off.delete(key as FeatureKey);
       else off.add(key as FeatureKey);
     }
-    await this.prisma.school.update({
-      where: { id: schoolId },
-      data: {
-        disabled_features: FEATURES.map((f) => f.key).filter((k) => off.has(k)),
-        updated_at: new Date(),
-      },
+    const before = Object.fromEntries(
+      Object.keys(changes).map((key) => [
+        key,
+        !school.disabled_features.includes(key),
+      ]),
+    );
+    const after = Object.fromEntries(
+      Object.keys(changes).map((key) => [key, changes[key]]),
+    );
+    await this.prisma.$transaction(async (tx) => {
+      await tx.school.update({
+        where: { id: schoolId },
+        data: {
+          disabled_features: FEATURES.map((f) => f.key).filter((k) =>
+            off.has(k),
+          ),
+          updated_at: new Date(),
+        },
+      });
+      if (actorId) {
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: actorId },
+          {
+            entity: 'school_features',
+            entityId: schoolId,
+            action: 'update',
+            changes: auditChanges(before, after),
+          },
+        );
+      }
     });
     this.logger.log(
       `School ${schoolId} features changed: ${JSON.stringify(changes)}`,
@@ -239,7 +296,9 @@ export class FeatureService {
   /** Drop cached settings and every profile (profiles carry `features`). */
   private async invalidate(schoolId?: string) {
     await Promise.all([
-      schoolId ? this.cache.delete(schoolKey(schoolId)) : this.cache.deleteByPrefix('features:'),
+      schoolId
+        ? this.cache.delete(schoolKey(schoolId))
+        : this.cache.deleteByPrefix('features:'),
       this.cache.delete(ORG_KEY),
       this.cache.deleteByPrefix('profile:'),
     ]);

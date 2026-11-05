@@ -3,9 +3,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { isNotFound } from '@/common/db-values';
 import { FileQueueService } from '@/queue/file-queue.service';
 import { SharePrincipalType, type ShareTargetDto } from './dto/share-file.dto';
@@ -29,6 +31,7 @@ export class FileShareService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: FileQueueService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   async list(fileId: string) {
@@ -52,21 +55,34 @@ export class FileShareService {
     let data: Prisma.file_shareGetPayload<{ select: typeof SHARE_COLUMNS }>[];
     try {
       // Re-sharing with a principal updates the existing row in place.
-      data = await this.prisma.$transaction(
-        targets.map((t) => {
+      data = await this.prisma.$transaction(async (tx) => {
+        const rows: Prisma.file_shareGetPayload<{
+          select: typeof SHARE_COLUMNS;
+        }>[] = [];
+        for (const t of targets) {
           const row = {
             school_id: schoolId,
             can_download: t.canDownload ?? false,
             created_by: createdBy,
           };
-          return this.prisma.file_share.upsert({
-            where: {
-              file_id_principal_type_principal_id: {
-                file_id: fileId,
-                principal_type: t.principalType,
-                principal_id: t.principalId,
-              },
+          const where = {
+            file_id_principal_type_principal_id: {
+              file_id: fileId,
+              principal_type: t.principalType,
+              principal_id: t.principalId,
             },
+          };
+          const before = await tx.file_share.findUnique({
+            where,
+            select: {
+              id: true,
+              principal_type: true,
+              principal_id: true,
+              can_download: true,
+            },
+          });
+          const saved = await tx.file_share.upsert({
+            where,
             create: {
               file_id: fileId,
               principal_type: t.principalType,
@@ -76,8 +92,24 @@ export class FileShareService {
             update: row,
             select: SHARE_COLUMNS,
           });
-        }),
-      );
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: createdBy },
+            {
+              entity: 'file_share',
+              entityId: saved.id,
+              action: before ? 'update' : 'create',
+              changes: auditChanges(
+                before ? shareAuditMetadata(before) : null,
+                shareAuditMetadata(saved),
+              ),
+            },
+          );
+          rows.push(saved);
+        }
+        return rows;
+      });
     } catch (error) {
       this.logger.error(
         `Failed to create shares for ${fileId}: ${(error as Error).message}`,
@@ -159,12 +191,44 @@ export class FileShareService {
     }
   }
 
-  async updateDownload(fileId: string, shareId: string, canDownload: boolean) {
+  async updateDownload(
+    fileId: string,
+    shareId: string,
+    canDownload: boolean,
+    actorId: string,
+    schoolId: string,
+  ) {
     try {
-      return await this.prisma.file_share.update({
-        where: { id: shareId, file_id: fileId },
-        data: { can_download: canDownload },
-        select: SHARE_COLUMNS,
+      return await this.prisma.$transaction(async (tx) => {
+        const before = await tx.file_share.findFirst({
+          where: { id: shareId, file_id: fileId },
+          select: {
+            id: true,
+            principal_type: true,
+            principal_id: true,
+            can_download: true,
+          },
+        });
+        const updated = await tx.file_share.update({
+          where: { id: shareId, file_id: fileId },
+          data: { can_download: canDownload },
+          select: SHARE_COLUMNS,
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: actorId },
+          {
+            entity: 'file_share',
+            entityId: updated.id,
+            action: 'update',
+            changes: auditChanges(
+              before ? shareAuditMetadata(before) : null,
+              shareAuditMetadata(updated),
+            ),
+          },
+        );
+        return updated;
       });
     } catch (error) {
       if (isNotFound(error)) throw new NotFoundException('Share not found');
@@ -172,12 +236,53 @@ export class FileShareService {
     }
   }
 
-  async revoke(fileId: string, shareId: string) {
-    await this.prisma.file_share.deleteMany({
-      where: { id: shareId, file_id: fileId },
+  async revoke(
+    fileId: string,
+    shareId: string,
+    actorId: string,
+    schoolId: string,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.file_share.findFirst({
+        where: { id: shareId, file_id: fileId },
+        select: {
+          id: true,
+          principal_type: true,
+          principal_id: true,
+          can_download: true,
+        },
+      });
+      await tx.file_share.deleteMany({
+        where: { id: shareId, file_id: fileId },
+      });
+      if (before) {
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: actorId },
+          {
+            entity: 'file_share',
+            entityId: shareId,
+            action: 'delete',
+            changes: auditChanges(shareAuditMetadata(before), null),
+          },
+        );
+      }
     });
     return { id: shareId, revoked: true };
   }
+}
+
+function shareAuditMetadata(row: {
+  principal_type: string;
+  principal_id: string;
+  can_download: boolean;
+}) {
+  return {
+    principal_type: row.principal_type,
+    principal_id: row.principal_id,
+    can_download: row.can_download,
+  };
 }
 
 /** Distinct principal ids of one type. */

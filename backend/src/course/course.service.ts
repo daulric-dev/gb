@@ -28,6 +28,7 @@ import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { plan } from '@/erasure/erasure-plan';
 import { optionalImageUrl } from '@/images/public-url';
 import type { CourseBannerColor } from './course-appearance';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 // No 0/O, 1/I/L: join codes get read off a board and typed on a phone.
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -43,14 +44,19 @@ export class CourseService {
     private readonly prisma: PrismaService,
     private readonly erasure: ErasureLogService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** course.created, after the course committed (new or copied). Fire and forget. */
   announceCreated(courseId: string, userId: string | null) {
-    void this.webhooks?.emitForCourse(courseId, 'course.created', async (course) => ({
-      course,
-      createdBy: await this.webhooks!.staffOrNull(userId),
-    }));
+    void this.webhooks?.emitForCourse(
+      courseId,
+      'course.created',
+      async (course) => ({
+        course,
+        createdBy: await this.webhooks!.staffOrNull(userId),
+      }),
+    );
   }
 
   /** student.enrolled / student.unenrolled for each student. Fire and forget. */
@@ -260,6 +266,23 @@ export class CourseService {
             role: 'teacher',
           },
         });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: userId },
+          {
+            entity: 'course',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              name: created.name,
+              code: created.code,
+              description: created.description,
+              academic_year_id: created.academic_year_id,
+              term_id: created.term_id,
+            }),
+          },
+        );
         return toCourseRow(created);
       });
     } catch (error) {
@@ -303,7 +326,8 @@ export class CourseService {
       changes.description = patch.description?.trim() || null;
     }
     if (patch.status !== undefined) changes.status = patch.status;
-    if (patch.bannerColor !== undefined) changes.banner_color = patch.bannerColor;
+    if (patch.bannerColor !== undefined)
+      changes.banner_color = patch.bannerColor;
     if (patch.gradeScaleId !== undefined) {
       changes.grade_scale_id = patch.gradeScaleId;
     }
@@ -350,20 +374,62 @@ export class CourseService {
 
     let data: CourseRow;
     try {
-      data = toCourseRow(
-        await this.prisma.course.update({
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.course.findUnique({
+          where: { id: courseId },
+          select: COURSE_SELECT,
+        });
+        const previous = before ?? course;
+        const updated = await tx.course.update({
           where: { id: courseId },
           data: changes,
           select: COURSE_SELECT,
-        }),
-      );
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'course',
+            entityId: updated.id,
+            action: 'update',
+            changes: auditChanges(
+              {
+                name: previous.name,
+                code: previous.code,
+                description: previous.description,
+                status: previous.status,
+                academic_year_id: previous.academic_year_id,
+                term_id: previous.term_id,
+                grade_scale_id: previous.grade_scale_id,
+                is_template: previous.is_template,
+                banner_color: previous.banner_color,
+              },
+              {
+                name: updated.name,
+                code: updated.code,
+                description: updated.description,
+                status: updated.status,
+                academic_year_id: updated.academic_year_id,
+                term_id: updated.term_id,
+                grade_scale_id: updated.grade_scale_id,
+                is_template: updated.is_template,
+                banner_color: updated.banner_color,
+              },
+            ),
+          },
+        );
+        return toCourseRow(updated);
+      });
     } catch (error) {
       this.logger.error(`Failed to update course: ${(error as Error).message}`);
       throw new BadRequestException('Failed to update course');
     }
 
     if (patch.status === 'archived' && course.status !== 'archived') {
-      void this.webhooks?.emitForCourse(courseId, 'course.archived', (ref) => ({ course: ref }));
+      void this.webhooks?.emitForCourse(courseId, 'course.archived', (ref) => ({
+        course: ref,
+      }));
     }
 
     const counts = await this.studentCounts([courseId]);
@@ -401,7 +467,39 @@ export class CourseService {
     // course, so this is an erasure of students' data: log it with it.
     try {
       await this.prisma.$transaction(async (tx) => {
-        await tx.course.deleteMany({ where: { id: courseId } });
+        const before = await tx.course.findUnique({
+          where: { id: courseId },
+          select: COURSE_SELECT,
+        });
+        const { count } = await tx.course.deleteMany({
+          where: { id: courseId },
+        });
+        if (count > 0 && before) {
+          await this.auditLog?.record(
+            tx,
+            course.school_id,
+            { id: userId },
+            {
+              entity: 'course',
+              entityId: courseId,
+              action: 'delete',
+              changes: auditChanges(
+                {
+                  name: before.name,
+                  code: before.code,
+                  description: before.description,
+                  status: before.status,
+                  academic_year_id: before.academic_year_id,
+                  term_id: before.term_id,
+                  grade_scale_id: before.grade_scale_id,
+                  is_template: before.is_template,
+                  banner_color: before.banner_color,
+                },
+                null,
+              ),
+            },
+          );
+        }
         await this.erasure.record(tx, {
           kind: 'course',
           subjectTable: 'course.course',
@@ -506,7 +604,10 @@ export class CourseService {
 
     const key = { course_id: course.id, student_id: studentId };
     const wasActive = await this.prisma.course_student
-      .findUnique({ where: { course_id_student_id: key }, select: { status: true } })
+      .findUnique({
+        where: { course_id_student_id: key },
+        select: { status: true },
+      })
       .then((r) => r?.status === 'active')
       .catch(() => false);
     try {
@@ -535,7 +636,9 @@ export class CourseService {
     }
 
     if (!wasActive) {
-      this.announceEnrolment(course.id, [studentId], 'student.enrolled', { via: 'join_code' });
+      this.announceEnrolment(course.id, [studentId], 'student.enrolled', {
+        via: 'join_code',
+      });
     }
     return this.toCourse(course);
   }
@@ -738,7 +841,11 @@ export class CourseService {
     const alreadyActive = new Set(
       (
         await this.prisma.course_student.findMany({
-          where: { course_id: courseId, student_id: { in: valid }, status: 'active' },
+          where: {
+            course_id: courseId,
+            student_id: { in: valid },
+            status: 'active',
+          },
           select: { student_id: true },
         })
       ).map((r) => r.student_id),
@@ -799,13 +906,16 @@ export class CourseService {
           })
         ).count;
       } else {
-        changed = (await this.prisma.course_student.deleteMany({ where })).count;
+        changed = (await this.prisma.course_student.deleteMany({ where }))
+          .count;
       }
     } catch {
       throw new BadRequestException('Failed to remove the student');
     }
     if (changed > 0) {
-      this.announceEnrolment(courseId, [studentId], 'student.unenrolled', { dropped: hasWork });
+      this.announceEnrolment(courseId, [studentId], 'student.unenrolled', {
+        dropped: hasWork,
+      });
     }
   }
 

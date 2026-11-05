@@ -61,6 +61,7 @@ function build(
   setup: (prisma: MockPrisma) => void,
   files: Partial<Record<string, any>> = {},
   access: ReturnType<typeof stubAccess> = stubAccess(),
+  auditLog?: { record: (...args: any[]) => Promise<void> },
 ) {
   const prisma = createMockPrisma();
   setup(prisma);
@@ -80,6 +81,8 @@ function build(
       ...files,
     } as any,
     access as any,
+    undefined,
+    auditLog as any,
   );
   return { service, prisma };
 }
@@ -99,6 +102,49 @@ function studentTables(
 }
 
 describe('SubmissionService file handling', () => {
+  test('audits a durable assignment hand-in with the student account as actor', async () => {
+    let args: any[] = [];
+    const auditLog = {
+      record: async (...recordArgs: any[]) => {
+        args = recordArgs;
+      },
+    };
+    const { service, prisma } = build(
+      (p) => {
+        studentTables()(p);
+        p.submission.findUnique.mockResolvedValue({
+          id: 'sub-1',
+          status: 'draft',
+          text_body: null,
+          file_id: null,
+        });
+        p.submission.updateManyAndReturn.mockResolvedValue([
+          { id: 'sub-1', status: 'submitted', submitted_at: new Date() },
+        ]);
+      },
+      {},
+      stubAccess(),
+      auditLog,
+    );
+
+    await service.submitAssignment('stu-1', 'act-1', { textBody: 'My essay' });
+
+    expect(args[0]).toBe(prisma);
+    expect(args[1]).toBe('school-1');
+    expect(args[2]).toEqual({ id: 'user-1' });
+    expect(args[3].entity).toBe('submission');
+    expect(args[3].entityId).toBe('sub-1');
+    expect(args[3].action).toBe('update');
+    expect(args[3].changes.status).toEqual({
+      before: 'draft',
+      after: 'submitted',
+    });
+    expect(args[3].changes.textBody).toEqual({
+      before: null,
+      after: 'My essay',
+    });
+  });
+
   test('finaliseUploadedFile stores the uploaded id on the draft', async () => {
     const { service, prisma } = build((p) => {
       studentTables()(p);
@@ -580,7 +626,8 @@ describe('SubmissionService student access', () => {
         activity: {
           ...ACTIVITY,
           kind: 'quiz',
-          max_attempts: over.maxAttempts === undefined ? null : over.maxAttempts,
+          max_attempts:
+            over.maxAttempts === undefined ? null : over.maxAttempts,
         },
         submission: over.draft ?? {
           id: 'sub-1',
@@ -746,14 +793,12 @@ describe('SubmissionService student access', () => {
         activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
       })(p);
       // Missing on the first look; the other request's row on the second.
-      p.submission.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValue({
-          id: 'sub-other',
-          status: 'draft',
-          attempt_count: 0,
-          graded_by: null,
-        });
+      p.submission.findFirst.mockResolvedValueOnce(null).mockResolvedValue({
+        id: 'sub-other',
+        status: 'draft',
+        attempt_count: 0,
+        graded_by: null,
+      });
       p.submission.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
           code: 'P2002',
@@ -900,14 +945,16 @@ describe('SubmissionService marking', () => {
   });
 
   test('a bare score clears the rubric levels from an earlier rubric mark', async () => {
-    const { service, prisma } = build(markTables({ existing: { id: 'sub-1' } }));
+    const { service, prisma } = build(
+      markTables({ existing: { id: 'sub-1' } }),
+    );
 
     await service.grade('user-1', 'act-1', 'stu-1', { score: 12 });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(prisma.rubric_assessment.deleteMany.mock.calls[0][0].where).toEqual(
-      { submission_id: 'sub-1' },
-    );
+    expect(prisma.rubric_assessment.deleteMany.mock.calls[0][0].where).toEqual({
+      submission_id: 'sub-1',
+    });
   });
 
   test('the score is checked against the points under a share lock', async () => {

@@ -1,0 +1,21 @@
+/// Append-only history of changes to user-managed records. Values are
+/// redacted by AuditLogService before they are stored.
+model audit_log {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope       String   @default("school")
+  school_id   String?  @db.Uuid
+  school_name String?
+  actor_id    String?  @db.Uuid
+  actor_name  String?
+  actor_email String?
+  entity      String
+  entity_id   String?
+  action      String
+  changes     Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  school      school?  @relation(fields: [school_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([school_id, created_at(sort: Desc), id(sort: Desc)], map: "audit_log_school_created_idx")
+  @@index([created_at(sort: Desc), id(sort: Desc)], map: "audit_log_created_idx")
+  @@schema("public")
+}

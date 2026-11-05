@@ -95,6 +95,28 @@ describe('PermissionGuard', () => {
     expect(await guard.canActivate(ctx)).toBe(true);
   });
 
+  test('audit log access requires an explicit grant for a non-admin member', async () => {
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(membership('member'));
+    const guard = guardWith(prisma, 'audit-log:read');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
+
+    expect(await expectRejection(guard.canActivate(ctx))).toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  test('a custom role can grant audit log access', async () => {
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue(
+      membership('member', ['audit-log:read']),
+    );
+    const guard = guardWith(prisma, 'audit-log:read');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
+
+    expect(await guard.canActivate(ctx)).toBe(true);
+  });
+
   test('a student is denied every staff route', async () => {
     // A claimed student has a school_id, so the guard resolves a school - but
     // students have no school_management row, which is what fails them closed.
@@ -166,7 +188,11 @@ describe('computeEffectivePermissions: organisation admins', () => {
   test('get the full catalog without a membership', async () => {
     const prisma = createMockPrisma();
     prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
-    const effective = await computeEffectivePermissions(prisma as any, 'u1', 's1');
+    const effective = await computeEffectivePermissions(
+      prisma as any,
+      'u1',
+      's1',
+    );
     expect(effective).toEqual({
       member: true,
       role: 'admin',
@@ -179,14 +205,22 @@ describe('computeEffectivePermissions: organisation admins', () => {
     const prisma = createMockPrisma();
     prisma.school_management.findFirst.mockResolvedValue(membership('teacher'));
     prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
-    const effective = await computeEffectivePermissions(prisma as any, 'u1', 's1');
+    const effective = await computeEffectivePermissions(
+      prisma as any,
+      'u1',
+      's1',
+    );
     expect(effective.role).toBe('admin');
     expect(effective.keys).toContain('course:update');
   });
 
   test('a plain stranger stays a non-member', async () => {
     const prisma = createMockPrisma();
-    const effective = await computeEffectivePermissions(prisma as any, 'u1', 's1');
+    const effective = await computeEffectivePermissions(
+      prisma as any,
+      'u1',
+      's1',
+    );
     expect(effective).toEqual({ member: false, role: null, keys: [] });
   });
 });

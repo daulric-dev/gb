@@ -81,9 +81,11 @@ describe('effectiveUploadMb', () => {
 });
 
 function makeService(env: Record<string, string> = {}) {
-  for (const key of ['UPLOAD_MAX_MB', 'UPLOAD_DEFAULT_MB']) delete process.env[key];
+  for (const key of ['UPLOAD_MAX_MB', 'UPLOAD_DEFAULT_MB'])
+    delete process.env[key];
   Object.assign(process.env, env);
   const prisma = createMockPrisma();
+  prisma.school.findUniqueOrThrow.mockResolvedValue({ max_upload_mb: null });
   const cache = createMockCacheService();
   const svc = new UploadLimitService(prisma as any, cache as any);
   return { svc, prisma, cache };

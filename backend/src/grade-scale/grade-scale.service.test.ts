@@ -51,10 +51,12 @@ describe('GradeScaleService', () => {
   let prisma: MockPrisma;
   let cache: ReturnType<typeof createMockCacheService>;
   let service: GradeScaleService;
+  let auditCalls: any[];
 
   beforeEach(() => {
     prisma = createMockPrisma();
     cache = createMockCacheService();
+    auditCalls = [];
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
     prisma.grade_scale.findUnique.mockResolvedValue(scaleRow());
     prisma.grade_scale.create.mockImplementation(async ({ data }) => ({
@@ -67,7 +69,11 @@ describe('GradeScaleService', () => {
       ...scaleRow({ id: where.id }),
       ...data,
     }));
-    service = new GradeScaleService(prisma as any, cache as any);
+    service = new GradeScaleService(prisma as any, cache as any, {
+      record: async (...args: any[]) => {
+        auditCalls.push(args);
+      },
+    } as any);
   });
 
   describe('school resolution', () => {
@@ -347,6 +353,15 @@ describe('GradeScaleService', () => {
       // Not a default: the existing default is left alone.
       expect(prisma.grade_scale.updateMany).not.toHaveBeenCalled();
       expect(res.id).toBe('gs-new');
+      expect(auditCalls).toHaveLength(1);
+      expect(auditCalls[0][1]).toBe('school-1');
+      expect(auditCalls[0][2]).toEqual({ id: 'u1' });
+      expect(auditCalls[0][3]).toMatchObject({
+        entity: 'grade_scale',
+        entityId: 'gs-new',
+        action: 'create',
+      });
+      expect(auditCalls[0][0]).toBe(prisma);
       expect(res.isDefault).toBe(false);
     });
 
@@ -540,6 +555,16 @@ describe('GradeScaleService', () => {
       const del = prisma.grade_scale_band.deleteMany.mock.invocationCallOrder[0];
       const ins = prisma.grade_scale_band.createMany.mock.invocationCallOrder[0];
       expect(del).toBeLessThan(ins);
+      expect(auditCalls).toHaveLength(1);
+      expect(auditCalls[0][1]).toBe('school-1');
+      expect(auditCalls[0][2]).toEqual({ id: 'u1' });
+      expect(auditCalls[0][3]).toMatchObject({
+        entity: 'grade_scale',
+        entityId: 'gs-1',
+        action: 'update',
+      });
+      expect(auditCalls[0][3].changes.bands.before).toEqual([]);
+      expect(auditCalls[0][3].changes.bands.after).toHaveLength(3);
     });
 
     test('404 for another school scale, bands untouched', async () => {

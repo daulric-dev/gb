@@ -10,6 +10,7 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isoDate } from '@/common/db-values';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { OCCURRED_AT, plan } from '@/erasure/erasure-plan';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
@@ -127,6 +128,7 @@ export class DiscussionService {
     private readonly access: CourseAccessService,
     private readonly erasure: ErasureLogService,
     @Optional() private readonly notices?: CourseNotificationService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ── who is asking ─────────────────────────────────────────────────────────
@@ -294,18 +296,27 @@ export class DiscussionService {
     const staff = this.isStaff(ctx);
     let data: TopicRecord;
     try {
-      data = await this.prisma.discussion_topic.create({
-        data: {
-          course_id: ctx.course.id,
-          author_user_profile_id: ctx.userId,
-          title,
-          body: dto.body ?? '',
-          is_pinned: staff ? (dto.isPinned ?? false) : false,
-          is_locked: staff ? (dto.isLocked ?? false) : false,
-          is_published: staff ? (dto.isPublished ?? true) : true,
-          require_initial_post: staff ? (dto.requireInitialPost ?? false) : false,
-        },
-        select: TOPIC_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.discussion_topic.create({
+          data: {
+            course_id: ctx.course.id,
+            author_user_profile_id: ctx.userId,
+            title,
+            body: dto.body ?? '',
+            is_pinned: staff ? (dto.isPinned ?? false) : false,
+            is_locked: staff ? (dto.isLocked ?? false) : false,
+            is_published: staff ? (dto.isPublished ?? true) : true,
+            require_initial_post: staff ? (dto.requireInitialPost ?? false) : false,
+          },
+          select: TOPIC_SELECT,
+        });
+        await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+          entity: 'discussion_topic',
+          entityId: created.id,
+          action: 'create',
+          changes: auditChanges(null, this.topicAuditFields(created)),
+        });
+        return created;
       });
     } catch (err) {
       this.logger.error(`Failed to create topic: ${(err as Error).message}`);
@@ -371,10 +382,22 @@ export class DiscussionService {
 
     let data: TopicRecord;
     try {
-      data = await this.prisma.discussion_topic.update({
-        where: { id: topic.id },
-        data: changes,
-        select: TOPIC_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.discussion_topic.update({
+          where: { id: topic.id },
+          data: changes,
+          select: TOPIC_SELECT,
+        });
+        await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+          entity: 'discussion_topic',
+          entityId: topic.id,
+          action: 'update',
+          changes: auditChanges(
+            this.topicAuditFields(topic),
+            this.topicAuditFields(updated),
+          ),
+        });
+        return updated;
       });
     } catch (err) {
       this.logger.error(`Failed to update topic: ${(err as Error).message}`);
@@ -417,6 +440,12 @@ export class DiscussionService {
     // with the delete.
     await this.prisma.$transaction(async (tx) => {
       await tx.discussion_topic.deleteMany({ where: { id: topic.id } });
+      await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+        entity: 'discussion_topic',
+        entityId: topic.id,
+        action: 'delete',
+        changes: auditChanges(this.topicAuditFields(topic), null),
+      });
       await this.erasure.record(tx, {
         kind: 'discussion_topic',
         subjectTable: 'course.discussion_topic',
@@ -458,8 +487,8 @@ export class DiscussionService {
     let data: ReplyRecord;
     try {
       const now = new Date();
-      [data] = await this.prisma.$transaction([
-        this.prisma.discussion_reply.create({
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.discussion_reply.create({
           data: {
             topic_id: topic.id,
             course_id: ctx.course.id,
@@ -469,13 +498,23 @@ export class DiscussionService {
             created_at: now,
           },
           select: REPLY_SELECT,
-        }),
-        this.prisma.discussion_topic.update({
+        });
+        await tx.discussion_topic.update({
           where: { id: topic.id },
           data: { last_reply_at: now },
           select: { id: true },
-        }),
-      ]);
+        });
+        await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+          entity: 'discussion_reply',
+          entityId: created.id,
+          action: 'create',
+          changes: auditChanges(null, {
+            body: created.body,
+            parent_id: created.parent_id,
+          }),
+        });
+        return created;
+      });
     } catch (err) {
       this.logger.error(`Failed to post reply: ${(err as Error).message}`);
       throw new BadRequestException('Failed to post the reply');
@@ -516,10 +555,22 @@ export class DiscussionService {
 
     let data: ReplyRecord;
     try {
-      data = await this.prisma.discussion_reply.update({
-        where: { id: reply.id },
-        data: { body, edited_at: new Date() },
-        select: REPLY_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.discussion_reply.update({
+          where: { id: reply.id },
+          data: { body, edited_at: new Date() },
+          select: REPLY_SELECT,
+        });
+        await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+          entity: 'discussion_reply',
+          entityId: reply.id,
+          action: 'update',
+          changes: auditChanges(
+            { body: reply.body },
+            { body: updated.body },
+          ),
+        });
+        return updated;
       });
     } catch (err) {
       this.logger.error(`Failed to update reply: ${(err as Error).message}`);
@@ -559,10 +610,20 @@ export class DiscussionService {
       });
 
       if (children > 0) {
+        const deletedAt = new Date();
         await tx.discussion_reply.update({
           where: { id: reply.id },
-          data: { body: '', deleted_at: new Date() },
+          data: { body: '', deleted_at: deletedAt },
           select: { id: true },
+        });
+        await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+          entity: 'discussion_reply',
+          entityId: reply.id,
+          action: 'update',
+          changes: auditChanges(
+            { body: reply.body, deleted_at: null },
+            { body: '', deleted_at: deletedAt },
+          ),
         });
         await this.erasure.record(tx, {
           ...entry,
@@ -579,16 +640,39 @@ export class DiscussionService {
       }
 
       await tx.discussion_reply.deleteMany({ where: { id: reply.id } });
+      await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+        entity: 'discussion_reply',
+        entityId: reply.id,
+        action: 'delete',
+        changes: auditChanges(
+          { body: reply.body, parent_id: reply.parent_id },
+          null,
+        ),
+      });
       const removed = [reply.id];
 
       if (reply.parent_id) {
         const parent = await tx.discussion_reply.findUnique({
           where: { id: reply.parent_id },
-          select: { deleted_at: true, _count: { select: { children: true } } },
+          select: {
+            body: true,
+            parent_id: true,
+            deleted_at: true,
+            _count: { select: { children: true } },
+          },
         });
         if (parent?.deleted_at && parent._count.children === 0) {
           await tx.discussion_reply.deleteMany({
             where: { id: reply.parent_id },
+          });
+          await this.auditLog?.record(tx, ctx.course.school_id, { id: ctx.userId }, {
+            entity: 'discussion_reply',
+            entityId: reply.parent_id,
+            action: 'delete',
+            changes: auditChanges(
+              { body: parent.body, parent_id: parent.parent_id },
+              null,
+            ),
           });
           removed.push(reply.parent_id);
         }
@@ -616,6 +700,17 @@ export class DiscussionService {
 
   private isStaff(ctx: DiscussionCtx): boolean {
     return ctx.role !== 'student';
+  }
+
+  private topicAuditFields(topic: TopicRecord) {
+    return {
+      title: topic.title,
+      body: topic.body,
+      is_pinned: topic.is_pinned,
+      is_locked: topic.is_locked,
+      is_published: topic.is_published,
+      require_initial_post: topic.require_initial_post,
+    };
   }
 
   private isModerator(ctx: DiscussionCtx): boolean {
@@ -664,7 +759,7 @@ export class DiscussionService {
   private async loadReply(topicId: string, replyId: string) {
     const reply = await this.prisma.discussion_reply.findFirst({
       where: { id: replyId, topic_id: topicId, deleted_at: null },
-      select: { id: true, parent_id: true, author_user_profile_id: true },
+      select: { id: true, parent_id: true, author_user_profile_id: true, body: true },
     });
     if (!reply) throw new NotFoundException('Reply not found');
     return reply;

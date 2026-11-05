@@ -1,6 +1,12 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { ImagesService } from '@/images/images.service';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import {
   CourseAccessService,
   MANAGE_ROLES,
@@ -27,6 +33,7 @@ export class CourseBannerService {
     private readonly courses: CourseService,
     private readonly images: ImagesService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   async createTicket(
@@ -60,10 +67,30 @@ export class CourseBannerService {
     await this.images.finalizeImage(path, served, COURSE_BANNER_MAX_BYTES);
 
     try {
-      await this.prisma.course.update({
-        where: { id: courseId },
-        data: { banner_image_path: served, updated_at: new Date() },
-        select: { id: true },
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.course.findUnique({
+          where: { id: courseId },
+          select: { banner_image_path: true },
+        });
+        await tx.course.update({
+          where: { id: courseId },
+          data: { banner_image_path: served, updated_at: new Date() },
+          select: { id: true },
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'course',
+            entityId: courseId,
+            action: 'update',
+            changes: auditChanges(
+              { banner_image_path: before?.banner_image_path ?? null },
+              { banner_image_path: served },
+            ),
+          },
+        );
       });
     } catch (error) {
       this.logger.error(
@@ -88,10 +115,30 @@ export class CourseBannerService {
     );
     if (course.banner_image_path) {
       try {
-        await this.prisma.course.update({
-          where: { id: courseId },
-          data: { banner_image_path: null, updated_at: new Date() },
-          select: { id: true },
+        await this.prisma.$transaction(async (tx) => {
+          const before = await tx.course.findUnique({
+            where: { id: courseId },
+            select: { banner_image_path: true },
+          });
+          await tx.course.update({
+            where: { id: courseId },
+            data: { banner_image_path: null, updated_at: new Date() },
+            select: { id: true },
+          });
+          await this.auditLog?.record(
+            tx,
+            course.school_id,
+            { id: userId },
+            {
+              entity: 'course',
+              entityId: courseId,
+              action: 'update',
+              changes: auditChanges(
+                { banner_image_path: before?.banner_image_path ?? null },
+                { banner_image_path: null },
+              ),
+            },
+          );
         });
       } catch (error) {
         this.logger.error(

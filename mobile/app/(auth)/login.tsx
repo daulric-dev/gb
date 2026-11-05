@@ -15,6 +15,7 @@ import {
   type SsoProvider,
 } from "@/lib/sso";
 import { useAuth } from "@/providers/AuthProvider";
+import { useApiServer } from "@/providers/ApiServerProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -42,7 +43,8 @@ export default function LoginScreen() {
   const router = useRouter();
   const toast = useToast();
   const { colors } = useTheme();
-  const { refresh } = useAuth();
+  const { refresh, logout } = useAuth();
+  const { serverUrl, disconnect } = useApiServer();
   const params = useLocalSearchParams<{ ssoError?: string }>();
 
   const [email, setEmail] = useState("");
@@ -56,6 +58,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(
     typeof params.ssoError === "string" ? ssoErrorMessage(params.ssoError) : null,
   );
+  const [switchingServer, setSwitchingServer] = useState(false);
 
   useEffect(() => {
     if (typeof params.ssoError === "string")
@@ -178,6 +181,19 @@ export default function LoginScreen() {
       return;
     }
     void startSso(provider, trimmed);
+  }
+
+  async function changeServer() {
+    if (switchingServer) return;
+    setSwitchingServer(true);
+    try {
+      await logout();
+      await disconnect();
+    } catch {
+      setError("Couldn't clear the saved server. Please try again.");
+    } finally {
+      setSwitchingServer(false);
+    }
   }
 
   const others = providers.filter((p) => p.id !== offered?.id);
@@ -308,6 +324,17 @@ export default function LoginScreen() {
           >
             By continuing, you agree to our Terms of Service and Privacy Policy.
           </Text>
+          {serverUrl ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={() => void changeServer()}
+              loading={switchingServer}
+              disabled={!!busy}
+            >
+              Change school server
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     </AuthShell>

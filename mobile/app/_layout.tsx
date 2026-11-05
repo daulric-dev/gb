@@ -13,6 +13,9 @@ import { UpdateGate } from "@/features/app-update/UpdateGate";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { clearOpenedFiles } from "@/lib/open-file";
 import { ErrorScreen } from "@/components/layout/ErrorScreen";
+import { Loading } from "@/components/layout/Loading";
+import { ServerSetupScreen } from "@/components/auth/ServerSetupScreen";
+import { ApiServerProvider, useApiServer } from "@/providers/ApiServerProvider";
 
 /** A render error anywhere shows a friendly screen with "Try again", never the error text. */
 export { ErrorScreen as ErrorBoundary };
@@ -65,14 +68,28 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <ToastProvider>
-            <AuthProvider>
-              <PermissionsProvider>
-                <RootNavigator />
-              </PermissionsProvider>
-            </AuthProvider>
+            <ApiServerProvider>
+              <ConfiguredApp />
+            </ApiServerProvider>
           </ToastProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+function ConfiguredApp() {
+  const { ready, serverUrl, error, connect } = useApiServer();
+
+  if (!ready) return <Loading />;
+  if (!serverUrl)
+    return <ServerSetupScreen error={error} onConnect={connect} />;
+
+  return (
+    <AuthProvider>
+      <PermissionsProvider>
+        <RootNavigator />
+      </PermissionsProvider>
+    </AuthProvider>
   );
 }

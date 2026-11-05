@@ -9,6 +9,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isoDate, isUniqueViolation, num } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import {
   CreateGradeScaleDto,
   GradeScaleType,
@@ -54,6 +55,7 @@ export class GradeScaleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async list(userId: string): Promise<GradeScaleSummary[]> {
@@ -104,7 +106,7 @@ export class GradeScaleService {
     // The scale and its bands land together or not at all.
     const scale = await this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {
-        await this.clearCurrentDefault(tx, schoolId);
+        await this.clearCurrentDefault(tx, schoolId, userId);
       }
 
       let created: ScaleRow;
@@ -132,6 +134,24 @@ export class GradeScaleService {
       }
 
       await this.insertBands(tx, created.id, dto.bands);
+      await this.auditLog.record(tx, schoolId, { id: userId }, {
+        entity: 'grade_scale',
+        entityId: created.id,
+        action: 'create',
+        changes: auditChanges(null, {
+          name: created.name,
+          scale_type: created.scale_type,
+          is_default: created.is_default,
+          bands: dto.bands.map((band, i) => ({
+            label: band.label,
+            min_percentage: band.minPercentage,
+            max_percentage: band.maxPercentage,
+            gpa_points: band.gpaPoints ?? null,
+            is_pass: band.isPass,
+            sort_order: band.sortOrder ?? i,
+          })),
+        }),
+      });
       return created;
     });
 
@@ -159,12 +179,23 @@ export class GradeScaleService {
     }
 
     const data = await this.prisma.$transaction(async (tx) => {
-      if (makeDefault) await this.clearCurrentDefault(tx, existing.school_id);
+      if (makeDefault)
+        await this.clearCurrentDefault(tx, existing.school_id, userId);
       try {
-        return (await tx.grade_scale.update({
+        const updated = (await tx.grade_scale.update({
           where: { id },
           data: patch,
         }));
+        await this.auditLog.record(tx, existing.school_id, { id: userId }, {
+          entity: 'grade_scale',
+          entityId: id,
+          action: 'update',
+          changes: auditChanges(
+            { name: existing.name, is_default: existing.is_default },
+            { name: updated.name, is_default: updated.is_default },
+          ),
+        });
+        return updated;
       } catch (err) {
         if (isUniqueViolation(err)) {
           throw new ConflictException(
@@ -192,6 +223,10 @@ export class GradeScaleService {
 
     // Clear and refill atomically so a failed insert keeps the old bands.
     await this.prisma.$transaction(async (tx) => {
+      const beforeBands = await tx.grade_scale_band.findMany({
+        where: { grade_scale_id: id },
+        orderBy: { sort_order: 'asc' },
+      });
       try {
         await tx.grade_scale_band.deleteMany({ where: { grade_scale_id: id } });
       } catch (err) {
@@ -203,6 +238,33 @@ export class GradeScaleService {
       await tx.grade_scale.updateMany({
         where: { id },
         data: { updated_by: userId, updated_at: new Date() },
+      });
+      await this.auditLog.record(tx, scale.school_id, { id: userId }, {
+        entity: 'grade_scale',
+        entityId: id,
+        action: 'update',
+        changes: auditChanges(
+          {
+            bands: beforeBands.map((band) => ({
+              label: band.label,
+              min_percentage: band.min_percentage,
+              max_percentage: band.max_percentage,
+              gpa_points: band.gpa_points,
+              is_pass: band.is_pass,
+              sort_order: band.sort_order,
+            })),
+          },
+          {
+            bands: dto.bands.map((band, i) => ({
+              label: band.label,
+              min_percentage: band.minPercentage,
+              max_percentage: band.maxPercentage,
+              gpa_points: band.gpaPoints ?? null,
+              is_pass: band.isPass,
+              sort_order: band.sortOrder ?? i,
+            })),
+          },
+        ),
       });
     });
 
@@ -217,9 +279,9 @@ export class GradeScaleService {
     }
 
     const data = await this.prisma.$transaction(async (tx) => {
-      await this.clearCurrentDefault(tx, scale.school_id);
+      await this.clearCurrentDefault(tx, scale.school_id, userId);
       try {
-        return (await tx.grade_scale.update({
+        const updated = (await tx.grade_scale.update({
           where: { id },
           data: {
             is_default: true,
@@ -227,6 +289,16 @@ export class GradeScaleService {
             updated_at: new Date(),
           },
         }));
+        await this.auditLog.record(tx, scale.school_id, { id: userId }, {
+          entity: 'grade_scale',
+          entityId: id,
+          action: 'update',
+          changes: auditChanges(
+            { is_default: scale.is_default },
+            { is_default: updated.is_default },
+          ),
+        });
+        return updated;
       } catch (err) {
         this.logger.error(
           `Failed to set default scale: ${(err as Error).message}`,
@@ -243,7 +315,34 @@ export class GradeScaleService {
     const scale = await this.assertScaleInUserSchool(id, userId);
 
     try {
-      await this.prisma.grade_scale.deleteMany({ where: { id } });
+      await this.prisma.$transaction(async (tx) => {
+        const bands = await tx.grade_scale_band.findMany({
+          where: { grade_scale_id: id },
+          orderBy: { sort_order: 'asc' },
+        });
+        await tx.grade_scale.deleteMany({ where: { id } });
+        await this.auditLog.record(tx, scale.school_id, { id: userId }, {
+          entity: 'grade_scale',
+          entityId: id,
+          action: 'delete',
+          changes: auditChanges(
+            {
+              name: scale.name,
+              scale_type: scale.scale_type,
+              is_default: scale.is_default,
+              bands: bands.map((band) => ({
+                label: band.label,
+                min_percentage: band.min_percentage,
+                max_percentage: band.max_percentage,
+                gpa_points: band.gpa_points,
+                is_pass: band.is_pass,
+                sort_order: band.sort_order,
+              })),
+            },
+            null,
+          ),
+        });
+      });
     } catch (err) {
       this.logger.error(
         `Failed to delete grade scale: ${(err as Error).message}`,
@@ -279,12 +378,27 @@ export class GradeScaleService {
     }
   }
 
-  private async clearCurrentDefault(db: Db, schoolId: string) {
+  private async clearCurrentDefault(
+    db: Db,
+    schoolId: string,
+    userId: string,
+  ) {
     try {
+      const defaults = await db.grade_scale.findMany({
+        where: { school_id: schoolId, is_default: true },
+      });
       await db.grade_scale.updateMany({
         where: { school_id: schoolId, is_default: true },
         data: { is_default: false },
       });
+      for (const scale of defaults) {
+        await this.auditLog.record(db, schoolId, { id: userId }, {
+          entity: 'grade_scale',
+          entityId: scale.id,
+          action: 'update',
+          changes: auditChanges({ is_default: true }, { is_default: false }),
+        });
+      }
     } catch (err) {
       this.logger.error(
         `Failed to clear default scale: ${(err as Error).message}`,

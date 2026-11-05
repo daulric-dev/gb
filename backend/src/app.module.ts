@@ -50,6 +50,7 @@ import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
 import { IntegrationsModule } from '@/integrations/integrations.module';
+import { AuditLogModule } from '@/audit-log/audit-log.module';
 import { HealthService } from '@/health/health.service';
 
 @Module({
@@ -140,6 +141,7 @@ import { HealthService } from '@/health/health.service';
     RetentionModule,
     AppVersionModule,
     IntegrationsModule.forRoot(),
+    AuditLogModule,
   ],
   controllers: [AppController],
   providers: [

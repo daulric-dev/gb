@@ -5,7 +5,14 @@ import { contentSecurityPolicy, createNonce } from "@/lib/csp";
 
 const GUEST_ONLY = ["/login", "/login/verify"];
 // /scan is where the attendance QR lands; it works signed out (see app/scan).
-const PUBLIC_PATHS = ["/", "/privacy", "/terms", "/scan", ...GUEST_ONLY];
+const PUBLIC_PATHS = [
+  "/",
+  "/privacy",
+  "/terms",
+  "/scan",
+  "/.well-known/gradebook.json",
+  ...GUEST_ONLY,
+];
 /**
  * Our session cookie, set by the API on /auth/otp/verify and the SSO
  * callback/handoff. It is HttpOnly and opaque (a random token only the API can

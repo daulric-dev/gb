@@ -17,6 +17,7 @@ export const RESOURCES = [
   'file',
   'chat',
   'join-code',
+  'audit-log',
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -37,6 +38,7 @@ const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
   course: ['create', 'update'],
   student: ['read', 'update'],
   'join-code': ['read', 'update'],
+  'audit-log': ['read'],
   'academic-year': ['create', 'read', 'update'],
 };
 
@@ -68,6 +70,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   file: 'files',
   chat: 'chat messages',
   'join-code': 'school join code',
+  'audit-log': 'audit log',
 };
 
 const ACTION_VERBS: Record<Action, string> = {

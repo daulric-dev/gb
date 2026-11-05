@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import {
   BadRequestException,
   ForbiddenException,
@@ -65,7 +65,9 @@ describe('PageService', () => {
         updatedAt: '2026-10-02T09:00:00.000Z',
       },
     ]);
-    expect(prisma.page.findMany.mock.calls[0][0].orderBy).toEqual({ title: 'asc' });
+    expect(prisma.page.findMany.mock.calls[0][0].orderBy).toEqual({
+      title: 'asc',
+    });
   });
 
   test('get is scoped to the course and returns the full page', async () => {
@@ -105,10 +107,15 @@ describe('PageService', () => {
 
   test('create trims the title and defaults to an empty draft', async () => {
     const prisma = createMockPrisma();
-    prisma.page.create.mockResolvedValue(page({ is_published: false, body: '' }));
-    await new PageService(prisma as any, fakeAccess('teacher')).create(USER, COURSE, {
-      title: '  Welcome ',
-    });
+    prisma.page.create.mockResolvedValue(
+      page({ is_published: false, body: '' }),
+    );
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
+    await new PageService(
+      prisma as any,
+      fakeAccess('teacher'),
+      auditLog as any,
+    ).create(USER, COURSE, { title: '  Welcome ' });
     expect(prisma.page.create.mock.calls[0][0].data).toEqual({
       course_id: COURSE,
       title: 'Welcome',
@@ -116,6 +123,22 @@ describe('PageService', () => {
       is_published: false,
       created_by: USER,
     });
+    const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0];
+    expect(tx).toBe(prisma);
+    expect([schoolId, actor, entry]).toEqual([
+      'school-1',
+      { id: USER },
+      {
+        entity: 'page',
+        entityId: 'p1',
+        action: 'create',
+        changes: {
+          title: { before: null, after: 'Welcome' },
+          body: { before: null, after: '' },
+          is_published: { before: null, after: false },
+        },
+      },
+    ]);
   });
 
   test('an empty update is refused', async () => {
@@ -132,9 +155,36 @@ describe('PageService', () => {
     ).toBeInstanceOf(BadRequestException);
   });
 
+  test('update audits only changed page fields in its write transaction', async () => {
+    const prisma = createMockPrisma();
+    prisma.page.findFirst.mockResolvedValue(page());
+    prisma.page.updateManyAndReturn.mockResolvedValue([
+      page({ title: 'Updated', body: '# Hi', is_published: true }),
+    ]);
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
+
+    await new PageService(
+      prisma as any,
+      fakeAccess('teacher'),
+      auditLog as any,
+    ).update(USER, COURSE, 'p1', { title: ' Updated ' });
+
+    const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0];
+    expect(tx).toBe(prisma);
+    expect([schoolId, actor, entry]).toEqual([
+      'school-1',
+      { id: USER },
+      {
+        entity: 'page',
+        entityId: 'p1',
+        action: 'update',
+        changes: { title: { before: 'Welcome', after: 'Updated' } },
+      },
+    ]);
+  });
+
   test('updating a page of another course is a 404', async () => {
     const prisma = createMockPrisma();
-    prisma.page.updateManyAndReturn.mockResolvedValue([]);
     expect(
       await expectRejection(
         new PageService(prisma as any, fakeAccess('teacher')).update(
@@ -145,10 +195,11 @@ describe('PageService', () => {
         ),
       ),
     ).toBeInstanceOf(NotFoundException);
-    expect(prisma.page.updateManyAndReturn.mock.calls[0][0].where).toEqual({
+    expect(prisma.page.findFirst.mock.calls[0][0].where).toEqual({
       id: 'p9',
       course_id: COURSE,
     });
+    expect(prisma.page.updateManyAndReturn).not.toHaveBeenCalled();
   });
 
   test('deleting a page of another course is a 404', async () => {
@@ -156,7 +207,11 @@ describe('PageService', () => {
     prisma.page.deleteMany.mockResolvedValue({ count: 0 });
     expect(
       await expectRejection(
-        new PageService(prisma as any, fakeAccess('teacher')).remove(USER, COURSE, 'p9'),
+        new PageService(prisma as any, fakeAccess('teacher')).remove(
+          USER,
+          COURSE,
+          'p9',
+        ),
       ),
     ).toBeInstanceOf(NotFoundException);
   });
@@ -166,7 +221,10 @@ describe('PageService', () => {
     prisma.page.findFirst.mockResolvedValue(page({ is_published: false }));
     expect(
       await expectRejection(
-        new PageService(prisma as any, fakeAccess(null)).getPublished(COURSE, 'p1'),
+        new PageService(prisma as any, fakeAccess(null)).getPublished(
+          COURSE,
+          'p1',
+        ),
       ),
     ).toBeInstanceOf(NotFoundException);
   });

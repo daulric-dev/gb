@@ -23,6 +23,7 @@ import { WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isUniqueViolation, pgCode } from '@/common/db-values';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 /** The role columns every role endpoint returns. */
 const ROLE_SELECT = {
@@ -42,6 +43,7 @@ export class PermissionService {
     private readonly cache: CacheService,
     private readonly prisma: PrismaService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    private readonly auditLog?: AuditLogService,
   ) {}
 
   /** The code-defined catalog of assignable permissions (for the admin UI). */
@@ -73,14 +75,31 @@ export class PermissionService {
     const schoolId = await this.requireAdminSchool(adminUserId);
 
     try {
-      return await this.prisma.school_role.create({
-        data: {
-          school_id: schoolId,
-          name: dto.name,
-          description: dto.description ?? null,
-          is_system: false,
-        },
-        select: ROLE_SELECT,
+      return await this.prisma.$transaction(async (tx) => {
+        const role = await tx.school_role.create({
+          data: {
+            school_id: schoolId,
+            name: dto.name,
+            description: dto.description ?? null,
+            is_system: false,
+          },
+          select: ROLE_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: adminUserId },
+          {
+            entity: 'school_role',
+            entityId: role.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              name: role.name,
+              description: role.description,
+            }),
+          },
+        );
+        return role;
       });
     } catch (err) {
       // Unique violation: name already used in this school.
@@ -103,10 +122,31 @@ export class PermissionService {
 
     let data;
     try {
-      data = await this.prisma.school_role.update({
-        where: { id: role.id },
-        data: patch,
-        select: ROLE_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.school_role.findUniqueOrThrow({
+          where: { id: role.id },
+          select: ROLE_SELECT,
+        });
+        const updated = await tx.school_role.update({
+          where: { id: role.id },
+          data: patch,
+          select: ROLE_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          role.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_role',
+            entityId: role.id,
+            action: 'update',
+            changes: auditChanges(
+              { name: before.name, description: before.description },
+              { name: updated.name, description: updated.description },
+            ),
+          },
+        );
+        return updated;
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -128,7 +168,23 @@ export class PermissionService {
     const role = await this.requireEditableRole(adminUserId, roleId);
 
     try {
-      await this.prisma.school_role.deleteMany({ where: { id: role.id } });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.school_role.deleteMany({ where: { id: role.id } });
+        await this.auditLog?.record(
+          tx,
+          role.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_role',
+            entityId: role.id,
+            action: 'delete',
+            changes: auditChanges(
+              { name: role.name, description: role.description },
+              null,
+            ),
+          },
+        );
+      });
     } catch (err) {
       this.logger.error(
         `Failed to delete role ${roleId}: ${(err as Error).message}`,
@@ -181,18 +237,23 @@ export class PermissionService {
     const uniqueKeys = [...new Set(keys)];
 
     try {
-      // Map keys -> catalog ids.
-      const catalog =
-        uniqueKeys.length > 0
-          ? await this.prisma.permission_catalog.findMany({
-              where: { key: { in: uniqueKeys } },
-              select: { id: true },
-            })
-          : [];
-      const permissionIds = catalog.map((c) => c.id);
-
       // Replace: clear existing, then insert the new set, atomically.
       await this.prisma.$transaction(async (tx) => {
+        const previous = await tx.school_role_permission.findMany({
+          where: { school_role_id: role.id },
+          select: { permission_catalog: { select: { key: true } } },
+        });
+        const beforeKeys = previous
+          .map((grant) => grant.permission_catalog?.key)
+          .filter((key): key is string => Boolean(key));
+        const catalog =
+          uniqueKeys.length > 0
+            ? await tx.permission_catalog.findMany({
+                where: { key: { in: uniqueKeys } },
+                select: { id: true },
+              })
+            : [];
+        const permissionIds = catalog.map((c) => c.id);
         await tx.school_role_permission.deleteMany({
           where: { school_role_id: role.id },
         });
@@ -204,6 +265,20 @@ export class PermissionService {
             })),
           });
         }
+        await this.auditLog?.record(
+          tx,
+          role.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_role',
+            entityId: role.id,
+            action: 'update',
+            changes: auditChanges(
+              { permissions: beforeKeys.sort() },
+              { permissions: [...uniqueKeys].sort() },
+            ),
+          },
+        );
       });
     } catch (err) {
       this.logger.error(
@@ -223,18 +298,47 @@ export class PermissionService {
   ) {
     const schoolId = await this.requireAdminSchool(adminUserId);
     await this.requireMembershipInSchool(membershipId, schoolId);
-    await this.requireRoleInSchool(adminUserId, roleId);
+    const role = await this.requireRoleInSchool(adminUserId, roleId);
 
     try {
-      await this.prisma.school_management_role.upsert({
-        where: {
-          school_management_id_school_role_id: {
+      await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.school_management_role.findUnique({
+          where: {
+            school_management_id_school_role_id: {
+              school_management_id: membershipId,
+              school_role_id: roleId,
+            },
+          },
+        });
+        await tx.school_management_role.upsert({
+          where: {
+            school_management_id_school_role_id: {
+              school_management_id: membershipId,
+              school_role_id: roleId,
+            },
+          },
+          create: {
             school_management_id: membershipId,
             school_role_id: roleId,
           },
-        },
-        create: { school_management_id: membershipId, school_role_id: roleId },
-        update: {},
+          update: {},
+        });
+        if (!existing) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: adminUserId },
+            {
+              entity: 'school_membership',
+              entityId: membershipId,
+              action: 'update',
+              changes: auditChanges(
+                { customRoles: [] },
+                { customRoles: [role.name] },
+              ),
+            },
+          );
+        }
       });
     } catch (err) {
       this.logger.error(`Failed to assign role: ${(err as Error).message}`);
@@ -263,9 +367,26 @@ export class PermissionService {
     }
 
     try {
-      await this.prisma.school_management.update({
-        where: { id: membershipId },
-        data: { role, updated_at: new Date() },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.school_management.update({
+          where: { id: membershipId },
+          data: { role, updated_at: new Date() },
+        });
+        await tx.user_profile.updateMany({
+          where: { id: membership.user_id, school_id: schoolId },
+          data: { role },
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: adminUserId },
+          {
+            entity: 'school_membership',
+            entityId: membershipId,
+            action: 'update',
+            changes: auditChanges({ role: membership.role }, { role }),
+          },
+        );
       });
     } catch (err) {
       const message = (err as Error).message;
@@ -285,17 +406,6 @@ export class PermissionService {
     // user_profile.role is the role in the user's *active* school, and
     // AdminGuard / is_admin() trust it. Only mirror when this membership is
     // that school, or an admin of any school could grant admin elsewhere.
-    try {
-      await this.prisma.user_profile.updateMany({
-        where: { id: membership.user_id, school_id: schoolId },
-        data: { role },
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to mirror member role ${membership.user_id}: ${(err as Error).message}`,
-      );
-      throw new BadRequestException('Failed to synchronize member role');
-    }
     await this.cache.delete(`profile:${membership.user_id}`);
     await this.invalidate();
     const before = membership.role ?? null;
@@ -315,10 +425,29 @@ export class PermissionService {
   ) {
     const schoolId = await this.requireAdminSchool(adminUserId);
     await this.requireMembershipInSchool(membershipId, schoolId);
+    const role = await this.requireRoleInSchool(adminUserId, roleId);
 
     try {
-      await this.prisma.school_management_role.deleteMany({
-        where: { school_management_id: membershipId, school_role_id: roleId },
+      await this.prisma.$transaction(async (tx) => {
+        const removed = await tx.school_management_role.deleteMany({
+          where: { school_management_id: membershipId, school_role_id: roleId },
+        });
+        if (removed.count > 0) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: adminUserId },
+            {
+              entity: 'school_membership',
+              entityId: membershipId,
+              action: 'update',
+              changes: auditChanges(
+                { customRoles: [role.name] },
+                { customRoles: [] },
+              ),
+            },
+          );
+        }
       });
     } catch (err) {
       this.logger.error(`Failed to unassign role: ${(err as Error).message}`);
@@ -426,7 +555,13 @@ export class PermissionService {
     const role = await this.prisma.school_role
       .findUnique({
         where: { id: roleId },
-        select: { id: true, school_id: true, is_system: true, name: true },
+        select: {
+          id: true,
+          school_id: true,
+          is_system: true,
+          name: true,
+          description: true,
+        },
       })
       .catch(() => null);
 

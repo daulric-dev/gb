@@ -4,8 +4,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
 import {
   CourseAccessService,
@@ -149,6 +151,7 @@ export class RubricService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** Rubric ids in `ids` that have marked someone. */
@@ -231,7 +234,11 @@ export class RubricService {
   }
 
   async create(userId: string, courseId: string, input: RubricInput) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
     const title = input.title.trim();
     if (!title) throw new BadRequestException('Give the rubric a title');
     this.validate(input.criteria);
@@ -244,13 +251,43 @@ export class RubricService {
           select: { id: true },
         });
         await this.writeCriteria(tx, row.id, input.criteria);
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'rubric',
+            entityId: row.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              title,
+              criteria: this.criteriaAuditFields(input.criteria),
+            }),
+          },
+        );
         return row.id;
       });
     } catch (error) {
       this.logger.error(`Failed to create rubric: ${(error as Error).message}`);
       throw new BadRequestException('Failed to save the rubric');
     }
+
     return toRubric(await this.requireRubric(courseId, id));
+  }
+
+  private criteriaAuditFields(criteria: any[]) {
+    return criteria.map((criterion) => ({
+      title: criterion.title.trim(),
+      description: criterion.description?.trim() || null,
+      points: Number(criterion.points),
+      ratings: (criterion.ratings ?? criterion.rubric_rating).map(
+        (rating: any) => ({
+          label: rating.label.trim(),
+          description: rating.description?.trim() || null,
+          points: Number(rating.points),
+        }),
+      ),
+    }));
   }
 
   /**
@@ -265,8 +302,12 @@ export class RubricService {
     rubricId: string,
     patch: Partial<RubricInput>,
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
-    await this.requireRubric(courseId, rubricId);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
+    const before = await this.requireRubric(courseId, rubricId);
 
     const title = patch.title?.trim();
     if (patch.title !== undefined && !title) {
@@ -304,6 +345,34 @@ export class RubricService {
           });
           await this.writeCriteria(tx, rubricId, patch.criteria);
         }
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'rubric',
+            entityId: rubricId,
+            action: 'update',
+            changes: auditChanges(
+              {
+                title: before.title,
+                ...(patch.criteria
+                  ? {
+                      criteria: this.criteriaAuditFields(
+                        before.rubric_criterion,
+                      ),
+                    }
+                  : {}),
+              },
+              {
+                title: title ?? before.title,
+                ...(patch.criteria
+                  ? { criteria: this.criteriaAuditFields(patch.criteria) }
+                  : {}),
+              },
+            ),
+          },
+        );
       });
     } catch (error) {
       if (error instanceof ConflictException) throw error;
@@ -328,9 +397,36 @@ export class RubricService {
    * the scores those marks produced stay on the submissions.
    */
   async remove(userId: string, courseId: string, rubricId: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
-    const { count } = await this.prisma.rubric.deleteMany({
-      where: { id: rubricId, course_id: courseId },
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
+    const before = await this.requireRubric(courseId, rubricId);
+    const { count } = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.rubric.deleteMany({
+        where: { id: rubricId, course_id: courseId },
+      });
+      if (result.count > 0) {
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'rubric',
+            entityId: rubricId,
+            action: 'delete',
+            changes: auditChanges(
+              {
+                title: before.title,
+                criteria: this.criteriaAuditFields(before.rubric_criterion),
+              },
+              null,
+            ),
+          },
+        );
+      }
+      return result;
     });
     if (count === 0) throw new NotFoundException('Rubric not found');
   }
@@ -352,8 +448,12 @@ export class RubricService {
       },
     });
     if (!activity) throw new NotFoundException('Activity not found');
-    await this.access.require(userId, activity.course_id, roles);
-    return activity;
+    const { course } = await this.access.require(
+      userId,
+      activity.course_id,
+      roles,
+    );
+    return { ...activity, school_id: course.school_id };
   }
 
   /** Attach a course rubric to an assignment or offline work, or detach. */
@@ -370,9 +470,22 @@ export class RubricService {
     }
     if (rubricId) await this.requireRubric(activity.course_id, rubricId);
 
-    await this.prisma.activity.update({
-      where: { id: activityId },
-      data: { rubric_id: rubricId, updated_at: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.activity.update({
+        where: { id: activityId },
+        data: { rubric_id: rubricId, updated_at: new Date() },
+      });
+      await this.auditLog?.record(
+        tx,
+        activity.school_id,
+        { id: userId },
+        {
+          entity: 'activity',
+          entityId: activityId,
+          action: 'update',
+          changes: auditChanges({ rubricId: activity.rubric_id }, { rubricId }),
+        },
+      );
     });
     return this.forActivity(userId, activityId);
   }
@@ -512,6 +625,36 @@ export class RubricService {
         await tx.$queryRaw`
           select 1 from grading.rubric where id = ${rubric.id}::uuid for share
         `;
+        const before = await tx.submission.findUnique({
+          where: {
+            activity_id_student_id: {
+              activity_id: activityId,
+              student_id: studentId,
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            score: true,
+            feedback: true,
+            excused: true,
+            excused_reason: true,
+          },
+        });
+        const oldAssessments = before
+          ? await tx.rubric_assessment.findMany({
+              where: {
+                submission_id: before.id,
+                criterion_id: { in: [...criteria.keys()] },
+              },
+              select: {
+                criterion_id: true,
+                rating_id: true,
+                points: true,
+                comment: true,
+              },
+            })
+          : [];
         const fields = {
           status: 'graded' as const,
           score,
@@ -551,6 +694,32 @@ export class RubricService {
             data: rows.map((r) => ({ ...r, submission_id: submission.id })),
           });
         }
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'submission',
+            entityId: submission.id,
+            action: before ? 'update' : 'create',
+            changes: auditChanges(
+              before
+                ? {
+                    status: before.status,
+                    score: scoreOrNull(before.score),
+                    feedback: before.feedback,
+                    rubricAssessments: oldAssessments,
+                  }
+                : null,
+              {
+                status: submission.status,
+                score: scoreOrNull(submission.score),
+                feedback: submission.feedback,
+                rubricAssessments: rows,
+              },
+            ),
+          },
+        );
         return submission;
       });
     } catch (error) {

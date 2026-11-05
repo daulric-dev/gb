@@ -13,6 +13,7 @@ import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { SessionService } from '@/account/session.service';
 import { plan } from '@/erasure/erasure-plan';
 import { setSchoolMembership } from '@/common/school-membership';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
 
@@ -27,6 +28,7 @@ export class SchoolService {
     private readonly erasure: ErasureLogService,
     private readonly sessions: SessionService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** staff.joined / staff.left after the change committed. Fire and forget. */
@@ -90,12 +92,30 @@ export class SchoolService {
 
     let data;
     try {
-      data = await this.prisma.school_join_request.create({
-        data: {
-          user_id: userId,
-          school_id: schoolId,
-          message: message ?? null,
-        },
+      data = await this.prisma.$transaction(async (tx) => {
+        const request = await tx.school_join_request.create({
+          data: {
+            user_id: userId,
+            school_id: schoolId,
+            message: message ?? null,
+          },
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: userId },
+          {
+            entity: 'school_join_request',
+            entityId: request.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              user_id: userId,
+              school_id: schoolId,
+              status: request.status ?? 'pending',
+            }),
+          },
+        );
+        return request;
       });
     } catch (err) {
       this.logger.error(
@@ -214,6 +234,22 @@ export class SchoolService {
     // Membership, custom roles, profile mirror and the request's status
     // change together: a failure part-way leaves nothing behind.
     const updated = await this.prisma.$transaction(async (tx) => {
+      const existingMembership = this.auditLog
+        ? await tx.school_management.findUnique({
+            where: {
+              user_id_school_id: {
+                user_id: request.user_id,
+                school_id: request.school_id,
+              },
+            },
+            select: {
+              role: true,
+              school_management_role: {
+                select: { school_role_id: true },
+              },
+            },
+          })
+        : null;
       // Canonical membership record (updated in case a prior membership
       // exists for this pair).
       let membership: { id: string };
@@ -258,7 +294,7 @@ export class SchoolService {
       }
 
       try {
-        return await tx.school_join_request.update({
+        const approved = await tx.school_join_request.update({
           where: { id: requestId },
           data: {
             status: 'approved',
@@ -266,6 +302,56 @@ export class SchoolService {
             reviewed_at: new Date(),
           },
         });
+        await this.auditLog?.record(
+          tx,
+          request.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_membership',
+            entityId: membership.id,
+            action: existingMembership ? 'update' : 'create',
+            changes: auditChanges(
+              existingMembership
+                ? {
+                    user_id: request.user_id,
+                    school_id: request.school_id,
+                    role: existingMembership.role,
+                    role_ids: existingMembership.school_management_role
+                      .map(({ school_role_id }) => school_role_id)
+                      .sort(),
+                  }
+                : null,
+              {
+                user_id: request.user_id,
+                school_id: request.school_id,
+                role,
+                role_ids: [
+                  ...new Set([
+                    ...(existingMembership?.school_management_role.map(
+                      ({ school_role_id }) => school_role_id,
+                    ) ?? []),
+                    ...uniqueRoleIds,
+                  ]),
+                ].sort(),
+              },
+            ),
+          },
+        );
+        await this.auditLog?.record(
+          tx,
+          request.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_join_request',
+            entityId: request.id,
+            action: 'update',
+            changes: auditChanges(
+              { status: request.status },
+              { status: 'approved' },
+            ),
+          },
+        );
+        return approved;
       } catch (err) {
         this.logger.error(
           `Failed to update join request ${requestId}: ${(err as Error).message}`,
@@ -381,9 +467,25 @@ export class SchoolService {
       })
       .catch(() => null);
     if (!member) {
-      await this.prisma.user_profile.updateMany({
-        where: { id: userId },
-        data: { school_id: null, role: null },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user_profile.updateMany({
+          where: { id: userId },
+          data: { school_id: null, role: null },
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: userId },
+          {
+            entity: 'school_membership',
+            entityId: null,
+            action: 'delete',
+            changes: auditChanges(
+              { user_id: userId, school_id: schoolId, role: profile.role },
+              null,
+            ),
+          },
+        );
       });
       await this.cache.delete(`profile:${userId}`);
       return { left: true };
@@ -410,12 +512,32 @@ export class SchoolService {
           this.prisma.$transaction(async (tx) => {
             const gone = await tx.school_management.findMany({
               where: { user_id: userId, school_id: schoolId },
-              select: { id: true },
+              select: { id: true, role: true },
             });
             if (gone.length === 0) return;
             await tx.school_management.deleteMany({
               where: { id: { in: gone.map((m) => m.id) } },
             });
+            for (const membership of gone) {
+              await this.auditLog?.record(
+                tx,
+                schoolId,
+                { id: userId },
+                {
+                  entity: 'school_membership',
+                  entityId: membership.id,
+                  action: 'delete',
+                  changes: auditChanges(
+                    {
+                      user_id: userId,
+                      school_id: schoolId,
+                      role: membership.role,
+                    },
+                    null,
+                  ),
+                },
+              );
+            }
             // Leaving a school ends its chats for this user: no more reading,
             // posting or live events from that school's conversations.
             await tx.conversation_member.deleteMany({
@@ -439,8 +561,30 @@ export class SchoolService {
       [
         'withdraw pending requests',
         () =>
-          this.prisma.school_join_request.deleteMany({
-            where: { user_id: userId, status: 'pending' },
+          this.prisma.$transaction(async (tx) => {
+            const requests = await tx.school_join_request.findMany({
+              where: { user_id: userId, status: 'pending' },
+              select: { id: true, school_id: true, status: true },
+            });
+            await tx.school_join_request.deleteMany({
+              where: { user_id: userId, status: 'pending' },
+            });
+            for (const request of requests) {
+              await this.auditLog?.record(
+                tx,
+                request.school_id,
+                { id: userId },
+                {
+                  entity: 'school_join_request',
+                  entityId: request.id,
+                  action: 'delete',
+                  changes: auditChanges(
+                    { user_id: userId, status: request.status },
+                    null,
+                  ),
+                },
+              );
+            }
           }),
       ],
       [
@@ -506,6 +650,24 @@ export class SchoolService {
         await tx.school_management.deleteMany({
           where: { id: membershipId },
         });
+        await this.auditLog?.record(
+          tx,
+          membership.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_membership',
+            entityId: membershipId,
+            action: 'delete',
+            changes: auditChanges(
+              {
+                user_id: membership.user_id,
+                school_id: membership.school_id,
+                role: membership.role,
+              },
+              null,
+            ),
+          },
+        );
         await tx.user_profile.updateMany({
           where: { id: membership.user_id, school_id: membership.school_id },
           data: { school_id: null, role: null },
@@ -539,7 +701,9 @@ export class SchoolService {
     }
 
     await this.cache.delete(`profile:${membership.user_id}`);
-    this.announceStaff(membership.school_id, membership.user_id, 'staff.left', { via: 'removed' });
+    this.announceStaff(membership.school_id, membership.user_id, 'staff.left', {
+      via: 'removed',
+    });
     return { removed: true };
   }
 
@@ -584,13 +748,30 @@ export class SchoolService {
     }
 
     try {
-      return await this.prisma.school_join_request.update({
-        where: { id: requestId },
-        data: {
-          status: 'rejected',
-          reviewed_by: adminUserId,
-          reviewed_at: new Date(),
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const rejected = await tx.school_join_request.update({
+          where: { id: requestId },
+          data: {
+            status: 'rejected',
+            reviewed_by: adminUserId,
+            reviewed_at: new Date(),
+          },
+        });
+        await this.auditLog?.record(
+          tx,
+          request.school_id,
+          { id: adminUserId },
+          {
+            entity: 'school_join_request',
+            entityId: request.id,
+            action: 'update',
+            changes: auditChanges(
+              { status: request.status },
+              { status: 'rejected' },
+            ),
+          },
+        );
+        return rejected;
       });
     } catch (err) {
       this.logger.error(
@@ -612,7 +793,11 @@ export class SchoolService {
     const membership = await this.prisma.school_management
       .findUnique({
         where: { id: membershipId },
-        select: { user_id: true, school_id: true, school: { select: { owner_id: true } } },
+        select: {
+          user_id: true,
+          school_id: true,
+          school: { select: { owner_id: true } },
+        },
       })
       .catch(() => null);
     if (!membership || membership.school_id !== adminSchoolId) {
@@ -622,7 +807,9 @@ export class SchoolService {
       membership.school?.owner_id === membership.user_id &&
       membership.user_id !== adminUserId
     ) {
-      throw new ForbiddenException('Only the school owner can sign the owner out');
+      throw new ForbiddenException(
+        'Only the school owner can sign the owner out',
+      );
     }
 
     const revoked = await this.sessions.revokeAll(membership.user_id, 'admin');

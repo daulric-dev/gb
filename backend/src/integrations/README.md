@@ -1,6 +1,6 @@
 # Integrations (`src/integrations`)
 
-School webhooks: GradeBook POSTs platform events (grades and submissions, attendance, people and enrolment, courses and content) as signed JSON to URLs a school chooses, so its own systems can act on them. A school may have several webhooks, each with its own URL and event types. Behind the `integrations` feature (off by default: data leaves the platform). Full guide for receivers: [docs/content/backend/webhooks.md](../../../docs/content/backend/webhooks.md).
+School webhooks: GradeBook POSTs platform events (grades and submissions, attendance, people and enrolment, courses and content, and optionally audit-log changes) as signed JSON to URLs a school chooses, so its own systems can act on them. A school may have several webhooks, each with its own URL and event types. Behind the `integrations` feature (off by default: data leaves the platform). Full guide for receivers: [docs/content/backend/webhooks.md](../../../docs/content/backend/webhooks.md).
 
 ## What it provides
 
@@ -29,6 +29,7 @@ Plus `GET /api/webhooks/event-types` (`WebhookEventTypesController`: any school 
 The module is `@Global()` (`IntegrationsModule.forRoot()` in `app.module.ts`).
 
 - **`WebhookEvents`** (import from `@/integrations/events`, the public barrel): `emit(schoolId, type, data | () => data)` and `emitForCourse(courseId, type, build)`, plus `student` / `staff` / `staffOrNull` / `studentOfUser` / `activity` reference loaders. Called after the owning change committed; returns at once, never throws into the caller. Stops after two cheap lookups when integrations are off for the school (cached feature map) or no enabled webhook subscribes to the type; only then is the payload built. Writes one `webhook_delivery` per subscribed webhook with one event id.
+- **Audit-log webhook delivery**: `AuditLogService` adds `audit.changed` deliveries transactionally for school-scoped entries when integrations are enabled and at least one enabled webhook subscribes. The event is opt-in and carries the already-redacted changes. Organisation-wide entries are not sent to school webhooks; the worker's database poller picks up the committed delivery rows.
 - `WebhookService` - the admin side (CRUD, secrets, test, deliveries, redeliver).
 - `WebhookDeliveryService` - claiming, sending, retrying, auto-disable.
 - `IntegrationAuditService` - `record(tx, ...)` and `list`.
@@ -49,6 +50,7 @@ The module is `@Global()` (`IntegrationsModule.forRoot()` in `app.module.ts`).
 | `staff.left` | `src/school/school.service.ts` (`leaveSchool`, `removeMember`) |
 | `staff.role_changed` | `src/permission/permission.service.ts` (`changeMemberRole`) |
 | `announcement.posted` | `src/announcement/announcement.service.ts` (school and course) |
+| `audit.changed` | `src/audit-log/audit-log.service.ts` (only when a school webhook explicitly subscribes) |
 | `ping` | `WebhookService.test` |
 
 Not done: `grades.released` - there is no release step (a mark is visible once entered). Also not sent: custom role grants, school-admin appointments from the organisation console, per-student automatic absences at close (counted in `attendance.session_closed`).
