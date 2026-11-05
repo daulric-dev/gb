@@ -135,6 +135,7 @@ describe('ActivityService.create', () => {
         'allowText',
         'maxAttempts',
         'timeLimitMinutes',
+        'lockdownBrowser',
         'omitFromFinalGrade',
         'rubricId',
         'createdAt',
@@ -172,6 +173,29 @@ describe('ActivityService.create', () => {
         timeLimitMinutes: 0,
       }),
     ).rejects.toThrow('Time limit must be between 1 and 1440 minutes');
+  });
+
+  test('creates a quiz with lockdown browser and refuses for non-quizzes', async () => {
+    const { service, prisma } = build();
+    await service.create('user-1', 'course-1', {
+      kind: 'quiz',
+      title: 'Lockdown Quiz',
+      points: 10,
+      lockdownBrowser: true,
+    });
+    expect(prisma.activity.create.mock.calls[0][0].data.lockdown_browser).toBe(
+      true,
+    );
+
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'assignment',
+        title: 'Lockdown Assignment',
+        points: 10,
+        allowText: true,
+        lockdownBrowser: true,
+      }),
+    ).rejects.toThrow('Only quizzes can require lockdown browser');
   });
 
   test('a TA cannot create work', async () => {

@@ -84,6 +84,7 @@ export function CreateActivityDialog({
   const points = useSignal("100");
   const dueAt = useSignal("");
   const timeLimitMinutes = useSignal("");
+  const lockdownBrowser = useSignal(false);
   const groupId = useSignal(defaultGroupId ?? "");
   const allowFile = useSignal(true);
   const allowMultipleFiles = useSignal(false);

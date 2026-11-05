@@ -14,6 +14,7 @@ import { StudentGuard, type StudentRequest } from './student.guard';
 import { SubmissionService } from '@/grading/submission.service';
 import { GradebookService } from '@/grading/gradebook.service';
 import {
+  QuizPresenceDto,
   SaveQuizAnswersDto,
   SubmitAssignmentDto,
   SubmitQuizDto,
@@ -152,6 +153,19 @@ export class PortalActivityController {
       req.student!.studentId,
       activityId,
       dto.answers,
+    );
+  }
+
+  @Post('activities/:activityId/quiz/presence')
+  async updateQuizPresence(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Body() dto: QuizPresenceDto,
+  ) {
+    return this.submissions.updateQuizPresence(
+      req.student!.studentId,
+      activityId,
+      dto,
     );
   }
 }

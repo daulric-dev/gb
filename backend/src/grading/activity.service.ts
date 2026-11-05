@@ -206,6 +206,9 @@ export class ActivityService {
     if (input.kind !== 'quiz' && input.timeLimitMinutes != null) {
       throw new BadRequestException('Only quizzes can have a time limit');
     }
+    if (input.kind !== 'quiz' && input.lockdownBrowser) {
+      throw new BadRequestException('Only quizzes can require lockdown browser');
+    }
     if (
       input.timeLimitMinutes != null &&
       (!Number.isInteger(input.timeLimitMinutes) ||
@@ -242,6 +245,8 @@ export class ActivityService {
               input.kind === 'quiz'
                 ? (input.timeLimitMinutes ?? null)
                 : null,
+            lockdown_browser:
+              input.kind === 'quiz' ? (input.lockdownBrowser ?? false) : false,
             kind: input.kind,
             title,
             instructions: input.instructions ?? null,
@@ -359,6 +364,12 @@ export class ActivityService {
       }
       changes.time_limit_minutes = patch.timeLimitMinutes;
     }
+    if (patch.lockdownBrowser !== undefined) {
+      if (activity.kind !== 'quiz' && patch.lockdownBrowser) {
+        throw new BadRequestException('Only quizzes can require lockdown browser');
+      }
+      changes.lockdown_browser = patch.lockdownBrowser;
+    }
 
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
@@ -417,6 +428,7 @@ export class ActivityService {
       allowText: activity.allow_text,
       maxAttempts: activity.max_attempts,
       timeLimitMinutes: activity.time_limit_minutes,
+      lockdownBrowser: activity.lockdown_browser,
       omitFromFinalGrade: activity.omit_from_final_grade,
       rubricId: activity.rubric_id,
     };

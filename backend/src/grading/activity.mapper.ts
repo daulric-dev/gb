@@ -27,6 +27,7 @@ export const ACTIVITY_SELECT = {
   allow_text: true,
   max_attempts: true,
   time_limit_minutes: true,
+  lockdown_browser: true,
   omit_from_final_grade: true,
   rubric_id: true,
   created_by: true,
@@ -77,6 +78,7 @@ export function toActivity(a: any) {
     // "unlimited" reads better as 0 than as an empty box.
     maxAttempts: (a.max_attempts as number | null) ?? 0,
     timeLimitMinutes: (a.time_limit_minutes as number | null) ?? null,
+    lockdownBrowser: !!a.lockdown_browser,
     omitFromFinalGrade: !!a.omit_from_final_grade,
     rubricId: (a.rubric_id as string | null) ?? null,
     createdAt: ts(a.created_at) as string,

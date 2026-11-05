@@ -50,6 +50,7 @@ export interface PortalWorkDetail {
   /** 0 means unlimited. */
   maxAttempts: number;
   timeLimitMinutes: number | null;
+  lockdownBrowser?: boolean;
   attemptsUsed: number;
   quizAttempt: {
     startedAt: string;

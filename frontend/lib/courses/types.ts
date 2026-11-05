@@ -185,6 +185,8 @@ export interface Activity {
   maxAttempts: number;
   /** null means the quiz is untimed. */
   timeLimitMinutes: number | null;
+  /** Whether the quiz enforces fullscreen and locks down browser shortcuts. */
+  lockdownBrowser?: boolean;
   omitFromFinalGrade: boolean;
   /** The course rubric marking uses; quizzes never have one. */
   rubricId: string | null;

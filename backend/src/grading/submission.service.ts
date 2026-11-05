@@ -49,6 +49,7 @@ const STUDENT_ACTIVITY_SELECT = {
   allow_text: true,
   max_attempts: true,
   time_limit_minutes: true,
+  lockdown_browser: true,
   rubric_id: true,
 } satisfies Prisma.activitySelect;
 
@@ -60,6 +61,9 @@ const DRAFT_SELECT = {
   graded_by: true,
   quiz_started_at: true,
   quiz_expires_at: true,
+  is_away: true,
+  tab_switch_count: true,
+  last_away_at: true,
 } satisfies Prisma.submissionSelect;
 
 const MARKED_SELECT = {
@@ -443,6 +447,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       // 0 means unlimited, matching the teacher's editor.
       maxAttempts: activity.max_attempts ?? 0,
       timeLimitMinutes: activity.time_limit_minutes,
+      lockdownBrowser: !!activity.lockdown_browser,
       attemptsUsed: submission?.attempt_count ?? 0,
       questions,
       quizAttempt:
@@ -746,9 +751,21 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         data: {
           quiz_started_at: startedAt,
           quiz_expires_at: expiresAt,
+          is_away: false,
+          tab_switch_count: 0,
+          last_away_at: null,
           updated_at: startedAt,
         },
       });
+      await this.cache?.set(
+        `quiz:presence:${activityId}:${studentId}`,
+        {
+          isAway: false,
+          reason: null,
+          lastPingAt: startedAt.toISOString(),
+        },
+        35,
+      );
       return {
         startedAt: startedAt.toISOString(),
         expiresAt: expiresAt?.toISOString() ?? null,
@@ -808,6 +825,71 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       });
       return { savedAt: savedAt.toISOString() };
     });
+  }
+
+  async updateQuizPresence(
+    studentId: string,
+    activityId: string,
+    dto: { isAway: boolean; reason?: string },
+  ) {
+    const activity = await this.requireSubmittable(studentId, activityId);
+    if (activity.kind !== 'quiz') {
+      throw new BadRequestException('This is not a quiz');
+    }
+
+    const draft = await this.prisma.submission.findFirst({
+      where: { activity_id: activityId, student_id: studentId },
+      select: {
+        id: true,
+        status: true,
+        quiz_started_at: true,
+        quiz_expires_at: true,
+        is_away: true,
+        tab_switch_count: true,
+      },
+    });
+
+    if (!draft || !draft.quiz_started_at || draft.status !== 'draft') {
+      return { ok: true };
+    }
+
+    if (draft.quiz_expires_at && draft.quiz_expires_at.getTime() <= Date.now()) {
+      return { ok: true, expired: true };
+    }
+
+    const now = new Date();
+    const cacheKey = `quiz:presence:${activityId}:${studentId}`;
+    await this.cache?.set(
+      cacheKey,
+      {
+        isAway: dto.isAway,
+        reason: dto.reason ?? null,
+        lastPingAt: now.toISOString(),
+      },
+      35,
+    );
+
+    if (dto.isAway) {
+      await this.prisma.submission.update({
+        where: { id: draft.id },
+        data: {
+          is_away: true,
+          tab_switch_count: { increment: 1 },
+          last_away_at: now,
+          updated_at: now,
+        },
+      });
+    } else if (draft.is_away) {
+      await this.prisma.submission.update({
+        where: { id: draft.id },
+        data: {
+          is_away: false,
+          updated_at: now,
+        },
+      });
+    }
+
+    return { ok: true };
   }
 
   private async validQuizAnswers(
@@ -1637,6 +1719,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         submitted_at: true,
         graded_at: true,
         attempt_count: true,
+        quiz_started_at: true,
+        quiz_expires_at: true,
+        is_away: true,
+        tab_switch_count: true,
+        last_away_at: true,
       },
     });
 
@@ -1663,14 +1750,53 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
     const filesBySubmission = await this.submissionFilesById(submissions);
 
-    return students
-      .map((s) => {
+    const now = Date.now();
+    const rows = await Promise.all(
+      students.map(async (s) => {
         const submission = byStudent.get(s.id);
+        const isActiveAttempt =
+          activity.kind === 'quiz' &&
+          submission?.status === 'draft' &&
+          !!submission.quiz_started_at &&
+          (!submission.quiz_expires_at ||
+            submission.quiz_expires_at.getTime() > now);
+
+        let isAway = false;
+        let awayReason: string | null = null;
+        if (isActiveAttempt) {
+          const presence = (await this.cache?.get(
+            `quiz:presence:${activityId}:${s.id}`,
+          )) as
+            | {
+                isAway: boolean;
+                reason?: string | null;
+                lastPingAt?: string;
+              }
+            | null
+            | undefined;
+
+          if (presence) {
+            const stale =
+              !presence.lastPingAt ||
+              now - new Date(presence.lastPingAt).getTime() > 25_000;
+            isAway = presence.isAway || stale;
+            awayReason = presence.reason ?? (stale ? 'no_heartbeat' : null);
+          } else {
+            const startedAtMs = submission.quiz_started_at?.getTime() ?? 0;
+            const stale = now - startedAtMs > 20_000;
+            isAway = submission.is_away || stale;
+            awayReason = stale ? 'no_heartbeat' : null;
+          }
+        }
+
         return {
           studentId: s.id,
           name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
           enrollmentStatus: (statusOf.get(s.id) ?? null) as
-            'active' | 'dropped' | 'completed' | null,
+            | 'active'
+            | 'dropped'
+            | 'completed'
+            | null,
           submission: submission
             ? {
                 id: submission.id,
@@ -1690,11 +1816,19 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
                 submittedAt: ts(submission.submitted_at),
                 gradedAt: ts(submission.graded_at),
                 attemptCount: submission.attempt_count ?? 0,
+                quizStartedAt: ts(submission.quiz_started_at),
+                quizExpiresAt: ts(submission.quiz_expires_at),
+                isActiveAttempt,
+                isAway,
+                awayReason,
+                tabSwitchCount: submission.tab_switch_count ?? 0,
+                lastAwayAt: ts(submission.last_away_at),
               }
             : null,
         };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      }),
+    );
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private toMarked(row: any) {

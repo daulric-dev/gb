@@ -1471,5 +1471,104 @@ describe('SubmissionService marking', () => {
       expect(prisma.quiz_question.findMany).toHaveBeenCalledTimes(1);
       expect(prisma.quiz_option.findMany).toHaveBeenCalledTimes(1);
     });
+
+    test('updateQuizPresence tracks away state and increments tab switch count in DB', async () => {
+      const cache = createMockCacheService();
+      const { service, prisma } = build(
+        (p) => {
+          studentTables({
+            activity: { ...ACTIVITY, kind: 'quiz' },
+            submission: {
+              id: 'sub-1',
+              status: 'draft',
+              quiz_started_at: new Date(Date.now() - 10_000),
+              quiz_expires_at: new Date(Date.now() + 600_000),
+              is_away: false,
+              tab_switch_count: 1,
+            },
+          })(p);
+        },
+        {},
+        stubAccess(),
+        undefined,
+        cache,
+      );
+
+      // Student leaves tab: isAway = true
+      await service.updateQuizPresence('stu-1', 'act-1', {
+        isAway: true,
+        reason: 'tab_hidden',
+      });
+      expect(prisma.submission.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sub-1' },
+          data: expect.objectContaining({
+            is_away: true,
+            tab_switch_count: { increment: 1 },
+          }),
+        }),
+      );
+
+      // Cached presence was stored
+      const presence = await cache.get('quiz:presence:act-1:stu-1');
+      expect(presence).toMatchObject({
+        isAway: true,
+        reason: 'tab_hidden',
+      });
+    });
+
+    test('listForTeacher reports live proctoring and tab switch counts', async () => {
+      const cache = createMockCacheService();
+      await cache.set(
+        'quiz:presence:act-1:stu-1',
+        {
+          isAway: true,
+          reason: 'fullscreen_exit',
+          lastPingAt: new Date().toISOString(),
+        },
+        35,
+      );
+
+      const { service } = build(
+        (p) => {
+          p.activity.findUnique.mockResolvedValue({
+            ...PUBLISHED,
+            kind: 'quiz',
+          });
+          p.course_student.findMany.mockResolvedValue([
+            { student_id: 'stu-1', status: 'active' },
+          ]);
+          p.submission.findMany.mockResolvedValue([
+            {
+              id: 'sub-1',
+              student_id: 'stu-1',
+              status: 'draft',
+              score: null,
+              attempt_count: 0,
+              quiz_started_at: new Date(Date.now() - 30_000),
+              quiz_expires_at: new Date(Date.now() + 600_000),
+              is_away: true,
+              tab_switch_count: 2,
+              last_away_at: new Date(),
+              excused: false,
+            },
+          ]);
+          p.student.findMany.mockResolvedValue([
+            { id: 'stu-1', first_name: 'Eve', last_name: 'Tester' },
+          ]);
+        },
+        {},
+        stubAccess(),
+        undefined,
+        cache,
+      );
+
+      const rows = await service.listForTeacher('user-1', 'act-1');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].submission?.isActiveAttempt).toBe(true);
+      expect(rows[0].submission?.isAway).toBe(true);
+      expect(rows[0].submission?.awayReason).toBe('fullscreen_exit');
+      expect(rows[0].submission?.tabSwitchCount).toBe(2);
+    });
   });
 });

@@ -46,5 +46,12 @@ export interface SubmissionRow {
     attemptCount: number;
     excused: boolean;
     excusedReason: string | null;
+    quizStartedAt?: string | null;
+    quizExpiresAt?: string | null;
+    isActiveAttempt?: boolean;
+    isAway?: boolean;
+    awayReason?: string | null;
+    tabSwitchCount?: number;
+    lastAwayAt?: string | null;
   } | null;
 }
