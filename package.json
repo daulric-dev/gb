@@ -24,7 +24,7 @@
         "test": "turbo run test",
         "test:frontend": "turbo run test --filter=frontend",
         "test:backend": "turbo run test --filter=backend",
-        "preview": "turbo run start:prod",
+        "preview": "bash infrastructure/pm2/preview.sh",
         "dev:docs": "turbo run dev --filter=docs",
         "build:docs": "turbo run build --filter=docs",
         "db:setup": "bun run --cwd backend db:deploy",

@@ -193,7 +193,7 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 | `bun run test:frontend` / `test:backend`                               | Run one project's tests               |
 | `bun audit`                                                              | Check installed dependencies for known vulnerabilities |
 | `bun run release <bump>`                                                 | Tag and publish a major, minor, or patch release from `main` |
-| `bun run preview`                                                        | Run in production mode                |
+| `bun run preview`                                                        | Build, then run the API and web app in production mode under PM2 ([`infrastructure/pm2`](infrastructure/pm2/README.md#local-preview)); Ctrl+C stops it |
 | `bun run db:setup` / `db:deploy`                                       | Apply pending Prisma migrations       |
 | `bun run db:migrate --name <change>`                                     | Create and apply a migration from `.prisma` edits |
 | `bun run db:pull` / `db:studio`                                        | Introspect the database / open Prisma Studio |

@@ -6,11 +6,13 @@ on:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
       - ".github/scripts/validate-caddy.sh"
+      - ".github/scripts/validate-pm2.sh"
   pull_request:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
       - ".github/scripts/validate-caddy.sh"
+      - ".github/scripts/validate-pm2.sh"
   workflow_dispatch:
 
 permissions:
@@ -40,3 +42,119 @@ jobs:
           # Dummy env: only interpolation is checked, nothing starts.
           printf 'REDIS_PASSWORD=ci\nSITE_ADDRESS=api.example.com\n' > infrastructure/.env
           docker compose -f infrastructure/docker-compose.yml config -q
+
+  pm2:
+    name: PM2 deployment
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: gradebook
+          POSTGRES_PASSWORD: gradebook
+          POSTGRES_DB: gradebook
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U gradebook"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PM2_VERSION: "7.1.2"
+      PM2_HOME: ${{ runner.temp }}/pm2
+      PM2_LOG_DIR: ${{ runner.temp }}/pm2-logs
+      # Production-shaped settings for the smoke test only; nothing is real.
+      DATABASE_URL: postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook
+      USE_REDIS: "true"
+      REDIS_URL: redis://127.0.0.1:6379
+      FRONTEND_URL: https://app.example.test
+      API_URL: https://api.example.test
+      API_INSTANCES: "2"
+      API_BASE_PORT: "3001"
+      WEB_PORT: "3000"
+      NEXT_PUBLIC_API_URL: https://api.example.test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setting up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.4"
+
+      - name: Validating PM2 setup
+        run: bash .github/scripts/validate-pm2.sh
+
+      - name: Installing dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Building backend and frontend
+        run: |
+          bun run --cwd backend build
+          bun run --cwd frontend build
+
+      - name: Applying migrations
+        working-directory: backend
+        run: bunx prisma migrate deploy
+
+      - name: Generating test secrets
+        run: |
+          {
+            echo "AUTH_SECRET=$(openssl rand -hex 32)"
+            echo "CHAT_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+            echo "STUDENT_CLAIM_CODE_PEPPER=$(openssl rand -hex 32)"
+          } >> "$GITHUB_ENV"
+
+      - name: Starting with PM2
+        run: |
+          bunx "pm2@${PM2_VERSION}" start infrastructure/pm2/ecosystem.config.cjs
+          for port in 3001 3002 3000; do
+            for _ in $(seq 1 60); do
+              curl -fs -o /dev/null "http://127.0.0.1:${port}/" && break
+              sleep 1
+            done
+            curl -fs -o /dev/null "http://127.0.0.1:${port}/" \
+              || { echo "port ${port} never answered"; exit 1; }
+            echo "port ${port} up"
+          done
+          bunx "pm2@${PM2_VERSION}" list
+
+      - name: Reloading without downtime
+        env:
+          PM2_CONCURRENT_ACTIONS: "1"
+        run: |
+          # Poll both API instances during the reload; at least one must
+          # answer at every sample.
+          (
+            while true; do
+              curl -fs -o /dev/null --max-time 1 http://127.0.0.1:3001/ \
+                || curl -fs -o /dev/null --max-time 1 http://127.0.0.1:3002/ \
+                || echo down >> "${RUNNER_TEMP}/outages"
+              sleep 0.1
+            done
+          ) &
+          poller=$!
+          bunx "pm2@${PM2_VERSION}" startOrReload infrastructure/pm2/ecosystem.config.cjs --update-env
+          sleep 2
+          kill "${poller}"
+          if [ -s "${RUNNER_TEMP}/outages" ]; then
+            echo "API was fully down for $(wc -l < "${RUNNER_TEMP}/outages") samples during reload"
+            exit 1
+          fi
+          for port in 3001 3002 3000; do
+            curl -fs -o /dev/null "http://127.0.0.1:${port}/"
+          done
+          echo "reload kept the API up"
+
+      - name: PM2 logs
+        if: always()
+        run: |
+          bunx "pm2@${PM2_VERSION}" list || true
+          tail -n 100 "${PM2_LOG_DIR}"/*.log || true
+
+      - name: Stopping PM2
+        if: always()
+        run: bunx "pm2@${PM2_VERSION}" kill || true
