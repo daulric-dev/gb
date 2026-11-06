@@ -205,7 +205,7 @@ Each install is run by one organisation, which may have several schools. On a ne
 bun run dev              # frontend + backend
 bun run build            # every workspace, cached by Turbo
 bun run test             # every workspace
-bun run preview          # production-mode builds locally
+bun run preview          # production builds of API + web under PM2 (Ctrl+C stops)
 bun run lint             # typecheck everything
 
 bun run db:setup         # apply pending migrations (prisma migrate deploy)
@@ -243,4 +243,4 @@ Deeper reference: the **[backend overview](./backend/overview.md)** for modules 
 - **Some joins across schemas are still done in JavaScript.** The database has several schemas, and code written before Prisma joined them by hand; it still works, so not all of it has been folded into one query.
 - **All authorisation is in the API.** The API connects as the schema owner and there is no row-level security; guards and service code are the only access rules, so every new query must scope itself to the caller's school and role.
 - **The docs sidebar is built at compile time** from each file's frontmatter, by a Vite plugin. Add a `.md` under `docs/content/` and it appears; there is no sidebar file to edit.
-- **`bun run preview` is not `bun run dev`.** It builds and serves production bundles, which is where build-time-inlined variables show their real values.
+- **`bun run preview` is not `bun run dev`.** It builds and serves production bundles (under PM2, see [`infrastructure/pm2/README.md`](../../infrastructure/pm2/README.md#local-preview)), which is where build-time-inlined variables show their real values.

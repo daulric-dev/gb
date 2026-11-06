@@ -32,6 +32,18 @@ and S3 provider, or provision those services separately. See
 [`infrastructure/SERVICES.md`](../../infrastructure/SERVICES.md) for the
 Compose details and service behavior.
 
+### Without Docker (PM2)
+
+To run on a server or VM without containers, use the PM2 setup in
+[`infrastructure/pm2/`](../../infrastructure/pm2/README.md): PM2 runs the API
+on Bun (three processes on ports 3001-3003 by default, fork mode) and the
+frontend with `next start` on Node, and a Caddy on the host terminates TLS for
+both hostnames and balances over the API processes. `deploy.sh` installs,
+builds, applies migrations and reloads the processes one at a time;
+`setup.sh` installs PM2 and log rotation once per server. It needs Bun 1.4.4,
+Node.js 20.9+, and the same PostgreSQL, Redis (required for more than one API
+process), S3 and SMTP services as the Compose stack.
+
 ## Runtime requirements
 
 | Component      | Runtime / version                       | Notes                                                                                                                                                                |
