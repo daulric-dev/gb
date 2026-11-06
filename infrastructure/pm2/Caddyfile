@@ -1,0 +1,129 @@
+# Caddy for the PM2 (bare-metal) deployment: TLS and load balancing in front
+# of the processes from ecosystem.config.cjs on this machine. The Docker
+# deployment uses infrastructure/caddy/Caddyfile instead; the API site below
+# mirrors it (same balancing, timeouts, headers and SSE handling) with local
+# upstreams, and adds a site for the Next.js frontend.
+#
+# Run Caddy on the host (e.g. the distribution's caddy package as a systemd
+# service) with this file and these environment variables:
+#   SITE_ADDRESS      API hostname, e.g. api.example.com (automatic HTTPS), or
+#                     http://api.example.com behind a TLS proxy of yours.
+#   WEB_SITE_ADDRESS  Frontend hostname, e.g. app.example.com (same rules).
+#   ACME_EMAIL        Optional contact for Let's Encrypt.
+#   TRUSTED_PROXIES   Optional CIDRs of a proxy in front (see the Docker
+#                     Caddyfile and SERVICES.md, "Caddy").
+# The defaults (api.localhost / app.localhost) only make sense for a local try
+# with Caddy's internal CA.
+#
+# Upstreams: the API runs API_INSTANCES processes on API_BASE_PORT,
+# API_BASE_PORT+1, ... (defaults: 3001-3003). Keep the list in the `api`
+# snippet in sync when you change those. The frontend is one port (WEB_PORT,
+# default 3000) however many cluster workers serve it.
+#
+#   caddy validate --adapter caddyfile --config infrastructure/pm2/Caddyfile
+#   caddy reload --config infrastructure/pm2/Caddyfile
+{
+	email "{$ACME_EMAIL}"
+
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES}
+		trusted_proxies_strict
+	}
+
+	admin localhost:2019
+}
+
+# The API instances. {args[0]}: longest silence allowed between two reads
+# from the upstream; {block}: extra reverse_proxy settings.
+(api) {
+	# 127.0.0.1, not localhost: the API listens on IPv4 (0.0.0.0) only.
+	reverse_proxy 127.0.0.1:3001 127.0.0.1:3002 127.0.0.1:3003 {
+		lb_policy round_robin
+		# A process restarting (pm2 reload, crash) refuses connections: try
+		# the next one for up to 5s. Only GETs are retried after reaching an
+		# instance, so a non-idempotent request is never sent twice.
+		lb_try_duration 5s
+		lb_try_interval 250ms
+
+		# Liveness route (`GET /` answers "gb"); not /health, which fails for
+		# every instance at once when the shared database, Redis or S3 is down.
+		health_uri /
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+		fail_duration 10s
+		max_fails 1
+
+		header_up X-Real-IP {remote_host}
+
+		transport http {
+			keepalive 2m
+			keepalive_idle_conns_per_host 32
+			dial_timeout 5s
+			write_timeout 60s
+			read_timeout {args[0]}
+		}
+
+		{block}
+	}
+}
+
+# Headers and logging shared by both sites.
+(common) {
+	log {
+		output stdout
+	}
+
+	header {
+		-Server
+		-Via
+	}
+}
+
+{$SITE_ADDRESS:api.localhost} {
+	import common
+
+	@https protocol https
+	header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	request_body {
+		max_size 16MiB
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+	}
+
+	# Server-Sent Event streams (/api/.../stream): unbuffered, one hour of
+	# silence allowed (the API sends a heartbeat every 25s).
+	@stream path_regexp ^/api/.+/stream$
+	handle @stream {
+		import api 3600s {
+			flush_interval -1
+		}
+	}
+
+	# Every method, including QUERY.
+	handle {
+		import api 60s
+	}
+}
+
+{$WEB_SITE_ADDRESS:app.localhost} {
+	import common
+
+	# Next.js sets its own security headers, HSTS included, and the
+	# per-request CSP nonce (frontend/next.config.ts, proxy.ts); don't add
+	# them here too.
+	reverse_proxy 127.0.0.1:3000 {
+		header_up X-Real-IP {remote_host}
+		lb_try_duration 5s
+		transport http {
+			dial_timeout 5s
+		}
+	}
+}

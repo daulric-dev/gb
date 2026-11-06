@@ -8,6 +8,8 @@ build
 
 # Logs
 logs
+# PM2 logs (infrastructure/pm2, PM2_LOG_DIR default); also covered by `logs`
+infrastructure/pm2/logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*

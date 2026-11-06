@@ -8,6 +8,7 @@ stores, what breaks without it, and which environment variables wire it up.
 | --- | --- |
 | [`infrastructure/docker-compose.yml`](./docker-compose.yml) | Production / staging: three API replicas behind Caddy (reverse proxy + automatic HTTPS), Redis, the database backup sidecar, and an optional Postgres (with continuous backup) for a single box |
 | [`docker-compose.dev.yml`](../docker-compose.dev.yml) (repo root) | Local development: Postgres, Redis, S3 (SeaweedFS) and Mailpit |
+| [`pm2/`](./pm2/README.md) | Alternative without Docker: the API (Bun) and the web frontend (Next.js) under PM2 on a server or VM, behind a host Caddy (`pm2/Caddyfile`); also what `bun run preview` uses |
 
 The API is built from [`infrastructure/Dockerfile`](./Dockerfile) and run by
 the production Compose stack behind its bundled Caddy reverse proxy. See
@@ -412,6 +413,7 @@ never published.
 ## See also
 
 - [`backend/README.md`](../backend/README.md): running the backend locally
+- [`pm2/README.md`](./pm2/README.md): bare-metal / VM deployment with PM2 (no Docker)
 - [`docs/content/environment-variables.md`](../docs/content/environment-variables.md): every variable
 - [`BACKUPS.md`](./BACKUPS.md) and [`docs/content/backups.md`](../docs/content/backups.md): backups, point-in-time recovery and GDPR
 - [`backend/src/storage/README.md`](../backend/src/storage/README.md), [`backend/src/cache/README.md`](../backend/src/cache/README.md), [`backend/src/realtime/README.md`](../backend/src/realtime/README.md), [`backend/src/queue/README.md`](../backend/src/queue/README.md), [`backend/src/mail/README.md`](../backend/src/mail/README.md), [`backend/src/prisma/README.md`](../backend/src/prisma/README.md)
