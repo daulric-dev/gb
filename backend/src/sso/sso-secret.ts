@@ -1,20 +1,15 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { authSecret } from '@/account/secret';
+import { openSecret, sealSecret } from '@/account/secret-box';
 
-const ALGO = 'aes-256-gcm';
-const IV_BYTES = 12;
-const VERSION = 'v1';
-/** HKDF info: a key for this purpose only, never AUTH_SECRET itself. */
+/**
+ * HKDF info: a key for this purpose only, never the root secret itself
+ * (DATA_ENCRYPTION_KEY when set, else AUTH_SECRET; see account/secret-box.ts).
+ */
 const INFO = 'gradebook:school-sso-secret:v1';
 
 /** Whose secret it is: one school's app for one provider. */
 export interface SsoSecretOwner {
   schoolId: string;
   provider: string;
-}
-
-function key(): Buffer {
-  return Buffer.from(hkdfSync('sha256', authSecret(), Buffer.alloc(0), INFO, 32));
 }
 
 /**
@@ -26,36 +21,20 @@ function aad({ schoolId, provider }: SsoSecretOwner): Buffer {
 }
 
 /**
- * Encrypt a school's client secret for public.school_sso_provider
- * (`v1:<iv>:<tag>:<ciphertext>`, base64).
+ * Encrypt a school's client secret for public.school_sso_provider:
+ * `v2:<kid>:<iv>:<tag>:<ct>` under DATA_ENCRYPTION_KEY, or
+ * `v1:<iv>:<tag>:<ct>` under AUTH_SECRET when it is unset (base64).
  */
 export function encryptSsoSecret(owner: SsoSecretOwner, plaintext: string): string {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv(ALGO, key(), iv);
-  cipher.setAAD(aad(owner));
-  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  return [VERSION, iv, cipher.getAuthTag(), ct].map((p) =>
-    typeof p === 'string' ? p : p.toString('base64'),
-  ).join(':');
+  return sealSecret(INFO, aad(owner), plaintext);
 }
 
 /**
  * The plaintext, or null when the value cannot be decrypted - most often
- * because AUTH_SECRET changed since it was saved (the secret must then be
- * entered again), or because it was stored for another school or provider.
+ * because the key it was saved under changed since (AUTH_SECRET for `v1`
+ * values, DATA_ENCRYPTION_KEY for `v2`; the secret must then be entered
+ * again), or because it was stored for another school or provider.
  */
 export function decryptSsoSecret(owner: SsoSecretOwner, stored: string): string | null {
-  const parts = stored.split(':');
-  if (parts.length !== 4 || parts[0] !== VERSION) return null;
-  try {
-    const decipher = createDecipheriv(ALGO, key(), Buffer.from(parts[1], 'base64'));
-    decipher.setAAD(aad(owner));
-    decipher.setAuthTag(Buffer.from(parts[2], 'base64'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(parts[3], 'base64')),
-      decipher.final(),
-    ]).toString('utf8');
-  } catch {
-    return null;
-  }
+  return openSecret(INFO, aad(owner), stored);
 }

@@ -56,6 +56,11 @@ export class ChatController {
     } catch {
       schoolId = null;
     }
+    // Students only see presence for the staff they may message. Resolved
+    // before hijacking so a lookup failure is a normal error response.
+    const audience = schoolId
+      ? await this.chat.presenceAudience(userId)
+      : null;
 
     reply.hijack();
     const raw = reply.raw;
@@ -84,8 +89,10 @@ export class ChatController {
 
     let unsubPresence: (() => void) | null = null;
     if (schoolId) {
-      unsubPresence = await this.presence.subscribeSchool(schoolId, (e) =>
-        send(e),
+      unsubPresence = await this.presence.subscribeSchool(
+        schoolId,
+        (e) => send(e),
+        audience,
       );
       await this.presence.connect(userId, schoolId);
     }
@@ -117,19 +124,21 @@ export class ChatController {
     req.raw.on('error', onClose);
   }
 
-  //User ids currently online in the caller's school.
+  // User ids currently online in the caller's school (for a student, only
+  // the staff they may message).
   @RequirePermission('chat', 'read')
   @Get('presence')
   async presenceList(@Req() req: any): Promise<{ online: string[] }> {
+    const userId = req.user.id as string;
     let schoolId: string | null;
     try {
-      const userId = req.user.id as string;
       schoolId = await userSchoolId(this.prisma, userId);
     } catch {
       return { online: [] };
     }
     if (!schoolId) return { online: [] };
-    return { online: await this.presence.onlineUserIds(schoolId) };
+    const audience = await this.chat.presenceAudience(userId);
+    return { online: await this.presence.onlineUserIds(schoolId, audience) };
   }
 
   // Directory / counters

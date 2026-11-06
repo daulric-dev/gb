@@ -3,7 +3,10 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { AccountService } from '@/account/account.service';
-import { permCacheKey, userPermCachePrefix } from '@/permission/permission.effective';
+import {
+  permCacheKey,
+  userPermCachePrefix,
+} from '@/permission/permission.effective';
 import { INVITE_TTL_MS, InviteService } from './invite.service';
 import { inviteEmail } from './invite.email';
 
@@ -27,34 +30,43 @@ const hit = (row: Row, where: Row) =>
 /** public.organisation_invite in memory, so open / expired filters run for real. */
 function inviteTable(prisma: MockPrisma) {
   const rows: Row[] = [];
-  prisma.organisation_invite.findMany.mockImplementation(async ({ where }: any) =>
-    rows.filter((r) => hit(r, where)).map((r) => ({ ...r })),
+  prisma.organisation_invite.findMany.mockImplementation(
+    async ({ where }: any) =>
+      rows.filter((r) => hit(r, where)).map((r) => ({ ...r })),
   );
-  prisma.organisation_invite.findUnique.mockImplementation(async ({ where }: any) => {
-    const row = rows.find((r) => r.id === where.id);
-    return row ? { ...row, school: null, inviter: null } : null;
-  });
-  prisma.organisation_invite.findUniqueOrThrow.mockImplementation(async ({ where }: any) => {
-    const row = rows.find((r) => r.id === where.id);
-    if (!row) throw new Error('Not found');
-    return { ...row };
-  });
-  prisma.organisation_invite.updateMany.mockImplementation(async ({ where, data }: any) => {
-    const matched = rows.filter((r) => hit(r, where));
-    for (const r of matched) Object.assign(r, data);
-    return { count: matched.length };
-  });
-  prisma.organisation_invite.create.mockImplementation(async ({ data }: any) => {
-    const row = {
-      id: `inv-${rows.length + 1}`,
-      accepted_at: null,
-      accepted_by: null,
-      revoked_at: null,
-      ...data,
-    };
-    rows.push(row);
-    return { ...row };
-  });
+  prisma.organisation_invite.findUnique.mockImplementation(
+    async ({ where }: any) => {
+      const row = rows.find((r) => r.id === where.id);
+      return row ? { ...row, school: null, inviter: null } : null;
+    },
+  );
+  prisma.organisation_invite.findUniqueOrThrow.mockImplementation(
+    async ({ where }: any) => {
+      const row = rows.find((r) => r.id === where.id);
+      if (!row) throw new Error('Not found');
+      return { ...row };
+    },
+  );
+  prisma.organisation_invite.updateMany.mockImplementation(
+    async ({ where, data }: any) => {
+      const matched = rows.filter((r) => hit(r, where));
+      for (const r of matched) Object.assign(r, data);
+      return { count: matched.length };
+    },
+  );
+  prisma.organisation_invite.create.mockImplementation(
+    async ({ data }: any) => {
+      const row = {
+        id: `inv-${rows.length + 1}`,
+        accepted_at: null,
+        accepted_by: null,
+        revoked_at: null,
+        ...data,
+      };
+      rows.push(row);
+      return { ...row };
+    },
+  );
   const add = (extra: Row): Row => {
     const row: Row = {
       id: `inv-${rows.length + 1}`,
@@ -78,7 +90,10 @@ function inviteTable(prisma: MockPrisma) {
 describe('InviteService', () => {
   let prisma: MockPrisma;
   let cache: ReturnType<typeof createMockCacheService>;
-  let mail: { configured: ReturnType<typeof mock>; send: ReturnType<typeof mock> };
+  let mail: {
+    configured: ReturnType<typeof mock>;
+    send: ReturnType<typeof mock>;
+  };
   let service: InviteService;
   let table: ReturnType<typeof inviteTable>;
 
@@ -87,31 +102,90 @@ describe('InviteService', () => {
     cache = createMockCacheService();
     mail = { configured: mock(() => false), send: mock(async () => {}) };
     const accounts = { onVerifiedSignIn: mock(() => {}) };
-    service = new InviteService(prisma as any, cache as any, mail as any, accounts as any);
+    service = new InviteService(
+      prisma as any,
+      cache as any,
+      mail as any,
+      accounts as any,
+    );
     table = inviteTable(prisma);
   });
 
   describe('invite', () => {
+    test('audits durable invite state in the creation transaction', async () => {
+      const auditLog = { record: mock(async () => {}) };
+      service = new InviteService(
+        prisma as any,
+        cache as any,
+        mail as any,
+        { onVerifiedSignIn: mock(() => {}) } as any,
+        auditLog as any,
+      );
+
+      const created = await service.invite(
+        ME,
+        'school_admin',
+        'new@x.org',
+        's1',
+      );
+
+      expect(auditLog.record).toHaveBeenCalledTimes(1);
+      const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0] as any;
+      expect(tx).toBe(prisma);
+      expect(schoolId).toBe('s1');
+      expect(actor).toEqual({ id: ME });
+      expect(entry).toMatchObject({
+        entity: 'organisation_invite',
+        entityId: created.id,
+        action: 'create',
+        changes: {
+          email: { before: null, after: 'new@x.org' },
+          kind: { before: null, after: 'school_admin' },
+          school_id: { before: null, after: 's1' },
+        },
+      });
+    });
+
     test('a new school admin invite revokes the school’s previous one', async () => {
       const old = table.add({ email: 'first@x.org' });
       const other = table.add({ email: 'other@x.org', school_id: 's2' });
 
-      const sent = await service.invite(ME, 'school_admin', ' Second@X.org ', 's1');
+      const sent = await service.invite(
+        ME,
+        'school_admin',
+        ' Second@X.org ',
+        's1',
+      );
 
       expect(sent.email).toBe('second@x.org');
-      expect(new Date(sent.expiresAt).getTime() - Date.now()).toBeGreaterThan(INVITE_TTL_MS - 5000);
+      expect(new Date(sent.expiresAt).getTime() - Date.now()).toBeGreaterThan(
+        INVITE_TTL_MS - 5000,
+      );
       expect(old.revoked_at).toBeInstanceOf(Date);
       expect(other.revoked_at).toBeNull();
-      expect(table.rows.filter((r) => r.school_id === 's1' && !r.revoked_at)).toHaveLength(1);
+      expect(
+        table.rows.filter((r) => r.school_id === 's1' && !r.revoked_at),
+      ).toHaveLength(1);
     });
 
     test('an organisation admin invite replaces only that email’s open one', async () => {
-      const same = table.add({ kind: 'organisation_admin', school_id: null, email: 'a@x.org' });
-      const other = table.add({ kind: 'organisation_admin', school_id: null, email: 'b@x.org' });
+      const same = table.add({
+        kind: 'organisation_admin',
+        school_id: null,
+        email: 'a@x.org',
+      });
+      const other = table.add({
+        kind: 'organisation_admin',
+        school_id: null,
+        email: 'b@x.org',
+      });
       await service.invite(ME, 'organisation_admin', 'a@x.org');
       expect(same.revoked_at).toBeInstanceOf(Date);
       expect(other.revoked_at).toBeNull();
-      expect(table.rows.at(-1)).toMatchObject({ kind: 'organisation_admin', school_id: null });
+      expect(table.rows.at(-1)).toMatchObject({
+        kind: 'organisation_admin',
+        school_id: null,
+      });
     });
 
     test('skips the email without SMTP', async () => {
@@ -122,12 +196,21 @@ describe('InviteService', () => {
     test('emails the invite when SMTP is configured', async () => {
       mail.configured.mockReturnValue(true);
       const prevUrl = process.env.FRONTEND_URL;
-      process.env.FRONTEND_URL = 'https://gb.example.org,https://other.example.org';
-      prisma.organisation_invite.findUnique.mockImplementation(async ({ where }: any) => ({
-        ...table.rows.find((r) => r.id === where.id),
-        school: { id: 's1', name: 'Riverside <Primary>' },
-        inviter: { id: ME, first_name: 'Ada', last_name: 'L', email: null, app_user: null },
-      }));
+      process.env.FRONTEND_URL =
+        'https://gb.example.org,https://other.example.org';
+      prisma.organisation_invite.findUnique.mockImplementation(
+        async ({ where }: any) => ({
+          ...table.rows.find((r) => r.id === where.id),
+          school: { id: 's1', name: 'Riverside <Primary>' },
+          inviter: {
+            id: ME,
+            first_name: 'Ada',
+            last_name: 'L',
+            email: null,
+            app_user: null,
+          },
+        }),
+      );
       try {
         await service.invite(ME, 'school_admin', 'new@x.org', 's1');
       } finally {
@@ -136,7 +219,9 @@ describe('InviteService', () => {
       }
       const sent = mail.send.mock.calls[0][0] as any;
       expect(sent.to).toBe('new@x.org');
-      expect(sent.subject).toBe("You've been invited to run Riverside <Primary> on GradeBook");
+      expect(sent.subject).toBe(
+        "You've been invited to run Riverside <Primary> on GradeBook",
+      );
       expect(sent.text).toContain('Ada L invited you');
       expect(sent.text).toContain('https://gb.example.org/login');
       expect(sent.html).toContain('Riverside &lt;Primary&gt;');
@@ -152,25 +237,59 @@ describe('InviteService', () => {
   });
 
   describe('revoke and resend', () => {
+    test('audits revocation in the same transaction', async () => {
+      const row = table.add({});
+      const auditLog = { record: mock(async () => {}) };
+      service = new InviteService(
+        prisma as any,
+        cache as any,
+        mail as any,
+        { onVerifiedSignIn: mock(() => {}) } as any,
+        auditLog as any,
+      );
+
+      expect(await service.revoke(ME, row.id)).toEqual({ revoked: true });
+
+      expect(auditLog.record).toHaveBeenCalledTimes(1);
+      const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0] as any;
+      expect(tx).toBe(prisma);
+      expect(schoolId).toBe('s1');
+      expect(actor).toEqual({ id: ME });
+      expect(entry).toMatchObject({
+        entity: 'organisation_invite',
+        entityId: row.id,
+        action: 'update',
+        changes: {
+          revoked_at: { before: null, after: expect.any(Date) },
+        },
+      });
+    });
+
     test('revoke marks an open invite revoked; 404 once it is not open', async () => {
       const row = table.add({});
       expect(await service.revoke(ME, row.id)).toEqual({ revoked: true });
       expect(row.revoked_at).toBeInstanceOf(Date);
-      expect(await expectRejection(service.revoke(ME, row.id))).toBeInstanceOf(NotFoundException);
+      expect(await expectRejection(service.revoke(ME, row.id))).toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     test('resend gives an expired invite 14 more days and emails it again', async () => {
       mail.configured.mockReturnValue(true);
       const row = table.add({ expires_at: new Date(Date.now() - DAY) });
       const sent = await service.resend(ME, row.id);
-      expect(new Date(sent.expiresAt).getTime()).toBeGreaterThan(Date.now() + 13 * DAY);
+      expect(new Date(sent.expiresAt).getTime()).toBeGreaterThan(
+        Date.now() + 13 * DAY,
+      );
       expect(row.expires_at.getTime()).toBeGreaterThan(Date.now() + 13 * DAY);
       expect(mail.send).toHaveBeenCalledTimes(1);
     });
 
     test('resend: 404 for an accepted invite', async () => {
       const row = table.add({ accepted_at: new Date(), accepted_by: 'u-1' });
-      expect(await expectRejection(service.resend(ME, row.id))).toBeInstanceOf(NotFoundException);
+      expect(await expectRejection(service.resend(ME, row.id))).toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -191,6 +310,53 @@ describe('InviteService', () => {
   describe('acceptFor (verified sign-in)', () => {
     const user = { id: 'u-head', email: 'head@x.org' };
 
+    test('audits invite acceptance in its claim transaction', async () => {
+      const invite = table.add({
+        kind: 'organisation_admin',
+        school_id: null,
+        email: user.email,
+      });
+      prisma.user_profile.findUnique.mockResolvedValue({
+        id: user.id,
+        school_id: null,
+        account_type: 'staff',
+      });
+      const auditLog = { record: mock(async () => {}) };
+      service = new InviteService(
+        prisma as any,
+        cache as any,
+        mail as any,
+        { onVerifiedSignIn: mock(() => {}) } as any,
+        auditLog as any,
+      );
+
+      expect(await service.acceptFor(user)).toBe(1);
+
+      expect(auditLog.record).toHaveBeenCalledTimes(2);
+      const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0] as any;
+      expect(tx).toBe(prisma);
+      expect(schoolId).toBeNull();
+      expect(actor).toEqual({ id: user.id });
+      expect(entry).toMatchObject({
+        entity: 'organisation_invite',
+        entityId: invite.id,
+        action: 'update',
+        changes: {
+          accepted_at: { before: null, after: expect.any(Date) },
+          accepted_by: { before: null, after: user.id },
+        },
+      });
+      expect((auditLog.record.mock.calls[1] as any[])[3]).toMatchObject({
+        entity: 'organisation_admin',
+        entityId: user.id,
+        action: 'create',
+        changes: {
+          user_id: { before: null, after: user.id },
+          created_by: { before: null, after: ME },
+        },
+      });
+    });
+
     test('appoints the school admin, demotes the previous one and marks it accepted', async () => {
       const invite = table.add({});
       prisma.user_profile.findUnique.mockResolvedValue({
@@ -198,8 +364,15 @@ describe('InviteService', () => {
         school_id: null,
         account_type: 'staff',
       });
-      prisma.school_management.findFirst.mockResolvedValue({ id: 'm-old', user_id: 'u-old' });
-      for (const key of ['profile:u-head', 'profile:u-old', permCacheKey('u-old', 's1')]) {
+      prisma.school_management.findFirst.mockResolvedValue({
+        id: 'm-old',
+        user_id: 'u-old',
+      });
+      for (const key of [
+        'profile:u-head',
+        'profile:u-old',
+        permCacheKey('u-old', 's1'),
+      ]) {
         await cache.set(key, {}, 60);
       }
 
@@ -212,13 +385,17 @@ describe('InviteService', () => {
         where: { id: 'm-old' },
         data: { role: 'teacher' },
       });
-      expect(prisma.school_management.create.mock.calls[0][0].data).toMatchObject({
+      expect(
+        prisma.school_management.create.mock.calls[0][0].data,
+      ).toMatchObject({
         user_id: 'u-head',
         school_id: 's1',
         role: 'admin',
       });
       expect(prisma.school_management.upsert).not.toHaveBeenCalled();
-      expect(prisma.school.update.mock.calls[0][0].data.owner_id).toBe('u-head');
+      expect(prisma.school.update.mock.calls[0][0].data.owner_id).toBe(
+        'u-head',
+      );
       expect(prisma.user_profile.update.mock.calls[0][0]).toEqual({
         where: { id: 'u-head' },
         data: { school_id: 's1', role: 'admin', is_active: true },
@@ -240,14 +417,24 @@ describe('InviteService', () => {
         id: 'u-head',
         email: 'head@x.org',
       });
-      expect(prisma.user_profile.create.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(
+        prisma.user_profile.create.mock.invocationCallOrder[0],
+      ).toBeLessThan(
         prisma.school_management.create.mock.invocationCallOrder[0],
       );
     });
 
     test('an organisation admin invite adds the row and clears the permission caches', async () => {
-      const invite = table.add({ kind: 'organisation_admin', school_id: null, invited_by: ME });
-      prisma.user_profile.findUnique.mockResolvedValue({ id: 'u-head', school_id: 's9', account_type: 'staff' });
+      const invite = table.add({
+        kind: 'organisation_admin',
+        school_id: null,
+        invited_by: ME,
+      });
+      prisma.user_profile.findUnique.mockResolvedValue({
+        id: 'u-head',
+        school_id: 's9',
+        account_type: 'staff',
+      });
       await cache.set(`${userPermCachePrefix('u-head')}s9`, {}, 60);
 
       expect(await service.acceptFor(user)).toBe(1);
@@ -281,7 +468,11 @@ describe('InviteService', () => {
 
     test('an invite another sign-in already claimed is applied once', async () => {
       table.add({});
-      prisma.user_profile.findUnique.mockResolvedValue({ id: 'u-head', school_id: null, account_type: 'staff' });
+      prisma.user_profile.findUnique.mockResolvedValue({
+        id: 'u-head',
+        school_id: null,
+        account_type: 'staff',
+      });
       // Claimed between the read and the claim.
       prisma.organisation_invite.updateMany.mockResolvedValue({ count: 0 });
       expect(await service.acceptFor(user)).toBe(0);
@@ -299,7 +490,9 @@ describe('invite email', () => {
       expiresAt: new Date('2026-11-15T10:00:00Z'),
       signInUrl: 'https://gb.example.org/login',
     });
-    expect(email.subject).toBe("You've been invited to administer Riverside Trust on GradeBook");
+    expect(email.subject).toBe(
+      "You've been invited to administer Riverside Trust on GradeBook",
+    );
     expect(email.text).toContain('15 November 2026');
     expect(email.html).toContain('href="https://gb.example.org/login"');
   });
@@ -308,16 +501,25 @@ describe('invite email', () => {
 describe('AccountService verified sign-in hooks', () => {
   function accounts() {
     const prisma = createMockPrisma();
-    const service = new AccountService(prisma as any, { purgeCached: mock(async () => {}) } as any);
+    const service = new AccountService(
+      prisma as any,
+      { purgeCached: mock(async () => {}) } as any,
+    );
     return { prisma, service };
   }
 
   test('a verified email runs the hooks with the user', async () => {
     const { prisma, service } = accounts();
-    prisma.app_user.create.mockResolvedValue({ id: 'u-1', email: 'head@x.org' });
+    prisma.app_user.create.mockResolvedValue({
+      id: 'u-1',
+      email: 'head@x.org',
+    });
     const hook = mock(async () => {});
     service.onVerifiedSignIn(hook);
-    expect(await service.userForVerifiedEmail('Head@X.org')).toEqual({ id: 'u-1', email: 'head@x.org' });
+    expect(await service.userForVerifiedEmail('Head@X.org')).toEqual({
+      id: 'u-1',
+      email: 'head@x.org',
+    });
     expect(hook).toHaveBeenCalledWith({ id: 'u-1', email: 'head@x.org' });
   });
 
@@ -332,7 +534,10 @@ describe('AccountService verified sign-in hooks', () => {
     service.onVerifiedSignIn(async () => {
       throw new Error('boom');
     });
-    expect(await service.userForVerifiedEmail('head@x.org')).toEqual({ id: 'u-1', email: 'head@x.org' });
+    expect(await service.userForVerifiedEmail('head@x.org')).toEqual({
+      id: 'u-1',
+      email: 'head@x.org',
+    });
   });
 
   test('an unverified SSO email never runs them', async () => {
@@ -359,9 +564,9 @@ describe('AccountService verified sign-in hooks', () => {
     });
     const hook = mock(async () => {});
     service.onVerifiedSignIn(hook);
-    expect(await expectRejection(service.userForVerifiedEmail('head@x.org'))).toBeInstanceOf(
-      ForbiddenException,
-    );
+    expect(
+      await expectRejection(service.userForVerifiedEmail('head@x.org')),
+    ).toBeInstanceOf(ForbiddenException);
     expect(hook).not.toHaveBeenCalled();
   });
 
@@ -369,7 +574,12 @@ describe('AccountService verified sign-in hooks', () => {
     const { service: accountService } = accounts();
     const spy = mock(() => {});
     accountService.onVerifiedSignIn = spy as any;
-    new InviteService({} as any, {} as any, {} as any, accountService).onModuleInit();
+    new InviteService(
+      {} as any,
+      {} as any,
+      {} as any,
+      accountService,
+    ).onModuleInit();
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });

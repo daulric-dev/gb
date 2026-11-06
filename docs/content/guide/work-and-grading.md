@@ -44,6 +44,26 @@ Give it a title, instructions (Markdown), a points total, a due date and its gro
 
 **Attempts** sets how many tries a student gets (`0` is unlimited).
 
+### Lockdown quizzes in the mobile app
+
+A lockdown quiz taken in the GradeBook app is pinned to the screen for the attempt, screenshots and screen recordings are blocked where the phone allows it, and the screen stays on. Anything that breaks the lockdown is reported on the live roster as **Away** with a reason, and adds to the student's "Left N times" count:
+
+| Shown to you | What happened |
+| --- | --- |
+| Left the app | Went to the home screen or another app |
+| Unpinned the app | Ended pinning or Guided Access during the attempt |
+| Recording the screen | Screen recording or mirroring was running (iPhone/iPad; Android 15+) |
+| Took a screenshot | Took a screenshot; reads as away for a few seconds |
+| App not pinned | The student started without pinning because their device could not pin; it shows for as long as the app stays unpinned |
+
+What students see on each platform:
+
+- **Android** - tapping **Start quiz** shows the system **Pin this app?** prompt; the quiz starts once they confirm. To unpin afterwards, the app releases the pin itself after submitting, or they hold **Back** and **Overview**.
+- **iPhone and iPad** - the app uses **Guided Access**, which must be switched on once in **Settings > Accessibility > Guided Access** (with a passcode). Before starting, the student triple-clicks the side (or Home) button and taps **Start**; **Start quiz** unlocks once Guided Access is on. After submitting they triple-click again and enter the passcode to end it.
+- **School-managed iPads/iPhones** - an MDM profile can allow GradeBook for **Autonomous Single App Mode**. On those supervised devices the app turns Guided Access on and off by itself, with no triple-click or passcode.
+
+If pinning does not work on a device (for example Guided Access was never set up and the student cannot change Settings), the student can **Start without pinning**; you see **App not pinned** for that attempt. Phones still cannot be locked down completely - treat these reports as signals, not proof.
+
 ## Publishing
 
 **Publish** makes the work visible to students. **Questions lock at publish** - changing them afterwards would silently rescore work already handed in. Title, instructions, due date and points stay editable. **Close** stops new submissions without hiding anything.

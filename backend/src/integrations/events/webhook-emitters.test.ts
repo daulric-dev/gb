@@ -406,8 +406,27 @@ describe('grading', () => {
     const { service } = submissions(webhooks, (p) => {
       p.activity.findUnique.mockResolvedValue({ ...activityRow, kind: 'quiz', status: 'published', max_attempts: null });
       p.student.findUnique.mockResolvedValue({ user_profile_id: USER });
-      p.submission.findFirst.mockResolvedValue({ id: SUBMISSION, status: 'draft', file_id: null, attempt_count: 0, graded_by: null });
-      p.$queryRaw.mockResolvedValue([{ score: 8, points: 10, attempts_used: 1 }]);
+      p.submission.findFirst.mockResolvedValue({
+        id: SUBMISSION,
+        status: 'draft',
+        file_id: null,
+        attempt_count: 0,
+        graded_by: null,
+        quiz_started_at: new Date('2026-11-04T09:00:00Z'),
+      });
+      p.$queryRaw.mockImplementation(async (strings: string[]) => {
+        if (strings.join('?').includes('submit_quiz')) {
+          return [{ score: 8, points: 10, attempts_used: 1 }];
+        }
+        return [
+          {
+            attempt_count: 0,
+            graded_by: null,
+            quiz_started_at: new Date('2026-11-04T09:00:00Z'),
+            expired: false,
+          },
+        ];
+      });
     });
     await service.submitQuiz(STUDENT, ACTIVITY, []);
     await settle();

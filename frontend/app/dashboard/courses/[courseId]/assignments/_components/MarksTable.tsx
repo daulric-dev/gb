@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LockdownPresence } from "./LockdownPresence";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +54,7 @@ import {
 } from "@/components/ui/empty";
 import type { SubmissionRow } from "./types";
 import { RubricMarkDialog } from "./RubricMarkDialog";
+import { ExtensionActions, ExtensionBadge } from "./ExtensionControls";
 import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
 import { userMessage } from "@/lib/errors";
 
@@ -115,6 +117,7 @@ export function MarksTable({
   rubric = null,
   assessments = {},
   onAssessedAction,
+  lockdownBrowser = false,
 }: {
   activityId: string;
   kind: ActivityKind;
@@ -129,6 +132,8 @@ export function MarksTable({
   /** Each student's criterion marks, keyed by student id. */
   assessments?: Record<string, RubricAssessment[]>;
   onAssessedAction?: (studentId: string, marks: RubricAssessment[]) => void;
+  /** A lockdown quiz: show who is taking it now, away, and how often they left. */
+  lockdownBrowser?: boolean;
 }) {
   useSignals();
   const search = useSignal("");
@@ -281,7 +286,10 @@ export function MarksTable({
               const excused = !!sub?.excused;
               const lateBy =
                 kind === "assignment"
-                  ? lateDays(dueAt, sub?.submittedAt ?? null)
+                  ? lateDays(
+                      row.effectiveDueAt !== undefined ? row.effectiveDueAt : dueAt,
+                      sub?.submittedAt ?? null,
+                    )
                   : null;
               return (
                 <TableRow
@@ -294,6 +302,8 @@ export function MarksTable({
                 >
                   <TableCell className="align-top">
                     <p className="font-medium">{row.name}</p>
+                    {online && <ExtensionBadge extension={row.extension} />}
+                    {lockdownBrowser && <LockdownPresence submission={sub} />}
                     {row.enrollmentStatus && row.enrollmentStatus !== "active" && (
                       <p className="text-xs capitalize text-muted-foreground">
                         {row.enrollmentStatus}
@@ -468,6 +478,20 @@ export function MarksTable({
                   <TableCell className="text-right align-top">
                     {editable && (
                       <div className="flex justify-end gap-1">
+                        {online && (
+                          <ExtensionActions
+                            activityId={activityId}
+                            activityDueAt={dueAt}
+                            row={row}
+                            onChangedAction={(changed) =>
+                              onRowsChangeAction(
+                                rows.map((r) =>
+                                  r.studentId === changed.studentId ? changed : r,
+                                ),
+                              )
+                            }
+                          />
+                        )}
                         {rubric && (
                           <Button
                             size="sm"

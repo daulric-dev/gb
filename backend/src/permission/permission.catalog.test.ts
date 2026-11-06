@@ -18,6 +18,9 @@ describe('permission catalog', () => {
     expect(actionsFor('course')).toEqual(['create', 'update']);
     expect(actionsFor('student')).toEqual(['read', 'update']);
     expect(actionsFor('join-code')).toEqual(['read', 'update']);
+    expect(actionsFor('audit-log')).toEqual(['read']);
+    expect(isPermissionKey('audit-log:read')).toBe(true);
+    expect(isPermissionKey('audit-log:update')).toBe(false);
     expect(actionsFor('academic-year')).toEqual(['create', 'read', 'update']);
     for (const key of [
       'course:read',
@@ -64,6 +67,7 @@ describe('permission catalog', () => {
     expect(admin.size).toBe(PERMISSION_CATALOG.length);
     expect(admin.has('school:read')).toBe(true);
     expect(admin.has('school:update')).toBe(true);
+    expect(admin.has('audit-log:read')).toBe(true);
     expect(admin.has('school:delete' as never)).toBe(false);
   });
 

@@ -3,6 +3,10 @@
  * frontend/lib/courses/types.ts; keep the two in step.
  */
 
+import type { LocationFlag } from './location-flags';
+
+export type { LocationFlag } from './location-flags';
+
 export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused';
 export type AttendanceMethod = 'self' | 'qr' | 'teacher' | 'auto';
 
@@ -34,6 +38,11 @@ export interface AttendanceSession {
   requiresCode: boolean;
   lateAfterMinutes: number | null;
   location: { latitude: number; longitude: number; radiusM: number } | null;
+  /**
+   * When the session point was last set: at open, then each time staff
+   * shared a newer position. null without a location check.
+   */
+  locationUpdatedAt: string | null;
   counts: AttendanceCounts;
 }
 
@@ -46,6 +55,13 @@ export interface AttendanceRosterEntry {
   method: AttendanceMethod | null;
   checkedInAt: string | null;
   distanceM: number | null;
+  /** Reported GPS accuracy of the check-in, metres. Staff only. */
+  accuracyM: number | null;
+  /**
+   * Suspicious-reading markers (see location-flags.ts). Staff only; never in
+   * any portal response. Empty when nothing looked odd.
+   */
+  locationFlags: LocationFlag[];
   note: string | null;
 }
 

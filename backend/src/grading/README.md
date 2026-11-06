@@ -51,6 +51,18 @@ Questions are frozen once a quiz is published, because changing the answer key w
 | PATCH | `/api/activities/:activityId/submissions/:studentId/excuse` | Staff | Excuse or un-excuse (`ExcuseSubmissionDto`). Any mark is kept. A student with no submission gets a `graded` row with no score. |
 | GET | `/api/activities/submissions/:submissionId/file` | Staff | The file a student handed in, served inline |
 
+Each roster row also carries `effectiveDueAt` (the student's extension, else the activity's due date) and `extension` (`{ dueAt, reason, createdBy, createdAt, updatedAt }` or `null`).
+
+#### Due date extensions (`extension.controller.ts`, served by `ExtensionService`)
+
+| Method | Path | Who | What it does |
+| --- | --- | --- | --- |
+| GET | `/api/activities/:activityId/extensions` | Staff | Every extension on the activity |
+| PUT | `/api/activities/:activityId/extensions/:studentId` | Staff | Set or replace one student's due date (`SetExtensionDto`: `dueAt` in the future, optional `reason` up to 500). The student must be enrolled (not dropped); offline work is refused. Audited as `activity_extension`. |
+| DELETE | `/api/activities/:activityId/extensions/:studentId` | Staff | Remove the extension (`204`); `404` when there is none. Audited. |
+
+Due dates are enforced on the student routes (`due-date.ts`): after the student's effective due date, starting a quiz, saving quiz answers, handing in, upload tickets and attaching uploads are a `409` ("This was due on … UTC. Ask your teacher for an extension"). A quiz attempt started in time runs to its own `quiz_expires_at`; an untimed attempt is stamped to expire at the due date, so the expiry sweep submits it then, and moving the due date (an extension set or removed, the activity's date edited) moves running untimed attempts with it. Marking, excusing, import and offline work ignore due dates. Portal activity responses carry `effectiveDueAt`, `hasExtension` and `isClosed`.
+
 #### Assignment groups (`assignment-group.controller.ts`)
 
 | Method | Path | Who | What it does |
@@ -102,6 +114,7 @@ Questions are frozen once a quiz is published, because changing the answer key w
 - `submitAssignment()`: a client-supplied `fileId` must be the student's own `ready` file.
 - `submitQuiz()`: stores answers (only answers to this quiz's questions, and only options belonging to each question), then calls the database function `grading.submit_quiz`.
   - The function locks the row, enforces `max_attempts`, scores the quiz, scales the score to the activity's points and marks it `graded`.
+  - Changing a quiz's points (`PATCH /api/activities/:id`) keeps automatic scores (`graded_by` null) in step in the same transaction: rescaled by new/old points, or - from 0 points, where every score was 0 - scored again from the stored answers by the same rules (`rescoreQuizFromAnswers` in `quiz-rescore.ts`, whose test checks it against the latest `submit_quiz`). A submission with a retake in progress is skipped (starting a retake clears its answers); teacher marks are never changed and must fit the new points.
   - A retake clears the previous answers first.
 
 **`SubmissionService`**, staff side: `listForTeacher()`, `grade()`, `gradeSubmission()`, `excuse()`, `readSubmissionFile()`.
@@ -223,6 +236,7 @@ See [`prisma/schema/grading.prisma`](../../prisma/schema/grading.prisma) and [`p
 | `grading.quiz_question`, `grading.quiz_option` | Quiz content and answer key |
 | `grading.quiz_answer` | A student's answers for the current attempt |
 | `grading.submission` | Work and the mark: `status`, `score`, `feedback`, `excused`, `excused_reason`, `text_body`, `file_id`, `attempt_count`, `graded_by`, `graded_at`. Unique on `(activity_id, student_id)`. |
+| `grading.activity_extension` | One later due date per `(activity_id, student_id)`, with `reason` and `created_by` |
 | `grading.rubric`, `rubric_criterion`, `rubric_rating`, `rubric_assessment` | Rubrics and per-criterion marks |
 | `grading.grade_scale`, `grade_scale_band` | Read for letters |
 | `course.assignment_group` | Groups, weights, positions, `drop_lowest` and `drop_highest` |
@@ -253,6 +267,8 @@ None.
 | `gradebook-import.ts` | CSV parsing and import planning (pure) |
 | `gradebook-import.service.ts` | Import preview and transactional apply |
 | `round.ts` | Two-decimal rounding |
+| `due-date.ts` | Effective due dates, past-due checks and the quiz attempt grace (pure) |
+| `extension.controller.ts`, `extension.service.ts` | Per-student due date extensions |
 | `activity.service.test.ts` | Activity tests |
 | `submission.service.test.ts` | Submission tests |
 | `rubric.service.test.ts` | Rubric tests |

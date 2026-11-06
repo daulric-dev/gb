@@ -19,6 +19,7 @@ export const EVENT_GROUPS = [
   'people',
   'courses',
   'system',
+  'audit',
 ] as const;
 export type EventGroup = (typeof EVENT_GROUPS)[number];
 
@@ -28,6 +29,7 @@ export const EVENT_GROUP_LABELS: Record<EventGroup, string> = {
   people: 'People & enrolment',
   courses: 'Courses & content',
   system: 'System',
+  audit: 'Audit log',
 };
 
 /** A JSON Schema (draft 2020-12) object, the subset this file uses. */
@@ -43,7 +45,8 @@ export interface JsonSchema {
   items?: JsonSchema;
   minimum?: number;
 }
-type JsonType = 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
+type JsonType =
+  'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
 
 export interface WebhookEventType {
   key: string;
@@ -69,7 +72,10 @@ const uuidOrNull: JsonSchema = { type: ['string', 'null'], format: 'uuid' };
 const text: JsonSchema = { type: 'string' };
 const textOrNull: JsonSchema = { type: ['string', 'null'] };
 const time: JsonSchema = { type: 'string', format: 'date-time' };
-const timeOrNull: JsonSchema = { type: ['string', 'null'], format: 'date-time' };
+const timeOrNull: JsonSchema = {
+  type: ['string', 'null'],
+  format: 'date-time',
+};
 const numOrNull: JsonSchema = { type: ['number', 'null'] };
 
 const obj = (
@@ -90,7 +96,12 @@ const eventData = (properties: Record<string, JsonSchema>): JsonSchema =>
 
 const person = (description: string, nullable = false) =>
   obj(
-    { id: uuid, firstName: textOrNull, lastName: textOrNull, email: textOrNull },
+    {
+      id: uuid,
+      firstName: textOrNull,
+      lastName: textOrNull,
+      email: textOrNull,
+    },
     description,
     nullable,
   );
@@ -101,7 +112,10 @@ export const STUDENT_SCHEMA = person('The student (student record id)');
 export const STAFF_SCHEMA = person('A staff member (user profile id)');
 const STAFF_OR_NULL = person('A staff member (user profile id), or null', true);
 
-export const COURSE_SCHEMA = obj({ id: uuid, name: text, code: textOrNull }, 'The course');
+export const COURSE_SCHEMA = obj(
+  { id: uuid, name: text, code: textOrNull },
+  'The course',
+);
 
 const ACTIVITY_KINDS = ['assignment', 'quiz', 'offline'] as const;
 export const ACTIVITY_SCHEMA = obj(
@@ -127,17 +141,25 @@ const GRADE_SCHEMA = obj(
 /** The school the event happened in; first in every event's `data`. */
 export const SCHOOL_SCHEMA = obj({ id: uuid, name: text }, 'The school');
 
-const ATTENDANCE_STATUS: JsonSchema = { type: 'string', enum: ['present', 'late', 'absent', 'excused'] };
-const ROLE: JsonSchema = { type: ['string', 'null'], enum: ['admin', 'teacher', 'member', null] };
+const ATTENDANCE_STATUS: JsonSchema = {
+  type: 'string',
+  enum: ['present', 'late', 'absent', 'excused'],
+};
+const ROLE: JsonSchema = {
+  type: ['string', 'null'],
+  enum: ['admin', 'teacher', 'member', null],
+};
 
 // ── messages ────────────────────────────────────────────────────────────────
 
 type Data = Record<string, unknown>;
 
 /** `v` if it is a plain object, else an empty one (so lookups never throw). */
-const rec = (v: unknown): Data => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Data) : {});
+const rec = (v: unknown): Data =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Data) : {};
 /** A non-blank string, trimmed, or null. */
-const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const str = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim() ? v.trim() : null;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** "First Last" (whichever parts there are), or null. */
@@ -151,7 +173,8 @@ const courseName = (d: Data) => str(rec(d.course).name) ?? 'a course';
 const activityTitle = (d: Data) => str(rec(d.activity).title) ?? 'an activity';
 const schoolName = (d: Data) => str(rec(d.school).name) ?? 'the school';
 
-const numText = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : null);
+const numText = (v: unknown) =>
+  typeof v === 'number' && Number.isFinite(v) ? String(v) : null;
 /** "18/20", "18" (no points), or null (no score). */
 function markText(grade: unknown): string | null {
   const g = rec(grade);
@@ -163,7 +186,8 @@ function markText(grade: unknown): string | null {
 
 function gradeMessage(d: Data): string {
   const where = `${activityTitle(d)} in ${courseName(d)}`;
-  if (rec(d.grade).excused === true) return `${studentName(d)} was excused from ${where}`;
+  if (rec(d.grade).excused === true)
+    return `${studentName(d)} was excused from ${where}`;
   const mark = markText(d.grade);
   return mark
     ? `${studentName(d)} received ${mark} for ${where}`
@@ -190,12 +214,17 @@ export function eventMessage(type: string, data: unknown): string {
   // eslint-disable-next-line no-control-regex
   text = text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
   if (!text) text = def?.label ?? `GradeBook event ${type}`;
-  return text.length > MAX_MESSAGE_LENGTH ? `${text.slice(0, MAX_MESSAGE_LENGTH - 1).trimEnd()}…` : text;
+  return text.length > MAX_MESSAGE_LENGTH
+    ? `${text.slice(0, MAX_MESSAGE_LENGTH - 1).trimEnd()}…`
+    : text;
 }
 
 // ── example values ──────────────────────────────────────────────────────────
 
-const EX_SCHOOL = { id: '3c5e7a9b-1d3f-4a5c-8e7b-9d1f3a5c7e0b', name: 'Riverside High School' };
+const EX_SCHOOL = {
+  id: '3c5e7a9b-1d3f-4a5c-8e7b-9d1f3a5c7e0b',
+  name: 'Riverside High School',
+};
 
 const EX_STUDENT = {
   id: '6f1c2a0e-5b7d-4c3e-9a10-2d4e6f8a0b1c',
@@ -209,9 +238,24 @@ const EX_STAFF = {
   lastName: 'Hopper',
   email: 'g.hopper@riverside.edu',
 };
-const EX_COURSE = { id: '9d3f5b7a-2c4e-4a6b-8d0f-1e3a5c7b9d2f', name: 'Year 10 Mathematics', code: 'MATH10' };
-const EX_ACTIVITY = { id: '4a6c8e0b-3d5f-4b7a-9c1e-2f4a6b8c0d3e', title: 'Quadratics homework', kind: 'assignment', points: 20 };
-const EX_QUIZ = { ...EX_ACTIVITY, id: '5b7d9f1c-4e6a-4c8b-8d2f-3a5b7c9d1e4f', title: 'Fractions quiz', kind: 'quiz', points: 10 };
+const EX_COURSE = {
+  id: '9d3f5b7a-2c4e-4a6b-8d0f-1e3a5c7b9d2f',
+  name: 'Year 10 Mathematics',
+  code: 'MATH10',
+};
+const EX_ACTIVITY = {
+  id: '4a6c8e0b-3d5f-4b7a-9c1e-2f4a6b8c0d3e',
+  title: 'Quadratics homework',
+  kind: 'assignment',
+  points: 20,
+};
+const EX_QUIZ = {
+  ...EX_ACTIVITY,
+  id: '5b7d9f1c-4e6a-4c8b-8d2f-3a5b7c9d1e4f',
+  title: 'Fractions quiz',
+  kind: 'quiz',
+  points: 10,
+};
 const EX_SESSION_ID = '7c9e1a3d-5f7b-4d9c-8e3a-4b6c8d0e2f5a';
 const EX_SUBMISSION_ID = '8d0f2b4e-6a8c-4e0d-9f4b-5c7d9e1f3a6b';
 
@@ -223,8 +267,10 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     key: 'submission.handed_in',
     group: 'grades_submissions',
     label: 'Assignment handed in',
-    message: (d) => `${studentName(d)} handed in ${activityTitle(d)} in ${courseName(d)}`,
-    description: 'A student handed in an assignment (text, files or both). Quizzes send quiz.completed instead.',
+    message: (d) =>
+      `${studentName(d)} handed in ${activityTitle(d)} in ${courseName(d)}`,
+    description:
+      'A student handed in an assignment (text, files or both). Quizzes send quiz.completed instead.',
     schema: eventData({
       submission: obj({ id: uuid, submittedAt: time }),
       activity: ACTIVITY_SCHEMA,
@@ -233,7 +279,10 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     }),
     example: {
       school: EX_SCHOOL,
-      submission: { id: EX_SUBMISSION_ID, submittedAt: '2026-11-04T09:15:00.000Z' },
+      submission: {
+        id: EX_SUBMISSION_ID,
+        submittedAt: '2026-11-04T09:15:00.000Z',
+      },
       activity: EX_ACTIVITY,
       course: EX_COURSE,
       student: EX_STUDENT,
@@ -274,7 +323,8 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       const mark = markText(d.grade);
       return `${studentName(d)} completed ${activityTitle(d)} in ${courseName(d)}${mark ? ` and scored ${mark}` : ''}`;
     },
-    description: 'A student submitted a quiz attempt; it was marked automatically.',
+    description:
+      'A student submitted a quiz attempt; it was marked automatically.',
     schema: eventData({
       submission: obj({ id: uuid, attempt: { type: ['integer', 'null'] } }),
       activity: ACTIVITY_SCHEMA,
@@ -346,7 +396,12 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     description:
       'An attendance session closed (early, or when its time ran out). Everyone who had not checked in was marked absent; the counts include them.',
     schema: eventData({
-      session: obj({ id: uuid, title: textOrNull, openedAt: time, closedAt: time }),
+      session: obj({
+        id: uuid,
+        title: textOrNull,
+        openedAt: time,
+        closedAt: time,
+      }),
       course: COURSE_SCHEMA,
       counts: obj({
         present: { type: 'integer' },
@@ -376,7 +431,7 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       return `${studentName(d)} was marked ${status ?? 'for attendance'} in ${courseName(d)}`;
     },
     description:
-      'A student checked in (code or QR), or a teacher set or changed a student\'s attendance. Absences filled in automatically at close are in attendance.session_closed\'s counts, not sent one by one.',
+      "A student checked in (code or QR), or a teacher set or changed a student's attendance. Absences filled in automatically at close are in attendance.session_closed's counts, not sent one by one.",
     schema: eventData({
       session: obj({ id: uuid }),
       course: COURSE_SCHEMA,
@@ -393,7 +448,11 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       session: { id: EX_SESSION_ID },
       course: EX_COURSE,
       student: EX_STUDENT,
-      record: { status: 'late', method: 'qr', checkedInAt: '2026-11-04T08:37:12.000Z' },
+      record: {
+        status: 'late',
+        method: 'qr',
+        checkedInAt: '2026-11-04T08:37:12.000Z',
+      },
       recordedBy: null,
     },
   },
@@ -405,7 +464,8 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     label: 'Student joined the school',
     message: (d) =>
       `${studentName(d)} joined ${schoolName(d)}${d.via === 'email_domain' ? ' with a student email address' : d.via === 'join_code' ? ' with the join code' : ''}`,
-    description: "A student joined the school with its join code or a student email domain.",
+    description:
+      'A student joined the school with its join code or a student email domain.',
     schema: eventData({
       student: STUDENT_SCHEMA,
       via: { type: 'string', enum: ['join_code', 'email_domain'] },
@@ -433,19 +493,26 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       d.via === 'join_code'
         ? `${studentName(d)} joined ${courseName(d)} with its join code`
         : `${studentName(d)} was enrolled in ${courseName(d)}`,
-    description: "A student was added to a course by its staff, or joined it with the course's code.",
+    description:
+      "A student was added to a course by its staff, or joined it with the course's code.",
     schema: eventData({
       student: STUDENT_SCHEMA,
       course: COURSE_SCHEMA,
       via: { type: 'string', enum: ['staff', 'join_code'] },
     }),
-    example: { school: EX_SCHOOL, student: EX_STUDENT, course: EX_COURSE, via: 'staff' },
+    example: {
+      school: EX_SCHOOL,
+      student: EX_STUDENT,
+      course: EX_COURSE,
+      via: 'staff',
+    },
   },
   {
     key: 'student.unenrolled',
     group: 'people',
     label: 'Student removed from a course',
-    message: (d) => `${studentName(d)} was removed from ${courseName(d)}${d.dropped === true ? ' (kept as dropped)' : ''}`,
+    message: (d) =>
+      `${studentName(d)} was removed from ${courseName(d)}${d.dropped === true ? ' (kept as dropped)' : ''}`,
     description:
       'A student was removed from a course. `dropped` is true when they had work in it (kept, marked dropped), false when the enrolment was deleted.',
     schema: eventData({
@@ -453,7 +520,12 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       course: COURSE_SCHEMA,
       dropped: { type: 'boolean' },
     }),
-    example: { school: EX_SCHOOL, student: EX_STUDENT, course: EX_COURSE, dropped: true },
+    example: {
+      school: EX_SCHOOL,
+      student: EX_STUDENT,
+      course: EX_COURSE,
+      dropped: true,
+    },
   },
   {
     key: 'staff.joined',
@@ -463,13 +535,19 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       const role = str(d.role);
       return `${staffName(d)} joined ${schoolName(d)}${role ? ` as ${role === 'admin' ? 'an' : 'a'} ${role}` : ''}`;
     },
-    description: 'A school admin approved a join request, or a staff member joined with a staff email domain.',
+    description:
+      'A school admin approved a join request, or a staff member joined with a staff email domain.',
     schema: eventData({
       staff: STAFF_SCHEMA,
       role: ROLE,
       via: { type: 'string', enum: ['join_request', 'email_domain'] },
     }),
-    example: { school: EX_SCHOOL, staff: EX_STAFF, role: 'teacher', via: 'join_request' },
+    example: {
+      school: EX_SCHOOL,
+      staff: EX_STAFF,
+      role: 'teacher',
+      via: 'join_request',
+    },
   },
   {
     key: 'staff.left',
@@ -479,7 +557,8 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       d.via === 'removed'
         ? `${staffName(d)} was removed from ${schoolName(d)}`
         : `${staffName(d)} left ${schoolName(d)}`,
-    description: 'A staff member left the school, or a school admin removed them.',
+    description:
+      'A staff member left the school, or a school admin removed them.',
     schema: eventData({
       staff: STAFF_SCHEMA,
       via: { type: 'string', enum: ['left', 'removed'] },
@@ -496,12 +575,17 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
       const after = str(r.after) ?? 'no role';
       return `${staffName(d)}'s role changed from ${before} to ${after}`;
     },
-    description: "A school admin changed a staff member's base role (admin, teacher, member). Custom role grants are not sent.",
+    description:
+      "A school admin changed a staff member's base role (admin, teacher, member). Custom role grants are not sent.",
     schema: eventData({
       staff: STAFF_SCHEMA,
       role: obj({ before: ROLE, after: ROLE }),
     }),
-    example: { school: EX_SCHOOL, staff: EX_STAFF, role: { before: 'teacher', after: 'admin' } },
+    example: {
+      school: EX_SCHOOL,
+      staff: EX_STAFF,
+      role: { before: 'teacher', after: 'admin' },
+    },
   },
 
   // Courses & content
@@ -511,7 +595,9 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     label: 'Course created',
     message: (d) => {
       const by = personName(d.createdBy);
-      return by ? `${by} created ${courseName(d)}` : `${cap(courseName(d))} was created`;
+      return by
+        ? `${by} created ${courseName(d)}`
+        : `${cap(courseName(d))} was created`;
     },
     description: 'A course was created (from scratch or as a copy).',
     schema: eventData({ course: COURSE_SCHEMA, createdBy: STAFF_OR_NULL }),
@@ -532,11 +618,19 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     label: 'Activity published',
     message: (d) => {
       const kind = str(rec(d.activity).kind);
-      const noun = kind === 'quiz' ? 'Quiz' : kind === 'offline' ? 'Activity' : 'Assignment';
+      const noun =
+        kind === 'quiz'
+          ? 'Quiz'
+          : kind === 'offline'
+            ? 'Activity'
+            : 'Assignment';
       const title = str(rec(d.activity).title);
-      return title ? `${noun} ${title} was published in ${courseName(d)}` : `A new ${noun.toLowerCase()} was published in ${courseName(d)}`;
+      return title
+        ? `${noun} ${title} was published in ${courseName(d)}`
+        : `A new ${noun.toLowerCase()} was published in ${courseName(d)}`;
     },
-    description: 'An assignment, quiz or offline activity was published (or reopened) to students.',
+    description:
+      'An assignment, quiz or offline activity was published (or reopened) to students.',
     schema: eventData({
       activity: obj({
         id: uuid,
@@ -560,25 +654,83 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     message: (d) => {
       const title = str(rec(d.announcement).title);
       const what = title ? `the announcement "${title}"` : 'an announcement';
-      const where = rec(d.announcement).scope === 'course' && d.course ? `in ${courseName(d)}` : `to ${schoolName(d)}`;
+      const where =
+        rec(d.announcement).scope === 'course' && d.course
+          ? `in ${courseName(d)}`
+          : `to ${schoolName(d)}`;
       const by = personName(d.author);
-      return by ? `${by} posted ${what} ${where}` : `${cap(what)} was posted ${where}`;
+      return by
+        ? `${by} posted ${what} ${where}`
+        : `${cap(what)} was posted ${where}`;
     },
-    description: 'A school-wide or course announcement was posted. Only the title is sent, never the body.',
+    description:
+      'A school-wide or course announcement was posted. Only the title is sent, never the body.',
     schema: eventData({
       announcement: obj({
         id: uuid,
         title: text,
         scope: { type: 'string', enum: ['school', 'course'] },
       }),
-      course: { ...COURSE_SCHEMA, type: ['object', 'null'], description: 'The course, for a course announcement' },
+      course: {
+        ...COURSE_SCHEMA,
+        type: ['object', 'null'],
+        description: 'The course, for a course announcement',
+      },
       author: STAFF_OR_NULL,
     }),
     example: {
       school: EX_SCHOOL,
-      announcement: { id: '1e3a5c7b-9d2f-4b4d-8f6a-7c9e1a3d5f8b', title: 'Exam timetable published', scope: 'course' },
+      announcement: {
+        id: '1e3a5c7b-9d2f-4b4d-8f6a-7c9e1a3d5f8b',
+        title: 'Exam timetable published',
+        scope: 'course',
+      },
       course: EX_COURSE,
       author: EX_STAFF,
+    },
+  },
+
+  // Audit log
+  {
+    key: 'audit.changed',
+    group: 'audit',
+    label: 'Audit log change',
+    message: (d) => {
+      const audit = rec(d.audit);
+      const actor = rec(audit.actor);
+      const who = str(actor.name) ?? str(actor.email) ?? 'A user';
+      const action = str(audit.action) ?? 'changed';
+      const entity = str(audit.entity) ?? 'a record';
+      return `${who} ${action === 'create' ? 'created' : action === 'delete' ? 'deleted' : 'updated'} ${entity} in ${schoolName(d)}`;
+    },
+    description:
+      'A school-scoped audit-log entry, including redacted before/after values and actor details. Contains personal data; subscribe only if this receiver is trusted.',
+    schema: eventData({
+      audit: obj({
+        id: uuid,
+        entity: text,
+        entityId: textOrNull,
+        action: { type: 'string', enum: ['create', 'update', 'delete'] },
+        actor: obj({
+          id: uuid,
+          name: textOrNull,
+          email: textOrNull,
+        }),
+        changes: { type: 'object', additionalProperties: true },
+        createdAt: time,
+      }),
+    }),
+    example: {
+      school: EX_SCHOOL,
+      audit: {
+        id: 'a1b2c3d4-e5f6-4789-8abc-def012345678',
+        entity: 'term',
+        entityId: '5b7d9f1c-4e6a-4c8b-8d2f-3a5b7c9d1e4f',
+        action: 'update',
+        actor: { id: EX_STAFF.id, name: 'Grace Hopper', email: EX_STAFF.email },
+        changes: { name: { before: 'Autumn', after: 'Fall' } },
+        createdAt: '2026-11-04T09:15:00.000Z',
+      },
     },
   },
 
@@ -595,7 +747,10 @@ export const WEBHOOK_EVENT_TYPES: readonly WebhookEventType[] = [
     }),
     example: {
       school: EX_SCHOOL,
-      webhook: { id: '0a2c4e6f-8b1d-4f3a-9c5e-6d8f0a2b4c7d', name: 'Student information system' },
+      webhook: {
+        id: '0a2c4e6f-8b1d-4f3a-9c5e-6d8f0a2b4c7d',
+        name: 'Student information system',
+      },
     },
   },
 ];
@@ -605,7 +760,9 @@ export type WebhookEventKey = string;
 const BY_KEY = new Map(WEBHOOK_EVENT_TYPES.map((t) => [t.key, t]));
 
 /** Every key, in catalog order. */
-export const WEBHOOK_EVENT_KEYS: readonly string[] = WEBHOOK_EVENT_TYPES.map((t) => t.key);
+export const WEBHOOK_EVENT_KEYS: readonly string[] = WEBHOOK_EVENT_TYPES.map(
+  (t) => t.key,
+);
 
 export function isWebhookEventKey(key: unknown): key is WebhookEventKey {
   return typeof key === 'string' && BY_KEY.has(key);
@@ -626,7 +783,10 @@ export function eventTypeCatalog() {
       label: t.label,
       description: t.description,
       exampleMessage: eventMessage(t.key, t.example),
-      schema: { $schema: 'https://json-schema.org/draft/2020-12/schema', ...t.schema },
+      schema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        ...t.schema,
+      },
       example: t.example,
     })),
   };
@@ -659,12 +819,14 @@ export class UnknownEventTypeError extends Error {
 
 // ── validation ──────────────────────────────────────────────────────────────
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function typeOf(value: unknown): JsonType {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
-  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'number';
+  if (typeof value === 'number')
+    return Number.isInteger(value) ? 'integer' : 'number';
   return typeof value as JsonType;
 }
 
@@ -673,19 +835,29 @@ function typeOf(value: unknown): JsonType {
  * enum, properties, required, additionalProperties, items, uuid and
  * date-time formats). Returns the problems found; empty means valid.
  */
-export function validateSchema(schema: JsonSchema, value: unknown, path = 'data'): string[] {
+export function validateSchema(
+  schema: JsonSchema,
+  value: unknown,
+  path = 'data',
+): string[] {
   const errors: string[] = [];
   if (schema.type) {
     const allowed = Array.isArray(schema.type) ? schema.type : [schema.type];
     const actual = typeOf(value);
-    const ok = allowed.some((t) => t === actual || (t === 'number' && actual === 'integer'));
-    if (!ok) return [`${path}: expected ${allowed.join(' or ')}, got ${actual}`];
+    const ok = allowed.some(
+      (t) => t === actual || (t === 'number' && actual === 'integer'),
+    );
+    if (!ok)
+      return [`${path}: expected ${allowed.join(' or ')}, got ${actual}`];
   }
   if (schema.enum && !schema.enum.includes(value as never)) {
-    errors.push(`${path}: ${JSON.stringify(value)} is not one of ${JSON.stringify(schema.enum)}`);
+    errors.push(
+      `${path}: ${JSON.stringify(value)} is not one of ${JSON.stringify(schema.enum)}`,
+    );
   }
   if (typeof value === 'string' && schema.format) {
-    if (schema.format === 'uuid' && !UUID_RE.test(value)) errors.push(`${path}: not a uuid`);
+    if (schema.format === 'uuid' && !UUID_RE.test(value))
+      errors.push(`${path}: not a uuid`);
     if (schema.format === 'date-time' && Number.isNaN(Date.parse(value))) {
       errors.push(`${path}: not a date-time`);
     }
@@ -698,11 +870,14 @@ export function validateSchema(schema: JsonSchema, value: unknown, path = 'data'
     for (const [key, v] of Object.entries(record)) {
       const sub = schema.properties?.[key];
       if (sub) errors.push(...validateSchema(sub, v, `${path}.${key}`));
-      else if (schema.additionalProperties === false) errors.push(`${path}.${key}: not allowed`);
+      else if (schema.additionalProperties === false)
+        errors.push(`${path}.${key}: not allowed`);
     }
   }
   if (Array.isArray(value) && schema.items) {
-    value.forEach((v, i) => errors.push(...validateSchema(schema.items!, v, `${path}[${i}]`)));
+    value.forEach((v, i) =>
+      errors.push(...validateSchema(schema.items!, v, `${path}[${i}]`)),
+    );
   }
   return errors;
 }

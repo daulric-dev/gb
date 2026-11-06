@@ -28,7 +28,16 @@ const SIGNED_IN = `${SESSION_COOKIE}=opaque-token`;
 
 describe("proxy - signed out", () => {
   test("public and guest-only pages pass", () => {
-    for (const path of ["/", "/privacy", "/terms", "/scan", "/scan/x", "/login", "/login/verify"]) {
+    for (const path of [
+      "/",
+      "/privacy",
+      "/terms",
+      "/scan",
+      "/scan/x",
+      "/.well-known/gradebook.json",
+      "/login",
+      "/login/verify",
+    ]) {
       expect(redirectedTo(run(path))).toBeNull();
     }
   });

@@ -5,7 +5,7 @@ frontend's design system and core flows.
 
 ## Scope (MVP)
 
-- **OTP email auth** — send code → verify 8-digit code → cookie session
+- **OTP email auth** — send code → verify 8-digit code → bearer session token
   (`/auth/otp/send`, `/auth/otp/verify`), matching the web flow exactly.
 - **Dashboard** — admin overview (stats + staff/student donut charts + current
   academic year) and teacher overview (class list with student counts). Users
@@ -24,7 +24,7 @@ frontend's design system and core flows.
 | ---------------------------- | ------------------------------------------------ |
 | Next.js app router           | `expo-router` (file-based, `app/`)           |
 | shadcn + Tailwind (oklch)    | `src/theme` tokens + `src/components/ui`     |
-| `lib/api.ts` (cookie auth) | `src/lib/api.ts` (native cookie jar)           |
+| `lib/api.ts` (browser cookie) | `src/lib/api.ts` (opaque bearer session)      |
 | `AuthProvider` (signals)   | `src/providers/AuthProvider` (context)         |
 | `sonner` toasts            | `src/providers/ToastProvider`                  |
 | `recharts`                 | `src/components/charts` (`react-native-svg`) |
@@ -48,13 +48,12 @@ send `GET` there and get 404s, so `MOBILE_MIN_VERSION` should be raised to the
 first build with `QUERY` once it is in both stores
 (`docs/content/backend/http-query.md`).
 
-Auth is cookie-based: the API sets one opaque httpOnly session cookie,
-`gb_session`, on `/auth/otp/verify` and on `/auth/sso/handoff` (SSO sign-ins
-come back as a one-time code that the app trades for the cookie). React
-Native's fetch keeps and resends it through the native cookie store
-(`credentials: "include"`), so the app never handles a token. The cookie
-survives app restarts because the API gives it an expiry (30 days, sliding);
-a cookie without one would be dropped when the app is killed.
+The API issues an opaque session token (not a JWT). The mobile app receives it
+in the `X-Session-Token` response header and stores it in the device keychain or
+keystore; authenticated requests send it as a bearer token. This is separate
+from the web app, which uses the `gb_session` HTTP-only cookie. Mobile sessions
+can be revoked server-side from Signed-in devices, including signing out all
+other devices.
 
 ## App updates
 
@@ -101,7 +100,13 @@ bun run ios | android | web
 
 ### Backend URL
 
-Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL` (no `/api` suffix):
+In a release app, enter the school's public GradeBook URL on first launch
+(for example `https://school.example.com`). If that is the frontend and the API
+is on a different host, the frontend should publish
+`/.well-known/gradebook.json` with `{"apiUrl":"https://api.school.example.com"}`.
+The app also accepts the backend URL directly.
+For development, copy `.env.example` to `.env` and optionally set
+`EXPO_PUBLIC_API_URL` (no `/api` suffix):
 
 - iOS simulator: `http://localhost:3001`
 - Android emulator: `http://10.0.2.2:3001`

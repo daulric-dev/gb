@@ -34,13 +34,25 @@ describe('OrganisationService', () => {
     sessions = { revokeAll: mock(async () => 3) };
     const mail = { configured: () => false, send: mock(async () => {}) };
     const accounts = { onVerifiedSignIn: mock(() => {}) };
-    const invites = new InviteService(prisma as any, cache as any, mail as any, accounts as any);
-    service = new OrganisationService(prisma as any, cache as any, sessions as any, invites);
-    prisma.organisation_invite.create.mockImplementation(async ({ data }: any) => ({
-      id: 'inv-1',
-      email: data.email,
-      expires_at: data.expires_at,
-    }));
+    const invites = new InviteService(
+      prisma as any,
+      cache as any,
+      mail as any,
+      accounts as any,
+    );
+    service = new OrganisationService(
+      prisma as any,
+      cache as any,
+      sessions as any,
+      invites,
+    );
+    prisma.organisation_invite.create.mockImplementation(
+      async ({ data }: any) => ({
+        id: 'inv-1',
+        email: data.email,
+        expires_at: data.expires_at,
+      }),
+    );
     prisma.organisation.create.mockImplementation(async ({ data }: any) => ({
       id: 'org-1',
       created_at: NOW,
@@ -58,11 +70,16 @@ describe('OrganisationService', () => {
   describe('status', () => {
     test('needs setup without an organisation', async () => {
       prisma.organisation.findFirst.mockResolvedValue(null);
-      expect(await service.status()).toEqual({ needsSetup: true, organisation: null });
+      expect(await service.status()).toEqual({
+        needsSetup: true,
+        organisation: null,
+      });
     });
 
     test('done once the organisation exists', async () => {
-      prisma.organisation.findFirst.mockResolvedValue({ name: 'Northside Trust' });
+      prisma.organisation.findFirst.mockResolvedValue({
+        name: 'Northside Trust',
+      });
       expect(await service.status()).toEqual({
         needsSetup: false,
         organisation: { name: 'Northside Trust' },
@@ -70,23 +87,87 @@ describe('OrganisationService', () => {
     });
   });
 
+  describe('setup warning at boot', () => {
+    let prevNodeEnv: string | undefined;
+    let warn: ReturnType<typeof mock>;
+
+    beforeEach(() => {
+      prevNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      warn = mock(() => {});
+      (service as any).logger.warn = warn;
+      prisma.organisation.count.mockResolvedValue(0);
+      prisma.school.count.mockResolvedValue(0);
+    });
+
+    afterEach(() => {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+    });
+
+    test('warns in production when the first sign-in would claim the install', async () => {
+      await service.onApplicationBootstrap();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('ORG_ADMIN_EMAILS');
+      expect(warn.mock.calls[0][0]).toContain('first account to sign in');
+    });
+
+    test('is quiet with ORG_ADMIN_EMAILS set', async () => {
+      process.env.ORG_ADMIN_EMAILS = 'boss@school.test';
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('is quiet once set up, or with schools already', async () => {
+      prisma.organisation.count.mockResolvedValue(1);
+      await service.onApplicationBootstrap();
+      prisma.organisation.count.mockResolvedValue(0);
+      prisma.school.count.mockResolvedValue(2);
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('is quiet outside production', async () => {
+      process.env.NODE_ENV = 'development';
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('a database error at boot is not fatal', async () => {
+      prisma.organisation.count.mockRejectedValue(new Error('db down'));
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
   describe('eligibility', () => {
     test('on an empty install, any signed-in user is sent to setup', async () => {
       prisma.organisation.count.mockResolvedValue(0);
       prisma.school.count.mockResolvedValue(0);
-      expect(await service.eligibility(ME)).toEqual({ needsSetup: true, canSetUp: true });
+      expect(await service.eligibility(ME)).toEqual({
+        needsSetup: true,
+        canSetUp: true,
+      });
     });
 
     test('a stranger on an install with schools cannot set up', async () => {
       prisma.organisation.count.mockResolvedValue(0);
-      prisma.school.count.mockImplementation(async (args: any) => (args?.where ? 0 : 2));
+      prisma.school.count.mockImplementation(async (args: any) =>
+        args?.where ? 0 : 2,
+      );
       prisma.school_management.count.mockResolvedValue(0);
-      expect(await service.eligibility(ME)).toEqual({ needsSetup: true, canSetUp: false });
+      expect(await service.eligibility(ME)).toEqual({
+        needsSetup: true,
+        canSetUp: false,
+      });
     });
 
     test('nothing to do once the organisation exists', async () => {
       prisma.organisation.count.mockResolvedValue(1);
-      expect(await service.eligibility(ME)).toEqual({ needsSetup: false, canSetUp: false });
+      expect(await service.eligibility(ME)).toEqual({
+        needsSetup: false,
+        canSetUp: false,
+      });
     });
   });
 
@@ -158,15 +239,19 @@ describe('OrganisationService', () => {
     test('with ORG_ADMIN_EMAILS set, only listed verified emails may set up', async () => {
       process.env.ORG_ADMIN_EMAILS = 'it@example.org';
       prisma.school.count.mockResolvedValue(0);
-      prisma.app_user.findUnique.mockResolvedValue(account('someone@example.org'));
+      prisma.app_user.findUnique.mockResolvedValue(
+        account('someone@example.org'),
+      );
 
       const err = await expectRejection(service.setup(ME, 'Riverside'));
       expect(err).toBeInstanceOf(ForbiddenException);
 
-      prisma.app_user.findUnique.mockResolvedValue(account('it@example.org', false));
-      expect(await expectRejection(service.setup(ME, 'Riverside'))).toBeInstanceOf(
-        ForbiddenException,
+      prisma.app_user.findUnique.mockResolvedValue(
+        account('it@example.org', false),
       );
+      expect(
+        await expectRejection(service.setup(ME, 'Riverside')),
+      ).toBeInstanceOf(ForbiddenException);
       expect(prisma.organisation.create).not.toHaveBeenCalled();
     });
 
@@ -181,7 +266,9 @@ describe('OrganisationService', () => {
     });
 
     test('race: a setup that committed first makes the second a 409 (re-check under the lock)', async () => {
-      prisma.organisation.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+      prisma.organisation.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
       const err = await expectRejection(service.setup(ME, 'Riverside'));
       expect(err).toBeInstanceOf(ConflictException);
       expect(prisma.organisation.create).not.toHaveBeenCalled();
@@ -203,11 +290,18 @@ describe('OrganisationService', () => {
 
   describe('organisation', () => {
     test('get is 404 before setup', async () => {
-      expect(await expectRejection(service.get())).toBeInstanceOf(NotFoundException);
+      expect(await expectRejection(service.get())).toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     test('rename updates the name and clears every cached profile', async () => {
       prisma.organisation.findFirst.mockResolvedValue({ id: 'org-1' });
+      prisma.organisation.findUniqueOrThrow.mockResolvedValue({
+        id: 'org-1',
+        name: 'Old Name',
+        created_at: NOW,
+      });
       prisma.organisation.update.mockImplementation(async ({ data }: any) => ({
         id: 'org-1',
         created_at: NOW,
@@ -265,20 +359,47 @@ describe('OrganisationService', () => {
         row('u-both', 'both@x.org'),
       ]);
       prisma.app_user.findMany.mockResolvedValue([
-        { id: 'u-both', email: 'both@x.org', created_at: NOW, user_profile: null },
+        {
+          id: 'u-both',
+          email: 'both@x.org',
+          created_at: NOW,
+          user_profile: null,
+        },
         {
           id: 'u-env',
           email: 'env@x.org',
           created_at: NOW,
-          user_profile: { first_name: 'Env', last_name: 'Admin', email: 'env@x.org' },
+          user_profile: {
+            first_name: 'Env',
+            last_name: 'Admin',
+            email: 'env@x.org',
+          },
         },
       ]);
 
       const list = await service.admins();
       expect(list).toEqual([
-        { userId: 'u-db', email: 'db@x.org', name: 'A u-db', createdAt: NOW.toISOString(), fromEnv: false },
-        { userId: 'u-both', email: 'both@x.org', name: 'A u-both', createdAt: NOW.toISOString(), fromEnv: true },
-        { userId: 'u-env', email: 'env@x.org', name: 'Env Admin', createdAt: NOW.toISOString(), fromEnv: true },
+        {
+          userId: 'u-db',
+          email: 'db@x.org',
+          name: 'A u-db',
+          createdAt: NOW.toISOString(),
+          fromEnv: false,
+        },
+        {
+          userId: 'u-both',
+          email: 'both@x.org',
+          name: 'A u-both',
+          createdAt: NOW.toISOString(),
+          fromEnv: true,
+        },
+        {
+          userId: 'u-env',
+          email: 'env@x.org',
+          name: 'Env Admin',
+          createdAt: NOW.toISOString(),
+          fromEnv: true,
+        },
       ]);
       // Only verified, live accounts count.
       expect(prisma.app_user.findMany.mock.calls[0][0].where).toMatchObject({
@@ -290,17 +411,25 @@ describe('OrganisationService', () => {
     test('add: invites an email nobody signs in with yet', async () => {
       const added = await service.addAdmin(ME, ' Ghost@X.org ');
       expect(added).toEqual({
-        invited: { id: 'inv-1', email: 'ghost@x.org', expiresAt: expect.any(String) },
+        invited: {
+          id: 'inv-1',
+          email: 'ghost@x.org',
+          expiresAt: expect.any(String),
+        },
       });
       expect(prisma.organisation_admin.upsert).not.toHaveBeenCalled();
-      expect(prisma.organisation_invite.create.mock.calls[0][0].data).toMatchObject({
+      expect(
+        prisma.organisation_invite.create.mock.calls[0][0].data,
+      ).toMatchObject({
         email: 'ghost@x.org',
         kind: 'organisation_admin',
         school_id: null,
         invited_by: ME,
       });
       // It replaces the same email's open organisation admin invite.
-      expect(prisma.organisation_invite.updateMany.mock.calls[0][0].where).toEqual({
+      expect(
+        prisma.organisation_invite.updateMany.mock.calls[0][0].where,
+      ).toEqual({
         kind: 'organisation_admin',
         email: 'ghost@x.org',
         accepted_at: null,
@@ -312,11 +441,15 @@ describe('OrganisationService', () => {
       prisma.app_user.findUnique.mockResolvedValue({
         user_profile: { id: 'u-new', school_id: null, account_type: 'staff' },
       });
-      prisma.organisation_admin.findMany.mockResolvedValue([row('u-new', 'new@x.org')]);
+      prisma.organisation_admin.findMany.mockResolvedValue([
+        row('u-new', 'new@x.org'),
+      ]);
       await cache.set('profile:u-new', {}, 60);
 
       const added = await service.addAdmin(ME, ' New@X.org ');
-      expect(prisma.app_user.findUnique.mock.calls[0][0].where).toEqual({ email: 'new@x.org' });
+      expect(prisma.app_user.findUnique.mock.calls[0][0].where).toEqual({
+        email: 'new@x.org',
+      });
       expect(prisma.organisation_admin.upsert.mock.calls[0][0].create).toEqual({
         user_id: 'u-new',
         created_by: ME,
@@ -325,13 +458,21 @@ describe('OrganisationService', () => {
       expect(added.invited).toBeNull();
       expect(await cache.get('profile:u-new')).toBeNull();
       // Added directly: any open invite for the email is moot.
-      expect(prisma.organisation_invite.updateMany.mock.calls[0][0]).toMatchObject({
-        where: { kind: 'organisation_admin', email: 'new@x.org', revoked_at: null },
+      expect(
+        prisma.organisation_invite.updateMany.mock.calls[0][0],
+      ).toMatchObject({
+        where: {
+          kind: 'organisation_admin',
+          email: 'new@x.org',
+          revoked_at: null,
+        },
       });
     });
 
     test('remove: refuses the last admin from the database, yourself included', async () => {
-      prisma.organisation_admin.findMany.mockResolvedValue([row(ME, 'me@x.org')]);
+      prisma.organisation_admin.findMany.mockResolvedValue([
+        row(ME, 'me@x.org'),
+      ]);
       prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: ME });
 
       const err: any = await expectRejection(service.removeAdmin(ME, ME));
@@ -342,15 +483,24 @@ describe('OrganisationService', () => {
 
     test('remove: an env-listed admin does not stand in for the last database admin', async () => {
       process.env.ORG_ADMIN_EMAILS = 'env@x.org';
-      prisma.organisation_admin.findMany.mockResolvedValue([row('u-db', 'db@x.org')]);
-      prisma.app_user.findMany.mockResolvedValue([
-        { id: 'u-env', email: 'env@x.org', created_at: NOW, user_profile: null },
+      prisma.organisation_admin.findMany.mockResolvedValue([
+        row('u-db', 'db@x.org'),
       ]);
-      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u-db' });
+      prisma.app_user.findMany.mockResolvedValue([
+        {
+          id: 'u-env',
+          email: 'env@x.org',
+          created_at: NOW,
+          user_profile: null,
+        },
+      ]);
+      prisma.organisation_admin.findUnique.mockResolvedValue({
+        user_id: 'u-db',
+      });
 
-      expect(await expectRejection(service.removeAdmin(ME, 'u-db'))).toBeInstanceOf(
-        BadRequestException,
-      );
+      expect(
+        await expectRejection(service.removeAdmin(ME, 'u-db')),
+      ).toBeInstanceOf(BadRequestException);
     });
 
     test('remove: another admin can go while one remains', async () => {
@@ -358,7 +508,9 @@ describe('OrganisationService', () => {
         row(ME, 'me@x.org'),
         row('u-2', 'two@x.org'),
       ]);
-      prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u-2' });
+      prisma.organisation_admin.findUnique.mockResolvedValue({
+        user_id: 'u-2',
+      });
       await cache.set('profile:u-2', {}, 60);
 
       expect(await service.removeAdmin(ME, 'u-2')).toEqual({ removed: true });
@@ -370,9 +522,16 @@ describe('OrganisationService', () => {
 
     test('remove: an admin who is only in ORG_ADMIN_EMAILS is a 400', async () => {
       process.env.ORG_ADMIN_EMAILS = 'env@x.org';
-      prisma.organisation_admin.findMany.mockResolvedValue([row(ME, 'me@x.org')]);
+      prisma.organisation_admin.findMany.mockResolvedValue([
+        row(ME, 'me@x.org'),
+      ]);
       prisma.app_user.findMany.mockResolvedValue([
-        { id: 'u-env', email: 'env@x.org', created_at: NOW, user_profile: null },
+        {
+          id: 'u-env',
+          email: 'env@x.org',
+          created_at: NOW,
+          user_profile: null,
+        },
       ]);
       const err: any = await expectRejection(service.removeAdmin(ME, 'u-env'));
       expect(err).toBeInstanceOf(BadRequestException);
@@ -380,9 +539,9 @@ describe('OrganisationService', () => {
     });
 
     test('remove: 404 for someone who is not an admin', async () => {
-      expect(await expectRejection(service.removeAdmin(ME, 'u-x'))).toBeInstanceOf(
-        NotFoundException,
-      );
+      expect(
+        await expectRejection(service.removeAdmin(ME, 'u-x')),
+      ).toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -400,15 +559,25 @@ describe('OrganisationService', () => {
     });
 
     test('lists schools with their admin, staff and student counts', async () => {
-      prisma.school.findMany.mockResolvedValue([school('s1'), school('s2', { is_active: null })]);
+      prisma.school.findMany.mockResolvedValue([
+        school('s1'),
+        school('s2', { is_active: null }),
+      ]);
       prisma.school_management.findMany.mockResolvedValue([
         {
           school_id: 's1',
           user_id: 'u-a',
-          user_profile: { first_name: 'Ada', last_name: 'L', email: null, app_user: { email: 'ada@x.org' } },
+          user_profile: {
+            first_name: 'Ada',
+            last_name: 'L',
+            email: null,
+            app_user: { email: 'ada@x.org' },
+          },
         },
       ]);
-      prisma.school_management.groupBy.mockResolvedValue([{ school_id: 's1', _count: { _all: 5 } }]);
+      prisma.school_management.groupBy.mockResolvedValue([
+        { school_id: 's1', _count: { _all: 5 } },
+      ]);
       prisma.student.groupBy.mockResolvedValue([
         { school_id: 's1', _count: { _all: 40 } },
         { school_id: 's2', _count: { _all: 7 } },
@@ -451,11 +620,21 @@ describe('OrganisationService', () => {
         {
           school_id: 's2',
           user_id: 'u-a',
-          user_profile: { first_name: 'Ada', last_name: null, email: 'ada@x.org', app_user: null },
+          user_profile: {
+            first_name: 'Ada',
+            last_name: null,
+            email: 'ada@x.org',
+            app_user: null,
+          },
         },
       ]);
       prisma.organisation_invite.findMany.mockResolvedValue([
-        { id: 'inv-1', email: 'head@x.org', school_id: 's1', expires_at: expires },
+        {
+          id: 'inv-1',
+          email: 'head@x.org',
+          school_id: 's1',
+          expires_at: expires,
+        },
       ]);
       const rows = await service.schools(undefined, 'all');
       expect(rows[0].pendingAdminInvite).toEqual({
@@ -464,7 +643,9 @@ describe('OrganisationService', () => {
         expiresAt: expires.toISOString(),
       });
       expect(rows[1].pendingAdminInvite).toBeNull();
-      expect(prisma.organisation_invite.findMany.mock.calls[0][0].where).toEqual({
+      expect(
+        prisma.organisation_invite.findMany.mock.calls[0][0].where,
+      ).toEqual({
         kind: 'school_admin',
         school_id: { in: ['s1', 's2'] },
         accepted_at: null,
@@ -503,10 +684,17 @@ describe('OrganisationService', () => {
         prisma.school_management.groupBy.mockResolvedValue([]);
         prisma.student.groupBy.mockResolvedValue([]);
         const row = await service.school('s1');
-        expect(row).toMatchObject({ id: 's1', name: 'School s1', admin: null, studentCount: 0 });
+        expect(row).toMatchObject({
+          id: 's1',
+          name: 'School s1',
+          admin: null,
+          studentCount: 0,
+        });
         expect(row.logoUrl).toStartWith('https://cdn.example/');
         expect(row.logoUrl).toContain('school-logos/s1-abc.png');
-        expect(prisma.school.findUnique.mock.calls[0][0].select.logo_path).toBe(true);
+        expect(prisma.school.findUnique.mock.calls[0][0].select.logo_path).toBe(
+          true,
+        );
       } finally {
         if (prev === undefined) delete process.env.S3_PUBLIC_URL;
         else process.env.S3_PUBLIC_URL = prev;
@@ -515,10 +703,12 @@ describe('OrganisationService', () => {
 
     test('one school: 404 when it does not exist', async () => {
       prisma.school.findUnique.mockResolvedValue(null);
-      expect(await expectRejection(service.school('nope'))).toBeInstanceOf(NotFoundException);
-      expect(await expectRejection(service.requireSchool('nope'))).toBeInstanceOf(
+      expect(await expectRejection(service.school('nope'))).toBeInstanceOf(
         NotFoundException,
       );
+      expect(
+        await expectRejection(service.requireSchool('nope')),
+      ).toBeInstanceOf(NotFoundException);
     });
 
     test('create: makes the school without making the organisation admin a member', async () => {
@@ -526,7 +716,11 @@ describe('OrganisationService', () => {
       prisma.school.findUnique.mockResolvedValue(school('s-new'));
       await cache.set('schools:all', [], 60);
 
-      const row = await service.createSchool(ME, { name: ' New ', code: '', schoolType: 'secondary' });
+      const row = await service.createSchool(ME, {
+        name: ' New ',
+        code: '',
+        schoolType: 'secondary',
+      });
       expect(prisma.school.create.mock.calls[0][0].data).toEqual({
         name: 'New',
         code: null,
@@ -548,7 +742,9 @@ describe('OrganisationService', () => {
       });
 
       await service.createSchool(ME, { name: 'New', adminEmail: 'head@x.org' });
-      expect(prisma.school_management.create.mock.calls[0][0].data).toMatchObject({
+      expect(
+        prisma.school_management.create.mock.calls[0][0].data,
+      ).toMatchObject({
         user_id: 'u-head',
         school_id: 's-new',
         role: 'admin',
@@ -558,7 +754,10 @@ describe('OrganisationService', () => {
     test('create with an unknown adminEmail invites them', async () => {
       prisma.school.create.mockResolvedValue({ id: 's-new' });
       prisma.school.findUnique.mockResolvedValue(school('s-new'));
-      const row = await service.createSchool(ME, { name: 'New', adminEmail: 'ghost@x.org' });
+      const row = await service.createSchool(ME, {
+        name: 'New',
+        adminEmail: 'ghost@x.org',
+      });
       expect(row.admin).toBeNull();
       expect(row.invited).toEqual({
         id: 'inv-1',
@@ -566,7 +765,9 @@ describe('OrganisationService', () => {
         expiresAt: expect.any(String),
       });
       expect(prisma.school_management.create).not.toHaveBeenCalled();
-      expect(prisma.organisation_invite.create.mock.calls[0][0].data).toMatchObject({
+      expect(
+        prisma.organisation_invite.create.mock.calls[0][0].data,
+      ).toMatchObject({
         kind: 'school_admin',
         school_id: 's-new',
         email: 'ghost@x.org',
@@ -589,6 +790,7 @@ describe('OrganisationService', () => {
 
     test('update: writes only the fields given and drops members’ profiles', async () => {
       prisma.school.findUnique.mockResolvedValue(school('s1'));
+      prisma.school.findUniqueOrThrow.mockResolvedValue(school('s1'));
       prisma.user_profile.findMany.mockResolvedValue([{ id: 'u-1' }]);
       await cache.set('profile:u-1', {}, 60);
 
@@ -618,7 +820,9 @@ describe('OrganisationService', () => {
       expect(row.invited).toMatchObject({ id: 'inv-1', email: 'ghost@x.org' });
       expect(prisma.school_management.create).not.toHaveBeenCalled();
       // One admin per school: the school's other open admin invite goes.
-      expect(prisma.organisation_invite.updateMany.mock.calls[0][0].where).toEqual({
+      expect(
+        prisma.organisation_invite.updateMany.mock.calls[0][0].where,
+      ).toEqual({
         kind: 'school_admin',
         school_id: 's1',
         accepted_at: null,
@@ -626,9 +830,13 @@ describe('OrganisationService', () => {
       });
       expect(
         prisma.organisation_invite.updateMany.mock.invocationCallOrder[0],
-      ).toBeLessThan(prisma.organisation_invite.create.mock.invocationCallOrder[0]);
+      ).toBeLessThan(
+        prisma.organisation_invite.create.mock.invocationCallOrder[0],
+      );
       const data = prisma.organisation_invite.create.mock.calls[0][0].data;
-      expect(data.expires_at.getTime() - data.created_at.getTime()).toBe(14 * 24 * 3600 * 1000);
+      expect(data.expires_at.getTime() - data.created_at.getTime()).toBe(
+        14 * 24 * 3600 * 1000,
+      );
     });
 
     test('appointing an existing account revokes the school’s open admin invite', async () => {
@@ -638,8 +846,15 @@ describe('OrganisationService', () => {
       const row = await service.appointAdmin(ME, 's1', 'new@x.org');
       expect(row.invited).toBeNull();
       expect(prisma.organisation_invite.create).not.toHaveBeenCalled();
-      expect(prisma.organisation_invite.updateMany.mock.calls[0][0]).toMatchObject({
-        where: { school_id: 's1', kind: 'school_admin', accepted_at: null, revoked_at: null },
+      expect(
+        prisma.organisation_invite.updateMany.mock.calls[0][0],
+      ).toMatchObject({
+        where: {
+          school_id: 's1',
+          kind: 'school_admin',
+          accepted_at: null,
+          revoked_at: null,
+        },
         data: { revoked_at: expect.any(Date) },
       });
     });
@@ -648,16 +863,23 @@ describe('OrganisationService', () => {
       prisma.app_user.findUnique.mockResolvedValue({
         user_profile: { id: 'u-s', school_id: null, account_type: 'student' },
       });
-      expect(await expectRejection(service.appointAdmin(ME, 's1', 's@x.org'))).toBeInstanceOf(
-        BadRequestException,
-      );
+      expect(
+        await expectRejection(service.appointAdmin(ME, 's1', 's@x.org')),
+      ).toBeInstanceOf(BadRequestException);
     });
 
     test('demotes the previous admin to teacher, then appoints and sets the owner', async () => {
       prisma.app_user.findUnique.mockResolvedValue({
-        user_profile: { id: 'u-new', school_id: 's-other', account_type: 'staff' },
+        user_profile: {
+          id: 'u-new',
+          school_id: 's-other',
+          account_type: 'staff',
+        },
       });
-      prisma.school_management.findFirst.mockResolvedValue({ id: 'm-old', user_id: 'u-old' });
+      prisma.school_management.findFirst.mockResolvedValue({
+        id: 'm-old',
+        user_id: 'u-old',
+      });
       for (const key of [
         'profile:u-new',
         'profile:u-old',
@@ -680,13 +902,19 @@ describe('OrganisationService', () => {
       });
       // The demotion runs before the new admin's row is written (one admin
       // per school); with no row of their own yet, one is created.
-      expect(prisma.school_management.findUnique.mock.calls[0][0]).toMatchObject({
+      expect(
+        prisma.school_management.findUnique.mock.calls[0][0],
+      ).toMatchObject({
         where: { user_id_school_id: { user_id: 'u-new', school_id: 's1' } },
       });
-      expect(prisma.school_management.update.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(
+        prisma.school_management.update.mock.invocationCallOrder[0],
+      ).toBeLessThan(
         prisma.school_management.create.mock.invocationCallOrder[0],
       );
-      expect(prisma.school_management.create.mock.calls[0][0].data).toMatchObject({
+      expect(
+        prisma.school_management.create.mock.calls[0][0].data,
+      ).toMatchObject({
         user_id: 'u-new',
         school_id: 's1',
         role: 'admin',
@@ -720,26 +948,36 @@ describe('OrganisationService', () => {
       prisma.app_user.findUnique.mockResolvedValue({
         user_profile: { id: 'u-new', school_id: 's1', account_type: 'staff' },
       });
-      prisma.school_management.findFirst.mockResolvedValue({ id: 'm', user_id: 'u-new' });
+      prisma.school_management.findFirst.mockResolvedValue({
+        id: 'm',
+        user_id: 'u-new',
+      });
 
       await service.appointAdmin(ME, 's1', 'new@x.org');
       expect(prisma.school_management.update).not.toHaveBeenCalled();
-      expect(prisma.user_profile.update.mock.calls[0][0].data).toEqual({ role: 'admin' });
+      expect(prisma.user_profile.update.mock.calls[0][0].data).toEqual({
+        role: 'admin',
+      });
     });
   });
 
   describe('revokeUserSessions', () => {
     test('404 for an unknown user', async () => {
-      expect(await expectRejection(service.revokeUserSessions(ME, 'u-x'))).toBeInstanceOf(
-        NotFoundException,
-      );
+      expect(
+        await expectRejection(service.revokeUserSessions(ME, 'u-x')),
+      ).toBeInstanceOf(NotFoundException);
       expect(sessions.revokeAll).not.toHaveBeenCalled();
     });
 
     test('signs the user out everywhere with the organisation_admin reason', async () => {
       prisma.app_user.findUnique.mockResolvedValue({ id: 'u-1' });
-      expect(await service.revokeUserSessions(ME, 'u-1')).toEqual({ revoked: 3 });
-      expect(sessions.revokeAll).toHaveBeenCalledWith('u-1', 'organisation_admin');
+      expect(await service.revokeUserSessions(ME, 'u-1')).toEqual({
+        revoked: 3,
+      });
+      expect(sessions.revokeAll).toHaveBeenCalledWith(
+        'u-1',
+        'organisation_admin',
+      );
     });
   });
 });

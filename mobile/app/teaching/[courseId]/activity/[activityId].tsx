@@ -14,12 +14,10 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useTheme } from "@/theme/ThemeProvider";
 import { dueLabel } from "@/lib/work";
 import { formatScore } from "@/lib/format-number";
-import {
-  href,
-  type StaffActivity,
-  type TeacherSubmissionRow,
-} from "@/lib/course";
+import { href, type StaffActivity, type TeacherSubmissionRow } from "@/lib/course";
 import { WebHint } from "@/features/course/StaffSections";
+import { ExtensionBadge, LockdownMonitorSummary, LockdownPresence } from "@/features/course/LockdownPresence";
+import { useLiveRoster } from "@/lib/use-live-roster";
 
 type Filter = "all" | "tomark" | "marked";
 
@@ -48,6 +46,7 @@ export default function ActivitySubmissionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [rosterRefreshing, setRosterRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!activityId) return;
@@ -60,6 +59,27 @@ export default function ActivitySubmissionsScreen() {
     setActivity(a);
     setRows(subs ?? []);
   }, [activityId]);
+
+  /** Re-reads just the roster (live lockdown presence). Keeps the old rows on failure. */
+  const loadRoster = useCallback(async () => {
+    if (!activityId) return;
+    const subs = await api<TeacherSubmissionRow[]>(
+      `/activities/${activityId}/submissions`,
+    ).catch(() => null);
+    if (subs) setRows(subs);
+  }, [activityId]);
+
+  const lockdown = activity?.kind === "quiz" && !!activity.lockdownBrowser;
+  useLiveRoster({
+    enabled: lockdown,
+    hasActiveAttempt: rows.some((r) => r.submission?.isActiveAttempt),
+    refresh: loadRoster,
+  });
+
+  const onRefreshRoster = useCallback(() => {
+    setRosterRefreshing(true);
+    loadRoster().finally(() => setRosterRefreshing(false));
+  }, [loadRoster]);
 
   // Loads on open, and again on the way back from marking someone.
   useFocusEffect(
@@ -154,6 +174,14 @@ export default function ActivitySubmissionsScreen() {
         </CardContent>
       </Card>
 
+      {lockdown ? (
+        <LockdownMonitorSummary
+          rows={rows}
+          refreshing={rosterRefreshing}
+          onRefresh={onRefreshRoster}
+        />
+      ) : null}
+
       <SegmentedControl
         options={[
           { value: "all", label: "All" },
@@ -209,6 +237,10 @@ export default function ActivitySubmissionsScreen() {
                         ? ` · ${r.enrollmentStatus}`
                         : ""}
                     </Text>
+                    <ExtensionBadge extension={r.extension} />
+                    {lockdown ? (
+                      <LockdownPresence submission={r.submission} />
+                    ) : null}
                   </View>
                   {state === "marked" ? (
                     <Text weight="600">

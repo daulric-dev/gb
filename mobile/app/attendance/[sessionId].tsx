@@ -98,6 +98,8 @@ function CheckInScreen() {
         setError(message);
         if (err instanceof ApiError) {
           if (err.status === 429) setLocked(true);
+          // Too far, or mock location on: the retry takes a fresh reading.
+          if (err.status === 403) fix.current = null;
           if (err.status === 409 && /closed/i.test(err.message)) {
             setClosed(true);
           } else if (err.status === 409 && /already/i.test(err.message)) {

@@ -3,10 +3,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { isoDate } from '@/common/db-values';
+import { effectiveDueAt } from '@/grading/due-date';
 import {
   CourseAccessService,
   CourseRow,
@@ -87,6 +90,8 @@ interface ActivitySummary {
   points: number;
   due_at: string | null;
   status: 'draft' | 'published' | 'closed';
+  /** Student view only: `due_at` is this student's extension. */
+  has_extension?: boolean;
 }
 
 /**
@@ -104,6 +109,7 @@ export class ModuleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ── reading ───────────────────────────────────────────────────────────────
@@ -117,13 +123,19 @@ export class ModuleService {
   /**
    * What a student sees: published modules holding published items, minus
    * any item whose page is unpublished or whose activity is still a draft.
-   * The caller has already proved the student is enrolled.
+   * An activity's `dueAt` is the student's effective due date (their
+   * extension when they have one, with `hasExtension`). The caller has
+   * already proved the student is enrolled.
    */
-  async listForStudent(courseId: string) {
-    return this.build(courseId, true);
+  async listForStudent(courseId: string, studentId: string) {
+    return this.build(courseId, true, studentId);
   }
 
-  private async build(courseId: string, studentView: boolean) {
+  private async build(
+    courseId: string,
+    studentView: boolean,
+    studentId?: string,
+  ) {
     const where = {
       course_id: courseId,
       ...(studentView ? { is_published: true } : {}),
@@ -151,6 +163,9 @@ export class ModuleService {
 
     const itemRows: ItemRow[] = items;
     const targets = this.targetsOf(items);
+    if (studentView && studentId) {
+      await this.applyExtensions(targets.activities, studentId);
+    }
 
     const byModule = new Map<string, ReturnType<typeof this.toItem>[]>();
     for (const row of itemRows) {
@@ -184,9 +199,38 @@ export class ModuleService {
     if (row.item_type === 'file') return targets.files.has(row.file_id!);
     // A draft topic does not exist for a student.
     if (row.item_type === 'discussion') {
-      return targets.topics.get(row.discussion_topic_id!)?.is_published === true;
+      return (
+        targets.topics.get(row.discussion_topic_id!)?.is_published === true
+      );
     }
     return true;
+  }
+
+  /**
+   * Swap each activity's due date for the student's effective one (their
+   * extension, else the activity's), and mark which are extensions.
+   */
+  private async applyExtensions(
+    activities: Map<string, ActivitySummary>,
+    studentId: string,
+  ) {
+    if (activities.size === 0) return;
+    let rows: { activity_id: string; due_at: Date }[];
+    try {
+      rows = await this.prisma.activity_extension.findMany({
+        where: { student_id: studentId, activity_id: { in: [...activities.keys()] } },
+        select: { activity_id: true, due_at: true },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to load extensions: ${(error as Error).message}`);
+      throw new BadRequestException('Failed to load modules');
+    }
+    const extensions = new Map(rows.map((r) => [r.activity_id, r.due_at]));
+    for (const [id, a] of activities) {
+      const extension = extensions.get(id) ?? null;
+      a.due_at = isoDate(effectiveDueAt(a.due_at, extension));
+      a.has_extension = extension !== null;
+    }
   }
 
   /** The pages, activities, files and topics items point at. */
@@ -254,6 +298,9 @@ export class ModuleService {
               points: Number(activity.points),
               dueAt: activity.due_at,
               status: activity.status,
+              ...(activity.has_extension !== undefined
+                ? { hasExtension: activity.has_extension }
+                : {}),
             },
           }
         : {}),
@@ -279,7 +326,11 @@ export class ModuleService {
 
   /** New modules go last. */
   async create(userId: string, courseId: string, title: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const trimmed = title.trim();
     if (!trimmed) throw new BadRequestException('Give the module a title');
@@ -288,9 +339,27 @@ export class ModuleService {
 
     let m: ModuleRow;
     try {
-      m = await this.prisma.module.create({
-        data: { course_id: courseId, title: trimmed, position },
-        select: MODULE_SELECT,
+      m = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.module.create({
+          data: { course_id: courseId, title: trimmed, position },
+          select: MODULE_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'module',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              title: created.title,
+              position: created.position,
+              is_published: created.is_published,
+            }),
+          },
+        );
+        return created;
       });
     } catch (error) {
       this.logger.error(`Failed to create module: ${(error as Error).message}`);
@@ -313,8 +382,11 @@ export class ModuleService {
     moduleId: string,
     patch: { title?: string; isPublished?: boolean },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
-    await this.loadModule(courseId, moduleId);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const changes: Prisma.moduleUncheckedUpdateManyInput = {};
     if (patch.title !== undefined) {
@@ -330,11 +402,46 @@ export class ModuleService {
     }
 
     try {
-      await this.prisma.module.updateMany({
-        where: { id: moduleId, course_id: courseId },
-        data: changes,
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.module.findFirst({
+          where: { id: moduleId, course_id: courseId },
+          select: MODULE_SELECT,
+        });
+        if (!before) throw new NotFoundException('Module not found');
+        await tx.module.updateMany({
+          where: { id: moduleId, course_id: courseId },
+          data: changes,
+        });
+        const updated = await tx.module.findFirst({
+          where: { id: moduleId, course_id: courseId },
+          select: MODULE_SELECT,
+        });
+        if (!updated) throw new NotFoundException('Module not found');
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'module',
+            entityId: updated.id,
+            action: 'update',
+            changes: auditChanges(
+              {
+                title: before.title,
+                position: before.position,
+                is_published: before.is_published,
+              },
+              {
+                title: updated.title,
+                position: updated.position,
+                is_published: updated.is_published,
+              },
+            ),
+          },
+        );
       });
     } catch (error) {
+      if (error instanceof NotFoundException) throw error;
       this.logger.error(`Failed to update module: ${(error as Error).message}`);
       throw new BadRequestException('Failed to update the module');
     }
@@ -345,14 +452,46 @@ export class ModuleService {
 
   /** Items go with the module; the pages and activities they link stay. */
   async remove(userId: string, courseId: string, moduleId: string) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
-    await this.loadModule(courseId, moduleId);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     try {
-      await this.prisma.module.deleteMany({
-        where: { id: moduleId, course_id: courseId },
+      const deleted = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.module.findFirst({
+          where: { id: moduleId, course_id: courseId },
+          select: MODULE_SELECT,
+        });
+        if (!before) return false;
+        const { count } = await tx.module.deleteMany({
+          where: { id: moduleId, course_id: courseId },
+        });
+        if (count === 0) return false;
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'module',
+            entityId: before.id,
+            action: 'delete',
+            changes: auditChanges(
+              {
+                title: before.title,
+                position: before.position,
+                is_published: before.is_published,
+              },
+              null,
+            ),
+          },
+        );
+        return true;
       });
+      if (!deleted) throw new NotFoundException('Module not found');
     } catch (error) {
+      if (error instanceof NotFoundException) throw error;
       this.logger.error(`Failed to delete module: ${(error as Error).message}`);
       throw new BadRequestException('Failed to delete the module');
     }
@@ -360,7 +499,11 @@ export class ModuleService {
 
   /** `moduleIds` must name every module in the course, in the new order. */
   async reorder(userId: string, courseId: string, moduleIds: string[]) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const data = await this.prisma.module.findMany({
       where: { course_id: courseId },
@@ -372,7 +515,13 @@ export class ModuleService {
       moduleIds,
       'module',
     );
-    await this.writePositions('module', moduleIds);
+    await this.writePositions(
+      'module',
+      courseId,
+      moduleIds,
+      userId,
+      course.school_id,
+    );
     return this.build(courseId, false);
   }
 
@@ -512,15 +661,29 @@ export class ModuleService {
 
     let data: ItemWithTargets;
     try {
-      data = await this.prisma.module_item.create({
-        data: {
-          ...target,
-          module_id: moduleId,
-          course_id: courseId,
-          position,
-          indent: input.indent ?? 0,
-        },
-        select: ITEM_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.module_item.create({
+          data: {
+            ...target,
+            module_id: moduleId,
+            course_id: courseId,
+            position,
+            indent: input.indent ?? 0,
+          },
+          select: ITEM_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'module_item',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, this.auditItem(created)),
+          },
+        );
+        return created;
       });
     } catch (error) {
       this.logger.error(
@@ -544,7 +707,11 @@ export class ModuleService {
       moduleId?: string;
     },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
     const item = await this.loadItem(courseId, moduleId, itemId);
 
     const changes: Prisma.module_itemUncheckedUpdateInput = {};
@@ -578,13 +745,36 @@ export class ModuleService {
 
     let data: ItemWithTargets;
     try {
-      // loadItem proved the item is in this course, so `id` alone is enough.
-      data = await this.prisma.module_item.update({
-        where: { id: itemId },
-        data: changes,
-        select: ITEM_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const item = await tx.module_item.findFirst({
+          where: { id: itemId, module_id: moduleId, course_id: courseId },
+          select: ITEM_SELECT,
+        });
+        if (!item) throw new NotFoundException('Module item not found');
+        // The scoped lookup proves this item belongs to the course.
+        const updated = await tx.module_item.update({
+          where: { id: itemId },
+          data: changes,
+          select: ITEM_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'module_item',
+            entityId: updated.id,
+            action: 'update',
+            changes: auditChanges(
+              this.auditItem(item),
+              this.auditItem(updated),
+            ),
+          },
+        );
+        return updated;
       });
     } catch (error) {
+      if (error instanceof NotFoundException) throw error;
       this.logger.error(
         `Failed to update module item: ${(error as Error).message}`,
       );
@@ -601,14 +791,39 @@ export class ModuleService {
     moduleId: string,
     itemId: string,
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
-    await this.loadItem(courseId, moduleId, itemId);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     try {
-      await this.prisma.module_item.deleteMany({
-        where: { id: itemId, course_id: courseId },
+      const deleted = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.module_item.findFirst({
+          where: { id: itemId, module_id: moduleId, course_id: courseId },
+          select: ITEM_SELECT,
+        });
+        if (!before) return false;
+        const { count } = await tx.module_item.deleteMany({
+          where: { id: itemId, course_id: courseId },
+        });
+        if (count === 0) return false;
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'module_item',
+            entityId: before.id,
+            action: 'delete',
+            changes: auditChanges(this.auditItem(before), null),
+          },
+        );
+        return true;
       });
+      if (!deleted) throw new NotFoundException('Module item not found');
     } catch (error) {
+      if (error instanceof NotFoundException) throw error;
       this.logger.error(
         `Failed to delete module item: ${(error as Error).message}`,
       );
@@ -623,7 +838,11 @@ export class ModuleService {
     moduleId: string,
     itemIds: string[],
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
     await this.loadModule(courseId, moduleId);
 
     const data = await this.prisma.module_item.findMany({
@@ -636,7 +855,13 @@ export class ModuleService {
       itemIds,
       'item',
     );
-    await this.writePositions('module_item', itemIds);
+    await this.writePositions(
+      'module_item',
+      courseId,
+      itemIds,
+      userId,
+      course.school_id,
+    );
 
     const modules = await this.build(courseId, false);
     return modules.find((m) => m.id === moduleId)!;
@@ -682,26 +907,73 @@ export class ModuleService {
     }
   }
 
-  private async writePositions(table: 'module' | 'module_item', ids: string[]) {
+  private async writePositions(
+    table: 'module' | 'module_item',
+    courseId: string,
+    ids: string[],
+    userId: string,
+    schoolId: string,
+  ) {
     try {
-      await this.prisma.$transaction(
-        ids.map((id, position) =>
+      await this.prisma.$transaction(async (tx) => {
+        const rows =
           table === 'module'
-            ? this.prisma.module.updateMany({
-                where: { id },
-                data: { position },
+            ? await tx.module.findMany({
+                where: { id: { in: ids }, course_id: courseId },
+                select: { id: true, position: true },
               })
-            : this.prisma.module_item.updateMany({
-                where: { id },
-                data: { position },
-              }),
-        ),
-      );
+            : await tx.module_item.findMany({
+                where: { id: { in: ids }, course_id: courseId },
+                select: { id: true, position: true },
+              });
+        const before = new Map(rows.map((row) => [row.id, row.position]));
+        for (const [position, id] of ids.entries()) {
+          if (table === 'module') {
+            await tx.module.updateMany({ where: { id }, data: { position } });
+          } else {
+            await tx.module_item.updateMany({
+              where: { id },
+              data: { position },
+            });
+          }
+        }
+        for (const [position, id] of ids.entries()) {
+          const previous = before.get(id);
+          if (previous === undefined || previous === position) continue;
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: table,
+              entityId: id,
+              action: 'update',
+              changes: auditChanges({ position: previous }, { position }),
+            },
+          );
+        }
+      });
     } catch (error) {
       this.logger.error(
         `Failed to reorder ${table}: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to save the new order');
     }
+  }
+
+  private auditItem(item: ItemWithTargets) {
+    return {
+      module_id: item.module_id,
+      position: item.position,
+      item_type: item.item_type,
+      title: item.title,
+      page_id: item.page_id,
+      activity_id: item.activity_id,
+      file_id: item.file_id,
+      discussion_topic_id: item.discussion_topic_id,
+      url: item.url,
+      indent: item.indent,
+      is_published: item.is_published,
+    };
   }
 }

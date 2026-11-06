@@ -1,11 +1,22 @@
+import { configuredApiUrl } from '@/config/origins';
 import { objectKey } from '@/storage/keys';
 
+/**
+ * The URL clients load an image from: the CDN when S3_PUBLIC_URL is set, else
+ * this API at API_URL. `requestOrigin` (built from the Host header) is only a
+ * development fallback; production requires API_URL at boot and ignores it,
+ * so a forged Host can never end up in a stored avatar URL.
+ */
 export function publicImageUrl(path: string, requestOrigin?: string): string {
   const cdn = process.env.S3_PUBLIC_URL?.replace(/\/+$/, '');
   if (cdn) return `${cdn}/${objectKey('images', path)}`;
+  const fromRequest =
+    process.env.NODE_ENV === 'production'
+      ? undefined
+      : requestOrigin?.replace(/\/+$/, '');
   const api =
-    process.env.API_URL?.replace(/\/+$/, '') ||
-    requestOrigin?.replace(/\/+$/, '') ||
+    configuredApiUrl() ||
+    fromRequest ||
     'http://localhost:3001';
   return `${api}/api/${objectKey('images', path)}`;
 }

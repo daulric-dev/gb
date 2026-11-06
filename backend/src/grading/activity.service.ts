@@ -8,6 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { toActivityRef, WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import {
@@ -24,6 +25,8 @@ import {
   toTimestamp,
 } from './activity.mapper';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
+import { syncUntimedQuizAttempts } from './extension.service';
+import { rescoreQuizFromAnswers } from './quiz-rescore';
 
 type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
 
@@ -52,6 +55,7 @@ export class ActivityService {
     private readonly access: CourseAccessService,
     @Optional() private readonly notices?: CourseNotificationService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /**
@@ -72,8 +76,12 @@ export class ActivityService {
       throw new NotFoundException('Activity not found');
     }
 
-    await this.access.require(userId, data.course_id, roles);
-    return data as typeof data & { course_id: string };
+    const { course } = await this.access.require(userId, data.course_id, roles);
+    return {
+      ...data,
+      course_id: data.course_id,
+      school_id: course.school_id,
+    };
   }
 
   /**
@@ -178,9 +186,15 @@ export class ActivityService {
       allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number;
+      timeLimitMinutes?: number | null;
+      lockdownBrowser?: boolean;
     },
   ) {
-    await this.access.require(userId, courseId, MANAGE_ROLES);
+    const { course } = await this.access.require(
+      userId,
+      courseId,
+      MANAGE_ROLES,
+    );
 
     const title = input.title.trim();
     if (!title) throw new BadRequestException('Give the activity a title');
@@ -190,6 +204,22 @@ export class ActivityService {
     if (input.kind === 'assignment' && !input.allowFile && !input.allowText) {
       throw new BadRequestException(
         'An assignment must accept a file, text, or both',
+      );
+    }
+    if (input.kind !== 'quiz' && input.timeLimitMinutes != null) {
+      throw new BadRequestException('Only quizzes can have a time limit');
+    }
+    if (input.kind !== 'quiz' && input.lockdownBrowser) {
+      throw new BadRequestException('Only quizzes can require lockdown browser');
+    }
+    if (
+      input.timeLimitMinutes != null &&
+      (!Number.isInteger(input.timeLimitMinutes) ||
+        input.timeLimitMinutes < 1 ||
+        input.timeLimitMinutes > 1440)
+    ) {
+      throw new BadRequestException(
+        'Time limit must be between 1 and 1440 minutes',
       );
     }
     if (input.allowMultipleFiles && !input.allowFile) {
@@ -207,26 +237,46 @@ export class ActivityService {
 
     let data;
     try {
-      data = await this.prisma.activity.create({
-        data: {
-          course_id: courseId,
-          assignment_group_id: input.assignmentGroupId ?? null,
-          max_attempts:
-            input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
-          kind: input.kind,
-          title,
-          instructions: input.instructions ?? null,
-          points: input.points,
-          due_at: toTimestamp(input.dueAt ?? null),
-          allow_file: online ? (input.allowFile ?? false) : false,
-          allow_multiple_files:
-            online && input.allowFile
-              ? (input.allowMultipleFiles ?? false)
-              : false,
-          allow_text: online ? (input.allowText ?? false) : false,
-          created_by: userId,
-        },
-        select: ACTIVITY_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.activity.create({
+          data: {
+            course_id: courseId,
+            assignment_group_id: input.assignmentGroupId ?? null,
+            max_attempts:
+              input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
+            time_limit_minutes:
+              input.kind === 'quiz'
+                ? (input.timeLimitMinutes ?? null)
+                : null,
+            lockdown_browser:
+              input.kind === 'quiz' ? (input.lockdownBrowser ?? false) : false,
+            kind: input.kind,
+            title,
+            instructions: input.instructions ?? null,
+            points: input.points,
+            due_at: toTimestamp(input.dueAt ?? null),
+            allow_file: online ? (input.allowFile ?? false) : false,
+            allow_multiple_files:
+              online && input.allowFile
+                ? (input.allowMultipleFiles ?? false)
+                : false,
+            allow_text: online ? (input.allowText ?? false) : false,
+            created_by: userId,
+          },
+          select: ACTIVITY_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          course.school_id,
+          { id: userId },
+          {
+            entity: 'activity',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, this.activityAuditFields(created)),
+          },
+        );
+        return created;
       });
     } catch (error) {
       this.logger.error(
@@ -252,6 +302,8 @@ export class ActivityService {
       allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number | null;
+      timeLimitMinutes?: number | null;
+      lockdownBrowser?: boolean;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -300,6 +352,28 @@ export class ActivityService {
     if (patch.maxAttempts !== undefined) {
       changes.max_attempts = patch.maxAttempts || null;
     }
+    if (patch.timeLimitMinutes !== undefined) {
+      if (activity.kind !== 'quiz' && patch.timeLimitMinutes !== null) {
+        throw new BadRequestException('Only quizzes can have a time limit');
+      }
+      if (
+        patch.timeLimitMinutes !== null &&
+        (!Number.isInteger(patch.timeLimitMinutes) ||
+          patch.timeLimitMinutes < 1 ||
+          patch.timeLimitMinutes > 1440)
+      ) {
+        throw new BadRequestException(
+          'Time limit must be between 1 and 1440 minutes',
+        );
+      }
+      changes.time_limit_minutes = patch.timeLimitMinutes;
+    }
+    if (patch.lockdownBrowser !== undefined) {
+      if (activity.kind !== 'quiz' && patch.lockdownBrowser) {
+        throw new BadRequestException('Only quizzes can require lockdown browser');
+      }
+      changes.lockdown_browser = patch.lockdownBrowser;
+    }
 
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
@@ -312,11 +386,40 @@ export class ActivityService {
         if (patch.points !== undefined) {
           await this.changePoints(tx, activityId, patch.points);
         }
-        return tx.activity.update({
+        const updated = await tx.activity.update({
           where: { id: activityId },
           data: changes,
           select: ACTIVITY_SELECT,
         });
+        if (patch.dueAt !== undefined) {
+          // Untimed attempts end at the due date; students with their own
+          // extension keep theirs.
+          await syncUntimedQuizAttempts(
+            tx,
+            updated,
+            {
+              student: {
+                activity_extension: { none: { activity_id: activityId } },
+              },
+            },
+            updated.due_at,
+          );
+        }
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'activity',
+            entityId: activityId,
+            action: 'update',
+            changes: auditChanges(
+              this.activityAuditFields(activity),
+              this.activityAuditFields(updated),
+            ),
+          },
+        );
+        return updated;
       });
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -329,6 +432,26 @@ export class ActivityService {
     return toActivity(data);
   }
 
+  private activityAuditFields(activity: any) {
+    return {
+      assignmentGroupId: activity.assignment_group_id,
+      kind: activity.kind,
+      title: activity.title,
+      instructions: activity.instructions,
+      points: Number(activity.points),
+      dueAt: activity.due_at,
+      status: activity.status,
+      allowFile: activity.allow_file,
+      allowMultipleFiles: activity.allow_multiple_files,
+      allowText: activity.allow_text,
+      maxAttempts: activity.max_attempts,
+      timeLimitMinutes: activity.time_limit_minutes,
+      lockdownBrowser: activity.lockdown_browser,
+      omitFromFinalGrade: activity.omit_from_final_grade,
+      rubricId: activity.rubric_id,
+    };
+  }
+
   /**
    * Make way for new points, in the transaction that saves them.
    *
@@ -337,9 +460,12 @@ export class ActivityService {
    * points between the check here and the commit.
    *
    * submit_quiz stores a quiz's automatic score already scaled to the points,
-   * so those scores are rescaled by new/old to stay the same fraction. A mark
-   * a teacher entered or imported (graded_by set) is theirs and is left as
-   * it is, which is why it must still fit under the new points.
+   * so those scores are rescaled by new/old to stay the same fraction. From 0
+   * points there is no fraction to keep (every automatic score is 0), so
+   * they are scored again from their stored answers instead, by submit_quiz's
+   * rules (rescoreQuizFromAnswers). A mark a teacher entered or imported
+   * (graded_by set) is theirs and is left as it is, which is why it must
+   * still fit under the new points.
    */
   private async changePoints(
     tx: Prisma.TransactionClient,
@@ -356,14 +482,16 @@ export class ActivityService {
     if (!locked) throw new NotFoundException('Activity not found');
 
     const old = Number(locked.points);
-    const rescale = locked.kind === 'quiz' && old > 0 && old !== points;
+    // Automatic quiz scores follow the points: rescaled, or (from 0) rescored.
+    const autoScored = locked.kind === 'quiz' && old !== points;
+    const rescale = autoScored && old > 0;
 
     // A mark above the new total would read as over 100% everywhere.
     const over = await tx.submission.findFirst({
       where: {
         activity_id: activityId,
         score: { gt: points },
-        ...(rescale ? { graded_by: { not: null } } : {}),
+        ...(autoScored ? { graded_by: { not: null } } : {}),
       },
       select: { id: true },
     });
@@ -382,6 +510,8 @@ export class ActivityService {
           and graded_by is null
           and score is not null
       `;
+    } else if (autoScored) {
+      await rescoreQuizFromAnswers(tx, activityId, points);
     }
   }
 
@@ -409,15 +539,32 @@ export class ActivityService {
     const now = new Date();
     let data;
     try {
-      data = await this.prisma.activity.update({
-        where: { id: activityId },
-        data: {
-          status: 'published',
-          // Reopening closed work keeps the date it first went out.
-          published_at: activity.published_at ?? now,
-          updated_at: now,
-        },
-        select: ACTIVITY_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.activity.update({
+          where: { id: activityId },
+          data: {
+            status: 'published',
+            // Reopening closed work keeps the date it first went out.
+            published_at: activity.published_at ?? now,
+            updated_at: now,
+          },
+          select: ACTIVITY_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'activity',
+            entityId: activityId,
+            action: 'update',
+            changes: auditChanges(
+              { status: activity.status },
+              { status: updated.status },
+            ),
+          },
+        );
+        return updated;
       });
     } catch (error) {
       this.logger.error(
@@ -439,27 +586,50 @@ export class ActivityService {
       points: unknown;
       due_at: Date | string | null;
     };
-    void this.webhooks?.emitForCourse(activity.course_id, 'activity.published', (course) => ({
-      activity: {
-        ...toActivityRef(published),
-        dueAt: published.due_at ? new Date(published.due_at).toISOString() : null,
-      },
-      course,
-    }));
+    void this.webhooks?.emitForCourse(
+      activity.course_id,
+      'activity.published',
+      (course) => ({
+        activity: {
+          ...toActivityRef(published),
+          dueAt: published.due_at
+            ? new Date(published.due_at).toISOString()
+            : null,
+        },
+        course,
+      }),
+    );
 
     return toActivity(data);
   }
 
   /** Stop accepting submissions without hiding what was already set. */
   async close(userId: string, activityId: string) {
-    await this.requireActivity(userId, activityId);
+    const activity = await this.requireActivity(userId, activityId);
 
     let data;
     try {
-      data = await this.prisma.activity.update({
-        where: { id: activityId },
-        data: { status: 'closed', updated_at: new Date() },
-        select: ACTIVITY_SELECT,
+      data = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.activity.update({
+          where: { id: activityId },
+          data: { status: 'closed', updated_at: new Date() },
+          select: ACTIVITY_SELECT,
+        });
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'activity',
+            entityId: activityId,
+            action: 'update',
+            changes: auditChanges(
+              { status: activity.status },
+              { status: updated.status },
+            ),
+          },
+        );
+        return updated;
       });
     } catch {
       throw new BadRequestException('Failed to close activity');
@@ -473,21 +643,32 @@ export class ActivityService {
    * the final grade, is what a teacher usually wants.
    */
   async remove(userId: string, activityId: string) {
-    await this.requireActivity(userId, activityId);
-
-    const count = await this.prisma.submission.count({
-      where: { activity_id: activityId },
-    });
-
-    if ((count ?? 0) > 0) {
-      throw new ConflictException(
-        'Students have work or marks on this; close it instead of deleting',
-      );
-    }
-
+    const activity = await this.requireActivity(userId, activityId);
     try {
-      await this.prisma.activity.deleteMany({ where: { id: activityId } });
-    } catch {
+      await this.prisma.$transaction(async (tx) => {
+        const count = await tx.submission.count({
+          where: { activity_id: activityId },
+        });
+        if (count > 0) {
+          throw new ConflictException(
+            'Students have work or marks on this; close it instead of deleting',
+          );
+        }
+        await tx.activity.deleteMany({ where: { id: activityId } });
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'activity',
+            entityId: activityId,
+            action: 'delete',
+            changes: auditChanges(this.activityAuditFields(activity), null),
+          },
+        );
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new BadRequestException('Failed to delete activity');
     }
   }
@@ -561,7 +742,7 @@ export class ActivityService {
       options: { label: string; isCorrect: boolean }[];
     },
   ) {
-    await this.requireDraftQuiz(userId, activityId);
+    const activity = await this.requireDraftQuiz(userId, activityId);
 
     const prompt = input.prompt.trim();
     if (!prompt) throw new BadRequestException('Give the question a prompt');
@@ -615,6 +796,26 @@ export class ActivityService {
       } catch {
         throw new BadRequestException('Failed to add question options');
       }
+      await this.auditLog?.record(
+        tx,
+        activity.school_id,
+        { id: userId },
+        {
+          entity: 'quiz_question',
+          entityId: created.id,
+          action: 'create',
+          changes: auditChanges(null, {
+            prompt: created.prompt,
+            kind: created.kind,
+            points: Number(created.points),
+            options: options.map((option, i) => ({
+              label: option.label.trim(),
+              isCorrect: option.isCorrect,
+              sortOrder: i,
+            })),
+          }),
+        },
+      );
 
       return created;
     });
@@ -643,7 +844,7 @@ export class ActivityService {
       options?: { label: string; isCorrect: boolean }[];
     },
   ) {
-    await this.requireDraftQuiz(userId, activityId);
+    const activity = await this.requireDraftQuiz(userId, activityId);
 
     const existing = await this.prisma.quiz_question.findFirst({
       where: { id: questionId, activity_id: activityId },
@@ -679,6 +880,11 @@ export class ActivityService {
     // One transaction, so a failed option insert cannot leave the question
     // with no options (unanswerable) or half-edited.
     await this.prisma.$transaction(async (tx) => {
+      const oldOptions = await tx.quiz_option.findMany({
+        where: { question_id: questionId },
+        select: { label: true, is_correct: true, sort_order: true },
+        orderBy: { sort_order: 'asc' },
+      });
       if (Object.keys(changes).length > 0) {
         try {
           await tx.quiz_question.update({
@@ -721,6 +927,43 @@ export class ActivityService {
           throw new BadRequestException('Failed to save the options');
         }
       }
+      const nextOptions = options
+        ? options.map((option, i) => ({
+            label: option.label.trim(),
+            isCorrect: option.isCorrect,
+            sortOrder: i,
+          }))
+        : oldOptions.map((option) => ({
+            label: option.label,
+            isCorrect: option.is_correct,
+            sortOrder: option.sort_order,
+          }));
+      await this.auditLog?.record(
+        tx,
+        activity.school_id,
+        { id: userId },
+        {
+          entity: 'quiz_question',
+          entityId: questionId,
+          action: 'update',
+          changes: auditChanges(
+            {
+              prompt: existing.prompt,
+              points: Number(existing.points),
+              options: oldOptions.map((option) => ({
+                label: option.label,
+                isCorrect: option.is_correct,
+                sortOrder: option.sort_order,
+              })),
+            },
+            {
+              prompt: changes.prompt ?? existing.prompt,
+              points: changes.points ?? Number(existing.points),
+              options: nextOptions,
+            },
+          ),
+        },
+      );
     });
 
     return this.getQuestion(activityId, questionId);
@@ -754,11 +997,46 @@ export class ActivityService {
   }
 
   async removeQuestion(userId: string, activityId: string, questionId: string) {
-    await this.requireDraftQuiz(userId, activityId);
+    const activity = await this.requireDraftQuiz(userId, activityId);
 
     try {
-      await this.prisma.quiz_question.deleteMany({
-        where: { id: questionId, activity_id: activityId },
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.quiz_question.findFirst({
+          where: { id: questionId, activity_id: activityId },
+          select: { id: true, prompt: true, kind: true, points: true },
+        });
+        if (!before) return;
+        const options = await tx.quiz_option.findMany({
+          where: { question_id: questionId },
+          select: { label: true, is_correct: true, sort_order: true },
+          orderBy: { sort_order: 'asc' },
+        });
+        await tx.quiz_question.deleteMany({
+          where: { id: questionId, activity_id: activityId },
+        });
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'quiz_question',
+            entityId: questionId,
+            action: 'delete',
+            changes: auditChanges(
+              {
+                prompt: before.prompt,
+                kind: before.kind,
+                points: Number(before.points),
+                options: options.map((option) => ({
+                  label: option.label,
+                  isCorrect: option.is_correct,
+                  sortOrder: option.sort_order,
+                })),
+              },
+              null,
+            ),
+          },
+        );
       });
     } catch {
       throw new BadRequestException('Failed to remove question');

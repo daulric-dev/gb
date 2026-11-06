@@ -9,7 +9,7 @@ import {
   primaryOrigin,
 } from './origins';
 
-const KEYS = ['FRONTEND_URL', 'AUTH_COOKIE_DOMAIN', 'NODE_ENV'] as const;
+const KEYS = ['FRONTEND_URL', 'AUTH_COOKIE_DOMAIN', 'NODE_ENV', 'LOCAL_PREVIEW'] as const;
 let saved: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -51,6 +51,26 @@ describe('allowedOrigins', () => {
   test('a single origin', () => {
     process.env.FRONTEND_URL = 'https://app.example.com';
     expect(allowedOrigins()).toEqual(['https://app.example.com']);
+  });
+
+  test('production has no localhost default', () => {
+    process.env.NODE_ENV = 'production';
+    expect(allowedOrigins()).toEqual([]);
+  });
+
+  test('production drops loopback origins even when configured', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.FRONTEND_URL =
+      'http://localhost:3000, https://app.example.com, http://127.0.0.1:3000';
+    expect(allowedOrigins()).toEqual(['https://app.example.com']);
+    expect(isOriginAllowed('http://localhost:3000')).toBe(false);
+  });
+
+  test('local preview keeps localhost in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.LOCAL_PREVIEW = 'true';
+    process.env.FRONTEND_URL = 'http://localhost:3000';
+    expect(allowedOrigins()).toEqual(['http://localhost:3000']);
   });
 });
 

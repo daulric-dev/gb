@@ -48,14 +48,27 @@ export function verifyQrToken(
  */
 export const QR_CLAIM_TTL_MS = 5 * 60_000;
 
+/**
+ * The device a claim is bound to, as it appears inside the claim: an HMAC of
+ * the scan-device cookie (see scan-device.ts) under the session's secret.
+ * Never the id itself, and unlinkable from one session to the next.
+ */
+export function claimDeviceTag(secret: string, deviceId: string): string {
+  return createHmac('sha256', secret)
+    .update(`device:${deviceId}`)
+    .digest('base64url')
+    .slice(0, 22);
+}
+
 function claimMac(
   secret: string,
   sessionId: string,
   exp: number,
   nonce: string,
+  device: string,
 ): string {
   return createHmac('sha256', secret)
-    .update(`claim:${sessionId}:${exp}:${nonce}`)
+    .update(`claim:${sessionId}:${exp}:${nonce}:${device}`)
     .digest('base64url')
     .slice(0, 32);
 }
@@ -67,55 +80,83 @@ function claimMac(
  * login code, so the scan page swaps the token for this claim first. It does
  * not widen the window for passing the code on: getting a claim still needs a
  * token that is live right now, exactly as checking in directly does. Each
- * claim carries a random nonce so the server can redeem it only once.
+ * claim carries a random nonce so the server can redeem it only once, and is
+ * bound to the device that scanned (its scan-device cookie), so a claim link
+ * forwarded to a friend at home does not work on their phone.
  */
-export function qrClaim(secret: string, sessionId: string, now: number): {
+export function qrClaim(
+  secret: string,
+  sessionId: string,
+  now: number,
+  deviceId: string,
+): {
   claim: string;
   expiresAt: number;
 } {
   const exp = now + QR_CLAIM_TTL_MS;
   const nonce = randomBytes(16).toString('base64url');
+  const device = claimDeviceTag(secret, deviceId);
   return {
-    claim: `${exp}.${nonce}.${claimMac(secret, sessionId, exp, nonce)}`,
+    claim: `${exp}.${nonce}.${device}.${claimMac(secret, sessionId, exp, nonce, device)}`,
     expiresAt: exp,
   };
 }
 
 /**
- * Check a claim's signature and expiry. Returns its nonce and expiry when
- * valid (for single-use bookkeeping), otherwise null.
+ * Check a claim's signature and expiry. Returns its nonce, expiry and device
+ * tag when valid (for single-use bookkeeping and the device check), otherwise
+ * null. Does not check the device: see `claimFromDevice`.
  */
 export function readQrClaim(
   secret: string,
   sessionId: string,
   claim: string,
   now: number,
-): { nonce: string; expiresAt: number } | null {
-  const [expPart, nonce, mac, extra] = claim.split('.');
+): { nonce: string; expiresAt: number; device: string } | null {
+  const [expPart, nonce, device, mac, extra] = claim.split('.');
   if (
     extra !== undefined ||
     !expPart ||
     !nonce ||
+    !device ||
     !mac ||
     !/^\d+$/.test(expPart) ||
-    !/^[A-Za-z0-9_-]{1,64}$/.test(nonce)
+    !/^[A-Za-z0-9_-]{1,64}$/.test(nonce) ||
+    !/^[A-Za-z0-9_-]{1,64}$/.test(device)
   ) {
     return null;
   }
   const exp = Number(expPart);
   if (exp < now || exp > now + QR_CLAIM_TTL_MS) return null;
-  const expected = Buffer.from(claimMac(secret, sessionId, exp, nonce));
+  const expected = Buffer.from(
+    claimMac(secret, sessionId, exp, nonce, device),
+  );
   const given = Buffer.from(mac);
   const ok =
     expected.length === given.length && timingSafeEqual(expected, given);
-  return ok ? { nonce, expiresAt: exp } : null;
+  return ok ? { nonce, expiresAt: exp, device } : null;
 }
 
+/** Whether a valid claim's device tag is the one for this device cookie. */
+export function claimFromDevice(
+  secret: string,
+  claimDevice: string,
+  deviceId: string | undefined,
+): boolean {
+  if (!deviceId) return false;
+  const expected = Buffer.from(claimDeviceTag(secret, deviceId));
+  const given = Buffer.from(claimDevice);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+/** A valid, unexpired claim presented from the device that got it. */
 export function verifyQrClaim(
   secret: string,
   sessionId: string,
   claim: string,
   now: number,
+  deviceId: string | undefined,
 ): boolean {
-  return readQrClaim(secret, sessionId, claim, now) !== null;
+  const read = readQrClaim(secret, sessionId, claim, now);
+  return !!read && claimFromDevice(secret, read.device, deviceId);
 }

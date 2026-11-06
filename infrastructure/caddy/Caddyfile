@@ -1,0 +1,149 @@
+# Caddy reverse proxy in front of the API replicas app1-app3 from
+# infrastructure/docker-compose.yml (each listens on the image's default PORT,
+# 3001, inside its own container). See infrastructure/SERVICES.md, "Caddy".
+#
+# SITE_ADDRESS (infrastructure/.env) picks the mode:
+#   api.example.com  Caddy terminates TLS itself: it gets and renews a Let's
+#                    Encrypt certificate (DNS must point here, ports 80 and
+#                    443 open), redirects HTTP -> HTTPS, serves HTTP/1.1, /2
+#                    and /3, and sends HSTS.
+#   :80 (default)    Plain HTTP only, for when TLS terminates at a trusted
+#                    proxy in front of Caddy (Cloudflare, a load balancer...).
+#
+# Check it: .github/scripts/validate-caddy.sh
+# Apply it: docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+{
+	# Contact address for the ACME account (expiry and problem notices).
+	# Optional: left empty, certificates are still issued (from Let's Encrypt
+	# only; with an address Caddy can also fall back to ZeroSSL). Quoted so an
+	# empty value is a valid empty argument.
+	email "{$ACME_EMAIL}"
+
+	servers {
+		# Proxies in front of Caddy whose X-Forwarded-* headers are believed
+		# (TRUSTED_PROXIES: space-separated CIDRs, e.g. your load balancer or
+		# CDN ranges). Empty (default): none, so a client can't spoof its
+		# address or claim https; Caddy sends only its own view upstream.
+		# From a trusted peer, the client's address is appended to its
+		# X-Forwarded-For and its X-Forwarded-Proto/Host are kept: then also
+		# set TRUST_PROXY_HOPS=2 for the API.
+		trusted_proxies static {$TRUSTED_PROXIES}
+		trusted_proxies_strict
+	}
+
+	# Admin API stays on the loopback inside the container (used by
+	# `caddy reload` and the Compose health check), never published.
+	admin localhost:2019
+}
+
+# Proxy to the three replicas. {args[0]} is the longest silence allowed
+# between two reads from the upstream; an
+# optional block passed to `import` adds reverse_proxy settings ({block}).
+(backend) {
+	reverse_proxy app1:3001 app2:3001 app3:3001 {
+		# No sticky sessions: any replica serves any request (SSE fan-out
+		# goes through Redis pub/sub).
+		lb_policy round_robin
+		# When a replica can't be reached, try the next one for up to 5s.
+		# Requests that failed after reaching a replica are only retried for
+		# GET, so a non-idempotent request is never sent twice.
+		lb_try_duration 5s
+		lb_try_interval 250ms
+
+		# Active checks against the liveness route (`GET /` answers "gb" as
+		# long as the process serves HTTP). Not /health on purpose: that one
+		# returns 503 when the shared database, Redis or S3 is down, which
+		# would eject every replica at once and turn a partial outage into
+		# a total one. Compose already gates startup on /health.
+		health_uri /
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+		# Passive checks: one failed request takes a replica out for 10s.
+		fail_duration 10s
+		max_fails 1
+
+		# Caddy already sends Host unchanged and sets X-Forwarded-For (the
+		# client's TCP address; an incoming X-Forwarded-For is dropped unless
+		# the peer is in trusted_proxies above), X-Forwarded-Proto (Caddy's
+		# own scheme, never a client's) and X-Forwarded-Host. The API trusts
+		# exactly one hop by default (TRUST_PROXY_HOPS=1): this one.
+		# X-Real-IP is the TCP peer, never the Host header; downstream rate
+		# limiting and audit logging key off the client address.
+		header_up X-Real-IP {remote_host}
+
+		transport http {
+			# Reuse up to 32 idle upstream connections per replica.
+			keepalive 2m
+			keepalive_idle_conns_per_host 32
+			# A replica on the same Docker network answers a connect within
+			# milliseconds; give up after 5s so the retry
+			# above can still reach another replica within lb_try_duration.
+			dial_timeout 5s
+			# Longest pause allowed while sending a request body upstream.
+			write_timeout 60s
+			read_timeout {args[0]}
+		}
+
+		{block}
+	}
+}
+
+{$SITE_ADDRESS::80} {
+	# Access log on stdout (`docker compose logs caddy`).
+	log {
+		output stdout
+	}
+
+	# Reject bodies larger than the avatar/PDF cap (16 MiB) with 413.
+	# Without a cap an attacker could exhaust the backend with unbounded
+	# payloads.
+	request_body {
+		max_size 16MiB
+	}
+
+	# Defense-in-depth security headers for every response, including the
+	# SSE streams and Caddy's own error pages (e.g. 502 when no replica is
+	# up). Applied immediately, not deferred, so they survive proxy
+	# errors and are added alongside (never replacing) a stricter header the
+	# API sends itself, e.g. `Content-Security-Policy: sandbox` on downloads.
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+	}
+
+	# HSTS only when Caddy itself serves HTTPS: browsers stop using plain
+	# HTTP for this host (and its subdomains) for a year. Only add `preload`
+	# once every subdomain serves HTTPS.
+	@https protocol https
+	header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Don't advertise the server software: drop Caddy's `Server: Caddy` and the `Via: 1.1 Caddy` it adds to
+	# proxied responses.
+	header {
+		-Server
+		-Via
+	}
+
+	# Server-Sent Event streams: every API route ending in /stream
+	# (/api/chat/stream, /api/portal/me/stream,
+	# /api/attendance/sessions/:id/stream, ...). Long-lived and never
+	# buffered: each event is flushed to the client as soon as it arrives.
+	# SSE sends a heartbeat comment every 25s; allow an hour of silence.
+	@stream path_regexp ^/api/.+/stream$
+	handle @stream {
+		import backend 3600s {
+			flush_interval -1
+		}
+	}
+
+	# Every HTTP method is proxied, including QUERY (the API's search and
+	# filter lists send their filters in a QUERY body). Don't add a method
+	# matcher here, or those lists break.
+	handle {
+		import backend 60s
+	}
+}

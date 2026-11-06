@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import {
   MB,
   effectiveUploadMb,
@@ -37,8 +38,11 @@ export class UploadLimitService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly auditLog?: AuditLogService,
   ) {
-    this.config = loadUploadLimitConfig(process.env, (m) => this.logger.warn(m));
+    this.config = loadUploadLimitConfig(process.env, (m) =>
+      this.logger.warn(m),
+    );
   }
 
   async forSchool(schoolId: string): Promise<UploadLimit> {
@@ -53,7 +57,11 @@ export class UploadLimitService {
    * Set (or, with null, clear) a school's limit. Above the platform ceiling is
    * a 400 rather than a silent clamp, so the admin knows what they got.
    */
-  async setForSchool(schoolId: string, mb: number | null): Promise<UploadLimit> {
+  async setForSchool(
+    schoolId: string,
+    mb: number | null,
+    actorId?: string,
+  ): Promise<UploadLimit> {
     if (mb !== null) {
       if (!Number.isInteger(mb) || mb < 1) {
         throw new BadRequestException(
@@ -68,10 +76,32 @@ export class UploadLimitService {
     }
 
     try {
-      await this.prisma.school.update({
-        where: { id: schoolId },
-        data: { max_upload_mb: mb, updated_at: new Date() },
-        select: { id: true },
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.school.findUniqueOrThrow({
+          where: { id: schoolId },
+          select: { max_upload_mb: true },
+        });
+        await tx.school.update({
+          where: { id: schoolId },
+          data: { max_upload_mb: mb, updated_at: new Date() },
+          select: { id: true },
+        });
+        if (actorId) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: actorId },
+            {
+              entity: 'school',
+              entityId: schoolId,
+              action: 'update',
+              changes: auditChanges(
+                { max_upload_mb: before.max_upload_mb },
+                { max_upload_mb: mb },
+              ),
+            },
+          );
+        }
       });
     } catch (error) {
       this.logger.error(

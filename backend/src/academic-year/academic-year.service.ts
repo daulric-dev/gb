@@ -10,6 +10,7 @@ import { parseDateOnly, serializeAcademicYear } from './academic-year.rows';
 import { CacheService } from '@/cache/cache.service';
 import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { UpdateAcademicYearDto } from './dto/update-academic-year.dto';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 const YEAR_TTL = 60 * 60 * 24 * 30;
 
@@ -20,6 +21,7 @@ export class AcademicYearService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly auditLog?: AuditLogService,
   ) {}
 
   private async getSchoolId(userId: string): Promise<string> {
@@ -53,14 +55,33 @@ export class AcademicYearService {
     let data;
     try {
       data = serializeAcademicYear(
-        await this.prisma.academic_year.create({
-          data: {
-            school_id: schoolId,
-            name: dto.name,
-            start_date: parseDateOnly(dto.startDate),
-            end_date: parseDateOnly(dto.endDate),
-            is_active: false,
-          },
+        await this.prisma.$transaction(async (tx) => {
+          const created = await tx.academic_year.create({
+            data: {
+              school_id: schoolId,
+              name: dto.name,
+              start_date: parseDateOnly(dto.startDate),
+              end_date: parseDateOnly(dto.endDate),
+              is_active: false,
+            },
+          });
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: 'academic_year',
+              entityId: created.id,
+              action: 'create',
+              changes: auditChanges(null, {
+                name: created.name,
+                start_date: created.start_date,
+                end_date: created.end_date,
+                is_active: created.is_active,
+              }),
+            },
+          );
+          return created;
         }),
       );
     } catch (err) {
@@ -150,7 +171,11 @@ export class AcademicYearService {
       throw new NotFoundException('Academic year not found');
     }
 
-    return serializeAcademicYear(data as typeof serializeAcademicYear extends (row: infer R) => any ? R : never);
+    return serializeAcademicYear(
+      data as typeof serializeAcademicYear extends (row: infer R) => any
+        ? R
+        : never,
+    );
   }
 
   async update(userId: string, yearId: string, dto: UpdateAcademicYearDto) {
@@ -166,9 +191,37 @@ export class AcademicYearService {
     let data;
     try {
       data = serializeAcademicYear(
-        await this.prisma.academic_year.update({
-          where: { id: yearId, school_id: schoolId },
-          data: updateData,
+        await this.prisma.$transaction(async (tx) => {
+          const before = await tx.academic_year.findFirstOrThrow({
+            where: { id: yearId, school_id: schoolId },
+          });
+          const updated = await tx.academic_year.update({
+            where: { id: yearId, school_id: schoolId },
+            data: updateData,
+          });
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: 'academic_year',
+              entityId: yearId,
+              action: 'update',
+              changes: auditChanges(
+                {
+                  name: before.name,
+                  start_date: before.start_date,
+                  end_date: before.end_date,
+                },
+                {
+                  name: updated.name,
+                  start_date: updated.start_date,
+                  end_date: updated.end_date,
+                },
+              ),
+            },
+          );
+          return updated;
         }),
       );
     } catch (err) {
@@ -199,14 +252,51 @@ export class AcademicYearService {
     try {
       data = serializeAcademicYear(
         await this.prisma.$transaction(async (tx) => {
+          const previous = await tx.academic_year.findMany({
+            where: { school_id: schoolId, is_active: true },
+          });
           await tx.academic_year.updateMany({
             where: { school_id: schoolId },
             data: { is_active: false },
           });
-          return tx.academic_year.update({
+          const active = await tx.academic_year.update({
             where: { id: yearId, school_id: schoolId },
             data: { is_active: true },
           });
+          for (const year of previous) {
+            if (year.id === active.id) continue;
+            await this.auditLog?.record(
+              tx,
+              schoolId,
+              { id: userId },
+              {
+                entity: 'academic_year',
+                entityId: year.id,
+                action: 'update',
+                changes: auditChanges(
+                  { is_active: true },
+                  { is_active: false },
+                ),
+              },
+            );
+          }
+          if (!previous.some((year) => year.id === active.id)) {
+            await this.auditLog?.record(
+              tx,
+              schoolId,
+              { id: userId },
+              {
+                entity: 'academic_year',
+                entityId: active.id,
+                action: 'update',
+                changes: auditChanges(
+                  { is_active: false },
+                  { is_active: true },
+                ),
+              },
+            );
+          }
+          return active;
         }),
       );
     } catch (err) {
@@ -226,9 +316,29 @@ export class AcademicYearService {
     let data;
     try {
       data = serializeAcademicYear(
-        await this.prisma.academic_year.update({
-          where: { id: yearId, school_id: schoolId },
-          data: { is_active: false },
+        await this.prisma.$transaction(async (tx) => {
+          const before = await tx.academic_year.findFirstOrThrow({
+            where: { id: yearId, school_id: schoolId },
+          });
+          const updated = await tx.academic_year.update({
+            where: { id: yearId, school_id: schoolId },
+            data: { is_active: false },
+          });
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: 'academic_year',
+              entityId: yearId,
+              action: 'update',
+              changes: auditChanges(
+                { is_active: before.is_active },
+                { is_active: updated.is_active },
+              ),
+            },
+          );
+          return updated;
         }),
       );
     } catch (err) {

@@ -62,8 +62,13 @@ services:
     <<: *app
     environment: *app-env
 
-  nginx:
-    image: nginx:1.28-alpine
+  # Reverse proxy and TLS in front of app1-app3 (caddy/Caddyfile). With
+  # SITE_ADDRESS set to the API hostname it gets and renews a Let's Encrypt
+  # certificate itself; the default (:80) serves plain HTTP for a TLS proxy in
+  # front. See SERVICES.md, "Caddy".
+  #   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+  caddy:
+    image: caddy:2.11.8-alpine
     restart: unless-stopped
     depends_on:
       app1:
@@ -72,12 +77,37 @@ services:
         condition: service_healthy
       app3:
         condition: service_healthy
+    environment:
+      SITE_ADDRESS: "${SITE_ADDRESS:-:80}"
+      ACME_EMAIL: "${ACME_EMAIL:-}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys: must survive container rebuilds,
+      # or every restart re-issues and soon hits Let's Encrypt rate limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    # Binding 80/443 needs this one capability.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
     networks:
       - appnet
+    healthcheck:
+      # The admin API (loopback inside the container only) answers once the
+      # config is loaded.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   # One-off release step when the app runs with MIGRATE_ON_START=false:
   #   docker compose --profile release run --rm migrate
@@ -239,4 +269,6 @@ networks:
 
 volumes:
   redis-data:
+  caddy_data:
+  caddy_config:
   # db-data:

@@ -6,11 +6,11 @@ stores, what breaks without it, and which environment variables wire it up.
 
 | File | Purpose |
 | --- | --- |
-| [`infrastructure/docker-compose.yml`](./docker-compose.yml) | Production / staging: three API replicas behind nginx, Redis, the database backup sidecar, and an optional Postgres (with continuous backup) for a single box |
+| [`infrastructure/docker-compose.yml`](./docker-compose.yml) | Production / staging: three API replicas behind Caddy (reverse proxy + automatic HTTPS), Redis, the database backup sidecar, and an optional Postgres (with continuous backup) for a single box |
 | [`docker-compose.dev.yml`](../docker-compose.dev.yml) (repo root) | Local development: Postgres, Redis, S3 (SeaweedFS) and Mailpit |
 
 The API is built from [`infrastructure/Dockerfile`](./Dockerfile) and run by
-the production Compose stack behind its bundled nginx reverse proxy. See
+the production Compose stack behind its bundled Caddy reverse proxy. See
 [The API container](#the-api-container) below.
 
 ## At a glance
@@ -21,7 +21,7 @@ the production Compose stack behind its bundled nginx reverse proxy. See
 | [Redis](#redis-redis) | `redis:7.4-alpine` | `redis` | `redis` | Optional for one instance, **yes** for more than one | `src/cache/`, `src/realtime/`, `src/queue/` |
 | [S3 object storage](#s3-object-storage-s3) | `chrislusf/seaweedfs:4.48` | `s3` | not included (use any S3 provider) | **Yes** | `src/storage/` → `src/file-manager/`, `src/images/` |
 | [Mailpit / SMTP](#mailpit--smtp-mailpit) | `axllent/mailpit:v1.27` | `mailpit` | not included (use any SMTP server) | **Yes** (sign-in sends email) | `src/mail/` → `src/account/email-code.service.ts` |
-| [API + nginx](#the-api-container) | API image + `nginx:1.28-alpine` | - | `app1`-`app3` + `nginx` | **Yes** | `backend/src/` |
+| [API + Caddy](#the-api-container) | API image + `caddy:2.11.8-alpine` | - | `app1`-`app3` + `caddy` | **Yes** | `backend/src/` |
 | [migrate](#migrate-release-step) | the API image | - | `migrate` (profile `release`) | Only with `MIGRATE_ON_START=false` | `backend/prisma/migrations/` |
 | [backup](#database-backups-backup-db-backup) | `infrastructure/backup/` (Postgres 18 client, age, rclone, supercronic) | `backup` (profile `backup`) | `backup` (runs by default) | **Yes** in production | None: reads the database, writes an S3 bucket |
 
@@ -305,9 +305,9 @@ pending migrations itself before starting, and this service is not needed.
 for Redis to be healthy, health check against `GET /health`) and shared
 environment in `x-app-env` (`USE_REDIS=true`, `REDIS_URL`,
 `CHAT_CHANNELS_ENABLED=false`). It starts three API replicas (`app1`-`app3`)
-behind nginx. Nginx listens on `NGINX_HTTP_PORT` (default `80`); terminate TLS
-at a trusted upstream proxy or configure the TLS server in
-`infrastructure/nginx/default.conf` before exposing it directly.
+behind [Caddy](#caddy), which publishes ports 80 and 443 (TCP and UDP) and
+either terminates TLS itself with an automatic Let's Encrypt certificate or
+serves plain HTTP behind a TLS proxy of yours.
 
 The image (Bun 1.4.4, Alpine):
 
@@ -323,8 +323,79 @@ Microsoft client ids), push notifications (Expo), chat encryption
 (`CHAT_ENCRYPTION_KEY` or the `CHAT_ENCRYPTION_KEYS` ring) and organisation
 admins by email (`ORG_ADMIN_EMAILS`).
 
-`infrastructure/nginx/` holds the nginx config that load-balances the three
-replicas and disables buffering for SSE streams.
+## Caddy
+
+[`caddy/Caddyfile`](./caddy/Caddyfile) is the reverse proxy in front of the
+three replicas (service `caddy`, `caddy:2.11.8-alpine`). It:
+
+- balances requests round-robin over `app1`-`app3` (port 3001), checks each
+  replica every 10s (`GET /`, the liveness route; not `/health`, which fails
+  for every replica at once when the shared database, Redis or S3 is down)
+  and takes a replica out for 10s after a failed request; a request that
+  can't reach a replica is retried on another one for up to 5s;
+- streams Server-Sent Events unbuffered (every `/api/.../stream` route, read
+  timeout 1 hour; 60s between reads elsewhere);
+- passes every HTTP method through, including `QUERY`;
+- caps request bodies at 16 MiB (`413` above that);
+- adds the security headers and CSP to every response, plus HSTS
+  (`max-age=31536000; includeSubDomains`) when serving HTTPS, and removes the
+  `Server` and `Via` headers;
+- sends `X-Forwarded-For` (the client's TCP address), `X-Forwarded-Proto`,
+  `X-Forwarded-Host` and `X-Real-IP`; the API trusts exactly that one hop
+  (`TRUST_PROXY_HOPS=1`);
+- logs every request to stdout (`docker compose logs caddy`).
+
+`SITE_ADDRESS` in `.env` picks the mode:
+
+| `SITE_ADDRESS` | Mode |
+| --- | --- |
+| `api.example.com` | **Automatic HTTPS.** Caddy gets and renews a Let's Encrypt certificate for the hostname, redirects HTTP to HTTPS, serves HTTP/1.1, HTTP/2 and HTTP/3, and sends HSTS. |
+| `:80` (default) | **Plain HTTP**, for when TLS terminates at a trusted proxy in front (Cloudflare, a cloud load balancer, ...). No certificates, no HSTS from Caddy. |
+
+### Automatic HTTPS
+
+1. Point the API hostname's DNS (A/AAAA records) at this server.
+2. Open ports 80 and 443/TCP (Let's Encrypt validates over them; 80 also
+   serves the redirect) and 443/UDP for HTTP/3.
+3. In `.env`: `SITE_ADDRESS=api.example.com`, optionally
+   `ACME_EMAIL=ops@example.com` (expiry and problem notices), and
+   `API_URL=https://api.example.com`.
+4. `docker compose up -d caddy`, then watch `docker compose logs -f caddy`
+   for `certificate obtained successfully`.
+
+Certificates, ACME account keys and OCSP staples live in the `caddy_data`
+volume (`/data`); `caddy_config` holds Caddy's autosaved config. Keep both:
+deleting `caddy_data` forces a re-issue on every start, which soon hits Let's
+Encrypt's rate limits. Renewal is automatic; there is nothing to reload.
+
+### Plain HTTP behind another proxy
+
+Leave `SITE_ADDRESS=:80` and terminate TLS upstream. Caddy normally drops a
+client's `X-Forwarded-*` headers and reports `http` as the scheme. If the
+proxy in front should be believed, set `TRUSTED_PROXIES` to its address
+ranges (space-separated CIDRs): Caddy then appends to its `X-Forwarded-For`
+and keeps its `X-Forwarded-Proto`. Set `TRUST_PROXY_HOPS=2` for the API
+(one per hop) so rate limits see the real client.
+
+### Changing the config
+
+```sh
+./.github/scripts/validate-caddy.sh                              # from the repo root
+docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+`caddy reload` applies the edited file without dropping connections (the
+Caddyfile is bind-mounted read-only, so edit it on the host). A change to
+`SITE_ADDRESS`, `ACME_EMAIL` or `TRUSTED_PROXIES` needs
+`docker compose up -d caddy` instead, since they are environment variables.
+CI runs `validate-caddy.sh` (the `Infrastructure` workflow), which also fails
+on unformatted files: `caddy fmt --overwrite` fixes them.
+
+The container runs read-only with every capability dropped except
+`NET_BIND_SERVICE` (to bind 80/443). Its health check calls the admin API,
+which listens only on the container's loopback (`localhost:2019`) and is
+never published.
 
 ---
 
@@ -336,7 +407,7 @@ replicas and disables buffering for SSE streams.
 | One retention purge at a time | Already handled by Postgres advisory locks |
 | Background notifications processed once | BullMQ on the shared Redis |
 | Rate limits | Per instance (in-memory); multiply the configured limits by the instance count when sizing |
-| Long-lived SSE connections | The proxy must not buffer `/api/chat/stream`, `/api/portal/me/stream` or the attendance session streams (see the nginx config) |
+| Long-lived SSE connections | The proxy must not buffer `/api/chat/stream`, `/api/portal/me/stream` or the attendance session streams (see `caddy/Caddyfile`) |
 
 ## See also
 

@@ -63,6 +63,10 @@ export interface PortalGradeActivity {
   instructions: string | null;
   points: number;
   dueAt: string | null;
+  /** The student's own due date: their extension, else dueAt. */
+  effectiveDueAt?: string | null;
+  hasExtension?: boolean;
+  isClosed?: boolean;
   status: "draft" | "published" | "closed";
   publishedAt: string | null;
   allowFile: boolean;

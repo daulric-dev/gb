@@ -5,11 +5,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { ZipArchive } from 'archiver';
 import { basename } from 'node:path';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isUniqueViolation, pgCode, raisedMessage } from '@/common/db-values';
 import { roundScore, scoreOrNull } from './round';
@@ -25,6 +28,16 @@ import {
   ts,
 } from './activity.mapper';
 import { loadAssessments, loadRubric } from './rubric.service';
+import {
+  assertNotPastDue,
+  effectiveDueAt,
+  isPastDue,
+  isQuizAttemptOpen,
+  newQuizAttemptExpiry,
+  pastDueError,
+  studentDueFields,
+} from './due-date';
+import { CacheService } from '@/cache/cache.service';
 import {
   scoreValue,
   toActivityRef,
@@ -44,6 +57,8 @@ const STUDENT_ACTIVITY_SELECT = {
   allow_multiple_files: true,
   allow_text: true,
   max_attempts: true,
+  time_limit_minutes: true,
+  lockdown_browser: true,
   rubric_id: true,
 } satisfies Prisma.activitySelect;
 
@@ -53,6 +68,11 @@ const DRAFT_SELECT = {
   file_id: true,
   attempt_count: true,
   graded_by: true,
+  quiz_started_at: true,
+  quiz_expires_at: true,
+  is_away: true,
+  tab_switch_count: true,
+  last_away_at: true,
 } satisfies Prisma.submissionSelect;
 
 const MARKED_SELECT = {
@@ -82,15 +102,33 @@ type SubmissionFileInfo = {
  * gradebook reads submissions directly.
  */
 @Injectable()
-export class SubmissionService {
+export class SubmissionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SubmissionService.name);
+  private quizSweepTimer?: ReturnType<typeof setInterval>;
+  private sweepingQuizAttempts = false;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly files: FileManagerService,
     private readonly access: CourseAccessService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
+    @Optional() private readonly cache?: CacheService,
   ) {}
+
+  onModuleInit() {
+    if (process.env.NODE_ENV === 'test') return;
+    this.quizSweepTimer = setInterval(
+      () => void this.sweepExpiredQuizAttempts(),
+      5_000,
+    );
+    void this.sweepExpiredQuizAttempts();
+  }
+
+  onModuleDestroy() {
+    if (this.quizSweepTimer) clearInterval(this.quizSweepTimer);
+    this.quizSweepTimer = undefined;
+  }
 
   // ── webhooks ──────────────────────────────────────────────────────────────
 
@@ -114,20 +152,24 @@ export class SubmissionService {
         select: { course_id: true },
       });
       if (!row?.course_id) return;
-      await webhooks.emitForCourse(row.course_id, 'grade.recorded', async (course) => ({
-        submission: { id: marked.id },
-        activity,
-        course,
-        student: await webhooks.student(marked.studentId),
-        grade: {
-          score: marked.score,
-          points: activity.points,
-          status: marked.status,
-          excused: marked.excused,
-        },
-        gradedBy: await webhooks.staffOrNull(userId),
-        source,
-      }));
+      await webhooks.emitForCourse(
+        row.course_id,
+        'grade.recorded',
+        async (course) => ({
+          submission: { id: marked.id },
+          activity,
+          course,
+          student: await webhooks.student(marked.studentId),
+          grade: {
+            score: marked.score,
+            points: activity.points,
+            status: marked.status,
+            excused: marked.excused,
+          },
+          gradedBy: await webhooks.staffOrNull(userId),
+          source,
+        }),
+      );
     })().catch(() => undefined);
   }
 
@@ -149,11 +191,27 @@ export class SubmissionService {
     if (courseIds.length === 0) return new Map();
 
     const courses = await this.prisma.course.findMany({
-      where: { id: { in: courseIds }, status: { in: ['published', 'archived'] } },
+      where: {
+        id: { in: courseIds },
+        status: { in: ['published', 'archived'] },
+      },
       select: { id: true, name: true },
     });
 
     return new Map(courses.map((c) => [c.id, c.name]));
+  }
+
+  /** The due dates a teacher extended for this student, by activity. */
+  private async extensionsFor(
+    studentId: string,
+    activityIds: string[],
+  ): Promise<Map<string, Date>> {
+    if (activityIds.length === 0) return new Map();
+    const rows = await this.prisma.activity_extension.findMany({
+      where: { student_id: studentId, activity_id: { in: activityIds } },
+      select: { activity_id: true, due_at: true },
+    });
+    return new Map(rows.map((r) => [r.activity_id, r.due_at]));
   }
 
   /**
@@ -176,25 +234,32 @@ export class SubmissionService {
 
     if (rows.length === 0) return [];
 
-    const submissions = await this.prisma.submission.findMany({
-      where: {
-        student_id: studentId,
-        activity_id: { in: rows.map((a) => a.id) },
-      },
-      select: {
-        id: true,
-        activity_id: true,
-        status: true,
-        score: true,
-        excused: true,
-        submitted_at: true,
-        graded_at: true,
-      },
-    });
+    const activityIds = rows.map((a) => a.id);
+    const [submissions, extensions] = await Promise.all([
+      this.prisma.submission.findMany({
+        where: {
+          student_id: studentId,
+          activity_id: { in: activityIds },
+        },
+        select: {
+          id: true,
+          activity_id: true,
+          status: true,
+          score: true,
+          excused: true,
+          submitted_at: true,
+          graded_at: true,
+          quiz_started_at: true,
+          quiz_expires_at: true,
+        },
+      }),
+      this.extensionsFor(studentId, activityIds),
+    ]);
 
     const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
+    const now = Date.now();
 
-    return rows.map((a) => {
+    const items = rows.map((a) => {
       const submission = byActivity.get(a.id);
       const graded = submission?.status === 'graded';
 
@@ -207,6 +272,7 @@ export class SubmissionService {
         instructions: a.instructions,
         points: Number(a.points),
         dueAt: ts(a.due_at),
+        ...studentDueFields(a.due_at, extensions.get(a.id), submission, now),
         status: a.status,
         allowFile: a.allow_file,
         allowMultipleFiles: a.allow_multiple_files,
@@ -226,6 +292,11 @@ export class SubmissionService {
           : null,
       };
     });
+    // The to-do runs on each student's own dates, extensions included.
+    const time = (v: string | null) => (v ? Date.parse(v) : Infinity);
+    return items.sort(
+      (a, b) => time(a.effectiveDueAt) - time(b.effectiveDueAt),
+    );
   }
 
   /** One course's published and closed work, with the student's state on each. */
@@ -240,32 +311,45 @@ export class SubmissionService {
 
     if (rows.length === 0) return [];
 
-    const submissions = await this.prisma.submission.findMany({
-      where: {
-        student_id: studentId,
-        activity_id: { in: rows.map((a) => a.id) },
-      },
-      select: {
-        activity_id: true,
-        status: true,
-        score: true,
-        excused: true,
-        feedback: true,
-        submitted_at: true,
-        attempt_count: true,
-      },
-    });
+    const activityIds = rows.map((a) => a.id);
+    const [submissions, extensions] = await Promise.all([
+      this.prisma.submission.findMany({
+        where: {
+          student_id: studentId,
+          activity_id: { in: activityIds },
+        },
+        select: {
+          activity_id: true,
+          status: true,
+          score: true,
+          excused: true,
+          feedback: true,
+          submitted_at: true,
+          attempt_count: true,
+          quiz_started_at: true,
+          quiz_expires_at: true,
+        },
+      }),
+      this.extensionsFor(studentId, activityIds),
+    ]);
 
     const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
+    const now = Date.now();
 
-    return rows.map((a) => toPortalActivity(a, byActivity.get(a.id)));
+    return rows.map((a) => {
+      const submission = byActivity.get(a.id);
+      return {
+        ...toPortalActivity(a, submission),
+        ...studentDueFields(a.due_at, extensions.get(a.id), submission, now),
+      };
+    });
   }
 
   /** The activity itself, with questions but never the correct answers. */
   async getForStudent(studentId: string, activityId: string) {
     const activity = await this.requireAssignedActivity(studentId, activityId);
 
-    const submission = await this.prisma.submission.findFirst({
+    let submission = await this.prisma.submission.findFirst({
       where: { activity_id: activityId, student_id: studentId },
       select: {
         id: true,
@@ -278,44 +362,109 @@ export class SubmissionService {
         submitted_at: true,
         graded_at: true,
         attempt_count: true,
+        quiz_started_at: true,
+        quiz_expires_at: true,
       },
     });
+    // An attempt past its end (its time limit, or the due date for one
+    // without) is submitted with what was saved before showing the result.
+    if (
+      submission?.quiz_started_at &&
+      !isQuizAttemptOpen(submission, activity.effective_due_at)
+    ) {
+      await this.finalizeExpiredQuizAttempt(
+        submission.id,
+        studentId,
+        activityId,
+        activity.effective_due_at,
+      );
+      submission = await this.prisma.submission.findFirst({
+        where: { activity_id: activityId, student_id: studentId },
+        select: {
+          id: true,
+          status: true,
+          text_body: true,
+          file_id: true,
+          score: true,
+          feedback: true,
+          excused: true,
+          submitted_at: true,
+          graded_at: true,
+          attempt_count: true,
+          quiz_started_at: true,
+          quiz_expires_at: true,
+        },
+      });
+    }
+
+    const savedAnswers =
+      activity.kind === 'quiz' && submission?.quiz_started_at
+        ? await this.prisma.quiz_answer.findMany({
+            where: {
+              submission_id: submission.id,
+              quiz_question: { activity_id: activityId },
+            },
+            select: {
+              question_id: true,
+              option_id: true,
+              text_answer: true,
+            },
+          })
+        : [];
 
     let questions: any[] = [];
 
     if (activity.kind === 'quiz') {
-      const qs = await this.prisma.quiz_question.findMany({
-        where: { activity_id: activityId },
-        select: { id: true, prompt: true, kind: true, points: true, sort_order: true },
-        orderBy: { sort_order: 'asc' },
-      });
+      const cacheKey = `quiz:student-questions:${activityId}`;
+      const cached = (await this.cache?.get(cacheKey)) as any[] | undefined | null;
+      if (cached) {
+        questions = cached;
+      } else {
+        const qs = await this.prisma.quiz_question.findMany({
+          where: { activity_id: activityId },
+          select: {
+            id: true,
+            prompt: true,
+            kind: true,
+            points: true,
+            sort_order: true,
+          },
+          orderBy: { sort_order: 'asc' },
+        });
 
-      const questionIds = qs.map((q) => q.id);
+        const questionIds = qs.map((q) => q.id);
 
-      const options = questionIds.length
-        ? await this.prisma.quiz_option.findMany({
-            where: { question_id: { in: questionIds } },
-            select: { id: true, question_id: true, label: true, sort_order: true },
-            orderBy: { sort_order: 'asc' },
-          })
-        : [];
+        const options = questionIds.length
+          ? await this.prisma.quiz_option.findMany({
+              where: { question_id: { in: questionIds } },
+              select: {
+                id: true,
+                question_id: true,
+                label: true,
+                sort_order: true,
+              },
+              orderBy: { sort_order: 'asc' },
+            })
+          : [];
 
-      // is_correct is deliberately not selected: the answer key must not reach
-      // the student's browser, where it is one devtools tab from being read.
-      // A short answer goes further and sends no options at all - there its
-      // labels are the accepted wordings, so the labels are the answer key.
-      questions = qs.map((q) => ({
-        id: q.id,
-        prompt: q.prompt,
-        kind: q.kind,
-        points: Number(q.points),
-        options:
-          q.kind === 'short_answer'
-            ? []
-            : options
-                .filter((o) => o.question_id === q.id)
-                .map((o) => ({ id: o.id, label: o.label })),
-      }));
+        // is_correct is deliberately not selected: the answer key must not reach
+        // the student's browser, where it is one devtools tab from being read.
+        // A short answer goes further and sends no options at all - there its
+        // labels are the accepted wordings, so the labels are the answer key.
+        questions = qs.map((q) => ({
+          id: q.id,
+          prompt: q.prompt,
+          kind: q.kind,
+          points: Number(q.points),
+          options:
+            q.kind === 'short_answer'
+              ? []
+              : options
+                  .filter((o) => o.question_id === q.id)
+                  .map((o) => ({ id: o.id, label: o.label })),
+        }));
+        await this.cache?.set(cacheKey, questions, 3600);
+      }
     }
 
     const files = submission
@@ -342,14 +491,34 @@ export class SubmissionService {
       instructions: activity.instructions,
       points: Number(activity.points),
       dueAt: ts(activity.due_at),
+      ...studentDueFields(
+        activity.due_at,
+        activity.extension_due_at,
+        submission,
+      ),
       status: activity.status,
       allowFile: activity.allow_file,
       allowMultipleFiles: activity.allow_multiple_files,
       allowText: activity.allow_text,
       // 0 means unlimited, matching the teacher's editor.
       maxAttempts: activity.max_attempts ?? 0,
+      timeLimitMinutes: activity.time_limit_minutes,
+      lockdownBrowser: !!activity.lockdown_browser,
       attemptsUsed: submission?.attempt_count ?? 0,
       questions,
+      quizAttempt:
+        activity.kind === 'quiz' && submission?.quiz_started_at
+          ? {
+              startedAt: ts(submission.quiz_started_at),
+              expiresAt: ts(submission.quiz_expires_at),
+              serverNow: new Date().toISOString(),
+              answers: savedAnswers.map((answer) => ({
+                questionId: answer.question_id,
+                optionId: answer.option_id,
+                text: answer.text_answer,
+              })),
+            }
+          : null,
       rubric,
       rubricAssessment,
       submission: submission
@@ -499,13 +668,31 @@ export class SubmissionService {
       throw new NotFoundException('Activity not found');
     }
 
+    let course: Awaited<ReturnType<CourseAccessService['requireStudent']>>;
     try {
-      await this.access.requireStudent(studentId, activity.course_id);
+      course = await this.access.requireStudent(studentId, activity.course_id);
     } catch {
       throw new NotFoundException('Activity not found');
     }
 
-    return activity as typeof activity & { course_id: string };
+    const extension = await this.prisma.activity_extension.findUnique({
+      where: {
+        activity_id_student_id: {
+          activity_id: activityId,
+          student_id: studentId,
+        },
+      },
+      select: { due_at: true },
+    });
+
+    return {
+      ...activity,
+      course_id: activity.course_id,
+      school_id: course.school_id,
+      extension_due_at: extension?.due_at ?? null,
+      // The date that applies to this student: their extension, if any.
+      effective_due_at: effectiveDueAt(activity.due_at, extension?.due_at),
+    };
   }
 
   /**
@@ -523,13 +710,9 @@ export class SubmissionService {
     // An archived course stays readable for the record, but archiving does
     // not close its activities, so hand-ins are refused at the course level.
     try {
-      await this.access.requireStudent(
-        studentId,
-        activity.course_id,
-        {
-          allowArchived: false,
-        },
-      );
+      await this.access.requireStudent(studentId, activity.course_id, {
+        allowArchived: false,
+      });
     } catch {
       throw new ConflictException('This course is closed to new work');
     }
@@ -570,6 +753,472 @@ export class SubmissionService {
     }
   }
 
+  async startQuizAttempt(studentId: string, activityId: string) {
+    const activity = await this.requireSubmittable(studentId, activityId);
+    if (activity.kind !== 'quiz') {
+      throw new BadRequestException('This is not a quiz');
+    }
+    if (activity.status !== 'published') {
+      throw new ConflictException('This quiz is closed');
+    }
+
+    const draft = await this.ensureDraft(studentId, activityId);
+    return this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<
+        {
+          attempt_count: number;
+          graded_by: string | null;
+          quiz_started_at: Date | null;
+          quiz_expires_at: Date | null;
+        }[]
+      >`
+        select attempt_count, graded_by, quiz_started_at, quiz_expires_at
+        from grading.submission
+        where id = ${draft.id}::uuid
+        for update
+      `;
+      if (!locked) throw new NotFoundException('Activity not found');
+      if (locked.graded_by) {
+        throw new BadRequestException(
+          'Your teacher has marked this quiz, so it cannot be retaken',
+        );
+      }
+      if (locked.quiz_started_at) {
+        // An attempt begun in time carries on past the due date until its
+        // own end, so resuming it is always allowed while it runs.
+        if (!isQuizAttemptOpen(locked, activity.effective_due_at)) {
+          throw new ConflictException('This quiz attempt has expired');
+        }
+        return {
+          startedAt: locked.quiz_started_at.toISOString(),
+          expiresAt: locked.quiz_expires_at?.toISOString() ?? null,
+          serverNow: new Date().toISOString(),
+        };
+      }
+      assertNotPastDue(activity.effective_due_at);
+      if (
+        activity.max_attempts !== null &&
+        locked.attempt_count >= activity.max_attempts
+      ) {
+        throw new ConflictException('You have no attempts left');
+      }
+
+      const startedAt = new Date();
+      // With no time limit the attempt ends when the quiz is due, so the
+      // expiry sweep submits it then.
+      const expiresAt = newQuizAttemptExpiry(
+        startedAt,
+        activity.time_limit_minutes,
+        activity.effective_due_at,
+      );
+      await tx.quiz_answer.deleteMany({
+        where: {
+          submission_id: draft.id,
+          quiz_question: { activity_id: activityId },
+        },
+      });
+      await tx.submission.update({
+        where: { id: draft.id },
+        data: {
+          quiz_started_at: startedAt,
+          quiz_expires_at: expiresAt,
+          is_away: false,
+          tab_switch_count: 0,
+          last_away_at: null,
+          updated_at: startedAt,
+        },
+      });
+      await this.cache?.set(
+        `quiz:presence:${activityId}:${studentId}`,
+        {
+          isAway: false,
+          reason: null,
+          lastPingAt: startedAt.toISOString(),
+        },
+        35,
+      );
+      return {
+        startedAt: startedAt.toISOString(),
+        expiresAt: expiresAt?.toISOString() ?? null,
+        serverNow: new Date().toISOString(),
+      };
+    });
+  }
+
+  async saveQuizAnswers(
+    studentId: string,
+    activityId: string,
+    answers: { questionId: string; optionId?: string; text?: string }[],
+  ) {
+    const activity = await this.requireSubmittable(studentId, activityId);
+    if (activity.kind !== 'quiz') {
+      throw new BadRequestException('This is not a quiz');
+    }
+    const draft = await this.ensureDraft(studentId, activityId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<
+        { quiz_started_at: Date | null; quiz_expires_at: Date | null }[]
+      >`
+        select quiz_started_at, quiz_expires_at
+        from grading.submission
+        where id = ${draft.id}::uuid
+        for update
+      `;
+      if (!locked?.quiz_started_at) {
+        if (isPastDue(activity.effective_due_at)) {
+          throw pastDueError(activity.effective_due_at);
+        }
+        throw new ConflictException('Start the quiz before saving answers');
+      }
+      if (
+        locked.quiz_expires_at &&
+        locked.quiz_expires_at.getTime() <= Date.now()
+      ) {
+        throw new ConflictException(
+          'Time is up; your saved answers were submitted',
+        );
+      }
+      // An attempt from before this deploy may have no expiry: with no time
+      // limit it ends at the due date.
+      if (!isQuizAttemptOpen(locked, activity.effective_due_at)) {
+        throw pastDueError(activity.effective_due_at);
+      }
+
+      const accepted = await this.validQuizAnswers(tx, activityId, answers);
+      await tx.quiz_answer.deleteMany({
+        where: {
+          submission_id: draft.id,
+          quiz_question: { activity_id: activityId },
+        },
+      });
+      if (accepted.length > 0) {
+        await tx.quiz_answer.createMany({
+          data: accepted.map((answer) => this.quizAnswerRow(draft.id, answer)),
+        });
+      }
+      const savedAt = new Date();
+      await tx.submission.update({
+        where: { id: draft.id },
+        data: { updated_at: savedAt },
+      });
+      return { savedAt: savedAt.toISOString() };
+    });
+  }
+
+  async updateQuizPresence(
+    studentId: string,
+    activityId: string,
+    dto: { isAway: boolean; reason?: string },
+  ) {
+    const activity = await this.requireSubmittable(studentId, activityId);
+    if (activity.kind !== 'quiz') {
+      throw new BadRequestException('This is not a quiz');
+    }
+    // Only lockdown quizzes are monitored; a normal quiz must not collect
+    // tab-switch counts from a client that calls this anyway.
+    if (!activity.lockdown_browser) {
+      return { ok: true };
+    }
+
+    const draft = await this.prisma.submission.findFirst({
+      where: { activity_id: activityId, student_id: studentId },
+      select: {
+        id: true,
+        status: true,
+        quiz_started_at: true,
+        quiz_expires_at: true,
+        is_away: true,
+        tab_switch_count: true,
+      },
+    });
+
+    if (!draft || !draft.quiz_started_at || draft.status !== 'draft') {
+      return { ok: true };
+    }
+
+    if (draft.quiz_expires_at && draft.quiz_expires_at.getTime() <= Date.now()) {
+      return { ok: true, expired: true };
+    }
+
+    const now = new Date();
+    const cacheKey = `quiz:presence:${activityId}:${studentId}`;
+    await this.cache?.set(
+      cacheKey,
+      {
+        isAway: dto.isAway,
+        reason: dto.reason ?? null,
+        lastPingAt: now.toISOString(),
+      },
+      35,
+    );
+
+    if (dto.isAway) {
+      // Count leaving the quiz once per departure: an away client keeps
+      // pinging, and every ping must not add another switch.
+      await this.prisma.submission.update({
+        where: { id: draft.id },
+        data: {
+          is_away: true,
+          // A departure, not every away ping: count it and stamp when it began.
+          ...(draft.is_away
+            ? {}
+            : { tab_switch_count: { increment: 1 }, last_away_at: now }),
+          updated_at: now,
+        },
+      });
+    } else if (draft.is_away) {
+      await this.prisma.submission.update({
+        where: { id: draft.id },
+        data: {
+          is_away: false,
+          updated_at: now,
+        },
+      });
+    }
+
+    return { ok: true };
+  }
+
+  private async validQuizAnswers(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    answers: { questionId: string; optionId?: string; text?: string }[],
+  ) {
+    const cacheKey = `quiz:structure:${activityId}`;
+    type QuizStructure = {
+      kindById: [string, string][];
+      questionOfOption: [string, string][];
+    };
+    let structure: QuizStructure | null =
+      ((await this.cache?.get(cacheKey)) as QuizStructure | null | undefined) ?? null;
+
+    if (!structure) {
+      const questions = await tx.quiz_question.findMany({
+        where: { activity_id: activityId },
+        select: { id: true, kind: true },
+      });
+      const questionIds = questions.map((question) => question.id);
+      const options = questionIds.length
+        ? await tx.quiz_option.findMany({
+            where: { question_id: { in: questionIds } },
+            select: { id: true, question_id: true },
+          })
+        : [];
+      structure = {
+        kindById: questions.map((q) => [q.id, q.kind]),
+        questionOfOption: options.map((option) => [
+          option.id,
+          option.question_id,
+        ]),
+      };
+      await this.cache?.set(cacheKey, structure, 3600);
+    }
+
+    const kindById = new Map<string, string>(structure.kindById);
+    const questionOfOption = new Map<string, string>(structure.questionOfOption);
+    const valid = answers.filter(
+      (answer) =>
+        kindById.has(answer.questionId) &&
+        (kindById.get(answer.questionId) === 'short_answer' ||
+          !answer.optionId ||
+          questionOfOption.get(answer.optionId) === answer.questionId),
+    );
+    return [
+      ...new Map(valid.map((answer) => [answer.questionId, answer])).values(),
+    ];
+  }
+
+  private quizAnswerRow(
+    submissionId: string,
+    answer: { questionId: string; optionId?: string; text?: string },
+  ) {
+    const isText = answer.text !== undefined;
+    return {
+      submission_id: submissionId,
+      question_id: answer.questionId,
+      option_id: isText ? null : (answer.optionId ?? null),
+      text_answer: isText ? (answer.text?.trim() ?? null) : null,
+    };
+  }
+
+  private emitQuizCompleted(
+    activity: {
+      id: string;
+      course_id: string;
+      title: string;
+      kind: string;
+      points: unknown;
+    },
+    studentId: string,
+    submissionId: string,
+    row: {
+      score: Prisma.Decimal | null;
+      points: Prisma.Decimal | null;
+      attempts_used: number | null;
+    },
+  ) {
+    const webhooks = this.webhooks;
+    if (!webhooks) return;
+    void webhooks.emitForCourse(
+      activity.course_id,
+      'quiz.completed',
+      async (course) => ({
+        submission: { id: submissionId, attempt: row.attempts_used ?? null },
+        activity: toActivityRef(activity),
+        course,
+        student: await webhooks.student(studentId),
+        grade: {
+          score: scoreValue(row.score),
+          points:
+            row.points === null
+              ? Number(activity.points)
+              : scoreValue(row.points),
+          status: 'graded',
+          excused: false,
+        },
+      }),
+    );
+  }
+
+  private async finalizeExpiredQuizAttempt(
+    submissionId: string,
+    studentId: string,
+    activityId: string,
+    dueAt: Date | null = null,
+  ) {
+    const completed = await this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<
+        {
+          quiz_started_at: Date | null;
+          quiz_expires_at: Date | null;
+          expired: boolean;
+        }[]
+      >`
+        select quiz_started_at, quiz_expires_at,
+               quiz_expires_at is not null and quiz_expires_at <= now() as expired
+        from grading.submission
+        where id = ${submissionId}::uuid
+        for update
+      `;
+      if (!locked?.quiz_started_at) return null;
+      // Ended by its time limit, or (no expiry) by the due date.
+      const ended =
+        locked.expired ||
+        (!locked.quiz_expires_at && isPastDue(dueAt));
+      if (!ended) return null;
+      const [row] = await tx.$queryRaw<
+        {
+          score: Prisma.Decimal | null;
+          points: Prisma.Decimal | null;
+          attempts_used: number | null;
+        }[]
+      >`
+        select * from grading.submit_quiz(
+          ${submissionId}::uuid,
+          ${studentId}::uuid
+        )
+      `;
+      return row ?? null;
+    });
+    if (!completed) return;
+    const activity = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, course_id: true, title: true, kind: true, points: true },
+    });
+    if (activity) {
+      this.emitQuizCompleted(activity, studentId, submissionId, completed);
+    }
+  }
+
+  private async sweepExpiredQuizAttempts() {
+    if (this.sweepingQuizAttempts) return;
+    this.sweepingQuizAttempts = true;
+    try {
+      const completed = await this.prisma.$transaction(async (tx) => {
+        const expired = await tx.$queryRaw<
+          {
+            id: string;
+            student_id: string;
+            activity_id: string;
+            course_id: string;
+            title: string;
+            kind: string;
+            points: Prisma.Decimal;
+          }[]
+        >`
+          select s.id, s.student_id, a.id as activity_id, a.course_id,
+                 a.title, a.kind, a.points
+          from grading.submission s
+          join grading.activity a on a.id = s.activity_id
+          where s.quiz_expires_at <= now()
+          order by s.quiz_expires_at
+          limit 50
+          for update of s skip locked
+        `;
+        const rows: {
+          submissionId: string;
+          studentId: string;
+          activity: {
+            id: string;
+            course_id: string;
+            title: string;
+            kind: string;
+            points: unknown;
+          };
+          result: {
+            score: Prisma.Decimal | null;
+            points: Prisma.Decimal | null;
+            attempts_used: number | null;
+          };
+        }[] = [];
+        for (const attempt of expired) {
+          const [result] = await tx.$queryRaw<
+            {
+              score: Prisma.Decimal | null;
+              points: Prisma.Decimal | null;
+              attempts_used: number | null;
+            }[]
+          >`
+            select * from grading.submit_quiz(
+              ${attempt.id}::uuid,
+              ${attempt.student_id}::uuid
+            )
+          `;
+          if (result) {
+            rows.push({
+              submissionId: attempt.id,
+              studentId: attempt.student_id,
+              activity: {
+                id: attempt.activity_id,
+                course_id: attempt.course_id,
+                title: attempt.title,
+                kind: attempt.kind,
+                points: attempt.points,
+              },
+              result,
+            });
+          }
+        }
+        return rows;
+      });
+      for (const attempt of completed) {
+        this.emitQuizCompleted(
+          attempt.activity,
+          attempt.studentId,
+          attempt.submissionId,
+          attempt.result,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to finalize expired quiz attempts: ${(error as Error).message}`,
+      );
+    } finally {
+      this.sweepingQuizAttempts = false;
+    }
+  }
+
   /**
    * Start a direct upload for the draft, as the student's own file.
    *
@@ -599,6 +1248,7 @@ export class SubmissionService {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    assertNotPastDue(activity.effective_due_at);
 
     await this.assertUploadCapacity(
       draft.id,
@@ -632,6 +1282,8 @@ export class SubmissionService {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    // An upload started in time but finished late is not attached.
+    assertNotPastDue(activity.effective_due_at);
     await this.assertUploadCapacity(
       draft.id,
       activity.allow_multiple_files,
@@ -749,13 +1401,15 @@ export class SubmissionService {
         id: true,
         activity_id: true,
         file_id: true,
-        submission_file: { select: { file_id: true }, orderBy: { sort_order: 'asc' } },
+        submission_file: {
+          select: { file_id: true },
+          orderBy: { sort_order: 'asc' },
+        },
       },
     });
 
-    const attachedFileIds = submission?.submission_file?.map(
-      ({ file_id }) => file_id,
-    ) ?? [];
+    const attachedFileIds =
+      submission?.submission_file?.map(({ file_id }) => file_id) ?? [];
     if (submission?.file_id && attachedFileIds.length === 0) {
       attachedFileIds.push(submission.file_id);
     }
@@ -835,7 +1489,9 @@ export class SubmissionService {
         .replace(/[\\/:*?"<>|\p{Cc}]/gu, '_')
         .slice(0, 180) + '.zip';
     void archive.finalize().catch((error: Error) => {
-      this.logger.error(`Failed to generate submission archive: ${error.message}`);
+      this.logger.error(
+        `Failed to generate submission archive: ${error.message}`,
+      );
     });
     return { archive, archiveName };
   }
@@ -859,10 +1515,11 @@ export class SubmissionService {
     if (draft.status !== 'draft') {
       throw new ConflictException('You have already submitted this');
     }
+    assertNotPastDue(activity.effective_due_at);
 
     // A file attached earlier stays attached: handing in text as well must not
     // silently drop it.
-    const fileId = (input.fileId ?? draft.file_id ?? null);
+    const fileId = input.fileId ?? draft.file_id ?? null;
 
     if (!input.textBody?.trim() && !fileId) {
       throw new BadRequestException('Add your work before submitting');
@@ -886,18 +1543,55 @@ export class SubmissionService {
     }
 
     let data;
+    const actorId = await this.userIdForStudent(studentId);
     try {
-      [data] = await this.prisma.submission.updateManyAndReturn({
-        // The status guards a second submit racing the first.
-        where: { id: draft.id, status: 'draft' },
-        data: {
-          status: 'submitted',
-          text_body: input.textBody?.trim() ?? null,
-          file_id: fileId,
-          submitted_at: new Date(),
-          updated_at: new Date(),
-        },
-        select: { id: true, status: true, submitted_at: true },
+      data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.submission.findUnique({
+          where: { id: draft.id },
+          select: {
+            id: true,
+            status: true,
+            text_body: true,
+            file_id: true,
+          },
+        });
+        const [submitted] = await tx.submission.updateManyAndReturn({
+          // The status guards a second submit racing the first.
+          where: { id: draft.id, status: 'draft' },
+          data: {
+            status: 'submitted',
+            text_body: input.textBody?.trim() ?? null,
+            file_id: fileId,
+            submitted_at: new Date(),
+            updated_at: new Date(),
+          },
+          select: { id: true, status: true, submitted_at: true },
+        });
+        if (submitted) {
+          await this.auditLog?.record(
+            tx,
+            activity.school_id,
+            { id: actorId },
+            {
+              entity: 'submission',
+              entityId: submitted.id,
+              action: 'update',
+              changes: auditChanges(
+                {
+                  status: before?.status ?? null,
+                  textBody: before?.text_body ?? null,
+                  fileId: before?.file_id ?? null,
+                },
+                {
+                  status: submitted.status,
+                  textBody: input.textBody?.trim() ?? null,
+                  fileId,
+                },
+              ),
+            },
+          );
+        }
+        return submitted;
       });
     } catch {
       data = undefined;
@@ -908,15 +1602,19 @@ export class SubmissionService {
     }
 
     const handedIn = data;
-    void this.webhooks?.emitForCourse(activity.course_id, 'submission.handed_in', async (course) => ({
-      submission: {
-        id: handedIn.id,
-        submittedAt: (handedIn.submitted_at ?? new Date()).toISOString(),
-      },
-      activity: toActivityRef(activity),
-      course,
-      student: await this.webhooks!.student(studentId),
-    }));
+    void this.webhooks?.emitForCourse(
+      activity.course_id,
+      'submission.handed_in',
+      async (course) => ({
+        submission: {
+          id: handedIn.id,
+          submittedAt: (handedIn.submitted_at ?? new Date()).toISOString(),
+        },
+        activity: toActivityRef(activity),
+        course,
+        student: await this.webhooks!.student(studentId),
+      }),
+    );
 
     return {
       id: data.id,
@@ -935,79 +1633,25 @@ export class SubmissionService {
     answers: { questionId: string; optionId?: string; text?: string }[],
   ) {
     const activity = await this.requireSubmittable(studentId, activityId);
-
     if (activity.kind !== 'quiz') {
       throw new BadRequestException('This is not a quiz');
     }
-    if (activity.status !== 'published') {
-      throw new ConflictException('This quiz is closed');
-    }
-
     const draft = await this.ensureDraft(studentId, activityId);
-
-    // A mark a teacher entered or imported is final; a retake would replace it
-    // with the automatic score. submit_quiz checks this again under its lock.
     if (draft.graded_by) {
       throw new BadRequestException(
         'Your teacher has marked this quiz, so it cannot be retaken',
       );
     }
-
-    // A retake is allowed while attempts remain, so a graded submission is not
-    // automatically the end of it. The limit is enforced again inside
-    // submit_quiz, which holds the row lock while it counts.
-    const limit = activity.max_attempts;
-    const used = draft.attempt_count ?? 0;
-
-    if (limit !== null && used >= limit) {
-      throw new ConflictException(
-        used === 1
-          ? 'You have already submitted this quiz'
-          : `You have used all ${limit} attempts`,
-      );
+    if (activity.status !== 'published' && !draft.quiz_started_at) {
+      throw new ConflictException('This quiz is closed');
     }
-
-    // Only answers belonging to this quiz count; anything else is ignored
-    // rather than trusted.
-    const questions = await this.prisma.quiz_question.findMany({
-      where: { activity_id: activityId },
-      select: { id: true, kind: true },
-    });
-
-    // An answer is stored in the shape its question is marked in, whatever the
-    // client sent: text for a short answer, an option for the choice kinds.
-    const kindById = new Map<string, string>(
-      questions.map((q) => [q.id, q.kind]),
-    );
-
-    // An option id is only an answer to the question it belongs to. Without
-    // this, one option id known to be correct - learned on a retake of any
-    // quiz - could be sent as the answer to every question everywhere.
-    const questionIds = [...kindById.keys()];
-    const options = questionIds.length
-      ? await this.prisma.quiz_option.findMany({
-          where: { question_id: { in: questionIds } },
-          select: { id: true, question_id: true },
-        })
-      : [];
-    const questionOfOption = new Map(
-      options.map((o) => [o.id, o.question_id]),
-    );
-
-    const valid = answers.filter(
-      (a) =>
-        kindById.has(a.questionId) &&
-        (kindById.get(a.questionId) === 'short_answer' ||
-          !a.optionId ||
-          questionOfOption.get(a.optionId) === a.questionId),
-    );
-    // One answer per question: (submission, question) is unique, so a repeated
-    // question would fail the whole submit. The last one sent wins.
-    const accepted = [
-      ...new Map(valid.map((a) => [a.questionId, a])).values(),
-    ];
-
-    let data: {
+    if (!draft.quiz_started_at) {
+      if (isPastDue(activity.effective_due_at)) {
+        throw pastDueError(activity.effective_due_at);
+      }
+      throw new ConflictException('Start the quiz before submitting');
+    }
+    let rows: {
       score: Prisma.Decimal | null;
       points: Prisma.Decimal | null;
       attempts_used: number | null;
@@ -1017,11 +1661,18 @@ export class SubmissionService {
       // together or not at all. The row lock is taken first, so a second
       // submit waits here and then sees the attempt this one used, and any
       // refusal inside submit_quiz rolls the new answers back with it.
-      data = await this.prisma.$transaction(async (tx) => {
+      rows = await this.prisma.$transaction(async (tx) => {
         const [locked] = await tx.$queryRaw<
-          { attempt_count: number | null; graded_by: string | null }[]
+          {
+            attempt_count: number | null;
+            graded_by: string | null;
+            quiz_started_at: Date | null;
+            quiz_expires_at: Date | null;
+            expired: boolean;
+          }[]
         >`
-          select attempt_count, graded_by
+          select attempt_count, graded_by, quiz_started_at, quiz_expires_at,
+                 quiz_expires_at is not null and quiz_expires_at <= now() as expired
           from grading.submission
           where id = ${draft.id}::uuid
           for update
@@ -1032,28 +1683,47 @@ export class SubmissionService {
             'Your teacher has marked this quiz, so it cannot be retaken',
           );
         }
-        if (limit !== null && (locked.attempt_count ?? 0) >= limit) {
+        if (
+          activity.max_attempts !== null &&
+          (locked.attempt_count ?? 0) >= activity.max_attempts
+        ) {
           throw new ConflictException('You have no attempts left');
         }
+        if (!locked.quiz_started_at) {
+          if (isPastDue(activity.effective_due_at)) {
+            throw pastDueError(activity.effective_due_at);
+          }
+          throw new ConflictException('Start the quiz before submitting');
+        }
 
-        // Clear the previous attempt first: replacing only the answers sent
-        // would leave answers to questions this attempt skipped, silently
-        // scoring them again.
-        await tx.quiz_answer.deleteMany({
-          where: { submission_id: draft.id },
-        });
-        if (accepted.length > 0) {
-          await tx.quiz_answer.createMany({
-            data: accepted.map((a) => {
-              const isText = kindById.get(a.questionId) === 'short_answer';
-              return {
-                submission_id: draft.id,
-                question_id: a.questionId,
-                option_id: isText ? null : (a.optionId ?? null),
-                text_answer: isText ? (a.text?.trim() ?? null) : null,
-              };
-            }),
+        // Once time expires only server-saved answers count. A last request
+        // from the client after the deadline must not extend the attempt.
+        // The due date is checked here, under the row lock, so it cannot
+        // race a save: an attempt with no expiry (one from before due dates
+        // were enforced) ends at the due date. submit_quiz itself stays
+        // date-blind, because the expiry sweep calls it after the deadline.
+        const ended =
+          locked.expired ||
+          (!locked.quiz_expires_at && isPastDue(activity.effective_due_at));
+        if (!ended) {
+          const accepted = await this.validQuizAnswers(
+            tx,
+            activityId,
+            answers,
+          );
+          await tx.quiz_answer.deleteMany({
+            where: {
+              submission_id: draft.id,
+              quiz_question: { activity_id: activityId },
+            },
           });
+          if (accepted.length > 0) {
+            await tx.quiz_answer.createMany({
+              data: accepted.map((answer) =>
+                this.quizAnswerRow(draft.id, answer),
+              ),
+            });
+          }
         }
 
         return tx.$queryRaw`
@@ -1074,29 +1744,15 @@ export class SubmissionService {
       if (detail.includes('activity_not_open')) {
         throw new ConflictException('This quiz is closed');
       }
-      this.logger.error(
-        `Quiz submission failed: ${(error as Error).message}`,
-      );
+      if (detail.includes('quiz_attempt_not_started')) {
+        throw new ConflictException('Start the quiz before submitting');
+      }
+      this.logger.error(`Quiz submission failed: ${(error as Error).message}`);
       throw new BadRequestException('Failed to submit quiz');
     }
 
-    const row = data[0];
-
-    void this.webhooks?.emitForCourse(activity.course_id, 'quiz.completed', async (course) => {
-      const ref = toActivityRef(activity);
-      return {
-        submission: { id: draft.id, attempt: row?.attempts_used ?? null },
-        activity: ref,
-        course,
-        student: await this.webhooks!.student(studentId),
-        grade: {
-          score: scoreValue(row?.score),
-          points: row?.points === undefined ? ref.points : scoreValue(row.points),
-          status: 'graded',
-          excused: false,
-        },
-      };
-    });
+    const row = rows[0];
+    if (row) this.emitQuizCompleted(activity, studentId, draft.id, row);
 
     return {
       score: row?.score === undefined ? null : scoreOrNull(row.score),
@@ -1115,12 +1771,28 @@ export class SubmissionService {
   private async requireMarkable(userId: string, activityId: string) {
     const activity = await this.prisma.activity.findUnique({
       where: { id: activityId },
-      select: { id: true, course_id: true, points: true, status: true, kind: true },
+      select: {
+        id: true,
+        course_id: true,
+        points: true,
+        status: true,
+        kind: true,
+        lockdown_browser: true,
+        due_at: true,
+      },
     });
 
     if (!activity?.course_id) throw new NotFoundException('Activity not found');
-    await this.access.require(userId, activity.course_id, STAFF_ROLES);
-    return activity as typeof activity & { course_id: string };
+    const { course } = await this.access.require(
+      userId,
+      activity.course_id,
+      STAFF_ROLES,
+    );
+    return {
+      ...activity,
+      course_id: activity.course_id,
+      school_id: course.school_id,
+    };
   }
 
   /**
@@ -1165,6 +1837,11 @@ export class SubmissionService {
         submitted_at: true,
         graded_at: true,
         attempt_count: true,
+        quiz_started_at: true,
+        quiz_expires_at: true,
+        is_away: true,
+        tab_switch_count: true,
+        last_away_at: true,
       },
     });
 
@@ -1190,15 +1867,78 @@ export class SubmissionService {
       : [];
 
     const filesBySubmission = await this.submissionFilesById(submissions);
+    const extensions = await this.prisma.activity_extension.findMany({
+      where: { activity_id: activityId },
+      select: {
+        student_id: true,
+        due_at: true,
+        reason: true,
+        created_by: true,
+        created_at: true,
+        updated_at: true,
+      },
+    });
+    const extensionOf = new Map(extensions.map((e) => [e.student_id, e]));
 
-    return students
-      .map((s) => {
+    const now = Date.now();
+    const rows = await Promise.all(
+      students.map(async (s) => {
         const submission = byStudent.get(s.id);
+        const extension = extensionOf.get(s.id);
+        const dueAt = effectiveDueAt(activity.due_at, extension?.due_at);
+        const isActiveAttempt =
+          activity.kind === 'quiz' &&
+          submission?.status === 'draft' &&
+          isQuizAttemptOpen(submission, dueAt, now);
+
+        let isAway = false;
+        let awayReason: string | null = null;
+        // Only lockdown quizzes send presence; without it every attempt
+        // would read as away once the heartbeat window passed.
+        if (isActiveAttempt && activity.lockdown_browser) {
+          const presence = (await this.cache?.get(
+            `quiz:presence:${activityId}:${s.id}`,
+          )) as
+            | {
+                isAway: boolean;
+                reason?: string | null;
+                lastPingAt?: string;
+              }
+            | null
+            | undefined;
+
+          if (presence) {
+            const stale =
+              !presence.lastPingAt ||
+              now - new Date(presence.lastPingAt).getTime() > 25_000;
+            isAway = presence.isAway || stale;
+            awayReason = presence.reason ?? (stale ? 'no_heartbeat' : null);
+          } else {
+            const startedAtMs = submission.quiz_started_at?.getTime() ?? 0;
+            const stale = now - startedAtMs > 20_000;
+            isAway = submission.is_away || stale;
+            awayReason = stale ? 'no_heartbeat' : null;
+          }
+        }
+
         return {
           studentId: s.id,
           name: `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
           enrollmentStatus: (statusOf.get(s.id) ?? null) as
-            'active' | 'dropped' | 'completed' | null,
+            | 'active'
+            | 'dropped'
+            | 'completed'
+            | null,
+          effectiveDueAt: ts(dueAt),
+          extension: extension
+            ? {
+                dueAt: ts(extension.due_at) as string,
+                reason: extension.reason ?? null,
+                createdBy: extension.created_by ?? null,
+                createdAt: ts(extension.created_at) as string,
+                updatedAt: ts(extension.updated_at) as string,
+              }
+            : null,
           submission: submission
             ? {
                 id: submission.id,
@@ -1218,11 +1958,19 @@ export class SubmissionService {
                 submittedAt: ts(submission.submitted_at),
                 gradedAt: ts(submission.graded_at),
                 attemptCount: submission.attempt_count ?? 0,
+                quizStartedAt: ts(submission.quiz_started_at),
+                quizExpiresAt: ts(submission.quiz_expires_at),
+                isActiveAttempt,
+                isAway,
+                awayReason,
+                tabSwitchCount: submission.tab_switch_count ?? 0,
+                lastAwayAt: ts(submission.last_away_at),
               }
             : null,
         };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      }),
+    );
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private toMarked(row: any) {
@@ -1319,6 +2067,15 @@ export class SubmissionService {
           throw new BadRequestException(`Score must be between 0 and ${max}`);
         }
 
+        const before = await tx.submission.findFirst({
+          where: { activity_id: activityId, student_id: studentId },
+          select: {
+            id: true,
+            status: true,
+            score: true,
+            feedback: true,
+          },
+        });
         const written = await this.writeSubmission(
           activityId,
           studentId,
@@ -1336,6 +2093,30 @@ export class SubmissionService {
         await tx.rubric_assessment.deleteMany({
           where: { submission_id: written.id },
         });
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'submission',
+            entityId: written.id,
+            action: before ? 'update' : 'create',
+            changes: auditChanges(
+              before
+                ? {
+                    status: before.status,
+                    score: scoreOrNull(before.score),
+                    feedback: before.feedback,
+                  }
+                : null,
+              {
+                status: written.status,
+                score: written.score,
+                feedback: written.feedback,
+              },
+            ),
+          },
+        );
         return written;
       });
     } catch (error) {
@@ -1414,7 +2195,54 @@ export class SubmissionService {
       fields.graded_by = userId;
     }
 
-    const marked = await this.writeSubmission(activityId, studentId, fields);
+    const marked = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.submission.findFirst({
+        where: { activity_id: activityId, student_id: studentId },
+        select: {
+          id: true,
+          status: true,
+          score: true,
+          feedback: true,
+          excused: true,
+          excused_reason: true,
+        },
+      });
+      const updated = await this.writeSubmission(
+        activityId,
+        studentId,
+        fields,
+        tx,
+      );
+      await this.auditLog?.record(
+        tx,
+        activity.school_id,
+        { id: userId },
+        {
+          entity: 'submission',
+          entityId: updated.id,
+          action: before ? 'update' : 'create',
+          changes: auditChanges(
+            before
+              ? {
+                  status: before.status,
+                  score: scoreOrNull(before.score),
+                  feedback: before.feedback,
+                  excused: before.excused,
+                  excusedReason: before.excused_reason,
+                }
+              : null,
+            {
+              status: updated.status,
+              score: updated.score,
+              feedback: updated.feedback,
+              excused: updated.excused,
+              excusedReason: updated.excusedReason,
+            },
+          ),
+        },
+      );
+      return updated;
+    });
     this.emitGrade(activityId, marked, userId, 'excuse');
     return marked;
   }

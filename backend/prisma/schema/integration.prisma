@@ -4,7 +4,8 @@
 /// allowed, internal addresses included: self-hosted schools call systems on
 /// their own network. `events` holds explicit event type keys from
 /// src/integrations/webhook-event-types.ts (never a wildcard). `secret_enc`
-/// is the signing secret, AES-256-GCM under a key derived from AUTH_SECRET
+/// is the signing secret, AES-256-GCM under a key derived from
+/// DATA_ENCRYPTION_KEY (`v2:`) or, for `v1:` values, AUTH_SECRET
 /// and bound to the school and webhook id (src/integrations/webhook-secret.ts);
 /// it is shown once, on create and on rotate. After WEBHOOK_MAX_CONSECUTIVE_FAILURES
 /// failed deliveries in a row the webhook switches itself off
@@ -46,7 +47,7 @@ model school_webhook {
 /// Prisma cannot express: one name per webhook ignoring case
 /// (school_webhook_header_name_key on `(webhook_id, lower(name))`).
 /// `value_enc` is the value, AES-256-GCM under its own key derived from
-/// AUTH_SECRET, bound to the school, webhook and header id
+/// DATA_ENCRYPTION_KEY (`v2:`) or AUTH_SECRET (`v1:`), bound to the school, webhook and header id
 /// (src/integrations/webhooks/webhook-secret.ts); never returned or audited.
 /// Never drop that index when diffing: it lives in the migrations only.
 model school_webhook_header {

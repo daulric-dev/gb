@@ -5,15 +5,23 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { SessionService } from '@/account/session.service';
 import { normalizeEmail } from '@/account/email-code.service';
 import { isUniqueViolation } from '@/common/db-values';
-import { permCacheKey, userPermCachePrefix } from '@/permission/permission.effective';
+import {
+  permCacheKey,
+  userPermCachePrefix,
+} from '@/permission/permission.effective';
 import type { Prisma } from '@/generated/prisma/client';
-import { isEnvOrgAdmin, organisationSummary, orgAdminEmails } from './org-admin';
+import {
+  isEnvOrgAdmin,
+  organisationSummary,
+  orgAdminEmails,
+} from './org-admin';
 import type {
   CreateOrganisationSchoolDto,
   UpdateOrganisationSchoolDto,
@@ -21,6 +29,7 @@ import type {
 import { InviteService, type InviteSummary } from './invite.service';
 import { seatSchoolAdmin } from './school-admin';
 import { optionalImageUrl } from '@/images/public-url';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 /** Serialises first-run setups (with the singleton index as the backstop). */
 const SETUP_LOCK = 'gradebook:organisation-setup';
@@ -56,12 +65,13 @@ export interface OrganisationSchoolRow {
  * Creating a school or appointing its admin: the school's row, plus the
  * invite sent when no account uses the email (null when appointed directly).
  */
-export type AppointedSchoolRow = OrganisationSchoolRow & { invited: InviteSummary | null };
+export type AppointedSchoolRow = OrganisationSchoolRow & {
+  invited: InviteSummary | null;
+};
 
 /** Adding an organisation admin: their row, or the invite sent instead. */
 export type AddedAdmin =
-  | (OrganisationAdminRow & { invited: null })
-  | { invited: InviteSummary };
+  (OrganisationAdminRow & { invited: null }) | { invited: InviteSummary };
 
 export interface OrganisationSchoolDetail extends OrganisationSchoolRow {
   logoUrl: string | null;
@@ -82,7 +92,7 @@ const displayName = (p: Profile | null | undefined) =>
  * admins (OrganisationAdminGuard).
  */
 @Injectable()
-export class OrganisationService {
+export class OrganisationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OrganisationService.name);
 
   constructor(
@@ -90,7 +100,43 @@ export class OrganisationService {
     private readonly cache: CacheService,
     private readonly sessions: SessionService,
     private readonly invites: InviteService,
+    private readonly auditLog?: AuditLogService,
   ) {}
+
+  /** Warn once at boot when the first sign-in could claim the install. */
+  async onApplicationBootstrap(): Promise<void> {
+    await this.warnIfSetupUnguarded();
+  }
+
+  /**
+   * In production with ORG_ADMIN_EMAILS unset, an install with no
+   * organisation and no schools lets whoever signs in first run setup and
+   * become organisation admin (the documented first-run flow). That is fine
+   * on a fresh server you are about to set up yourself, and dangerous on one
+   * reachable by anyone else, so say so loudly. Behaviour is unchanged.
+   */
+  async warnIfSetupUnguarded(): Promise<void> {
+    if (process.env.NODE_ENV !== 'production') return;
+    if (orgAdminEmails().size > 0) return;
+    try {
+      const [organisations, schools] = await Promise.all([
+        this.prisma.organisation.count(),
+        this.prisma.school.count(),
+      ]);
+      if (organisations > 0 || schools > 0) return;
+    } catch (error) {
+      this.logger.debug(
+        `Skipped the setup check: ${(error as Error).message}`,
+      );
+      return;
+    }
+    this.logger.warn(
+      'GradeBook is not set up and ORG_ADMIN_EMAILS is unset: the first ' +
+        'account to sign in will claim the organisation and become its ' +
+        'admin. Set ORG_ADMIN_EMAILS to the email(s) allowed to run setup ' +
+        'and restart the server.',
+    );
+  }
 
   // --- setup ---------------------------------------------------------------
 
@@ -175,6 +221,17 @@ export class OrganisationService {
           create: { user_id: userId, created_by: userId },
           update: {},
         });
+        await this.auditLog?.record(
+          tx,
+          null,
+          { id: userId },
+          {
+            entity: 'organisation',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, { name: created.name }),
+          },
+        );
         return created;
       });
     } catch (err) {
@@ -200,12 +257,33 @@ export class OrganisationService {
     return this.orgDto(org);
   }
 
-  async rename(name: string) {
-    const org = await this.prisma.organisation.findFirst({ select: { id: true } });
+  async rename(name: string, actorId?: string) {
+    const org = await this.prisma.organisation.findFirst({
+      select: { id: true },
+    });
     if (!org) throw new NotFoundException('GradeBook is not set up yet');
-    const updated = await this.prisma.organisation.update({
-      where: { id: org.id },
-      data: { name: name.trim(), updated_at: new Date() },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.organisation.findUniqueOrThrow({
+        where: { id: org.id },
+      });
+      const result = await tx.organisation.update({
+        where: { id: org.id },
+        data: { name: name.trim(), updated_at: new Date() },
+      });
+      if (actorId) {
+        await this.auditLog?.record(
+          tx,
+          null,
+          { id: actorId },
+          {
+            entity: 'organisation',
+            entityId: org.id,
+            action: 'update',
+            changes: auditChanges({ name: before.name }, { name: result.name }),
+          },
+        );
+      }
+      return result;
     });
     await this.cache.deleteByPrefix('profile:');
     return this.orgDto(updated);
@@ -224,7 +302,11 @@ export class OrganisationService {
   }
 
   private orgDto(org: { id: string; name: string; created_at: Date }) {
-    return { id: org.id, name: org.name, createdAt: org.created_at.toISOString() };
+    return {
+      id: org.id,
+      name: org.name,
+      createdAt: org.created_at.toISOString(),
+    };
   }
 
   // --- admins --------------------------------------------------------------
@@ -297,13 +379,37 @@ export class OrganisationService {
   async addAdmin(actorId: string, email: string): Promise<AddedAdmin> {
     const user = await this.findUserByEmail(email);
     if (!user) {
-      return { invited: await this.invites.invite(actorId, 'organisation_admin', email) };
+      return {
+        invited: await this.invites.invite(
+          actorId,
+          'organisation_admin',
+          email,
+        ),
+      };
     }
     await this.invites.revokeOrganisationAdminInvite(email);
-    await this.prisma.organisation_admin.upsert({
-      where: { user_id: user.id },
-      create: { user_id: user.id, created_by: actorId },
-      update: {},
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.organisation_admin.findUnique({
+        where: { user_id: user.id },
+      });
+      await tx.organisation_admin.upsert({
+        where: { user_id: user.id },
+        create: { user_id: user.id, created_by: actorId },
+        update: {},
+      });
+      if (!existing) {
+        await this.auditLog?.record(
+          tx,
+          null,
+          { id: actorId },
+          {
+            entity: 'organisation_admin',
+            entityId: user.id,
+            action: 'create',
+            changes: auditChanges(null, { user_id: user.id }),
+          },
+        );
+      }
     });
     // Organisation admins administer every school: drop their cached sets.
     await Promise.all([
@@ -345,7 +451,24 @@ export class OrganisationService {
       );
     }
 
-    await this.prisma.organisation_admin.deleteMany({ where: { user_id: userId } });
+    await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.organisation_admin.deleteMany({
+        where: { user_id: userId },
+      });
+      if (deleted.count > 0) {
+        await this.auditLog?.record(
+          tx,
+          null,
+          { id: actorId },
+          {
+            entity: 'organisation_admin',
+            entityId: userId,
+            action: 'delete',
+            changes: auditChanges({ user_id: userId }, null),
+          },
+        );
+      }
+    });
     if (!target.fromEnv) await this.leaveManagedSchool(userId);
     await Promise.all([
       this.cache.delete(`profile:${userId}`),
@@ -383,7 +506,10 @@ export class OrganisationService {
 
   // --- schools -------------------------------------------------------------
 
-  async schools(search?: string, status?: string): Promise<OrganisationSchoolRow[]> {
+  async schools(
+    search?: string,
+    status?: string,
+  ): Promise<OrganisationSchoolRow[]> {
     const needle = search?.trim();
     const and: Prisma.schoolWhereInput[] = [];
     if (needle) {
@@ -395,7 +521,8 @@ export class OrganisationService {
       });
     }
     // is_active is nullable; null has always meant active.
-    if (status === 'active') and.push({ OR: [{ is_active: true }, { is_active: null }] });
+    if (status === 'active')
+      and.push({ OR: [{ is_active: true }, { is_active: null }] });
     else if (status === 'inactive') and.push({ is_active: false });
     const where: Prisma.schoolWhereInput = and.length ? { AND: and } : {};
 
@@ -430,27 +557,59 @@ export class OrganisationService {
   ): Promise<AppointedSchoolRow> {
     let school: { id: string };
     try {
-      school = await this.prisma.school.create({
-        data: {
-          name: dto.name.trim(),
-          code: dto.code?.trim() || null,
-          school_type: dto.schoolType ?? null,
-          is_active: true,
-        },
-        select: { id: true },
+      school = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.school.create({
+          data: {
+            name: dto.name.trim(),
+            code: dto.code?.trim() || null,
+            school_type: dto.schoolType ?? null,
+            is_active: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            school_type: true,
+            is_active: true,
+          },
+        });
+        await this.auditLog?.record(
+          tx,
+          created.id,
+          { id: actorId },
+          {
+            entity: 'school',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              name: created.name,
+              code: created.code,
+              school_type: created.school_type,
+              is_active: created.is_active,
+            }),
+          },
+        );
+        return created;
       });
     } catch (err) {
       this.logger.error(`Failed to create school: ${(err as Error).message}`);
       throw new BadRequestException('Failed to create school');
     }
     await this.cache.delete('schools:all');
-    this.logger.log(`Organisation admin ${actorId} created school ${school.id}`);
+    this.logger.log(
+      `Organisation admin ${actorId} created school ${school.id}`,
+    );
 
-    if (dto.adminEmail) return this.appointAdmin(actorId, school.id, dto.adminEmail);
+    if (dto.adminEmail)
+      return this.appointAdmin(actorId, school.id, dto.adminEmail);
     return { ...(await this.schoolRow(school.id)), invited: null };
   }
 
-  async updateSchool(schoolId: string, dto: UpdateOrganisationSchoolDto) {
+  async updateSchool(
+    schoolId: string,
+    dto: UpdateOrganisationSchoolDto,
+    actorId?: string,
+  ) {
     await this.requireSchool(schoolId);
     const data: Prisma.schoolUncheckedUpdateInput = { updated_at: new Date() };
     if (dto.name !== undefined) data.name = dto.name.trim();
@@ -458,9 +617,44 @@ export class OrganisationService {
     if (dto.schoolType !== undefined) data.school_type = dto.schoolType;
     if (dto.isActive !== undefined) data.is_active = dto.isActive;
     try {
-      await this.prisma.school.update({ where: { id: schoolId }, data });
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.school.findUniqueOrThrow({
+          where: { id: schoolId },
+          select: {
+            name: true,
+            code: true,
+            school_type: true,
+            is_active: true,
+          },
+        });
+        const updated = await tx.school.update({
+          where: { id: schoolId },
+          data,
+          select: {
+            name: true,
+            code: true,
+            school_type: true,
+            is_active: true,
+          },
+        });
+        if (actorId) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: actorId },
+            {
+              entity: 'school',
+              entityId: schoolId,
+              action: 'update',
+              changes: auditChanges(before, updated),
+            },
+          );
+        }
+      });
     } catch (err) {
-      this.logger.error(`Failed to update school ${schoolId}: ${(err as Error).message}`);
+      this.logger.error(
+        `Failed to update school ${schoolId}: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Failed to update school');
     }
     await this.cache.delete('schools:all');
@@ -488,7 +682,12 @@ export class OrganisationService {
     await this.requireSchool(schoolId);
     const user = await this.findUserByEmail(email);
     if (!user) {
-      const invited = await this.invites.invite(actorId, 'school_admin', email, schoolId);
+      const invited = await this.invites.invite(
+        actorId,
+        'school_admin',
+        email,
+        schoolId,
+      );
       return { ...(await this.schoolRow(schoolId)), invited };
     }
     if (user.account_type === 'student') {
@@ -497,7 +696,69 @@ export class OrganisationService {
 
     let previous: string | null;
     try {
-      previous = await this.prisma.$transaction((tx) => seatSchoolAdmin(tx, user, schoolId));
+      previous = await this.prisma.$transaction(async (tx) => {
+        const [currentAdmin, targetMembership] = await Promise.all([
+          tx.school_management.findFirst({
+            where: { school_id: schoolId, role: 'admin' },
+            select: { id: true, user_id: true },
+          }),
+          tx.school_management.findUnique({
+            where: {
+              user_id_school_id: { user_id: user.id, school_id: schoolId },
+            },
+            select: { id: true, role: true },
+          }),
+        ]);
+        const demoted = await seatSchoolAdmin(tx, user, schoolId);
+        const updatedMembership = await tx.school_management.findUnique({
+          where: {
+            user_id_school_id: { user_id: user.id, school_id: schoolId },
+          },
+          select: { id: true, role: true },
+        });
+        if (targetMembership?.id && updatedMembership) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: actorId },
+            {
+              entity: 'school_membership',
+              entityId: updatedMembership.id,
+              action: 'update',
+              changes: auditChanges(
+                { role: targetMembership.role },
+                { role: updatedMembership.role },
+              ),
+            },
+          );
+        } else if (updatedMembership) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: actorId },
+            {
+              entity: 'school_membership',
+              entityId: updatedMembership.id,
+              action: 'create',
+              changes: auditChanges(null, { role: updatedMembership.role }),
+            },
+          );
+        }
+        if (currentAdmin && demoted) {
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: actorId },
+            {
+              entity: 'school_membership',
+              entityId: currentAdmin.id,
+              action: 'update',
+              changes: auditChanges({ role: 'admin' }, { role: 'teacher' }),
+            },
+          );
+        }
+        return demoted;
+      });
     } catch (err) {
       this.logger.error(
         `Failed to appoint ${user.id} admin of ${schoolId}: ${(err as Error).message}`,
@@ -550,7 +811,9 @@ export class OrganisationService {
     const account = await this.prisma.app_user.findUnique({
       where: { email: normalizeEmail(email) },
       select: {
-        user_profile: { select: { id: true, school_id: true, account_type: true } },
+        user_profile: {
+          select: { id: true, school_id: true, account_type: true },
+        },
       },
     });
     // The profile shares the account's id.
@@ -566,7 +829,9 @@ export class OrganisationService {
     return (await this.schoolRows([school]))[0];
   }
 
-  private async schoolRows(schools: SchoolSelected[]): Promise<OrganisationSchoolRow[]> {
+  private async schoolRows(
+    schools: SchoolSelected[],
+  ): Promise<OrganisationSchoolRow[]> {
     if (schools.length === 0) return [];
     const ids = schools.map((s) => s.id);
     const [admins, staff, students, invites] = await Promise.all([
@@ -599,7 +864,9 @@ export class OrganisationService {
     ]);
     const adminBy = new Map(admins.map((a) => [a.school_id, a]));
     const staffBy = new Map(staff.map((g) => [g.school_id, g._count._all]));
-    const studentsBy = new Map(students.map((g) => [g.school_id, g._count._all]));
+    const studentsBy = new Map(
+      students.map((g) => [g.school_id, g._count._all]),
+    );
 
     return schools.map((s) => {
       const admin = adminBy.get(s.id);
@@ -613,7 +880,10 @@ export class OrganisationService {
         admin: admin
           ? {
               userId: admin.user_id,
-              email: admin.user_profile.app_user?.email ?? admin.user_profile.email ?? '',
+              email:
+                admin.user_profile.app_user?.email ??
+                admin.user_profile.email ??
+                '',
               name: displayName(admin.user_profile),
             }
           : null,

@@ -6,6 +6,9 @@
 import { useEffect, useState } from "react";
 import * as Location from "expo-location";
 import { FriendlyError } from "@/lib/errors";
+import type { AttendanceLocationFlag } from "@/lib/attendance-location";
+
+export type { AttendanceLocationFlag } from "@/lib/attendance-location";
 
 export type AttendanceStatus = "present" | "late" | "absent" | "excused";
 export type AttendanceMethod = "self" | "teacher" | "auto" | "qr";
@@ -26,6 +29,8 @@ export interface AttendanceSession {
   lateAfterMinutes: number | null;
   /** Present when the teacher asked for a location check. */
   location: { latitude: number; longitude: number; radiusM: number } | null;
+  /** When the point was last set (open, or staff sharing a newer position). */
+  locationUpdatedAt: string | null;
   counts: {
     present: number;
     late: number;
@@ -45,6 +50,10 @@ export interface AttendanceRosterEntry {
   method: AttendanceMethod | null;
   checkedInAt: string | null;
   distanceM: number | null;
+  /** Reported GPS accuracy of the check-in, metres. */
+  accuracyM: number | null;
+  /** Empty when nothing looked odd. Missing from servers that predate it. */
+  locationFlags?: AttendanceLocationFlag[];
   note: string | null;
 }
 
@@ -181,7 +190,16 @@ export function parseAttendanceQr(
   return { sessionId: s, token: t };
 }
 
-export type LocationFix = { latitude: number; longitude: number; accuracy?: number };
+export type LocationFix = {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  /**
+   * Android's mock-location marker (`LocationObject.mocked`); the API
+   * refuses a check-in with `true`. Absent on iOS.
+   */
+  mocked?: boolean;
+};
 
 const LOCATION_TIMEOUT_MS = 15_000;
 
@@ -206,5 +224,8 @@ export async function currentLocation(): Promise<LocationFix> {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
     accuracy: position.coords.accuracy ?? undefined,
+    // Only sent when true: an older API rejects unknown fields, and a
+    // genuine reading must keep working against it.
+    mocked: position.mocked === true ? true : undefined,
   };
 }

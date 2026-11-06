@@ -10,6 +10,7 @@ import {
   Post,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -198,9 +199,13 @@ export class AuthController {
   @Post('sessions/revoke-others')
   @HttpCode(200)
   async revokeOtherSessions(@Req() req: SessionRequest) {
+    const currentSessionId = req.user.sessionId;
+    if (!currentSessionId) {
+      throw new UnauthorizedException('Current session could not be verified');
+    }
     const revoked = await this.sessions.revokeOthers(
       req.user.id,
-      req.user.sessionId ?? '',
+      currentSessionId,
     );
     return { revoked };
   }
@@ -214,7 +219,10 @@ export class AuthController {
     @Req() req: SessionRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    const revoked = await this.sessions.revokeAll(req.user.id, 'signed_out_all');
+    const revoked = await this.sessions.revokeAll(
+      req.user.id,
+      'signed_out_all',
+    );
     this.sessions.clearCookie(res);
     return { revoked };
   }
@@ -275,8 +283,13 @@ export class AuthController {
 /** A guarded request: AuthGuard sets the user and the session making it. */
 type SessionRequest = { user: { id: string; sessionId?: string } };
 
-/** This API's origin as the caller reached it, for links back to it. */
+/**
+ * This API's origin as the caller reached it, for links back to it - a
+ * development fallback only. The Host header is client-controlled, so
+ * production uses API_URL (required at boot) and never this.
+ */
 function requestOrigin(req: FastifyRequest): string | undefined {
+  if (process.env.NODE_ENV === 'production') return undefined;
   const host = req.headers?.host;
   return host ? `${req.protocol}://${host}` : undefined;
 }

@@ -8,6 +8,7 @@ import cookie from '@fastify/cookie';
 import { acceptEmptyQueryBodies, CORS_METHODS } from './common/http-query';
 import { AppExceptionFilter } from './common/exception.filter';
 import { HealthService } from './health/health.service';
+import { registerCsrfProtection, useBodyParsers } from './common/csrf';
 
 const trustProxyHops = (() => {
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -24,6 +25,11 @@ export async function createApp(): Promise<NestFastifyApplication> {
   );
 
   await app.register(cookie);
+
+  const raw_instance = app.getHttpAdapter().getInstance();
+
+  registerCsrfProtection(raw_instance);
+  useBodyParsers(app);
 
   console.log(`Running in ${process.env.NODE_ENV} mode`);
 
@@ -50,9 +56,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
   
   app.useGlobalFilters(new AppExceptionFilter(app.getHttpAdapter()));
 
-  const raw_instance = app.getHttpAdapter().getInstance();
-
-  // An empty QUERY body means "no filters", not a JSON parse error.
   acceptEmptyQueryBodies(raw_instance);
 
   raw_instance.get('/', (_, res) => {
@@ -77,10 +80,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
       'X-GradeBook-Device',
       'X-GradeBook-App-Version',
     ],
-    // Not X-Session-Token: that is for the mobile app, which CORS does not
-    // apply to. Page script must never read a session token (the web session
-    // lives in an HttpOnly cookie); the API only sends it to bearer-token
-    // requests and to native sign-ins without an Origin.
     exposedHeaders: ['Content-Disposition'],
   });
 

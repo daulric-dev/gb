@@ -70,7 +70,7 @@ gb/
 │       └── login/  onboard/  schools/  privacy/  terms/
 ├── mobile/                  # Expo app for students and teachers
 ├── docs/                    # Documentation site
-├── infrastructure/          # Production Docker Compose, nginx, dev S3 config
+├── infrastructure/          # Production Docker Compose, Caddy, dev S3 config
 └── .github/                 # CI workflows and scripts
 ```
 

@@ -32,6 +32,10 @@ export interface SubmissionRow {
   studentId: string;
   name: string;
   enrollmentStatus?: "active" | "dropped" | "completed";
+  /** The student's own due date: their extension, else the activity's. */
+  effectiveDueAt?: string | null;
+  /** A later due date for this student only. */
+  extension?: StudentExtension | null;
   submission: {
     id: string;
     status: SubmissionStatus;
@@ -46,5 +50,21 @@ export interface SubmissionRow {
     attemptCount: number;
     excused: boolean;
     excusedReason: string | null;
+    quizStartedAt?: string | null;
+    quizExpiresAt?: string | null;
+    isActiveAttempt?: boolean;
+    isAway?: boolean;
+    awayReason?: string | null;
+    tabSwitchCount?: number;
+    lastAwayAt?: string | null;
   } | null;
+}
+
+/** A per-student due date (PUT /activities/:activityId/extensions/:studentId). */
+export interface StudentExtension {
+  dueAt: string;
+  reason: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }

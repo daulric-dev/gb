@@ -129,6 +129,7 @@ model school {
   sso_audit_log                               sso_audit_log[]
   school_webhook                              school_webhook[]
   integration_audit_log                       integration_audit_log[]
+  audit_log                                   audit_log[]
 
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")
@@ -292,6 +293,7 @@ model user_profile {
   grade_scale_grade_scale_created_byTouser_profile                  grade_scale[]              @relation("grade_scale_created_byTouser_profile")
   grade_scale_grade_scale_updated_byTouser_profile                  grade_scale[]              @relation("grade_scale_updated_byTouser_profile")
   submission                                                        submission[]
+  activity_extension                                                activity_extension[]
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]
   push_device                                                       push_device[]

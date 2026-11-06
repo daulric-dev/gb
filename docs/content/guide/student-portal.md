@@ -20,10 +20,11 @@ The mobile app has the same course screen: tap a course on **Home** and switch b
 **To-do** lists everything set for you across courses, by due date.
 
 - **Assignments** - attach a file, type an answer, or both. Attaching is not handing in: press **Hand in** when you are ready.
-- **Quizzes** - answer and submit; the score appears straight away. If retakes are allowed, **Try again** appears after your result. Correct answers are never shown.
+- **Quizzes** - track how many questions you have answered and see which ones still need an answer. Once all are answered, confirm before submitting; the confirmation explains how the submission affects your attempts. The score appears straight away. If retakes are allowed, **Try again** appears after your result. Correct answers are never shown.
+- **Lockdown quizzes** - in the app, the quiz is pinned to the screen: on Android confirm the **Pin this app?** prompt; on iPhone/iPad turn on Guided Access (set it up once in **Settings > Accessibility > Guided Access**, then triple-click the side button and tap **Start**). Screenshots and recordings are blocked and reported, and leaving or unpinning the app is shown to your teacher. After submitting, iPhone users triple-click and enter their Guided Access passcode to end it.
 - **Offline work** - done on paper; your teacher records the mark here.
 
-Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes are answered and submitted the same way, with **Try again** when retakes are allowed.
+Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes show answer progress and unanswered question numbers, and ask you to confirm before submission. **Try again** appears when retakes are allowed.
 
 ## Calendar and notifications
 
@@ -54,7 +55,7 @@ When your teacher opens attendance:
 - the app sends a notification - tap it to check in;
 - the web portal shows a banner with a countdown.
 
-Check in by **scanning the QR code** on the board (your phone's camera or the app's **Scan attendance QR**), or by typing the **4-digit code** shown in the room. If your teacher turned on the location check, allow location - you need to be close to the room. Not signed in yet? Scanning still works: sign in and you are checked in.
+Check in by **scanning the QR code** on the board (your phone's camera or the app's **Scan attendance QR**), or by typing the **4-digit code** shown in the room. If your teacher turned on the location check, allow location - you need to be close to the room. Not signed in yet? Scanning still works: sign in on the same phone and you are checked in. (A scan link only works on the phone that scanned it, so sending it to a friend will not check them in.)
 
 Miss the window and you are marked absent; talk to your teacher if that is wrong. Each course's **Attendance** tab shows your record and rate.
 

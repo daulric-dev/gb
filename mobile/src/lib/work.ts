@@ -7,6 +7,7 @@
  * because its options are the accepted wordings.
  */
 
+import { api } from "@/lib/api";
 import type { Rubric, RubricAssessment } from "@/lib/course";
 
 export type WorkKind = "quiz" | "assignment" | "offline";
@@ -19,6 +20,12 @@ export interface PortalWorkItem {
   instructions: string | null;
   points: number;
   dueAt: string | null;
+  /** The student's own due date: their extension, else dueAt. */
+  effectiveDueAt?: string | null;
+  /** A teacher gave this student more time. */
+  hasExtension?: boolean;
+  /** Past the student's due date and not inside a running quiz attempt. */
+  isClosed?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowMultipleFiles: boolean;
@@ -41,6 +48,12 @@ export interface PortalWorkDetail {
   instructions: string | null;
   points: number;
   dueAt: string | null;
+  /** The student's own due date: their extension, else dueAt. */
+  effectiveDueAt?: string | null;
+  /** A teacher gave this student more time. */
+  hasExtension?: boolean;
+  /** Past the student's due date and not inside a running quiz attempt. */
+  isClosed?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowMultipleFiles: boolean;
@@ -49,7 +62,15 @@ export interface PortalWorkDetail {
   courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
+  timeLimitMinutes: number | null;
+  lockdownBrowser?: boolean;
   attemptsUsed: number;
+  quizAttempt: {
+    startedAt: string;
+    expiresAt: string | null;
+    serverNow: string;
+    answers: { questionId: string; optionId: string | null; text: string | null }[];
+  } | null;
   questions: {
     id: string;
     prompt: string;
@@ -75,6 +96,28 @@ export interface PortalWorkDetail {
     gradedAt: string | null;
     attemptCount: number;
   } | null;
+}
+
+/** The due date that applies to this student: their extension, else the activity's. */
+export function studentDueAt(item: {
+  dueAt: string | null;
+  effectiveDueAt?: string | null;
+}): string | null {
+  return item.effectiveDueAt !== undefined ? item.effectiveDueAt : item.dueAt;
+}
+
+/** Why a student can no longer hand this in, matching the API's wording. */
+export function pastDueMessage(dueAt: string | null): string {
+  if (!dueAt) return "This is closed";
+  const date = new Date(dueAt);
+  if (Number.isNaN(date.getTime())) return "This is closed";
+  const formatted = date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `This was due on ${formatted}. Ask your teacher for an extension`;
 }
 
 export function dueLabel(value: string | null) {
@@ -127,4 +170,31 @@ export function attemptsLeft(work: PortalWorkDetail): number | null {
   if (work.kind !== "quiz") return null;
   if (work.maxAttempts === 0) return Infinity;
   return Math.max(0, (work.maxAttempts || 1) - (work.attemptsUsed ?? 0));
+}
+
+/**
+ * Why a lockdown quiz reads as away; the web adds tab/window/fullscreen.
+ * screenshot is a short away (one departure); not_pinned is an attempt the
+ * student started without pinning because pinning was unavailable.
+ */
+export type QuizAwayReason =
+  | "app_background"
+  | "screen_recording"
+  | "unpinned"
+  | "not_pinned"
+  | "screenshot";
+
+/**
+ * Lockdown quiz heartbeat: POST /portal/me/activities/:id/quiz/presence.
+ * The API counts a departure once per away-after-present and treats 25s
+ * without a ping as away.
+ */
+export function sendQuizPresence(
+  activityId: string,
+  payload: { isAway: boolean; reason?: QuizAwayReason },
+) {
+  return api<{ ok: boolean; expired?: boolean }>(
+    `/portal/me/activities/${activityId}/quiz/presence`,
+    { method: "POST", body: payload },
+  );
 }

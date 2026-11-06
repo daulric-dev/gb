@@ -58,7 +58,17 @@ The list shows each topic's reply count and how many replies are new since you l
 
 You can change anyone's status - present, late, absent, excused - at any time, including after closing. The Attendance tab keeps every session, each student's attendance rate, and a CSV export.
 
-Why it is hard to cheat: the code is never sent to students, the QR stops working seconds after it is shown, five wrong codes lock a student out of that session, and the location check refuses anyone too far from the room.
+Why it is hard to cheat: the code is never sent to students, the QR stops working seconds after it is shown, five wrong codes lock a student out of that session, and a QR scanned before signing in only works on the phone that scanned it, so forwarding the link to a friend at home does not check them in.
+
+**The location check is advisory, not proof.** The position comes from the student's own phone or browser, and a determined student can fake it with a location-spoofing app or browser developer tools. It stops casual check-ins from the bus or the canteen, nothing more. The real proof that someone is in the room is the **QR code or the room code** shown on your screen - keep one of them on, and compare the list against who you can see.
+
+### Location check
+
+- **The point follows you.** While the session is open, the session page (web) or the live attendance screen (app) keeps updating the check-in point to where your device is - every 30 seconds, or sooner once you have moved about 20 m - and shows **Location live · updated 12s ago**. Students are always measured against the latest point, so you can move the class to the lab or the field and keep checking in. Turn off **Share my location** to freeze the point where it last was. Sharing is on by default only on the device of whoever opened the session; other staff can turn it on. Very rough readings (worse than 100 m, common indoors) are skipped so they don't drag the point away. The app only does this while it is open on screen; it never tracks you in the background.
+- **Mock locations are refused on Android.** If a student's Android phone reports that its position comes from a mock-location app, the check-in is refused with "Turn off mock location to check in". This does not count as a wrong code. Browsers and iPhones cannot tell, so this only catches the easy case.
+- **Odd readings are flagged for you, never refused.** A small warning sign next to a student in the live list means their reading looked unusual: exactly on your own position (copied coordinates), identical to another student's check-in, reported with no GPS accuracy, or rounded coordinates that look typed in. Hover (web) or tap (app) the sign for the reasons and the distance. Real phones occasionally do these things, so the check-in still counts - use it as a prompt to look up. Students never see these flags.
+
+All of this is still advisory: it makes faking a location more effort and more visible, but it is not proof of presence.
 
 ## Settings
 

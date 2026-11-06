@@ -15,6 +15,12 @@ export interface PresenceEvent {
 
 type PresenceHandler = (event: PresenceEvent) => void;
 
+/**
+ * Whose presence a caller may see: null means everyone in the school (staff),
+ * a set limits it to those user ids (a student sees only their teachers).
+ */
+export type PresenceAudience = ReadonlySet<string> | null;
+
 const TTL_SECONDS = 60;
 const STALE_MS = TTL_SECONDS * 1000;
 
@@ -101,24 +107,39 @@ export class PresenceService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** The user ids currently online in a school (stale entries pruned). */
-  async onlineUserIds(schoolId: string): Promise<string[]> {
+  /**
+   * The user ids currently online in a school (stale entries pruned),
+   * limited to `audience` when one is given.
+   */
+  async onlineUserIds(
+    schoolId: string,
+    audience: PresenceAudience = null,
+  ): Promise<string[]> {
+    let ids: string[];
     if (this.redis) {
       const cutoff = Date.now() - STALE_MS;
       await this.redis.zremrangebyscore(this.schoolKey(schoolId), 0, cutoff);
-      return this.redis.zrange(this.schoolKey(schoolId), '0', '-1');
+      ids = await this.redis.zrange(this.schoolKey(schoolId), '0', '-1');
+    } else {
+      ids = [...this.localMembers(schoolId)];
     }
-    return [...this.localMembers(schoolId)];
+    return audience ? ids.filter((id) => audience.has(id)) : ids;
   }
 
-  /** Subscribe an SSE stream to its school's presence changes. */
+  /**
+   * Subscribe an SSE stream to its school's presence changes, dropping events
+   * about users outside `audience` when one is given.
+   */
   async subscribeSchool(
     schoolId: string,
     handler: PresenceHandler,
+    audience: PresenceAudience = null,
   ): Promise<() => void> {
-    return this.bus.subscribe(this.schoolChannel(schoolId), (payload) =>
-      handler(payload as PresenceEvent),
-    );
+    return this.bus.subscribe(this.schoolChannel(schoolId), (payload) => {
+      const event = payload as PresenceEvent;
+      if (audience && !audience.has(event.data.userId)) return;
+      handler(event);
+    });
   }
 
   private async publish(

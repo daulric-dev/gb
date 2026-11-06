@@ -75,10 +75,14 @@ function makeStorage(stored: { bytes: Buffer; type: string } | null) {
     delete: mock((..._args: any[]) => Promise.resolve()),
     exists: mock((..._args: any[]) =>
       Promise.resolve(
-        stored ? { size: stored.bytes.byteLength, contentType: stored.type } : null,
+        stored
+          ? { size: stored.bytes.byteLength, contentType: stored.type }
+          : null,
       ),
     ),
-    getBuffer: mock((..._args: any[]) => Promise.resolve(stored?.bytes ?? null)),
+    getBuffer: mock((..._args: any[]) =>
+      Promise.resolve(stored?.bytes ?? null),
+    ),
     uploadUrl: mock((key: string, ..._rest: any[]) =>
       Promise.resolve(`https://s3.test/${key}?sig`),
     ),
@@ -91,6 +95,7 @@ function setup(
     bytes: pngBytes(),
     type: 'image/png',
   },
+  auditLog?: any,
 ) {
   const cache = createMockCacheService() as any;
   const access = new CourseAccessService(cache, prisma as any);
@@ -99,12 +104,20 @@ function setup(
     access,
     prisma as any,
     createMockErasureLog() as any,
+    undefined,
+    auditLog,
   );
   const storage = makeStorage(stored);
   const images = new ImagesService(storage as any, prisma as any, cache);
   return {
     storage,
-    svc: new CourseBannerService(access, courses, images, prisma as any),
+    svc: new CourseBannerService(
+      access,
+      courses,
+      images,
+      prisma as any,
+      auditLog,
+    ),
   };
 }
 
@@ -146,13 +159,28 @@ describe('CourseService banner fields', () => {
 
   test('PATCH stores the colour; null returns to auto', async () => {
     const prisma = db({ courseRole: 'teacher' });
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
     prisma.course.update.mockResolvedValue(courseRow({ banner_color: 'teal' }));
-    const { svc } = setup(prisma);
+    const { svc } = setup(prisma, undefined, auditLog);
     const res = await (svc as any).courses.update(USER, COURSE, {
       bannerColor: 'teal',
     });
-    expect(prisma.course.update.mock.calls[0][0].data.banner_color).toBe('teal');
+    expect(prisma.course.update.mock.calls[0][0].data.banner_color).toBe(
+      'teal',
+    );
     expect(res.bannerColor).toBe('teal');
+    const [tx, schoolId, actor, entry] = auditLog.record.mock.calls[0];
+    expect(tx).toBe(prisma);
+    expect([schoolId, actor, entry]).toEqual([
+      'school-1',
+      { id: USER },
+      {
+        entity: 'course',
+        entityId: COURSE,
+        action: 'update',
+        changes: { banner_color: { before: null, after: 'teal' } },
+      },
+    ]);
 
     await (svc as any).courses.update(USER, COURSE, { bannerColor: null });
     expect(prisma.course.update.mock.calls[1][0].data.banner_color).toBeNull();
@@ -199,16 +227,22 @@ describe('CourseBannerService', () => {
 
     const other = setup(db({ courseRole: null }));
     expect(
-      await expectRejection(other.svc.createTicket(USER, COURSE, 'image/png', 10)),
+      await expectRejection(
+        other.svc.createTicket(USER, COURSE, 'image/png', 10),
+      ),
     ).toBeInstanceOf(NotFoundException);
-    expect(await expectRejection(other.svc.remove(USER, COURSE))).toBeInstanceOf(
-      NotFoundException,
-    );
+    expect(
+      await expectRejection(other.svc.remove(USER, COURSE)),
+    ).toBeInstanceOf(NotFoundException);
 
     const student = setup(db({ schoolRole: null }));
     expect(
       await expectRejection(
-        student.svc.complete(USER, COURSE, `uploads/course-banners/${COURSE}-${'a'.repeat(32)}.png`),
+        student.svc.complete(
+          USER,
+          COURSE,
+          `uploads/course-banners/${COURSE}-${'a'.repeat(32)}.png`,
+        ),
       ),
     ).toBeInstanceOf(NotFoundException);
   });
@@ -220,8 +254,12 @@ describe('CourseBannerService', () => {
   });
 
   test('complete verifies, serves, points the course at it and deletes the old cover', async () => {
-    const prisma = db({ courseRole: 'teacher', course: { banner_image_path: OLD } });
-    const { svc, storage } = setup(prisma);
+    const prisma = db({
+      courseRole: 'teacher',
+      course: { banner_image_path: OLD },
+    });
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
+    const { svc, storage } = setup(prisma, undefined, auditLog);
     const path = `uploads/course-banners/${COURSE}-${'a'.repeat(32)}.png`;
     const served = path.slice('uploads/'.length);
 
@@ -231,6 +269,14 @@ describe('CourseBannerService', () => {
     expect(prisma.course.update.mock.calls[0][0].data.banner_image_path).toBe(
       served,
     );
+    expect(auditLog.record.mock.calls[0][3]).toMatchObject({
+      entity: 'course',
+      entityId: COURSE,
+      action: 'update',
+      changes: {
+        banner_image_path: { before: OLD, after: served },
+      },
+    });
     const deleted = storage.delete.mock.calls.map((c: any[]) => c[0]);
     expect(deleted).toContain(`images/${path}`);
     expect(deleted).toContain(`images/${OLD}`);
@@ -245,9 +291,9 @@ describe('CourseBannerService', () => {
       `uploads/avatars/${USER}.png`,
       `uploads/course-banners/${COURSE}-../../x.png`,
     ]) {
-      expect(await expectRejection(svc.complete(USER, COURSE, path))).toBeInstanceOf(
-        BadRequestException,
-      );
+      expect(
+        await expectRejection(svc.complete(USER, COURSE, path)),
+      ).toBeInstanceOf(BadRequestException);
     }
     expect(storage.put).not.toHaveBeenCalled();
   });
@@ -259,9 +305,9 @@ describe('CourseBannerService', () => {
       type: 'image/png',
     });
     const path = `uploads/course-banners/${COURSE}-${'a'.repeat(32)}.png`;
-    expect(await expectRejection(svc.complete(USER, COURSE, path))).toBeInstanceOf(
-      BadRequestException,
-    );
+    expect(
+      await expectRejection(svc.complete(USER, COURSE, path)),
+    ).toBeInstanceOf(BadRequestException);
     expect(storage.put).not.toHaveBeenCalled();
     expect(storage.delete.mock.calls[0][0]).toBe(`images/${path}`);
     expect(prisma.course.update).not.toHaveBeenCalled();
@@ -273,19 +319,33 @@ describe('CourseBannerService', () => {
       type: 'image/png',
     });
     const path = `uploads/course-banners/${COURSE}-${'a'.repeat(32)}.png`;
-    expect(await expectRejection(svc.complete(USER, COURSE, path))).toBeInstanceOf(
-      BadRequestException,
-    );
+    expect(
+      await expectRejection(svc.complete(USER, COURSE, path)),
+    ).toBeInstanceOf(BadRequestException);
     expect(storage.put).not.toHaveBeenCalled();
   });
 
   test('remove clears the path and deletes the object', async () => {
-    const prisma = db({ courseRole: 'teacher', course: { banner_image_path: OLD } });
-    const { svc, storage } = setup(prisma);
+    const prisma = db({
+      courseRole: 'teacher',
+      course: { banner_image_path: OLD },
+    });
+    const auditLog = { record: mock(async (..._args: any[]) => {}) };
+    const { svc, storage } = setup(prisma, undefined, auditLog);
     await svc.remove(USER, COURSE);
 
-    expect(prisma.course.update.mock.calls[0][0].data.banner_image_path).toBeNull();
+    expect(
+      prisma.course.update.mock.calls[0][0].data.banner_image_path,
+    ).toBeNull();
     expect(storage.delete.mock.calls[0][0]).toBe(`images/${OLD}`);
+    expect(auditLog.record.mock.calls[0][3]).toMatchObject({
+      entity: 'course',
+      entityId: COURSE,
+      action: 'update',
+      changes: {
+        banner_image_path: { before: OLD, after: null },
+      },
+    });
   });
 
   test('remove with no cover touches nothing', async () => {

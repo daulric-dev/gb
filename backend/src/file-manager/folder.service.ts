@@ -3,9 +3,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { userSchoolId } from '@/common/user-school';
 import { isUniqueViolation } from '@/common/db-values';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
@@ -23,6 +25,24 @@ const FOLDER_COLUMNS = {
 } satisfies Prisma.folderSelect;
 
 type FolderRow = Prisma.folderGetPayload<{ select: typeof FOLDER_COLUMNS }>;
+
+function folderAuditMetadata(row: { name: string; parent_id: string | null }) {
+  return { name: row.name, parent_id: row.parent_id };
+}
+
+function fileAuditMetadata(row: {
+  name: string;
+  content_type: string;
+  size_bytes: bigint;
+  folder_id: string | null;
+}) {
+  return {
+    name: row.name,
+    content_type: row.content_type,
+    size_bytes: row.size_bytes.toString(),
+    folder_id: row.folder_id,
+  };
+}
 
 /**
  * Ids come straight from the URL. Postgres rejects a malformed uuid, which
@@ -44,6 +64,7 @@ export class FolderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly erasure: ErasureLogService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** Live child folders of `parentId` (or the roots when null), by name. */
@@ -109,14 +130,28 @@ export class FolderService {
     }
 
     try {
-      const data = await this.prisma.folder.create({
-        data: {
-          school_id: schoolId,
-          owner_id: userId,
-          parent_id: parent,
-          name: clean,
-        },
-        select: FOLDER_COLUMNS,
+      const data = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.folder.create({
+          data: {
+            school_id: schoolId,
+            owner_id: userId,
+            parent_id: parent,
+            name: clean,
+          },
+          select: FOLDER_COLUMNS,
+        });
+        await this.auditLog?.record(
+          tx,
+          schoolId,
+          { id: userId },
+          {
+            entity: 'folder',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, folderAuditMetadata(created)),
+          },
+        );
+        return created;
       });
       return this.present(data);
     } catch (error) {
@@ -138,10 +173,31 @@ export class FolderService {
     const clean = this.cleanName(name);
 
     try {
-      const data = await this.prisma.folder.update({
-        where: { id: folderId },
-        data: { name: clean, updated_at: new Date() },
-        select: FOLDER_COLUMNS,
+      const data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.folder.findFirst({
+          where: { id: folderId, owner_id: userId },
+          select: { school_id: true, name: true, parent_id: true },
+        });
+        const updated = await tx.folder.update({
+          where: { id: folderId },
+          data: { name: clean, updated_at: new Date() },
+          select: FOLDER_COLUMNS,
+        });
+        await this.auditLog?.record(
+          tx,
+          before?.school_id ?? folder.school_id,
+          { id: userId },
+          {
+            entity: 'folder',
+            entityId: folderId,
+            action: 'update',
+            changes: auditChanges(
+              before ? folderAuditMetadata(before) : null,
+              folderAuditMetadata(updated),
+            ),
+          },
+        );
+        return updated;
       });
       return this.present(data);
     } catch (error) {
@@ -180,10 +236,31 @@ export class FolderService {
     }
 
     try {
-      const data = await this.prisma.folder.update({
-        where: { id: folderId, owner_id: userId },
-        data: { parent_id: newParentId, updated_at: new Date() },
-        select: FOLDER_COLUMNS,
+      const data = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.folder.findFirst({
+          where: { id: folderId, owner_id: userId },
+          select: { school_id: true, name: true, parent_id: true },
+        });
+        const updated = await tx.folder.update({
+          where: { id: folderId, owner_id: userId },
+          data: { parent_id: newParentId, updated_at: new Date() },
+          select: FOLDER_COLUMNS,
+        });
+        await this.auditLog?.record(
+          tx,
+          before?.school_id ?? folder.school_id,
+          { id: userId },
+          {
+            entity: 'folder',
+            entityId: folderId,
+            action: 'update',
+            changes: auditChanges(
+              before ? folderAuditMetadata(before) : null,
+              folderAuditMetadata(updated),
+            ),
+          },
+        );
+        return updated;
       });
       return this.present(data);
     } catch (error) {
@@ -213,6 +290,27 @@ export class FolderService {
     let step = 'Failed to delete folder contents';
     try {
       await this.prisma.$transaction(async (tx) => {
+        const [folders, files] = await Promise.all([
+          tx.folder.findMany({
+            where: { owner_id: userId, id: { in: ids } },
+            select: { id: true, school_id: true, parent_id: true, name: true },
+          }),
+          tx.file.findMany({
+            where: {
+              owner_id: userId,
+              deleted_at: null,
+              folder_id: { in: ids },
+            },
+            select: {
+              id: true,
+              school_id: true,
+              name: true,
+              content_type: true,
+              size_bytes: true,
+              folder_id: true,
+            },
+          }),
+        ]);
         await tx.file.updateMany({
           where: { owner_id: userId, deleted_at: null, folder_id: { in: ids } },
           data: { deleted_at: now },
@@ -222,6 +320,32 @@ export class FolderService {
           where: { owner_id: userId, id: { in: ids } },
           data: { deleted_at: now },
         });
+        for (const file of files) {
+          await this.auditLog?.record(
+            tx,
+            file.school_id,
+            { id: userId },
+            {
+              entity: 'file',
+              entityId: file.id,
+              action: 'delete',
+              changes: auditChanges(fileAuditMetadata(file), null),
+            },
+          );
+        }
+        for (const removedFolder of folders) {
+          await this.auditLog?.record(
+            tx,
+            removedFolder.school_id,
+            { id: userId },
+            {
+              entity: 'folder',
+              entityId: removedFolder.id,
+              action: 'delete',
+              changes: auditChanges(folderAuditMetadata(removedFolder), null),
+            },
+          );
+        }
         step = 'Failed to delete folder';
         await this.erasure.record(tx, {
           kind: 'folder',

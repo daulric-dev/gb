@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, jest, test } from 'bun:test';
 import { HealthService } from './health.service';
 
 describe('HealthService', () => {

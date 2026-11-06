@@ -16,7 +16,7 @@ Both controllers are `@Controller('portal/me')` with `@UseGuards(AuthGuard, Stud
 | --- | --- | --- |
 | GET | `/api/portal/me` | The student's record (`firstName`, `lastName`, `dateOfBirth`, `gender`, `enrollmentDate`) and school (`id`, `name`, `type`, `logoUrl`). |
 | GET | `/api/portal/me/courses` | Course cards for every non-dropped enrolment in a published or archived, non-template course, sorted by name: teachers, the banner (`bannerColor`, `bannerImageUrl`) and the student's grade summary (a grade that fails to compute is left out, not an error). Never includes the course join code. |
-| POST | `/api/portal/me/courses/join` | Body `JoinCourseDto` (`joinCode`). Enrols via `CourseService.joinByCode()` and returns the new card. Throttled by `claim-code` (10 per 15 min). |
+| POST | `/api/portal/me/courses/join` | Body `JoinCourseDto` (`joinCode`). Enrols via `CourseService.joinByCode()` and returns the new card. Throttled by `claim-code` (10 per 15 min, per session). On top of that, wrong codes are counted per **student** (`student-portal:failed-join:<studentId>`, `CacheService.incr`, one-hour window from the first miss) so signing in again does not reset the allowance: after `MAX_FAILED_JOINS` (20) misses every join is refused with 429 "Too many wrong join codes..." until the window ends. Successful joins are not counted. |
 | GET | `/api/portal/me/courses/:courseId` | One course card. |
 | GET | `/api/portal/me/courses/:courseId/modules` | Published modules and items (`ModuleService.listForStudent`). |
 | GET | `/api/portal/me/courses/:courseId/pages/:pageId` | A published page (`PageService.getPublished`); drafts are 404. |
@@ -94,7 +94,7 @@ None.
 cd backend && bun test src/student-portal
 ```
 
-Guard: fails closed without a user, pins the linked student, denies staff accounts, students without a linked record, deactivated accounts and inactive records, resolves from the account (never the request), serves the cached context. Service: `getMe` scoping and 404, course cards (teachers and grade, no join code, grade failure tolerated, no enrolments, drafts hidden, dropped students refused, join passes the guard-resolved ids, unpublished pages 404), and course files (module link served, course share served, anything else 404, dropped students refused).
+Guard: fails closed without a user, pins the linked student, denies staff accounts, students without a linked record, deactivated accounts and inactive records, resolves from the account (never the request), serves the cached context. Service: `getMe` scoping and 404, course cards (teachers and grade, no join code, grade failure tolerated, no enrolments, drafts hidden, dropped students refused, join passes the guard-resolved ids, wrong join codes counted per student with a 429 after 20 and successful joins not counted, unpublished pages 404), and course files (module link served, course share served, anything else 404, dropped students refused).
 
 ## See also
 

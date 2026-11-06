@@ -5,9 +5,10 @@
 /// lives on school_email_domain. No row = the school uses the install-wide
 /// env credentials (SSO_PROVIDERS, GOOGLE_CLIENT_ID, ...), if any; a row,
 /// even a switched-off one, replaces them for that school. `client_secret_enc`
-/// is AES-256-GCM ciphertext under a key derived from AUTH_SECRET, bound to
-/// the school and provider (src/sso/sso-secret.ts): rotating AUTH_SECRET
-/// means re-entering the secrets.
+/// is AES-256-GCM ciphertext under a key derived from DATA_ENCRYPTION_KEY
+/// (`v2:`) or, for `v1:` values, AUTH_SECRET, bound to the school and
+/// provider (src/sso/sso-secret.ts). Run `bun run secrets:reencrypt` before
+/// rotating AUTH_SECRET, or the `v1:` secrets must be entered again.
 model school_sso_provider {
   school_id         String   @db.Uuid
   /// google | azure

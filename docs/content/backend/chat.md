@@ -59,10 +59,10 @@ Schema: `backend/prisma/schema/chat.prisma` (Postgres schema `chat`; created by 
 
 ## Realtime: SSE + Redis pub/sub
 
-The transport has to satisfy two constraints: **several stateless replicas behind nginx with no sticky sessions**, and **cookie-based auth**.
+The transport has to satisfy two constraints: **several stateless replicas behind Caddy with no sticky sessions**, and **cookie-based auth**.
 
 ```
- browser ──EventSource──►  nginx  ──►  replica N (app1|app2|app3)
+ browser ──EventSource──►  Caddy  ──►  replica N (app1|app2|app3)
    ▲                                        │ subscribes chat:u:<me>
    │ SSE frames                             ▼
    └──────────────────────────────  Redis pub/sub  ◄── any replica PUBLISHes

@@ -25,14 +25,15 @@ None.
 | `delete(key)` | Removes one key. |
 | `setIfAbsent(key, value, ttl)` | Atomic set-if-absent; true when this call wrote the key. A store error returns false (fails closed). |
 | `incr(key, ttl)` | Atomic counter: adds one (missing is 0), sets the TTL only on creation, returns the new value. Store errors propagate. |
-| `deleteByPrefix(prefix)` | Removes every key that starts with `prefix`. In Redis this is a `SCAN MATCH prefix*` loop, 100 keys per batch. |
-| `clear()` | Removes everything. In Redis this is `FLUSHALL ASYNC`, which empties the **whole** Redis database. |
+| `deleteByPrefix(prefix)` | Removes every key that starts with `prefix`. In Redis this is a `SCAN MATCH cache:prefix*` loop, 100 keys per batch. |
+| `clear()` | Removes every cache key. In Redis this is `deleteByPrefix('')`, i.e. a `SCAN` over the `cache:` namespace only; it never runs `FLUSHALL`, so BullMQ queues, `throttle:*` counters and anything else sharing the Redis survive. Nothing in the app calls it today. |
 
 When the module is destroyed (`onModuleDestroy`), `CacheService` disposes of the store, which stops its timers and closes the Redis connection.
 
 ### Other
 
 - [`stores/`](./stores/README.md) contains `MemoryStore`, `RedisStore` and the `CacheInterface` they implement. `CacheService` itself also implements that interface.
+- In Redis every key is stored under the `cache:` namespace (`CACHE_KEY_PREFIX` in `stores/RedisStore.ts`), added and stripped by the store, so callers never see it. The same Redis holds BullMQ queues and rate-limit counters, which the cache must not touch.
 - The key names are chosen by the calling services. Some examples: `session:<hash>` (account), `profile:<userId>` (auth), `academic-years:<schoolId>` (academic year), `announcements:content:<schoolId>` (announcement), `attendance:wrong-code:<sessionId>:<studentId>` (attendance).
 
 ## Used by
@@ -53,7 +54,7 @@ When the module is destroyed (`onModuleDestroy`), `CacheService` disposes of the
   - `school/school.service.ts`;
   - `sso/sso.service.ts`;
   - `student-account/student-membership.service.ts`;
-  - `student-portal/student.guard.ts`;
+  - `student-portal/student.guard.ts`, `student-portal/student-portal.service.ts`;
   - `student/student.service.ts`;
   - `term/term.service.ts`.
 
@@ -91,6 +92,7 @@ cd backend && bun test src/cache
 
 - `cache.service.test.ts` covers the get/set round trip, `update` (it returns false on a missing key, transforms the value, accepts an async transformer and keeps the TTL), `delete` and `deleteByPrefix`.
 - `stores/MemoryStore.test.ts` covers the memory store directly.
+- `stores/RedisStore.test.ts` runs the Redis store over a fake client: keys land under `cache:`, `deleteByPrefix` stays inside the namespace, and `clear()` leaves queue and throttle keys alone and never sends `FLUSHALL`.
 
 ## See also
 

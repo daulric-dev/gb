@@ -10,6 +10,8 @@ import { GradebookController } from './gradebook.controller';
 import { RubricService } from './rubric.service';
 import { GradebookImportService } from './gradebook-import.service';
 import { RubricController } from './rubric.controller';
+import { ExtensionService } from './extension.service';
+import { ExtensionController } from './extension.controller';
 
 /**
  * Course work and marks: activities, submissions, assignment groups, rubrics
@@ -24,6 +26,7 @@ import { RubricController } from './rubric.controller';
     GradebookService,
     RubricService,
     GradebookImportService,
+    ExtensionService,
   ],
   // The student portal submits work, lists course activities and reads
   // grades through these.
@@ -33,6 +36,7 @@ import { RubricController } from './rubric.controller';
     AssignmentGroupController,
     GradebookController,
     RubricController,
+    ExtensionController,
   ],
 })
 export class GradingModule {}

@@ -13,7 +13,12 @@ import { AuthGuard } from '@/auth/auth.guard';
 import { StudentGuard, type StudentRequest } from './student.guard';
 import { SubmissionService } from '@/grading/submission.service';
 import { GradebookService } from '@/grading/gradebook.service';
-import { SubmitAssignmentDto, SubmitQuizDto } from '@/grading/dto/activity.dto';
+import {
+  QuizPresenceDto,
+  SaveQuizAnswersDto,
+  SubmitAssignmentDto,
+  SubmitQuizDto,
+} from '@/grading/dto/activity.dto';
 import { CreateUploadTicketDto } from '@/file-manager/dto/upload-ticket.dto';
 
 /**
@@ -124,6 +129,43 @@ export class PortalActivityController {
       req.student!.studentId,
       activityId,
       dto.answers,
+    );
+  }
+
+  @Post('activities/:activityId/quiz/start')
+  async startQuizAttempt(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+  ) {
+    return this.submissions.startQuizAttempt(
+      req.student!.studentId,
+      activityId,
+    );
+  }
+
+  @Post('activities/:activityId/quiz/answers')
+  async saveQuizAnswers(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Body() dto: SaveQuizAnswersDto,
+  ) {
+    return this.submissions.saveQuizAnswers(
+      req.student!.studentId,
+      activityId,
+      dto.answers,
+    );
+  }
+
+  @Post('activities/:activityId/quiz/presence')
+  async updateQuizPresence(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Body() dto: QuizPresenceDto,
+  ) {
+    return this.submissions.updateQuizPresence(
+      req.student!.studentId,
+      activityId,
+      dto,
     );
   }
 }

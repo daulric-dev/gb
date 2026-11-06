@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   type OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -12,9 +13,13 @@ import { AccountService } from '@/account/account.service';
 import { normalizeEmail } from '@/account/email-code.service';
 import { primaryOrigin } from '@/config/origins';
 import { isUniqueViolation } from '@/common/db-values';
-import { permCacheKey, userPermCachePrefix } from '@/permission/permission.effective';
+import {
+  permCacheKey,
+  userPermCachePrefix,
+} from '@/permission/permission.effective';
 import { seatSchoolAdmin } from './school-admin';
 import { inviteEmail } from './invite.email';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 export const INVITE_KINDS = ['school_admin', 'organisation_admin'] as const;
 export type InviteKind = (typeof INVITE_KINDS)[number];
@@ -83,6 +88,7 @@ export class InviteService implements OnModuleInit {
     private readonly cache: CacheService,
     private readonly mail: MailService,
     private readonly accounts: AccountService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   onModuleInit() {
@@ -109,14 +115,21 @@ export class InviteService implements OnModuleInit {
     let created: { id: string; email: string; expires_at: Date };
     try {
       created = await this.prisma.$transaction(async (tx) => {
+        const where =
+          kind === 'school_admin'
+            ? { kind, school_id: schoolId, ...OPEN }
+            : { kind, email, ...OPEN };
+        const replaced = this.auditLog
+          ? await tx.organisation_invite.findMany({
+              where,
+              select: { id: true, school_id: true, revoked_at: true },
+            })
+          : [];
         await tx.organisation_invite.updateMany({
-          where:
-            kind === 'school_admin'
-              ? { kind, school_id: schoolId, ...OPEN }
-              : { kind, email, ...OPEN },
+          where,
           data: { revoked_at: now },
         });
-        return tx.organisation_invite.create({
+        const invite = await tx.organisation_invite.create({
           data: {
             email,
             kind,
@@ -127,11 +140,46 @@ export class InviteService implements OnModuleInit {
           },
           select: { id: true, email: true, expires_at: true },
         });
+        for (const previous of replaced) {
+          await this.auditLog?.record(
+            tx,
+            previous.school_id,
+            { id: actorId },
+            {
+              entity: 'organisation_invite',
+              entityId: previous.id,
+              action: 'update',
+              changes: auditChanges(
+                { revoked_at: previous.revoked_at },
+                { revoked_at: now },
+              ),
+            },
+          );
+        }
+        await this.auditLog?.record(
+          tx,
+          kind === 'school_admin' ? schoolId : null,
+          { id: actorId },
+          {
+            entity: 'organisation_invite',
+            entityId: invite.id,
+            action: 'create',
+            changes: auditChanges(null, {
+              email,
+              kind,
+              school_id: kind === 'school_admin' ? schoolId : null,
+              expires_at: invite.expires_at,
+            }),
+          },
+        );
+        return invite;
       });
     } catch (err) {
       // Two admins inviting for the same school (or email) at once.
       if (isUniqueViolation(err)) {
-        throw new ConflictException('An invite was just sent for this. Refresh and try again.');
+        throw new ConflictException(
+          'An invite was just sent for this. Refresh and try again.',
+        );
       }
       throw err;
     }
@@ -141,7 +189,11 @@ export class InviteService implements OnModuleInit {
         ` (invite ${created.id})`,
     );
     await this.sendEmail(created.id);
-    return { id: created.id, email: created.email, expiresAt: created.expires_at.toISOString() };
+    return {
+      id: created.id,
+      email: created.email,
+      expiresAt: created.expires_at.toISOString(),
+    };
   }
 
   /** Open invites (newest first), optionally of one kind. */
@@ -172,9 +224,35 @@ export class InviteService implements OnModuleInit {
 
   /** Cancel an open invite; 404 once it is accepted or revoked. */
   async revoke(actorId: string, id: string) {
-    const { count } = await this.prisma.organisation_invite.updateMany({
-      where: { id, ...OPEN },
-      data: { revoked_at: new Date() },
+    const revokedAt = new Date();
+    const { count } = await this.prisma.$transaction(async (tx) => {
+      const invite = this.auditLog
+        ? await tx.organisation_invite.findUnique({
+            where: { id },
+            select: { id: true, school_id: true, revoked_at: true },
+          })
+        : null;
+      const { count } = await tx.organisation_invite.updateMany({
+        where: { id, ...OPEN },
+        data: { revoked_at: revokedAt },
+      });
+      if (count > 0 && invite) {
+        await this.auditLog?.record(
+          tx,
+          invite.school_id,
+          { id: actorId },
+          {
+            entity: 'organisation_invite',
+            entityId: id,
+            action: 'update',
+            changes: auditChanges(
+              { revoked_at: invite.revoked_at },
+              { revoked_at: revokedAt },
+            ),
+          },
+        );
+      }
+      return { count };
     });
     if (count === 0) throw new NotFoundException('Invite not found');
     this.logger.log(`Organisation admin ${actorId} revoked invite ${id}`);
@@ -184,9 +262,34 @@ export class InviteService implements OnModuleInit {
   /** Give an open invite (expired or not) a fresh 14 days and email it again. */
   async resend(actorId: string, id: string): Promise<InviteSummary> {
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
-    const { count } = await this.prisma.organisation_invite.updateMany({
-      where: { id, ...OPEN },
-      data: { expires_at: expiresAt },
+    const { count } = await this.prisma.$transaction(async (tx) => {
+      const invite = this.auditLog
+        ? await tx.organisation_invite.findUnique({
+            where: { id },
+            select: { id: true, school_id: true, expires_at: true },
+          })
+        : null;
+      const { count } = await tx.organisation_invite.updateMany({
+        where: { id, ...OPEN },
+        data: { expires_at: expiresAt },
+      });
+      if (count > 0 && invite) {
+        await this.auditLog?.record(
+          tx,
+          invite.school_id,
+          { id: actorId },
+          {
+            entity: 'organisation_invite',
+            entityId: id,
+            action: 'update',
+            changes: auditChanges(
+              { expires_at: invite.expires_at },
+              { expires_at: expiresAt },
+            ),
+          },
+        );
+      }
+      return { count };
     });
     if (count === 0) throw new NotFoundException('Invite not found');
     const invite = await this.prisma.organisation_invite.findUniqueOrThrow({
@@ -195,11 +298,17 @@ export class InviteService implements OnModuleInit {
     });
     this.logger.log(`Organisation admin ${actorId} resent invite ${id}`);
     await this.sendEmail(id);
-    return { id: invite.id, email: invite.email, expiresAt: invite.expires_at.toISOString() };
+    return {
+      id: invite.id,
+      email: invite.email,
+      expiresAt: invite.expires_at.toISOString(),
+    };
   }
 
   /** Each school's open admin invite (expired ones included), by school id. */
-  async pendingForSchools(schoolIds: string[]): Promise<Map<string, InviteSummary>> {
+  async pendingForSchools(
+    schoolIds: string[],
+  ): Promise<Map<string, InviteSummary>> {
     if (schoolIds.length === 0) return new Map();
     const rows = await this.prisma.organisation_invite.findMany({
       where: { kind: 'school_admin', school_id: { in: schoolIds }, ...OPEN },
@@ -216,7 +325,11 @@ export class InviteService implements OnModuleInit {
   /** An account was added directly: its open organisation admin invite is moot. */
   async revokeOrganisationAdminInvite(rawEmail: string) {
     await this.prisma.organisation_invite.updateMany({
-      where: { kind: 'organisation_admin', email: normalizeEmail(rawEmail), ...OPEN },
+      where: {
+        kind: 'organisation_admin',
+        email: normalizeEmail(rawEmail),
+        ...OPEN,
+      },
       data: { revoked_at: new Date() },
     });
   }
@@ -276,11 +389,127 @@ export class InviteService implements OnModuleInit {
           data: { accepted_at: now, accepted_by: user.id },
         });
         if (claimed.count !== 1) continue;
+        await this.auditLog?.record(
+          tx,
+          invite.school_id,
+          { id: user.id },
+          {
+            entity: 'organisation_invite',
+            entityId: invite.id,
+            action: 'update',
+            changes: auditChanges(
+              { accepted_at: null, accepted_by: null },
+              { accepted_at: now, accepted_by: user.id },
+            ),
+          },
+        );
 
         if (invite.kind === 'school_admin' && invite.school_id) {
-          const demoted = await seatSchoolAdmin(tx, profile, invite.school_id, now);
+          const currentAdmin = this.auditLog
+            ? await tx.school_management.findFirst({
+                where: { school_id: invite.school_id, role: 'admin' },
+                select: { id: true, user_id: true, role: true },
+              })
+            : null;
+          const existingMembership = this.auditLog
+            ? await tx.school_management.findUnique({
+                where: {
+                  user_id_school_id: {
+                    user_id: user.id,
+                    school_id: invite.school_id,
+                  },
+                },
+                select: { id: true, role: true },
+              })
+            : null;
+          const openSchoolInvites = this.auditLog
+            ? await tx.organisation_invite.findMany({
+                where: {
+                  school_id: invite.school_id,
+                  kind: 'school_admin',
+                  ...OPEN,
+                },
+                select: { id: true, revoked_at: true },
+              })
+            : [];
+          const demoted = await seatSchoolAdmin(
+            tx,
+            profile,
+            invite.school_id,
+            now,
+          );
           seated.push({ schoolId: invite.school_id, demoted });
-          if (!profile.school_id) profile = { ...profile, school_id: invite.school_id };
+          if (currentAdmin && currentAdmin.user_id !== user.id) {
+            await this.auditLog?.record(
+              tx,
+              invite.school_id,
+              { id: user.id },
+              {
+                entity: 'school_membership',
+                entityId: currentAdmin.id,
+                action: 'update',
+                changes: auditChanges(
+                  { user_id: currentAdmin.user_id, role: currentAdmin.role },
+                  { user_id: currentAdmin.user_id, role: 'teacher' },
+                ),
+              },
+            );
+          }
+          if (this.auditLog) {
+            const membership = await tx.school_management.findUnique({
+              where: {
+                user_id_school_id: {
+                  user_id: user.id,
+                  school_id: invite.school_id,
+                },
+              },
+              select: { id: true },
+            });
+            if (membership) {
+              await this.auditLog.record(
+                tx,
+                invite.school_id,
+                { id: user.id },
+                {
+                  entity: 'school_membership',
+                  entityId: membership.id,
+                  action: existingMembership ? 'update' : 'create',
+                  changes: auditChanges(
+                    existingMembership
+                      ? {
+                          user_id: user.id,
+                          school_id: invite.school_id,
+                          role: existingMembership.role,
+                        }
+                      : null,
+                    {
+                      user_id: user.id,
+                      school_id: invite.school_id,
+                      role: 'admin',
+                    },
+                  ),
+                },
+              );
+            }
+          }
+          for (const replaced of openSchoolInvites) {
+            await this.auditLog?.record(
+              tx,
+              invite.school_id,
+              { id: user.id },
+              {
+                entity: 'organisation_invite',
+                entityId: replaced.id,
+                action: 'update',
+                changes: auditChanges(
+                  { revoked_at: replaced.revoked_at },
+                  { revoked_at: now },
+                ),
+              },
+            );
+          }
+          if (!profile.school_id)
+            profile = { ...profile, school_id: invite.school_id };
         } else if (invite.kind === 'organisation_admin') {
           const has = await tx.organisation_admin.findUnique({
             where: { user_id: user.id },
@@ -290,13 +519,29 @@ export class InviteService implements OnModuleInit {
             await tx.organisation_admin.create({
               data: { user_id: user.id, created_by: invite.invited_by },
             });
+            await this.auditLog?.record(
+              tx,
+              null,
+              { id: user.id },
+              {
+                entity: 'organisation_admin',
+                entityId: user.id,
+                action: 'create',
+                changes: auditChanges(null, {
+                  user_id: user.id,
+                  created_by: invite.invited_by,
+                }),
+              },
+            );
           }
           orgAdmin = true;
         }
       }
     });
 
-    const clears: Promise<unknown>[] = [this.cache.delete(`profile:${user.id}`)];
+    const clears: Promise<unknown>[] = [
+      this.cache.delete(`profile:${user.id}`),
+    ];
     for (const { schoolId, demoted } of seated) {
       clears.push(this.cache.delete(permCacheKey(user.id, schoolId)));
       if (demoted) {
@@ -306,7 +551,8 @@ export class InviteService implements OnModuleInit {
         );
       }
     }
-    if (orgAdmin) clears.push(this.cache.deleteByPrefix(userPermCachePrefix(user.id)));
+    if (orgAdmin)
+      clears.push(this.cache.deleteByPrefix(userPermCachePrefix(user.id)));
     if (seated.length > 0) clears.push(this.cache.delete('schools:all'));
     await Promise.all(clears);
 
@@ -314,7 +560,9 @@ export class InviteService implements OnModuleInit {
     if (applied > 0) {
       this.logger.log(
         `Applied ${applied} invite(s) for ${user.id}` +
-          (seated.length ? `: admin of ${seated.map((s) => s.schoolId).join(', ')}` : '') +
+          (seated.length
+            ? `: admin of ${seated.map((s) => s.schoolId).join(', ')}`
+            : '') +
           (orgAdmin ? '; organisation admin' : ''),
       );
     }
@@ -327,7 +575,9 @@ export class InviteService implements OnModuleInit {
   private async sendEmail(id: string): Promise<void> {
     try {
       if (!this.mail.configured()) {
-        this.logger.log(`Email is not configured; invite ${id} was not emailed`);
+        this.logger.log(
+          `Email is not configured; invite ${id} was not emailed`,
+        );
         return;
       }
       const invite = await this.prisma.organisation_invite.findUnique({
@@ -339,8 +589,11 @@ export class InviteService implements OnModuleInit {
       const place =
         kind === 'school_admin'
           ? invite.school?.name || 'a school'
-          : (await this.prisma.organisation.findFirst({ select: { name: true } }))?.name ||
-            'your organisation';
+          : (
+              await this.prisma.organisation.findFirst({
+                select: { name: true },
+              })
+            )?.name || 'your organisation';
       const inviter = invite.inviter
         ? displayName(invite.inviter) ||
           invite.inviter.app_user?.email ||
@@ -358,7 +611,9 @@ export class InviteService implements OnModuleInit {
         }),
       });
     } catch (err) {
-      this.logger.warn(`Failed to email invite ${id}: ${(err as Error).message}`);
+      this.logger.warn(
+        `Failed to email invite ${id}: ${(err as Error).message}`,
+      );
     }
   }
 }

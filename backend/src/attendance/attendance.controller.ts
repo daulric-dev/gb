@@ -19,7 +19,11 @@ import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { AttendanceService } from './attendance.service';
 import { AttendanceRealtime } from './attendance.realtime';
-import { OpenAttendanceDto, SetAttendanceRecordDto } from './dto/attendance.dto';
+import {
+  OpenAttendanceDto,
+  SetAttendanceRecordDto,
+  UpdateSessionLocationDto,
+} from './dto/attendance.dto';
 import { openEventStream } from './sse';
 
 /**
@@ -82,6 +86,33 @@ export class AttendanceController {
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
     return this.attendance.close(req.user.id as string, courseId, sessionId);
+  }
+
+  /**
+   * The teacher's device moved: check-ins from now on measure from here.
+   * 200 with the new point, or 204 when the fix was too coarse to use (the
+   * point stays). 409 once closed or without a location check; 429 when
+   * the point was set less than 5 s ago.
+   */
+  @Patch('sessions/:sessionId/location')
+  async updateLocation(
+    @Req() req: any,
+    @Param('courseId', ParseUUIDPipe) courseId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() dto: UpdateSessionLocationDto,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const result = await this.attendance.updateLocation(
+      req.user.id as string,
+      courseId,
+      sessionId,
+      dto,
+    );
+    if (!result) {
+      reply.status(204);
+      return undefined;
+    }
+    return result;
   }
 
   @Delete('sessions/:sessionId')

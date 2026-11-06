@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Packages the frontend, backend and docs sources plus the root workspace files
-# into gradebook-<VERSION>.zip and writes its checksum to SHA256SUMS, both in
+# Packages the frontend, backend, docs and mobile sources, the self-hosting
+# files in infrastructure/ and the root workspace files into
+# gradebook-<VERSION>.zip and writes its checksum to SHA256SUMS, both in
 # the current directory (the repo root).
 #
 # Called by: .github/workflows/release.yml, job "package", step "Build zip".
@@ -10,9 +11,16 @@ set -euo pipefail
 
 name="gradebook-$VERSION"
 # git archive only takes tracked files: no node_modules, build
-# output or .env files.
+# output or .env files. mobile/ is a root workspace, so `bun install
+# --frozen-lockfile` needs its package.json; the rest of its source lets a
+# self-hoster build the app against their own server. The generated native
+# iOS project is left out (`expo prebuild` recreates it).
 git archive --format=zip --prefix="$name/" -o "$name.zip" HEAD \
-  frontend backend docs \
+  frontend backend docs mobile infrastructure \
+  ':(exclude)mobile/ios' \
+  ':(exclude,glob)**/.env' \
+  ':(exclude,glob)**/.env.local' \
+  ':(exclude,glob)**/.env.*.local' \
   ':(exclude,glob)**/*.test.*' \
   ':(exclude,glob)**/*.spec.*' \
   ':(exclude,glob)**/__tests__/**' \
