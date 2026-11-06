@@ -291,10 +291,10 @@ export function CreateActivityDialog({
           {kind.value === "quiz" && (
             <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
               <div className="space-y-0.5">
-                <Label htmlFor="quizLockdown">Lockdown browser</Label>
+                <Label htmlFor="quizLockdown">Lockdown</Label>
                 <p className="text-xs text-muted-foreground">
-                  Students take it in fullscreen; you see when they leave the
-                  quiz and how often.
+                  Web: fullscreen, no copy or paste. App: pinned, screenshots and
+                  recording blocked. You see when students leave and how often.
                 </p>
               </div>
               <Switch

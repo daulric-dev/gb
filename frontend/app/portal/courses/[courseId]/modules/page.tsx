@@ -170,6 +170,7 @@ function ModuleItemRow({
             {item.activity && (
               <span className="block text-xs text-muted-foreground">
                 {dueLabel(item.activity.dueAt)}
+                {item.activity.hasExtension && " (extended)"}
               </span>
             )}
           </span>

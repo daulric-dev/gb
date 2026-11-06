@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+
 const SERVER_URL_KEY = "gb_server_url";
 const DISCOVERY_PATH = "/.well-known/gradebook.json";
 
@@ -48,7 +50,6 @@ export async function savedServerUrl(): Promise<string | null> {
   if (typeof localStorage !== "undefined") {
     return localStorage.getItem(SERVER_URL_KEY);
   }
-  const SecureStore = await import("expo-secure-store");
   return SecureStore.getItemAsync(SERVER_URL_KEY);
 }
 
@@ -58,7 +59,6 @@ export async function saveServerUrl(url: string | null): Promise<void> {
     else localStorage.removeItem(SERVER_URL_KEY);
     return;
   }
-  const SecureStore = await import("expo-secure-store");
   if (url) await SecureStore.setItemAsync(SERVER_URL_KEY, url);
   else await SecureStore.deleteItemAsync(SERVER_URL_KEY);
 }

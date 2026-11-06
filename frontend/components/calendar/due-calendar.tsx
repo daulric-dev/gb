@@ -325,6 +325,9 @@ export function DueCalendar<T extends CalendarItem>({
                   </Link>
                   <p className="truncate text-xs text-muted-foreground">
                     {item.courseName} · Due {timeLabel(item.dueAt)}
+                    {"hasExtension" in item && item.hasExtension
+                      ? " (extended)"
+                      : ""}
                   </p>
                 </div>
                 {badgeFor?.(item)}

@@ -123,6 +123,8 @@ export default function ScanAttendanceScreen() {
       );
       setPhase({ kind: "done", session: result });
     } catch (err) {
+      // Too far, or mock location on: the retry takes a fresh reading.
+      if (err instanceof ApiError && err.status === 403) fix.current = null;
       if (err instanceof ApiError && err.status === 409) {
         if (/closed/i.test(err.message)) {
           setPhase({ kind: "closed" });

@@ -8,14 +8,21 @@ import {
 } from '@nestjs/common';
 import {
   AttendanceService,
+  CLAIM_OTHER_DEVICE_MESSAGE,
   MAX_SCAN_CLAIMS_PER_IP,
   MAX_WRONG_CODES,
+  MOCK_LOCATION_MESSAGE,
+  SESSION_LOCATION_MIN_INTERVAL_MS,
   tally,
 } from './attendance.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
 import { Prisma } from '@/generated/prisma/client';
+
+/** Scan-device cookie values: the phone that scanned, and a friend's. */
+const DEVICE = 'device-aaaaaaaaaaaaaaaaaa';
+const OTHER_DEVICE = 'device-bbbbbbbbbbbbbbbbbb';
 
 /**
  * A tiny in-memory database behind the Prisma mock: enough filters, unique
@@ -77,6 +84,7 @@ function fakeDb(seed: Record<string, Row[]>) {
         note: null,
         checked_in_at: null,
         distance_m: null,
+        location_flags: [],
         ...item,
       };
       const clash = unique[key];
@@ -123,6 +131,16 @@ function fakeDb(seed: Record<string, Row[]>) {
       const { row } = insert(create);
       rows().push(row);
       return { ...row };
+    });
+    m.update.mockImplementation(async ({ where, data }) => {
+      const hit = rows().find((r) => matches(r, where));
+      if (!hit) {
+        throw new Prisma.PrismaClientKnownRequestError('Record not found', {
+          code: 'P2025',
+          clientVersion: 'test',
+        });
+      }
+      return { ...Object.assign(hit, data) };
     });
     m.updateManyAndReturn.mockImplementation(async ({ where, data }) => {
       const hit = rows().filter((r) => matches(r, where));
@@ -278,6 +296,7 @@ describe('AttendanceService.open', () => {
     expect(detail.checkInCode).toBeNull();
     expect(detail.requiresCode).toBe(false);
     expect(detail.location).toEqual({ latitude: 10, longitude: 20, radiusM: 100 });
+    expect(detail.locationUpdatedAt).toBe(detail.openedAt);
   });
 
   test('a second open in the same course is a conflict', async () => {
@@ -390,15 +409,55 @@ describe('AttendanceService.checkIn', () => {
     const { service } = setup();
     const s = await service.open(TEACHER, COURSE, {});
     const frame = await service.qr(TEACHER, COURSE, s.id);
-    const { claim } = await service.scanClaim(s.id, frame.token);
+    const { claim } = await service.scanClaim(s.id, frame.token, DEVICE);
 
-    const res = await service.checkIn('st-1', s.id, { qrClaim: claim });
+    const res = await service.checkIn('st-1', s.id, {
+      qrClaim: claim,
+      scanDeviceId: DEVICE,
+    });
     expect(res.myStatus).toBe('present');
 
-    // Shared with a friend: refused, not a second check-in.
+    // Another student signed in on the same device: refused, not a second
+    // check-in.
     await expect(
-      service.checkIn('st-2', s.id, { qrClaim: claim }),
+      service.checkIn('st-2', s.id, { qrClaim: claim, scanDeviceId: DEVICE }),
     ).rejects.toThrow('expired');
+  });
+
+  test('a claim forwarded to another device does not redeem there', async () => {
+    const { service, cache } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    const frame = await service.qr(TEACHER, COURSE, s.id);
+    const { claim } = await service.scanClaim(s.id, frame.token, DEVICE);
+
+    for (const scanDeviceId of [OTHER_DEVICE, undefined]) {
+      const err = await service
+        .checkIn('st-2', s.id, { qrClaim: claim, scanDeviceId })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err.message).toBe(CLAIM_OTHER_DEVICE_MESSAGE);
+    }
+    // Nothing was recorded against the claim, so the scanning student can
+    // still use it.
+    expect(
+      [...cache._store.keys()].some((k) => k.startsWith('attendance:qr-claim:')),
+    ).toBe(false);
+    const res = await service.checkIn('st-1', s.id, {
+      qrClaim: claim,
+      scanDeviceId: DEVICE,
+    });
+    expect(res.myStatus).toBe('present');
+  });
+
+  test('a whole class on one school network can get claims', async () => {
+    const { service } = setup();
+    const s = await service.open(TEACHER, COURSE, {});
+    const frame = await service.qr(TEACHER, COURSE, s.id);
+    for (let i = 0; i < 35; i++) {
+      await expect(
+        service.scanClaim(s.id, frame.token, `device-${i}`.padEnd(22, 'x'), '203.0.113.7'),
+      ).resolves.toHaveProperty('claim');
+    }
   });
 
   test('one address gets a limited number of claims per session', async () => {
@@ -406,10 +465,10 @@ describe('AttendanceService.checkIn', () => {
     const s = await service.open(TEACHER, COURSE, {});
     const frame = await service.qr(TEACHER, COURSE, s.id);
     for (let i = 0; i < MAX_SCAN_CLAIMS_PER_IP; i++) {
-      await service.scanClaim(s.id, frame.token, '203.0.113.7');
+      await service.scanClaim(s.id, frame.token, DEVICE, '203.0.113.7');
     }
     const err = await service
-      .scanClaim(s.id, frame.token, '203.0.113.7')
+      .scanClaim(s.id, frame.token, DEVICE, '203.0.113.7')
       .catch((e) => e);
     expect(err).toBeInstanceOf(HttpException);
     expect(err.getStatus()).toBe(429);
@@ -417,7 +476,7 @@ describe('AttendanceService.checkIn', () => {
 
     // Another address still gets a claim; the counter lasts one claim lifetime.
     await expect(
-      service.scanClaim(s.id, frame.token, '198.51.100.2'),
+      service.scanClaim(s.id, frame.token, DEVICE, '198.51.100.2'),
     ).resolves.toHaveProperty('claim');
     const entry = cache._store.get(
       `attendance:scan-claims:${s.id}:203.0.113.7`,
@@ -429,7 +488,7 @@ describe('AttendanceService.checkIn', () => {
     const { service, cache } = setup();
     const s = await service.open(TEACHER, COURSE, {});
     await expect(
-      service.scanClaim(s.id, 'AAAAAAAAAAAAAAAAAAAAAA', '203.0.113.7'),
+      service.scanClaim(s.id, 'AAAAAAAAAAAAAAAAAAAAAA', DEVICE, '203.0.113.7'),
     ).rejects.toThrow('expired');
     expect(cache._store.has(`attendance:scan-claims:${s.id}:203.0.113.7`)).toBe(
       false,
@@ -442,7 +501,7 @@ describe('AttendanceService.checkIn', () => {
     const frame = await service.qr(TEACHER, COURSE, s.id);
     cache.incr = () => Promise.reject(new Error('redis down'));
     await expect(
-      service.scanClaim(s.id, frame.token, '203.0.113.7'),
+      service.scanClaim(s.id, frame.token, DEVICE, '203.0.113.7'),
     ).rejects.toThrow('unavailable');
   });
 
@@ -452,12 +511,13 @@ describe('AttendanceService.checkIn', () => {
       location: { latitude: 51.5, longitude: -0.12, radiusM: 100 },
     });
     const frame = await service.qr(TEACHER, COURSE, s.id);
-    const { claim } = await service.scanClaim(s.id, frame.token);
+    const { claim } = await service.scanClaim(s.id, frame.token, DEVICE);
     await expect(
-      service.checkIn('st-1', s.id, { qrClaim: claim }),
+      service.checkIn('st-1', s.id, { qrClaim: claim, scanDeviceId: DEVICE }),
     ).rejects.toThrow('location');
     const res = await service.checkIn('st-1', s.id, {
       qrClaim: claim,
+      scanDeviceId: DEVICE,
       location: { latitude: 51.5, longitude: -0.12, accuracy: 10 },
     });
     expect(res.myStatus).toBe('present');
@@ -641,6 +701,8 @@ describe('AttendanceService.setRecord', () => {
       method: 'teacher',
       checkedInAt: null,
       distanceM: null,
+      accuracyM: null,
+      locationFlags: [],
       note: 'Doctor',
     });
     expect(
@@ -750,3 +812,286 @@ describe('AttendanceService portal', () => {
 });
 
 afterEach(() => undefined);
+
+/** Pretend the session point was last set `ms` ago, past the throttle. */
+function staleLocation(sb: ReturnType<typeof fakeDb>, sessionId: string, ms = 60_000) {
+  const s = sb.tables['course.attendance_session'].find((r) => r.id === sessionId)!;
+  s.location_updated_at = new Date(Date.now() - ms);
+}
+
+const record = (sb: ReturnType<typeof fakeDb>, studentId: string) =>
+  sb.tables['course.attendance_record'].find((r) => r.student_id === studentId)!;
+
+describe('AttendanceService.updateLocation', () => {
+  async function located(opts: { role?: string } = {}) {
+    const ctx = setup(opts);
+    const session = await ctx.service.open(TEACHER, COURSE, {
+      requireCode: false,
+      location: { latitude: 51.5, longitude: -0.12, radiusM: 100 },
+    });
+    return { ...ctx, session };
+  }
+
+  test('moves the point of an open session, stamps it and tells staff', async () => {
+    const { service, sb, events, session } = await located();
+    staleLocation(sb, session.id);
+    const out = await service.updateLocation(TEACHER, COURSE, session.id, {
+      latitude: 51.51,
+      longitude: -0.13,
+      accuracy: 12,
+    });
+    expect(out!.location).toEqual({ latitude: 51.51, longitude: -0.13, radiusM: 100 });
+    expect(Date.now() - Date.parse(out!.locationUpdatedAt)).toBeLessThan(5_000);
+
+    const detail = await service.detail(TEACHER, COURSE, session.id);
+    expect(detail.location).toEqual(out!.location);
+    expect(detail.locationUpdatedAt).toBe(out!.locationUpdatedAt);
+    await tick();
+    expect(events.some((e) => e.event.type === 'attendance.location')).toBe(true);
+  });
+
+  test('takes the same course role as opening: any staff role, nobody else', async () => {
+    const ta = await located({ role: 'ta' });
+    staleLocation(ta.sb, ta.session.id);
+    expect(
+      await ta.service.updateLocation(TEACHER, COURSE, ta.session.id, {
+        latitude: 51.5,
+        longitude: -0.12,
+      }),
+    ).not.toBeNull();
+
+    const { service, session } = await located();
+    expect(
+      await expectRejection(
+        service.updateLocation(TEACHER, 'other-course', session.id, {
+          latitude: 51.5,
+          longitude: -0.12,
+        }),
+      ),
+    ).toBeInstanceOf(NotFoundException);
+
+    // A role outside STAFF_ROLES is refused before anything is read.
+    const outsider = setup({ role: 'student' });
+    expect(
+      await expectRejection(
+        outsider.service.updateLocation(TEACHER, COURSE, session.id, {
+          latitude: 51.5,
+          longitude: -0.12,
+        }),
+      ),
+    ).toBeInstanceOf(ForbiddenException);
+  });
+
+  test('a closed session or one without a location check is a conflict', async () => {
+    const { service, sb, session } = await located();
+    await service.close(TEACHER, COURSE, session.id);
+    staleLocation(sb, session.id);
+    const err = await expectRejection(
+      service.updateLocation(TEACHER, COURSE, session.id, { latitude: 1, longitude: 1 }),
+    );
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as Error).message).toBe('Attendance has closed');
+
+    const plain = await service.open(TEACHER, COURSE, { requireCode: false });
+    const err2 = await expectRejection(
+      service.updateLocation(TEACHER, COURSE, plain.id, { latitude: 1, longitude: 1 }),
+    );
+    expect(err2).toBeInstanceOf(ConflictException);
+    expect((err2 as Error).message).toBe('This session has no location check');
+  });
+
+  test('a fix worse than 100 m is ignored and the point stays', async () => {
+    const { service, sb, session } = await located();
+    staleLocation(sb, session.id);
+    const out = await service.updateLocation(TEACHER, COURSE, session.id, {
+      latitude: 52,
+      longitude: 0,
+      accuracy: 150,
+    });
+    expect(out).toBeNull();
+    const row = sb.tables['course.attendance_session'].find((r) => r.id === session.id)!;
+    expect(row.latitude).toBe(51.5);
+    expect(row.longitude).toBe(-0.12);
+
+    // Exactly 100 m is still usable.
+    expect(
+      await service.updateLocation(TEACHER, COURSE, session.id, {
+        latitude: 52,
+        longitude: 0,
+        accuracy: 100,
+      }),
+    ).not.toBeNull();
+  });
+
+  test('more than one update per session every 5 s is refused with 429', async () => {
+    const { service, sb, session } = await located();
+    // Just opened: the point was set moments ago.
+    const err = await expectRejection(
+      service.updateLocation(TEACHER, COURSE, session.id, { latitude: 51.5, longitude: -0.12 }),
+    );
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(429);
+
+    staleLocation(sb, session.id, SESSION_LOCATION_MIN_INTERVAL_MS + 1);
+    await service.updateLocation(TEACHER, COURSE, session.id, { latitude: 51.5, longitude: -0.12 });
+    const again = await expectRejection(
+      service.updateLocation(TEACHER, COURSE, session.id, { latitude: 51.5, longitude: -0.12 }),
+    );
+    expect((again as HttpException).getStatus()).toBe(429);
+  });
+
+  test('check-ins are measured against the moved point', async () => {
+    const { service, sb, session } = await located();
+    // ~1.1 km north of where the session opened.
+    const there = { latitude: 51.51, longitude: -0.12, accuracy: 10 };
+    expect(
+      await expectRejection(service.checkIn('st-1', session.id, { location: there })),
+    ).toBeInstanceOf(ForbiddenException);
+
+    staleLocation(sb, session.id);
+    await service.updateLocation(TEACHER, COURSE, session.id, {
+      latitude: 51.5101,
+      longitude: -0.12,
+      accuracy: 8,
+    });
+    const ok = await service.checkIn('st-1', session.id, { location: there });
+    expect(ok.myStatus).toBe('present');
+    expect(record(sb, 'st-1').distance_m).toBeLessThan(20);
+  });
+});
+
+describe('AttendanceService.checkIn location readings', () => {
+  async function located(requireCode = false) {
+    const ctx = setup();
+    const session = await ctx.service.open(TEACHER, COURSE, {
+      requireCode,
+      location: { latitude: 51.5, longitude: -0.12, radiusM: 100 },
+    });
+    return { ...ctx, session };
+  }
+  const near = { latitude: 51.500234567, longitude: -0.120345678, accuracy: 12 };
+
+  test('a mocked reading is refused with 403 and costs no code attempt', async () => {
+    const { service, cache, session } = await located(true);
+    for (let i = 0; i < MAX_WRONG_CODES + 2; i++) {
+      const err = await expectRejection(
+        service.checkIn('st-1', session.id, {
+          code: '0000',
+          location: { ...near, mocked: true },
+        }),
+      );
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as Error).message).toBe(MOCK_LOCATION_MESSAGE);
+    }
+    expect(cache._store.has(`attendance:wrong-code:${session.id}:st-1`)).toBe(false);
+
+    const ok = await service.checkIn('st-1', session.id, {
+      code: session.checkInCode!,
+      location: { ...near, mocked: false },
+    });
+    expect(ok.myStatus).toBe('present');
+  });
+
+  test('stores coordinates, accuracy and distance; a clean reading has no flags', async () => {
+    const { service, sb, session } = await located();
+    await service.checkIn('st-1', session.id, { location: near, nativeClient: true });
+    const rec = record(sb, 'st-1');
+    expect(rec.latitude).toBe(near.latitude);
+    expect(rec.longitude).toBe(near.longitude);
+    expect(rec.accuracy_m).toBe(12);
+    expect(rec.distance_m).toBeGreaterThan(20);
+    expect(rec.location_flags).toEqual([]);
+
+    const detail = await service.detail(TEACHER, COURSE, session.id);
+    const entry = detail.roster.find((r) => r.studentId === 'st-1')!;
+    expect(entry.locationFlags).toEqual([]);
+    expect(entry.accuracyM).toBe(12);
+  });
+
+  test('exact_point: within 1 m of the session point', async () => {
+    const { service, sb, session } = await located();
+    await service.checkIn('st-1', session.id, {
+      location: { latitude: 51.5000001, longitude: -0.1200001, accuracy: 5 },
+    });
+    expect(record(sb, 'st-1').location_flags).toEqual(['exact_point']);
+  });
+
+  test('zero_accuracy: 0 anywhere, missing only from the app', async () => {
+    const { service, sb, session } = await located();
+    await service.checkIn('st-1', session.id, {
+      location: { ...near, accuracy: 0 },
+    });
+    expect(record(sb, 'st-1').location_flags).toEqual(['zero_accuracy']);
+
+    await service.checkIn('st-2', session.id, {
+      location: { latitude: 51.500111111, longitude: -0.120222222 },
+      nativeClient: true,
+    });
+    expect(record(sb, 'st-2').location_flags).toEqual(['zero_accuracy']);
+
+    await service.checkIn('st-3', session.id, {
+      location: { latitude: 51.500333333, longitude: -0.120444444 },
+    });
+    expect(record(sb, 'st-3').location_flags).toEqual([]);
+  });
+
+  test('low_precision: both coordinates with 3 decimals or fewer', async () => {
+    const { service, sb, session } = await located();
+    await service.checkIn('st-1', session.id, {
+      location: { latitude: 51.5, longitude: -0.121, accuracy: 20 },
+    });
+    expect(record(sb, 'st-1').location_flags).toEqual(['low_precision']);
+
+    // One precise coordinate is enough to not flag.
+    await service.checkIn('st-2', session.id, {
+      location: { latitude: 51.5004, longitude: -0.120456789, accuracy: 20 },
+    });
+    expect(record(sb, 'st-2').location_flags).toEqual([]);
+  });
+
+  test('duplicate_coords flags the later check-in and, after the fact, the earlier one', async () => {
+    const { service, sb, events, session } = await located();
+    await service.checkIn('st-1', session.id, { location: near });
+    expect(record(sb, 'st-1').location_flags).toEqual([]);
+
+    // Same to 6 decimals, different beyond.
+    await service.checkIn('st-2', session.id, {
+      location: { latitude: 51.5002345671, longitude: -0.1203456779, accuracy: 30 },
+    });
+    expect(record(sb, 'st-2').location_flags).toEqual(['duplicate_coords']);
+    expect(record(sb, 'st-1').location_flags).toEqual(['duplicate_coords']);
+
+    // The earlier row is re-sent to staff with its new flag.
+    await tick();
+    const st1 = events.filter(
+      (e) => e.event.type === 'attendance.record' && e.event.data.studentId === 'st-1',
+    );
+    expect(st1.at(-1)!.event.data.locationFlags).toEqual(['duplicate_coords']);
+
+    // A third different reading is untouched.
+    await service.checkIn('st-3', session.id, {
+      location: { latitude: 51.500111111, longitude: -0.120222222, accuracy: 9 },
+    });
+    expect(record(sb, 'st-3').location_flags).toEqual([]);
+  });
+
+  test('flags never reach the student', async () => {
+    const { service, session } = await located();
+    const out = await service.checkIn('st-1', session.id, {
+      location: { latitude: 51.5, longitude: -0.12, accuracy: 0 },
+    });
+    expect(JSON.stringify(out)).not.toContain('flag');
+    const mine = await service.courseForStudent('st-1', COURSE);
+    expect(JSON.stringify(mine)).not.toContain('flag');
+    expect(JSON.stringify(mine)).not.toContain('accuracy');
+  });
+
+  test('no location check means no coordinates are kept', async () => {
+    const ctx = setup();
+    const s = await ctx.service.open(TEACHER, COURSE, { requireCode: false });
+    await ctx.service.checkIn('st-1', s.id, { location: { ...near, mocked: true } });
+    const rec = record(ctx.sb, 'st-1');
+    expect(rec.latitude ?? null).toBeNull();
+    expect(rec.location_flags).toEqual([]);
+  });
+});

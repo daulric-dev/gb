@@ -119,8 +119,11 @@ export interface ModuleItem {
   activity?: {
     kind: ActivityKind;
     points: number;
+    /** In the student portal: the student's effective due date (their extension, else the activity's). */
     dueAt: string | null;
     status: ActivityStatus;
+    /** Student portal only: `dueAt` is the student's extension. */
+    hasExtension?: boolean;
   };
 }
 
@@ -377,8 +380,17 @@ export interface AttendanceSession {
   lateAfterMinutes: number | null;
   /** Present when the teacher asked for a location check. */
   location: { latitude: number; longitude: number; radiusM: number } | null;
+  /** When the point was last set (open, or staff sharing a newer position). */
+  locationUpdatedAt: string | null;
   counts: { present: number; late: number; absent: number; excused: number; pending: number };
 }
+
+/** Suspicious-reading markers on a check-in; staff only, never refused on. */
+export type AttendanceLocationFlag =
+  | "exact_point"
+  | "duplicate_coords"
+  | "zero_accuracy"
+  | "low_precision";
 
 export interface AttendanceRosterEntry {
   studentId: string;
@@ -390,6 +402,10 @@ export interface AttendanceRosterEntry {
   method: AttendanceMethod | null;
   checkedInAt: string | null;
   distanceM: number | null;
+  /** Reported GPS accuracy of the check-in, metres. */
+  accuracyM: number | null;
+  /** Empty when nothing looked odd. Missing from servers that predate it. */
+  locationFlags?: AttendanceLocationFlag[];
   note: string | null;
 }
 
@@ -476,6 +492,8 @@ export interface CalendarItem {
 
 /** A student's calendar item (`GET /portal/me/calendar`). */
 export interface PortalCalendarItem extends CalendarItem {
+  /** `dueAt` is the student's extension (their effective due date), not the activity's own. */
+  hasExtension: boolean;
   submission: {
     status: SubmissionStatus;
     /** Only once graded. */

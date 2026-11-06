@@ -71,7 +71,7 @@ A restore rolls `compliance.erasure_log` back too, so the entries made since the
 <ERASURE_LOG_S3_PREFIX>/YYYY/MM/DD/<occurred_at compact>-<id>.json     e.g. erasure-log/2026/10/25/20261025T101500.123Z-<uuid>.json
 ```
 
-This is a **transactional outbox**: `record()` only inserts the row (inside the caller's transaction); about two seconds later the service exports rows with `exported_at IS NULL` and stamps them, and the retention scheduler retries that every 15 minutes in every instance. A crash, a storage outage or a rolled-back transaction can therefore never lose an entry or export one that did not commit - at worst the copy is late. BullMQ was not used: an outbox in the same database needs no Redis, cannot drop a job when Redis is flushed, and re-exporting is idempotent because the key is fixed by the entry. Copies are signed (HMAC-SHA256 with a key derived from `AUTH_SECRET`); replay refuses an unsigned or altered copy unless `--allow-unsigned`. The copy holds the same ids-only content as the row. A database lost at the instant between commit and export (seconds) loses those entries; that window is documented in BACKUPS.md.
+This is a **transactional outbox**: `record()` only inserts the row (inside the caller's transaction); about two seconds later the service exports rows with `exported_at IS NULL` and stamps them, and the retention scheduler retries that every 15 minutes in every instance. A crash, a storage outage or a rolled-back transaction can therefore never lose an entry or export one that did not commit - at worst the copy is late. BullMQ was not used: an outbox in the same database needs no Redis, cannot drop a job when Redis is flushed, and re-exporting is idempotent because the key is fixed by the entry. Copies are signed (HMAC-SHA256 with a key derived from `DATA_ENCRYPTION_KEY` when set, else `AUTH_SECRET`; verification accepts either, so copies signed before `DATA_ENCRYPTION_KEY` was set keep verifying); replay refuses an unsigned or altered copy unless `--allow-unsigned`. The copy holds the same ids-only content as the row. A database lost at the instant between commit and export (seconds) loses those entries; that window is documented in BACKUPS.md.
 
 ## Replay CLI
 
@@ -97,7 +97,8 @@ bun run erasure:replay --since 2026-10-24T04:00:00Z [--source both|db|storage] [
 | --- | --- | --- |
 | `ERASURE_LOG_S3_PREFIX` | `erasure-log` | Prefix in `S3_BUCKET` for the storage copy. `off` / `false` / `none` disables it (then replay can only use what the restored database still has). |
 | `ERASURE_LOG_RETENTION_DAYS` | `400` | Entries (rows and copies) older than this are pruned by the retention job. Keep it longer than any backup you could restore. |
-| `AUTH_SECRET` | - | Derives the signing key for the copies. Changing it makes older copies fail verification (`--allow-unsigned` reads them anyway). |
+| `AUTH_SECRET` | - | Derives the signing key for the copies while `DATA_ENCRYPTION_KEY` is unset (and verifies copies signed before it was set). Changing it makes those copies fail verification (`--allow-unsigned` reads them anyway) unless `bun run secrets:reencrypt` re-signed them first. |
+| `DATA_ENCRYPTION_KEY` | - | When set, derives the signing key for new copies. Keep it stable. |
 
 ## Files
 

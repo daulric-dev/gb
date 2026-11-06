@@ -29,6 +29,17 @@ export function createMockCacheService() {
       store.set(key, { value: await func(entry.value as T), ttl });
       return true;
     },
+    setIfAbsent: (key: string, value: any, ttl: number) => {
+      if (store.has(key)) return Promise.resolve(false);
+      store.set(key, { value, ttl });
+      return Promise.resolve(true);
+    },
+    incr: (key: string, ttl: number) => {
+      const entry = store.get(key);
+      const value = Number(entry?.value ?? 0) + 1;
+      store.set(key, { value, ttl: entry?.ttl ?? ttl });
+      return Promise.resolve(value);
+    },
     delete: (key: string) => {
       store.delete(key);
       return Promise.resolve();

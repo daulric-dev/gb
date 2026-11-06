@@ -3,17 +3,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
-import {
-  ERASURE_KINDS,
-  ERASURE_REASONS,
-  isUuid,
-  REGISTRY,
-  validatePlan,
-  type ErasureKind,
-  type ErasureReason,
-  type ReplayPlan,
-} from './erasure-plan';
-import { erasureLogCutoff, erasureLogPrefix, signingKey } from './erasure.config';
+import { ERASURE_KINDS, ERASURE_REASONS, isUuid, REGISTRY, validatePlan, type ErasureKind, type ErasureReason, type ReplayPlan } from './erasure-plan';
+import { erasureLogCutoff, erasureLogPrefix, signingKey, verificationKeys } from './erasure.config';
 
 /** Prisma client or interactive-transaction client. */
 export type Db = Prisma.TransactionClient | PrismaService;
@@ -74,16 +65,27 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function signEntry(entry: Omit<ErasureEntry, 'sig'>): string {
-  return createHmac('sha256', signingKey()).update(stableStringify(entry)).digest('base64url');
+export function signEntry(entry: Omit<ErasureEntry, 'sig'>, key: Buffer = signingKey()): string {
+  return createHmac('sha256', key).update(stableStringify(entry)).digest('base64url');
+}
+
+/**
+ * The key the entry's signature verifies under (see verificationKeys():
+ * DATA_ENCRYPTION_KEY's, then AUTH_SECRET's), or null.
+ */
+export function entrySigningKey(entry: ErasureEntry): Buffer | null {
+  if (!entry.sig) return null;
+  const { sig, ...rest } = entry;
+  const given = Buffer.from(sig);
+  for (const key of verificationKeys()) {
+    const expected = Buffer.from(signEntry(rest, key));
+    if (expected.length === given.length && timingSafeEqual(expected, given)) return key;
+  }
+  return null;
 }
 
 export function verifyEntry(entry: ErasureEntry): boolean {
-  if (!entry.sig) return false;
-  const { sig, ...rest } = entry;
-  const expected = Buffer.from(signEntry(rest));
-  const given = Buffer.from(sig);
-  return expected.length === given.length && timingSafeEqual(expected, given);
+  return entrySigningKey(entry) !== null;
 }
 
 export function toEntry(row: Row): ErasureEntry {

@@ -43,5 +43,24 @@ How to write a new migration, and the rules (never edit an applied migration, ne
 | `20261105110000_webhook_tls` | Per-webhook TLS certificate verification. `school_webhook` gains `verify_tls` (boolean, default true - every existing webhook keeps verifying) and `tls_ca_cert` (nullable PEM bundle of CA certificates trusted instead of the public roots, for private-CA / self-signed receivers; certificates only, ≤ 64 KB, normalised by the API; public, stored plain). `webhook_delivery` gains `tls_verified` (boolean, null for plain http): false when an attempt was sent with verification off. `integration_audit_log_action_check` gains `tls_verification_disabled`, `tls_verification_enabled`, `tls_ca_changed` (fingerprints only). See `src/integrations`. |
 | `20261107100000_audit_log` | Adds `public.audit_log`, a field-level history with school or organisation scope, actor and school-name snapshots, record identity, action, before/after JSON, and timestamp. School deletion leaves its audit history with the name snapshot. Entries are paginated newest-first, indexed by school and time, and secret values are redacted by `src/audit-log`. |
 | `20261109100000_activity_extensions` | Adds `grading.activity_extension`: a per-student due date on one activity (`activity_id` and `student_id` cascading, `due_at` not null, `reason` up to 500 characters, `created_by` referencing `user_profile` set null, `created_at`, `updated_at`), unique on `(activity_id, student_id)`, indexed on `student_id` and `created_by`. See `src/grading`. |
+| `20261110100000_attendance_live_location` | Live teacher position and suspicious check-in readings. Adds `course.attendance_session.location_updated_at` (when the point was last set; backfilled to `opened_at` for sessions with a location). Adds to `course.attendance_record`: `latitude`, `longitude`, `accuracy_m` (double precision, null without a location check; CHECK latitude and longitude both set or both null, accuracy >= 0) and `location_flags` (`text[]`, not null, default `{}`: `exact_point`, `duplicate_coords`, `zero_accuracy`, `low_precision`, recorded for staff, never used to refuse). See `src/attendance`. |
 
 The models for these tables are in [`../schema/`](../schema/README.md).
+
+## Indexes the schema files cannot declare (expected `migrate diff` noise)
+
+Prisma 7 (7.10, with the `partialIndexes` preview feature enabled in `../schema/main.prisma`) can declare partial indexes (`where: raw("...")`), so every partial index in the migrations is also in the schema files - for example `idx_submission_is_away` on `grading.submission (activity_id, is_away) WHERE is_away = true` (`20261108110000_quiz_lockdown_presence`). It cannot declare **expression indexes** (an index over `lower(name)` rather than a column; there is no preview feature for them), so these two exist only in the SQL:
+
+| Index | Table and definition | Created by |
+| --- | --- | --- |
+| `assignment_group_course_name_key` | `UNIQUE` on `course.assignment_group (course_id, lower(name))` - one group name per course, ignoring case | `0_baseline` |
+| `school_webhook_header_name_key` | `UNIQUE` on `public.school_webhook_header (webhook_id, lower(name))` - one header name per webhook, ignoring case | `20261105100000_webhook_auth` |
+
+Both models carry a `///` comment saying so. Consequences:
+
+- `prisma migrate diff --from-config-datasource --to-schema prisma/schema` (or `--from-migrations ... --to-schema ...`) against a database built from these migrations reports `DROP INDEX` for both. That is expected noise: **delete those two lines** from any generated migration before committing it. Nothing else should appear on a database that is up to date; any other difference is real drift.
+- `prisma db push` would drop them too. Do not use it against a real database (the workflow is migrations only).
+- `prisma db pull` keeps them out of the models and adds Prisma's "expression index" warning comment; keep the existing `///` comments when re-pulling.
+- The uniqueness is enforced by the database only: the Prisma client does not know these indexes exist (no `findUnique` by them), and a duplicate surfaces as a unique violation (`P2002`, see `isUniqueViolation` in `src/common/db-values.ts`).
+
+If a future Prisma release supports expression indexes, declare them in the models and remove them from this list.

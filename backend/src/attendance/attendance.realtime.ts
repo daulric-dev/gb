@@ -16,7 +16,15 @@ export const portalUserChannel = (userProfileId: string) =>
 
 export type AttendanceStaffEvent =
   | { type: 'attendance.record'; data: AttendanceRosterEntry }
-  | { type: 'attendance.closed'; data: AttendanceSession };
+  | { type: 'attendance.closed'; data: AttendanceSession }
+  | {
+      type: 'attendance.location';
+      data: {
+        sessionId: string;
+        location: { latitude: number; longitude: number; radiusM: number };
+        locationUpdatedAt: string;
+      };
+    };
 
 export type PortalEvent =
   | { type: 'attendance.opened'; data: PortalOpenAttendance }

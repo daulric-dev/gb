@@ -207,7 +207,7 @@ describe('ModuleService.list', () => {
 
   test('students see no unpublished pages, draft activities or deleted files', async () => {
     const prisma = content();
-    const modules = await service(prisma).listForStudent(COURSE);
+    const modules = await service(prisma).listForStudent(COURSE, 'student-1');
     const ids = modules[0].items.map((i) => i.id);
     expect(ids).toEqual(['i1', 'i2', 'i4', 'i6']);
 
@@ -217,6 +217,44 @@ describe('ModuleService.list', () => {
     expect(
       prisma.module_item.findMany.mock.calls[0][0].where.is_published,
     ).toBe(true);
+  });
+
+  test("a student's activity due date is their extension when they have one", async () => {
+    const prisma = content();
+    prisma.activity_extension.findMany.mockResolvedValue([
+      { activity_id: 'a1', due_at: new Date('2026-11-08T12:00:00Z') },
+    ]);
+    const modules = await service(prisma).listForStudent(COURSE, 'student-1');
+
+    expect(prisma.activity_extension.findMany.mock.calls[0][0].where).toEqual({
+      student_id: 'student-1',
+      activity_id: { in: ['a1', 'a2'] },
+    });
+    const essay = modules[0].items.find((i) => i.id === 'i4')!;
+    expect(essay.activity).toEqual({
+      kind: 'assignment',
+      points: 20,
+      dueAt: '2026-11-08T12:00:00.000Z',
+      status: 'published',
+      hasExtension: true,
+    });
+  });
+
+  test("without an extension a student sees the activity's own due date", async () => {
+    const prisma = content();
+    prisma.activity_extension.findMany.mockResolvedValue([]);
+    const modules = await service(prisma).listForStudent(COURSE, 'student-1');
+    const essay = modules[0].items.find((i) => i.id === 'i4')!;
+    expect(essay.activity).toMatchObject({
+      dueAt: '2026-11-01T12:00:00.000Z',
+      hasExtension: false,
+    });
+  });
+
+  test('staff views never load extensions', async () => {
+    const prisma = content();
+    await service(prisma, 'ta').list(USER, COURSE);
+    expect(prisma.activity_extension.findMany).not.toHaveBeenCalled();
   });
 
   test('a discussion item shows its topic, and only a published one to students', async () => {
@@ -255,7 +293,7 @@ describe('ModuleService.list', () => {
       ['Draft prompt', 't2'],
     ]);
 
-    const student = await svc.listForStudent(COURSE);
+    const student = await svc.listForStudent(COURSE, 'student-1');
     expect(student[0].items.map((i) => i.id)).toEqual(['d1']);
   });
 

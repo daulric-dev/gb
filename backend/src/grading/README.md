@@ -114,6 +114,7 @@ Due dates are enforced on the student routes (`due-date.ts`): after the student'
 - `submitAssignment()`: a client-supplied `fileId` must be the student's own `ready` file.
 - `submitQuiz()`: stores answers (only answers to this quiz's questions, and only options belonging to each question), then calls the database function `grading.submit_quiz`.
   - The function locks the row, enforces `max_attempts`, scores the quiz, scales the score to the activity's points and marks it `graded`.
+  - Changing a quiz's points (`PATCH /api/activities/:id`) keeps automatic scores (`graded_by` null) in step in the same transaction: rescaled by new/old points, or - from 0 points, where every score was 0 - scored again from the stored answers by the same rules (`rescoreQuizFromAnswers` in `quiz-rescore.ts`, whose test checks it against the latest `submit_quiz`). A submission with a retake in progress is skipped (starting a retake clears its answers); teacher marks are never changed and must fit the new points.
   - A retake clears the previous answers first.
 
 **`SubmissionService`**, staff side: `listForTeacher()`, `grade()`, `gradeSubmission()`, `excuse()`, `readSubmissionFile()`.

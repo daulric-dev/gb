@@ -252,6 +252,17 @@ export interface StaffActivity {
   allowText: boolean;
   maxAttempts: number;
   rubricId: string | null;
+  /** Quiz runs in lockdown: the roster reports who is taking it / away. */
+  lockdownBrowser?: boolean;
+}
+
+/** A per-student due date (PUT /activities/:activityId/extensions/:studentId). */
+export interface StudentExtension {
+  dueAt: string;
+  reason: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** GET /activities/:id/submissions - one roster row. */
@@ -259,6 +270,10 @@ export interface TeacherSubmissionRow {
   studentId: string;
   name: string;
   enrollmentStatus: string;
+  /** The student's own due date: their extension, else the activity's. */
+  effectiveDueAt?: string | null;
+  /** A later due date for this student only. */
+  extension?: StudentExtension | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";
@@ -272,6 +287,14 @@ export interface TeacherSubmissionRow {
     submittedAt: string | null;
     gradedAt: string | null;
     attemptCount: number;
+    /** Lockdown quiz presence (absent on older servers). */
+    quizStartedAt?: string | null;
+    quizExpiresAt?: string | null;
+    isActiveAttempt?: boolean;
+    isAway?: boolean;
+    awayReason?: string | null;
+    tabSwitchCount?: number;
+    lastAwayAt?: string | null;
   } | null;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -85,6 +85,13 @@ import {
   useQrFrame,
 } from "../_components/attendance-qr";
 import { userMessage } from "@/lib/errors";
+import { useAuth } from "@/providers/AuthProvider";
+import {
+  LiveLocationBar,
+  LocationFlagBadge,
+  useLiveTeacherLocation,
+  type LocationUpdate,
+} from "../_components/live-location";
 
 const POLL_MS = 10_000;
 const STATUS_ITEMS = ATTENDANCE_STATUSES.map((s) => ({
@@ -127,6 +134,9 @@ export default function AttendanceSessionPage() {
   const deleting = useSignal(false);
   const search = useSignal("");
   const saving = useSignal<Record<string, boolean>>({});
+  /** null until chosen: on for whoever opened the session, off for others. */
+  const sharingChoice = useSignal<boolean | null>(null);
+  const { profile } = useAuth();
 
   const sessionPath = `/courses/${course.id}/attendance/sessions/${sessionId}`;
 
@@ -202,6 +212,47 @@ export default function AttendanceSessionPage() {
   const qr = useQrFrame(sessionPath, isOpen && !!sessionId, load);
   const showQr = isOpen && !qr.unavailable;
 
+  // Live teacher position: the session's point follows this device while
+  // it is open and has a location check. Only the member of staff who
+  // opened it shares by default, so two staff screens don't pull the point
+  // back and forth; anyone may switch it on.
+  const hasLocation = !!detail.value?.location;
+  const sharing =
+    sharingChoice.value ??
+    (!!profile.value?.id && profile.value.id === detail.value?.openedBy);
+  const pointLat = detail.value?.location?.latitude;
+  const pointLng = detail.value?.location?.longitude;
+  const pointAt = detail.value?.locationUpdatedAt ?? null;
+  const currentPoint = useMemo(
+    () =>
+      pointLat !== undefined && pointLng !== undefined && pointAt
+        ? { latitude: pointLat, longitude: pointLng, at: Date.parse(pointAt) }
+        : null,
+    [pointLat, pointLng, pointAt],
+  );
+  const applyLocation = useCallback(
+    (u: LocationUpdate) => {
+      const cur = detail.value;
+      if (!cur) return;
+      const prev = cur.locationUpdatedAt ? Date.parse(cur.locationUpdatedAt) : 0;
+      if (Date.parse(u.locationUpdatedAt) < prev) return;
+      detail.value = {
+        ...cur,
+        location: u.location,
+        locationUpdatedAt: u.locationUpdatedAt,
+      };
+    },
+    [detail],
+  );
+  const liveLocation = useLiveTeacherLocation({
+    sessionPath,
+    active: isOpen && hasLocation && !!sessionId,
+    sharing,
+    current: currentPoint,
+    onUpdated: applyLocation,
+    onClosed: load,
+  });
+
   // Live roster over SSE while open, polling every 10 s if the stream drops.
   useEffect(() => {
     if (!isOpen || !sessionId) return;
@@ -220,6 +271,10 @@ export default function AttendanceSessionPage() {
           if (entry?.studentId) applyEntry(entry);
         },
         "attendance.closed": () => void load(),
+        "attendance.location": (data) => {
+          const u = data as LocationUpdate;
+          if (u?.location && u.locationUpdatedAt) applyLocation(u);
+        },
       },
       onOpen: stopPolling,
       onError: startPolling,
@@ -228,7 +283,7 @@ export default function AttendanceSessionPage() {
       close();
       stopPolling();
     };
-  }, [isOpen, sessionId, sessionPath, load, applyEntry]);
+  }, [isOpen, sessionId, sessionPath, load, applyEntry, applyLocation]);
 
   // When the countdown runs out, re-read: the API finalises expired sessions
   // on read. Once per closesAt so a slow sweep cannot loop us.
@@ -457,6 +512,17 @@ export default function AttendanceSessionPage() {
                 / {total} checked in
               </p>
             </div>
+            {s.location && (
+              <div className="mt-4">
+                <LiveLocationBar
+                  state={liveLocation}
+                  sharing={sharing}
+                  onSharingChange={(v) => (sharingChoice.value = v)}
+                  updatedAt={s.locationUpdatedAt}
+                  radiusM={s.location.radiusM}
+                />
+              </div>
+            )}
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Button variant="outline" onClick={() => void present()}>
                 <Maximize2 className="mr-2 size-4" />
@@ -527,6 +593,7 @@ export default function AttendanceSessionPage() {
                   <TableRow key={r.studentId}>
                     <TableCell>
                       <span className="font-medium">{personName(r)}</span>
+                      <LocationFlagBadge entry={r} />
                       {!r.hasAccount && (
                         <span className="ml-1.5 text-xs text-muted-foreground">
                           (no account)

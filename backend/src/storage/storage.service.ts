@@ -15,7 +15,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Readable } from 'node:stream';
-import { allowedOrigins } from '@/config/origins';
+import { allowedOrigins, isLocalPreview } from '@/config/origins';
 
 export interface StoredObject {
   body: Readable;
@@ -275,7 +275,10 @@ export class StorageService implements OnModuleInit {
 /** Browsers PUT uploads and GET downloads straight from the web origins. */
 export function corsRule() {
   return {
-    AllowedOrigins: [...new Set([...allowedOrigins(), 'http://localhost:3000'])],
+    AllowedOrigins:
+      process.env.NODE_ENV === 'production' && !isLocalPreview()
+        ? allowedOrigins()
+        : [...new Set([...allowedOrigins(), 'http://localhost:3000'])],
     AllowedMethods: ['PUT', 'GET', 'HEAD'],
     AllowedHeaders: ['Content-Type'],
     ExposeHeaders: ['ETag'],

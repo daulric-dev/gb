@@ -30,9 +30,11 @@ import { Markdown } from "@/components/ui/Markdown";
 import { RubricView } from "@/features/course/RubricView";
 import { userMessage } from "@/lib/errors";
 import { useQuizLockdown } from "@/lib/use-quiz-lockdown";
+import { PINNING_PLATFORM, useAppPinning } from "@/lib/use-app-pinning";
 import {
   LockdownOverlay,
   LockdownStartCard,
+  UnpinCard,
 } from "@/features/work/QuizLockdown";
 
 export default function WorkDetailScreen() {
@@ -59,6 +61,13 @@ export default function WorkDetailScreen() {
   /** questionId -> typed answer, for short-answer questions */
   const [written, setWritten] = useState<Record<string, string>>({});
   const [text, setText] = useState("");
+  // Lockdown pinning: a failed pin offers the reported "without pinning"
+  // fallback; waived reports not_pinned for the attempt; unpinHint shows how
+  // to end a pin the app could not release itself.
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinFailed, setPinFailed] = useState(false);
+  const [pinningWaived, setPinningWaived] = useState(false);
+  const [unpinHint, setUnpinHint] = useState(false);
   const quizSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quizSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const quizSaveRevision = useRef(0);
@@ -123,16 +132,74 @@ export default function WorkDetailScreen() {
       )
     : null;
 
+  const lockdownQuiz = !!work?.lockdownBrowser && work.kind === "quiz";
+  const pinning = useAppPinning(lockdownQuiz);
   // Lockdown quizzes: monitored only while an attempt can still be answered.
+  const lockdownActive =
+    lockdownQuiz &&
+    work?.status === "published" &&
+    !!work.quizAttempt?.startedAt &&
+    secondsRemaining !== 0;
   const lockdown = useQuizLockdown({
     activityId,
-    enabled:
-      !!work?.lockdownBrowser &&
-      work.kind === "quiz" &&
-      work.status === "published" &&
-      !!work.quizAttempt?.startedAt &&
-      secondsRemaining !== 0,
+    enabled: lockdownActive,
+    pinned: pinning.pinned,
+    captured: pinning.captured,
+    pinningRequired: PINNING_PLATFORM !== null,
+    pinningWaived,
+    onScreenshot: () =>
+      toast.error("Screenshot reported to your teacher."),
   });
+
+  // Release the pin when the attempt ends (submit or expiry) and on leaving
+  // the screen. iOS cannot end a Guided Access session the student started,
+  // so they are told how.
+  const stopPinning = pinning.stopPinning;
+  const lockdownWasActive = useRef(false);
+  useEffect(() => {
+    if (lockdownActive) {
+      lockdownWasActive.current = true;
+      setUnpinHint(false);
+      return;
+    }
+    if (!lockdownWasActive.current) return;
+    lockdownWasActive.current = false;
+    setPinningWaived(false);
+    setPinFailed(false);
+    void stopPinning().then((unpinned) => setUnpinHint(!unpinned));
+  }, [lockdownActive, stopPinning]);
+  useEffect(
+    () => () => {
+      void stopPinning();
+    },
+    [stopPinning],
+  );
+
+  /** Pin first (Android prompt / iOS managed Guided Access), then start. */
+  async function startLockdownQuiz() {
+    if (!pinning.pinned) {
+      setPinBusy(true);
+      const pinned = await pinning.startPinning();
+      setPinBusy(false);
+      setPinFailed(!pinned);
+      if (!pinned) return;
+    }
+    setPinningWaived(false);
+    await startQuiz();
+  }
+
+  async function startWithoutPinning() {
+    setPinningWaived(true);
+    await startQuiz();
+  }
+
+  async function pinAgain() {
+    setPinBusy(true);
+    const pinned = await pinning.startPinning();
+    setPinBusy(false);
+    setPinFailed(!pinned);
+    if (pinned) setPinningWaived(false);
+  }
 
   function quizAnswers(
     currentAnswers = answers,
@@ -540,10 +607,22 @@ export default function WorkDetailScreen() {
                     : ` ${left} attempt${left === 1 ? "" : "s"} available.`
                 }`}
                 startLabel={submitted ? "Start another attempt" : "Start quiz"}
-                busy={working}
-                onStart={startQuiz}
+                busy={working || pinBusy}
+                platform={PINNING_PLATFORM}
+                pinned={pinning.pinned}
+                pinFailed={pinFailed}
+                onStart={() => {
+                  void startLockdownQuiz();
+                }}
+                onStartWithoutPinning={() => {
+                  void startWithoutPinning();
+                }}
               />
             )}
+            {work.lockdownBrowser &&
+              !lockdownActive &&
+              unpinHint &&
+              pinning.pinned && <UnpinCard platform={PINNING_PLATFORM} />}
             {canStartQuiz && !work.lockdownBrowser && (
               <Card>
                 <CardContent style={{ gap: 8 }}>
@@ -859,6 +938,14 @@ export default function WorkDetailScreen() {
       )}
       <LockdownOverlay
         visible={lockdown.showOverlay}
+        reason={lockdown.state.reason}
+        platform={PINNING_PLATFORM}
+        pinBusy={pinBusy}
+        pinFailed={pinFailed}
+        onPin={() => {
+          void pinAgain();
+        }}
+        onContinueWithoutPinning={() => setPinningWaived(true)}
         timeLeft={
           secondsRemaining !== null
             ? `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`

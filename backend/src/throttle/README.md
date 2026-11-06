@@ -4,7 +4,7 @@ How rate-limit buckets are keyed and where their counters live. The limits thems
 
 Two rules drive it:
 
-- **Client IP comes only from Fastify's `req.ip`.** `X-Forwarded-For` and `X-Real-IP` are never read directly, because clients can set them. Fastify resolves `req.ip` through `trustProxy`, which `src/createApp.ts` sets to trust `TRUST_PROXY_HOPS` hops (default 1, the bundled nginx).
+- **Client IP comes only from Fastify's `req.ip`.** `X-Forwarded-For` and `X-Real-IP` are never read directly, because clients can set them. Fastify resolves `req.ip` through `trustProxy`, which `src/createApp.ts` sets to trust `TRUST_PROXY_HOPS` hops (default 1, the bundled Caddy).
 - **A signed-in session gets its own bucket**, keyed on the `gb_session` cookie - but only if the cookie looks like a token this server issued (`isIssuedSessionToken()`, a tag check with no database lookup). The throttler runs before `AuthGuard`, so without that check a client could rotate made-up cookies to get a fresh bucket per request. The bucket key is a truncated SHA-256 fingerprint, never the token.
 
 ## What it provides

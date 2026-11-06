@@ -31,6 +31,20 @@ HTTP `QUERY` support for the search and filter lists (see [docs/content/backend/
 
 `http-query.test.ts` checks every converted route (QUERY metadata, `@Body()` DTO, empty-body defaults, 400s) and, through `fastify.inject`, that a QUERY body reaches a handler, that an empty one is every default, that the old GET is a 404 and that the CORS preflight allows QUERY.
 
+### `csrf.ts`
+
+Cross-site request forgery protection, installed by `createApp.ts`. The `gb_session` cookie is `SameSite=Lax` on a parent domain, so a page on any sibling subdomain is same-site and its form posts carry the cookie.
+
+| Export | What it does |
+|--------|--------------|
+| `registerCsrfProtection(fastify)` | An `onRequest` hook (after `@fastify/cookie`, before body parsing and guards). A non-GET/HEAD/OPTIONS/QUERY request whose session would come from the cookie (`sessionTokenVia(req) === 'cookie'`) must carry an `Origin` - or, when that is missing, a `Referer` whose origin - is in `allowedOrigins()` (or a LAN origin outside production, as for CORS). Otherwise `403 { statusCode, message: CSRF_REJECTION_MESSAGE, error: 'Forbidden' }`; a missing origin and `Origin: null` are refused too. Not checked: requests without a session cookie, the native app (`Authorization: Bearer` or `X-GradeBook-Client: native` - custom headers a cross-site page cannot send without a CORS preflight that only our origins pass), and `CSRF_EXEMPT_PATHS` (the SAML ACS, which an IdP posts to cross-site and which ignores the session cookie). There are no inbound webhooks to exempt. |
+| `csrfViolation(req)` | The pure rule above: the reason to refuse, or `null`. |
+| `requestSourceOrigin(req)` / `requestPath(url)` | `Origin`, else the `Referer`'s origin; a URL's path without query or trailing slash. |
+| `useBodyParsers(app)` | Replaces Nest's default body parsers before `init()`: JSON exactly as Nest registers it, and `application/x-www-form-urlencoded` through `formBodyParser`. |
+| `formBodyParser` | Parses form bodies only on `SAML_ACS_PATH` (`/api/auth/sso/saml/acs`); anywhere else answers 415, so a plain cross-site HTML form (no preflight) cannot reach a JSON route at all. |
+
+`csrf.test.ts` (through `fastify.inject` on a small Nest app) covers an allowed origin, a foreign origin, a missing or `null` origin with a cookie, the `Referer` fallback, the native app's bearer token (and its cookie jar replaying a cookie), requests without a cookie and safe methods, the SAML ACS exemption and form parsing there, 415 for form bodies elsewhere, and JSON parsing unchanged (including prototype-poisoning 400s).
+
 ### `exception.filter.ts`
 
 The app's global exception filter, registered in `createApp.ts` with `app.useGlobalFilters(new AppExceptionFilter(app.getHttpAdapter()))`. Clients must never see stack traces, Prisma or SQL text, or file paths.
@@ -55,7 +69,7 @@ Services must not build an `HttpException` from raw error text (`err.message`, `
 
 `user-school.ts` is imported by: `calendar/calendar.service.ts`, `chat/chat.controller.ts`, `chat/chat.service.ts`, `course/course-copy.service.ts`, `course/course.service.ts`, `dashboard/dashboard.service.ts`, `email-domain/email-domain.service.ts`, `file-manager/file-manager.service.ts`, `file-manager/folder.service.ts`, `permission/permission.service.ts`, `student/student.service.ts`, `term/term.service.ts`.
 
-`http-query.ts` and `exception.filter.ts` are imported by `createApp.ts`.
+`http-query.ts`, `csrf.ts` and `exception.filter.ts` are imported by `createApp.ts`.
 
 Nothing outside `backend/src` uses these files.
 
@@ -79,6 +93,7 @@ None.
 | `db-values.ts` | Response value converters and Prisma/Postgres error-code helpers. |
 | `user-school.ts` | `userSchoolId` lookup of the caller's current school. |
 | `exception.filter.ts` | `AppExceptionFilter`: generic 500s with an error id for unknown errors. |
+| `csrf.ts` | Origin check for cookie-authenticated writes; JSON and SAML-only form body parsers. |
 | `school-membership.ts` | `setSchoolMembership(tx, userId, schoolId, role)`: create or update a `school_management` row without Prisma `upsert` (the partial one-admin-per-school index makes its ON CONFLICT fail with 42P10). Used by organisation appoint-admin and join-request approval. |
 | `db-values.test.ts`, `user-school.test.ts`, `exception.filter.test.ts` | Unit tests (see Tests). |
 

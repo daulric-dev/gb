@@ -166,13 +166,13 @@ Configure it from `infrastructure/env.example`, not `backend/.env.example` - Com
 
 `/health` is the readiness endpoint, and the container healthcheck already uses it.
 
-> **`infrastructure/docker-compose.yml` does not run the application.** It brings up Redis only. It defines `x-app` and `x-app-env` anchors for API replicas, but no service uses them, and `infrastructure/nginx/default.conf` load-balances to `app1:3004`, `app2:3005` and `app3:3006` - hosts nothing defines. The Dockerfile, the nginx config and the Compose file are three-quarters of a stack, not a working one. CI builds the image (`infrastructure.yml`) but never pushes or deploys it. Treat the image as the deliverable and bring your own orchestration until those services are written.
+`infrastructure/docker-compose.yml` runs the full stack on one host: three API replicas (`app1`-`app3`, port 3001 inside each) behind Caddy (`infrastructure/caddy/Caddyfile`), Redis and the backup sidecar. Set `SITE_ADDRESS` to the API hostname and Caddy gets and renews a Let's Encrypt certificate itself; leave it at `:80` for plain HTTP behind a TLS proxy of your own (see `infrastructure/SERVICES.md`, "Caddy"). `.github/scripts/validate-caddy.sh` checks the Caddyfile. CI builds the image (`infrastructure.yml`) but never pushes or deploys it.
 
 If you run more than one replica, set `USE_REDIS=true` and point every replica at the same `REDIS_URL`. Without it the cache and chat pub/sub are in-process, and replicas will not see each other's invalidations or messages.
 
 ### Frontend → Vercel
 
-Deploys from Vercel's own Git integration; CI reports lint status to it via `vercel/repository-dispatch`. There is no deploy step in this repo.
+Deploys from Vercel's own Git integration, with the Vercel project's Root Directory set to `frontend/` (there is no `vercel.json`; Next.js is detected automatically). CI reports lint status to it via `vercel/repository-dispatch`. There is no deploy step in this repo.
 
 Set `NEXT_PUBLIC_API_URL` in the Vercel project's environment variables - it is compiled into the bundle, so **changing it needs a rebuild, not a restart**. Whatever origin Vercel serves must also appear in the backend's `FRONTEND_URL` list, or the browser is blocked by CORS.
 
@@ -234,7 +234,7 @@ bun run smoke            # end-to-end API check (API running)
 | `frontend/app/` | Next.js App Router. `dashboard/` is staff, `portal/` is students. |
 | `mobile/app/` | Expo Router. `(auth)`, `(tabs)` staff, `(portal)` students. |
 | `docs/content/` | This site. A new `.md` file appears in the sidebar automatically. |
-| `infrastructure/` | Dockerfile, nginx config, Compose. See the caveat above. |
+| `infrastructure/` | Dockerfile, Caddyfile, Compose. See the caveat above. |
 
 Deeper reference: the **[backend overview](./backend/overview.md)** for modules and routes, and `backend/prisma/schema` (with its README) for the database.
 

@@ -172,8 +172,17 @@ export function attemptsLeft(work: PortalWorkDetail): number | null {
   return Math.max(0, (work.maxAttempts || 1) - (work.attemptsUsed ?? 0));
 }
 
-/** Why a lockdown quiz reads as away; the web adds tab/window/fullscreen. */
-export type QuizAwayReason = "app_background";
+/**
+ * Why a lockdown quiz reads as away; the web adds tab/window/fullscreen.
+ * screenshot is a short away (one departure); not_pinned is an attempt the
+ * student started without pinning because pinning was unavailable.
+ */
+export type QuizAwayReason =
+  | "app_background"
+  | "screen_recording"
+  | "unpinned"
+  | "not_pinned"
+  | "screenshot";
 
 /**
  * Lockdown quiz heartbeat: POST /portal/me/activities/:id/quiz/presence.

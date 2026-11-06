@@ -263,6 +263,10 @@ describe("awayReasonLabel", () => {
     expect(awayReasonLabel("tab_hidden")).toBe("Switched tab or minimised");
     expect(awayReasonLabel("no_heartbeat")).toBe("Not responding");
     expect(awayReasonLabel("app_background")).toBe("Left the app");
+    expect(awayReasonLabel("screenshot")).toBe("Took a screenshot");
+    expect(awayReasonLabel("screen_recording")).toBe("Recording the screen");
+    expect(awayReasonLabel("unpinned")).toBe("Unpinned the app");
+    expect(awayReasonLabel("not_pinned")).toBe("App not pinned");
     expect(awayReasonLabel(null)).toBe("Away");
     expect(awayReasonLabel("something_new")).toBe("something new");
   });

@@ -1,10 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import {
-  createHash,
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
@@ -13,12 +8,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { authSecret } from './secret';
 import { DEVICE_HEADER, deviceLabel } from './device-label';
 import { SessionAlertService } from './session-alert.service';
-import {
-  KNOWN_DEVICE_WINDOW_MS,
-  rotationGraceMs,
-  sessionAlertsEnabled,
-  sessionMaxAgeMs,
-} from './session.config';
+import { KNOWN_DEVICE_WINDOW_MS, rotationGraceMs, sessionAlertsEnabled, sessionMaxAgeMs } from './session.config';
 
 export const SESSION_COOKIE = 'gb_session';
 /** The sliding expiry: a session unused for this long ends. */
@@ -132,6 +122,18 @@ export const SESSION_TOKEN_HEADER = 'x-session-token';
  */
 export function sessionTokenFrom(req: TokenRequest): string | undefined {
   return tokenSource(req)?.token;
+}
+
+/**
+ * How the request's session would be read: from the `gb_session` cookie the
+ * browser attaches on its own ('cookie'), from the app's bearer header
+ * ('bearer'), or not at all. Only a cookie session is ambient authority a
+ * forged cross-site request could borrow (see common/csrf.ts).
+ */
+export function sessionTokenVia(
+  req: TokenRequest,
+): 'cookie' | 'bearer' | undefined {
+  return tokenSource(req)?.via;
 }
 
 type TokenRequest = {

@@ -426,6 +426,43 @@ describe('ActivityService.update', () => {
     expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(20);
   });
 
+  test('a quiz going up from 0 points is rescored from its answers, not rescaled', async () => {
+    const { service, prisma } = build((p) => {
+      lockedAs('quiz', 0)(p);
+      p.submission.findFirst.mockResolvedValue(null);
+    });
+    await service.update('user-1', 'act-1', { points: 25 });
+
+    // Automatic scores are recomputed, so only teacher marks must fit.
+    expect(prisma.submission.findFirst.mock.calls[0][0].where).toEqual({
+      activity_id: 'act-1',
+      score: { gt: 25 },
+      graded_by: { not: null },
+    });
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    const call = prisma.$executeRaw.mock.calls[0];
+    const text = sql(call);
+    // No division by the old (zero) points.
+    expect(text).not.toContain('score = score *');
+    expect(text).toContain('t.earned / t.possible');
+    expect(text).toContain('lower(btrim(ans.text_answer)) = lower(btrim(o.label))');
+    expect(text).toContain('s2.graded_by is null');
+    expect(text).toContain('s2.quiz_started_at is null');
+    expect(call.slice(1)).toEqual([25, 'act-1']);
+    // In the same transaction as the points themselves.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(25);
+  });
+
+  test('a quiz at 0 points kept at 0 rescores nothing', async () => {
+    const { service, prisma } = build((p) => {
+      lockedAs('quiz', 0)(p);
+      p.submission.findFirst.mockResolvedValue(null);
+    });
+    await service.update('user-1', 'act-1', { points: 0 });
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
   test('a teacher mark above the new quiz points still refuses the change', async () => {
     const { service, prisma } = build((p) => {
       lockedAs('quiz', 20)(p);

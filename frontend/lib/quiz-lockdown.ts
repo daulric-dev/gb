@@ -280,6 +280,14 @@ export function awayReasonLabel(reason: string | null | undefined): string {
       return "Left fullscreen";
     case "app_background":
       return "Left the app";
+    case "screen_recording":
+      return "Recording the screen";
+    case "screenshot":
+      return "Took a screenshot";
+    case "unpinned":
+      return "Unpinned the app";
+    case "not_pinned":
+      return "App not pinned";
     case "no_heartbeat":
       return "Not responding";
     case null:

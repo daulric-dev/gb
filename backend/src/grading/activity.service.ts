@@ -26,6 +26,7 @@ import {
 } from './activity.mapper';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
 import { syncUntimedQuizAttempts } from './extension.service';
+import { rescoreQuizFromAnswers } from './quiz-rescore';
 
 type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
 
@@ -459,9 +460,12 @@ export class ActivityService {
    * points between the check here and the commit.
    *
    * submit_quiz stores a quiz's automatic score already scaled to the points,
-   * so those scores are rescaled by new/old to stay the same fraction. A mark
-   * a teacher entered or imported (graded_by set) is theirs and is left as
-   * it is, which is why it must still fit under the new points.
+   * so those scores are rescaled by new/old to stay the same fraction. From 0
+   * points there is no fraction to keep (every automatic score is 0), so
+   * they are scored again from their stored answers instead, by submit_quiz's
+   * rules (rescoreQuizFromAnswers). A mark a teacher entered or imported
+   * (graded_by set) is theirs and is left as it is, which is why it must
+   * still fit under the new points.
    */
   private async changePoints(
     tx: Prisma.TransactionClient,
@@ -478,14 +482,16 @@ export class ActivityService {
     if (!locked) throw new NotFoundException('Activity not found');
 
     const old = Number(locked.points);
-    const rescale = locked.kind === 'quiz' && old > 0 && old !== points;
+    // Automatic quiz scores follow the points: rescaled, or (from 0) rescored.
+    const autoScored = locked.kind === 'quiz' && old !== points;
+    const rescale = autoScored && old > 0;
 
     // A mark above the new total would read as over 100% everywhere.
     const over = await tx.submission.findFirst({
       where: {
         activity_id: activityId,
         score: { gt: points },
-        ...(rescale ? { graded_by: { not: null } } : {}),
+        ...(autoScored ? { graded_by: { not: null } } : {}),
       },
       select: { id: true },
     });
@@ -504,6 +510,8 @@ export class ActivityService {
           and graded_by is null
           and score is not null
       `;
+    } else if (autoScored) {
+      await rescoreQuizFromAnswers(tx, activityId, points);
     }
   }
 

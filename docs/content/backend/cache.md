@@ -85,7 +85,7 @@ All stores implement this interface:
 - Values are JSON-serialized on `set()` and JSON-parsed on `get()`.
 - TTL is set via `SET key value EX ttl` (seconds).
 - `deleteByPrefix()` uses `SCAN` with `MATCH` to find and delete matching keys without blocking.
-- `clear()` calls `FLUSHALL ASYNC` - use with caution in shared Redis instances.
+- Every Redis key is stored under the `cache:` namespace. `clear()` deletes only those keys (a `SCAN` + `DEL` loop), never `FLUSHALL`, so BullMQ queues and `throttle:*` counters in the same Redis are untouched.
 - Suitable for production and multi-instance deployments where cache must be shared.
 - Sends a `PING` every 60 seconds to keep the connection alive against providers (e.g. Upstash) that close idle TCP sockets.
 - Constructed with `autoReconnect: true`, `maxRetries: 20`, `idleTimeout: 0`.

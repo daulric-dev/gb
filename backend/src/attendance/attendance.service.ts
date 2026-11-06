@@ -30,6 +30,12 @@ import { PushService } from '@/notifications/push.service';
 import { AttendanceRealtime } from './attendance.realtime';
 import { withinGeofence } from './geo';
 import {
+  coordKey,
+  normaliseFlags,
+  readingFlags,
+  type LocationFlag,
+} from './location-flags';
+import {
   newQrSecret,
   QR_CLAIM_TTL_MS,
   QR_WINDOW_MS,
@@ -37,6 +43,7 @@ import {
   qrToken,
   qrWindow,
   readQrClaim,
+  claimFromDevice,
   verifyQrToken,
 } from './qr';
 import { primaryOrigin } from '@/config/origins';
@@ -66,6 +73,7 @@ const SESSION_SELECT = {
   latitude: true,
   longitude: true,
   radius_m: true,
+  location_updated_at: true,
 } as const;
 const RECORD_SELECT = {
   session_id: true,
@@ -74,6 +82,8 @@ const RECORD_SELECT = {
   method: true,
   checked_in_at: true,
   distance_m: true,
+  accuracy_m: true,
+  location_flags: true,
   note: true,
 } as const;
 const STUDENT_SELECT = {
@@ -85,6 +95,12 @@ const STUDENT_SELECT = {
 
 const DEFAULT_DURATION_MINUTES = 5;
 const DEFAULT_RADIUS_M = 100;
+/** A teacher's position fix worse than this is ignored (indoor guesswork). */
+export const MAX_SESSION_FIX_ACCURACY_M = 100;
+/** One session point update per session per this long, at most. */
+export const SESSION_LOCATION_MIN_INTERVAL_MS = 5_000;
+/** Shown when an Android phone reports a mock-location provider. */
+export const MOCK_LOCATION_MESSAGE = 'Turn off mock location to check in';
 const SWEEP_INTERVAL_MS = 30_000;
 /** Wrong codes allowed per student per session before check-in is refused. */
 export const MAX_WRONG_CODES = 5;
@@ -92,9 +108,15 @@ export const MAX_WRONG_CODES = 5;
 const WRONG_CODE_TTL_MARGIN_S = 10 * 60;
 /**
  * Scan claims one client address may get per session within a claim's
- * lifetime. Stops one student handing fresh claims to absent friends.
+ * lifetime. Only a loose backstop against scripted claim minting: a whole
+ * class can share one school NAT. What stops a claim being handed to an
+ * absent friend is the device binding (scan-device.ts), not this.
  */
-export const MAX_SCAN_CLAIMS_PER_IP = 3;
+export const MAX_SCAN_CLAIMS_PER_IP = 60;
+
+/** Shown when a claim is redeemed from a device other than the one that scanned. */
+export const CLAIM_OTHER_DEVICE_MESSAGE =
+  'This scan was started on another device. Scan the code on screen with this device';
 
 export interface SessionRow {
   id: string;
@@ -109,6 +131,7 @@ export interface SessionRow {
   latitude: number | null;
   longitude: number | null;
   radius_m: number | null;
+  location_updated_at: string | null;
 }
 
 interface RecordRow {
@@ -118,6 +141,8 @@ interface RecordRow {
   method: AttendanceMethod;
   checked_in_at: string | null;
   distance_m: number | null;
+  accuracy_m: number | null;
+  location_flags: string[];
   note: string | null;
 }
 
@@ -125,10 +150,14 @@ interface RecordRow {
  * Sessions and records are handled with ISO-string timestamps, as the API
  * has always sent them; the database rows carry Dates.
  */
-type SessionDbRow = Omit<SessionRow, 'opened_at' | 'closes_at' | 'closed_at'> & {
+type SessionDbRow = Omit<
+  SessionRow,
+  'opened_at' | 'closes_at' | 'closed_at' | 'location_updated_at'
+> & {
   opened_at: Date;
   closes_at: Date;
   closed_at: Date | null;
+  location_updated_at?: Date | null;
 };
 
 const toSessionRow = (r: SessionDbRow): SessionRow => ({
@@ -136,6 +165,7 @@ const toSessionRow = (r: SessionDbRow): SessionRow => ({
   opened_at: r.opened_at.toISOString(),
   closes_at: r.closes_at.toISOString(),
   closed_at: isoDate(r.closed_at),
+  location_updated_at: isoDate(r.location_updated_at ?? null),
 });
 
 type RecordDbRow = Omit<RecordRow, 'checked_in_at'> & {
@@ -144,6 +174,8 @@ type RecordDbRow = Omit<RecordRow, 'checked_in_at'> & {
 
 const toRecordRow = (r: RecordDbRow): RecordRow => ({
   ...r,
+  accuracy_m: r.accuracy_m ?? null,
+  location_flags: r.location_flags ?? [],
   checked_in_at: isoDate(r.checked_in_at),
 });
 
@@ -168,11 +200,34 @@ export interface CheckInInput {
   qrToken?: string;
   /** A claim the scan page got for a QR token before the student signed in. */
   qrClaim?: string;
+  /**
+   * The scan-device cookie on the check-in request (never from the body):
+   * a claim only redeems on the device it was minted for.
+   */
+  scanDeviceId?: string;
   location?: {
     latitude: number;
     longitude: number;
     accuracy?: number | null;
+    /** Android's mock-location marker; `true` is refused. */
+    mocked?: boolean | null;
   } | null;
+  /**
+   * The request came from the GradeBook app (`X-GradeBook-Client: native`),
+   * which always reports an accuracy; set by the controller, never the body.
+   */
+  nativeClient?: boolean;
+}
+
+export interface SessionLocationInput {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+}
+
+export interface SessionLocationUpdate {
+  location: { latitude: number; longitude: number; radiusM: number };
+  locationUpdatedAt: string;
 }
 
 const isOpen = (s: SessionRow, now = Date.now()) =>
@@ -356,6 +411,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
             radiusM: s.radius_m!,
           }
         : null,
+      locationUpdatedAt: hasLocation ? s.location_updated_at : null,
       counts: this.counts(s, records, activeIds),
     };
   }
@@ -374,6 +430,8 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       method: record?.method ?? null,
       checkedInAt: record?.checked_in_at ?? null,
       distanceM: record?.distance_m ?? null,
+      accuracyM: record?.accuracy_m ?? null,
+      locationFlags: normaliseFlags(record?.location_flags ?? []),
       note: record?.note ?? null,
     };
   }
@@ -660,6 +718,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         radius_m: input.location
           ? (input.location.radiusM ?? DEFAULT_RADIUS_M)
           : null,
+        location_updated_at: input.location ? openedAt : null,
         },
         select: SESSION_SELECT,
       });
@@ -752,6 +811,91 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       ? await this.finalize(session, new Date().toISOString())
       : await this.current(session);
     return this.detailOf(closed);
+  }
+
+  /**
+   * Move an open session's point to where the teacher's device is now, so
+   * check-ins follow a teacher who walks the class somewhere else. Same
+   * access as opening and closing. Returns null when the reading was too
+   * coarse to use (worse than MAX_SESSION_FIX_ACCURACY_M): the point stays.
+   *
+   * At most one update per session every SESSION_LOCATION_MIN_INTERVAL_MS,
+   * enforced by the update itself (it only matches a point older than that),
+   * so two of the teacher's devices cannot race past it. Not audit-logged,
+   * like opening and closing; it is far too frequent to log.
+   */
+  async updateLocation(
+    userId: string,
+    courseId: string,
+    sessionId: string,
+    input: SessionLocationInput,
+  ): Promise<SessionLocationUpdate | null> {
+    await this.access.require(userId, courseId, STAFF_ROLES);
+    const session = await this.loadSession(courseId, sessionId);
+    const now = Date.now();
+    if (!isOpen(session, now)) {
+      throw new ConflictException('Attendance has closed');
+    }
+    if (session.latitude === null || session.radius_m === null) {
+      throw new ConflictException('This session has no location check');
+    }
+    const accuracy = input.accuracy ?? null;
+    if (accuracy !== null && accuracy > MAX_SESSION_FIX_ACCURACY_M) return null;
+
+    const stamp = new Date(now);
+    let updated: SessionDbRow[];
+    try {
+      updated = await this.prisma.attendance_session.updateManyAndReturn({
+        where: {
+          id: session.id,
+          course_id: courseId,
+          closed_at: null,
+          closes_at: { gt: stamp },
+          location_updated_at: {
+            lte: new Date(now - SESSION_LOCATION_MIN_INTERVAL_MS),
+          },
+        },
+        data: {
+          latitude: input.latitude,
+          longitude: input.longitude,
+          location_updated_at: stamp,
+        },
+        select: SESSION_SELECT,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to update attendance location: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('Failed to update the location');
+    }
+
+    if (updated.length === 0) {
+      const fresh = await this.findSession(session.id);
+      if (!fresh || !isOpen(fresh)) {
+        throw new ConflictException('Attendance has closed');
+      }
+      throw new HttpException(
+        'Location was updated moments ago. Try again in a few seconds',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const row = toSessionRow(updated[0]);
+    const result: SessionLocationUpdate = {
+      location: {
+        latitude: row.latitude!,
+        longitude: row.longitude!,
+        radiusM: row.radius_m!,
+      },
+      locationUpdatedAt: row.location_updated_at ?? stamp.toISOString(),
+    };
+    void this.realtime
+      .publishStaff(session.id, {
+        type: 'attendance.location',
+        data: { sessionId: session.id, ...result },
+      })
+      .catch(() => {});
+    return result;
   }
 
   async remove(userId: string, courseId: string, sessionId: string) {
@@ -1086,7 +1230,12 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
    * scan page calls it before it knows who the student is, and all it proves
    * is that someone saw the screen in the last few seconds.
    */
-  async scanClaim(sessionId: string, token: string, clientIp?: string) {
+  async scanClaim(
+    sessionId: string,
+    token: string,
+    deviceId: string,
+    clientIp?: string,
+  ) {
     const data = await this.findSession(sessionId);
     const now = Date.now();
     if (!data || !isOpen(data, now)) {
@@ -1102,7 +1251,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
     await this.countScanClaim(sessionId, clientIp);
 
-    const { claim, expiresAt } = qrClaim(secret, sessionId, now);
+    const { claim, expiresAt } = qrClaim(secret, sessionId, now, deviceId);
     return { claim, expiresAt: new Date(expiresAt).toISOString() };
   }
 
@@ -1144,7 +1293,15 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     });
     if (existing) throw new ConflictException('You have already checked in');
 
-    let distanceM: number | null = null;
+    // Always the session's current point: staff may have moved it since
+    // the session opened (updateLocation).
+    let reading: {
+      latitude: number;
+      longitude: number;
+      accuracy_m: number | null;
+      distance_m: number;
+      location_flags: LocationFlag[];
+    } | null = null;
     if (
       session.latitude !== null &&
       session.longitude !== null &&
@@ -1153,17 +1310,33 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       if (!input.location) {
         throw new BadRequestException('Share your location to check in');
       }
+      // Before the code, so turning mock location off costs no code attempt.
+      if (input.location.mocked === true) {
+        throw new ForbiddenException(MOCK_LOCATION_MESSAGE);
+      }
       const fence = withinGeofence(
         { latitude: session.latitude, longitude: session.longitude },
         session.radius_m,
         input.location,
       );
-      distanceM = Math.round(fence.distanceM);
       if (!fence.ok) {
         throw new ForbiddenException(
           'You are too far from the classroom to check in',
         );
       }
+      reading = {
+        latitude: input.location.latitude,
+        longitude: input.location.longitude,
+        accuracy_m: input.location.accuracy ?? null,
+        distance_m: Math.round(fence.distanceM),
+        location_flags: readingFlags({
+          latitude: input.location.latitude,
+          longitude: input.location.longitude,
+          accuracy: input.location.accuracy,
+          distanceM: fence.distanceM,
+          nativeClient: input.nativeClient,
+        }),
+      };
     }
 
     // A valid QR frame proves the student is looking at the screen in the
@@ -1181,6 +1354,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
               session.id,
               studentId,
               input.qrClaim!,
+              input.scanDeviceId,
               now,
             ));
       if (!valid) {
@@ -1212,7 +1386,11 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
             status,
             method: viaQr ? 'qr' : 'self',
             checked_in_at: stamp,
-            distance_m: distanceM,
+            distance_m: reading?.distance_m ?? null,
+            latitude: reading?.latitude ?? null,
+            longitude: reading?.longitude ?? null,
+            accuracy_m: reading?.accuracy_m ?? null,
+            location_flags: reading?.location_flags ?? [],
             created_at: stamp,
             updated_at: stamp,
           },
@@ -1236,6 +1414,10 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Failed to check in');
     }
 
+    if (reading) {
+      record = await this.flagDuplicates(session.id, studentId, record, reading);
+    }
+
     const [student] = await this.students([studentId]);
     void this.realtime.publishStaff(session.id, {
       type: 'attendance.record',
@@ -1244,6 +1426,88 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     this.emitRecorded(session, studentId, record, null);
 
     return this.toPortalOpen(session, course.name, status);
+  }
+
+  /**
+   * Mark this check-in and every earlier one in the session that reported
+   * the very same coordinates (to 6 decimals) as `duplicate_coords`. Runs
+   * after the insert, so of two simultaneous check-ins at least the later
+   * query sees the other. Best effort: a failure here never undoes the
+   * check-in, it only leaves the flag off.
+   */
+  private async flagDuplicates(
+    sessionId: string,
+    studentId: string,
+    record: RecordRow,
+    reading: { latitude: number; longitude: number },
+  ): Promise<RecordRow> {
+    const key = coordKey(reading.latitude, reading.longitude);
+    try {
+      const others = (
+        await this.prisma.course_attendance_record.findMany({
+          where: { session_id: sessionId, latitude: { not: null } },
+          select: { ...RECORD_SELECT, latitude: true, longitude: true },
+        })
+      ).filter(
+        (r) =>
+          r.student_id !== studentId &&
+          r.latitude !== null &&
+          r.longitude !== null &&
+          coordKey(r.latitude, r.longitude) === key,
+      );
+      if (others.length === 0) return record;
+
+      const withFlag = (flags: string[]) =>
+        normaliseFlags([...flags, 'duplicate_coords']);
+      const earlier = others.filter(
+        (r) => !(r.location_flags ?? []).includes('duplicate_coords'),
+      );
+      const changed = await Promise.all(
+        earlier.map((r) =>
+          this.prisma.course_attendance_record.update({
+            where: {
+              session_id_student_id: {
+                session_id: sessionId,
+                student_id: r.student_id,
+              },
+            },
+            data: { location_flags: withFlag(r.location_flags ?? []) },
+            select: RECORD_SELECT,
+          }),
+        ),
+      );
+      const mine = toRecordRow(
+        await this.prisma.course_attendance_record.update({
+          where: {
+            session_id_student_id: { session_id: sessionId, student_id: studentId },
+          },
+          data: { location_flags: withFlag(record.location_flags) },
+          select: RECORD_SELECT,
+        }),
+      );
+
+      // Staff screens update the earlier rows too.
+      if (changed.length > 0) {
+        const rows = changed.map(toRecordRow);
+        const people = new Map(
+          (await this.students(rows.map((r) => r.student_id))).map((p) => [p.id, p]),
+        );
+        for (const r of rows) {
+          void this.realtime
+            .publishStaff(sessionId, {
+              type: 'attendance.record',
+              data: this.toEntry(people.get(r.student_id), r.student_id, r),
+            })
+            .catch(() => {});
+        }
+      }
+      return mine;
+    } catch (err) {
+      this.logger.error(
+        `Failed to flag duplicate check-in locations: ${(err as Error).message}`,
+      );
+      return record;
+    }
   }
 
   /**
@@ -1271,19 +1535,26 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Redeem a scan claim. Its nonce is recorded atomically on first use and
-   * bound to the student who used it: the same student may retry (say after
-   * a location error), anyone else holding the same claim is refused.
+   * Redeem a scan claim. It must come from the device that got it (its
+   * scan-device cookie), checked before anything is recorded so a forwarded
+   * claim cannot use up or bind the real one. Its nonce is then recorded
+   * atomically on first use and bound to the student who used it: the same
+   * student may retry (say after a location error), anyone else holding the
+   * same claim is refused.
    */
   private async redeemClaim(
     secret: string,
     sessionId: string,
     studentId: string,
     claim: string,
+    deviceId: string | undefined,
     now: number,
   ): Promise<boolean> {
     const read = readQrClaim(secret, sessionId, claim, now);
     if (!read) return false;
+    if (!claimFromDevice(secret, read.device, deviceId)) {
+      throw new ForbiddenException(CLAIM_OTHER_DEVICE_MESSAGE);
+    }
     const key = `attendance:qr-claim:${sessionId}:${read.nonce}`;
     // Outlive the claim itself so an expired claim can never be re-won.
     const ttlS = Math.ceil((read.expiresAt - now) / 1000) + 60;

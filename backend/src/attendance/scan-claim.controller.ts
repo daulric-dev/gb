@@ -1,4 +1,5 @@
-import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import { FeatureService } from '@/features/feature.service';
@@ -6,6 +7,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { getClientIp, type ThrottlerReq } from '@/throttle/tracker';
 import { AttendanceService } from './attendance.service';
 import { ScanClaimDto } from './dto/attendance.dto';
+import {
+  newScanDeviceId,
+  scanDeviceIdFrom,
+  setScanDeviceCookie,
+} from './scan-device';
 
 /**
  * The one unauthenticated attendance route. The QR on the teacher's screen
@@ -27,7 +33,11 @@ export class ScanClaimController {
   @Throttle({ 'claim-code': { limit: 300, ttl: 60 * 1000 } })
   @Post('scan-claim')
   @HttpCode(200)
-  async scanClaim(@Body() dto: ScanClaimDto, @Req() req: ThrottlerReq) {
+  async scanClaim(
+    @Body() dto: ScanClaimDto,
+    @Req() req: ThrottlerReq & { cookies?: Record<string, string | undefined> },
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
     // Public: the school comes from the session's course. An unknown session
     // falls through to the service's own error.
     const session = await this.prisma.attendance_session
@@ -39,10 +49,16 @@ export class ScanClaimController {
     if (session?.course) {
       await this.features.assertEnabled(session.course.school_id, 'attendance');
     }
-    // The service also caps claims per session and client address.
+    // The claim is bound to this browser's scan-device cookie (reused when
+    // it already has one), so it only redeems on this device. The cookie is
+    // set even when the claim is refused: harmless, and the retry reuses it.
+    const deviceId = scanDeviceIdFrom(req) ?? newScanDeviceId();
+    setScanDeviceCookie(reply, deviceId);
+    // The service also caps claims per session and client address, loosely.
     return this.attendance.scanClaim(
       dto.sessionId,
       dto.qrToken,
+      deviceId,
       getClientIp(req),
     );
   }

@@ -12,11 +12,13 @@ Shared configuration helpers. At the moment the folder holds one file, `origins.
 | `primaryOrigin()` | The first configured origin, used where a single value is required (web links, cookie domain, redirect targets). |
 | `corsOriginFor(requestOrigin)` | The value for `Access-Control-Allow-Origin` on one request: the request's own origin if it is allowed, otherwise the primary origin. |
 | `isOriginAllowed(origin)` | True when there is no `Origin` header (same-origin, curl, native app), when the origin is configured, or, outside production, when it is a localhost / private-network (`10.x`, `192.168.x`, `172.16-31.x`) address. |
+| `isDevelopmentOrigin(origin)` | Outside production, whether an origin is localhost or a private-network address. Used by `isOriginAllowed`, `corsOriginFor` and the CSRF check in `src/common/csrf.ts`. |
 | `authCookieDomain()` | `undefined` outside production. In production: `AUTH_COOKIE_DOMAIN` if set (`none` means a host-only cookie), otherwise a parent domain derived from the last two labels of the primary origin (for example `.example.com`). |
 
 ## Used by
 
 - `src/createApp.ts` - `enableCors` origin callback uses `isOriginAllowed`.
+- `src/common/csrf.ts` - the CSRF origin check uses `allowedOrigins()` and `isDevelopmentOrigin()`.
 - `src/attendance/sse.ts` and `src/chat/chat.controller.ts` - hand-written CORS headers on server-sent-event streams use `corsOriginFor`.
 - `src/attendance/attendance.service.ts` - builds the QR scan link `${primaryOrigin()}/scan?...`.
 - `src/storage/storage.service.ts` - bucket CORS rules use `allowedOrigins()` (plus `http://localhost:3000`).
@@ -38,12 +40,15 @@ None.
 | `FRONTEND_URL` | `http://localhost:3000` | Comma-separated allowed origins; the first is canonical. |
 | `AUTH_COOKIE_DOMAIN` | derived from the primary origin | Production cookie `Domain`; `none` for host-only. Needed when the API is on a different registrable domain from the app, or when the domain has a multi-part suffix such as `.co.uk`. |
 | `NODE_ENV` | (unset) | Anything other than `production` enables LAN origins and disables the cookie domain. |
+| `API_URL` | (unset) | The API's public origin. Required in production (checked by `startup.ts`). |
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `origins.ts` | Allowed origins, CORS header value, origin check and auth cookie domain. |
+| `startup.ts` | `validateStartupConfig()`, run by `main.ts` before the app is built. Requires a PostgreSQL `DATABASE_URL`; in production an `AUTH_SECRET` of 32+ characters and an `API_URL` that is an absolute `https://` URL (`http://` only for `localhost`, `127.0.0.1`, `[::1]`); a Redis `REDIS_URL` when `USE_REDIS=true`; `WEBHOOK_ALLOW_PRIVATE` of `true`/`false`. `API_URL` is required because SSO redirect / SAML ACS URLs and avatar links are built from it, and production never falls back to the client-controlled `Host` header. |
+| `startup.test.ts`, `host-header.test.ts` | Startup validation; and that `apiBase()` / `publicImageUrl()` use `API_URL` and ignore the `Host` header in production while still falling back to it in development. |
 | `origins.test.ts` | Unit tests (see Tests). |
 
 ## Tests

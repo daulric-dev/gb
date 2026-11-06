@@ -4,13 +4,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
 import { objectKey } from '@/storage/keys';
-import {
-  compileObjectKeys,
-  compileStep,
-  isUuid,
-  validatePlan,
-  type ReplayStep,
-} from './erasure-plan';
+import { compileObjectKeys, compileStep, isUuid, validatePlan, type ReplayStep } from './erasure-plan';
 import { dayPath, toEntry, verifyEntry, type ErasureEntry } from './erasure-log.service';
 import { erasureLogPrefix } from './erasure.config';
 
@@ -58,7 +52,7 @@ export function mergeEntries(...lists: ErasureEntry[][]): ErasureEntry[] {
 }
 
 /** Basic shape check for an entry read from outside the database. */
-function isEntry(v: unknown): v is ErasureEntry {
+export function isEntry(v: unknown): v is ErasureEntry {
   const e = v as ErasureEntry;
   return (
     !!e &&

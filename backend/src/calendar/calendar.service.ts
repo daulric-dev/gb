@@ -3,6 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate } from '@/common/db-values';
 import { userSchoolId } from '@/common/user-school';
 import { roundScore } from '@/grading/round';
+import { effectiveDueAt } from '@/grading/due-date';
 
 /** One dated piece of work on a calendar. */
 export interface CalendarItem {
@@ -15,11 +16,17 @@ export interface CalendarItem {
   /** Staff calendars include drafts; a student's only published and closed. */
   status: 'draft' | 'published' | 'closed';
   points: number;
+  /**
+   * When it is due. On a student's calendar this is their effective due
+   * date: their extension's when they have one, else the activity's.
+   */
   dueAt: string;
 }
 
 /** A student's own state on the item; null until they start it. */
 export interface StudentCalendarItem extends CalendarItem {
+  /** `dueAt` is the student's extension, not the activity's own due date. */
+  hasExtension: boolean;
   submission: {
     status: 'draft' | 'submitted' | 'graded';
     /** Only once graded, as on the to-do list. */
@@ -51,7 +58,9 @@ const ITEM_SELECT = {
  * Staff see every activity with a due date in the courses they teach or
  * assist (drafts too, so they can plan); students see published and closed
  * work in the published courses they are enrolled in, with their own
- * submission state. Undated work has no place on a calendar and is left out.
+ * submission state, each piece of work placed at the student's effective due
+ * date (their extension when they have one; see grading/due-date.ts).
+ * Undated work has no place on a calendar and is left out.
  */
 @Injectable()
 export class CalendarService {
@@ -131,7 +140,7 @@ export class CalendarService {
       select: { id: true, name: true, code: true },
     });
 
-    const items = await this.items(courses, window, ['published', 'closed']);
+    const items = await this.studentItems(courses, window, studentId);
     if (items.length === 0) return [];
 
     const submissions = await this.prisma.submission.findMany({
@@ -166,6 +175,63 @@ export class CalendarService {
           : null,
       };
     });
+  }
+
+  /**
+   * Published and closed work whose effective due date for this student is
+   * in the window: the activity's due date unless they have an extension, so
+   * an extension can bring work into the window (even undated work) or move
+   * it out.
+   */
+  private async studentItems(
+    courses: { id: string; name: string; code: string | null }[],
+    window: { from: Date; to: Date },
+    studentId: string,
+  ): Promise<Omit<StudentCalendarItem, 'submission'>[]> {
+    if (courses.length === 0) return [];
+    const byId = new Map(courses.map((c) => [c.id, c]));
+    const inWindow = { gte: window.from, lt: window.to };
+
+    const rows = await this.prisma.activity.findMany({
+      where: {
+        course_id: { in: [...byId.keys()] },
+        status: { in: ['published', 'closed'] },
+        OR: [
+          { due_at: inWindow },
+          { activity_extension: { some: { student_id: studentId, due_at: inWindow } } },
+        ],
+      },
+      select: {
+        ...ITEM_SELECT,
+        activity_extension: {
+          where: { student_id: studentId },
+          select: { due_at: true },
+        },
+      },
+    });
+
+    const items: Omit<StudentCalendarItem, 'submission'>[] = [];
+    for (const a of rows) {
+      const extension = a.activity_extension[0]?.due_at ?? null;
+      const due = effectiveDueAt(a.due_at, extension);
+      if (!due || due < window.from || due >= window.to) continue;
+      const course = byId.get(a.course_id)!;
+      items.push({
+        activityId: a.id,
+        courseId: a.course_id,
+        courseName: course.name,
+        courseCode: course.code,
+        title: a.title,
+        kind: a.kind,
+        status: a.status,
+        points: Number(a.points),
+        dueAt: due.toISOString(),
+        hasExtension: extension !== null,
+      });
+    }
+    return items.sort(
+      (x, y) => x.dueAt.localeCompare(y.dueAt) || x.title.localeCompare(y.title),
+    );
   }
 
   private async items(
