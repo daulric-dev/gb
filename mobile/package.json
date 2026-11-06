@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
-    "@react-native-community/datetimepicker": "9.2.1",
+    "@react-native-community/datetimepicker": "9.2.2",
     "expo": "~58.0.23",
     "expo-application": "~58.1.2",
     "expo-blob": "^58.0.3",
