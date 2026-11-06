@@ -94,8 +94,8 @@ describe('CalendarService.forStudent', () => {
     prisma.course_student.findMany.mockResolvedValue([{ course_id: 'course-1' }]);
     prisma.course.findMany.mockResolvedValue([COURSE]);
     prisma.activity.findMany.mockResolvedValue([
-      activity(),
-      activity({ id: 'act-2', title: 'Quiz', kind: 'quiz' }),
+      activity({ activity_extension: [] }),
+      activity({ id: 'act-2', title: 'Quiz', kind: 'quiz', activity_extension: [] }),
     ]);
     prisma.submission.findMany.mockResolvedValue([
       {
@@ -134,6 +134,88 @@ describe('CalendarService.forStudent', () => {
       submittedAt: '2026-10-29T09:00:00.000Z',
     });
     expect(items[1].submission).toBeNull();
+    expect(items[0].hasExtension).toBe(false);
+    expect(items[0].dueAt).toBe('2026-10-30T15:00:00.000Z');
+  });
+
+  /** A student calendar over October with these activity rows. */
+  async function studentCalendar(rows: Record<string, any>[]) {
+    const prisma = createMockPrisma();
+    prisma.course_student.findMany.mockResolvedValue([{ course_id: 'course-1' }]);
+    prisma.course.findMany.mockResolvedValue([COURSE]);
+    prisma.activity.findMany.mockResolvedValue(rows.map((r) => activity(r)));
+    prisma.submission.findMany.mockResolvedValue([]);
+    const items = await new CalendarService(prisma as any).forStudent(
+      'student-1',
+      '2026-10-01',
+      '2026-11-01',
+    );
+    return { prisma, items };
+  }
+
+  test('reads the window by the activity date or this student’s extension', async () => {
+    const { prisma } = await studentCalendar([]);
+    const where = prisma.activity.findMany.mock.calls[0][0].where;
+    const window = { gte: new Date('2026-10-01'), lt: new Date('2026-11-01') };
+    expect(where.due_at).toBeUndefined();
+    expect(where.OR).toEqual([
+      { due_at: window },
+      { activity_extension: { some: { student_id: 'student-1', due_at: window } } },
+    ]);
+    // Only this student's extension is loaded.
+    expect(
+      prisma.activity.findMany.mock.calls[0][0].select.activity_extension,
+    ).toEqual({ where: { student_id: 'student-1' }, select: { due_at: true } });
+  });
+
+  test('an extension moves the event to the student’s own due date', async () => {
+    const { items } = await studentCalendar([
+      {
+        id: 'act-1',
+        title: 'Lab report',
+        due_at: new Date('2026-10-30T15:00:00Z'),
+        activity_extension: [{ due_at: new Date('2026-10-05T09:00:00Z') }],
+      },
+      {
+        id: 'act-2',
+        title: 'Essay',
+        due_at: new Date('2026-10-10T09:00:00Z'),
+        activity_extension: [],
+      },
+    ]);
+    // Placed and ordered by the effective date.
+    expect(items.map((i) => [i.activityId, i.dueAt, i.hasExtension])).toEqual([
+      ['act-1', '2026-10-05T09:00:00.000Z', true],
+      ['act-2', '2026-10-10T09:00:00.000Z', false],
+    ]);
+  });
+
+  test('an extension can move work out of the window, or bring undated work in', async () => {
+    const { items } = await studentCalendar([
+      {
+        id: 'moved-out',
+        due_at: new Date('2026-10-20T09:00:00Z'),
+        activity_extension: [{ due_at: new Date('2026-11-20T09:00:00Z') }],
+      },
+      {
+        id: 'undated',
+        due_at: null,
+        activity_extension: [{ due_at: new Date('2026-10-12T09:00:00Z') }],
+      },
+    ]);
+    expect(items.map((i) => [i.activityId, i.dueAt])).toEqual([
+      ['undated', '2026-10-12T09:00:00.000Z'],
+    ]);
+  });
+
+  test('the student .ics feed uses the effective due date', async () => {
+    const { items } = await studentCalendar([
+      {
+        due_at: new Date('2026-10-30T15:00:00Z'),
+        activity_extension: [{ due_at: new Date('2026-10-31T15:00:00Z') }],
+      },
+    ]);
+    expect(toIcs(items, 'Mine')).toContain('DTSTART:20261031T150000Z');
   });
 
   test('a bad range is a 400 before any query', async () => {

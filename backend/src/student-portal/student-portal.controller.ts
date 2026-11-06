@@ -47,7 +47,10 @@ export class StudentPortalController {
     return this.portal.listCourses(req.student!);
   }
 
-  /** Join codes are short; throttle guessing the same way as claim codes. */
+  /**
+   * Join codes are short; throttle guessing the same way as claim codes. This
+   * limit is per session, so the service also caps wrong codes per student.
+   */
   @Throttle({ 'claim-code': { limit: 10, ttl: 15 * 60 * 1000 } })
   @Post('courses/join')
   async join(@Req() req: StudentRequest, @Body() dto: JoinCourseDto) {

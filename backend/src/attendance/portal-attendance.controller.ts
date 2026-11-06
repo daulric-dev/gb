@@ -16,6 +16,7 @@ import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
+import { scanDeviceIdFrom } from './scan-device';
 import {
   StudentGuard,
   type StudentRequest,
@@ -58,7 +59,16 @@ export class PortalAttendanceController {
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Body() dto: CheckInDto,
   ) {
-    return this.attendance.checkIn(req.student!.studentId, sessionId, dto);
+    // The scan-device cookie, for a claim minted while signed out; it is
+    // read from the cookie only, never the body.
+    return this.attendance.checkIn(req.student!.studentId, sessionId, {
+      ...dto,
+      scanDeviceId: scanDeviceIdFrom(req as { cookies?: Record<string, string | undefined> }),
+      // The app always reports GPS accuracy; a missing one from it is odd.
+      nativeClient:
+        (req as { headers?: Record<string, unknown> }).headers?.['x-gradebook-client'] ===
+        'native',
+    });
   }
 
   @Get('courses/:courseId/attendance')

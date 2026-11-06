@@ -25,6 +25,8 @@ import {
   toTimestamp,
 } from './activity.mapper';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
+import { syncUntimedQuizAttempts } from './extension.service';
+import { rescoreQuizFromAnswers } from './quiz-rescore';
 
 type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
 
@@ -184,6 +186,8 @@ export class ActivityService {
       allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number;
+      timeLimitMinutes?: number | null;
+      lockdownBrowser?: boolean;
     },
   ) {
     const { course } = await this.access.require(
@@ -200,6 +204,22 @@ export class ActivityService {
     if (input.kind === 'assignment' && !input.allowFile && !input.allowText) {
       throw new BadRequestException(
         'An assignment must accept a file, text, or both',
+      );
+    }
+    if (input.kind !== 'quiz' && input.timeLimitMinutes != null) {
+      throw new BadRequestException('Only quizzes can have a time limit');
+    }
+    if (input.kind !== 'quiz' && input.lockdownBrowser) {
+      throw new BadRequestException('Only quizzes can require lockdown browser');
+    }
+    if (
+      input.timeLimitMinutes != null &&
+      (!Number.isInteger(input.timeLimitMinutes) ||
+        input.timeLimitMinutes < 1 ||
+        input.timeLimitMinutes > 1440)
+    ) {
+      throw new BadRequestException(
+        'Time limit must be between 1 and 1440 minutes',
       );
     }
     if (input.allowMultipleFiles && !input.allowFile) {
@@ -224,6 +244,12 @@ export class ActivityService {
             assignment_group_id: input.assignmentGroupId ?? null,
             max_attempts:
               input.maxAttempts === 0 ? null : (input.maxAttempts ?? 1),
+            time_limit_minutes:
+              input.kind === 'quiz'
+                ? (input.timeLimitMinutes ?? null)
+                : null,
+            lockdown_browser:
+              input.kind === 'quiz' ? (input.lockdownBrowser ?? false) : false,
             kind: input.kind,
             title,
             instructions: input.instructions ?? null,
@@ -276,6 +302,8 @@ export class ActivityService {
       allowMultipleFiles?: boolean;
       allowText?: boolean;
       maxAttempts?: number | null;
+      timeLimitMinutes?: number | null;
+      lockdownBrowser?: boolean;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -324,6 +352,28 @@ export class ActivityService {
     if (patch.maxAttempts !== undefined) {
       changes.max_attempts = patch.maxAttempts || null;
     }
+    if (patch.timeLimitMinutes !== undefined) {
+      if (activity.kind !== 'quiz' && patch.timeLimitMinutes !== null) {
+        throw new BadRequestException('Only quizzes can have a time limit');
+      }
+      if (
+        patch.timeLimitMinutes !== null &&
+        (!Number.isInteger(patch.timeLimitMinutes) ||
+          patch.timeLimitMinutes < 1 ||
+          patch.timeLimitMinutes > 1440)
+      ) {
+        throw new BadRequestException(
+          'Time limit must be between 1 and 1440 minutes',
+        );
+      }
+      changes.time_limit_minutes = patch.timeLimitMinutes;
+    }
+    if (patch.lockdownBrowser !== undefined) {
+      if (activity.kind !== 'quiz' && patch.lockdownBrowser) {
+        throw new BadRequestException('Only quizzes can require lockdown browser');
+      }
+      changes.lockdown_browser = patch.lockdownBrowser;
+    }
 
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
@@ -341,6 +391,20 @@ export class ActivityService {
           data: changes,
           select: ACTIVITY_SELECT,
         });
+        if (patch.dueAt !== undefined) {
+          // Untimed attempts end at the due date; students with their own
+          // extension keep theirs.
+          await syncUntimedQuizAttempts(
+            tx,
+            updated,
+            {
+              student: {
+                activity_extension: { none: { activity_id: activityId } },
+              },
+            },
+            updated.due_at,
+          );
+        }
         await this.auditLog?.record(
           tx,
           activity.school_id,
@@ -381,6 +445,8 @@ export class ActivityService {
       allowMultipleFiles: activity.allow_multiple_files,
       allowText: activity.allow_text,
       maxAttempts: activity.max_attempts,
+      timeLimitMinutes: activity.time_limit_minutes,
+      lockdownBrowser: activity.lockdown_browser,
       omitFromFinalGrade: activity.omit_from_final_grade,
       rubricId: activity.rubric_id,
     };
@@ -394,9 +460,12 @@ export class ActivityService {
    * points between the check here and the commit.
    *
    * submit_quiz stores a quiz's automatic score already scaled to the points,
-   * so those scores are rescaled by new/old to stay the same fraction. A mark
-   * a teacher entered or imported (graded_by set) is theirs and is left as
-   * it is, which is why it must still fit under the new points.
+   * so those scores are rescaled by new/old to stay the same fraction. From 0
+   * points there is no fraction to keep (every automatic score is 0), so
+   * they are scored again from their stored answers instead, by submit_quiz's
+   * rules (rescoreQuizFromAnswers). A mark a teacher entered or imported
+   * (graded_by set) is theirs and is left as it is, which is why it must
+   * still fit under the new points.
    */
   private async changePoints(
     tx: Prisma.TransactionClient,
@@ -413,14 +482,16 @@ export class ActivityService {
     if (!locked) throw new NotFoundException('Activity not found');
 
     const old = Number(locked.points);
-    const rescale = locked.kind === 'quiz' && old > 0 && old !== points;
+    // Automatic quiz scores follow the points: rescaled, or (from 0) rescored.
+    const autoScored = locked.kind === 'quiz' && old !== points;
+    const rescale = autoScored && old > 0;
 
     // A mark above the new total would read as over 100% everywhere.
     const over = await tx.submission.findFirst({
       where: {
         activity_id: activityId,
         score: { gt: points },
-        ...(rescale ? { graded_by: { not: null } } : {}),
+        ...(autoScored ? { graded_by: { not: null } } : {}),
       },
       select: { id: true },
     });
@@ -439,6 +510,8 @@ export class ActivityService {
           and graded_by is null
           and score is not null
       `;
+    } else if (autoScored) {
+      await rescoreQuizFromAnswers(tx, activityId, points);
     }
   }
 

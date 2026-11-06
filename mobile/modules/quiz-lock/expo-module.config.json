@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["QuizLockModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.quizlock.QuizLockModule"]
+  }
+}

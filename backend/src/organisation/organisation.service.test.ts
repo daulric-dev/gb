@@ -87,6 +87,59 @@ describe('OrganisationService', () => {
     });
   });
 
+  describe('setup warning at boot', () => {
+    let prevNodeEnv: string | undefined;
+    let warn: ReturnType<typeof mock>;
+
+    beforeEach(() => {
+      prevNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      warn = mock(() => {});
+      (service as any).logger.warn = warn;
+      prisma.organisation.count.mockResolvedValue(0);
+      prisma.school.count.mockResolvedValue(0);
+    });
+
+    afterEach(() => {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+    });
+
+    test('warns in production when the first sign-in would claim the install', async () => {
+      await service.onApplicationBootstrap();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('ORG_ADMIN_EMAILS');
+      expect(warn.mock.calls[0][0]).toContain('first account to sign in');
+    });
+
+    test('is quiet with ORG_ADMIN_EMAILS set', async () => {
+      process.env.ORG_ADMIN_EMAILS = 'boss@school.test';
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('is quiet once set up, or with schools already', async () => {
+      prisma.organisation.count.mockResolvedValue(1);
+      await service.onApplicationBootstrap();
+      prisma.organisation.count.mockResolvedValue(0);
+      prisma.school.count.mockResolvedValue(2);
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('is quiet outside production', async () => {
+      process.env.NODE_ENV = 'development';
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test('a database error at boot is not fatal', async () => {
+      prisma.organisation.count.mockRejectedValue(new Error('db down'));
+      await service.onApplicationBootstrap();
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
   describe('eligibility', () => {
     test('on an empty install, any signed-in user is sent to setup', async () => {
       prisma.organisation.count.mockResolvedValue(0);

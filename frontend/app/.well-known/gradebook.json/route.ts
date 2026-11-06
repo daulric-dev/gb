@@ -14,11 +14,11 @@ function publicApiUrl(): string | null {
   }
 
   const localHttp =
-    process.env.NODE_ENV !== "production" &&
     url.protocol === "http:" &&
     (url.hostname === "localhost" ||
       url.hostname === "127.0.0.1" ||
-      url.hostname.endsWith(".local"));
+      (process.env.NODE_ENV !== "production" &&
+        url.hostname.endsWith(".local")));
 
   if (url.protocol !== "https:" && !localHttp) {
     throw new Error("NEXT_PUBLIC_API_URL must use HTTPS.");

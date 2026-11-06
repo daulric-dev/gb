@@ -1,10 +1,14 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { CacheService } from '@/cache/cache.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { dateOnly } from '@/common/db-values';
-import {
-  CourseAccessService,
-  type CourseRow,
-} from '@/course/access/course-access.service';
+import { CourseAccessService, type CourseRow } from '@/course/access/course-access.service';
 import { CourseService } from '@/course/course.service';
 import { ModuleService } from '@/course/module.service';
 import { PageService } from '@/course/page.service';
@@ -16,6 +20,16 @@ import type { StudentContext } from './student.guard';
 
 /** Course states a student can open: published, or archived for the record. */
 const VISIBLE_COURSE_STATUSES = ['published', 'archived'] as const;
+
+/**
+ * Wrong join codes a student may try per window, across every session they
+ * hold. The route's own throttle is per session, so signing in again would
+ * otherwise hand out a fresh allowance for guessing codes.
+ */
+export const MAX_FAILED_JOINS = 20;
+/** The failed-join window (seconds); the counter starts at the first miss. */
+export const FAILED_JOIN_WINDOW_S = 60 * 60;
+const failedJoinKey = (studentId: string) => `student-portal:failed-join:${studentId}`;
 
 /** What a portal course card is drawn from. */
 type CardCourse = Pick<
@@ -55,6 +69,7 @@ export class StudentPortalService {
     private readonly announcements: AnnouncementService,
     private readonly gradebook: GradebookService,
     private readonly files: FileManagerService,
+    private readonly cache: CacheService,
   ) {}
 
   /** The student's own record and school. */
@@ -156,18 +171,42 @@ export class StudentPortalService {
   }
 
   /** Enrol by the code a teacher handed out; returns the new course card. */
+  /**
+   * Join a course by its code. Only wrong codes count toward the student's
+   * limit, so a student joining several courses is never held up; once
+   * MAX_FAILED_JOINS have missed in the window every attempt is refused.
+   */
   async joinCourse(ctx: StudentContext, joinCode: string) {
-    const course = await this.courses.joinByCode(
-      ctx.studentId,
-      ctx.schoolId,
-      joinCode,
-    );
+    const key = failedJoinKey(ctx.studentId);
+    const failures = Number((await this.cache.get(key)) ?? 0);
+    if (failures >= MAX_FAILED_JOINS) {
+      throw new HttpException(
+        'Too many wrong join codes. Try again later or ask your teacher for the code',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    let course: { id: string };
+    try {
+      course = await this.courses.joinByCode(
+        ctx.studentId,
+        ctx.schoolId,
+        joinCode,
+      );
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        await this.cache.incr(key, FAILED_JOIN_WINDOW_S).catch((e: Error) => {
+          this.logger.error(`Failed-join counter failed: ${e.message}`);
+        });
+      }
+      throw err;
+    }
     return this.getCourse(ctx, course.id);
   }
 
   async getModules(ctx: StudentContext, courseId: string) {
     await this.access.requireStudent(ctx.studentId, courseId);
-    return this.modules.listForStudent(courseId);
+    return this.modules.listForStudent(courseId, ctx.studentId);
   }
 
   async getPage(ctx: StudentContext, courseId: string, pageId: string) {

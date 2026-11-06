@@ -79,4 +79,34 @@ describe('PresenceService (in-process)', () => {
     expect(events.filter((e) => e.data.online)).toHaveLength(1);
     expect(await presence.onlineUserIds(SCHOOL)).toEqual(['u1']);
   });
+
+  test('an audience limits the online list to those users', async () => {
+    await presence.connect('u1', SCHOOL);
+    await presence.connect('u2', SCHOOL);
+
+    expect(await presence.onlineUserIds(SCHOOL, new Set(['u2']))).toEqual([
+      'u2',
+    ]);
+    expect(await presence.onlineUserIds(SCHOOL, new Set())).toEqual([]);
+    expect(new Set(await presence.onlineUserIds(SCHOOL, null))).toEqual(
+      new Set(['u1', 'u2']),
+    );
+  });
+
+  test('an audience drops presence events about other users', async () => {
+    const seen: PresenceEvent[] = [];
+    await presence.subscribeSchool(
+      SCHOOL,
+      (e) => seen.push(e),
+      new Set(['u2']),
+    );
+
+    await presence.connect('u1', SCHOOL);
+    await presence.connect('u2', SCHOOL);
+    await presence.disconnect('u1', SCHOOL);
+
+    expect(seen.map((e) => e.data.userId)).toEqual(['u2']);
+    // The unfiltered subscriber still sees everyone.
+    expect(events).toHaveLength(3);
+  });
 });

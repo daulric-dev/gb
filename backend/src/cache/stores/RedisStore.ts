@@ -4,6 +4,13 @@ import { CacheInterface } from './cache.interface';
 
 const KEEPALIVE_INTERVAL_MS = 60_000;
 
+/**
+ * Every cache key lives under this namespace in Redis. The same Redis also
+ * holds BullMQ queues, rate-limit counters (`throttle:*`) and pub/sub, so the
+ * cache must never touch keys outside its own prefix - `clear()` included.
+ */
+export const CACHE_KEY_PREFIX = 'cache:';
+
 // INCR and the first EXPIRE in one script, so a crash between them cannot
 // leave a counter that never expires.
 const INCR_WITH_TTL = `local v = redis.call('INCR', KEYS[1])
@@ -14,7 +21,10 @@ export class RedisStore implements CacheInterface {
   private readonly logger = new Logger(RedisStore.name);
   private readonly keepalive: ReturnType<typeof setInterval>;
 
-  constructor(private readonly redis: RedisClient) {
+  constructor(
+    private readonly redis: RedisClient,
+    private readonly prefix: string = CACHE_KEY_PREFIX,
+  ) {
     this.keepalive = setInterval(() => {
       this.redis.send('PING', []).catch((err) => {
         this.logger.warn(`Redis keepalive ping failed: ${String(err)}`);
@@ -33,19 +43,23 @@ export class RedisStore implements CacheInterface {
     }
   }
 
+  private k(key: string): string {
+    return `${this.prefix}${key}`;
+  }
+
   async get(key: string): Promise<any> {
-    const raw = await this.redis.get(key);
+    const raw = await this.redis.get(this.k(key));
     if (raw === null) return null;
     return JSON.parse(raw);
   }
 
   async set(key: string, value: any, ttl: number): Promise<void> {
-    await this.redis.set(key, JSON.stringify(value), 'EX', ttl);
+    await this.redis.set(this.k(key), JSON.stringify(value), 'EX', ttl);
   }
 
   async setIfAbsent(key: string, value: any, ttl: number): Promise<boolean> {
     const res = await this.redis.send('SET', [
-      key,
+      this.k(key),
       JSON.stringify(value),
       'NX',
       'EX',
@@ -58,14 +72,14 @@ export class RedisStore implements CacheInterface {
     const res = await this.redis.send('EVAL', [
       INCR_WITH_TTL,
       '1',
-      key,
+      this.k(key),
       String(Math.max(1, Math.ceil(ttl))),
     ]);
     return Number(res);
   }
 
   async delete(key: string): Promise<void> {
-    await this.redis.del(key);
+    await this.redis.del(this.k(key));
   }
 
   async deleteByPrefix(prefix: string): Promise<void> {
@@ -74,7 +88,7 @@ export class RedisStore implements CacheInterface {
       const [next, keys] = await this.redis.scan(
         cursor,
         'MATCH',
-        `${prefix}*`,
+        `${this.k(prefix)}*`,
         'COUNT',
         100,
       );
@@ -83,7 +97,11 @@ export class RedisStore implements CacheInterface {
     } while (cursor !== '0');
   }
 
+  /**
+   * Removes the cache's own keys only. Never FLUSHALL: queues and rate-limit
+   * counters share this Redis.
+   */
   async clear(): Promise<void> {
-    await this.redis.send('FLUSHALL', ['ASYNC']);
+    await this.deleteByPrefix('');
   }
 }

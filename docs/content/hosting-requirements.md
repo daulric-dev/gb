@@ -27,7 +27,7 @@ Browser / mobile app
 The production Dockerfile in [`infrastructure/Dockerfile`](../../infrastructure/Dockerfile)
 builds and runs the **backend only**. The production Compose stack also runs
 Redis, an encrypted database-backup sidecar, and three API replicas behind
-nginx; it does not deploy the frontend, Postgres, or S3. Use a managed database
+Caddy (reverse proxy with automatic HTTPS); it does not deploy the frontend, Postgres, or S3. Use a managed database
 and S3 provider, or provision those services separately. See
 [`infrastructure/SERVICES.md`](../../infrastructure/SERVICES.md) for the
 Compose details and service behavior.
@@ -86,7 +86,10 @@ use per-process cache, realtime, presence, or queue state.
 
 - Terminate TLS for both the frontend and API. Expose HTTPS publicly; keep
   PostgreSQL and Redis on a private network and do not publish their ports to
-  the internet.
+  the internet. The Compose stack's Caddy can terminate TLS for the API itself
+  (set `SITE_ADDRESS` to the API hostname): it needs the hostname's DNS pointing
+  at the server and ports 80 and 443 reachable, and keeps its certificates in
+  the `caddy_data` volume.
 - The browser and mobile app must reach the API over HTTPS. Configure the API's
   `FRONTEND_URL` to the exact web origin and `API_URL` to the public API origin
   (no `/api` suffix). Set the frontend's `NEXT_PUBLIC_API_URL` to that same API

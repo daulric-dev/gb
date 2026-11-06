@@ -134,11 +134,68 @@ describe('ActivityService.create', () => {
         'allowMultipleFiles',
         'allowText',
         'maxAttempts',
+        'timeLimitMinutes',
+        'lockdownBrowser',
         'omitFromFinalGrade',
         'rubricId',
         'createdAt',
       ].sort(),
     );
+  });
+
+  test('creates a quiz with a time limit and validates bounds', async () => {
+    const { service, prisma } = build();
+    await service.create('user-1', 'course-1', {
+      kind: 'quiz',
+      title: 'Timed Quiz',
+      points: 10,
+      timeLimitMinutes: 45,
+    });
+    expect(prisma.activity.create.mock.calls[0][0].data.time_limit_minutes).toBe(
+      45,
+    );
+
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'assignment',
+        title: 'Timed Assignment',
+        points: 10,
+        allowText: true,
+        timeLimitMinutes: 30,
+      }),
+    ).rejects.toThrow('Only quizzes can have a time limit');
+
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'quiz',
+        title: 'Timed Quiz Invalid',
+        points: 10,
+        timeLimitMinutes: 0,
+      }),
+    ).rejects.toThrow('Time limit must be between 1 and 1440 minutes');
+  });
+
+  test('creates a quiz with lockdown browser and refuses for non-quizzes', async () => {
+    const { service, prisma } = build();
+    await service.create('user-1', 'course-1', {
+      kind: 'quiz',
+      title: 'Lockdown Quiz',
+      points: 10,
+      lockdownBrowser: true,
+    });
+    expect(prisma.activity.create.mock.calls[0][0].data.lockdown_browser).toBe(
+      true,
+    );
+
+    await expect(
+      service.create('user-1', 'course-1', {
+        kind: 'assignment',
+        title: 'Lockdown Assignment',
+        points: 10,
+        allowText: true,
+        lockdownBrowser: true,
+      }),
+    ).rejects.toThrow('Only quizzes can require lockdown browser');
   });
 
   test('a TA cannot create work', async () => {
@@ -369,6 +426,43 @@ describe('ActivityService.update', () => {
     expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(20);
   });
 
+  test('a quiz going up from 0 points is rescored from its answers, not rescaled', async () => {
+    const { service, prisma } = build((p) => {
+      lockedAs('quiz', 0)(p);
+      p.submission.findFirst.mockResolvedValue(null);
+    });
+    await service.update('user-1', 'act-1', { points: 25 });
+
+    // Automatic scores are recomputed, so only teacher marks must fit.
+    expect(prisma.submission.findFirst.mock.calls[0][0].where).toEqual({
+      activity_id: 'act-1',
+      score: { gt: 25 },
+      graded_by: { not: null },
+    });
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    const call = prisma.$executeRaw.mock.calls[0];
+    const text = sql(call);
+    // No division by the old (zero) points.
+    expect(text).not.toContain('score = score *');
+    expect(text).toContain('t.earned / t.possible');
+    expect(text).toContain('lower(btrim(ans.text_answer)) = lower(btrim(o.label))');
+    expect(text).toContain('s2.graded_by is null');
+    expect(text).toContain('s2.quiz_started_at is null');
+    expect(call.slice(1)).toEqual([25, 'act-1']);
+    // In the same transaction as the points themselves.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(25);
+  });
+
+  test('a quiz at 0 points kept at 0 rescores nothing', async () => {
+    const { service, prisma } = build((p) => {
+      lockedAs('quiz', 0)(p);
+      p.submission.findFirst.mockResolvedValue(null);
+    });
+    await service.update('user-1', 'act-1', { points: 0 });
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
   test('a teacher mark above the new quiz points still refuses the change', async () => {
     const { service, prisma } = build((p) => {
       lockedAs('quiz', 20)(p);
@@ -392,6 +486,43 @@ describe('ActivityService.update', () => {
     await service.update('user-1', 'act-1', { title: 'New title' });
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.submission.findFirst).not.toHaveBeenCalled();
+  });
+
+  test('moving an untimed quiz due date moves running attempts without an extension', async () => {
+    const { service, prisma } = build((p) => {
+      const quiz = { ...ACTIVITY, kind: 'quiz', time_limit_minutes: null };
+      p.activity.findUnique.mockResolvedValue(quiz);
+      p.activity.update.mockImplementation(async ({ data }: any) => ({
+        ...quiz,
+        ...data,
+      }));
+    });
+    await service.update('user-1', 'act-1', {
+      dueAt: '2026-12-01T12:00:00.000Z',
+    });
+    const update = prisma.submission.updateMany.mock.calls[0][0];
+    expect(update.where.activity_id).toBe('act-1');
+    expect(update.where.student).toEqual({
+      activity_extension: { none: { activity_id: 'act-1' } },
+    });
+    expect(update.data.quiz_expires_at).toEqual(
+      new Date('2026-12-01T12:00:00.000Z'),
+    );
+  });
+
+  test('changing a timed quiz due date leaves attempts alone', async () => {
+    const { service, prisma } = build((p) => {
+      const quiz = { ...ACTIVITY, kind: 'quiz', time_limit_minutes: 30 };
+      p.activity.findUnique.mockResolvedValue(quiz);
+      p.activity.update.mockImplementation(async ({ data }: any) => ({
+        ...quiz,
+        ...data,
+      }));
+    });
+    await service.update('user-1', 'act-1', {
+      dueAt: '2026-12-01T12:00:00.000Z',
+    });
+    expect(prisma.submission.updateMany).not.toHaveBeenCalled();
   });
 
   test('an activity with no course is not found', async () => {

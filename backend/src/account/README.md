@@ -41,7 +41,9 @@ None.
   - `rotatedToken(token)` (the token a rotation replaces `token` with) and `deviceFingerprint(method, device)`.
   - `isIssuedSessionToken(token)` checks the HMAC tag on a cookie value without touching the database. The rate limiter uses it to give real sessions their own bucket.
 - `email-code.service.ts`: `CODE_LENGTH` (8), `normalizeEmail()` (trim and lowercase), `CodePurpose`, `hashCode(email, code, purpose?)` (an HMAC-SHA256 of `email:code`, prefixed with the purpose for anything but sign-in, keyed with the auth secret), `hashClient()` (the same for a client address) and the caps `MAX_ATTEMPTS_PER_CLIENT`, `MAX_TOTAL_ATTEMPTS`, `MAX_SENDS_PER_CLIENT`, `MAX_SENDS_PER_EMAIL`.
-- `secret.ts`: `authSecret()` returns `AUTH_SECRET`. It throws in production when the secret is missing or shorter than 32 characters. In development it falls back to a fixed insecure value and logs a warning once.
+- `secret.ts`: `authSecret()` returns `AUTH_SECRET`. It throws in production when the secret is missing or shorter than 32 characters. In development it falls back to a fixed insecure value and logs a warning once. `dataEncryptionKey()` returns the optional `DATA_ENCRYPTION_KEY` (null when unset; throws when set but shorter than 32 characters).
+- `secret-box.ts`: `sealSecret(info, aad, plaintext)` / `openSecret(info, aad, stored)`, AES-256-GCM for secrets stored in the database (webhook secrets and header values, school SSO client secrets), with an HKDF-SHA256 key per `info`. The stored prefix says which root key: `v1:<iv>:<tag>:<ct>` is `AUTH_SECRET` (every value written before `DATA_ENCRYPTION_KEY`, and while it is unset); `v2:<kid>:<iv>:<tag>:<ct>` is `DATA_ENCRYPTION_KEY`, `kid` being a 12-hex fingerprint of it (`dataKeyId`). New values use `DATA_ENCRYPTION_KEY` when set. `openSecret` returns null on any failure, including a `v2` value under another key. `storedKeyId()` and `isSealedWithCurrentDataKey()` tell which key a value uses.
+- `secret-rotation.ts`: `reencryptStoredSecrets(prisma, { dryRun })` rewrites every `v1` secret as `v2` (compare-and-set per row, idempotent) and `resignErasureLog(storage, { dryRun })` re-signs erasure-log copies that verify only under the `AUTH_SECRET` key. Run by `bun run secrets:reencrypt` ([scripts/reencrypt-secrets.ts](../../scripts/reencrypt-secrets.ts)) before rotating `AUTH_SECRET`; see `DATA_ENCRYPTION_KEY` in the environment variables doc.
 - `templates/`: `signInCodeEmail(code)`, `stepUpCodeEmail(code)`, `newSignInEmail(...)`, `tokenReuseEmail(...)`. See [templates/README.md](./templates/README.md).
 - `device-label.ts`: `deviceLabel(userAgent, deviceHeader?, native?)` and `DEVICE_HEADER`.
 - `session.config.ts`: `sessionMaxAgeMs()`, `rotationGraceMs()`, `sessionAlertsEnabled()`, `KNOWN_DEVICE_WINDOW_MS` (90 days).
@@ -102,7 +104,9 @@ These tables are in the `account` Postgres schema, defined in [`prisma/schema/ac
 | `session-alert.service.ts` | `SessionAlertService`: the new sign-in and token reuse emails. |
 | `session.config.ts` | The session settings read from the environment. |
 | `device-label.ts` | `deviceLabel()`: friendly device names from the user agent or the app's device header. |
-| `secret.ts` | `authSecret()`. |
+| `secret.ts` | `authSecret()`, `dataEncryptionKey()`. |
+| `secret-box.ts` | Versioned AES-256-GCM for stored secrets (`v1` = `AUTH_SECRET`, `v2` = `DATA_ENCRYPTION_KEY`). |
+| `secret-rotation.ts` | Re-encrypt stored secrets and re-sign erasure-log copies under `DATA_ENCRYPTION_KEY`. |
 | `templates/` | The sign-in code, step-up code, new sign-in and token reuse emails. See [templates/README.md](./templates/README.md). |
 | `account.test.ts` | Tests for `EmailCodeService`, `SessionService`, `SessionAlertService` and `deviceLabel`. |
 

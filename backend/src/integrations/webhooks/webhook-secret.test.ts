@@ -12,6 +12,7 @@ const OWNER = { schoolId: '11111111-1111-4111-8111-111111111111', webhookId: '22
 
 beforeEach(() => {
   process.env.AUTH_SECRET = 'a'.repeat(40);
+  delete process.env.DATA_ENCRYPTION_KEY;
 });
 
 describe('webhook signing secrets', () => {

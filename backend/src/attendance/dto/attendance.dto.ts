@@ -82,6 +82,29 @@ export class CheckInLocationDto {
   @IsNumber()
   @Min(0)
   accuracy?: number | null;
+
+  /**
+   * The app's `LocationObject.mocked` (Android reports a mock-location
+   * provider). A check-in with `true` is refused. Browsers cannot tell.
+   */
+  @ApiPropertyOptional({ description: 'Reading came from a mock-location provider (Android)' })
+  @IsOptional()
+  @IsBoolean()
+  mocked?: boolean | null;
+}
+
+/** A newer position of the teacher's device for an open session. */
+export class UpdateSessionLocationDto {
+  @ApiProperty() @IsNumber() @Min(-90) @Max(90) latitude!: number;
+  @ApiProperty() @IsNumber() @Min(-180) @Max(180) longitude!: number;
+
+  @ApiPropertyOptional({
+    description: 'Reported accuracy in metres; readings worse than 100 m are ignored',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracy?: number | null;
 }
 
 export class CheckInDto {

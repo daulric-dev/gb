@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
@@ -91,7 +92,7 @@ const displayName = (p: Profile | null | undefined) =>
  * admins (OrganisationAdminGuard).
  */
 @Injectable()
-export class OrganisationService {
+export class OrganisationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OrganisationService.name);
 
   constructor(
@@ -101,6 +102,41 @@ export class OrganisationService {
     private readonly invites: InviteService,
     private readonly auditLog?: AuditLogService,
   ) {}
+
+  /** Warn once at boot when the first sign-in could claim the install. */
+  async onApplicationBootstrap(): Promise<void> {
+    await this.warnIfSetupUnguarded();
+  }
+
+  /**
+   * In production with ORG_ADMIN_EMAILS unset, an install with no
+   * organisation and no schools lets whoever signs in first run setup and
+   * become organisation admin (the documented first-run flow). That is fine
+   * on a fresh server you are about to set up yourself, and dangerous on one
+   * reachable by anyone else, so say so loudly. Behaviour is unchanged.
+   */
+  async warnIfSetupUnguarded(): Promise<void> {
+    if (process.env.NODE_ENV !== 'production') return;
+    if (orgAdminEmails().size > 0) return;
+    try {
+      const [organisations, schools] = await Promise.all([
+        this.prisma.organisation.count(),
+        this.prisma.school.count(),
+      ]);
+      if (organisations > 0 || schools > 0) return;
+    } catch (error) {
+      this.logger.debug(
+        `Skipped the setup check: ${(error as Error).message}`,
+      );
+      return;
+    }
+    this.logger.warn(
+      'GradeBook is not set up and ORG_ADMIN_EMAILS is unset: the first ' +
+        'account to sign in will claim the organisation and become its ' +
+        'admin. Set ORG_ADMIN_EMAILS to the email(s) allowed to run setup ' +
+        'and restart the server.',
+    );
+  }
 
   // --- setup ---------------------------------------------------------------
 

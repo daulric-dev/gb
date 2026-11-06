@@ -293,6 +293,7 @@ model user_profile {
   grade_scale_grade_scale_created_byTouser_profile                  grade_scale[]              @relation("grade_scale_created_byTouser_profile")
   grade_scale_grade_scale_updated_byTouser_profile                  grade_scale[]              @relation("grade_scale_updated_byTouser_profile")
   submission                                                        submission[]
+  activity_extension                                                activity_extension[]
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]
   push_device                                                       push_device[]

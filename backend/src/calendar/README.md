@@ -21,7 +21,7 @@ The module exports nothing; `CalendarService` is used only by its own controller
 
 - `CalendarService.range(from?, to?)` - resolves and validates the window.
 - `CalendarService.forStaff(userId, from?, to?)` - the staff calendar (empty if the user has no school or no staffed courses).
-- `CalendarService.forStudent(studentId, from?, to?)` - the student calendar with submission state; scores are rounded with `roundScore` from `@/grading/round` and only shown once graded.
+- `CalendarService.forStudent(studentId, from?, to?)` - the student calendar with submission state. Each item sits at the student's **effective** due date (`grading.activity_extension.due_at` when they have an extension, else `activity.due_at`; see `src/grading/due-date.ts`), so `dueAt` is that date and `hasExtension` says it is an extension; an extension can bring work into the window (even undated work) or move it out, and the `.ics` export follows. Staff calendars are unchanged (the activity's own date); scores are rounded with `roundScore` from `@/grading/round` and only shown once graded.
 - `toIcs(items, name)` (exported function in `calendar.service.ts`) - builds an RFC 5545 calendar: one zero-length `VEVENT` per item at its due time, a stable `UID` of `activity-<id>@gradebook` so re-importing updates instead of duplicating, escaped text and lines folded at 75 octets.
 
 ### Other

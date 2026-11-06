@@ -1,3 +1,4 @@
+import { configuredApiUrl } from '@/config/origins';
 import type { FastifyRequest } from 'fastify';
 
 /** SSO_PROVIDERS=google,azure,saml - the adapters this deployment turns on. */
@@ -12,13 +13,20 @@ export function enabledProviders(): Set<string> {
 
 /**
  * The API's public origin. Providers must see the same redirect URL at start
- * and at the callback, so API_URL should be set wherever SSO is on; the
- * request's host is only a fallback for local runs.
+ * and at the callback, so API_URL should be set wherever SSO is on.
+ *
+ * Production refuses to boot without API_URL (config/startup.ts), and never
+ * falls back to the request's Host header: it is client-controlled, and a
+ * forged one would point an OIDC redirect or SAML ACS URL at another site.
+ * Outside production the request's host is a fallback for local runs.
  */
 export function apiBase(req?: FastifyRequest): string {
-  const configured = process.env.API_URL?.trim().replace(/\/+$/, '');
+  const configured = configuredApiUrl();
   if (configured) return configured;
-  if (req) return `${req.protocol}://${req.headers.host as string}`;
+  const host = req?.headers?.host;
+  if (process.env.NODE_ENV !== 'production' && req && host) {
+    return `${req.protocol}://${host}`;
+  }
   return 'http://localhost:3001';
 }
 

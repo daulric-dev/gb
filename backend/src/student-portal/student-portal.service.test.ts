@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { NotFoundException } from '@nestjs/common';
-import { StudentPortalService } from './student-portal.service';
-import { expectRejection } from '@/test/mocks';
+import {
+  FAILED_JOIN_WINDOW_S,
+  MAX_FAILED_JOINS,
+  StudentPortalService,
+} from './student-portal.service';
+import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { HttpException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
 const CTX = { studentId: 'student-1', schoolId: 'school-1' };
@@ -40,6 +45,7 @@ function service(
     course?: Record<string, any>;
     enrolment?: string;
     page?: Record<string, any>;
+    cache?: ReturnType<typeof createMockCacheService>;
   } = {},
 ) {
   const access = {
@@ -87,6 +93,7 @@ function service(
     announcements as any,
     gradebook as any,
     files as any,
+    (opts.cache ?? createMockCacheService()) as any,
   );
 }
 
@@ -241,6 +248,42 @@ describe('StudentPortalService courses', () => {
     expect(seen).toEqual([['student-1', 'school-1', 'abc123']]);
     expect(card.id).toBe('course-1');
     expect('joinCode' in card).toBe(false);
+  });
+
+  test('wrong join codes count per student, across sessions', async () => {
+    const prisma = tables(createMockPrisma());
+    const cache = createMockCacheService();
+    const wrong = service(prisma, {
+      cache,
+      joinByCode: async () => {
+        throw new NotFoundException('No open course uses that code');
+      },
+    });
+    for (let i = 0; i < MAX_FAILED_JOINS; i++) {
+      expect(await expectRejection(wrong.joinCourse(CTX, 'NOPE'))).toBeInstanceOf(
+        NotFoundException,
+      );
+    }
+    expect(cache._store.get('student-portal:failed-join:student-1')).toEqual({
+      value: MAX_FAILED_JOINS,
+      ttl: FAILED_JOIN_WINDOW_S,
+    });
+
+    // Even the right code is refused once the limit is spent: the counter
+    // is keyed by student, so a fresh sign-in does not reset it.
+    const err = (await expectRejection(
+      service(prisma, { cache }).joinCourse(CTX, 'RIGHT'),
+    )) as HttpException;
+    expect(err).toBeInstanceOf(HttpException);
+    expect(err.getStatus()).toBe(429);
+    expect(err.message).toContain('Too many wrong join codes');
+  });
+
+  test('a successful join does not count toward the limit', async () => {
+    const prisma = tables(createMockPrisma());
+    const cache = createMockCacheService();
+    await service(prisma, { cache }).joinCourse(CTX, 'abc123');
+    expect(cache._store.size).toBe(0);
   });
 
   test('an unpublished page is a 404 for students', async () => {

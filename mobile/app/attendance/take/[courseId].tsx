@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import QRCode from "react-native-qrcode-svg";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { MapPin, TriangleAlert } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { api, ApiError } from "@/lib/api";
@@ -22,8 +23,19 @@ import {
   type AttendanceSession,
   type AttendanceSessionDetail,
 } from "@/lib/attendance";
+import {
+  describeLocationFlags,
+  formatAgo,
+} from "@/lib/attendance-location";
+import {
+  useLiveTeacherLocation,
+  type LiveLocationState,
+  type LocationUpdate,
+} from "@/features/attendance/use-live-teacher-location";
+import { useAuth } from "@/providers/AuthProvider";
 import { withFeature } from "@/components/layout/FeatureGate";
 import { userMessage } from "@/lib/errors";
+import type { AttendanceRosterEntry } from "@/lib/attendance";
 
 const POLL_MS = 5_000;
 /** Fetch the next QR frame just after the current one rotates. */
@@ -32,6 +44,8 @@ const QR_RETRY_MS = 3_000;
 const QR_SIZE = 220;
 const RADIUS_M = 100;
 const DURATIONS = ["2", "5", "10", "15"] as const;
+/** No colour token for warnings; the web app's amber. */
+const WARNING = "#d97706";
 type Duration = (typeof DURATIONS)[number];
 
 /**
@@ -80,6 +94,16 @@ function TakeAttendanceScreen() {
     ).catch(() => null);
     if (detail) setSession(detail);
   }, [base, sessionId]);
+
+  // A newer point from this phone or another staff device; never roll back.
+  const applyLocation = useCallback((u: LocationUpdate) => {
+    setSession((cur) => {
+      if (!cur) return cur;
+      const prev = cur.locationUpdatedAt ? Date.parse(cur.locationUpdatedAt) : 0;
+      if (Date.parse(u.locationUpdatedAt) < prev) return cur;
+      return { ...cur, location: u.location, locationUpdatedAt: u.locationUpdatedAt };
+    });
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -160,6 +184,7 @@ function TakeAttendanceScreen() {
         onBack={back}
         onClose={close}
         onRefresh={refresh}
+        onLocation={applyLocation}
       />
     );
   }
@@ -189,7 +214,8 @@ function TakeAttendanceScreen() {
             <View style={{ flex: 1 }}>
               <Text variant="label">Check location</Text>
               <Text variant="muted" size="xs">
-                Students must be within {RADIUS_M} m of this phone.
+                Students must be within {RADIUS_M} m of this phone. The
+                point follows you while this screen is open.
               </Text>
             </View>
             <Switch value={useLocation} onValueChange={setUseLocation} />
@@ -210,6 +236,7 @@ function LiveSession({
   onBack,
   onClose,
   onRefresh,
+  onLocation,
 }: {
   title: string;
   session: AttendanceSessionDetail;
@@ -217,10 +244,37 @@ function LiveSession({
   onBack: () => void;
   onClose: () => void;
   onRefresh: () => Promise<void>;
+  onLocation: (u: LocationUpdate) => void;
 }) {
   const { colors } = useTheme();
+  const { profile } = useAuth();
   const remaining = useRemaining(session.isOpen ? session.closesAt : null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Live teacher position: on by default for whoever opened the session, so
+  // a second staff device doesn't pull the point back and forth.
+  const [sharingChoice, setSharingChoice] = useState<boolean | null>(null);
+  const sharing =
+    sharingChoice ?? (!!profile?.id && profile.id === session.openedBy);
+  const lat = session.location?.latitude;
+  const lng = session.location?.longitude;
+  const at = session.locationUpdatedAt;
+  const current = useMemo(
+    () =>
+      lat !== undefined && lng !== undefined && at
+        ? { latitude: lat, longitude: lng, at: Date.parse(at) }
+        : null,
+    [lat, lng, at],
+  );
+  const liveLocation = useLiveTeacherLocation({
+    courseId: session.courseId,
+    sessionId: session.id,
+    active: session.isOpen && !!session.location,
+    sharing,
+    current,
+    onUpdated: onLocation,
+    onClosed: () => void onRefresh(),
+  });
 
   // The server finalises an expired session on the next read.
   useEffect(() => {
@@ -268,6 +322,15 @@ function LiveSession({
           <Text variant="subtitle">
             {checkedIn} / {session.roster.length} checked in
           </Text>
+          {session.isOpen && session.location ? (
+            <LiveLocationRow
+              state={liveLocation}
+              sharing={sharing}
+              onSharingChange={setSharingChoice}
+              updatedAt={session.locationUpdatedAt}
+              radiusM={session.location.radiusM}
+            />
+          ) : null}
           {session.isOpen ? (
             <Button
               variant="destructive"
@@ -292,29 +355,108 @@ function LiveSession({
             </Text>
           ) : (
             sorted.map((r) => (
-              <View
-                key={r.studentId}
-                style={[styles.rosterRow, { borderColor: colors.border }]}
-              >
-                <Text numberOfLines={1} style={{ flex: 1 }}>
-                  {displayName(r)}
-                </Text>
-                {r.method === "qr" ? <Badge variant="outline">QR</Badge> : null}
-                {r.status ? (
-                  <Badge variant={r.status === "absent" ? "outline" : "secondary"}>
-                    {STATUS_LABEL[r.status]}
-                  </Badge>
-                ) : (
-                  <Text variant="muted" size="xs">
-                    {r.hasAccount ? "Waiting" : "No account"}
-                  </Text>
-                )}
-              </View>
+              <RosterRow key={r.studentId} entry={r} borderColor={colors.border} />
             ))
           )}
         </CardContent>
       </Card>
     </Screen>
+  );
+}
+
+function RosterRow({
+  entry: r,
+  borderColor,
+}: {
+  entry: AttendanceRosterEntry;
+  borderColor: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const flags = r.locationFlags ?? [];
+  const reasons = flags.length > 0 ? describeLocationFlags(flags, r.distanceM) : [];
+  return (
+    <View style={[styles.rosterItem, { borderColor }]}>
+      <View style={styles.rosterRow}>
+        <Text numberOfLines={1} style={{ flex: 1 }}>
+          {displayName(r)}
+        </Text>
+        {reasons.length > 0 ? (
+          <Pressable
+            onPress={() => setOpen((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Location looks unusual: ${reasons.join("; ")}`}
+          >
+            <TriangleAlert size={18} color={WARNING} />
+          </Pressable>
+        ) : null}
+        {r.method === "qr" ? <Badge variant="outline">QR</Badge> : null}
+        {r.status ? (
+          <Badge variant={r.status === "absent" ? "outline" : "secondary"}>
+            {STATUS_LABEL[r.status]}
+          </Badge>
+        ) : (
+          <Text variant="muted" size="xs">
+            {r.hasAccount ? "Waiting" : "No account"}
+          </Text>
+        )}
+      </View>
+      {open && reasons.length > 0 ? (
+        <View style={styles.flagBox}>
+          <Text size="xs" style={{ color: WARNING, fontWeight: "600" }}>
+            Location looks unusual (check-in accepted)
+          </Text>
+          {reasons.map((line) => (
+            <Text key={line} variant="muted" size="xs">
+              • {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** "Location live · updated 12s ago" and the switch to stop sharing. */
+function LiveLocationRow({
+  state,
+  sharing,
+  onSharingChange,
+  updatedAt,
+  radiusM,
+}: {
+  state: LiveLocationState;
+  sharing: boolean;
+  onSharingChange: (v: boolean) => void;
+  updatedAt: string | null;
+  radiusM: number;
+}) {
+  const { colors } = useTheme();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(t);
+  }, []);
+  const ago = formatAgo(updatedAt, now);
+  let text: string;
+  if (!sharing) text = `Location paused · point from ${ago}`;
+  else if (state === "denied") text = "Location is off for GradeBook · using the last point";
+  else if (state === "error") text = `Location signal lost · updated ${ago}`;
+  else if (state === "waiting") text = `Finding your location… · updated ${ago}`;
+  else text = `Location live · updated ${ago}`;
+  const live = sharing && state === "live";
+
+  return (
+    <View style={[styles.switchRow, { alignSelf: "stretch" }]}>
+      <MapPin size={16} color={live ? "#10b981" : colors.mutedForeground} />
+      <View style={{ flex: 1 }}>
+        <Text size="sm">{text}</Text>
+        <Text variant="muted" size="xs">
+          Students check in within {radiusM} m of this point.
+        </Text>
+      </View>
+      <Switch value={sharing} onValueChange={onSharingChange} />
+    </View>
   );
 }
 
@@ -411,13 +553,16 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   qrBox: { alignItems: "center", gap: 6, marginBottom: 6 },
+  rosterItem: {
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   rosterRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  flagBox: { gap: 2, paddingTop: 6 },
 });
 
 export default withFeature("attendance", "Attendance", TakeAttendanceScreen);

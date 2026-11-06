@@ -83,6 +83,8 @@ export function CreateActivityDialog({
   const instructions = useSignal("");
   const points = useSignal("100");
   const dueAt = useSignal("");
+  const timeLimitMinutes = useSignal("");
+  const lockdownBrowser = useSignal(false);
   const groupId = useSignal(defaultGroupId ?? "");
   const allowFile = useSignal(true);
   const allowMultipleFiles = useSignal(false);
@@ -103,6 +105,17 @@ export function CreateActivityDialog({
       toast.error("Choose how students hand it in");
       return;
     }
+    const timeLimit = timeLimitMinutes.value
+      ? Number(timeLimitMinutes.value)
+      : null;
+    if (
+      kind.value === "quiz" &&
+      timeLimit !== null &&
+      (!Number.isInteger(timeLimit) || timeLimit < 1 || timeLimit > 1440)
+    ) {
+      toast.error("Quiz time limit must be between 1 and 1440 minutes");
+      return;
+    }
 
     saving.value = true;
     try {
@@ -114,6 +127,9 @@ export function CreateActivityDialog({
           instructions: instructions.value.trim() || undefined,
           points: pts,
           dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : undefined,
+          timeLimitMinutes: kind.value === "quiz" ? timeLimit : undefined,
+          lockdownBrowser:
+            kind.value === "quiz" ? lockdownBrowser.value : undefined,
           assignmentGroupId: groupId.value || undefined,
           allowFile: kind.value === "assignment" ? allowFile.value : false,
           allowMultipleFiles:
@@ -252,6 +268,42 @@ export function CreateActivityDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {kind.value === "quiz" && (
+            <div className="space-y-2">
+              <Label htmlFor="quizTimeLimit">Time limit (minutes)</Label>
+              <Input
+                id="quizTimeLimit"
+                type="number"
+                min={1}
+                max={1440}
+                value={timeLimitMinutes.value}
+                onChange={(e) => (timeLimitMinutes.value = e.target.value)}
+                placeholder="No time limit"
+              />
+              <p className="text-xs text-muted-foreground">
+                The timer starts when each student begins an attempt and
+                continues if they leave the quiz.
+              </p>
+            </div>
+          )}
+
+          {kind.value === "quiz" && (
+            <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="quizLockdown">Lockdown</Label>
+                <p className="text-xs text-muted-foreground">
+                  Web: fullscreen, no copy or paste. App: pinned, screenshots and
+                  recording blocked. You see when students leave and how often.
+                </p>
+              </div>
+              <Switch
+                id="quizLockdown"
+                checked={lockdownBrowser.value}
+                onCheckedChange={(v) => (lockdownBrowser.value = v)}
+              />
+            </div>
+          )}
 
           {kind.value === "assignment" && (
             <div className="space-y-3 rounded-lg border p-3">

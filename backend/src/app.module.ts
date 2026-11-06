@@ -2,13 +2,9 @@ import { Module, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import {
-  getClientIp,
-  getEmailIpTracker,
-  getSessionTracker,
-  skipUnlessDeclared,
-  type ThrottlerReq,
-} from '@/throttle/tracker';
+import { getClientIp, getEmailIpTracker, getSessionTracker, skipUnlessDeclared, type ThrottlerReq } from '@/throttle/tracker';
+import type { RedisThrottlerStorage } from '@/throttle/redis-throttler.storage';
+import { THROTTLER_SHARED_STORAGE, ThrottleStorageModule } from '@/throttle/throttle-storage.module';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
@@ -56,50 +52,57 @@ import { HealthService } from '@/health/health.service';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot({
-      throttlers: [
-        {
-          name: 'default',
-          ttl: 60_000,
-          limit: process.env.NODE_ENV === 'production' ? 1_200 : 100_000,
-          getTracker: (req: ThrottlerReq) =>
-            getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
-        },
-        {
-          // Sign-in routes only (see skipUnlessDeclared), per address + IP.
-          name: 'auth-strict',
-          ttl: 60 * 60 * 1000,
-          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
-          getTracker: getEmailIpTracker,
-          skipIf: skipUnlessDeclared('auth-strict'),
-        },
-        {
-          name: 'auth-ip',
-          ttl: 60 * 60 * 1000,
-          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
-          getTracker: (req: ThrottlerReq) =>
-            `ip:${getClientIp(req) ?? 'unknown'}`,
-          skipIf: skipUnlessDeclared('auth-ip'),
-        },
-        {
-          name: 'claim-code',
-          ttl: 15 * 60 * 1000,
-          limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
-          getTracker: (req: ThrottlerReq) =>
-            getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
-        },
-      ],
+    ThrottlerModule.forRootAsync({
+      // Shared Redis counters when USE_REDIS=true, so limits hold across
+      // replicas; undefined keeps the library's in-memory storage.
+      imports: [ThrottleStorageModule],
+      inject: [THROTTLER_SHARED_STORAGE],
+      useFactory: (storage?: RedisThrottlerStorage) => ({
+        storage,
+        throttlers: [
+          {
+            name: 'default',
+            ttl: 60_000,
+            limit: process.env.NODE_ENV === 'production' ? 1_200 : 100_000,
+            getTracker: (req: ThrottlerReq) =>
+              getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
+          },
+          {
+            // Sign-in routes only (see skipUnlessDeclared), per address + IP.
+            name: 'auth-strict',
+            ttl: 60 * 60 * 1000,
+            limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+            getTracker: getEmailIpTracker,
+            skipIf: skipUnlessDeclared('auth-strict'),
+          },
+          {
+            name: 'auth-ip',
+            ttl: 60 * 60 * 1000,
+            limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+            getTracker: (req: ThrottlerReq) =>
+              `ip:${getClientIp(req) ?? 'unknown'}`,
+            skipIf: skipUnlessDeclared('auth-ip'),
+          },
+          {
+            name: 'claim-code',
+            ttl: 15 * 60 * 1000,
+            limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,
+            getTracker: (req: ThrottlerReq) =>
+              getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
+          },
+        ],
 
-      generateKey: (
-        context: ExecutionContext,
-        tracker: string,
-        throttlerName: string,
-      ) => {
-        if (throttlerName === 'default') return `default:${tracker}`;
-        const handler = context.getHandler?.()?.name ?? 'unknown';
-        const controller = context.getClass?.()?.name ?? 'unknown';
-        return `${throttlerName}:${controller}.${handler}:${tracker}`;
-      },
+        generateKey: (
+          context: ExecutionContext,
+          tracker: string,
+          throttlerName: string,
+        ) => {
+          if (throttlerName === 'default') return `default:${tracker}`;
+          const handler = context.getHandler?.()?.name ?? 'unknown';
+          const controller = context.getClass?.()?.name ?? 'unknown';
+          return `${throttlerName}:${controller}.${handler}:${tracker}`;
+        },
+      }),
     }),
 
     PrismaModule,

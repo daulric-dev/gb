@@ -5,3 +5,17 @@ updates:
     schedule:
       interval: "weekly"
     target-branch: "staging"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "staging"
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/infrastructure"
+      - "/infrastructure/backup"
+      - "/infrastructure/postgres"
+    schedule:
+      interval: "weekly"
+    target-branch: "staging"

@@ -283,8 +283,13 @@ export class AuthController {
 /** A guarded request: AuthGuard sets the user and the session making it. */
 type SessionRequest = { user: { id: string; sessionId?: string } };
 
-/** This API's origin as the caller reached it, for links back to it. */
+/**
+ * This API's origin as the caller reached it, for links back to it - a
+ * development fallback only. The Host header is client-controlled, so
+ * production uses API_URL (required at boot) and never this.
+ */
 function requestOrigin(req: FastifyRequest): string | undefined {
+  if (process.env.NODE_ENV === 'production') return undefined;
   const host = req.headers?.host;
   return host ? `${req.protocol}://${host}` : undefined;
 }

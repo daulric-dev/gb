@@ -19,21 +19,55 @@ const DEFAULT_ORIGIN = 'http://localhost:3000';
  * running the app over Expo web comes from. The address changes with the DHCP
  * lease, so it is matched by shape rather than listed.
  */
-const PRIVATE_ORIGIN =
-  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.[0-9.]+|192\.168\.[0-9.]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+)(:\d+)?$/;
+const PRIVATE_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.[0-9.]+|192\.168\.[0-9.]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+)(:\d+)?$/;
 
 /** Dev only: a LAN origin is trusted because the network already is. */
-function isDevelopmentOrigin(origin: string): boolean {
+export function isDevelopmentOrigin(origin: string): boolean {
   return process.env.NODE_ENV !== 'production' && PRIVATE_ORIGIN.test(origin);
 }
 
+/** An origin served from this machine (localhost, 127.0.0.1, [::1]). */
+export function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `bun run preview`: a production build on this machine (the backend's
+ * start:prod script sets LOCAL_PREVIEW=true). Loopback origins are allowed
+ * there and only there; the container image never sets it.
+ */
+export function isLocalPreview(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.LOCAL_PREVIEW === 'true';
+}
+
+/**
+ * FRONTEND_URL's origins. Development falls back to http://localhost:3000.
+ * Production never allows a loopback origin, even if one is configured
+ * (startup refuses such a FRONTEND_URL; this is the second line), except in
+ * a local preview.
+ */
 export function allowedOrigins(): string[] {
-  const configured = (process.env.FRONTEND_URL || DEFAULT_ORIGIN)
+  const production =
+    process.env.NODE_ENV === 'production' && !isLocalPreview();
+  const configured = (process.env.FRONTEND_URL ?? '')
     .split(',')
     .map((origin) => origin.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((origin) => !production || !isLoopbackOrigin(origin));
 
-  return configured.length > 0 ? configured : [DEFAULT_ORIGIN];
+  if (configured.length > 0) return configured;
+  return production ? [] : [DEFAULT_ORIGIN];
 }
 
 /**
@@ -126,8 +160,15 @@ export function authCookieSecure(): boolean {
  * over plain http (a production build run locally): browsers make an exception
  * for localhost, native apps don't, so mobile sign-in silently fails.
  */
+/** API_URL, the API's public origin, without trailing slashes. */
+export function configuredApiUrl(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  return env.API_URL?.trim().replace(/\/+$/, '') || undefined;
+}
+
 export function insecureCookieWarning(): string | null {
-  const api = process.env.API_URL?.trim() ?? '';
+  const api = configuredApiUrl() ?? '';
   if (!authCookieSecure() || !api.toLowerCase().startsWith('http://')) return null;
   return (
     `Auth cookies are Secure (HTTPS only) but API_URL is ${api}. The mobile app will not stay signed in ` +

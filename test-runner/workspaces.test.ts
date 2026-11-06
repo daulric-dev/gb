@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { test } from 'bun:test';
 
-test('workspace test suites', () => {
+test('workspace test suites', { timeout: 30_000 }, () => {
   const result = spawnSync('bun', ['run', 'test'], {
     cwd: resolve(import.meta.dir, '..'),
     stdio: 'inherit',

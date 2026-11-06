@@ -1,10 +1,11 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { authSecret } from '@/account/secret';
+import { randomBytes } from 'node:crypto';
+import { openSecret, sealSecret } from '@/account/secret-box';
 
-const ALGO = 'aes-256-gcm';
-const IV_BYTES = 12;
-const VERSION = 'v1';
-/** HKDF info: a key for this purpose only (not the SSO secrets' key, not AUTH_SECRET). */
+/**
+ * HKDF info: a key for this purpose only (not the SSO secrets' key, not the
+ * root secret itself). The root is DATA_ENCRYPTION_KEY when set, else
+ * AUTH_SECRET; the stored prefix says which (see account/secret-box.ts).
+ */
 const INFO = 'gradebook:webhook-secret:v1';
 /**
  * HKDF info for custom header values (the key a school's endpoint asks for):
@@ -32,10 +33,8 @@ export interface WebhookHeaderOwner extends WebhookSecretOwner {
 
 type Purpose = 'signing' | 'header';
 
-function key(purpose: Purpose): Buffer {
-  return Buffer.from(
-    hkdfSync('sha256', authSecret(), Buffer.alloc(0), purpose === 'header' ? HEADER_INFO : INFO, 32),
-  );
+function info(purpose: Purpose): string {
+  return purpose === 'header' ? HEADER_INFO : INFO;
 }
 
 /**
@@ -52,27 +51,11 @@ function aad(owner: WebhookSecretOwner | WebhookHeaderOwner, purpose: Purpose): 
 }
 
 function seal(purpose: Purpose, owner: WebhookSecretOwner, plaintext: string): string {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv(ALGO, key(purpose), iv);
-  cipher.setAAD(aad(owner, purpose));
-  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  return [VERSION, iv.toString('base64'), cipher.getAuthTag().toString('base64'), ct.toString('base64')].join(':');
+  return sealSecret(info(purpose), aad(owner, purpose), plaintext);
 }
 
 function open(purpose: Purpose, owner: WebhookSecretOwner, stored: string): string | null {
-  const parts = stored.split(':');
-  if (parts.length !== 4 || parts[0] !== VERSION) return null;
-  try {
-    const decipher = createDecipheriv(ALGO, key(purpose), Buffer.from(parts[1], 'base64'));
-    decipher.setAAD(aad(owner, purpose));
-    decipher.setAuthTag(Buffer.from(parts[2], 'base64'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(parts[3], 'base64')),
-      decipher.final(),
-    ]).toString('utf8');
-  } catch {
-    return null;
-  }
+  return openSecret(info(purpose), aad(owner, purpose), stored);
 }
 
 /** A new signing secret: 32 random bytes, `whsec_` + base64url. */
@@ -95,15 +78,18 @@ export function customSecretProblem(raw: string): string | null {
   return null;
 }
 
-/** `v1:<iv>:<tag>:<ciphertext>` (base64), for public.school_webhook.secret_enc. */
+/**
+ * For public.school_webhook.secret_enc: `v2:<kid>:<iv>:<tag>:<ct>` under
+ * DATA_ENCRYPTION_KEY, or `v1:<iv>:<tag>:<ct>` under AUTH_SECRET when it is unset.
+ */
 export function encryptWebhookSecret(owner: WebhookSecretOwner, plaintext: string): string {
   return seal('signing', owner, plaintext);
 }
 
 /**
- * The plaintext, or null when it cannot be decrypted: AUTH_SECRET changed
- * since it was saved (rotate the webhook's secret), or the value belongs to
- * another webhook.
+ * The plaintext, or null when it cannot be decrypted: the key it was saved
+ * under (AUTH_SECRET for `v1`, DATA_ENCRYPTION_KEY for `v2`) changed since
+ * (rotate the webhook's secret), or the value belongs to another webhook.
  */
 export function decryptWebhookSecret(owner: WebhookSecretOwner, stored: string): string | null {
   return open('signing', owner, stored);

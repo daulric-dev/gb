@@ -42,4 +42,23 @@ describe("GET /.well-known/gradebook.json", () => {
 
     expect(() => GET()).toThrow("must use HTTPS");
   });
+
+  test("allows localhost during a production build", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.NEXT_PUBLIC_API_URL = "http://localhost:3001";
+
+    const response = GET();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      apiUrl: "http://localhost:3001",
+    });
+  });
+
+  test("rejects insecure .local backend URLs in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.NEXT_PUBLIC_API_URL = "http://school.local";
+
+    expect(() => GET()).toThrow("must use HTTPS");
+  });
 });

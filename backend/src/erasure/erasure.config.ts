@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { authSecret } from '@/account/secret';
+import { authSecret, dataEncryptionKey } from '@/account/secret';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,7 +33,36 @@ export function erasureLogPrefix(): string | null {
   return raw.replace(/^\/+|\/+$/g, '');
 }
 
-/** HMAC key for the storage copy; derived so AUTH_SECRET itself is never used directly. */
+const SIGNING_LABEL = 'gradebook:erasure-log:v1';
+
+function hmacKey(root: string): Buffer {
+  return createHmac('sha256', root).update(SIGNING_LABEL).digest();
+}
+
+/**
+ * HMAC key for new entries in the storage copy; derived so the root secret
+ * itself is never used directly. The root is DATA_ENCRYPTION_KEY when set,
+ * else AUTH_SECRET (as before it existed).
+ */
 export function signingKey(): Buffer {
-  return createHmac('sha256', authSecret()).update('gradebook:erasure-log:v1').digest();
+  return hmacKey((dataEncryptionKey() ?? authSecret()));
+}
+
+/** The AUTH_SECRET-derived key: what every entry written before DATA_ENCRYPTION_KEY was signed with. */
+export function legacySigningKey(): Buffer {
+  return hmacKey(authSecret());
+}
+
+/**
+ * Every key a stored entry's signature is accepted under: the current
+ * signing key first, then the AUTH_SECRET one. Entries are immutable once
+ * exported, so setting DATA_ENCRYPTION_KEY must not make older entries fail
+ * verification; they keep verifying while AUTH_SECRET is unchanged. Before
+ * rotating AUTH_SECRET, re-sign them under DATA_ENCRYPTION_KEY with
+ * `bun run secrets:reencrypt` (scripts/reencrypt-secrets.ts).
+ */
+export function verificationKeys(): Buffer[] {
+  const current = signingKey();
+  const legacy = legacySigningKey();
+  return current.equals(legacy) ? [current] : [current, legacy];
 }

@@ -5,10 +5,12 @@ on:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
+      - ".github/scripts/validate-caddy.sh"
   pull_request:
     paths:
       - "infrastructure/**"
       - ".github/workflows/infrastructure.yml"
+      - ".github/scripts/validate-caddy.sh"
   workflow_dispatch:
 
 permissions:
@@ -19,7 +21,22 @@ jobs:
     name: Build Project Image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Building Project Image
         run: docker build -f infrastructure/Dockerfile -t gb-backend:ci .
+
+  caddy:
+    name: Validate Caddyfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Validating Caddyfile
+        run: ./.github/scripts/validate-caddy.sh
+
+      - name: Validating Compose file
+        run: |
+          # Dummy env: only interpolation is checked, nothing starts.
+          printf 'REDIS_PASSWORD=ci\nSITE_ADDRESS=api.example.com\n' > infrastructure/.env
+          docker compose -f infrastructure/docker-compose.yml config -q

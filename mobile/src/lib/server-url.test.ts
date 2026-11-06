@@ -1,9 +1,16 @@
-import { describe, expect, test } from "bun:test";
-import {
-  checkServerUrl,
-  normalizeServerUrl,
-  resolveServerUrl,
-} from "./server-url";
+import { describe, expect, mock, test } from "bun:test";
+
+// expo-secure-store is React Native source Bun can't load; server-url only
+// touches it when saving the chosen server, which these tests don't do.
+mock.module("expo-secure-store", () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => {},
+  deleteItemAsync: async () => {},
+}));
+
+const { checkServerUrl, normalizeServerUrl, resolveServerUrl } = await import(
+  "./server-url"
+);
 
 describe("normalizeServerUrl", () => {
   test("adds HTTPS to a school hostname and removes a trailing slash", () => {

@@ -20,6 +20,7 @@ afterAll(() => {
 
 beforeEach(() => {
   process.env.AUTH_SECRET = 'a'.repeat(40);
+  delete process.env.DATA_ENCRYPTION_KEY;
   process.env.API_URL = 'https://api.gb.test';
   process.env.SSO_PROVIDERS = 'google';
   process.env.GOOGLE_CLIENT_ID = 'env-google-id';

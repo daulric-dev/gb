@@ -1,10 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import {
-  QUEUE_FILE_SHARE_NOTIFY,
-  type ShareNotifyJobData,
-} from '../queue.constants';
+import { QUEUE_FILE_SHARE_NOTIFY, type ShareNotifyJobData } from '../queue.constants';
 import { FileShareNotifyHandler } from '../handlers/file-share-notify.handler';
 
 // This processor runs only when Redis is enabled (see QueueModule.forRoot).

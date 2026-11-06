@@ -59,7 +59,7 @@ async list(@Req() req: any, @Body() query: ListCoursesQueryDto) { ... }
 ## CORS, proxies and Swagger
 
 - **CORS**: QUERY is not CORS-safelisted, so browsers send a preflight `OPTIONS` before every cross-origin QUERY. `CORS_METHODS` (`backend/src/common/http-query.ts`) lists it, so the preflight passes. Expect one extra round trip per new path/body combination until the browser caches the preflight.
-- **nginx**: `infrastructure/nginx/default.conf` proxies every method (there is no `limit_except`), so QUERY and its body reach the backend. Keep it that way if you add locations.
+- **Caddy**: `infrastructure/caddy/Caddyfile` proxies every method (no `method` matcher on the proxy routes), so QUERY and its body reach the backend. Keep it that way if you add routes.
 - **Other proxies, CDNs and WAFs** in front of the API must pass unknown methods with their body. Some reject anything outside GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS, or drop the body: check yours, e.g. with the curl above.
 - **Swagger**: `@nestjs/swagger` 12 writes these operations under a `query` key in an OpenAPI 3.0 document. `query` is only an operation key from OpenAPI 3.2, so Swagger UI at `/docs` may not show them. This page is the reference for them.
 

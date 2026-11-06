@@ -95,4 +95,27 @@ describe('FileShareService.share', () => {
       in: ['u2'],
     });
   });
+
+  test('a failing notification queue does not fail the share', async () => {
+    prisma.user_profile.findMany.mockResolvedValue([{ id: 'u2' }]);
+    queue.enqueueShareNotify.mockImplementation(async () => {
+      throw new Error('redis down');
+    });
+    const rows = await service.share(FILE, SCHOOL, OWNER, [
+      { principalType: SharePrincipalType.User, principalId: 'u2' },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(queue.enqueueShareNotify).toHaveBeenCalledWith({
+      shareId: 'share-u2',
+    });
+  });
+
+  test('a hung notification queue does not hold up the share', async () => {
+    prisma.user_profile.findMany.mockResolvedValue([{ id: 'u2' }]);
+    queue.enqueueShareNotify.mockImplementation(() => new Promise(() => {}));
+    const rows = await service.share(FILE, SCHOOL, OWNER, [
+      { principalType: SharePrincipalType.User, principalId: 'u2' },
+    ]);
+    expect(rows).toHaveLength(1);
+  });
 });

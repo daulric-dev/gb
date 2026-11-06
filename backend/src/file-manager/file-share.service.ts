@@ -117,8 +117,16 @@ export class FileShareService {
       throw error;
     }
 
+    // The shares are saved; notifying is best effort. Not awaited, so a queue
+    // (Redis) outage can neither hang nor fail a request that already worked.
     for (const share of data ?? []) {
-      await this.queue.enqueueShareNotify({ shareId: share.id });
+      void this.queue
+        .enqueueShareNotify({ shareId: share.id })
+        .catch((error: unknown) =>
+          this.logger.error(
+            `Failed to queue share notification for ${share.id}: ${(error as Error).message}`,
+          ),
+        );
     }
 
     return data ?? [];

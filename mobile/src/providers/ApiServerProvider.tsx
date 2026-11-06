@@ -28,6 +28,16 @@ interface ApiServerContextValue {
 
 const ApiServerContext = createContext<ApiServerContextValue | null>(null);
 
+/**
+ * Plain http to a local server (localhost, LAN, .local) is allowed in dev and
+ * whenever Metro serves the app - which includes `bun run preview`
+ * (`expo start --no-dev`), a production build still running from this Mac.
+ * Store/EAS builds have no Metro host, so they stay https-only.
+ */
+function localHttpAllowed(): boolean {
+  return __DEV__ || developmentServerUrl() !== null;
+}
+
 export function ApiServerProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -39,7 +49,7 @@ export function ApiServerProvider({ children }: { children: ReactNode }) {
       .then((saved) => {
         const developmentUrl = developmentServerUrl();
         const selected = saved
-          ? normalizeServerUrl(saved, __DEV__)
+          ? normalizeServerUrl(saved, localHttpAllowed())
           : developmentUrl
             ? normalizeServerUrl(developmentUrl, true)
             : null;
@@ -64,7 +74,7 @@ export function ApiServerProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(async (input: string) => {
     setError(null);
     try {
-      const selected = await resolveServerUrl(input, __DEV__);
+      const selected = await resolveServerUrl(input, localHttpAllowed());
       await checkServerUrl(selected);
       await saveServerUrl(selected);
       // Never send a session token or cached school file to a newly selected instance.

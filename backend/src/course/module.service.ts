@@ -9,6 +9,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { isoDate } from '@/common/db-values';
+import { effectiveDueAt } from '@/grading/due-date';
 import {
   CourseAccessService,
   CourseRow,
@@ -89,6 +90,8 @@ interface ActivitySummary {
   points: number;
   due_at: string | null;
   status: 'draft' | 'published' | 'closed';
+  /** Student view only: `due_at` is this student's extension. */
+  has_extension?: boolean;
 }
 
 /**
@@ -120,13 +123,19 @@ export class ModuleService {
   /**
    * What a student sees: published modules holding published items, minus
    * any item whose page is unpublished or whose activity is still a draft.
-   * The caller has already proved the student is enrolled.
+   * An activity's `dueAt` is the student's effective due date (their
+   * extension when they have one, with `hasExtension`). The caller has
+   * already proved the student is enrolled.
    */
-  async listForStudent(courseId: string) {
-    return this.build(courseId, true);
+  async listForStudent(courseId: string, studentId: string) {
+    return this.build(courseId, true, studentId);
   }
 
-  private async build(courseId: string, studentView: boolean) {
+  private async build(
+    courseId: string,
+    studentView: boolean,
+    studentId?: string,
+  ) {
     const where = {
       course_id: courseId,
       ...(studentView ? { is_published: true } : {}),
@@ -154,6 +163,9 @@ export class ModuleService {
 
     const itemRows: ItemRow[] = items;
     const targets = this.targetsOf(items);
+    if (studentView && studentId) {
+      await this.applyExtensions(targets.activities, studentId);
+    }
 
     const byModule = new Map<string, ReturnType<typeof this.toItem>[]>();
     for (const row of itemRows) {
@@ -192,6 +204,33 @@ export class ModuleService {
       );
     }
     return true;
+  }
+
+  /**
+   * Swap each activity's due date for the student's effective one (their
+   * extension, else the activity's), and mark which are extensions.
+   */
+  private async applyExtensions(
+    activities: Map<string, ActivitySummary>,
+    studentId: string,
+  ) {
+    if (activities.size === 0) return;
+    let rows: { activity_id: string; due_at: Date }[];
+    try {
+      rows = await this.prisma.activity_extension.findMany({
+        where: { student_id: studentId, activity_id: { in: [...activities.keys()] } },
+        select: { activity_id: true, due_at: true },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to load extensions: ${(error as Error).message}`);
+      throw new BadRequestException('Failed to load modules');
+    }
+    const extensions = new Map(rows.map((r) => [r.activity_id, r.due_at]));
+    for (const [id, a] of activities) {
+      const extension = extensions.get(id) ?? null;
+      a.due_at = isoDate(effectiveDueAt(a.due_at, extension));
+      a.has_extension = extension !== null;
+    }
   }
 
   /** The pages, activities, files and topics items point at. */
@@ -259,6 +298,9 @@ export class ModuleService {
               points: Number(activity.points),
               dueAt: activity.due_at,
               status: activity.status,
+              ...(activity.has_extension !== undefined
+                ? { hasExtension: activity.has_extension }
+                : {}),
             },
           }
         : {}),
