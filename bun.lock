@@ -16,7 +16,7 @@
       "dependencies": {
         "@aws-sdk/client-s3": "3.1154.0",
         "@aws-sdk/s3-request-presigner": "3.1154.0",
-        "@fastify/aws-lambda": "^6.4.1",
+        "@fastify/aws-lambda": "^6.4.2",
         "@fastify/cookie": "^11.1.5",
         "@fastify/swagger": "^9.8.2",
         "@fastify/swagger-ui": "^6.1.1",
@@ -718,7 +718,7 @@
 
     "@fastify/ajv-compiler": ["@fastify/ajv-compiler@4.0.7", "", { "dependencies": { "ajv": "^8.12.0", "ajv-formats": "^3.0.1", "fast-uri": "^4.0.0" } }, "sha512-VP0yIfwlc1ohj733keYDqyHm1VWeP9VQxYomunhr90jkC4aNNibbkrRiaNgPgqj1ORxUenILR4qzA/ppYBNAtQ=="],
 
-    "@fastify/aws-lambda": ["@fastify/aws-lambda@6.4.1", "", {}, "sha512-eTCkZJ8b4NAyafxChyM1VSVMUK1KnlyXj7NBfrQm8dRcXj42X8je5poyaZDZ9T5XTyykl3oLMiI4IvZJWXzLsw=="],
+    "@fastify/aws-lambda": ["@fastify/aws-lambda@6.4.2", "", {}, "sha512-1GqygENq4dqRcAYumdNaiUMBX6hVqJEsCtmJ0Rvh1p5fm6NGqTQl0wSR9ojsRrn72weDASqd4WhG6iGcIjbncg=="],
 
     "@fastify/cookie": ["@fastify/cookie@11.1.5", "", { "dependencies": { "cookie": "^2.0.0", "fastify-plugin": "^6.0.0" } }, "sha512-hs7e0otf7n/lJMpt63EFdQb5/u8kO6DeexEtLPVTybSdItC6SwJ1O0vtTyWvKNR70LZcHLlsUr/y3jFpqtyWRA=="],
 
