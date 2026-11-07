@@ -23,7 +23,7 @@ jobs:
     name: Build Project Image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Building Project Image
         run: docker build -f infrastructure/Dockerfile -t gb-backend:ci .
@@ -32,7 +32,7 @@ jobs:
     name: Validate Caddyfile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validating Caddyfile
         run: ./.github/scripts/validate-caddy.sh
@@ -78,7 +78,7 @@ jobs:
       WEB_PORT: "3000"
       NEXT_PUBLIC_API_URL: https://api.example.test
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setting up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
