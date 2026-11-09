@@ -213,7 +213,7 @@ turbo run build --dry-run            # see what would run
 
 GradeBook is **source-available** - the code is public to encourage security review and bug discovery. If you find a vulnerability or bug, please report it to **security@daulric.dev**. Do not open a public issue for security findings.
 
-See [SECURITY.md](SECURITY.md) for full details on scope, expectations, and what to include in a report, and [CONTRIBUTING.md](CONTRIBUTING.md) for bug reports and the workflow for authorised collaborators.
+See [SECURITY.md](SECURITY.md) for full details on scope, expectations, and what to include in a report, [CONTRIBUTING.md](CONTRIBUTING.md) for bug reports and the workflow for authorised collaborators, and [ACCESSIBILITY.md](ACCESSIBILITY.md) for our accessibility target, known gaps and how to report a problem.
 
 ## License
 

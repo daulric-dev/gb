@@ -88,6 +88,7 @@ CI runs the same checks on every push and pull request; the **CI Gate** status c
 - Keep each pull request to one change. Large features can land in steps.
 - Describe what changed, why, and how you tested it. Link the issue if there is one.
 - Include screenshots or a short recording for UI changes, on web and mobile where both are affected.
+- UI changes follow the checklist in [ACCESSIBILITY.md](ACCESSIBILITY.md#for-contributors).
 - Call out anything a deployer must do: new environment variables, migrations, a mobile rebuild, an ordering requirement (for example "deploy the API before the app").
 
 ### Code conventions
