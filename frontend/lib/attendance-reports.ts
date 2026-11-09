@@ -16,7 +16,10 @@ export interface Tally {
 export interface ReportRange {
   from: string;
   to: string;
+  /** The zone the days are counted in: the school's, or UTC while none is set. */
   timeZone: string;
+  /** False while the school has no time zone set. */
+  timeZoneSet?: boolean;
 }
 
 export interface ReportStudentRow extends Tally {

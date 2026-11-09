@@ -39,7 +39,7 @@ import {
   studentDueFields,
 } from './due-date';
 import { refreshLateness } from './lateness';
-import { toLatePolicy, toLateness } from './late-policy';
+import { toLatePolicy, toLateness, type Lateness } from './late-policy';
 import { randomInt } from 'node:crypto';
 import {
   answerRow,
@@ -2534,7 +2534,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       excused: !!row.excused,
       excusedReason: (row.excused_reason as string | null) ?? null,
       gradedAt: ts(row.graded_at),
-      ...toLateness(row),
+      ...toLateness(row as Lateness),
     };
   }
 

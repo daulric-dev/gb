@@ -11,6 +11,8 @@ import { getCurrentPosition } from "@/lib/attendance";
 import {
   browserTimeZone,
   formatDay,
+  isKnownTimeZone,
+  timeZoneOptions,
   minutesToTime,
   timeRange,
   timeToMinutes,
@@ -30,6 +32,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
+import { TimeZoneNotice } from "@/components/timetable/time-zone-notice";
 import {
   Dialog,
   DialogContent,
@@ -80,6 +91,8 @@ export default function TimetableSetupPage() {
         <Skeleton className="h-64 w-full" />
       ) : (
         <>
+          {!canEdit && <TimeZoneNotice timeZoneSet={setup.value.settings.timeZoneSet} />}
+          <TimeZoneCard settings={setup.value.settings} canEdit={canEdit} onSaved={load} />
           <SettingsCard settings={setup.value.settings} canEdit={canEdit} onSaved={load} />
           <PeriodsCard periods={setup.value.periods} schoolDays={setup.value.settings.schoolDays} canEdit={canEdit} onSaved={load} />
           <RoomsCard rooms={setup.value.rooms} canEdit={canEdit} onSaved={load} />
@@ -88,6 +101,136 @@ export default function TimetableSetupPage() {
         </>
       )}
     </div>
+  );
+}
+
+// ── Time zone ───────────────────────────────────────────────────────────────
+
+/**
+ * The school's time zone, set deliberately: the browser's zone is offered as
+ * a suggestion but only saved when the admin confirms it. Until it is set the
+ * scheduler opens nothing and the automatic-sessions switch stays off.
+ */
+function TimeZoneCard({
+  settings,
+  canEdit,
+  onSaved,
+}: {
+  settings: TimetableSettings;
+  canEdit: boolean;
+  onSaved: () => Promise<void>;
+}) {
+  useSignals();
+  const saved = settings.timeZoneSet ? settings.timeZone : null;
+  const choice = useSignal<string | null>(saved);
+  const saving = useSignal(false);
+  const err = useSignal<string | null>(null);
+  useEffect(() => {
+    choice.value = saved;
+  }, [saved, choice]);
+
+  const suggestion = browserTimeZone();
+  const zones = timeZoneOptions(saved, suggestion);
+  const picked = choice.value;
+  const changed = !!picked && picked !== saved;
+
+  async function confirm() {
+    if (!picked || !isKnownTimeZone(picked)) {
+      err.value = "Choose a time zone from the list";
+      return;
+    }
+    saving.value = true;
+    err.value = null;
+    try {
+      await api(`${PATH}/settings`, { method: "PATCH", body: { timeZone: picked } });
+      toast.success(`Time zone set to ${picked}`);
+      await onSaved();
+    } catch (e) {
+      err.value = userMessage(e, "Could not save the time zone");
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return (
+    <Card className={saved ? undefined : "border-amber-500/60"}>
+      <CardHeader>
+        <CardTitle>Time zone</CardTitle>
+        <CardDescription>
+          Every period time is local to this zone, and attendance reports count days in it. Set it before turning on
+          automatic sessions.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!saved && (
+          <p role="status" className="text-sm font-medium text-amber-700 dark:text-amber-300">
+            Not set yet. Until it is, times are treated as UTC and no check-in opens automatically.
+          </p>
+        )}
+        <div className="space-y-1.5">
+          <Label htmlFor="tz">School time zone</Label>
+          <Combobox
+            items={zones}
+            value={picked}
+            onValueChange={(v) => {
+              choice.value = (v as string | null) ?? null;
+              err.value = null;
+            }}
+            disabled={!canEdit}
+          >
+            <ComboboxInput
+              id="tz"
+              className="w-full sm:max-w-sm"
+              placeholder="Search, e.g. London or America/New_York"
+              aria-describedby="tz-hint"
+              aria-required
+              disabled={!canEdit}
+            />
+            <ComboboxContent>
+              <ComboboxEmpty>No matching time zone.</ComboboxEmpty>
+              <ComboboxList>
+                {(zone: string) => (
+                  <ComboboxItem key={zone} value={zone}>
+                    {zone}
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
+          <p id="tz-hint" className="text-xs text-muted-foreground">
+            {saved ? `Saved: ${saved}.` : "Required."}
+            {canEdit && suggestion && suggestion !== picked && (
+              <>
+                {" "}
+                This device is in {suggestion}.{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={() => {
+                    choice.value = suggestion;
+                    err.value = null;
+                  }}
+                >
+                  Use {suggestion}
+                </button>{" "}
+                (you still need to confirm it).
+              </>
+            )}
+          </p>
+        </div>
+        {err.value && (
+          <p role="alert" className="text-sm text-destructive">
+            {err.value}
+          </p>
+        )}
+        {canEdit && (
+          <Button type="button" onClick={() => void confirm()} disabled={!changed || saving.value}>
+            {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {saved ? "Change time zone" : "Confirm time zone"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -112,7 +255,8 @@ function SettingsCard({
 
   const d = draft.value;
   const set = (patch: Partial<TimetableSettings>) => (draft.value = { ...draft.value, ...patch });
-  const suggestion = browserTimeZone();
+  // Automatic sessions need the zone first (the API refuses them without it).
+  const zoneSet = settings.timeZoneSet;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -122,11 +266,10 @@ function SettingsCard({
       await api(`${PATH}/settings`, {
         method: "PATCH",
         body: {
-          timeZone: d.timeZone.trim(),
           cycleLength: d.cycleLength,
           cycleStartDate: d.cycleLength ? d.cycleStartDate : null,
           schoolDays: d.schoolDays,
-          autoSessions: d.autoSessions,
+          ...(zoneSet ? { autoSessions: d.autoSessions } : {}),
           leadMinutes: d.leadMinutes,
           lateAfterMinutes: d.lateAfterMinutes,
           requireCode: d.requireCode,
@@ -146,38 +289,13 @@ function SettingsCard({
       <CardHeader>
         <CardTitle>Schedule and check-in</CardTitle>
         <CardDescription>
-          Times are in the school&apos;s time zone, so clock changes are handled.
+          Times are in the school&apos;s time zone{zoneSet ? ` (${settings.timeZone})` : ""}, so clock changes are handled.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={save} className="space-y-5">
           <fieldset disabled={!canEdit} className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="tz">Time zone</Label>
-                <Input
-                  id="tz"
-                  value={d.timeZone}
-                  onChange={(e) => set({ timeZone: e.target.value })}
-                  placeholder="Europe/London"
-                  aria-describedby="tz-hint"
-                />
-                <p id="tz-hint" className="text-xs text-muted-foreground">
-                  An IANA zone name.
-                  {suggestion && suggestion !== d.timeZone && canEdit && (
-                    <>
-                      {" "}
-                      <button
-                        type="button"
-                        className="underline underline-offset-2"
-                        onClick={() => set({ timeZone: suggestion })}
-                      >
-                        Use {suggestion}
-                      </button>
-                    </>
-                  )}
-                </p>
-              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="cycle">Timetable</Label>
                 <select
@@ -254,11 +372,18 @@ function SettingsCard({
               <div className="flex items-center justify-between gap-3 rounded-lg border p-3 sm:col-span-2">
                 <div>
                   <Label htmlFor="auto">Open attendance automatically</Label>
-                  <p className="text-xs text-muted-foreground">
+                  <p id="auto-hint" className="text-xs text-muted-foreground">
                     A check-in session opens at the start of each timetabled period and closes at its end; whoever has not checked in is marked absent.
+                    {!zoneSet && " Set the school's time zone above first."}
                   </p>
                 </div>
-                <Switch id="auto" checked={d.autoSessions} onCheckedChange={(v) => set({ autoSessions: v })} disabled={!canEdit} />
+                <Switch
+                  id="auto"
+                  aria-describedby="auto-hint"
+                  checked={zoneSet && d.autoSessions}
+                  onCheckedChange={(v) => set({ autoSessions: v })}
+                  disabled={!canEdit || !zoneSet}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="lead">Open this many minutes early</Label>

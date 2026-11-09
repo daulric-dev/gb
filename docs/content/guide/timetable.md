@@ -17,13 +17,17 @@ school admin turns it on in **Settings → Features** (it needs Attendance on).
 
 ## Setting it up (school admins)
 
-Open **Timetable → School setup**. You need the *Edit school settings*
+Open **Timetable setup** in the sidebar (also linked from **Settings**). You need the *Edit school settings*
 permission to change anything here.
 
-1. **Time zone.** Every time in the timetable is local to your school. Choose
-   your school's time zone first: until you do, GradeBook uses UTC and periods
-   would open at the wrong time. Clock changes (summer time) are handled for
-   you.
+1. **Time zone.** Every time in the timetable is local to your school, so
+   this comes first and is required. Search the list (for example "London" or
+   "America/New_York"); GradeBook suggests the zone of the device you are on,
+   but nothing is saved until you press **Confirm time zone**. Until a zone is
+   set, no check-in session opens automatically, the automatic-sessions switch
+   stays off, times are shown in UTC and the timetable and attendance pages
+   show a "School time zone not set" warning. Clock changes (summer time) are
+   handled for you. Changing the zone is recorded in the audit log.
 2. **School days and cycle.** Choose the weekdays your school is open. Pick a
    **weekly** timetable (the same every week) or a **rotating** one of 2-20
    days (for example a two-week, ten-day cycle). For a rotating timetable, set
@@ -39,7 +43,8 @@ permission to change anything here.
    start). A room without a location gets no location check.
 5. **Holidays and closures.** Add each holiday or closure (one day or a date
    range). Nothing is scheduled on these days.
-6. **Automatic check-in.** Choose whether sessions open automatically, how many
+6. **Automatic check-in.** Choose whether sessions open automatically (only
+   possible once the time zone is set), how many
    minutes before the period they open (0-30), whether students need the room
    code, and after how many minutes from the start of the period a check-in
    counts as late.

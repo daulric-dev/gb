@@ -119,8 +119,8 @@ model school {
   disabled_features                           String[]              @default([])
   /// What parents see (src/parent-portal): { showGrades, showWork, showAttendance, showAnnouncements, maxStudentAge }. Missing keys use the defaults in parent-settings.ts.
   parent_settings                             Json                  @default("{}")
-  /// IANA time zone (e.g. Europe/London) for the timetable and attendance reports; UTC until an admin sets it (src/timetable).
-  time_zone                                   String                @default("UTC")
+  /// IANA time zone (e.g. Europe/London) for the timetable and attendance reports. Null until an admin sets it deliberately: the scheduler skips the school and reports count UTC days meanwhile (src/timetable).
+  time_zone                                   String?
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]

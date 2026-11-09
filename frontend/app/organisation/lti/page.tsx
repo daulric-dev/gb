@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -51,47 +53,52 @@ import { ToolFormDialog } from "./_components/tool-form-dialog";
  * Every change asks "Confirm it's you" (step-up).
  */
 export default function OrganisationLtiPage() {
-  const [data, setData] = useState<LtiOverview | null>(null);
-  const [off, setOff] = useState(false);
-  const [schools, setSchools] = useState<OrganisationSchool[] | null>(null);
-  const [editing, setEditing] = useState<LtiTool | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
-  const [rotating, setRotating] = useState(false);
-  const [refresh, setRefresh] = useState(0);
-  const bump = useCallback(() => setRefresh((n) => n + 1), []);
+  useSignals();
+  const data = useSignal<LtiOverview | null>(null);
+  const off = useSignal(false);
+  const schools = useSignal<OrganisationSchool[] | null>(null);
+  const editing = useSignal<LtiTool | null>(null);
+  const formOpen = useSignal(false);
+  const formKey = useSignal(0);
+  const rotating = useSignal(false);
+  const refresh = useSignal(0);
+  const bump = useCallback(() => (refresh.value = refresh.value + 1), [refresh]);
 
   useEffect(() => {
     let live = true;
     api<LtiOverview>(ORGANISATION_LTI_API)
-      .then((d) => live && (setData(d), setOff(false)))
+      .then((d) => {
+        if (!live) return;
+        data.value = d;
+        off.value = false;
+      })
       .catch((err) => {
         if (!live) return;
-        if (isFeatureDisabledError(err)) setOff(true);
+        if (isFeatureDisabledError(err)) off.value = true;
         else toast.error(userMessage(err, "Failed to load external tools"));
       });
     return () => {
       live = false;
     };
-  }, [refresh]);
+  }, [refresh.value, data, off]);
 
   useEffect(() => {
     listOrganisationSchools("", "all")
-      .then(setSchools)
-      .catch(() => setSchools([]));
-  }, []);
+      .then((s) => (schools.value = s))
+      .catch(() => (schools.value = []));
+  }, [schools]);
 
-  const replaceTool = (tool: LtiTool) =>
-    setData((d) =>
-      d
-        ? {
-            ...d,
-            tools: d.tools.some((t) => t.id === tool.id)
-              ? d.tools.map((t) => (t.id === tool.id ? tool : t))
-              : [...d.tools, tool].sort((a, b) => a.name.localeCompare(b.name)),
-          }
-        : d,
-    );
+  const replaceTool = (tool: LtiTool) => {
+    const d = data.value;
+    data.value = d
+      ? {
+          ...d,
+          tools: d.tools.some((t) => t.id === tool.id)
+            ? d.tools.map((t) => (t.id === tool.id ? tool : t))
+            : [...d.tools, tool].sort((a, b) => a.name.localeCompare(b.name)),
+        }
+      : d;
+  };
 
   async function rotateKey() {
     if (
@@ -100,25 +107,26 @@ export default function OrganisationLtiPage() {
       )
     )
       return;
-    setRotating(true);
+    rotating.value = true;
     try {
       const platform = await api<LtiPlatform>(`${ORGANISATION_LTI_API}/keys/rotate`, {
         method: "POST",
         stepUp: true,
       });
-      setData((d) => (d ? { ...d, platform } : d));
+      const d = data.value;
+      data.value = d ? { ...d, platform } : d;
       toast.success("Platform key rotated");
     } catch (err) {
       toast.error(userMessage(err, "Failed to rotate the key"));
     } finally {
-      setRotating(false);
+      rotating.value = false;
     }
   }
 
   function openForm(tool: LtiTool | null) {
-    setEditing(tool);
-    setFormKey((k) => k + 1);
-    setFormOpen(true);
+    editing.value = tool;
+    formKey.value = formKey.value + 1;
+    formOpen.value = true;
   }
 
   const header = (
@@ -126,7 +134,7 @@ export default function OrganisationLtiPage() {
       title="External tools"
       description="Connect LTI 1.3 tools that teachers can add to course modules"
       action={
-        data && (
+        data.value && (
           <Button onClick={() => openForm(null)}>
             <Plus className="mr-1.5 size-4" />
             Register a tool
@@ -136,7 +144,7 @@ export default function OrganisationLtiPage() {
     />
   );
 
-  if (off) {
+  if (off.value) {
     return (
       <div className="space-y-6">
         {header}
@@ -148,7 +156,7 @@ export default function OrganisationLtiPage() {
     );
   }
 
-  if (!data) {
+  if (!data.value) {
     return (
       <div className="space-y-6">
         {header}
@@ -158,7 +166,7 @@ export default function OrganisationLtiPage() {
     );
   }
 
-  const { platform, tools } = data;
+  const { platform, tools } = data.value;
   const activeKey = platform.keys.find((k) => k.active);
 
   return (
@@ -213,7 +221,7 @@ export default function OrganisationLtiPage() {
                 key={t.id}
                 tool={t}
                 platform={platform}
-                schools={schools}
+                schools={schools.value}
                 onEditAction={() => openForm(t)}
                 onChangedAction={replaceTool}
                 onRemovedAction={bump}
@@ -257,8 +265,8 @@ export default function OrganisationLtiPage() {
               ))}
             </ul>
           )}
-          <Button variant="outline" onClick={rotateKey} disabled={rotating}>
-            {rotating ? (
+          <Button variant="outline" onClick={rotateKey} disabled={rotating.value}>
+            {rotating.value ? (
               <Loader2 className="mr-1.5 size-4 animate-spin" />
             ) : (
               <KeyRound className="mr-1.5 size-4" />
@@ -269,11 +277,11 @@ export default function OrganisationLtiPage() {
       </Card>
 
       <ToolFormDialog
-        key={formKey}
-        open={formOpen}
-        existing={editing}
-        schools={schools}
-        onOpenChangeAction={setFormOpen}
+        key={formKey.value}
+        open={formOpen.value}
+        existing={editing.value}
+        schools={schools.value}
+        onOpenChangeAction={(o) => (formOpen.value = o)}
         onSavedAction={replaceTool}
       />
     </div>
@@ -295,22 +303,23 @@ function ToolRow({
   onChangedAction: (tool: LtiTool) => void;
   onRemovedAction: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [addSchool, setAddSchool] = useState("");
+  useSignals();
+  const open = useSignal(false);
+  const busy = useSignal<string | null>(null);
+  const addSchool = useSignal("");
   const base = ltiToolApi(t.id);
   const everySchool = t.deployments.some((d) => d.schoolId === null);
   const deployed = new Set(t.deployments.map((d) => d.schoolId));
   const addable = (schools ?? []).filter((s) => !deployed.has(s.id));
 
   async function run(label: string, fn: () => Promise<void>) {
-    setBusy(label);
+    busy.value = label;
     try {
       await fn();
     } catch (err) {
       toast.error(userMessage(err, `Failed to ${label}`));
     } finally {
-      setBusy(null);
+      busy.value = null;
     }
   }
 
@@ -326,7 +335,7 @@ function ToolRow({
     if (!window.confirm(`Delete "${t.name}"? Its client id and deployment ids stop working.`)) {
       return;
     }
-    setBusy("delete it");
+    busy.value = "delete it";
     api(base, { method: "DELETE", stepUp: true })
       .then(() => {
         toast.success("Tool deleted");
@@ -341,13 +350,13 @@ function ToolRow({
           toast.error(userMessage(err, "Failed to delete the tool"));
         }
       })
-      .finally(() => setBusy(null));
+      .finally(() => (busy.value = null));
   };
 
   const addDeployment = () =>
     run("add the deployment", async () => {
-      const schoolId = addSchool === "all" ? null : addSchool;
-      if (!addSchool) return;
+      const schoolId = addSchool.value === "all" ? null : addSchool.value;
+      if (!addSchool.value) return;
       onChangedAction(
         await api<LtiTool>(`${base}/deployments`, {
           method: "POST",
@@ -355,7 +364,7 @@ function ToolRow({
           stepUp: true,
         }),
       );
-      setAddSchool("");
+      addSchool.value = "";
       toast.success("Deployment added. Give the tool its deployment id.");
     });
 
@@ -384,13 +393,13 @@ function ToolRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
+          onClick={() => (open.value = !open.value)}
+          aria-expanded={open.value}
         >
           <ChevronDown
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform",
-              !open && "-rotate-90",
+              !open.value && "-rotate-90",
             )}
           />
           <span className="min-w-0">
@@ -418,13 +427,13 @@ function ToolRow({
         </button>
         <Switch
           checked={t.enabled}
-          disabled={!!busy}
+          disabled={!!busy.value}
           onCheckedChange={(v) => void toggle(v)}
           aria-label={`Allow launches of ${t.name}`}
         />
       </div>
 
-      {open && (
+      {open.value && (
         <div className="mt-3 space-y-4 pl-6">
           {t.description && <p className="text-sm text-muted-foreground">{t.description}</p>}
 
@@ -438,9 +447,9 @@ function ToolRow({
               variant="outline"
               className="text-destructive"
               onClick={remove}
-              disabled={!!busy}
+              disabled={!!busy.value}
             >
-              {busy === "delete it" ? (
+              {busy.value === "delete it" ? (
                 <Loader2 className="mr-1.5 size-3.5 animate-spin" />
               ) : (
                 <Trash2 className="mr-1.5 size-3.5" />
@@ -480,7 +489,7 @@ function ToolRow({
                         size="icon-sm"
                         variant="ghost"
                         onClick={() => removeDeployment(d.id, label)}
-                        disabled={!!busy}
+                        disabled={!!busy.value}
                         aria-label={`Remove the deployment for ${label}`}
                         title="Remove"
                       >
@@ -493,8 +502,8 @@ function ToolRow({
             )}
             <div className="flex flex-wrap items-center gap-2">
               <NativeSelect
-                value={addSchool}
-                onChange={(e) => setAddSchool(e.target.value)}
+                value={addSchool.value}
+                onChange={(e) => (addSchool.value = e.target.value)}
                 aria-label={`Add a deployment for ${t.name}`}
                 className="min-w-48"
               >
@@ -510,9 +519,9 @@ function ToolRow({
                 size="sm"
                 variant="outline"
                 onClick={() => void addDeployment()}
-                disabled={!addSchool || !!busy}
+                disabled={!addSchool.value || !!busy.value}
               >
-                {busy === "add the deployment" ? (
+                {busy.value === "add the deployment" ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                 ) : (
                   <Plus className="mr-1.5 size-3.5" />

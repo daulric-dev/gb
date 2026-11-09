@@ -20,6 +20,7 @@ as a single schema (`prisma.config.ts` points here).
 | `audit.prisma` | `public` | The school- and organisation-scoped, field-level audit log (`audit_log`): actor and school-name snapshots, entity and record id, action, previous/new values, and timestamp. See `src/audit-log` and [the audit log guide](../../../docs/content/guide/audit-log.md). |
 | `sso.prisma` | `public` | Each school's own sign-in apps (`school_sso_provider`, keyed by school and provider `google`/`azure`: on/off, client ID, client secret encrypted and bound to the school and provider, non-secret `settings`); no row = the env fallback. The SSO audit log (`sso_audit_log`): one row per change to a school's SSO settings, never a secret. See `src/sso`. |
 | `report.prisma` | `grading` | Report cards: `report_release` (per school and term: comment deadline, published at/by), `report_comment` (teacher comment per term, course and student, `draft`/`ready`), `report_head_comment` (head / form tutor comment per term and student) and `report_document` (each student's generated term PDF: status, storage key, attempts, error). See `src/report-card`. |
+| `rostering.prisma` | `public` | Rostering sync: `roster_source` (CSV or OneRoster 1.2 endpoint; client secret encrypted, bound to the source), `roster_link` (sourcedId -> GradeBook id per source and entity), `roster_run` (dry run / apply status, summary, progress) and `roster_change` (the change set: diff, data, errors, apply status). Also `student.student_number`. See `src/rostering`. |
 
 ## Changing the schema
 

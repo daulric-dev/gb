@@ -6,6 +6,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import {
   Archive,
   Eye,
+  ListChecks,
   Loader2,
   MessageSquareText,
   Search,
@@ -14,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { lateLabel } from "@/lib/courses/late";
 import { downloadFromUrl } from "@/lib/download";
 import type {
   ActivityKind,
@@ -54,6 +56,7 @@ import {
 } from "@/components/ui/empty";
 import type { SubmissionRow } from "./types";
 import { RubricMarkDialog } from "./RubricMarkDialog";
+import { QuizAnswersDialog } from "./QuizAnswersDialog";
 import { ExtensionActions, ExtensionBadge } from "./ExtensionControls";
 import { AccommodationActions, AccommodationBadge } from "./AccommodationControls";
 import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
@@ -143,6 +146,7 @@ export function MarksTable({
   const feedbackText = useSignal("");
   const excusing = useSignal<SubmissionRow | null>(null);
   const excuseReason = useSignal("");
+  const answersFor = useSignal<SubmissionRow | null>(null);
   const rubricFor = useSignal<SubmissionRow | null>(null);
   const fileFor = useSignal<{
     row: SubmissionRow;
@@ -216,6 +220,37 @@ export function MarksTable({
     if (ok) {
       feedbackFor.value = null;
       toast.success("Feedback saved");
+    }
+  }
+
+  async function toggleLatePenalty(row: SubmissionRow) {
+    const sub = row.submission;
+    if (!sub) return;
+    const nextWaived = !sub.latePenaltyWaived;
+    try {
+      const marked = await api<{ score: number | null; latePenaltyWaived: boolean }>(
+        `/activities/${activityId}/submissions/${row.studentId}/late-penalty`,
+        { method: "PATCH", body: { waived: nextWaived } },
+      );
+      toast.success(nextWaived ? "Late penalty waived" : "Late penalty applied");
+      onRowsChangeAction(
+        rows.map((r) =>
+          r.studentId === row.studentId
+            ? {
+                ...r,
+                submission: r.submission
+                  ? {
+                      ...r.submission,
+                      latePenaltyWaived: marked.latePenaltyWaived,
+                      score: marked.score,
+                    }
+                  : null,
+              }
+            : r,
+        ),
+      );
+    } catch (err) {
+      toast.error(userMessage(err, "Could not update late penalty"));
     }
   }
 
@@ -308,6 +343,13 @@ export function MarksTable({
                       <AccommodationBadge accommodation={row.accommodation} />
                     )}
                     {lockdownBrowser && <LockdownPresence submission={sub} />}
+                    {sub?.needsMarking && (
+                      <p className="mt-1">
+                        <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                          Needs marking
+                        </Badge>
+                      </p>
+                    )}
                     {row.enrollmentStatus && row.enrollmentStatus !== "active" && (
                       <p className="text-xs capitalize text-muted-foreground">
                         {row.enrollmentStatus}
@@ -337,11 +379,38 @@ export function MarksTable({
                             {sub!.attemptCount > 1 &&
                               ` · attempt ${sub!.attemptCount}`}
                           </p>
-                          {lateBy !== null && (
+                          {((sub?.lateSeconds ?? 0) > 0 || lateBy !== null) && (
+                            <div className="space-y-0.5">
                               <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                                {lateBy} {lateBy === 1 ? "day" : "days"} late
+                                {(sub?.lateSeconds ?? 0) > 0
+                                  ? lateLabel(sub!.lateSeconds!)
+                                  : `Late (${lateBy} ${lateBy === 1 ? "day" : "days"})`}
                               </p>
-                            )}
+                              {(sub?.latePenaltyPercent ?? 0) > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                                  {sub?.latePenaltyWaived ? (
+                                    <span className="text-muted-foreground line-through">
+                                      −{sub.latePenaltyPercent}% late penalty (waived)
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-700 dark:text-amber-400">
+                                      {sub?.rawScore !== null && sub?.rawScore !== undefined ? `${sub.rawScore} − ` : ""}
+                                      {sub?.latePenaltyPercent}% late = {sub?.score}
+                                    </span>
+                                  )}
+                                  {editable && (
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-medium text-primary underline underline-offset-2 hover:opacity-80"
+                                      onClick={() => void toggleLatePenalty(row)}
+                                    >
+                                      {sub?.latePenaltyWaived ? "Apply penalty" : "Waive penalty"}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {sub!.textBody && (
                             <p className="line-clamp-2 whitespace-pre-wrap text-sm">
                               {sub!.textBody}
@@ -509,6 +578,17 @@ export function MarksTable({
                             }
                           />
                         )}
+                        {kind === "quiz" && sub && (sub.status !== "draft" || sub.attemptCount > 0) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Answers and question marks"
+                            aria-label={`Answers and question marks for ${row.name}`}
+                            onClick={() => (answersFor.value = row)}
+                          >
+                            <ListChecks className="size-4" aria-hidden />
+                          </Button>
+                        )}
                         {rubric && (
                           <Button
                             size="sm"
@@ -556,6 +636,33 @@ export function MarksTable({
           </TableBody>
         </Table>
       </div>
+
+      {kind === "quiz" && (
+        <QuizAnswersDialog
+          activityId={activityId}
+          student={answersFor.value}
+          onOpenChangeAction={(v) => {
+            if (!v) answersFor.value = null;
+          }}
+          onMarkedAction={(studentId, marked) =>
+            onRowsChangeAction(
+              rows.map((r) =>
+                r.studentId === studentId && r.submission
+                  ? {
+                      ...r,
+                      submission: {
+                        ...r.submission,
+                        status: marked.status,
+                        score: marked.score,
+                        needsMarking: marked.status === "submitted",
+                      },
+                    }
+                  : r,
+              ),
+            )
+          }
+        />
+      )}
 
       {rubric && (
         <RubricMarkDialog

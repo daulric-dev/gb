@@ -70,7 +70,7 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 ## P2: after P1
 
-### 4. Late-work policy — [ ]
+### 4. Late-work policy — [x] (PR #TBD)
 
 **Why.** Due dates now hard-close. Many teachers accept late work with a penalty.
 
@@ -81,7 +81,7 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 **Touches:** `grading.activity` (`late_until`, `late_penalty_*`), `due-date.ts` (an effective "closed at" separate from "due at"), submission marking, gradebook display, CSV export.
 
-### 5. More quiz question types and question banks — [ ]
+### 5. More quiz question types and question banks — [x] (PR #TBD)
 
 **Why.** Only multiple choice, true/false and short answer exist; teachers need open answers and maths, and randomisation helps more against cheating than lockdown does.
 
@@ -105,7 +105,7 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 **Scope:** attendance percentage per student, course and school; thresholds (for example below 90% over 4 weeks) that alert the form tutor or admin, and the parent if the parent portal is on; CSV export.
 
-### 8. SIS / rostering sync (OneRoster, CSV) — [ ]
+### 8. SIS / rostering sync (OneRoster, CSV) — [x] (PR #TBD)
 
 **Feature flag:** `rostering` (organisation only).
 

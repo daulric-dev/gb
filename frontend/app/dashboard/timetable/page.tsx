@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { TimeZoneNotice } from "@/components/timetable/time-zone-notice";
 import { OccurrenceList } from "@/components/timetable/occurrence-list";
 import { OccurrenceDialog, type OccurrenceAction } from "@/components/timetable/occurrence-dialog";
 
@@ -93,6 +94,8 @@ export default function MyTimetablePage() {
           ) : undefined
         }
       />
+
+      <TimeZoneNotice timeZoneSet={data.value?.timeZoneSet} />
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">

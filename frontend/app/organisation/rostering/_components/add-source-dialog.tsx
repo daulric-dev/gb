@@ -1,6 +1,8 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2, PlugZap } from "lucide-react";
 import { api } from "@/lib/api";
@@ -37,58 +39,57 @@ export function AddSourceDialog({
   onOpenChangeAction: (open: boolean) => void;
   onCreatedAction: (source: RosterSource) => void;
 }) {
+  useSignals();
   const id = useId();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<SourceKind>("csv");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [tokenUrl, setTokenUrl] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [daily, setDaily] = useState(false);
-  const [autoApply, setAutoApply] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
-  const [saving, setSaving] = useState(false);
+  const name = useSignal("");
+  const kind = useSignal<SourceKind>("csv");
+  const baseUrl = useSignal("");
+  const tokenUrl = useSignal("");
+  const clientId = useSignal("");
+  const clientSecret = useSignal("");
+  const daily = useSignal(false);
+  const autoApply = useSignal(false);
+  const testing = useSignal(false);
+  const test = useSignal<{ ok: boolean; message: string } | null>(null);
+  const saving = useSignal(false);
 
-  const api_ = kind === "oneroster_api";
-  const ready = name.trim() && (!api_ || (baseUrl.trim() && tokenUrl.trim() && clientId.trim() && clientSecret));
+  const api_ = kind.value === "oneroster_api";
+  const ready = name.value.trim() && (!api_ || (baseUrl.value.trim() && tokenUrl.value.trim() && clientId.value.trim() && clientSecret.value));
 
   async function testConnection() {
-    setTesting(true);
-    setTest(null);
+    testing.value = true;
+    test.value = null;
     try {
-      setTest(
-        await api<{ ok: boolean; message: string }>(`${ROSTERING_API}/test-connection`, {
-          method: "POST",
-          body: { baseUrl: baseUrl.trim(), tokenUrl: tokenUrl.trim(), clientId: clientId.trim(), clientSecret },
-        }),
-      );
+      test.value = await api<{ ok: boolean; message: string }>(`${ROSTERING_API}/test-connection`, {
+        method: "POST",
+        body: { baseUrl: baseUrl.value.trim(), tokenUrl: tokenUrl.value.trim(), clientId: clientId.value.trim(), clientSecret: clientSecret.value },
+      });
     } catch (err) {
-      setTest({ ok: false, message: userMessage(err, "The test could not run") });
+      test.value = { ok: false, message: userMessage(err, "The test could not run") };
     } finally {
-      setTesting(false);
+      testing.value = false;
     }
   }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!ready) return;
-    setSaving(true);
+    saving.value = true;
     try {
       const source = await api<RosterSource>(`${ROSTERING_API}/sources`, {
         method: "POST",
         stepUp: true,
         body: {
-          name: name.trim(),
-          kind,
+          name: name.value.trim(),
+          kind: kind.value,
           ...(api_
             ? {
-                baseUrl: baseUrl.trim(),
-                tokenUrl: tokenUrl.trim(),
-                clientId: clientId.trim(),
-                clientSecret,
-                schedule: daily ? "daily" : "off",
-                autoApply,
+                baseUrl: baseUrl.value.trim(),
+                tokenUrl: tokenUrl.value.trim(),
+                clientId: clientId.value.trim(),
+                clientSecret: clientSecret.value,
+                schedule: daily.value ? "daily" : "off",
+                autoApply: autoApply.value,
               }
             : {}),
         },
@@ -98,7 +99,7 @@ export function AddSourceDialog({
     } catch (err) {
       toast.error(userMessage(err, "Failed to add the source"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -118,17 +119,17 @@ export function AddSourceDialog({
             <Label htmlFor={`${id}-name`}>Name</Label>
             <Input
               id={`${id}-name`}
-              value={name}
+              value={name.value}
               maxLength={120}
               placeholder="District SIS"
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => (name.value = e.target.value)}
               required
             />
           </div>
 
           <fieldset className="space-y-1.5">
             <legend className="text-sm font-medium">Type</legend>
-            <RadioGroup value={kind} onValueChange={(v) => setKind(v as SourceKind)} className="grid-cols-1 sm:grid-cols-2">
+            <RadioGroup value={kind.value} onValueChange={(v) => (kind.value = v as SourceKind)} className="grid-cols-1 sm:grid-cols-2">
               <Label className={RADIO_CARD}>
                 <RadioGroupItem value="csv" />
                 <span>
@@ -154,35 +155,35 @@ export function AddSourceDialog({
                 <Label htmlFor={`${id}-base`}>Endpoint URL</Label>
                 <Input
                   id={`${id}-base`}
-                  value={baseUrl}
+                  value={baseUrl.value}
                   inputMode="url"
                   placeholder="https://sis.example.org/ims/oneroster/rostering/v1p2"
-                  onChange={(e) => setBaseUrl(e.target.value)}
+                  onChange={(e) => (baseUrl.value = e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor={`${id}-token`}>Token URL</Label>
                 <Input
                   id={`${id}-token`}
-                  value={tokenUrl}
+                  value={tokenUrl.value}
                   inputMode="url"
                   placeholder="https://sis.example.org/oauth/token"
-                  onChange={(e) => setTokenUrl(e.target.value)}
+                  onChange={(e) => (tokenUrl.value = e.target.value)}
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor={`${id}-client`}>Client ID</Label>
-                  <Input id={`${id}-client`} value={clientId} autoComplete="off" onChange={(e) => setClientId(e.target.value)} />
+                  <Input id={`${id}-client`} value={clientId.value} autoComplete="off" onChange={(e) => (clientId.value = e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor={`${id}-secret`}>Client secret</Label>
                   <Input
                     id={`${id}-secret`}
                     type="password"
-                    value={clientSecret}
+                    value={clientSecret.value}
                     autoComplete="new-password"
-                    onChange={(e) => setClientSecret(e.target.value)}
+                    onChange={(e) => (clientSecret.value = e.target.value)}
                   />
                 </div>
               </div>
@@ -191,15 +192,15 @@ export function AddSourceDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={testing || !baseUrl || !tokenUrl || !clientId || !clientSecret}
+                  disabled={testing.value || !baseUrl.value || !tokenUrl.value || !clientId.value || !clientSecret.value}
                   onClick={() => void testConnection()}
                 >
-                  {testing ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <PlugZap className="mr-1.5 size-4" />}
+                  {testing.value ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <PlugZap className="mr-1.5 size-4" />}
                   Test connection
                 </Button>
-                {test && (
-                  <p role="status" className={test.ok ? "text-sm text-green-700 dark:text-green-400" : "text-sm text-destructive"}>
-                    {test.message}
+                {test.value && (
+                  <p role="status" className={test.value.ok ? "text-sm text-green-700 dark:text-green-400" : "text-sm text-destructive"}>
+                    {test.value.message}
                   </p>
                 )}
               </div>
@@ -210,9 +211,9 @@ export function AddSourceDialog({
                     A dry run every day. You review it, unless auto-apply is on.
                   </span>
                 </Label>
-                <Switch id={`${id}-daily`} checked={daily} onCheckedChange={setDaily} />
+                <Switch id={`${id}-daily`} checked={daily.value} onCheckedChange={(v) => (daily.value = v)} />
               </div>
-              {daily && (
+              {daily.value && (
                 <div className="flex items-start justify-between gap-3">
                   <Label htmlFor={`${id}-auto`} className="font-normal">
                     Apply new and changed records automatically
@@ -220,7 +221,7 @@ export function AddSourceDialog({
                       Records to disable always wait for you to confirm.
                     </span>
                   </Label>
-                  <Switch id={`${id}-auto`} checked={autoApply} onCheckedChange={setAutoApply} />
+                  <Switch id={`${id}-auto`} checked={autoApply.value} onCheckedChange={(v) => (autoApply.value = v)} />
                 </div>
               )}
             </div>
@@ -230,8 +231,8 @@ export function AddSourceDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChangeAction(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!ready || saving}>
-              {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+            <Button type="submit" disabled={!ready || saving.value}>
+              {saving.value && <Loader2 className="mr-1.5 size-4 animate-spin" />}
               Add source
             </Button>
           </DialogFooter>

@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { signal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { ApiError, buildUrl } from "@/lib/api";
 import { FriendlyError, safeText, userMessage } from "@/lib/errors";
 import type { AttendanceMethod, AttendanceStatus } from "@/lib/courses/types";
@@ -107,12 +109,19 @@ export function formatTime(iso: string | null | undefined): string {
   });
 }
 
+/** A signal holding the time it was created; the lazy start value for `useNow`. */
+const timeSignal = () => signal(Date.now());
+
 /** The current time, re-rendering every `intervalMs` while `active`. */
 export function useNow(intervalMs = 1000, active = true): number {
-  const [now, setNow] = useState(() => Date.now());
+  useSignals();
+  // Created once per mount, like a lazy initial state.
+  const now = useMemo(() => timeSignal(), []);
   useEffect(() => {
     if (!active) return;
-    const tick = () => setNow(Date.now());
+    const tick = () => {
+      now.value = Date.now();
+    };
     // Catch up straight away after being inactive, then tick on the interval.
     const first = setTimeout(tick, 0);
     const id = setInterval(tick, intervalMs);
@@ -120,8 +129,8 @@ export function useNow(intervalMs = 1000, active = true): number {
       clearTimeout(first);
       clearInterval(id);
     };
-  }, [intervalMs, active]);
-  return now;
+  }, [intervalMs, active, now]);
+  return now.value;
 }
 
 /** Milliseconds left until `closesAt`, ticking once a second. */

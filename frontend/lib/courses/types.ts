@@ -208,6 +208,13 @@ export interface Activity {
   omitFromFinalGrade: boolean;
   /** The course rubric marking uses; quizzes never have one. */
   rubricId: string | null;
+  lateUntil?: string | null;
+  latePenaltyMode?: "none" | "percent_per_day" | "percent_per_hour";
+  latePenaltyValue?: number | null;
+  latePenaltyCap?: number | null;
+  shuffleQuestions?: boolean;
+  /** Each student's own option order (choice and matching kinds). */
+  shuffleOptions?: boolean;
   createdAt: string;
 }
 
@@ -241,6 +248,11 @@ export interface GradebookCell {
   submittedAt: string | null;
   /** Left out of the total by its group's drop rule. */
   dropped: boolean;
+  /** The mark before the late penalty (score is after it). */
+  rawScore?: number | null;
+  lateSeconds?: number;
+  latePenaltyPercent?: number;
+  latePenaltyWaived?: boolean;
 }
 
 export interface GradebookRow {

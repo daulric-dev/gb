@@ -11,6 +11,7 @@ import {
   addDays,
   daysBetween,
   isIsoDate,
+  isValidTimeZone,
   localParts,
   safeTimeZone,
   zonedToUtc,
@@ -25,13 +26,24 @@ import { tally, type AttendanceTally } from './rates';
 export const DEFAULT_RANGE_DAYS = 28;
 export const MAX_RANGE_DAYS = 400;
 
-/** The school-wide power that sees every student's attendance report. */
-export const REPORT_PERMISSION = 'report-card:read';
+/**
+ * The school-wide power that sees every student's attendance report (and
+ * every open alert). Its own key: `report-card:read` no longer grants it.
+ */
+export const REPORT_PERMISSION = 'attendance-report:read';
 
 export interface ReportRange {
   from: string;
   to: string;
+  /** The zone the days are counted in: the school's, or UTC while it is not set. */
   timeZone: string;
+  /** False while the school has no time zone (days are then UTC days). */
+  timeZoneSet: boolean;
+}
+
+export interface SchoolZone {
+  timeZone: string;
+  timeZoneSet: boolean;
 }
 
 interface Rec {
@@ -99,7 +111,7 @@ const TALLY_HEAD = ['Present', 'Late', 'Absent', 'Excused', 'Rate %'];
  * zone; a session counts on the day it opened.
  *
  * Who sees what: the school report and any student's report need
- * `report-card:read` in the active school (admins by default); a form tutor
+ * `attendance-report:read` in the active school (admins by default); a form tutor
  * sees their own tutees' reports; a course report is for the course's staff.
  */
 @Injectable()
@@ -119,16 +131,19 @@ export class AttendanceReportService {
     return { schoolId, canSeeSchool: eff.keys.includes(REPORT_PERMISSION) };
   }
 
-  async timeZoneOf(schoolId: string): Promise<string> {
+  /** The school's zone; UTC (and `timeZoneSet: false`) while it is not set. */
+  async timeZoneOf(schoolId: string): Promise<SchoolZone> {
     const s = await this.prisma.school.findUnique({
       where: { id: schoolId },
       select: { time_zone: true },
     });
-    return safeTimeZone(s?.time_zone);
+    return { timeZone: safeTimeZone(s?.time_zone), timeZoneSet: isValidTimeZone(s?.time_zone) };
   }
 
   /** Validate a range of local days; default the last four weeks. */
-  resolveRange(timeZone: string, from?: string, to?: string, now = new Date()): ReportRange {
+  resolveRange(zone: SchoolZone | string, from?: string, to?: string, now = new Date()): ReportRange {
+    const { timeZone, timeZoneSet } =
+      typeof zone === 'string' ? { timeZone: zone, timeZoneSet: true } : zone;
     for (const d of [from, to]) {
       if (d !== undefined && !isIsoDate(d)) throw new BadRequestException('Use real dates (YYYY-MM-DD)');
     }
@@ -139,7 +154,7 @@ export class AttendanceReportService {
     if (span >= MAX_RANGE_DAYS) {
       throw new BadRequestException(`A report can cover at most ${MAX_RANGE_DAYS} days`);
     }
-    return { from: f, to: t, timeZone };
+    return { from: f, to: t, timeZone, timeZoneSet };
   }
 
   /** [start, end) instants of a range. */

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -34,25 +36,31 @@ import { InviteActions } from "../schools/_components/pending-invite";
 import { userMessage } from "@/lib/errors";
 
 export default function OrganisationAdminsPage() {
+  useSignals();
   const { profile } = useProfile();
-  const [rows, setRows] = useState<OrganisationAdmin[] | null>(null);
-  const [invites, setInvites] = useState<OrganisationInvite[]>([]);
-  const [email, setEmail] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const rowsSignal = useSignal<OrganisationAdmin[] | null>(null);
+  const rows = rowsSignal.value;
+  const invitesSignal = useSignal<OrganisationInvite[]>([]);
+  const invites = invitesSignal.value;
+  const emailSignal = useSignal("");
+  const email = emailSignal.value;
+  const addingSignal = useSignal(false);
+  const adding = addingSignal.value;
+  const removingIdSignal = useSignal<string | null>(null);
+  const removingId = removingIdSignal.value;
 
   const load = useCallback(() => {
     api<OrganisationAdmin[]>("/organisation/admins")
-      .then((data) => setRows(Array.isArray(data) ? data : []))
+      .then((data) => (rowsSignal.value = Array.isArray(data) ? data : []))
       .catch((err) => {
-        setRows([]);
+        rowsSignal.value = [];
         toast.error(userMessage(err, "Failed to load administrators"));
       });
     // People invited who have not signed in yet.
     listInvites("organisation_admin")
-      .then((data) => setInvites(Array.isArray(data) ? data : []))
-      .catch(() => setInvites([]));
-  }, []);
+      .then((data) => (invitesSignal.value = Array.isArray(data) ? data : []))
+      .catch(() => (invitesSignal.value = []));
+  }, [invitesSignal, rowsSignal]);
 
   useEffect(() => {
     load();
@@ -62,26 +70,26 @@ export default function OrganisationAdminsPage() {
     e.preventDefault();
     const value = email.trim();
     if (!value) return;
-    setAdding(true);
+    addingSignal.value = true;
     try {
       const result = await api<AddedAdmin>("/organisation/admins", {
         method: "POST",
         body: { email: value },
       });
       toast.success(appointedMessage(result, value, "an organisation administrator"));
-      setEmail("");
+      emailSignal.value = "";
       load();
     } catch (err) {
       toast.error(userMessage(err, "Failed to add the administrator"));
     } finally {
-      setAdding(false);
+      addingSignal.value = false;
     }
   }
 
   async function remove(admin: OrganisationAdmin) {
     const who = admin.name || admin.email;
     if (!window.confirm(`Remove ${who} as an organisation administrator?`)) return;
-    setRemovingId(admin.userId);
+    removingIdSignal.value = admin.userId;
     try {
       await api(`/organisation/admins/${encodeURIComponent(admin.userId)}`, {
         method: "DELETE",
@@ -91,7 +99,7 @@ export default function OrganisationAdminsPage() {
     } catch (err) {
       toast.error(userMessage(err, "Failed to remove the administrator"));
     } finally {
-      setRemovingId(null);
+      removingIdSignal.value = null;
     }
   }
 
@@ -106,7 +114,7 @@ export default function OrganisationAdminsPage() {
         <Input
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => (emailSignal.value = e.target.value)}
           placeholder="Email (we'll invite them if they don't have an account)"
           aria-label="Administrator email"
           className="flex-1"

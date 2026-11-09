@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -55,44 +57,55 @@ export function SchoolIntegrations({
   apiBase?: string;
   disabledHint?: React.ReactNode;
 }) {
-  const [hooks, setHooks] = useState<Webhook[] | null>(null);
-  const [catalog, setCatalog] = useState<EventTypeCatalog | null>(null);
-  const [off, setOff] = useState(false);
-  const [editing, setEditing] = useState<Webhook | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [formKey, setFormKey] = useState(0);
-  const [secret, setSecret] = useState<{ value: string; name: string; rotated: boolean } | null>(null);
-  const [refresh, setRefresh] = useState(0);
-  const bump = useCallback(() => setRefresh((n) => n + 1), []);
+  useSignals();
+  const hooks = useSignal<Webhook[] | null>(null);
+  const catalog = useSignal<EventTypeCatalog | null>(null);
+  const off = useSignal(false);
+  const editing = useSignal<Webhook | null>(null);
+  const formOpen = useSignal(false);
+  const formKey = useSignal(0);
+  const secret = useSignal<{ value: string; name: string; rotated: boolean } | null>(null);
+  const refresh = useSignal(0);
+  const bump = useCallback(() => {
+    refresh.value = refresh.value + 1;
+  }, [refresh]);
 
   useEffect(() => {
     let live = true;
     api<Webhook[]>(webhooksApi(apiBase))
-      .then((list) => live && (setHooks(list), setOff(false)))
+      .then((list) => {
+        if (!live) return;
+        hooks.value = list;
+        off.value = false;
+      })
       .catch((err) => {
         if (!live) return;
-        if (isFeatureDisabledError(err)) setOff(true);
+        if (isFeatureDisabledError(err)) off.value = true;
         else toast.error(userMessage(err, "Failed to load webhooks"));
-        setHooks([]);
+        hooks.value = [];
       });
     return () => {
       live = false;
     };
-  }, [apiBase, refresh]);
+  }, [apiBase, refresh.value, hooks, off]);
 
   useEffect(() => {
     api<EventTypeCatalog>(EVENT_TYPES_PATH)
-      .then(setCatalog)
-      .catch(() => setCatalog(null));
-  }, []);
+      .then((c) => {
+        catalog.value = c;
+      })
+      .catch(() => {
+        catalog.value = null;
+      });
+  }, [catalog]);
 
-  if (off) return disabledHint ? <>{disabledHint}</> : null;
+  if (off.value) return disabledHint ? <>{disabledHint}</> : null;
 
-  const total = catalog?.eventTypes.filter(SUBSCRIBABLE).length ?? 0;
+  const total = catalog.value?.eventTypes.filter(SUBSCRIBABLE).length ?? 0;
 
   function created(r: WebhookWithSecret) {
     // A secret the admin entered is not echoed back: nothing to show.
-    if (r.secret) setSecret({ value: r.secret, name: r.webhook.name, rotated: false });
+    if (r.secret) secret.value = { value: r.secret, name: r.webhook.name, rotated: false };
     bump();
   }
 
@@ -111,9 +124,9 @@ export function SchoolIntegrations({
           <Button
             size="sm"
             onClick={() => {
-              setEditing(null);
-              setFormKey((k) => k + 1);
-              setFormOpen(true);
+              editing.value = null;
+              formKey.value = formKey.value + 1;
+              formOpen.value = true;
             }}
           >
             <Plus className="mr-1.5 size-4" />
@@ -121,30 +134,30 @@ export function SchoolIntegrations({
           </Button>
         </div>
 
-        {hooks === null ? (
+        {hooks.value === null ? (
           <Skeleton className="h-20 w-full" />
-        ) : hooks.length === 0 ? (
+        ) : hooks.value.length === 0 ? (
           <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
             <WebhookIcon className="size-4 shrink-0" />
             No webhooks yet.
           </div>
         ) : (
           <div className="divide-y rounded-lg border px-4">
-            {hooks.map((h) => (
+            {hooks.value.map((h) => (
               <WebhookRow
                 key={h.id}
                 hook={h}
                 apiBase={apiBase}
-                catalog={catalog}
+                catalog={catalog.value}
                 total={total}
-                refreshKey={refresh}
+                refreshKey={refresh.value}
                 onEditAction={() => {
-                  setEditing(h);
-                  setFormKey((k) => k + 1);
-                  setFormOpen(true);
+                  editing.value = h;
+                  formKey.value = formKey.value + 1;
+                  formOpen.value = true;
                 }}
                 onRotatedAction={(r) => {
-                  if (r.secret) setSecret({ value: r.secret, name: r.webhook.name, rotated: true });
+                  if (r.secret) secret.value = { value: r.secret, name: r.webhook.name, rotated: true };
                   bump();
                 }}
                 onChangedAction={bump}
@@ -154,23 +167,23 @@ export function SchoolIntegrations({
         )}
       </div>
 
-      <IntegrationActivity apiBase={apiBase} refreshKey={refresh} />
+      <IntegrationActivity apiBase={apiBase} refreshKey={refresh.value} />
 
       <WebhookFormDialog
-        key={formKey}
-        open={formOpen}
-        existing={editing}
+        key={formKey.value}
+        open={formOpen.value}
+        existing={editing.value}
         apiBase={apiBase}
-        catalog={catalog}
-        onOpenChangeAction={setFormOpen}
+        catalog={catalog.value}
+        onOpenChangeAction={(o) => (formOpen.value = o)}
         onCreatedAction={created}
         onSavedAction={bump}
       />
       <SecretOnceDialog
-        secret={secret?.value ?? null}
-        webhookName={secret?.name ?? ""}
-        rotated={!!secret?.rotated}
-        onCloseAction={() => setSecret(null)}
+        secret={secret.value?.value ?? null}
+        webhookName={secret.value?.name ?? ""}
+        rotated={!!secret.value?.rotated}
+        onCloseAction={() => (secret.value = null)}
       />
     </div>
   );
@@ -195,21 +208,22 @@ function WebhookRow({
   onRotatedAction: (r: WebhookWithSecret) => void;
   onChangedAction: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [rotating, setRotating] = useState(false);
-  const [rotateKey, setRotateKey] = useState(0);
+  useSignals();
+  const open = useSignal(false);
+  const busy = useSignal<string | null>(null);
+  const rotating = useSignal(false);
+  const rotateKey = useSignal(0);
   const headers = headersSummary(h.headers);
   const base = `${webhooksApi(apiBase)}/${h.id}`;
 
   async function run(label: string, fn: () => Promise<void>) {
-    setBusy(label);
+    busy.value = label;
     try {
       await fn();
     } catch (err) {
       toast.error(userMessage(err, `Failed to ${label}`));
     } finally {
-      setBusy(null);
+      busy.value = null;
     }
   }
 
@@ -225,13 +239,13 @@ function WebhookRow({
       const d = await api<WebhookDeliveryDetail>(`${base}/test`, { method: "POST" });
       if (d.status === "succeeded") toast.success(`Test delivered (HTTP ${d.lastStatusCode})`);
       else toast.error(`Test failed: ${d.lastError ?? "no 2xx response"}`);
-      setOpen(true);
+      open.value = true;
       onChangedAction();
     });
 
   const rotate = () => {
-    setRotateKey((k) => k + 1);
-    setRotating(true);
+    rotateKey.value = rotateKey.value + 1;
+    rotating.value = true;
   };
 
   const remove = () => {
@@ -249,10 +263,10 @@ function WebhookRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
+          onClick={() => (open.value = !open.value)}
+          aria-expanded={open.value}
         >
-          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
+          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open.value && "-rotate-90")} />
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2">
               <span className="truncate font-medium">{h.name}</span>
@@ -280,7 +294,7 @@ function WebhookRow({
         </button>
         <Switch
           checked={h.enabled}
-          disabled={!!busy}
+          disabled={!!busy.value}
           onCheckedChange={(v) => void toggle(v)}
           aria-label={`Send events to ${h.name}`}
         />
@@ -317,22 +331,22 @@ function WebhookRow({
         </p>
       )}
 
-      {open && (
+      {open.value && (
         <div className="mt-3 space-y-4 pl-6">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={onEditAction}>
               <Pencil className="mr-1.5 size-3.5" />
               Edit
             </Button>
-            <Button size="sm" variant="outline" onClick={test} disabled={!!busy}>
-              {busy === "send a test" ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Send className="mr-1.5 size-3.5" />}
+            <Button size="sm" variant="outline" onClick={test} disabled={!!busy.value}>
+              {busy.value === "send a test" ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Send className="mr-1.5 size-3.5" />}
               Test
             </Button>
-            <Button size="sm" variant="outline" onClick={rotate} disabled={!!busy}>
+            <Button size="sm" variant="outline" onClick={rotate} disabled={!!busy.value}>
               <KeyRound className="mr-1.5 size-3.5" />
               Rotate secret
             </Button>
-            <Button size="sm" variant="outline" className="text-destructive" onClick={remove} disabled={!!busy}>
+            <Button size="sm" variant="outline" className="text-destructive" onClick={remove} disabled={!!busy.value}>
               <Trash2 className="mr-1.5 size-3.5" />
               Delete
             </Button>
@@ -347,11 +361,11 @@ function WebhookRow({
         </div>
       )}
       <RotateSecretDialog
-        key={rotateKey}
-        open={rotating}
+        key={rotateKey.value}
+        open={rotating.value}
         url={base}
         webhookName={h.name}
-        onOpenChangeAction={setRotating}
+        onOpenChangeAction={(o) => (rotating.value = o)}
         onRotatedAction={onRotatedAction}
       />
     </div>

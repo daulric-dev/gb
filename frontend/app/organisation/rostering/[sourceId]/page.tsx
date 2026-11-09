@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -39,103 +41,112 @@ const IGNORE = "__ignore__";
 
 /** One source: run a dry run, map orgs to schools, matching and email options, history. */
 export default function RosterSourcePage() {
+  useSignals();
   const params = useParams<{ sourceId: string }>();
   const sourceId = params?.sourceId ?? "";
   const router = useRouter();
   const id = useId();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [source, setSource] = useState<RosterSource | null>(null);
-  const [runs, setRuns] = useState<RosterRun[] | null>(null);
-  const [schools, setSchools] = useState<OrganisationSchool[]>([]);
-  const [settings, setSettings] = useState<RosterSettings | null>(null);
-  const [schedule, setSchedule] = useState<{ daily: boolean; autoApply: boolean }>({ daily: false, autoApply: false });
-  const [files, setFiles] = useState<File[]>([]);
-  const [starting, setStarting] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [secret, setSecret] = useState("");
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [off, setOff] = useState(false);
+  const source = useSignal<RosterSource | null>(null);
+  const runs = useSignal<RosterRun[] | null>(null);
+  const schools = useSignal<OrganisationSchool[]>([]);
+  const settings = useSignal<RosterSettings | null>(null);
+  const schedule = useSignal<{ daily: boolean; autoApply: boolean }>({ daily: false, autoApply: false });
+  const files = useSignal<File[]>([]);
+  const starting = useSignal(false);
+  const saving = useSignal(false);
+  const secret = useSignal("");
+  const testResult = useSignal<{ ok: boolean; message: string } | null>(null);
+  const testing = useSignal(false);
+  const off = useSignal(false);
 
   const load = useCallback(() => {
     api<RosterSource>(sourceApi(sourceId))
       .then((s) => {
-        setSource(s);
-        setSettings(s.settings);
-        setSchedule({ daily: s.schedule === "daily", autoApply: s.autoApply });
+        source.value = s;
+        settings.value = s.settings;
+        schedule.value = { daily: s.schedule === "daily", autoApply: s.autoApply };
       })
       .catch((err) => {
-        if (isFeatureDisabledError(err)) setOff(true);
+        if (isFeatureDisabledError(err)) off.value = true;
         else toast.error(userMessage(err, "Failed to load the source"));
       });
     listRuns(sourceId)
-      .then(setRuns)
-      .catch(() => setRuns([]));
-  }, [sourceId]);
+      .then((r) => (runs.value = r))
+      .catch(() => (runs.value = []));
+  }, [sourceId, source, settings, schedule, off, runs]);
   useEffect(load, [load]);
   useEffect(() => {
-    listOrganisationSchools("", "active").then(setSchools).catch(() => setSchools([]));
-  }, []);
+    listOrganisationSchools("", "active")
+      .then((s) => (schools.value = s))
+      .catch(() => (schools.value = []));
+  }, [schools]);
 
   // Poll while the newest run is busy.
-  const busy = runs?.[0] && runIsBusy(runs[0].status);
+  const busy = runs.value?.[0] && runIsBusy(runs.value[0].status);
   useEffect(() => {
     if (!busy) return;
-    const t = setInterval(() => listRuns(sourceId).then(setRuns).catch(() => undefined), 2500);
+    const t = setInterval(
+      () =>
+        listRuns(sourceId)
+          .then((r) => (runs.value = r))
+          .catch(() => undefined),
+      2500,
+    );
     return () => clearInterval(t);
-  }, [busy, sourceId]);
+  }, [busy, sourceId, runs]);
 
   async function dryRun() {
-    if (!source) return;
-    setStarting(true);
+    if (!source.value) return;
+    starting.value = true;
     try {
-      const uploads = source.kind === "csv" ? await uploadRosterFiles(sourceId, files) : undefined;
+      const uploads = source.value.kind === "csv" ? await uploadRosterFiles(sourceId, files.value) : undefined;
       const run = await startDryRun(sourceId, uploads);
-      setFiles([]);
+      files.value = [];
       if (fileRef.current) fileRef.current.value = "";
       toast.success("Dry run started");
       router.push(`${ORGANISATION_PATH}/rostering/${sourceId}/runs/${run.id}`);
     } catch (err) {
       toast.error(userMessage(err, "Failed to start the dry run"));
     } finally {
-      setStarting(false);
+      starting.value = false;
     }
   }
 
   async function saveSettings() {
-    if (!settings || !source) return;
-    setSaving(true);
+    if (!settings.value || !source.value) return;
+    saving.value = true;
     try {
       const updated = await api<RosterSource>(sourceApi(sourceId), {
         method: "PATCH",
-        stepUp: !!secret,
+        stepUp: !!secret.value,
         body: {
-          settings,
-          ...(source.kind === "oneroster_api"
-            ? { schedule: schedule.daily ? "daily" : "off", autoApply: schedule.autoApply }
+          settings: settings.value,
+          ...(source.value.kind === "oneroster_api"
+            ? { schedule: schedule.value.daily ? "daily" : "off", autoApply: schedule.value.autoApply }
             : {}),
-          ...(secret ? { clientSecret: secret } : {}),
+          ...(secret.value ? { clientSecret: secret.value } : {}),
         },
       });
-      setSource(updated);
-      setSettings(updated.settings);
-      setSecret("");
+      source.value = updated;
+      settings.value = updated.settings;
+      secret.value = "";
       toast.success("Saved");
     } catch (err) {
       toast.error(userMessage(err, "Failed to save"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
   async function testConnection() {
-    setTesting(true);
+    testing.value = true;
     try {
-      setTestResult(await api<{ ok: boolean; message: string }>(`${sourceApi(sourceId)}/test`, { method: "POST" }));
+      testResult.value = await api<{ ok: boolean; message: string }>(`${sourceApi(sourceId)}/test`, { method: "POST" });
     } catch (err) {
-      setTestResult({ ok: false, message: userMessage(err, "The test could not run") });
+      testResult.value = { ok: false, message: userMessage(err, "The test could not run") };
     } finally {
-      setTesting(false);
+      testing.value = false;
     }
   }
 
@@ -172,7 +183,7 @@ export default function RosterSourcePage() {
     </Link>
   );
 
-  if (off) {
+  if (off.value) {
     return (
       <div className="space-y-4">
         {back}
@@ -180,7 +191,9 @@ export default function RosterSourcePage() {
       </div>
     );
   }
-  if (!source || !settings) {
+  const current = source.value;
+  const currentSettings = settings.value;
+  if (!current || !currentSettings) {
     return (
       <div className="space-y-4">
         {back}
@@ -191,22 +204,22 @@ export default function RosterSourcePage() {
 
   // Orgs the newest dry run found, plus any already mapped.
   const orgs = new Map<string, string>();
-  for (const r of runs ?? []) for (const o of r.summary.orgs ?? []) if (!orgs.has(o.sourcedId)) orgs.set(o.sourcedId, o.name);
-  for (const k of Object.keys(settings.orgMap)) if (!orgs.has(k)) orgs.set(k, k);
+  for (const r of runs.value ?? []) for (const o of r.summary.orgs ?? []) if (!orgs.has(o.sourcedId)) orgs.set(o.sourcedId, o.name);
+  for (const k of Object.keys(currentSettings.orgMap)) if (!orgs.has(k)) orgs.set(k, k);
   const setOrg = (org: string, value: string) => {
-    const next = { ...settings.orgMap };
+    const next = { ...currentSettings.orgMap };
     if (value === "") delete next[org];
     else next[org] = value === IGNORE ? null : value;
-    setSettings({ ...settings, orgMap: next });
+    settings.value = { ...currentSettings, orgMap: next };
   };
-  const api_ = source.kind === "oneroster_api";
+  const api_ = current.kind === "oneroster_api";
 
   return (
     <div className="space-y-6">
       {back}
       <OrgHeader
-        title={source.name}
-        description={api_ ? `OneRoster 1.2 endpoint · ${source.baseUrl}` : "CSV upload"}
+        title={current.name}
+        description={api_ ? `OneRoster 1.2 endpoint · ${current.baseUrl}` : "CSV upload"}
         action={
           <Button variant="outline" onClick={() => void remove()}>
             <Trash2 className="mr-1.5 size-4" /> Delete
@@ -232,7 +245,7 @@ export default function RosterSourcePage() {
                 type="file"
                 multiple
                 accept=".csv,.zip,text/csv,application/zip"
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                onChange={(e) => (files.value = Array.from(e.target.files ?? []))}
                 aria-describedby={`${id}-files-hint`}
               />
               <p id={`${id}-files-hint`} className="text-xs text-muted-foreground">
@@ -243,8 +256,8 @@ export default function RosterSourcePage() {
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button disabled={starting || !!busy || (!api_ && files.length === 0)} onClick={() => void dryRun()}>
-              {starting ? (
+            <Button disabled={starting.value || !!busy || (!api_ && files.value.length === 0)} onClick={() => void dryRun()}>
+              {starting.value ? (
                 <Loader2 className="mr-1.5 size-4 animate-spin" />
               ) : api_ ? (
                 <Play className="mr-1.5 size-4" />
@@ -254,16 +267,16 @@ export default function RosterSourcePage() {
               {api_ ? "Run dry run now" : "Upload and run dry run"}
             </Button>
             {api_ && (
-              <Button variant="outline" disabled={testing} onClick={() => void testConnection()}>
-                {testing ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <PlugZap className="mr-1.5 size-4" />}
+              <Button variant="outline" disabled={testing.value} onClick={() => void testConnection()}>
+                {testing.value ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <PlugZap className="mr-1.5 size-4" />}
                 Test connection
               </Button>
             )}
           </div>
           {busy && <p role="status" className="text-sm text-muted-foreground">A sync is running…</p>}
-          {testResult && (
-            <p role="status" className={testResult.ok ? "text-sm text-green-700 dark:text-green-400" : "text-sm text-destructive"}>
-              {testResult.message}
+          {testResult.value && (
+            <p role="status" className={testResult.value.ok ? "text-sm text-green-700 dark:text-green-400" : "text-sm text-destructive"}>
+              {testResult.value.message}
             </p>
           )}
         </CardContent>
@@ -283,7 +296,7 @@ export default function RosterSourcePage() {
           ) : (
             <ul className="space-y-2">
               {[...orgs].map(([org, name]) => {
-                const v = settings.orgMap[org];
+                const v = currentSettings.orgMap[org];
                 return (
                   <li key={org} className="flex flex-wrap items-center justify-between gap-2">
                     <span className="min-w-0 text-sm">
@@ -298,7 +311,7 @@ export default function RosterSourcePage() {
                     >
                       <NativeSelectOption value="">Not mapped</NativeSelectOption>
                       <NativeSelectOption value={IGNORE}>Ignore this org</NativeSelectOption>
-                      {schools.map((s) => (
+                      {schools.value.map((s) => (
                         <NativeSelectOption key={s.id} value={s.id}>
                           {s.name}
                         </NativeSelectOption>
@@ -324,29 +337,29 @@ export default function RosterSourcePage() {
           <ToggleRow
             id={`${id}-number`}
             label="Match students by student number"
-            checked={settings.matchBy.studentNumber}
-            onChange={(v) => setSettings({ ...settings, matchBy: { ...settings.matchBy, studentNumber: v } })}
+            checked={currentSettings.matchBy.studentNumber}
+            onChange={(v) => (settings.value = { ...currentSettings, matchBy: { ...currentSettings.matchBy, studentNumber: v } })}
           />
           <ToggleRow
             id={`${id}-email`}
             label="Match students by email"
             hint="Their account email, or the email a roster gave them."
-            checked={settings.matchBy.email}
-            onChange={(v) => setSettings({ ...settings, matchBy: { ...settings.matchBy, email: v } })}
+            checked={currentSettings.matchBy.email}
+            onChange={(v) => (settings.value = { ...currentSettings, matchBy: { ...currentSettings.matchBy, email: v } })}
           />
           <ToggleRow
             id={`${id}-invites`}
             label="Email staff their invite"
             hint="Staff without an account get an invite; they join as teachers when they first sign in."
-            checked={settings.sendStaffInvites}
-            onChange={(v) => setSettings({ ...settings, sendStaffInvites: v })}
+            checked={currentSettings.sendStaffInvites}
+            onChange={(v) => (settings.value = { ...currentSettings, sendStaffInvites: v })}
           />
           <ToggleRow
             id={`${id}-students`}
             label="Email new students that they can sign in"
             hint="Off by default. Either way a student who signs in with their roster email is linked to their record."
-            checked={settings.notifyStudents}
-            onChange={(v) => setSettings({ ...settings, notifyStudents: v })}
+            checked={currentSettings.notifyStudents}
+            onChange={(v) => (settings.value = { ...currentSettings, notifyStudents: v })}
           />
           {api_ && (
             <>
@@ -354,16 +367,16 @@ export default function RosterSourcePage() {
                 id={`${id}-daily`}
                 label="Sync daily"
                 hint="A dry run every day."
-                checked={schedule.daily}
-                onChange={(v) => setSchedule({ ...schedule, daily: v })}
+                checked={schedule.value.daily}
+                onChange={(v) => (schedule.value = { ...schedule.value, daily: v })}
               />
-              {schedule.daily && (
+              {schedule.value.daily && (
                 <ToggleRow
                   id={`${id}-auto`}
                   label="Apply new and changed records automatically"
                   hint="Records to disable always wait for you to confirm."
-                  checked={schedule.autoApply}
-                  onChange={(v) => setSchedule({ ...schedule, autoApply: v })}
+                  checked={schedule.value.autoApply}
+                  onChange={(v) => (schedule.value = { ...schedule.value, autoApply: v })}
                 />
               )}
               <div className="space-y-1.5 border-t pt-3">
@@ -372,15 +385,15 @@ export default function RosterSourcePage() {
                   id={`${id}-secret`}
                   type="password"
                   autoComplete="new-password"
-                  value={secret}
-                  placeholder={source.secretUnreadable ? "The stored secret can no longer be read: enter it again" : "Leave blank to keep it"}
-                  onChange={(e) => setSecret(e.target.value)}
+                  value={secret.value}
+                  placeholder={current.secretUnreadable ? "The stored secret can no longer be read: enter it again" : "Leave blank to keep it"}
+                  onChange={(e) => (secret.value = e.target.value)}
                 />
               </div>
             </>
           )}
-          <Button disabled={saving} onClick={() => void saveSettings()}>
-            {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+          <Button disabled={saving.value} onClick={() => void saveSettings()}>
+            {saving.value && <Loader2 className="mr-1.5 size-4 animate-spin" />}
             Save
           </Button>
         </CardContent>
@@ -390,9 +403,9 @@ export default function RosterSourcePage() {
         <h2 id="history-heading" className="text-lg font-semibold">
           Sync history
         </h2>
-        {!runs ? (
+        {!runs.value ? (
           <Skeleton className="h-24 w-full" />
-        ) : runs.length === 0 ? (
+        ) : runs.value.length === 0 ? (
           <p className="text-sm text-muted-foreground">No syncs yet.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border">
@@ -411,7 +424,7 @@ export default function RosterSourcePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((r) => (
+                {runs.value.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="whitespace-nowrap">
                       {new Date(r.createdAt).toLocaleString()}
@@ -428,7 +441,7 @@ export default function RosterSourcePage() {
                     <TableCell className="text-right">{countAction(r.summary, "disable")}</TableCell>
                     <TableCell className="text-right">{(r.summary.errors ?? 0) + r.progress.failed}</TableCell>
                     <TableCell className="whitespace-nowrap text-right">
-                      <Button variant="link" size="sm" render={<Link href={`${ORGANISATION_PATH}/rostering/${sourceId}/runs/${r.id}`} />}>
+                      <Button variant="link" size="sm" nativeButton={false} render={<Link href={`${ORGANISATION_PATH}/rostering/${sourceId}/runs/${r.id}`} />}>
                         Review
                       </Button>
                       {(r.summary.errors ?? 0) + r.progress.failed > 0 && (

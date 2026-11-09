@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   BadRequestException,
   ConflictException,
@@ -113,6 +115,84 @@ describe('TimetableService', () => {
     );
     await service.updateSettings('u1', 's1', { cycleLength: 6, cycleStartDate: '2026-09-07' });
     expect(prisma.timetable_setting.upsert.mock.calls[0][0].create.cycle_length).toBe(6);
+  });
+
+  test('time zone names are validated (IANA only)', async () => {
+    for (const tz of ['Mars/Base', '', 'Europe/Londonn', 'GMT+25', 'x'.repeat(65)]) {
+      expect(await expectRejection(service.updateSettings('u1', 's1', { timeZone: tz }))).toBeInstanceOf(
+        BadRequestException,
+      );
+    }
+    expect(prisma.school.update).not.toHaveBeenCalled();
+    await service.updateSettings('u1', 's1', { timeZone: 'America/New_York' });
+    expect(prisma.school.update.mock.calls[0][0].data).toEqual({ time_zone: 'America/New_York' });
+  });
+
+  test('a school without a time zone: UTC for computing, timeZoneSet false', async () => {
+    prisma.school.findUnique.mockResolvedValue({ time_zone: null });
+    const ctx = await service.context('s1');
+    expect(ctx.settings.timeZone).toBe('UTC');
+    expect(ctx.settings.timeZoneSet).toBe(false);
+    expect((await service.setup('s1')).settings.timeZoneSet).toBe(false);
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's1' });
+    prisma.course_staff.findMany.mockResolvedValue([{ course_id: 'c1' }]);
+    const mine = await service.myOccurrences('u1', '2026-11-09', '2026-11-09');
+    expect(mine).toMatchObject({ timeZone: 'UTC', timeZoneSet: false });
+    // A 09:00 period is placed at 09:00 UTC meanwhile.
+    expect(mine.occurrences[0].startsAt).toBe('2026-11-09T09:00:00.000Z');
+    const course = await service.courseOccurrences('u1', 'c1', '2026-11-09', '2026-11-09');
+    expect(course.timeZoneSet).toBe(false);
+    prisma.course_student.findMany.mockResolvedValue([{ course_id: 'c1' }]);
+    expect((await service.studentOccurrences('st1', 's1')).timeZoneSet).toBe(false);
+  });
+
+  test('turning automatic sessions on is refused until the time zone is set', async () => {
+    prisma.school.findUnique.mockResolvedValue({ time_zone: null });
+    const err = await expectRejection(service.updateSettings('u1', 's1', { autoSessions: true }));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toBe("Set your school's time zone before turning on automatic sessions");
+    expect(prisma.timetable_setting.upsert).not.toHaveBeenCalled();
+    // Turning them off, or other settings, are fine without a zone.
+    await service.updateSettings('u1', 's1', { autoSessions: false });
+    await service.updateSettings('u1', 's1', { leadMinutes: 5 });
+    // Setting the zone in the same request is enough.
+    await service.updateSettings('u1', 's1', { timeZone: 'Europe/London', autoSessions: true });
+    expect(prisma.timetable_setting.upsert.mock.calls.at(-1)![0].update.auto_sessions).toBe(true);
+    // And once it is set, switching them on works.
+    prisma.school.findUnique.mockResolvedValue({ time_zone: 'Europe/London' });
+    await service.updateSettings('u1', 's1', { autoSessions: true });
+  });
+
+  test('a time zone change is audit-logged on the school; an unchanged one is not', async () => {
+    const record = mock(async () => undefined);
+    const audited = new TimetableService(prisma as any, {} as any, { record } as any);
+    prisma.school.findUnique.mockResolvedValue({ time_zone: null });
+    await audited.updateSettings('admin-1', 's1', { timeZone: 'Asia/Tokyo' });
+    expect(record).toHaveBeenCalledTimes(1);
+    const [, schoolId, actor, entry] = record.mock.calls[0] as any;
+    expect(schoolId).toBe('s1');
+    expect(actor).toEqual({ id: 'admin-1' });
+    expect(entry).toMatchObject({
+      entity: 'school',
+      entityId: 's1',
+      action: 'update',
+      changes: { time_zone: { before: null, after: 'Asia/Tokyo' } },
+    });
+    prisma.school.findUnique.mockResolvedValue({ time_zone: 'Asia/Tokyo' });
+    await audited.updateSettings('admin-1', 's1', { timeZone: 'Asia/Tokyo' });
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  test('the migration makes the zone nullable without a default and clears the old UTC default', () => {
+    const sql = readFileSync(
+      join(__dirname, '../../prisma/migrations/20261122100000_school_time_zone_explicit/migration.sql'),
+      'utf8',
+    );
+    expect(sql).toContain('ALTER TABLE public.school ALTER COLUMN time_zone DROP NOT NULL;');
+    expect(sql).toContain('ALTER TABLE public.school ALTER COLUMN time_zone DROP DEFAULT;');
+    expect(sql).toContain("UPDATE public.school SET time_zone = NULL WHERE time_zone = 'UTC';");
+    // Only the old default is cleared: a real zone is left alone.
+    expect(sql).not.toMatch(/UPDATE public\.school SET time_zone = NULL;/);
   });
 
   test('ranges are validated and capped', async () => {

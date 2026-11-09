@@ -177,7 +177,7 @@ export function studentDueFields(
   const row =
     activity && typeof activity === 'object' && !(activity instanceof Date)
       ? activity
-      : { due_at: activity as When, late_until: null };
+      : { due_at: activity, late_until: null };
   const effective = effectiveDueAt(row.due_at, extensionDueAt);
   const hasExtension = toDate(extensionDueAt) !== null;
   const closeAt = effectiveCloseAt(row.due_at, row.late_until, extensionDueAt);

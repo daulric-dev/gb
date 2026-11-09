@@ -417,7 +417,7 @@ export class ActivityService {
     if (lateTouched || patch.dueAt !== undefined) {
       const mode =
         patch.latePenaltyMode ??
-        (activity.late_penalty_mode as LatePenaltyMode);
+        (activity.late_penalty_mode);
       const keepNumbers = patch.latePenaltyMode === undefined;
       Object.assign(
         changes,

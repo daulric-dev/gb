@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { expectRejection } from '@/test/mocks';
@@ -19,7 +21,7 @@ describe('AttendanceReportService', () => {
 
   beforeEach(() => {
     prisma = createMockPrisma();
-    keys = ['report-card:read'];
+    keys = ['attendance-report:read'];
     member = true;
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
     prisma.school.findUnique.mockResolvedValue({ time_zone: 'America/New_York' });
@@ -77,10 +79,40 @@ describe('AttendanceReportService', () => {
       expect(await expectRejection(service.school('admin', f, t))).toBeInstanceOf(BadRequestException);
     }
     const d = service.resolveRange('UTC', undefined, undefined, new Date('2026-11-09T12:00:00Z'));
-    expect(d).toEqual({ from: '2026-10-13', to: '2026-11-09', timeZone: 'UTC' });
+    expect(d).toEqual({ from: '2026-10-13', to: '2026-11-09', timeZone: 'UTC', timeZoneSet: true });
   });
 
-  test('without report-card:read: no school report; a form tutor sees only their tutee', async () => {
+  test('report-card:read alone no longer grants attendance reports; attendance-report:read does', async () => {
+    keys = ['report-card:read'];
+    expect(await expectRejection(service.school('u'))).toBeInstanceOf(ForbiddenException);
+    expect(await expectRejection(service.schoolCsv('u'))).toBeInstanceOf(ForbiddenException);
+    prisma.student.findFirst.mockResolvedValue({ id: 's1', first_name: 'A', last_name: 'L', form_tutor_id: 'tutor-1' });
+    expect(await expectRejection(service.student('u', 's1'))).toBeInstanceOf(NotFoundException);
+    expect(await expectRejection(service.studentCsv('u', 's1'))).toBeInstanceOf(NotFoundException);
+    expect((await service.scope('u')).canSeeSchool).toBe(false);
+
+    keys = ['attendance-report:read'];
+    expect((await service.school('u', '2026-11-01', '2026-11-07')).students).toHaveLength(2);
+    expect((await service.schoolCsv('u', '2026-11-01', '2026-11-07')).filename).toContain('attendance-');
+    expect((await service.student('u', 's1')).student.id).toBe('s1');
+    expect((await service.studentCsv('u', 's1')).csv).toContain('Date,Course,Status');
+    expect((await service.scope('u')).canSeeSchool).toBe(true);
+  });
+
+  test('a school without a time zone: UTC days, and the response says so', async () => {
+    prisma.school.findUnique.mockResolvedValue({ time_zone: null });
+    const r = await service.school('admin', '2026-11-01', '2026-11-07');
+    expect(r.range).toEqual({ from: '2026-11-01', to: '2026-11-07', timeZone: 'UTC', timeZoneSet: false });
+    const where = prisma.course_attendance_record.findMany.mock.calls[0][0].where;
+    expect(where.attendance_session.opened_at.gte.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    expect(where.attendance_session.opened_at.lt.toISOString()).toBe('2026-11-08T00:00:00.000Z');
+    const course = await service.course('u', 'c1', '2026-11-01', '2026-11-07');
+    expect(course.range.timeZoneSet).toBe(false);
+    prisma.school.findUnique.mockResolvedValue({ time_zone: 'America/New_York' });
+    expect((await service.school('admin', '2026-11-01', '2026-11-07')).range.timeZoneSet).toBe(true);
+  });
+
+  test('without attendance-report:read: no school report; a form tutor sees only their tutee', async () => {
     keys = [];
     expect(await expectRejection(service.school('tutor-1'))).toBeInstanceOf(ForbiddenException);
     prisma.student.findFirst.mockResolvedValue({ id: 's1', first_name: 'A', last_name: 'L', form_tutor_id: 'tutor-1' });
@@ -89,7 +121,7 @@ describe('AttendanceReportService', () => {
     expect(await expectRejection(service.student('someone-else', 's1'))).toBeInstanceOf(NotFoundException);
     // Another school's student is not found at all.
     prisma.student.findFirst.mockResolvedValue(null);
-    keys = ['report-card:read'];
+    keys = ['attendance-report:read'];
     expect(await expectRejection(service.student('admin', 's-other'))).toBeInstanceOf(NotFoundException);
     expect(prisma.student.findFirst.mock.calls.at(-1)![0].where).toEqual({ id: 's-other', school_id: 'school-1' });
   });
@@ -111,5 +143,17 @@ describe('AttendanceReportService', () => {
     expect(filename).toBe('attendance-2026-11-01-to-2026-11-07.csv');
     expect(csv.split('\r\n')[0]).toBe('Last name,First name,Present,Late,Absent,Excused,Rate %');
     expect(csv).toContain(`Lee,"'=HYPERLINK(""x"")",1,0,1,0,50`);
+  });
+
+  test('the upgrade grants attendance-report:read to every role holding report-card:read', () => {
+    const sql = readFileSync(
+      join(__dirname, '../../prisma/migrations/20261122110000_attendance_report_permission/migration.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("'attendance-report', 'read', 'attendance-report:read'");
+    expect(sql).toMatch(/new_perm\.key = 'attendance-report:read'\s+WHERE old_perm\.key = 'report-card:read'/);
+    expect(sql).toContain('ON CONFLICT (school_role_id, permission_id) DO NOTHING');
+    // report-card:read itself is kept: it still gates report cards.
+    expect(sql).not.toMatch(/DELETE FROM public\.permission_catalog/);
   });
 });

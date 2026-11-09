@@ -4,7 +4,7 @@ Rooms, the school's bell schedule, non-school days, and a weekly or rotating tim
 
 ## Concepts
 
-- **School time zone.** `public.school.time_zone` (IANA name, default `UTC` for every existing school). All period times are local wall-clock minutes in this zone; `src/common/time-zone.ts` turns a local date + minute into an instant with `Intl` only (no library), so a 09:00 period is 09:00 local on both sides of a daylight-saving change. A time the clocks skip lands just after the gap; a time that happens twice is its first occurrence. An admin must set the real zone on the setup page before relying on the automatic sessions.
+- **School time zone.** `public.school.time_zone` (IANA name, **nullable, no default**: null until an admin sets it deliberately; migration `20261122100000_school_time_zone_explicit` cleared the old `UTC` default). While it is null everything is computed in UTC (`safeTimeZone`), responses carry `timeZoneSet: false`, the scheduler skips the school, and switching automatic sessions on is refused. All period times are local wall-clock minutes in this zone; `src/common/time-zone.ts` turns a local date + minute into an instant with `Intl` only (no library), so a 09:00 period is 09:00 local on both sides of a daylight-saving change. A time the clocks skip lands just after the gap; a time that happens twice is its first occurrence. An admin must set the real zone on the setup page before relying on the automatic sessions.
 - **Bell schedule.** `public.bell_period` (named, ordered) with `public.bell_period_time` rows per ISO weekday (1 = Monday). Different times per weekday (a short Friday) are different rows; a period with no row for a weekday does not run that day.
 - **Rooms.** `public.room`, unique name per school, with an optional saved location (`latitude`, `longitude`, `radius_m` 10-1000, default 50; all or none).
 - **Closures.** `public.school_closure` (inclusive date ranges: holidays, closures). Nothing is scheduled on them. There was no calendar of non-school days before this module; this is a minimal one.
@@ -19,7 +19,7 @@ Rooms, the school's bell schedule, non-school days, and a weekly or rotating tim
 
 Every minute in each API instance (first run 20 s after start), inside a transaction holding `pg_try_advisory_xact_lock(hashtext('gradebook:timetable'))`, so one instance runs at a time. It uses Postgres only: **no Redis or BullMQ needed**. Off under `NODE_ENV=test` or with `TIMETABLE_SCHEDULER=false`.
 
-1. Find schools with timetable entries in published, non-template courses; skip those where `timetable` is not effective or `auto_sessions` is off.
+1. Find schools with timetable entries in published, non-template courses; skip those where `timetable` is not effective or `auto_sessions` is off, and those with **no time zone set** (logged once per school per boot, not every minute).
 2. Compute yesterday's and today's occurrences in the school's zone; keep those not cancelled where `startsAt - lead_minutes <= now < endsAt`.
 3. **Claim** each with an insert into `timetable_occurrence` (`ON CONFLICT DO NOTHING`); only the caller whose insert succeeded goes on. This is what makes it idempotent across ticks, retries and instances.
 4. Open the session with `AttendanceService.openScheduled(courseId, …)`: no `opened_by`, title `<period> · <room>`, a code when `require_code`, `late_after_minutes` counted from the period's start (whenever the session actually opened), the **room's saved location as the geofence point** (no location check for a room without one), and `closes_at` = the period's end. The attendance sweep then closes it at that time and records absentees exactly as for a manual session. Students get the usual push and portal event. Live teacher location still works: any staff member can switch on **Share my location** on the session page and the point follows them (sharing is on by default only for the opener, and an automatic session has none).
@@ -35,9 +35,9 @@ All need `AuthGuard` and `FeatureGuard` with `@RequireFeature('timetable')` (403
 
 | Method | Path | Permission | What it does |
 | --- | --- | --- | --- |
-| GET | `/` | `school:read` | `{ settings (with timeZone), rooms, periods, closures, today }`. |
+| GET | `/` | `school:read` | `{ settings (with timeZone and timeZoneSet), rooms, periods, closures, today }`. |
 | GET | `/cycle?from&to` | `school:read` | `{ from, to, today, days: [{ date, weekday, schoolDay, closed, cycleDay }] }` (default 4 weeks from today) to check the rotation. |
-| PATCH | `/settings` | `school:update` | `UpdateTimetableSettingsDto`. 400 for an unknown time zone, a cycle without a start date, or no school days. Returns the settings. |
+| PATCH | `/settings` | `school:update` | `UpdateTimetableSettingsDto`. 400 for an unknown time zone (IANA names only, `isValidTimeZone`), a cycle without a start date, no school days, or `autoSessions: true` while the school has no time zone (and none is given in the same body): "Set your school's time zone before turning on automatic sessions". A time zone change is audit-logged (`entity: 'school'`, `time_zone` before/after). Returns the settings. |
 | POST / PATCH / DELETE | `/rooms`, `/rooms/:roomId` | `school:update` | `RoomDto` `{ name, location: { latitude, longitude, radiusM? } \| null }`. 409 for a duplicate name; another school's room is 404. Deleting a room leaves its entries without a room. |
 | POST / PATCH / DELETE | `/periods`, `/periods/:periodId` | `school:update` | `PeriodDto` `{ name, position, times: [{ weekday, startMinute, endMinute }] }` (`times` replaces all). 400 when a period ends before it starts or a weekday repeats; 409 for a duplicate name. Deleting a period deletes its entries. |
 | POST / DELETE | `/closures`, `/closures/:closureId` | `school:update` | `ClosureDto` `{ name, startDate, endDate }` (at most a year). |
@@ -50,7 +50,7 @@ Access is the caller's course role (`CourseAccessService`): any staff role reads
 | --- | --- | --- | --- |
 | GET | `/` | Course staff | `{ canEdit, entries, settings, periods, rooms, term }`. |
 | POST / PATCH / DELETE | `/entries`, `/entries/:entryId` | Teacher / admin | `TimetableEntryDto` `{ periodId, roomId, weekday \| cycleDay, validFrom, validTo }`. 400 for a period or room of another school, both or neither day kind, a cycle day on a weekly timetable or beyond the cycle, or dates outside the term. On PATCH, giving one day kind clears the other. |
-| GET | `/occurrences?from&to` | Course staff | `{ from, to, today, occurrences }` (default the next 7 days), each with `session: { id, state, reason } \| null`. |
+| GET | `/occurrences?from&to` | Course staff | `{ from, to, today, timeZone, timeZoneSet, occurrences }` (default the next 7 days), each with `session: { id, state, reason } \| null`. |
 | PUT | `/occurrences/:entryId/:date` | Teacher / admin | `OccurrenceOverrideDto` `{ kind: 'cancel' \| 'move', date?, startMinute?, endMinute?, roomId?, note? }` for the occurrence scheduled on `:date`. 404 if the entry does not run that day; 409 once its session has opened. |
 | DELETE | `/occurrences/:entryId/:date` | Teacher / admin | Undo the cancel or move (204). 409 once opened. |
 
@@ -58,8 +58,8 @@ Access is the caller's course role (`CourseAccessService`): any staff role reads
 
 | Method | Path | Guards | What it does |
 | --- | --- | --- | --- |
-| GET | `/api/timetable/me?from&to` | `AuthGuard` | The caller's periods in their active school (courses where they are `course_staff`, draft or published), default today, with session state and `timeZone`. The "today" view. |
-| GET | `/api/portal/me/timetable?from&to` | `AuthGuard`, `StudentGuard` | The student's periods (active enrolments in published courses of their school), default this week Monday-Sunday; no session state. |
+| GET | `/api/timetable/me?from&to` | `AuthGuard` | The caller's periods in their active school (courses where they are `course_staff`, draft or published), default today, with session state, `timeZone` and `timeZoneSet`. The "today" view. |
+| GET | `/api/portal/me/timetable?from&to` | `AuthGuard`, `StudentGuard` | The student's periods (active enrolments in published courses of their school), default this week Monday-Sunday; no session state; `timeZone`, `timeZoneSet`. |
 
 `TimetableOccurrence`: `{ entryId, courseId, courseName, courseCode, periodId, periodName, occursOn, date, startMinute, endMinute, startsAt, endsAt, roomId, roomName, status, note, cycleDay, session? }`.
 
@@ -77,7 +77,7 @@ Access is the caller's course role (`CourseAccessService`): any staff role reads
 
 ## Data
 
-Migration `20261118100000_timetable`: `public.school.time_zone`; `public.timetable_setting`, `public.room`, `public.bell_period`, `public.bell_period_time`, `public.school_closure`; `course.timetable_entry`, `course.timetable_override`, `course.timetable_occurrence`. Models in [`prisma/schema/timetable.prisma`](../../prisma/schema/timetable.prisma). Everything cascades with its school or course; `created_by` / `updated_by` have no foreign key.
+Migrations `20261118100000_timetable` and `20261122100000_school_time_zone_explicit` (time zone nullable, old `UTC` default cleared): `public.school.time_zone`; `public.timetable_setting`, `public.room`, `public.bell_period`, `public.bell_period_time`, `public.school_closure`; `course.timetable_entry`, `course.timetable_override`, `course.timetable_occurrence`. Models in [`prisma/schema/timetable.prisma`](../../prisma/schema/timetable.prisma). Everything cascades with its school or course; `created_by` / `updated_by` have no foreign key.
 
 ## Configuration
 
@@ -104,8 +104,8 @@ cd backend && bun test src/timetable src/common/time-zone.test.ts
 ```
 
 - `occurrences.test.ts`: weekly occurrences, entry/term bounds, per-weekday times (and none), closures and non-school weekdays, rotating cycle days skipping weekends and closures, a cycle start on a weekend, memo-order independence, cycle entries on a weekly timetable, cancel, move (same day, out of and into a range), and period instants across the London DST change.
-- `timetable.scheduler.test.ts`: opens with the room's location (and without for a room without one), closes at the period end, late counted from the period start; **idempotent** across ticks; lead time, end and cancelled occurrences; a conflict marks it skipped and is not retried; nothing with the feature off, automatic sessions off or without the lock.
-- `timetable.service.test.ts`: TA read-only, another course 404, entry validation, cancel/move only a real, unopened occurrence, settings validation, ranges.
+- `timetable.scheduler.test.ts`: a school without a time zone is skipped and logged once; opens with the room's location (and without for a room without one), closes at the period end, late counted from the period start; **idempotent** across ticks; lead time, end and cancelled occurrences; a conflict marks it skipped and is not retried; nothing with the feature off, automatic sessions off or without the lock.
+- `timetable.service.test.ts`: IANA validation, null time zone falls back to UTC with `timeZoneSet: false` in every view, automatic sessions refused without a zone, the zone change audit-logged, the migration clearing `UTC`; TA read-only, another course 404, entry validation, cancel/move only a real, unopened occurrence, settings validation, ranges.
 - `timetable.feature.test.ts`: every timetable (and attendance report/alert) controller is off by default, on when the organisation turns it on, and off when the school turns `attendance` off.
 - `src/common/time-zone.test.ts`: zone validation, wall time to UTC across DST (gap and overlap), local parts, day arithmetic.
 - `src/attendance/attendance.service.test.ts` (`openScheduled`): the session uses the given point, no opener, closes at the period end; unpublished, ended and already-open are refused.

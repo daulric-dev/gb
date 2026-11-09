@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { scoreOrNull } from './round';
-import { toLateness } from './late-policy';
+import { toLateness, type Lateness } from './late-policy';
 import {
   CourseAccessService,
   CourseRow,
@@ -263,7 +263,7 @@ export class GradebookService {
           excused: !!s.excused,
           submittedAt: ts(s.submitted_at),
           dropped: false,
-          ...toLateness(s),
+          ...toLateness(s as Lateness),
         };
         calc.set(s.activity_id as string, this.toCalcSubmission(s));
       }

@@ -4,7 +4,10 @@
  */
 
 export interface TimetableSettings {
+  /** The zone times are computed in: the school's, or UTC while none is set. */
   timeZone: string;
+  /** False until an admin sets the school's zone; nothing opens automatically meanwhile. */
+  timeZoneSet: boolean;
   /** null = weekly timetable. */
   cycleLength: number | null;
   cycleStartDate: string | null;
@@ -119,6 +122,8 @@ export interface OccurrenceRange {
   to: string;
   today: string;
   timeZone?: string;
+  /** False while the school has no time zone (times are then UTC). */
+  timeZoneSet?: boolean;
   occurrences: TimetableOccurrence[];
 }
 
@@ -208,6 +213,64 @@ export function browserTimeZone(): string | null {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
   } catch {
     return null;
+  }
+}
+
+/** A few zones for runtimes without `Intl.supportedValuesOf`. */
+const FALLBACK_ZONES = [
+  "UTC",
+  "Africa/Johannesburg",
+  "Africa/Lagos",
+  "Africa/Nairobi",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/New_York",
+  "America/Port_of_Spain",
+  "America/Sao_Paulo",
+  "America/Toronto",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Shanghai",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Europe/Berlin",
+  "Europe/Dublin",
+  "Europe/London",
+  "Europe/Paris",
+  "Pacific/Auckland",
+];
+
+/**
+ * Every IANA zone this browser knows (sorted, UTC included), for the school
+ * time zone picker; a short list where `Intl.supportedValuesOf` is missing.
+ * `extra` (the saved zone, the browser's own) is added when absent.
+ */
+export function timeZoneOptions(...extra: (string | null | undefined)[]): string[] {
+  let zones: string[] = FALLBACK_ZONES;
+  try {
+    const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+    if (typeof supported === "function") {
+      const list = supported("timeZone");
+      if (list.length > 0) zones = list;
+    }
+  } catch {
+    // Keep the fallback.
+  }
+  const all = new Set([...zones, "UTC"]);
+  for (const z of extra) if (z) all.add(z);
+  return [...all].sort((a, b) => a.localeCompare(b));
+}
+
+/** Whether `tz` is a zone this browser can format in (the API checks too). */
+export function isKnownTimeZone(tz: string): boolean {
+  if (!tz) return false;
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
   }
 }
 

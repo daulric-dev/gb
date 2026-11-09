@@ -14,6 +14,7 @@ import {
   OCCURRENCE_STATUS_LABEL,
   timeRange,
   type OccurrenceRange,
+  type TimetableOccurrence,
 } from "@/lib/timetable";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +56,7 @@ export default function PortalTimetablePage() {
   }
 
   const d = data.value;
-  const byDay = d ? groupByDay(d.occurrences) : new Map();
+  const byDay = d ? groupByDay(d.occurrences) : new Map<string, TimetableOccurrence[]>();
   // Weekdays always; a weekend only when something is on.
   const days = d
     ? daysIn(d.from, d.to).filter((day, i) => i < 5 || byDay.has(day))

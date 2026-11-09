@@ -147,6 +147,18 @@ function TodayScreen() {
         </Pressable>
       </View>
 
+      {data?.timeZoneSet === false ? (
+        <Card accessibilityRole="alert">
+          <CardContent style={{ gap: 4, paddingTop: 16 }}>
+            <Text weight="600">School time zone not set</Text>
+            <Text variant="muted" size="sm">
+              Times below are shown in UTC and check-in will not open automatically until a school admin sets the
+              time zone in Timetable setup on the web.
+            </Text>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {loading ? (
         <View style={{ gap: 12 }}>
           <Skeleton style={{ height: 90 }} />

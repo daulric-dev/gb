@@ -262,7 +262,7 @@ export class LtiAgsGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<FastifyRequest & { ltiTool?: AgsCaller }>();
     const header: string | string[] | undefined = req.headers.authorization;
-    const caller = await this.tokens.resolve(Array.isArray(header) ? header[0] : header);
+    const caller = await this.tokens.resolve((Array.isArray(header) ? header[0] : header) as string);
     if (!caller) throw new UnauthorizedException('A valid LTI access token is required');
     if (!(await this.limiter.allow(caller.toolId))) throw new LtiRateLimitedException();
     req.ltiTool = caller;

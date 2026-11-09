@@ -34,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { TimeZoneNotice } from "@/components/timetable/time-zone-notice";
 import { OccurrenceList } from "@/components/timetable/occurrence-list";
 import { OccurrenceDialog, type OccurrenceAction } from "@/components/timetable/occurrence-dialog";
 import { useCourse } from "../_components/course-context";
@@ -213,6 +214,7 @@ export default function CourseTimetablePage() {
   return (
     <div className="space-y-6">
       {header}
+      <TimeZoneNotice timeZoneSet={t.settings.timeZoneSet} />
 
       <Card>
         <CardHeader>

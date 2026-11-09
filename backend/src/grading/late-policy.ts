@@ -25,8 +25,22 @@ export const LATE_PENALTY_MODES = [
 ] as const;
 export type LatePenaltyMode = (typeof LATE_PENALTY_MODES)[number];
 
-type Numeric = number | string | { toString(): string } | null | undefined;
-type When = Date | string | null | undefined;
+export type Numeric = number | string | { toString(): string } | null | undefined;
+export type When = Date | string | null | undefined;
+
+export type LatePolicyRow = {
+  late_until?: When;
+  late_penalty_mode?: string | null;
+  late_penalty_value?: Numeric;
+  late_penalty_cap?: Numeric;
+};
+
+export type Lateness = {
+  raw_score?: Numeric;
+  late_seconds?: number | null;
+  late_penalty_percent?: Numeric;
+  late_penalty_waived?: boolean | null;
+}
 
 export type LatePolicy = {
   mode: LatePenaltyMode;
@@ -158,12 +172,7 @@ export function latePolicyColumns(kind: string, input: LatePolicyInput) {
 }
 
 /** The `LatePolicy` contract on activities (staff and students). */
-export function toLatePolicy(row: {
-  late_until?: When;
-  late_penalty_mode?: string | null;
-  late_penalty_value?: Numeric;
-  late_penalty_cap?: Numeric;
-}) {
+export function toLatePolicy(row: LatePolicyRow) {
   const policy = latePolicyOf(row);
   const until = toDate(row.late_until);
   return {
@@ -175,12 +184,7 @@ export function toLatePolicy(row: {
 }
 
 /** The lateness fields on a submission, for staff and the student. */
-export function toLateness(row: {
-  raw_score?: Numeric;
-  late_seconds?: number | null;
-  late_penalty_percent?: Numeric;
-  late_penalty_waived?: boolean | null;
-}) {
+export function toLateness(row: Lateness) {
   const percent = toNumber(row.late_penalty_percent) ?? 0;
   return {
     lateSeconds: row.late_seconds ?? 0,

@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useSignal } from "@preact/signals-react"
+import { useSignals } from "@preact/signals-react/runtime"
 import useEmblaCarousel, {
   type UseEmblaCarouselType,
 } from "embla-carousel-react"
@@ -51,6 +53,7 @@ function Carousel({
   children,
   ...props
 }: React.ComponentProps<"div"> & CarouselProps) {
+  useSignals()
   const [carouselRef, api] = useEmblaCarousel(
     {
       ...opts,
@@ -58,14 +61,17 @@ function Carousel({
     },
     plugins
   )
-  const [canScrollPrev, setCanScrollPrev] = React.useState(false)
-  const [canScrollNext, setCanScrollNext] = React.useState(false)
+  const canScrollPrev = useSignal(false)
+  const canScrollNext = useSignal(false)
 
-  const onSelect = React.useCallback((api: CarouselApi) => {
-    if (!api) return
-    setCanScrollPrev(api.canScrollPrev())
-    setCanScrollNext(api.canScrollNext())
-  }, [])
+  const onSelect = React.useCallback(
+    (api: CarouselApi) => {
+      if (!api) return
+      canScrollPrev.value = api.canScrollPrev()
+      canScrollNext.value = api.canScrollNext()
+    },
+    [canScrollPrev, canScrollNext]
+  )
 
   const scrollPrev = React.useCallback(() => {
     api?.scrollPrev()
@@ -117,8 +123,8 @@ function Carousel({
           orientation || (opts?.axis === "y" ? "vertical" : "horizontal"),
         scrollPrev,
         scrollNext,
-        canScrollPrev,
-        canScrollNext,
+        canScrollPrev: canScrollPrev.value,
+        canScrollNext: canScrollNext.value,
       }}
     >
       <div

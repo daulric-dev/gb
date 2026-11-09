@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { setupRedirectPath } from "@/lib/routing";
@@ -52,23 +54,24 @@ export function resetSetupStatus(done = false) {
  * to someone who cannot set up.
  */
 export function useSetupGate(enabled: boolean): SetupEligibility | null {
+  useSignals();
   const router = useRouter();
   const pathname = usePathname() ?? "";
-  const [eligibility, setEligibility] = useState<SetupEligibility | null>(null);
+  const eligibility = useSignal<SetupEligibility | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     void setupEligibility().then((result) => {
       if (cancelled) return;
-      setEligibility(result);
+      eligibility.value = result;
       const target = setupRedirectPath(result.canSetUp, pathname);
       if (target) router.replace(target);
     });
     return () => {
       cancelled = true;
     };
-  }, [enabled, pathname, router]);
+  }, [enabled, pathname, router, eligibility]);
 
-  return eligibility;
+  return eligibility.value;
 }

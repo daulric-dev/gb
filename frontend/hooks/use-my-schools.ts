@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useAuth, useProfile } from "@/providers/AuthProvider";
@@ -37,11 +39,12 @@ export function useMySchools(): MySchool[] | null {
  */
 export function useSwitchSchool() {
   const { refreshSilently } = useAuth();
+  useSignals();
   const router = useRouter();
-  const [switching, setSwitching] = useState<string | null>(null);
+  const switching = useSignal<string | null>(null);
 
   async function switchTo(schoolId: string, path = "/dashboard") {
-    setSwitching(schoolId);
+    switching.value = schoolId;
     try {
       await switchActiveSchool(schoolId);
       await refreshSilently();
@@ -50,9 +53,9 @@ export function useSwitchSchool() {
     } catch (err) {
       toast.error(userMessage(err, "Could not switch school"));
     } finally {
-      setSwitching(null);
+      switching.value = null;
     }
   }
 
-  return { switchTo, switching };
+  return { switchTo, switching: switching.value };
 }

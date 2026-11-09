@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { KeyRound, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -36,18 +37,19 @@ export function RotateSecretDialog({
   onOpenChangeAction: (open: boolean) => void;
   onRotatedAction: (result: WebhookWithSecret) => void;
 }) {
-  const [own, setOwn] = useState("");
-  const [saving, setSaving] = useState(false);
-  const problem = own ? customSecretProblem(own) : null;
+  useSignals();
+  const own = useSignal("");
+  const saving = useSignal(false);
+  const problem = own.value ? customSecretProblem(own.value) : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (problem) return;
-    setSaving(true);
+    saving.value = true;
     try {
       const r = await api<WebhookWithSecret>(`${url}/rotate-secret`, {
         method: "POST",
-        body: rotateBody(own),
+        body: rotateBody(own.value),
         stepUp: true,
       });
       if (!r.secretGenerated) toast.success("Your signing secret is saved");
@@ -56,7 +58,7 @@ export function RotateSecretDialog({
     } catch (err) {
       toast.error(userMessage(err, "Failed to rotate the secret"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -78,11 +80,11 @@ export function RotateSecretDialog({
             <Label htmlFor="rotate-own-secret">Use my own signing secret (optional)</Label>
             <SecretInput
               id="rotate-own-secret"
-              value={own}
+              value={own.value}
               maxLength={256}
               placeholder="Leave blank to generate one"
               label="signing secret"
-              onChangeAction={setOwn}
+              onChangeAction={(v) => (own.value = v)}
             />
             <p className="text-xs text-muted-foreground">
               16-256 characters. A generated secret is shown once; your own is stored encrypted and
@@ -94,8 +96,8 @@ export function RotateSecretDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChangeAction(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!!problem || saving}>
-              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+            <Button type="submit" disabled={!!problem || saving.value}>
+              {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
               Rotate secret
             </Button>
           </DialogFooter>

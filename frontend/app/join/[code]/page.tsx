@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CircleX, KeyRound, Loader2 } from "lucide-react";
@@ -8,6 +8,7 @@ import { api, ApiError } from "@/lib/api";
 import { normaliseJoinCode } from "@/lib/course-join";
 import type { PortalCourseCard } from "@/lib/courses/types";
 import { homePathFor, isStudentProfile, loginPath } from "@/lib/routing";
+import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { useProfile } from "@/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,7 @@ export default function JoinCoursePage() {
   const { profile: profileSignal, loading: loadingSignal } = useProfile();
   const profile = profileSignal.value;
   const loading = loadingSignal.value;
-  const [apiError, setApiError] = useState<State | null>(null);
+  const apiError = useSignal<State | null>(null);
   const started = useRef(false);
 
   const code = normaliseJoinCode(params?.code);
@@ -85,7 +86,7 @@ export default function JoinCoursePage() {
       .then((course) => router.replace(`/portal/courses/${course.id}`))
       .catch((err) => {
         const notFound = err instanceof ApiError && err.status === 404;
-        setApiError({
+        apiError.value = {
           kind: "error",
           title: notFound
             ? "This join code doesn't work"
@@ -95,9 +96,9 @@ export default function JoinCoursePage() {
             : userMessage(err, "Something went wrong. Try again in a moment."),
           href: "/portal/courses",
           action: "Go to my courses",
-        });
+        };
       });
-  }, [ready, code, router]);
+  }, [ready, code, router, apiError]);
 
   // The proxy sends signed-out visitors to sign-in already; this covers a
   // stale session cookie, coming back here afterwards.
@@ -106,7 +107,7 @@ export default function JoinCoursePage() {
       router.replace(loginPath(`/join/${code}`));
   }, [loading, profile, code, router]);
 
-  const state: State = blocked ?? apiError ?? { kind: "working" };
+  const state: State = blocked ?? apiError.value ?? { kind: "working" };
 
   return (
     <main className="flex min-h-svh items-center justify-center px-4">

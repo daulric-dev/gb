@@ -14,7 +14,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useTheme } from "@/theme/ThemeProvider";
 import { dueLabel } from "@/lib/work";
 import { formatScore } from "@/lib/format-number";
-import { href, type StaffActivity, type TeacherSubmissionRow } from "@/lib/course";
+import { href, type StaffActivity, type TeacherSubmissionRow, lateLabel } from "@/lib/course";
 import { WebHint } from "@/features/course/StaffSections";
 import { ExtensionBadge, LockdownMonitorSummary, LockdownPresence } from "@/features/course/LockdownPresence";
 import { AccommodationBadge } from "@/features/course/AccommodationBadge";
@@ -237,6 +237,10 @@ export default function ActivitySubmissionsScreen() {
                       {r.enrollmentStatus !== "active"
                         ? ` · ${r.enrollmentStatus}`
                         : ""}
+                      {lateLabel(r.submission?.lateSeconds)
+                        ? ` · ${lateLabel(r.submission?.lateSeconds)}`
+                        : ""}
+                      {r.submission?.needsMarking ? " · Needs marking" : ""}
                     </Text>
                     <ExtensionBadge extension={r.extension} />
                     {activity.kind === "quiz" ? (

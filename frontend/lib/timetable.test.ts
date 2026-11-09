@@ -4,7 +4,9 @@ import {
   daysIn,
   entryDayLabel,
   groupByDay,
+  isKnownTimeZone,
   isoWeekday,
+  timeZoneOptions,
   minutesToTime,
   timeRange,
   timeToMinutes,
@@ -50,5 +52,23 @@ describe("timetable days", () => {
     const g = groupByDay([o("2026-11-10", 600), o("2026-11-09", 540), o("2026-11-10", 480)]);
     expect([...g.keys()]).toEqual(["2026-11-09", "2026-11-10"]);
     expect(g.get("2026-11-10")!.map((x) => x.startMinute)).toEqual([480, 600]);
+  });
+});
+
+describe("school time zone picker", () => {
+  test("lists IANA zones, sorted, with UTC and any extra zone included", () => {
+    const zones = timeZoneOptions("Europe/London", null, undefined);
+    expect(zones).toContain("UTC");
+    expect(zones).toContain("Europe/London");
+    expect(zones).toContain("America/New_York");
+    expect([...zones].sort((a, b) => a.localeCompare(b))).toEqual(zones);
+    expect(new Set(zones).size).toBe(zones.length);
+  });
+
+  test("known zones are accepted, made-up ones are not", () => {
+    expect(isKnownTimeZone("Asia/Tokyo")).toBe(true);
+    expect(isKnownTimeZone("UTC")).toBe(true);
+    expect(isKnownTimeZone("Mars/Base")).toBe(false);
+    expect(isKnownTimeZone("")).toBe(false);
   });
 });

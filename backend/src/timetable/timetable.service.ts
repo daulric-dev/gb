@@ -3,8 +3,10 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { isUniqueViolation } from '@/common/db-values';
 import { userSchoolId } from '@/common/user-school';
 import {
@@ -47,8 +49,15 @@ import type {
 export const MAX_RANGE_DAYS = 62;
 export const DEFAULT_ROOM_RADIUS_M = 50;
 
+/** 400 message when automatic sessions are switched on without a zone. */
+export const TIME_ZONE_REQUIRED =
+  "Set your school's time zone before turning on automatic sessions";
+
 export interface TimetableSettings {
+  /** The zone everything is computed in: the school's, or UTC while it is not set. */
   timeZone: string;
+  /** False until an admin sets the school's zone; the scheduler skips the school meanwhile. */
+  timeZoneSet: boolean;
   cycleLength: number | null;
   cycleStartDate: string | null;
   schoolDays: number[];
@@ -114,7 +123,7 @@ export interface TimetableOccurrence {
   session?: { id: string | null; state: 'opened' | 'skipped'; reason: string | null } | null;
 }
 
-export const DEFAULT_SETTINGS: Omit<TimetableSettings, 'timeZone'> = {
+export const DEFAULT_SETTINGS: Omit<TimetableSettings, 'timeZone' | 'timeZoneSet'> = {
   cycleLength: null,
   cycleStartDate: null,
   schoolDays: [1, 2, 3, 4, 5],
@@ -158,6 +167,7 @@ export class TimetableService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   // ── school context ───────────────────────────────────────────────────────
@@ -193,6 +203,7 @@ export class TimetableService {
       schoolId,
       settings: {
         timeZone: safeTimeZone(school.time_zone),
+        timeZoneSet: isValidTimeZone(school.time_zone),
         cycleLength: setting?.cycle_length ?? DEFAULT_SETTINGS.cycleLength,
         cycleStartDate: dateOnly(setting?.cycle_start_date) ?? DEFAULT_SETTINGS.cycleStartDate,
         schoolDays: setting?.school_days ?? DEFAULT_SETTINGS.schoolDays,
@@ -282,9 +293,32 @@ export class TimetableService {
     if (dto.schoolDays && dto.schoolDays.length === 0) {
       throw new BadRequestException('Choose at least one school day');
     }
+    // Automatic sessions open at local times, so they need a real zone: one
+    // already set, or one given in this same request.
+    const zoneSet = current.settings.timeZoneSet || dto.timeZone !== undefined;
+    if (dto.autoSessions === true && !zoneSet) {
+      throw new BadRequestException(TIME_ZONE_REQUIRED);
+    }
 
     if (dto.timeZone !== undefined) {
-      await this.prisma.school.update({ where: { id: schoolId }, data: { time_zone: dto.timeZone } });
+      const zone = dto.timeZone;
+      const before = current.settings.timeZoneSet ? current.settings.timeZone : null;
+      if (zone !== before) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.school.update({ where: { id: schoolId }, data: { time_zone: zone } });
+          await this.auditLog?.record(
+            tx,
+            schoolId,
+            { id: userId },
+            {
+              entity: 'school',
+              entityId: schoolId,
+              action: 'update',
+              changes: auditChanges({ time_zone: before }, { time_zone: zone }),
+            },
+          );
+        });
+      }
     }
     const data = {
       cycle_length: cycleLength,
@@ -834,6 +868,8 @@ export class TimetableService {
     const range = this.range(ctx, from, to, 6);
     return {
       ...range,
+      timeZone: ctx.settings.timeZone,
+      timeZoneSet: ctx.settings.timeZoneSet,
       occurrences: await this.occurrencesFor(ctx, [courseId], range.from, range.to, {
         withSessions: true,
       }),
@@ -855,6 +891,7 @@ export class TimetableService {
     return {
       ...range,
       timeZone: ctx.settings.timeZone,
+      timeZoneSet: ctx.settings.timeZoneSet,
       occurrences: await this.occurrencesFor(
         ctx,
         staffed.map((s) => s.course_id),
@@ -888,6 +925,7 @@ export class TimetableService {
     return {
       ...range,
       timeZone: ctx.settings.timeZone,
+      timeZoneSet: ctx.settings.timeZoneSet,
       occurrences: await this.occurrencesFor(
         ctx,
         enrolled.map((e) => e.course_id),

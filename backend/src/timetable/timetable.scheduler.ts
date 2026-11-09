@@ -25,7 +25,8 @@ export interface TickResult {
  * with an insert into `course.timetable_occurrence` before its session is
  * opened, so it is opened at most once whatever happens: a retry, two
  * instances, or staff deleting the session afterwards. Nothing runs under
- * NODE_ENV=test or with TIMETABLE_SCHEDULER=false.
+ * NODE_ENV=test or with TIMETABLE_SCHEDULER=false. A school whose time zone
+ * is not set yet is skipped (and logged once per boot).
  */
 @Injectable()
 export class TimetableScheduler implements OnModuleInit, OnModuleDestroy {
@@ -33,6 +34,8 @@ export class TimetableScheduler implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private firstRun?: ReturnType<typeof setTimeout>;
   private running = false;
+  /** Schools already logged as skipped for having no time zone (once per boot). */
+  private readonly noZoneLogged = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -97,6 +100,16 @@ export class TimetableScheduler implements OnModuleInit, OnModuleDestroy {
         if (!(await this.features.isEnabled(schoolId, 'timetable'))) continue;
         const ctx = await this.timetable.context(schoolId);
         if (!ctx.settings.autoSessions) continue;
+        // No zone set: local period times cannot be placed, so nothing opens.
+        if (!ctx.settings.timeZoneSet) {
+          if (!this.noZoneLogged.has(schoolId)) {
+            this.noZoneLogged.add(schoolId);
+            this.logger.warn(
+              `School ${schoolId} has no time zone set; skipping its automatic sessions until an admin sets one`,
+            );
+          }
+          continue;
+        }
         const today = localParts(now, ctx.settings.timeZone).date;
         // Yesterday too: a lead time can open a period just after midnight
         // UTC on the local day before; anything ended is filtered below.

@@ -18,6 +18,11 @@ export interface PortalWorkItem {
   hasExtension?: boolean;
   /** Past the student's due date and not inside a running quiz attempt. */
   isClosed?: boolean;
+  lateUntil?: string | null;
+  latePenaltyMode?: "none" | "percent_per_day" | "percent_per_hour";
+  latePenaltyValue?: number | null;
+  latePenaltyCap?: number | null;
+  isLate?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
@@ -46,6 +51,11 @@ export interface PortalWorkDetail {
   hasExtension?: boolean;
   /** Past the student's due date and not inside a running quiz attempt. */
   isClosed?: boolean;
+  lateUntil?: string | null;
+  latePenaltyMode?: "none" | "percent_per_day" | "percent_per_hour";
+  latePenaltyValue?: number | null;
+  latePenaltyCap?: number | null;
+  isLate?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowText: boolean;
@@ -64,7 +74,15 @@ export interface PortalWorkDetail {
     startedAt: string;
     expiresAt: string | null;
     serverNow: string;
-    answers: { questionId: string; optionId: string | null; text: string | null }[];
+    answers: {
+      questionId: string;
+      optionId?: string | null;
+      optionIds?: string[] | null;
+      matches?: Record<string, string> | { optionId: string; label: string }[] | null;
+      text?: string | null;
+      numeric?: number | null;
+      fileId?: string | null;
+    }[];
   } | null;
   /** How the work is marked, shown before and after marking. */
   rubric?: Rubric | null;
@@ -73,10 +91,23 @@ export interface PortalWorkDetail {
   questions: {
     id: string;
     prompt: string;
-    kind: "multiple_choice" | "true_false" | "short_answer";
+    kind:
+      | "multiple_choice"
+      | "true_false"
+      | "short_answer"
+      | "essay"
+      | "multiple_select"
+      | "numeric"
+      | "matching"
+      | "ordering"
+      | "file_upload";
     points: number;
     options: { id: string; label: string }[];
+    matchChoices?: string[];
+    fileTypes?: string[];
+    fileMaxMb?: number | null;
   }[];
+  markedQuestions?: { questionId: string; points: number | null; feedback: string | null }[];
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";
@@ -84,11 +115,16 @@ export interface PortalWorkDetail {
     fileId: string | null;
     fileName: string | null;
     score: number | null;
+    rawScore?: number | null;
     excused?: boolean;
     feedback: string | null;
     submittedAt: string | null;
     gradedAt: string | null;
     attemptCount: number;
+    lateSeconds?: number;
+    latePenaltyPercent?: number;
+    latePenaltyWaived?: boolean;
+    needsMarking?: boolean;
   } | null;
 }
 

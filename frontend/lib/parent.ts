@@ -151,7 +151,13 @@ export function announcementSource(a: ParentAnnouncement): string {
   return a.courseName ?? "Course";
 }
 
-export const NOTICE_KINDS = ["missing_work", "absence", "new_grade", "announcement"] as const;
+export const NOTICE_KINDS = [
+  "missing_work",
+  "absence",
+  "new_grade",
+  "announcement",
+  "attendance_alert",
+] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 export const NOTICE_LABELS: Record<NoticeKind, string> = {
@@ -159,6 +165,7 @@ export const NOTICE_LABELS: Record<NoticeKind, string> = {
   absence: "Absences",
   new_grade: "New grades",
   announcement: "Announcements (school and courses)",
+  attendance_alert: "Attendance alerts",
 };
 
 /** GET/PUT /parent/notifications/preferences */

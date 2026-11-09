@@ -21,8 +21,9 @@ does not count either way. So 8 present, 1 late, 1 absent and 2 excused is
 record in, so joining a course halfway through is not counted as absence.
 With nothing to count, the percentage shows as "-".
 
-Dates are days in your school's time zone (set in **Timetable → School
-setup**; UTC until set).
+Dates are days in your school's time zone (set in **Timetable setup**). Until
+an admin sets it, days are counted in UTC and the reports show a "School time
+zone not set" warning.
 
 ## Reports (staff)
 
@@ -30,13 +31,19 @@ Open **Attendance** in the sidebar and pick a date range (the last four weeks to
 start with).
 
 - **School**: the overall percentage, each course and each student (lowest
-  first is easy to sort to), with open alerts marked. Needs the *View report
-  cards* permission (admins have it).
+  first is easy to sort to), with open alerts marked. Needs the *View
+  attendance reports* permission (`attendance-report:read`; admins have it).
+  *View report cards* alone does not give it.
 - **A student**: their percentage per course, every session in the range, and
-  their alert history. Staff with *View report cards* can open any student;
+  their alert history. Staff with *View attendance reports* can open any student;
   a **form tutor** can open their own tutees.
 - **A course**: from the course's **Attendance** tab, the course's students
   over the range (any of the course's staff).
+
+Upgrading: attendance reports used to be gated on *View report cards*. Every
+custom role that had *View report cards* was given *View attendance reports*
+too, so nobody lost access; remove it from a role on the **Roles** page if
+that role should see report cards but not attendance.
 
 Each has **Download CSV**. Values that a spreadsheet might run as a formula are
 neutralised.

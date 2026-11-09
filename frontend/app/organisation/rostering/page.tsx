@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import Link from "next/link";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Download, FileSpreadsheet, Globe, Plus } from "lucide-react";
 import { isFeatureDisabledError } from "@/lib/features";
@@ -24,19 +26,23 @@ import { AddSourceDialog } from "./_components/add-source-dialog";
 
 /** Rostering sources: CSV uploads or OneRoster endpoints, with their last sync. */
 export default function RosteringPage() {
-  const [sources, setSources] = useState<RosterSource[] | null>(null);
-  const [off, setOff] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  useSignals();
+  const sources = useSignal<RosterSource[] | null>(null);
+  const off = useSignal(false);
+  const adding = useSignal(false);
+  const formKey = useSignal(0);
 
   const load = useCallback(() => {
     listSources()
-      .then((s) => (setSources(s), setOff(false)))
+      .then((s) => {
+        sources.value = s;
+        off.value = false;
+      })
       .catch((err) => {
-        if (isFeatureDisabledError(err)) setOff(true);
+        if (isFeatureDisabledError(err)) off.value = true;
         else toast.error(userMessage(err, "Failed to load rostering sources"));
       });
-  }, []);
+  }, [sources, off]);
   useEffect(load, [load]);
 
   async function template(kind: string) {
@@ -52,8 +58,13 @@ export default function RosteringPage() {
       title="Rostering"
       description="Import or sync students, staff, classes and enrolments from your SIS"
       action={
-        !off && (
-          <Button onClick={() => (setFormKey((k) => k + 1), setAdding(true))}>
+        !off.value && (
+          <Button
+            onClick={() => {
+              formKey.value = formKey.value + 1;
+              adding.value = true;
+            }}
+          >
             <Plus className="mr-1.5 size-4" />
             Add source
           </Button>
@@ -62,7 +73,7 @@ export default function RosteringPage() {
     />
   );
 
-  if (off) {
+  if (off.value) {
     return (
       <div className="space-y-6">
         {header}
@@ -82,16 +93,16 @@ export default function RosteringPage() {
         <h2 id="sources-heading" className="text-lg font-semibold">
           Sources
         </h2>
-        {!sources ? (
+        {!sources.value ? (
           <Skeleton className="h-32 w-full" />
-        ) : sources.length === 0 ? (
+        ) : sources.value.length === 0 ? (
           <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
             No sources yet. Add a CSV source to upload a OneRoster bundle or the templates below, or
             connect a OneRoster 1.2 endpoint.
           </p>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
-            {sources.map((s) => (
+            {sources.value.map((s) => (
               <li key={s.id}>
                 <Link
                   href={`${ORGANISATION_PATH}/rostering/${s.id}`}
@@ -151,12 +162,12 @@ export default function RosteringPage() {
       </Card>
 
       <AddSourceDialog
-        key={formKey}
-        open={adding}
-        onOpenChangeAction={setAdding}
+        key={formKey.value}
+        open={adding.value}
+        onOpenChangeAction={(o) => (adding.value = o)}
         onCreatedAction={(s) => {
-          setAdding(false);
-          setSources((list) => [...(list ?? []), s]);
+          adding.value = false;
+          sources.value = [...(sources.value ?? []), s];
         }}
       />
     </div>

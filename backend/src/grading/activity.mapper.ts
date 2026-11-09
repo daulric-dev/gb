@@ -6,7 +6,7 @@
 
 import type { Prisma } from '@/generated/prisma/client';
 import { roundScore } from './round';
-import { toLatePolicy, toLateness } from './late-policy';
+import { toLatePolicy, toLateness, type LatePolicyRow, type Lateness } from './late-policy';
 
 export type ActivityKind = 'quiz' | 'assignment' | 'offline';
 export type ActivityStatus = 'draft' | 'published' | 'closed';
@@ -92,7 +92,7 @@ export function toActivity(a: any) {
     omitFromFinalGrade: !!a.omit_from_final_grade,
     rubricId: (a.rubric_id as string | null) ?? null,
     // Late work: accepted until lateUntil, with a penalty per day or hour.
-    ...toLatePolicy(a),
+    ...toLatePolicy(a as LatePolicyRow),
     createdAt: ts(a.created_at) as string,
   };
 }
@@ -109,7 +109,7 @@ export type ActivityDto = ReturnType<typeof toActivity>;
 export function toPortalSubmission(s: any) {
   if (!s) return null;
   const graded = s.status === 'graded';
-  const late = toLateness(s);
+  const late = toLateness(s as Lateness);
   return {
     status: s.status as SubmissionStatus,
     score:

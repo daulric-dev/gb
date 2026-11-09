@@ -1,7 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { CircleX, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -22,11 +24,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * out of the way.
  */
 function Launch() {
+  useSignals();
   const params = useSearchParams();
   const courseId = params?.get("course") ?? "";
   const itemId = params?.get("item") ?? "";
   const valid = UUID.test(courseId) && UUID.test(itemId);
-  const [error, setError] = useState<string | null>(null);
+  const error = useSignal<string | null>(null);
   const started = useRef(false);
 
   useEffect(() => {
@@ -41,10 +44,10 @@ function Launch() {
         if (!url) throw new Error("bad launch url");
         window.location.replace(url);
       })
-      .catch((err) => setError(launchErrorMessage(err)));
-  }, [valid, courseId, itemId]);
+      .catch((err) => (error.value = launchErrorMessage(err)));
+  }, [valid, courseId, itemId, error]);
 
-  const shown = valid ? error : "This link is incomplete. Open the tool from the course again.";
+  const shown = valid ? error.value : "This link is incomplete. Open the tool from the course again.";
 
   if (!shown) {
     return (

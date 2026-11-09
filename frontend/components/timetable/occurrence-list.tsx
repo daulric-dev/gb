@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { toast } from "sonner";
 import { CalendarX, MapPin, MoveRight, Radio, Undo2 } from "lucide-react";
+import { useNow } from "@/lib/attendance";
 import { userMessage } from "@/lib/errors";
 import {
   formatDay,
@@ -30,7 +31,7 @@ export function OccurrenceList({
   occurrences,
   showCourse = true,
   showDate = false,
-  now = Date.now(),
+  now: propNow,
   onAction,
   onChangedAction,
 }: {
@@ -41,6 +42,8 @@ export function OccurrenceList({
   onAction?: (o: TimetableOccurrence, action: OccurrenceAction) => void;
   onChangedAction?: () => void;
 }) {
+  const hookNow = useNow(30_000);
+  const now = propNow ?? hookNow;
   async function restore(o: TimetableOccurrence) {
     try {
       await restoreOccurrence(o);

@@ -125,6 +125,12 @@ GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/sr
 | `REPORT_GENERATION_SWEEP` | No | `true` | `false` stops the sweep that resumes report card PDFs a restart left behind (on boot and every 5 minutes, one instance at a time; see `backend/src/report-card/README.md`). |
 | `REPORT_PDF_EXTRA_FONT` | No | - | Path to an extra TrueType/OpenType font (not `.ttc`) for characters the bundled Noto Sans lacks, such as Chinese, Japanese, Korean or Arabic names on report cards and transcripts. Without it they are drawn as a replacement character. |
 
+### Rostering
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `ROSTERING_SCHEDULER` | No | `true` | `false` stops the rostering sweep in this instance: resuming applies a restart interrupted and starting daily OneRoster syncs (every 5 minutes, one instance at a time; see `backend/src/rostering/README.md`). OneRoster endpoints follow `WEBHOOK_ALLOW_PRIVATE` for private-network destinations. |
+
 ### Example `backend/.env`
 
 `backend/.env.example` is the full, commented template; its defaults match `docker-compose.dev.yml`.

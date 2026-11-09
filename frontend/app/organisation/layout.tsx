@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, usePathname, useRouter } from "next/navigation";
@@ -12,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   Puzzle,
+  RefreshCw,
   School,
   Settings,
   ShieldCheck,
@@ -71,6 +73,12 @@ const NAV: {
     icon: Puzzle,
     feature: "lti",
   },
+  {
+    href: `${ORGANISATION_PATH}/rostering`,
+    label: "Rostering",
+    icon: RefreshCw,
+    feature: "rostering",
+  },
   { href: `${ORGANISATION_PATH}/settings`, label: "Settings", icon: Settings },
 ];
 
@@ -93,19 +101,20 @@ export default function OrganisationLayout({
   // The organisation's own switches (profile.features is the admin's school,
   // if any). Re-read when the profile is refreshed, as the Features page does
   // after saving.
-  const [orgFeatures, setOrgFeatures] = useState<Record<string, boolean>>({});
+  const orgFeaturesSignal = useSignal<Record<string, boolean>>({});
+  const orgFeatures = orgFeaturesSignal.value;
   useEffect(() => {
     if (!isOrgAdmin) return;
     let live = true;
     api<OrganisationFeature[]>("/organisation/features")
       .then((list) => {
-        if (live) setOrgFeatures(Object.fromEntries(list.map((f) => [f.key, f.enabled])));
+        if (live) orgFeaturesSignal.value = Object.fromEntries(list.map((f) => [f.key, f.enabled]));
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [isOrgAdmin, profile.value]);
+  }, [isOrgAdmin, profile.value, orgFeaturesSignal]);
 
   useEffect(() => {
     if (loading.value) return;

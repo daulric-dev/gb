@@ -197,7 +197,7 @@ export class AttendanceAlertService {
 
   /**
    * Alerts the caller may see: every one in the school with
-   * `report-card:read`, otherwise their own tutees'.
+   * `attendance-report:read`, otherwise their own tutees'.
    */
   async list(userId: string, status: 'open' | 'resolved' | 'all' = 'open') {
     const { schoolId, canSeeSchool } = await this.reports.scope(userId);

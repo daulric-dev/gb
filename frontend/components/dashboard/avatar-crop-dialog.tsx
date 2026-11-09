@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import { Loader2, ZoomIn, ZoomOut, RotateCw } from "lucide-react";
@@ -69,28 +71,32 @@ export function AvatarCropDialog({
   onConfirm,
   uploading = false,
 }: AvatarCropDialogProps) {
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
-  const [croppedArea, setCroppedArea] = useState<Area | null>(null);
+  useSignals();
+  const crop = useSignal({ x: 0, y: 0 });
+  const zoom = useSignal(1);
+  const rotation = useSignal(0);
+  const croppedArea = useSignal<Area | null>(null);
 
-  const onCropComplete = useCallback((_: Area, croppedAreaPixels: Area) => {
-    setCroppedArea(croppedAreaPixels);
-  }, []);
+  const onCropComplete = useCallback(
+    (_: Area, croppedAreaPixels: Area) => {
+      croppedArea.value = croppedAreaPixels;
+    },
+    [croppedArea],
+  );
 
   async function handleConfirm() {
-    if (!imageSrc || !croppedArea) return;
-    const blob = await getCroppedBlob(imageSrc, croppedArea);
+    if (!imageSrc || !croppedArea.value) return;
+    const blob = await getCroppedBlob(imageSrc, croppedArea.value);
     onConfirm(blob);
   }
 
   function handleClose(value: boolean) {
     if (uploading) return;
     if (!value) {
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-      setRotation(0);
-      setCroppedArea(null);
+      crop.value = { x: 0, y: 0 };
+      zoom.value = 1;
+      rotation.value = 0;
+      croppedArea.value = null;
     }
     onOpenChange(value);
   }
@@ -107,15 +113,15 @@ export function AvatarCropDialog({
         <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
           <Cropper
             image={imageSrc}
-            crop={crop}
-            zoom={zoom}
-            rotation={rotation}
+            crop={crop.value}
+            zoom={zoom.value}
+            rotation={rotation.value}
             aspect={1}
             cropShape="round"
             showGrid={false}
-            onCropChange={setCrop}
-            onZoomChange={setZoom}
-            onRotationChange={setRotation}
+            onCropChange={(next) => (crop.value = next)}
+            onZoomChange={(next) => (zoom.value = next)}
+            onRotationChange={(next) => (rotation.value = next)}
             onCropComplete={onCropComplete}
           />
         </div>
@@ -127,8 +133,8 @@ export function AvatarCropDialog({
               min={1}
               max={3}
               step={0.05}
-              value={[zoom]}
-              onValueChange={(value) => setZoom(Array.isArray(value) ? value[0] : value)}
+              value={[zoom.value]}
+              onValueChange={(value) => (zoom.value = Array.isArray(value) ? value[0] : value)}
             />
             <ZoomIn className="size-4 shrink-0 text-muted-foreground" />
           </div>
@@ -139,10 +145,10 @@ export function AvatarCropDialog({
               min={0}
               max={360}
               step={1}
-              value={[rotation]}
-              onValueChange={(value) => setRotation(Array.isArray(value) ? value[0] : value)}
+              value={[rotation.value]}
+              onValueChange={(value) => (rotation.value = Array.isArray(value) ? value[0] : value)}
             />
-            <span className="text-xs text-muted-foreground w-8 text-right">{rotation}°</span>
+            <span className="text-xs text-muted-foreground w-8 text-right">{rotation.value}°</span>
           </div>
         </div>
 
@@ -150,7 +156,7 @@ export function AvatarCropDialog({
           <Button variant="outline" onClick={() => handleClose(false)} disabled={uploading}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={uploading || !croppedArea}>
+          <Button onClick={handleConfirm} disabled={uploading || !croppedArea.value}>
             {uploading && <Loader2 className="mr-2 size-4 animate-spin" />}
             Upload
           </Button>

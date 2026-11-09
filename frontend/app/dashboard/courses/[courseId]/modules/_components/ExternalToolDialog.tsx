@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -40,9 +42,10 @@ export function ExternalToolDialog({
   canEdit: boolean;
   onOpenChangeAction: (open: boolean) => void;
 }) {
-  const [detail, setDetail] = useState<LtiItemDetail | null>(null);
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
+  useSignals();
+  const detail = useSignal<LtiItemDetail | null>(null);
+  const text = useSignal("");
+  const saving = useSignal(false);
   const url = `${courseLtiApi(courseId)}/items/${encodeURIComponent(itemId)}`;
 
   useEffect(() => {
@@ -51,8 +54,8 @@ export function ExternalToolDialog({
     api<LtiItemDetail>(url)
       .then((d) => {
         if (!live) return;
-        setDetail(d);
-        setText(formatCustomParams(d.customParams));
+        detail.value = d;
+        text.value = formatCustomParams(d.customParams);
       })
       .catch((err) => {
         if (!live) return;
@@ -61,25 +64,25 @@ export function ExternalToolDialog({
     return () => {
       live = false;
     };
-  }, [open, url]);
+  }, [open, url, detail, text]);
 
-  const parsed = parseCustomParams(text);
+  const parsed = parseCustomParams(text.value);
 
   async function save() {
     if (parsed.params === null) return toast.error(parsed.problem);
-    setSaving(true);
+    saving.value = true;
     try {
       const d = await api<LtiItemDetail>(url, {
         method: "PATCH",
         body: { customParams: parsed.params },
       });
-      setDetail(d);
+      detail.value = d;
       toast.success("Saved");
       onOpenChangeAction(false);
     } catch (err) {
       toast.error(userMessage(err, "Failed to save"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -89,18 +92,18 @@ export function ExternalToolDialog({
         <DialogHeader>
           <DialogTitle>{itemTitle}</DialogTitle>
           <DialogDescription>
-            {detail
-              ? `External tool: ${detail.toolName}${detail.toolEnabled ? "" : " (switched off by your organisation)"}`
+            {detail.value
+              ? `External tool: ${detail.value.toolName}${detail.value.toolEnabled ? "" : " (switched off by your organisation)"}`
               : "External tool"}
           </DialogDescription>
         </DialogHeader>
-        {!detail ? (
+        {!detail.value ? (
           <Skeleton className="h-24 w-full" />
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {detail.lineItem
-                ? `Scores from the tool go to a ${detail.lineItem.points}-point gradebook column.`
+              {detail.value.lineItem
+                ? `Scores from the tool go to a ${detail.value.lineItem.points}-point gradebook column.`
                 : "This item has no gradebook column."}
             </p>
             <div className="space-y-2">
@@ -109,9 +112,9 @@ export function ExternalToolDialog({
                 id={`lti-item-${itemId}-custom`}
                 rows={4}
                 className="font-mono text-xs"
-                value={text}
+                value={text.value}
                 readOnly={!canEdit}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => (text.value = e.target.value)}
                 aria-describedby={`lti-item-${itemId}-hint`}
               />
               <p id={`lti-item-${itemId}-hint`} className="text-xs text-muted-foreground">
@@ -130,8 +133,8 @@ export function ExternalToolDialog({
             {canEdit ? "Cancel" : "Close"}
           </Button>
           {canEdit && (
-            <Button onClick={save} disabled={!detail || !!parsed.problem || saving}>
-              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+            <Button onClick={save} disabled={!detail.value || !!parsed.problem || saving.value}>
+              {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
               Save
             </Button>
           )}

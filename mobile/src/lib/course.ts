@@ -313,6 +313,13 @@ export interface TeacherSubmissionRow {
     awayReason?: string | null;
     tabSwitchCount?: number;
     lastAwayAt?: string | null;
+    /** Late work (absent on older servers): score is after the penalty. */
+    lateSeconds?: number;
+    latePenaltyPercent?: number;
+    latePenaltyWaived?: boolean;
+    rawScore?: number | null;
+    /** A quiz waiting for its essay or file questions to be marked. */
+    needsMarking?: boolean;
   } | null;
 }
 
@@ -386,3 +393,17 @@ export function timeAgo(value: string | null | undefined): string {
   });
 }
 
+
+/**
+ * "Late (2 days)" from a submission's lateSeconds: a started day counts as a
+ * day, as the late penalty counts it; under a day shows hours.
+ */
+export function lateLabel(lateSeconds: number | undefined): string | null {
+  if (!lateSeconds || lateSeconds <= 0) return null;
+  if (lateSeconds < 86_400) {
+    const hours = Math.ceil(lateSeconds / 3_600);
+    return `Late (${hours} ${hours === 1 ? "hour" : "hours"})`;
+  }
+  const days = Math.ceil(lateSeconds / 86_400);
+  return `Late (${days} ${days === 1 ? "day" : "days"})`;
+}

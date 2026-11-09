@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { setStepUpHandler } from "@/lib/api";
 import {
@@ -38,48 +40,54 @@ const RESEND_COOLDOWN = 30;
  * the root layout inside AuthProvider; renders nothing until needed.
  */
 export function StepUpDialogHost() {
-  const [open, setOpen] = useState(false);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+  useSignals();
+  const open = useSignal(false);
+  const code = useSignal("");
+  const error = useSignal<string | null>(null);
+  const sending = useSignal(false);
+  const verifying = useSignal(false);
+  const cooldown = useSignal(0);
   const { profile } = useProfile();
   const email = profile.value?.email ?? null;
-  const prompt = useMemo(() => createStepUpPrompt(setOpen), []);
+  const prompt = useMemo(
+    () =>
+      createStepUpPrompt((next) => {
+        open.value = next;
+      }),
+    [open],
+  );
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startCooldown = useCallback(() => {
-    setCooldown(RESEND_COOLDOWN);
+    cooldown.value = RESEND_COOLDOWN;
     if (timer.current) clearInterval(timer.current);
     timer.current = setInterval(() => {
-      setCooldown((c) => {
-        if (c <= 1 && timer.current) {
-          clearInterval(timer.current);
-          timer.current = null;
-        }
-        return Math.max(0, c - 1);
-      });
+      const c = cooldown.value;
+      if (c <= 1 && timer.current) {
+        clearInterval(timer.current);
+        timer.current = null;
+      }
+      cooldown.value = Math.max(0, c - 1);
     }, 1000);
-  }, []);
+  }, [cooldown]);
 
   const send = useCallback(async () => {
-    setSending(true);
-    setError(null);
+    sending.value = true;
+    error.value = null;
     try {
       await sendStepUpCode();
       startCooldown();
     } catch (err) {
-      setError(userMessage(err, "Failed to send the code"));
+      error.value = userMessage(err, "Failed to send the code");
     } finally {
-      setSending(false);
+      sending.value = false;
     }
-  }, [startCooldown]);
+  }, [startCooldown, sending, error]);
 
   useEffect(() => {
     setStepUpHandler(() => {
-      setCode("");
-      setError(null);
+      code.value = "";
+      error.value = null;
       const answer = prompt.request();
       // Auto-send as it opens: the code is the only thing they need.
       void send();
@@ -90,31 +98,31 @@ export function StepUpDialogHost() {
       prompt.dismissed();
       if (timer.current) clearInterval(timer.current);
     };
-  }, [prompt, send]);
+  }, [prompt, send, code, error]);
 
   const verify = useCallback(
     async (value: string) => {
-      if (value.length !== STEP_UP_CODE_LENGTH || verifying) return;
-      setVerifying(true);
-      setError(null);
+      if (value.length !== STEP_UP_CODE_LENGTH || verifying.value) return;
+      verifying.value = true;
+      error.value = null;
       try {
         await verifyStepUpCode(value);
         prompt.confirmed();
       } catch (err) {
-        setError(userMessage(err, "Verification failed"));
-        setCode("");
+        error.value = userMessage(err, "Verification failed");
+        code.value = "";
       } finally {
-        setVerifying(false);
+        verifying.value = false;
       }
     },
-    [prompt, verifying],
+    [prompt, verifying, error, code],
   );
 
   return (
     <Dialog
-      open={open}
+      open={open.value}
       onOpenChange={(o) => {
-        if (!o && !verifying) prompt.dismissed();
+        if (!o && !verifying.value) prompt.dismissed();
       }}
     >
       <DialogContent className="sm:max-w-md">
@@ -140,37 +148,37 @@ export function StepUpDialogHost() {
           className="flex flex-col items-center gap-3"
           onSubmit={(e) => {
             e.preventDefault();
-            void verify(code);
+            void verify(code.value);
           }}
         >
           <InputOTP
             maxLength={STEP_UP_CODE_LENGTH}
-            value={code}
+            value={code.value}
             autoFocus
-            disabled={verifying}
+            disabled={verifying.value}
             aria-label="Confirmation code"
-            aria-invalid={!!error}
+            aria-invalid={!!error.value}
             onChange={(v) => {
               const next = cleanStepUpCode(v);
-              setCode(next);
-              if (error) setError(null);
+              code.value = next;
+              if (error.value) error.value = null;
               if (next.length === STEP_UP_CODE_LENGTH) void verify(next);
             }}
           >
             <InputOTPGroup>
               {[0, 1, 2, 3].map((i) => (
-                <InputOTPSlot key={i} index={i} className="size-9" aria-invalid={!!error} />
+                <InputOTPSlot key={i} index={i} className="size-9" aria-invalid={!!error.value} />
               ))}
             </InputOTPGroup>
             <InputOTPSeparator className="hidden sm:flex" />
             <InputOTPGroup>
               {[4, 5, 6, 7].map((i) => (
-                <InputOTPSlot key={i} index={i} className="size-9" aria-invalid={!!error} />
+                <InputOTPSlot key={i} index={i} className="size-9" aria-invalid={!!error.value} />
               ))}
             </InputOTPGroup>
           </InputOTP>
           <p className="min-h-5 text-center text-sm text-destructive" role="alert">
-            {error}
+            {error.value}
           </p>
 
           <DialogFooter className="w-full sm:justify-between">
@@ -178,16 +186,16 @@ export function StepUpDialogHost() {
               type="button"
               variant="ghost"
               onClick={() => void send()}
-              disabled={sending || cooldown > 0}
+              disabled={sending.value || cooldown.value > 0}
             >
-              {sending && <Loader2 className="mr-2 size-4 animate-spin" />}
-              {cooldown > 0 ? `Resend code (${cooldown}s)` : "Send code"}
+              {sending.value && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {cooldown.value > 0 ? `Resend code (${cooldown.value}s)` : "Send code"}
             </Button>
             <Button
               type="submit"
-              disabled={verifying || code.length !== STEP_UP_CODE_LENGTH}
+              disabled={verifying.value || code.value.length !== STEP_UP_CODE_LENGTH}
             >
-              {verifying && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {verifying.value && <Loader2 className="mr-2 size-4 animate-spin" />}
               Verify
             </Button>
           </DialogFooter>

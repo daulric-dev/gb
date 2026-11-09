@@ -30,6 +30,7 @@ Defined once in `backend/src/features/feature.catalog.ts`.
 | `timetable` | Timetable & automatic attendance | off | `attendance` |
 | `attendance_alerts` | Attendance reports & alerts | off | `attendance` |
 | `report_cards` | Report cards & transcripts | on | |
+| `rostering` | Rostering sync (OneRoster, CSV) | off | Organisation-level: a school's switch has no effect. |
 
 **Effective for a school** = the organisation's value AND the school has not switched it off AND every feature it requires is effective. Without a school (an organisation admin with none), the organisation's values and requirements decide.
 
@@ -98,4 +99,5 @@ Added by migration `20261102120000_features`. Lookups are cached for 30 seconds 
 | `timetable` | `src/timetable` (school setup, course timetables, `/timetable/me`, `/portal/me/timetable`); no session opens automatically while it is off. |
 | `attendance_alerts` | `src/attendance-alerts` (reports, CSV, alerts, settings, form tutors); no alerts are opened and no parent `attendance_alert` notice is sent while it is off. |
 | `report_cards` | `/api/courses/:courseId/report-comments`, every `/api/report-cards/...` route (release dashboard and signed report links), and `/api/portal/me/reports...` / `/api/portal/me/transcript...`; queued PDF jobs for a school with it off do nothing. See [the report cards guide](../guide/report-cards.md). |
+| `rostering` | Every `/api/organisation/rostering/...` route (organisation admins; checked against the organisation's setting only), dry runs, applies and daily syncs. See [the rostering guide](../guide/rostering.md). |
 | `push_notifications` | `PushService` sends nothing to users whose school has it off. Device registration still works, and in-app course notifications are still created. |

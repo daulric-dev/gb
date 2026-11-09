@@ -41,7 +41,7 @@ function sendCsv(reply: FastifyReply, out: { csv: string; filename: string }) {
 
 /**
  * Attendance reports (school, student) and alerts. The school report needs
- * `report-card:read`; a form tutor sees their own tutees (checked in the
+ * `attendance-report:read`; a form tutor sees their own tutees (checked in the
  * services); settings need `school:update`, form tutors `student:update`.
  */
 @ApiTags('Attendance reports')

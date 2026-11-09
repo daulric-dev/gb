@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -54,17 +55,20 @@ export function ToolFormDialog({
   onOpenChangeAction: (open: boolean) => void;
   onSavedAction: (tool: LtiTool) => void;
 }) {
+  useSignals();
   // Fresh fields each time: the parent remounts this (key) when it opens.
-  const [draft, setDraft] = useState<ToolDraft>(() => toolDraftOf(existing));
-  const [saving, setSaving] = useState(false);
-  const set = (patch: Partial<ToolDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  // useSignal keeps only the first render's value, like a lazy initial state.
+  const draftSignal = useSignal<ToolDraft>(toolDraftOf(existing));
+  const draft = draftSignal.value;
+  const saving = useSignal(false);
+  const set = (patch: Partial<ToolDraft>) => (draftSignal.value = { ...draftSignal.value, ...patch });
   const problem = toolDraftProblem(draft);
   const id = `lti-tool-${existing?.id ?? "new"}`;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (problem) return toast.error(problem);
-    setSaving(true);
+    saving.value = true;
     try {
       let saved: LtiTool;
       if (existing) {
@@ -89,7 +93,7 @@ export function ToolFormDialog({
     } catch (err) {
       toast.error(userMessage(err, "Failed to save the tool"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -322,8 +326,8 @@ export function ToolFormDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChangeAction(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!!problem || saving}>
-              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+            <Button type="submit" disabled={!!problem || saving.value}>
+              {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
               {existing ? "Save" : "Register tool"}
             </Button>
           </DialogFooter>

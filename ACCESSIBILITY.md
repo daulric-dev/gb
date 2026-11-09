@@ -30,6 +30,8 @@ We aim to meet the **[Web Content Accessibility Guidelines (WCAG) 2.2, level AA]
 **Course design**
 
 - Teachers can give an individual student a later due date, excuse a student from a piece of work, and mark work done offline or on paper, so students are not forced through one online format.
+- **Quiz question types work without dragging:** ordering questions use Move up / Move down buttons and matching questions use a labelled choice per item, on the web (keyboard) and in the app (VoiceOver and TalkBack labels say which item and where it is).
+- **Late work:** teachers can accept work after the due date (with or without a penalty) and waive the penalty for one student.
 - **Quiz accommodations:** a student can get extra time on timed quizzes (×1.25, ×1.5, ×2 or extra minutes) and be exempt from Lockdown, on one quiz or as a school-wide default. An exempt student takes a Lockdown quiz without fullscreen or app pinning and is never reported as away. Accommodations are shown only to staff.
 
 ## Known gaps

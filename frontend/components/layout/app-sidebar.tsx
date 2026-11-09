@@ -96,8 +96,8 @@ const navItems: NavItem[] = [
     icon: Clock,
     feature: "timetable",
   },
-  // Reports and alerts; the API decides what each member may see (school
-  // report with report-card:read, a form tutor's own tutees otherwise).
+  // Reports and alerts; open to staff because form tutors see their own
+  // tutees here. The school report inside needs attendance-report:read.
   {
     title: "Attendance",
     href: "/dashboard/attendance",

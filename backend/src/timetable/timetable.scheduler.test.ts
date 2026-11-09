@@ -53,6 +53,7 @@ describe('TimetableScheduler', () => {
       schoolId: 's1',
       settings: {
         timeZone: 'Europe/London',
+        timeZoneSet: true,
         cycleLength: null,
         cycleStartDate: null,
         schoolDays: [1, 2, 3, 4, 5],
@@ -140,5 +141,24 @@ describe('TimetableScheduler', () => {
     await scheduler.tick(NOW);
     expect(attendance.openScheduled).not.toHaveBeenCalled();
     expect(features.isEnabled.mock.calls[0]).toEqual(['s1', 'timetable']);
+  });
+
+  test('a school without a time zone is skipped, and logged once per boot', async () => {
+    ctx.settings.timeZone = 'UTC';
+    ctx.settings.timeZoneSet = false;
+    const warn = mock(() => undefined);
+    (scheduler as any).logger.warn = warn;
+    await scheduler.tick(NOW);
+    await scheduler.tick(new Date(NOW.getTime() + 60_000));
+    await scheduler.tick(new Date(NOW.getTime() + 120_000));
+    expect(attendance.openScheduled).not.toHaveBeenCalled();
+    expect(timetable.occurrencesFor).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String((warn.mock.calls[0] as unknown[])[0])).toContain('s1');
+
+    // Once an admin sets the zone, the next tick opens the period.
+    ctx.settings.timeZone = 'Europe/London';
+    ctx.settings.timeZoneSet = true;
+    expect(await scheduler.tick(NOW)).toEqual({ opened: 1, skipped: 0 });
   });
 });

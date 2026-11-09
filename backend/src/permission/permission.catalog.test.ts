@@ -71,6 +71,17 @@ describe('permission catalog', () => {
     expect(admin.has('school:delete' as never)).toBe(false);
   });
 
+  test('attendance-report has read only; admins hold it, teachers and members do not', () => {
+    expect(actionsFor('attendance-report')).toEqual(['read']);
+    expect(isPermissionKey('attendance-report:read')).toBe(true);
+    for (const action of ['create', 'update', 'delete']) {
+      expect(isPermissionKey(`attendance-report:${action}`)).toBe(false);
+    }
+    expect(defaultsForRole('admin').has('attendance-report:read')).toBe(true);
+    expect(defaultsForRole('teacher').has('attendance-report:read')).toBe(false);
+    expect(defaultsForRole('member').has('attendance-report:read')).toBe(false);
+  });
+
   test('teacher and member defaults grant school:read and join-code:read only', () => {
     for (const role of ['teacher', 'member']) {
       const keys = defaultsForRole(role);

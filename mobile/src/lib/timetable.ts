@@ -35,6 +35,8 @@ export interface TimetableRange {
   to: string;
   today: string;
   timeZone?: string;
+  /** False until the school's admin sets its time zone (times are then UTC and nothing opens automatically). */
+  timeZoneSet?: boolean;
   occurrences: TimetableOccurrence[];
 }
 

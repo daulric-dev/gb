@@ -25,6 +25,7 @@ Platform features the organisation switches on or off for its schools. A school'
 | `lti` | External tools (LTI 1.3) | off | Data leaves the platform, so the organisation turns it on; a school can switch it off. |
 | `timetable` | Timetable & automatic attendance | off | `attendance` |
 | `attendance_alerts` | Attendance reports & alerts | off | `attendance` |
+| `rostering` | Rostering sync (OneRoster, CSV) | off | Organisation-level only: checked against the organisation's setting, a school's switch has no effect. |
 
 Effective for a school = the organisation's value AND not in the school's `disabled_features` AND every `requires` effective (`effectiveForSchool`). Without a school, the organisation's values and requirements (`effectiveForOrganisation`). `organisationSettings(stored)` applies the stored overrides to the defaults, ignoring unknown keys and non-booleans.
 
@@ -62,6 +63,7 @@ Effective for a school = the organisation's value AND not in the school's `disab
 | `report_cards` | `src/report-card`: `report-comment.controller.ts`, `report-release.controller.ts`, `portal-report.controller.ts` (class); the public signed-link route checks it with `assertEnabled`; `ReportGenerationService.generate` skips a school with it off. |
 | `push_notifications` | `src/notifications/push.service.ts`: `sendToUsers` drops recipients whose school has it off (checked once per school). Registration routes stay; in-app course notifications are still created. |
 | `lti` | `src/lti`: course routes (`LtiCourseController`, `@RequireFeature('lti')`), organisation registry (`LtiOrganisationFeatureGuard`: organisation value only), the OIDC auth endpoint (course's school, refused with an error page), the token endpoint (organisation value, 403) and AGS (course's school, `FeatureDisabledException`). |
+| `rostering` | `src/rostering`: every `/api/organisation/rostering` route (`RosteringFeatureGuard`, organisation value only), dry runs and applies (`RosterRunService` stops while it is off) and the scheduler's daily syncs. |
 
 The routes for changing features live with their owners: `GET`/`PATCH /api/organisation/features` in `src/organisation` (organisation admins) and `GET`/`PATCH /api/schools/current/features` in `src/school` (`school:update`), plus `GET`/`PATCH /api/organisation/schools/:id/features` in `src/organisation` (organisation admins, any school; same rules). The profile's `features` map is added in `src/auth/auth.service.ts`.
 

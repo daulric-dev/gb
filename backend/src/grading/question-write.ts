@@ -273,7 +273,7 @@ export async function updateQuestionRow(
       matchLabel: o.matchLabel,
     }));
   const { options, columns } = validateQuestion(
-    existing.kind as QuestionKind,
+    existing.kind,
     optionInput,
     merged,
   );

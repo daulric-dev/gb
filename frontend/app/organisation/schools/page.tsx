@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -77,17 +79,27 @@ function arrivedFromSetup(): boolean {
 }
 
 export default function OrganisationSchoolsPage() {
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<SchoolStatusFilter>(initialStatus);
-  const [rows, setRows] = useState<OrganisationSchool[] | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+  useSignals();
+  const searchSignal = useSignal("");
+  const search = searchSignal.value;
+  const statusSignal = useSignal<SchoolStatusFilter>(initialStatus());
+  const status = statusSignal.value;
+  const rowsSignal = useSignal<OrganisationSchool[] | null>(null);
+  const rows = rowsSignal.value;
+  const reloadKeySignal = useSignal(0);
+  const reloadKey = reloadKeySignal.value;
+  const reload = useCallback(() => {
+    reloadKeySignal.value = reloadKeySignal.value + 1;
+  }, [reloadKeySignal]);
 
   const router = useRouter();
   // Add / edit share one dialog; `editing` is the school being edited.
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<OrganisationSchool | null>(null);
-  const [appointing, setAppointing] = useState<OrganisationSchool | null>(null);
+  const formOpenSignal = useSignal(false);
+  const formOpen = formOpenSignal.value;
+  const editingSignal = useSignal<OrganisationSchool | null>(null);
+  const editing = editingSignal.value;
+  const appointingSignal = useSignal<OrganisationSchool | null>(null);
+  const appointing = appointingSignal.value;
   // Configuring a school happens on its page (the name links there); its
   // dashboard is a row action that switches the active school.
   const { open: openDashboard, switching } = useOpenSchoolDashboard();
@@ -103,16 +115,16 @@ export default function OrganisationSchoolsPage() {
         .then((data) => {
           if (cancelled) return;
           const list = Array.isArray(data) ? data : [];
-          setRows(list);
+          rowsSignal.value = list;
           if (welcomePending.current && list.length === 0) {
             welcomePending.current = false;
-            setEditing(null);
-            setFormOpen(true);
+            editingSignal.value = null;
+            formOpenSignal.value = true;
           }
         })
         .catch((err) => {
           if (!cancelled) {
-            setRows([]);
+            rowsSignal.value = [];
             toast.error(userMessage(err, "Failed to load schools"));
           }
         });
@@ -121,16 +133,16 @@ export default function OrganisationSchoolsPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, status, reloadKey]);
+  }, [search, status, reloadKey, editingSignal, formOpenSignal, rowsSignal]);
 
   function openAdd() {
-    setEditing(null);
-    setFormOpen(true);
+    editingSignal.value = null;
+    formOpenSignal.value = true;
   }
 
   function openEdit(school: OrganisationSchool) {
-    setEditing(school);
-    setFormOpen(true);
+    editingSignal.value = school;
+    formOpenSignal.value = true;
   }
 
   return (
@@ -151,7 +163,7 @@ export default function OrganisationSchoolsPage() {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => (searchSignal.value = e.target.value)}
             placeholder="Search schools"
             className="pl-8"
             aria-label="Search schools"
@@ -159,7 +171,7 @@ export default function OrganisationSchoolsPage() {
         </div>
         <NativeSelect
           value={status}
-          onChange={(e) => setStatus(e.target.value as SchoolStatusFilter)}
+          onChange={(e) => (statusSignal.value = e.target.value as SchoolStatusFilter)}
           aria-label="Filter by status"
           className="w-full sm:w-48"
         >
@@ -273,7 +285,7 @@ export default function OrganisationSchoolsPage() {
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => setAppointing(r)}
+                            onClick={() => (appointingSignal.value = r)}
                           >
                             <UserCog className="mr-2 size-4" />
                             Appoint admin
@@ -301,13 +313,13 @@ export default function OrganisationSchoolsPage() {
 
       <SchoolFormDialog
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(o) => (formOpenSignal.value = o)}
         editing={editing}
         onSaved={reload}
       />
       <AppointAdminDialog
         school={appointing}
-        onClose={() => setAppointing(null)}
+        onClose={() => (appointingSignal.value = null)}
         onAppointed={reload}
       />
     </div>

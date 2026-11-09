@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { ChevronRight, ClipboardList, Plus, Scale, SlashIcon } from "lucide-react";
+import { Boxes, ChevronRight, ClipboardList, Plus, Scale, SlashIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Activity, AssignmentGroup } from "@/lib/courses/types";
 import { ACTIVITY_KIND_LABEL, formatDue } from "@/lib/courses/format";
@@ -24,6 +24,7 @@ import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { CreateActivityDialog } from "./_components/CreateActivityDialog";
 import { AssignmentGroupsDialog } from "./_components/AssignmentGroupsDialog";
+import { QuestionBanksDialog } from "./_components/QuestionBanksDialog";
 import {
   ACTIVITY_ICON,
   ActivityStatusBadge,
@@ -49,6 +50,7 @@ export default function CourseAssignmentsPage() {
   const createGroupId = useSignal<string | null>(null);
   const createKey = useSignal(0);
   const groupsOpen = useSignal(false);
+  const banksOpen = useSignal(false);
 
   const loadGroups = useCallback(() => {
     return api<AssignmentGroup[]>(`/courses/${course.id}/assignment-groups`)
@@ -116,6 +118,10 @@ export default function CourseAssignmentsPage() {
         }
         actions={
           <>
+            <Button variant="outline" onClick={() => (banksOpen.value = true)}>
+              <Boxes className="mr-2 size-4" />
+              Question banks
+            </Button>
             <Button variant="outline" onClick={() => (groupsOpen.value = true)}>
               <Scale className="mr-2 size-4" />
               Groups
@@ -248,6 +254,13 @@ export default function CourseAssignmentsPage() {
         canEdit={canManage}
         onOpenChangeAction={(v) => (groupsOpen.value = v)}
         onChangedAction={() => void loadGroups()}
+      />
+
+      <QuestionBanksDialog
+        open={banksOpen.value}
+        courseId={course.id}
+        canManage={canManage}
+        onOpenChangeAction={(v) => (banksOpen.value = v)}
       />
     </div>
   );
