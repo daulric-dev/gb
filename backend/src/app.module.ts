@@ -37,6 +37,8 @@ import { SsoCoreModule } from '@/sso/sso-core.module';
 import { SsoModule } from '@/sso/sso.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AttendanceModule } from '@/attendance/attendance.module';
+import { TimetableModule } from '@/timetable/timetable.module';
+import { AttendanceAlertsModule } from '@/attendance-alerts/attendance-alerts.module';
 import { DiscussionModule } from '@/discussion/discussion.module';
 import { CalendarModule } from '@/calendar/calendar.module';
 import { CourseNotificationModule } from '@/course-notification/course-notification.module';
@@ -49,6 +51,8 @@ import { IntegrationsModule } from '@/integrations/integrations.module';
 import { AuditLogModule } from '@/audit-log/audit-log.module';
 import { ReportCardModule } from '@/report-card/report-card.module';
 import { ParentPortalModule } from '@/parent-portal/parent-portal.module';
+import { LtiModule } from '@/lti/lti.module';
+import { RosteringModule } from '@/rostering/rostering.module';
 import { HealthService } from '@/health/health.service';
 
 @Module({
@@ -138,6 +142,8 @@ import { HealthService } from '@/health/health.service';
     DashboardModule,
     NotificationsModule,
     AttendanceModule,
+    TimetableModule,
+    AttendanceAlertsModule,
     ParentPortalModule,
     DiscussionModule,
     CalendarModule,
@@ -148,7 +154,9 @@ import { HealthService } from '@/health/health.service';
     AppVersionModule,
     IntegrationsModule.forRoot(),
     AuditLogModule,
+    LtiModule,
     ReportCardModule.forRoot(),
+    RosteringModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [

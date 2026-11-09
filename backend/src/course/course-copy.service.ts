@@ -564,6 +564,9 @@ export class CourseCopyService {
     const newItems: Prisma.module_itemCreateManyInput[] = [];
     for (const i of items) {
       if (i.file_id && !usableFiles.has(i.file_id)) continue;
+      // External tool items carry an LTI resource link (and a deployment
+      // that may not reach the target's school); they are not copied.
+      if (i.item_type === 'external_tool') continue;
       const moduleId = ids.get(i.module_id);
       const pageId = i.page_id ? ids.get(i.page_id) : null;
       const activityId = i.activity_id ? ids.get(i.activity_id) : null;

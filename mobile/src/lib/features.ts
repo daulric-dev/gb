@@ -20,6 +20,10 @@ export const FEATURE_KEYS = [
   "report_cards",
   "parent_portal",
   "parent_notifications",
+  "timetable",
+  "attendance_alerts",
+  "rostering",
+  "lti",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -43,12 +47,21 @@ export const FALLBACK_FEATURES: FeatureMap = {
   // Older servers have no parent portal.
   parent_portal: false,
   parent_notifications: false,
+  // Older servers have no timetable or attendance alerts.
+  timetable: false,
+  attendance_alerts: false,
+  // Older servers have no rostering sync.
+  rostering: false,
+  // Older servers have no external tools (LTI).
+  lti: false,
 };
 
 const REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {
   student_messaging: ["messaging"],
   chat_channels: ["messaging"],
   parent_notifications: ["parent_portal"],
+  timetable: ["attendance"],
+  attendance_alerts: ["attendance"],
 };
 
 export function resolveFeatures(

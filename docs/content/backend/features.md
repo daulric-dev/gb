@@ -27,6 +27,8 @@ Defined once in `backend/src/features/feature.catalog.ts`.
 | `integrations` | Integrations (webhooks) | off | Data leaves the platform, so the organisation turns it on. |
 | `parent_portal` | Parent portal | off | Each school turns it on when it is ready. |
 | `parent_notifications` | Parent notifications | off | `parent_portal` |
+| `timetable` | Timetable & automatic attendance | off | `attendance` |
+| `attendance_alerts` | Attendance reports & alerts | off | `attendance` |
 | `report_cards` | Report cards & transcripts | on | |
 
 **Effective for a school** = the organisation's value AND the school has not switched it off AND every feature it requires is effective. Without a school (an organisation admin with none), the organisation's values and requirements decide.
@@ -93,5 +95,7 @@ Added by migration `20261102120000_features`. Lookups are cached for 30 seconds 
 | `integrations` | Every webhook route (`/api/schools/current/webhooks/...`, `/api/organisation/schools/:schoolId/webhooks/...`); no events are queued and no deliveries are sent for a school with it off. See [webhooks.md](./webhooks.md). |
 | `parent_portal` | Every `/api/parent/...` route, `/api/students/:studentId/parents/...`, and redeeming a parent invitation or code. See [the parent portal guide](../guide/parent-portal.md). |
 | `parent_notifications` | `/api/parent/notifications/preferences`; no parent notice is sent for a child whose school has it off. |
+| `timetable` | `src/timetable` (school setup, course timetables, `/timetable/me`, `/portal/me/timetable`); no session opens automatically while it is off. |
+| `attendance_alerts` | `src/attendance-alerts` (reports, CSV, alerts, settings, form tutors); no alerts are opened and no parent `attendance_alert` notice is sent while it is off. |
 | `report_cards` | `/api/courses/:courseId/report-comments`, every `/api/report-cards/...` route (release dashboard and signed report links), and `/api/portal/me/reports...` / `/api/portal/me/transcript...`; queued PDF jobs for a school with it off do nothing. See [the report cards guide](../guide/report-cards.md). |
 | `push_notifications` | `PushService` sends nothing to users whose school has it off. Device registration still works, and in-app course notifications are still created. |

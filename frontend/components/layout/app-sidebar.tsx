@@ -15,8 +15,10 @@ import {
   AtSign,
   ClipboardClock,
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
+  Clock,
   Building2,
   ChevronsUpDown,
   FileText,
@@ -87,6 +89,21 @@ const navItems: NavItem[] = [
     icon: CalendarDays,
     feature: "calendar",
   },
+  // The caller's own periods; the API returns only courses they staff.
+  {
+    title: "Timetable",
+    href: "/dashboard/timetable",
+    icon: Clock,
+    feature: "timetable",
+  },
+  // Reports and alerts; the API decides what each member may see (school
+  // report with report-card:read, a form tutor's own tutees otherwise).
+  {
+    title: "Attendance",
+    href: "/dashboard/attendance",
+    icon: CalendarCheck,
+    feature: "attendance_alerts",
+  },
   {
     title: "Students",
     href: "/dashboard/students",
@@ -136,6 +153,13 @@ const adminNavItems: NavItem[] = [
     permission: ["grade-scale", "read"],
   },
   { title: "Roles", href: "/dashboard/roles", icon: KeyRound, adminOnly: true },
+  {
+    title: "Timetable setup",
+    href: "/dashboard/settings/timetable",
+    icon: Clock,
+    permission: ["school", "update"],
+    feature: "timetable",
+  },
   {
     title: "Email Domains",
     href: "/dashboard/email-domains",

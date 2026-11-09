@@ -39,6 +39,7 @@ Only the call that actually sets `closed_at` sends the "closed" events.
 
 | Method | Path | Who may call | What it does |
 |--------|------|--------------|--------------|
+| GET | `/api/portal/me/attendance/summary` | A student | `{ overall, courses: [{ courseId, courseName, courseCode, archived, summary }] }`: the student's own tally and rate, overall and per course (published or archived, not dropped), from their own records only. The portal's attendance page. |
 | GET | `/api/portal/me/attendance/open` | A student | The open sessions in the student's active enrolments in published courses, each with `myStatus`. |
 | POST | `/api/portal/me/attendance/:sessionId/check-in` | A student. Throttled: `claim-code` 30 per 15 min. | Checks in (`CheckInDto`). See the check-in rules below. |
 | GET | `/api/portal/me/courses/:courseId/attendance` | A student enrolled in the course | `{ summary, records[] }` for this student. It includes only the sessions they have a record in, plus any open one. |
@@ -80,11 +81,12 @@ The proof of presence is the **QR token or the room code**: both are shown only 
 
 ### Services / exports
 
-The module exports nothing. Its providers are:
+The module exports `AttendanceService` (for `src/timetable`). Its providers are:
 
 - **`AttendanceService`**:
+  - system: `openScheduled(courseId, { closesAt, openedAt?, title, requireCode, lateAfterMinutes, location })`, used by the timetable scheduler ([`src/timetable`](../timetable/README.md)): opens a session with no `opened_by` (published courses only; 409 when one is open or the period has ended), with the same code, QR secret, push and events as `open`; `closes_at` is the period's end, so the sweep closes it and records absentees;
   - staff: `list`, `open`, `detail`, `qr`, `close`, `updateLocation`, `remove`, `setRecord`, `summary`, `exportCsv`, `assertSession`;
-  - portal: `openForStudent`, `checkIn`, `courseForStudent`, `scanClaim`;
+  - portal: `openForStudent`, `checkIn`, `courseForStudent`, `summaryForStudent`, `scanClaim`;
   - finalising: `finalize`, `finalizeExpired(courseId?)`, `sweep`.
   - It also exports the helper `tally(records)`: the rate is (present + late) / (records − excused) × 100, rounded to one decimal, or `null` when there is nothing to count. It also exports `MAX_WRONG_CODES` (5), `MAX_SESSION_FIX_ACCURACY_M` (100), `SESSION_LOCATION_MIN_INTERVAL_MS` (5000) and `MOCK_LOCATION_MESSAGE`.
 - **`AttendanceRealtime`**: attendance's wrapper around `RedisPubSubService`.
@@ -106,7 +108,7 @@ The module exports nothing. Its providers are:
 
 ## Used by
 
-- `src/app.module.ts` imports `AttendanceModule`. No other backend module imports it.
+- `src/app.module.ts` imports `AttendanceModule`; `src/timetable` imports it for `openScheduled` (automatic sessions at each timetabled period, with the room's saved location as the point). `src/attendance-alerts` reads the records and reuses `tally` for reports and alerts.
 - Frontend (staff):
   - `app/dashboard/courses/[courseId]/attendance/page.tsx` (list, summary, export);
   - `.../attendance/_components/TakeAttendanceDialog.tsx` (open);
@@ -189,7 +191,8 @@ cd backend && bun test src/attendance
   - **location readings**: a mocked reading refused without using a code attempt, stored coordinates/accuracy/distance, each flag (including the earlier record flagged when a later duplicate arrives), flags never in student responses, no coordinates kept without a location check;
   - **finalising**: idempotence, events sent once, the sweep, finalise-on-read;
   - **setRecord**: overrides and a TA being able to mark but not delete;
-  - the summary rate, the CSV formula defusing, `tally`, and the portal views.
+  - the summary rate, the CSV formula defusing, `tally`, and the portal views;
+  - `openScheduled` (point, no opener, period end; unpublished, ended and already-open refused) and `summaryForStudent`.
 - `qr.test.ts` covers token windows, forged tokens and claim binding (session, secret, device) and expiry.
 - `scan-device.test.ts` covers the device cookie's attributes, reuse, and malformed values.
 - `attendance.service.test.ts` also covers a claim forwarded to another device (403, claim not used up) and a whole class claiming from one address.

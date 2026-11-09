@@ -93,13 +93,15 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 **Touches:** `question_kind` enum, `grading.submit_quiz` (and the TypeScript re-scoring copy in `quiz-rescore.ts`, which has a test that keeps them identical), quiz builder UI, student quiz screens on web and mobile.
 
-### 6. Timetable and automatic attendance sessions — [ ]
+### 6. Timetable and automatic attendance sessions — [x] (PR #TBD)
 
 **Feature flag:** `timetable` (requires `attendance`).
 
 **Scope:** periods, rooms and a weekly or rotating timetable per course; check-in sessions open (and close) automatically at the start of each period, with the room's saved location for the location check; teachers can cancel or move a single period.
 
-### 7. Attendance reports and alerts — [ ]
+### 7. Attendance reports and alerts — [x] (PR #TBD)
+
+**Feature flag:** `attendance_alerts` (requires `attendance`).
 
 **Scope:** attendance percentage per student, course and school; thresholds (for example below 90% over 4 weeks) that alert the form tutor or admin, and the parent if the parent portal is on; CSV export.
 
@@ -109,7 +111,7 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 **Scope:** import or sync students, staff, classes and enrolments from a CSV upload or a OneRoster 1.2 endpoint; a dry run that shows changes before applying; nothing is deleted without confirmation. Webhooks already send data out; this brings it in.
 
-### 9. LTI 1.3 tool support — [ ]
+### 9. LTI 1.3 tool support — [x] (PR #TBD)
 
 **Feature flag:** `lti` (organisation only, off by default: data leaves the platform).
 

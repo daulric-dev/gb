@@ -15,11 +15,14 @@ interface StudentWorkItem {
   points: number;
   effectiveDueAt: When;
   hasExtension: boolean;
+  /** Until when late work is still accepted from the child, if at all. */
+  lateUntil?: When;
   submission: {
     status: string;
     score: number | null;
     excused: boolean;
     submittedAt: When;
+    lateSeconds?: number;
   } | null;
 }
 
@@ -34,6 +37,10 @@ export interface ParentWorkItem {
   points: number;
   dueAt: When;
   hasExtension: boolean;
+  /** Missing work can still be handed in (late) until then; null when not. */
+  lateUntil: When;
+  /** Handed in after the due date. */
+  late: boolean;
   state: ParentWorkState;
   submittedAt: When;
   /** Only when graded and the school shows grades. */
@@ -72,6 +79,8 @@ export function toParentWork(
       points: i.points,
       dueAt: i.effectiveDueAt,
       hasExtension: i.hasExtension,
+      lateUntil: i.lateUntil ?? null,
+      late: (i.submission?.lateSeconds ?? 0) > 0,
       state,
       submittedAt: i.submission?.submittedAt ?? null,
       score: showGrades && state === 'graded' ? (i.submission?.score ?? null) : null,

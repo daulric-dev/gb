@@ -1,8 +1,8 @@
 import { accountEmailHtml, formatWhen } from '@/account/templates/layout';
 
 export interface InviteEmailInput {
-  kind: 'school_admin' | 'organisation_admin';
-  /** The school (school_admin) or the organisation (organisation_admin). */
+  kind: 'school_admin' | 'organisation_admin' | 'school_staff';
+  /** The school (school_admin, school_staff) or the organisation (organisation_admin). */
   place: string;
   /** Who sent it, when known ("Ada Lovelace" or their email). */
   inviter: string | null;
@@ -23,13 +23,17 @@ export function inviteEmail(input: InviteEmailInput): {
   const role =
     input.kind === 'school_admin'
       ? `run ${input.place}`
-      : `administer ${input.place}`;
+      : input.kind === 'school_staff'
+        ? `join ${input.place}`
+        : `administer ${input.place}`;
   const subject = `You've been invited to ${role} on GradeBook`;
   const by = input.inviter ? `${input.inviter} invited you` : 'You have been invited';
   const what =
     input.kind === 'school_admin'
       ? `${by} to be the administrator of ${input.place} on GradeBook.`
-      : `${by} to be an organisation administrator of ${input.place} on GradeBook.`;
+      : input.kind === 'school_staff'
+        ? `${by} to join the staff of ${input.place} on GradeBook as a teacher.`
+        : `${by} to be an organisation administrator of ${input.place} on GradeBook.`;
   const how =
     'Sign in with this email address and you will be set up straight away. ' +
     'There is nothing else to accept.';
@@ -52,7 +56,7 @@ export function inviteEmail(input: InviteEmailInput): {
       heading: `You've been invited to ${role}`,
       paragraphs: [what, how],
       details: [
-        [input.kind === 'school_admin' ? 'School' : 'Organisation', input.place],
+        [input.kind === 'organisation_admin' ? 'Organisation' : 'School', input.place],
         ['Expires', expires],
       ],
       button: { label: 'Sign in to GradeBook', href: input.signInUrl },

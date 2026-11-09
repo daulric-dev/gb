@@ -53,6 +53,7 @@ These are the problems we know about. They are tracked and will be fixed; if one
 - **A Lockdown exemption is not automatic.** Until a teacher or school staff exempt a student (see *Quiz accommodations* above), Lockdown may conflict with assistive technology: on the web, moving focus to a separate dictation, magnifier or screen-reader window can be reported as leaving the quiz; in the mobile app, pinning (Guided Access on iPhone, screen pinning on Android) blocks switching to other apps, including some assistive apps. Treat "away" reports for students without an exemption with that in mind.
 - **Attendance check-in** by QR code needs a camera. The 4-digit room code is the alternative, and teachers can also mark attendance by hand.
 - **Location-based check-in** depends on the device's location services and can be refused indoors. Teachers can turn the location check off for a session.
+- **Automatic check-in from the timetable** opens and closes on the bell schedule, which can be too short for some students. Teachers can mark any student present by hand at any time, including after the session closes, and a school can turn the room-code requirement and the location check off (a room without a saved location has no location check).
 
 ## Reporting an accessibility problem
 

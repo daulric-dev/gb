@@ -25,7 +25,12 @@ export const MODULE_ITEM_TYPES = [
   'header',
   'discussion',
 ] as const;
-export type ModuleItemType = (typeof MODULE_ITEM_TYPES)[number];
+/**
+ * Every item type, including `external_tool` (an LTI resource link), which is
+ * created through `POST /courses/:courseId/lti/modules/:moduleId/items`
+ * (src/lti), never through the generic item route.
+ */
+export type ModuleItemType = (typeof MODULE_ITEM_TYPES)[number] | 'external_tool';
 
 // ── modules ─────────────────────────────────────────────────────────────────
 
@@ -61,7 +66,7 @@ export class ReorderModulesDto {
 export class CreateModuleItemDto {
   @ApiProperty({ enum: MODULE_ITEM_TYPES })
   @IsIn(MODULE_ITEM_TYPES)
-  itemType!: ModuleItemType;
+  itemType!: (typeof MODULE_ITEM_TYPES)[number];
 
   /** Required for links and headers; optional override for the rest. */
   @ApiPropertyOptional()

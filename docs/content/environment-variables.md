@@ -81,7 +81,8 @@ Only used while the organisation has the `integrations` feature on. See [Webhook
 | --- | --- | --- | --- |
 | `WEBHOOK_MAX_ATTEMPTS` | No | `8` | Attempts per delivery (the first included) before it is given up (`abandoned`). The default spreads them over about 24 hours. |
 | `WEBHOOK_MAX_CONSECUTIVE_FAILURES` | No | `50` | Failed attempts in a row after which a webhook switches itself off and the school's admins are emailed. |
-| `WEBHOOK_ALLOW_PRIVATE` | No | `false` | Allow webhook deliveries to private, loopback, and reserved IP addresses. Keep disabled unless trusted school integrations need private-network access. DNS results are checked and pinned for each send. |
+| `WEBHOOK_ALLOW_PRIVATE` | No | `false` | Allow webhook deliveries to private, loopback, and reserved IP addresses. Keep disabled unless trusted school integrations need private-network access. DNS results are checked and pinned for each send. Also applies to LTI tool keyset (JWKS) URLs. |
+| `LTI_TOOL_RATE_LIMIT` | No | `300` | Requests per LTI tool per minute on the AGS token and grade endpoints (`src/lti`). The LTI platform issuer is `API_URL`. |
 | `WEBHOOK_DELIVERY_RETENTION_DAYS` | No | `30` | Days a delivery (and its payload, which holds personal data) is kept; purged by the daily retention job. |
 | `WEBHOOK_POLL_INTERVAL_MS` | No | `5000` | How often each API instance looks for due deliveries when Redis is off. With `USE_REDIS=true` a BullMQ queue sends them and the database is checked once a minute as a backstop. |
 
@@ -114,6 +115,8 @@ GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/sr
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `PARENT_NOTIFICATIONS_SWEEP` | No | `true` | `false` stops the 15-minute sweep that sends parent notices (see `backend/src/parent-portal/README.md`). The notices also need the `parent_notifications` feature. |
+| `TIMETABLE_SCHEDULER` | No | `true` | `false` stops the per-minute timetable scheduler that opens a check-in session at each timetabled period (see `backend/src/timetable/README.md`). Also needs the `timetable` feature; uses a Postgres advisory lock, no Redis. |
+| `ATTENDANCE_ALERTS_SWEEP` | No | `true` | `false` stops the hourly attendance alert sweep (see `backend/src/attendance-alerts/README.md`). Also needs the `attendance_alerts` feature and a threshold in the school's settings. |
 
 ### Report cards
 

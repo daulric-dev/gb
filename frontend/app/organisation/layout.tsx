@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, usePathname, useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ import {
   ClipboardClock,
   LayoutDashboard,
   LogOut,
+  Puzzle,
   School,
   Settings,
   ShieldCheck,
@@ -18,6 +19,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import type { FeatureKey, OrganisationFeature } from "@/lib/features";
 import { useProfile } from "@/providers/AuthProvider";
 import { homePathFor, loginPath, ORGANISATION_PATH } from "@/lib/routing";
 import { cn } from "@/lib/utils";
@@ -33,7 +35,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const NAV = [
+const NAV: {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  exact?: boolean;
+  /** Shown only while this feature is on for the organisation. */
+  feature?: FeatureKey;
+}[] = [
   {
     href: ORGANISATION_PATH,
     label: "Overview",
@@ -56,6 +65,12 @@ const NAV = [
     label: "Features",
     icon: ToggleRight,
   },
+  {
+    href: `${ORGANISATION_PATH}/lti`,
+    label: "External tools",
+    icon: Puzzle,
+    feature: "lti",
+  },
   { href: `${ORGANISATION_PATH}/settings`, label: "Settings", icon: Settings },
 ];
 
@@ -74,6 +89,23 @@ export default function OrganisationLayout({
   const pathname = usePathname() ?? "";
   const { profile, loading } = useProfile();
   const signedIn = !loading.value && !!profile.value;
+  const isOrgAdmin = signedIn && !!profile.value?.is_org_admin;
+  // The organisation's own switches (profile.features is the admin's school,
+  // if any). Re-read when the profile is refreshed, as the Features page does
+  // after saving.
+  const [orgFeatures, setOrgFeatures] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!isOrgAdmin) return;
+    let live = true;
+    api<OrganisationFeature[]>("/organisation/features")
+      .then((list) => {
+        if (live) setOrgFeatures(Object.fromEntries(list.map((f) => [f.key, f.enabled])));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [isOrgAdmin, profile.value]);
 
   useEffect(() => {
     if (loading.value) return;
@@ -195,7 +227,7 @@ export default function OrganisationLayout({
         </div>
         <nav className="mx-auto max-w-6xl px-2">
           <div className="flex gap-1 overflow-x-auto">
-            {NAV.map((item) => {
+            {NAV.filter((item) => !item.feature || orgFeatures[item.feature]).map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href, item.exact);
               return (

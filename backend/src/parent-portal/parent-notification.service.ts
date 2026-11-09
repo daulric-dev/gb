@@ -11,6 +11,7 @@ import { NOTICE_KINDS, type NoticeKind, type ParentNotificationPrefsDto } from '
 import { excludedByAge, parseParentSettings, type ParentSettings } from './parent-settings';
 import { workState } from './parent-portal.mapper';
 import { parentNoticeEmail } from './parent-emails';
+import { describeAlert } from '@/attendance-alerts/rates';
 
 /** How far back each sweep looks; the sent table keeps it to one notice per event. */
 export const LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -41,7 +42,7 @@ interface Child {
   schoolId: string;
   name: string;
   settings: ParentSettings;
-  features: { attendance: boolean; announcements: boolean; push: boolean };
+  features: { attendance: boolean; announcements: boolean; push: boolean; attendanceAlerts: boolean };
   parents: string[];
 }
 
@@ -150,6 +151,7 @@ export class ParentNotificationService {
       }
     };
 
+    const parentAlertsOf = new Map<string, boolean>();
     const schoolPostsOf = new Map<
       string,
       { id: string; title: string; school: { name: string | null } | null }[]
@@ -188,6 +190,42 @@ export class ParentNotificationService {
         for (const a of absent) {
           emit(c, 'absence', a.id, `${c.name} was marked absent`,
             `${c.name} was marked absent in ${a.course?.name ?? 'a class'} (${formatDueDate(a.attendance_session.opened_at)}).`);
+        }
+      }
+
+      // Attendance alerts (src/attendance-alerts): one notice per alert row,
+      // so a parent hears again only after the child recovered and fell
+      // below the threshold again. Needs the attendance_alerts feature, the
+      // school's notify_parents setting and showAttendance.
+      if (
+        c.settings.showAttendance &&
+        c.features.attendance &&
+        c.features.attendanceAlerts &&
+        anyWants('attendance_alert')
+      ) {
+        let notifyParents = parentAlertsOf.get(c.schoolId);
+        if (notifyParents === undefined) {
+          const setting = await this.prisma.attendance_alert_setting.findUnique({
+            where: { school_id: c.schoolId },
+            select: { notify_parents: true },
+          });
+          notifyParents = setting?.notify_parents ?? false;
+          parentAlertsOf.set(c.schoolId, notifyParents);
+        }
+        if (notifyParents) {
+          const alerts = await this.prisma.attendance_alert.findMany({
+            where: {
+              student_id: c.studentId,
+              school_id: c.schoolId,
+              resolved_at: null,
+              opened_at: { gte: since, lte: now },
+            },
+            select: { id: true, kind: true, value: true, threshold: true, window_days: true },
+          });
+          for (const a of alerts) {
+            emit(c, 'attendance_alert', a.id, `Attendance alert for ${c.name}`,
+              `${c.name}: ${describeAlert({ kind: a.kind, value: a.value, threshold: a.threshold, windowDays: a.window_days })}`);
+          }
         }
       }
 
@@ -296,6 +334,7 @@ export class ParentNotificationService {
         settings,
         features: {
           attendance: f.attendance,
+          attendanceAlerts: f.attendance_alerts,
           announcements: f.announcements,
           push: f.push_notifications,
         },

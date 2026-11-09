@@ -10,6 +10,7 @@ import {
   BarChart3,
   CalendarCheck,
   ClipboardList,
+  Clock,
   FileBadge,
   FileText,
   House,
@@ -147,6 +148,9 @@ export default function CourseLayout({
     { href: `${base}/people`, label: "People", icon: Users },
     ...(hasFeature("attendance")
       ? [{ href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck }]
+      : []),
+    ...(hasFeature("timetable")
+      ? [{ href: `${base}/timetable`, label: "Timetable", icon: Clock }]
       : []),
     { href: `${base}/grades`, label: "Grades", icon: BarChart3 },
     ...(hasFeature("report_cards")

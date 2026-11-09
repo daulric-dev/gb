@@ -1,0 +1,120 @@
+/// Rostering sync (src/rostering, feature `rostering`, organisation only).
+/// A source is where roster data comes from: CSV uploads (a OneRoster 1.2
+/// CSV bundle or GradeBook's own templates) or a OneRoster 1.2 REST endpoint.
+/// `client_secret_enc` is the OAuth2 client secret, AES-256-GCM through
+/// src/account/secret-box.ts (info `gradebook:roster-secret:v1`, AAD the
+/// source id); never returned. `settings` holds the matching rules, the
+/// OneRoster org -> school mapping and the email opt-ins (see
+/// src/rostering/roster-settings.ts). Organisation-wide: no school_id.
+model roster_source {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  /// csv | oneroster_api
+  kind              String
+  base_url          String?
+  token_url         String?
+  client_id         String?
+  client_secret_enc String?
+  settings          Json          @default("{}")
+  /// off | daily
+  schedule          String        @default("off")
+  /// Scheduled runs apply creates and updates on their own; disables always wait.
+  auto_apply        Boolean       @default(false)
+  last_scheduled_at DateTime?     @db.Timestamptz(6)
+  created_by        String?       @db.Uuid
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  links             roster_link[]
+  runs              roster_run[]
+
+  @@schema("public")
+}
+
+/// sourcedId <-> GradeBook id, per source and entity, so a re-sync updates
+/// what it created (or matched) instead of creating it again. `target_id`
+/// has no foreign key (it points at different tables per entity); a link
+/// whose target is gone is treated as missing. `email` is the roster email
+/// of a student or staff member, used to link an account that signs in
+/// later. `disabled_at` is set when an applied disable removed it from use.
+model roster_link {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_id   String        @db.Uuid
+  /// school | academic_year | term | course | student | staff | enrolment | course_staff
+  entity      String
+  sourced_id  String
+  target_id   String        @db.Uuid
+  school_id   String?       @db.Uuid
+  email       String?
+  /// The source record's fields as last applied (what a dry run diffs against for disables).
+  data        Json          @default("{}")
+  disabled_at DateTime?     @db.Timestamptz(6)
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime      @default(now()) @db.Timestamptz(6)
+  source      roster_source @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([source_id, entity, sourced_id], map: "roster_link_source_entity_sourced_key")
+  @@index([source_id, entity, target_id], map: "roster_link_target_idx")
+  @@index([email], map: "roster_link_email_idx")
+  @@schema("public")
+}
+
+/// One sync: a dry run (status planning -> planned) that stores its change
+/// set in roster_change, then optionally an apply (queued -> applying ->
+/// applied / failed). `summary` counts changes by entity and action;
+/// `progress_*` count applied changes. A failed or interrupted apply is
+/// resumed by applying the changes still pending.
+model roster_run {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_id        String          @db.Uuid
+  /// manual | scheduled
+  trigger          String          @default("manual")
+  /// planning | planned | queued | applying | applied | failed | cancelled
+  status           String          @default("planning")
+  summary          Json            @default("{}")
+  error            String?
+  include_disables Boolean         @default(false)
+  progress_done    Int             @default(0)
+  progress_total   Int             @default(0)
+  progress_failed  Int             @default(0)
+  created_by       String?         @db.Uuid
+  applied_by       String?         @db.Uuid
+  created_at       DateTime        @default(now()) @db.Timestamptz(6)
+  planned_at       DateTime?       @db.Timestamptz(6)
+  apply_started_at DateTime?       @db.Timestamptz(6)
+  heartbeat_at     DateTime?       @db.Timestamptz(6)
+  finished_at      DateTime?       @db.Timestamptz(6)
+  source           roster_source   @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  changes          roster_change[]
+
+  @@index([source_id, created_at(sort: Desc)], map: "roster_run_source_created_idx")
+  @@index([status], map: "roster_run_status_idx")
+  @@schema("public")
+}
+
+/// One row of a dry run's change set. `action` create | update | disable |
+/// error (a source row that cannot be applied); `diff` is
+/// `{ field: { from, to } }`; `data` the normalised source record the apply
+/// writes. `status` pending | applied | failed | skipped (a disable left
+/// unconfirmed, an error row).
+model roster_change {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  run_id     String     @db.Uuid
+  seq        Int
+  entity     String
+  action     String
+  sourced_id String
+  target_id  String?    @db.Uuid
+  school_id  String?    @db.Uuid
+  label      String
+  diff       Json       @default("{}")
+  data       Json       @default("{}")
+  errors     String[]   @default([])
+  status     String     @default("pending")
+  apply_error String?
+  applied_at DateTime?  @db.Timestamptz(6)
+  run        roster_run @relation(fields: [run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([run_id, seq], map: "roster_change_run_seq_key")
+  @@index([run_id, status], map: "roster_change_run_status_idx")
+  @@schema("public")
+}

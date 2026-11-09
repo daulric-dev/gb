@@ -6,6 +6,7 @@
 
 import type { Prisma } from '@/generated/prisma/client';
 import { roundScore } from './round';
+import { toLatePolicy, toLateness } from './late-policy';
 
 export type ActivityKind = 'quiz' | 'assignment' | 'offline';
 export type ActivityStatus = 'draft' | 'published' | 'closed';
@@ -28,8 +29,14 @@ export const ACTIVITY_SELECT = {
   max_attempts: true,
   time_limit_minutes: true,
   lockdown_browser: true,
+  shuffle_questions: true,
+  shuffle_options: true,
   omit_from_final_grade: true,
   rubric_id: true,
+  late_until: true,
+  late_penalty_mode: true,
+  late_penalty_value: true,
+  late_penalty_cap: true,
   created_by: true,
   created_at: true,
 } satisfies Prisma.activitySelect;
@@ -79,8 +86,13 @@ export function toActivity(a: any) {
     maxAttempts: (a.max_attempts as number | null) ?? 0,
     timeLimitMinutes: (a.time_limit_minutes as number | null) ?? null,
     lockdownBrowser: !!a.lockdown_browser,
+    // Each student's question / option order, fixed when their attempt starts.
+    shuffleQuestions: !!a.shuffle_questions,
+    shuffleOptions: !!a.shuffle_options,
     omitFromFinalGrade: !!a.omit_from_final_grade,
     rubricId: (a.rubric_id as string | null) ?? null,
+    // Late work: accepted until lateUntil, with a penalty per day or hour.
+    ...toLatePolicy(a),
     createdAt: ts(a.created_at) as string,
   };
 }
@@ -97,6 +109,7 @@ export type ActivityDto = ReturnType<typeof toActivity>;
 export function toPortalSubmission(s: any) {
   if (!s) return null;
   const graded = s.status === 'graded';
+  const late = toLateness(s);
   return {
     status: s.status as SubmissionStatus,
     score:
@@ -107,6 +120,11 @@ export function toPortalSubmission(s: any) {
     attemptCount: (s.attempt_count as number | null) ?? 0,
     submittedAt: ts(s.submitted_at),
     feedback: graded ? ((s.feedback as string | null) ?? null) : null,
+    // How late it was handed in and the penalty that applies (or will, once
+    // marked); the mark before the penalty only once graded.
+    lateSeconds: late.lateSeconds,
+    latePenaltyPercent: late.latePenaltyWaived ? 0 : late.latePenaltyPercent,
+    rawScore: graded ? late.rawScore : null,
   };
 }
 

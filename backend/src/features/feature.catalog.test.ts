@@ -28,7 +28,35 @@ describe('feature catalog', () => {
       report_cards: true,
       parent_portal: false,
       parent_notifications: false,
+      timetable: false,
+      attendance_alerts: false,
+      rostering: false,
+      lti: false,
     });
+  });
+
+  test('lti is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('lti').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).lti).toBe(false);
+    const org = organisationSettings({ lti: true });
+    expect(effectiveForOrganisation(org).lti).toBe(true);
+    expect(effectiveForSchool(org, []).lti).toBe(true);
+    expect(effectiveForSchool(org, ['lti']).lti).toBe(false);
+  });
+
+  test('rostering is off by default and needs nothing else', () => {
+    expect(featureDefinition('rostering').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).rostering).toBe(false);
+    expect(effectiveForOrganisation(organisationSettings({ rostering: true })).rostering).toBe(true);
+  });
+
+  test('timetable and attendance alerts require attendance; both default off', () => {
+    expect(featureDefinition('timetable').requires).toEqual(['attendance']);
+    expect(featureDefinition('attendance_alerts').requires).toEqual(['attendance']);
+    const org = organisationSettings({ timetable: true, attendance_alerts: true });
+    expect(effectiveForSchool(org, []).timetable).toBe(true);
+    expect(effectiveForSchool(org, ['attendance']).timetable).toBe(false);
+    expect(effectiveForSchool(org, ['attendance']).attendance_alerts).toBe(false);
   });
 
   test('student messaging and channels require messaging', () => {

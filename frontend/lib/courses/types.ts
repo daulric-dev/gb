@@ -99,7 +99,20 @@ export type ModuleItemType =
   | "file"
   | "link"
   | "header"
-  | "discussion";
+  | "discussion"
+  | "external_tool";
+
+/** An external tool (LTI) item's link, on module listings. */
+export interface ModuleItemExternalTool {
+  toolId: string;
+  toolName: string;
+  /** Off in the organisation console: staff still see the item, students do not. */
+  toolEnabled?: boolean;
+  resourceLinkId: string;
+  /** The gradebook column the tool sends scores to, if any. */
+  activityId: string | null;
+  points: number | null;
+}
 
 export interface ModuleItem {
   id: string;
@@ -125,6 +138,8 @@ export interface ModuleItem {
     /** Student portal only: `dueAt` is the student's extension. */
     hasExtension?: boolean;
   };
+  /** Present when itemType is "external_tool". */
+  externalTool?: ModuleItemExternalTool | null;
 }
 
 export interface CourseModule {

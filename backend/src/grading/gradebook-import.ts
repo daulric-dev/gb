@@ -71,19 +71,22 @@ export const MAX_CSV_LENGTH = 1_000_000;
  * RFC 4180 CSV: quoted fields, doubled quotes, CRLF or LF, a leading BOM.
  * Blank lines are dropped. Returns rows with their 1-based line number.
  */
-export function parseCsv(text: string): { line: number; cells: string[] }[] {
+export function parseCsv(
+  text: string,
+  maxLength: number = MAX_CSV_LENGTH,
+): { line: number; cells: string[] }[] {
 
   if (typeof text !== 'string') throw new TypeError('CSV must be text');
-  if (text.length > MAX_CSV_LENGTH) {
-    throw new RangeError(`CSV is longer than ${MAX_CSV_LENGTH} characters`);
+  if (text.length > maxLength) {
+    throw new RangeError(`CSV is longer than ${maxLength} characters`);
   }
 
   const src = text.replace(/^\uFEFF/, '');
   
   if (src.length === 0) return [];
 
-  if (src.length > MAX_CSV_LENGTH) {
-    throw new RangeError(`CSV is longer than ${MAX_CSV_LENGTH} characters`);
+  if (src.length > maxLength) {
+    throw new RangeError(`CSV is longer than ${maxLength} characters`);
   }
 
   const rows: { line: number; cells: string[] }[] = [];

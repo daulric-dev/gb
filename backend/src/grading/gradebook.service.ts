@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { scoreOrNull } from './round';
+import { toLateness } from './late-policy';
 import {
   CourseAccessService,
   CourseRow,
@@ -38,6 +39,10 @@ const SUBMISSION_SELECT = {
   feedback: true,
   submitted_at: true,
   attempt_count: true,
+  raw_score: true,
+  late_seconds: true,
+  late_penalty_percent: true,
+  late_penalty_waived: true,
 } as const;
 
 type Group = Awaited<
@@ -242,6 +247,11 @@ export class GradebookService {
           submittedAt: string | null;
           /** Left out of the total by a drop rule. */
           dropped: boolean;
+          /** The mark before the late penalty; score is after it. */
+          rawScore: number | null;
+          lateSeconds: number;
+          latePenaltyPercent: number;
+          latePenaltyWaived: boolean;
         }
       > = {};
       const calc = new Map<string, CalcSubmission>();
@@ -253,6 +263,7 @@ export class GradebookService {
           excused: !!s.excused,
           submittedAt: ts(s.submitted_at),
           dropped: false,
+          ...toLateness(s),
         };
         calc.set(s.activity_id as string, this.toCalcSubmission(s));
       }

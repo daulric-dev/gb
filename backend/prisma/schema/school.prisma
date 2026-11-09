@@ -119,6 +119,8 @@ model school {
   disabled_features                           String[]              @default([])
   /// What parents see (src/parent-portal): { showGrades, showWork, showAttendance, showAnnouncements, maxStudentAge }. Missing keys use the defaults in parent-settings.ts.
   parent_settings                             Json                  @default("{}")
+  /// IANA time zone (e.g. Europe/London) for the timetable and attendance reports; UTC until an admin sets it (src/timetable).
+  time_zone                                   String                @default("UTC")
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]
@@ -145,6 +147,13 @@ model school {
   audit_log                                   audit_log[]
   report_release                              report_release[]
   report_document                             report_document[]
+  timetable_setting                           timetable_setting?
+  room                                        room[]
+  bell_period                                 bell_period[]
+  school_closure                              school_closure[]
+  attendance_alert_setting                    attendance_alert_setting?
+  attendance_alert                            attendance_alert[]
+  lti_deployment                              lti_deployment[]
 
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")
@@ -317,6 +326,8 @@ model user_profile {
   report_comment                                                    report_comment[]
   report_head_comment                                               report_head_comment[]
   activity_accommodation                                            activity_accommodation[]
+  question_bank                                                     question_bank[]
+  quiz_answer_marked                                                quiz_answer[]           @relation("quiz_answer_marked_by")
   student_accommodation                                             student_accommodation[]
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]
@@ -342,6 +353,7 @@ model user_profile {
   organisation_admin_created                                        organisation_admin[]       @relation("organisation_admin_created_byTouser_profile")
   organisation_invite_sent                                          organisation_invite[]      @relation("organisation_invite_invited_byTouser_profile")
   organisation_invite_accepted                                      organisation_invite[]      @relation("organisation_invite_accepted_byTouser_profile")
+  lti_subject                                                       lti_subject[]
 
   @@index([school_id], map: "idx_user_profile_school")
   @@schema("public")

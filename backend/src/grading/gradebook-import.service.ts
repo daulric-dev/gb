@@ -139,6 +139,10 @@ export class GradebookImportService {
             : {
                 status: 'graded' as const,
                 score: c.to.score,
+                // An imported mark is taken as the final mark, as typed: no
+                // late penalty is worked out on top of it.
+                raw_score: null,
+                late_penalty_waived: false,
                 excused: false,
                 excused_reason: null,
                 graded_at: now,

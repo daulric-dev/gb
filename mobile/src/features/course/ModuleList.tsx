@@ -9,6 +9,7 @@ import {
   NotebookText,
   Paperclip,
   PenLine,
+  Puzzle,
 } from "lucide-react-native";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -19,6 +20,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { dueLabel } from "@/lib/work";
 import { formatScore } from "@/lib/format-number";
 import type { CourseModule, ModuleItem } from "@/lib/course";
+import { useFeatures } from "@/lib/use-features";
 
 function itemIcon(item: ModuleItem) {
   switch (item.itemType) {
@@ -30,6 +32,8 @@ function itemIcon(item: ModuleItem) {
       return ExternalLink;
     case "discussion":
       return MessagesSquare;
+    case "external_tool":
+      return Puzzle;
     case "activity":
       return item.activity?.kind === "quiz"
         ? ClipboardList
@@ -51,6 +55,17 @@ function itemDetail(item: ModuleItem): string | null {
       return item.url ? item.url.replace(/^https?:\/\//, "") : "Link";
     case "discussion":
       return "Discussion";
+    case "external_tool": {
+      const t = item.externalTool;
+      if (!t) return "External tool";
+      return [
+        `External tool · ${t.toolName}`,
+        t.points != null ? `${formatScore(t.points)} pts` : null,
+        t.toolEnabled === false ? "switched off" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
     case "activity": {
       const a = item.activity;
       if (!a) return "Work";
@@ -82,6 +97,8 @@ export function ModuleList({
   togglingId?: string | null;
 }) {
   const { colors } = useTheme();
+  // External tool items only while the `lti` feature is on.
+  const ltiOn = useFeatures().hasFeature("lti");
 
   if (modules.length === 0) {
     return (
@@ -127,6 +144,9 @@ export function ModuleList({
               </Text>
             ) : (
               m.items.map((item) => {
+                if (item.itemType === "external_tool" && (!ltiOn || !item.externalTool)) {
+                  return null;
+                }
                 if (item.itemType === "header") {
                   return (
                     <Text
@@ -150,6 +170,19 @@ export function ModuleList({
                   <Pressable
                     key={item.id}
                     onPress={() => onOpenItem(item)}
+                    accessibilityRole={item.itemType === "link" ? "link" : "button"}
+                    accessibilityLabel={[
+                      item.title,
+                      detail,
+                      staff && !item.isPublished ? "Draft" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
+                    accessibilityHint={
+                      item.itemType === "external_tool"
+                        ? "Opens the tool in the in-app browser"
+                        : undefined
+                    }
                     style={({ pressed }) => [
                       styles.item,
                       {

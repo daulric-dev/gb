@@ -97,7 +97,7 @@ All `:courseId`, `:moduleId`, `:itemId`, `:pageId`, `:fileId`, `:userProfileId` 
 
 - Course access lives in the global `CourseAccessModule`; see [access/README.md](access/README.md).
 - `course-appearance.ts` exports `COURSE_BANNER_COLORS` (the banner presets; also a CHECK on `course.course.banner_color`) and `COURSE_BANNER_MAX_BYTES`. Cover images are served publicly by an unguessable name from `GET /api/images/course-banners/<file>` (or the image CDN), the same exposure as avatars; see [`../images/README.md`](../images/README.md). A copied course keeps the colour but not the cover image: each image object belongs to one course and is deleted with it.
-- `dto/content.dto.ts` exports `MODULE_ITEM_TYPES` / `ModuleItemType` (`page`, `activity`, `file`, `link`, `header`, `discussion`); `dto/course.dto.ts` exports `COURSE_STATUSES` / `CourseStatus` and `JoinCourseDto` (used by the student portal). See [dto/README.md](dto/README.md).
+- `dto/content.dto.ts` exports `MODULE_ITEM_TYPES` (`page`, `activity`, `file`, `link`, `header`, `discussion`: what the generic create route accepts) and `ModuleItemType` (those plus `external_tool`, an LTI resource link created by [`src/lti`](../lti/README.md); listings give it `externalTool: { toolId, toolName, toolEnabled, resourceLinkId, activityId, points }`, students do not see it while its tool is switched off, it must keep a title, and copy/import skip it); `dto/course.dto.ts` exports `COURSE_STATUSES` / `CourseStatus` and `JoinCourseDto` (used by the student portal). See [dto/README.md](dto/README.md).
 
 ## Used by
 

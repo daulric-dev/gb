@@ -15,7 +15,13 @@ import {
 export const RELATIONSHIPS = ['mother', 'father', 'guardian'] as const;
 export type Relationship = (typeof RELATIONSHIPS)[number];
 
-export const NOTICE_KINDS = ['missing_work', 'absence', 'new_grade', 'announcement'] as const;
+export const NOTICE_KINDS = [
+  'missing_work',
+  'absence',
+  'new_grade',
+  'announcement',
+  'attendance_alert',
+] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 class RelationshipFields {

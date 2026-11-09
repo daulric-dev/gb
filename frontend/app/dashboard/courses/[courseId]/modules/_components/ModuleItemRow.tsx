@@ -18,12 +18,15 @@ import {
   MoreVertical,
   Paperclip,
   Pencil,
+  Puzzle,
+  Settings2,
   Trash2,
 } from "lucide-react";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { formatDue } from "@/lib/courses/format";
 import { fetchStaffCourseFileBlob } from "@/lib/files/content";
 import { openOrDownloadFile, safeExternalUrl } from "@/lib/files/open";
+import { ltiLaunchPath } from "@/lib/lti";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -37,6 +40,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ExternalToolDialog } from "./ExternalToolDialog";
 import { ACTIVITY_ICON } from "../../assignments/_components/ActivityStatusBadge";
 
 const MAX_INDENT = 3;
@@ -57,6 +61,7 @@ function ItemIcon({
   if (item.itemType === "discussion") {
     return <MessagesSquare className={className} />;
   }
+  if (item.itemType === "external_tool") return <Puzzle className={className} />;
   return <FileText className={className} />;
 }
 
@@ -106,12 +111,15 @@ export function ModuleItemRow({
 }) {
   useSignals();
   const opening = useSignal(false);
+  const toolSettings = useSignal(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id, disabled: !canEdit });
 
   const isHeader = item.itemType === "header";
   const href = itemHref(item, base);
   const external = item.itemType === "link";
+  const tool = item.itemType === "external_tool" ? item.externalTool : null;
+  const launchHref = tool ? ltiLaunchPath(courseId, item.id) : null;
 
   // Files open through the course, so a colleague's linked file opens too.
   // Only PDFs and plain images open in a tab; anything else downloads, since
@@ -146,6 +154,18 @@ export function ModuleItemRow({
         <Loader2 className="ml-1.5 size-3 shrink-0 animate-spin text-muted-foreground" />
       )}
     </button>
+  ) : launchHref ? (
+    // A new tab that starts the launch itself (no popup blocker in the way).
+    <a
+      href={launchHref}
+      target="_blank"
+      rel="noopener"
+      className="truncate text-sm font-medium hover:underline"
+    >
+      {item.title}
+      <ExternalLink className="ml-1 inline size-3 text-muted-foreground" />
+      <span className="sr-only"> (opens the tool in a new tab)</span>
+    </a>
   ) : href ? (
     <Link
       href={href}
@@ -207,8 +227,27 @@ export function ModuleItemRow({
               {item.activity.status === "draft" && " · draft"}
             </span>
           )}
+          {tool && (
+            <span className="text-xs text-muted-foreground">
+              External tool · {tool.toolName}
+              {tool.points != null && ` · ${tool.points} pts`}
+              {tool.toolEnabled === false && " · switched off by your organisation"}
+            </span>
+          )}
         </div>
       </div>
+
+      {launchHref && (
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<a href={launchHref} target="_blank" rel="noopener" />}
+          aria-label={`Open ${item.title} in a new tab`}
+        >
+          Open
+        </Button>
+      )}
 
       {canEdit ? (
         <>
@@ -232,6 +271,12 @@ export function ModuleItemRow({
                 <Pencil className="mr-2 size-4" />
                 Rename
               </DropdownMenuItem>
+              {tool && (
+                <DropdownMenuItem onClick={() => (toolSettings.value = true)}>
+                  <Settings2 className="mr-2 size-4" />
+                  Tool settings
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 disabled={item.indent >= MAX_INDENT}
                 onClick={() => actions.onPatch({ indent: item.indent + 1 })}
@@ -273,6 +318,16 @@ export function ModuleItemRow({
         !item.isPublished && (
           <span className="text-xs text-muted-foreground">Unpublished</span>
         )
+      )}
+      {tool && canEdit && (
+        <ExternalToolDialog
+          open={toolSettings.value}
+          courseId={courseId}
+          itemId={item.id}
+          itemTitle={item.title}
+          canEdit={canEdit}
+          onOpenChangeAction={(o) => (toolSettings.value = o)}
+        />
       )}
     </div>
   );

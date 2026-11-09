@@ -81,7 +81,8 @@ export interface InviteSummary {
   expiresAt: string;
 }
 
-export type InviteKind = "school_admin" | "organisation_admin";
+/** `school_staff` invites come from rostering (backend src/rostering). */
+export type InviteKind = "school_admin" | "organisation_admin" | "school_staff";
 
 /** QUERY /organisation/invites (`{ kind }` in the body). */
 export interface OrganisationInvite extends InviteSummary {

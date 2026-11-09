@@ -13,6 +13,8 @@ import { RubricController } from './rubric.controller';
 import { ExtensionService } from './extension.service';
 import { ExtensionController } from './extension.controller';
 import { AccommodationService } from './accommodation.service';
+import { QuestionBankService } from './question-bank.service';
+import { QuestionBankController } from './question-bank.controller';
 import {
   ActivityAccommodationController,
   StudentAccommodationController,
@@ -33,10 +35,12 @@ import {
     GradebookImportService,
     ExtensionService,
     AccommodationService,
+    QuestionBankService,
   ],
   // The student portal submits work, lists course activities and reads
   // grades through these.
-  exports: [SubmissionService, GradebookService],
+  // LTI creates gradebook columns for external tools through ActivityService.
+  exports: [SubmissionService, GradebookService, ActivityService],
   controllers: [
     ActivityController,
     AssignmentGroupController,
@@ -45,6 +49,7 @@ import {
     ExtensionController,
     ActivityAccommodationController,
     StudentAccommodationController,
+    QuestionBankController,
   ],
 })
 export class GradingModule {}

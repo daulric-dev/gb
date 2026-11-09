@@ -478,10 +478,62 @@ describe('InviteService', () => {
       expect(await service.acceptFor(user)).toBe(0);
       expect(prisma.school_management.create).not.toHaveBeenCalled();
     });
+
+    test('a rostered school_staff invite makes them a teacher (never admin) and sets their school', async () => {
+      const invite = table.add({ kind: 'school_staff' });
+      prisma.user_profile.findUnique.mockResolvedValue({
+        id: 'u-head',
+        school_id: null,
+        account_type: 'staff',
+      });
+      prisma.school_management.create.mockResolvedValue({ id: 'm-1' });
+      expect(await service.acceptFor(user)).toBe(1);
+      expect(invite.accepted_by).toBe('u-head');
+      expect(prisma.school_management.create.mock.calls[0][0].data).toMatchObject({
+        user_id: 'u-head',
+        school_id: 's1',
+        role: 'teacher',
+      });
+      expect(prisma.school.update).not.toHaveBeenCalled(); // never the owner
+      expect(prisma.user_profile.update.mock.calls[0][0].data).toMatchObject({
+        school_id: 's1',
+        role: 'teacher',
+      });
+    });
+
+    test('a school_staff invite is left open for a student account', async () => {
+      const invite = table.add({ kind: 'school_staff' });
+      prisma.user_profile.findUnique.mockResolvedValue({
+        id: 'u-head',
+        school_id: null,
+        account_type: 'student',
+      });
+      expect(await service.acceptFor(user)).toBe(0);
+      expect(invite.accepted_at).toBeNull();
+    });
+  });
+
+  test('school_staff invites can be sent without an email (rostering opt-out)', async () => {
+    mail.configured.mockReturnValue(true);
+    await service.invite(ME, 'school_staff', 'Ada@X.org', 's1', { sendEmail: false });
+    expect(table.rows[0]).toMatchObject({ kind: 'school_staff', school_id: 's1', email: 'ada@x.org' });
+    expect(mail.send).not.toHaveBeenCalled();
   });
 });
 
 describe('invite email', () => {
+  test('school staff wording', () => {
+    const email = inviteEmail({
+      kind: 'school_staff',
+      place: 'North High',
+      inviter: 'Ada',
+      expiresAt: new Date('2026-11-15T10:00:00Z'),
+      signInUrl: 'https://gb.example.org/login',
+    });
+    expect(email.subject).toBe("You've been invited to join North High on GradeBook");
+    expect(email.text).toContain('as a teacher');
+  });
+
   test('organisation admin wording', () => {
     const email = inviteEmail({
       kind: 'organisation_admin',

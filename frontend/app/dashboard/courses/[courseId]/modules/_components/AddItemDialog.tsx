@@ -12,6 +12,7 @@ import {
   Loader2,
   MessagesSquare,
   Paperclip,
+  Puzzle,
 } from "lucide-react";
 import { api, apiQuery } from "@/lib/api";
 import type {
@@ -27,6 +28,9 @@ import type {
 } from "@/lib/courses/discussions";
 import type { FileItem } from "@/app/dashboard/files/_components/types";
 import { cn } from "@/lib/utils";
+import { courseLtiApi, ltiItemBody, type CourseLtiTool } from "@/lib/lti";
+import { useFeatures } from "@/hooks/use-features";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,6 +61,9 @@ const TYPES: { type: ModuleItemType; label: string; icon: typeof FileText }[] = 
   { type: "header", label: "Text header", icon: Heading },
 ];
 
+/** Shown while the `lti` feature is on. */
+const EXTERNAL_TOOL = { type: "external_tool" as const, label: "External tool", icon: Puzzle };
+
 const NEW_PAGE = "__new__";
 
 export function AddItemDialog({
@@ -75,7 +82,13 @@ export function AddItemDialog({
   onAddedAction: () => void;
 }) {
   useSignals();
+  const { hasFeature } = useFeatures();
+  const ltiOn = hasFeature("lti");
+  const types = ltiOn ? [...TYPES, EXTERNAL_TOOL] : TYPES;
   const type = useSignal<ModuleItemType>("page");
+  const tools = useSignal<CourseLtiTool[]>([]);
+  const customParams = useSignal("");
+  const points = useSignal("");
   const pages = useSignal<CoursePageSummary[]>([]);
   const activities = useSignal<Activity[]>([]);
   const files = useSignal<FileItem[]>([]);
@@ -92,6 +105,8 @@ export function AddItemDialog({
     target.value = "";
     title.value = "";
     url.value = "";
+    customParams.value = "";
+    points.value = "";
     loading.value = true;
     void Promise.all([
       api<CoursePageSummary[]>(`/courses/${courseId}/pages`).catch(
@@ -104,14 +119,51 @@ export function AddItemDialog({
       api<DiscussionList>(`/courses/${courseId}/discussions`)
         .then((d) => d.topics)
         .catch(() => [] as DiscussionTopicSummary[]),
-    ]).then(([p, a, f, d]) => {
+      ltiOn
+        ? api<CourseLtiTool[]>(`${courseLtiApi(courseId)}/tools`).catch(
+            () => [] as CourseLtiTool[],
+          )
+        : Promise.resolve([] as CourseLtiTool[]),
+    ]).then(([p, a, f, d, lti]) => {
       pages.value = p;
       activities.value = a;
       files.value = f.filter((x) => x.status === "ready");
       topics.value = d;
+      tools.value = lti;
       loading.value = false;
     });
-  }, [open, courseId, type, target, title, url, loading, pages, activities, files, topics]);
+  }, [open, courseId, ltiOn, type, target, title, url, customParams, points, loading, pages, activities, files, topics, tools]);
+
+  const chosenTool =
+    type.value === "external_tool"
+      ? (tools.value.find((x) => x.id === target.value) ?? null)
+      : null;
+
+  async function addExternalTool() {
+    if (!moduleId) return;
+    const r = ltiItemBody({
+      toolId: target.value,
+      title: title.value,
+      customParams: customParams.value,
+      points: points.value,
+      agsEnabled: !!chosenTool?.agsEnabled,
+    });
+    if (r.problem) return toast.error(r.problem);
+    saving.value = true;
+    try {
+      await api(`${courseLtiApi(courseId)}/modules/${moduleId}/items`, {
+        method: "POST",
+        body: r.body,
+      });
+      toast.success("Added to the module");
+      onOpenChangeAction(false);
+      onAddedAction();
+    } catch (err) {
+      toast.error(userMessage(err, "Failed to add the external tool"));
+    } finally {
+      saving.value = false;
+    }
+  }
 
   function pick(next: ModuleItemType) {
     type.value = next;
@@ -121,6 +173,7 @@ export function AddItemDialog({
   async function add() {
     if (!moduleId) return;
     const t = type.value;
+    if (t === "external_tool") return addExternalTool();
     const body: Record<string, unknown> = { itemType: t };
 
     if (t === "page") {
@@ -200,9 +253,11 @@ export function AddItemDialog({
                 value: d.id,
                 label: d.isPublished ? d.title : `${d.title} (draft)`,
               }))
-            : [];
+            : type.value === "external_tool"
+              ? tools.value.map((x) => ({ value: x.id, label: x.name }))
+              : [];
 
-  const needsTarget = ["page", "activity", "file", "discussion"].includes(
+  const needsTarget = ["page", "activity", "file", "discussion", "external_tool"].includes(
     type.value,
   );
 
@@ -217,8 +272,13 @@ export function AddItemDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {TYPES.map((t) => {
+          <div
+            className={cn(
+              "grid grid-cols-3 gap-2",
+              types.length > 6 ? "sm:grid-cols-4" : "sm:grid-cols-6",
+            )}
+          >
+            {types.map((t) => {
               const Icon = t.icon;
               const active = type.value === t.type;
               return (
@@ -250,7 +310,9 @@ export function AddItemDialog({
                   ? "No assignments yet. Create one on the Assignments tab."
                   : type.value === "discussion"
                     ? "No discussion topics yet. Start one on the Discussions tab."
-                    : "No files yet. Upload one in Files first."}
+                    : type.value === "external_tool"
+                      ? "No external tools are available to this course. Your organisation administrator registers them."
+                      : "No files yet. Upload one in Files first."}
               </p>
             ) : (
               <div className="space-y-2">
@@ -261,7 +323,9 @@ export function AddItemDialog({
                       ? "Assignment"
                       : type.value === "discussion"
                         ? "Discussion topic"
-                        : "File"}
+                        : type.value === "external_tool"
+                          ? "Tool"
+                          : "File"}
                 </Label>
                 <Select
                   value={target.value || null}
@@ -282,6 +346,10 @@ export function AddItemDialog({
               </div>
             ))}
 
+          {chosenTool?.description && (
+            <p className="text-xs text-muted-foreground">{chosenTool.description}</p>
+          )}
+
           {type.value === "link" && (
             <div className="space-y-2">
               <Label htmlFor="itemUrl">Web address</Label>
@@ -299,7 +367,9 @@ export function AddItemDialog({
             <Label htmlFor="itemTitle">
               {type.value === "header"
                 ? "Header text"
-                : target.value === NEW_PAGE
+                : type.value === "external_tool"
+                  ? "Title"
+                  : target.value === NEW_PAGE
                   ? "New page title"
                   : "Title (optional)"}
             </Label>
@@ -308,7 +378,9 @@ export function AddItemDialog({
               placeholder={
                 type.value === "header"
                   ? "Week 1"
-                  : type.value === "link"
+                  : type.value === "external_tool"
+                    ? "Week 1 practice set"
+                    : type.value === "link"
                     ? "Defaults to the site name"
                     : target.value === NEW_PAGE
                       ? "Reading notes"
@@ -318,6 +390,46 @@ export function AddItemDialog({
               onChange={(e) => (title.value = e.target.value)}
             />
           </div>
+
+          {type.value === "external_tool" && tools.value.length > 0 && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="itemCustomParams">Custom parameters (optional)</Label>
+                <Textarea
+                  id="itemCustomParams"
+                  rows={3}
+                  className="font-mono text-xs"
+                  placeholder={"chapter=4\nlevel=advanced"}
+                  value={customParams.value}
+                  onChange={(e) => (customParams.value = e.target.value)}
+                  aria-describedby="itemCustomParamsHint"
+                />
+                <p id="itemCustomParamsHint" className="text-xs text-muted-foreground">
+                  One name=value per line, sent to the tool on every launch.
+                </p>
+              </div>
+              {chosenTool?.agsEnabled && (
+                <div className="space-y-2">
+                  <Label htmlFor="itemPoints">Points (optional)</Label>
+                  <Input
+                    id="itemPoints"
+                    type="number"
+                    inputMode="decimal"
+                    min={1}
+                    max={100000}
+                    step="any"
+                    placeholder="No gradebook column"
+                    value={points.value}
+                    onChange={(e) => (points.value = e.target.value)}
+                    aria-describedby="itemPointsHint"
+                  />
+                  <p id="itemPointsHint" className="text-xs text-muted-foreground">
+                    Adds a published gradebook column the tool can send scores to.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <DialogFooter>

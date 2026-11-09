@@ -53,6 +53,13 @@ const ITEM_SELECT = {
   },
   file: { select: { id: true, name: true, deleted_at: true } },
   discussion_topic: { select: { id: true, title: true, is_published: true } },
+  lti_resource_link: {
+    select: {
+      id: true,
+      tool: { select: { id: true, name: true, enabled: true } },
+      line_items: { select: { activity_id: true, activity: { select: { points: true } } }, take: 1 },
+    },
+  },
 } as const;
 
 type ItemWithTargets = Prisma.module_itemGetPayload<{
@@ -203,6 +210,10 @@ export class ModuleService {
         targets.topics.get(row.discussion_topic_id!)?.is_published === true
       );
     }
+    // A tool the organisation switched off is not offered to students.
+    if (row.item_type === 'external_tool') {
+      return targets.tools.get(row.id)?.toolEnabled === true;
+    }
     return true;
   }
 
@@ -239,6 +250,18 @@ export class ModuleService {
     const topics = new Map<string, { title: string; is_published: boolean }>();
     const activities = new Map<string, ActivitySummary>();
     const files = new Map<string, { name: string }>();
+    // External tool items, by item id.
+    const tools = new Map<
+      string,
+      {
+        toolId: string;
+        toolName: string;
+        toolEnabled: boolean;
+        resourceLinkId: string;
+        activityId: string | null;
+        points: number | null;
+      }
+    >();
 
     for (const i of items) {
       if (i.item_type === 'page' && i.page) pages.set(i.page.id, i.page);
@@ -260,9 +283,21 @@ export class ModuleService {
       if (i.item_type === 'discussion' && i.discussion_topic) {
         topics.set(i.discussion_topic.id, i.discussion_topic);
       }
+      const link = i.lti_resource_link;
+      if (i.item_type === 'external_tool' && link) {
+        const line = link.line_items[0];
+        tools.set(i.id, {
+          toolId: link.tool.id,
+          toolName: link.tool.name,
+          toolEnabled: link.tool.enabled,
+          resourceLinkId: link.id,
+          activityId: line?.activity_id ?? null,
+          points: line ? Number(line.activity.points) : null,
+        });
+      }
     }
 
-    return { pages, activities, files, topics };
+    return { pages, activities, files, topics, tools };
   }
 
   private toItem(row: ItemRow, targets: ReturnType<typeof this.targetsOf>) {
@@ -303,6 +338,9 @@ export class ModuleService {
                 : {}),
             },
           }
+        : {}),
+      ...(row.item_type === 'external_tool' && targets.tools.has(row.id)
+        ? { externalTool: targets.tools.get(row.id) }
         : {}),
     };
   }
@@ -625,6 +663,11 @@ export class ModuleService {
       case 'header':
         if (!title) throw new BadRequestException('Give the header a title');
         break;
+      case 'external_tool':
+        // Needs a registered tool and a resource link: see src/lti.
+        throw new BadRequestException(
+          'Add external tools with "Add external tool"',
+        );
     }
 
     return row;
@@ -720,7 +763,9 @@ export class ModuleService {
       // Links and headers have nothing else to show.
       if (
         !title &&
-        (item.item_type === 'link' || item.item_type === 'header')
+        (item.item_type === 'link' ||
+          item.item_type === 'header' ||
+          item.item_type === 'external_tool')
       ) {
         throw new BadRequestException('This item needs a title');
       }

@@ -1,0 +1,46 @@
+// Attendance reports and alerts (src/attendance-alerts).
+// Migration 20261119100000_attendance_alerts.
+
+/// A school's attendance alert thresholds. min_rate (percent) over the last window_days, counted once a student has min_sessions records; consecutive_absences in a row (excused records skipped). Null switches that check off.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model attendance_alert_setting {
+  school_id            String   @id @db.Uuid
+  min_rate             Int?     @db.SmallInt
+  window_days          Int      @default(28) @db.SmallInt
+  min_sessions         Int      @default(5) @db.SmallInt
+  consecutive_absences Int?     @db.SmallInt
+  notify_tutor         Boolean  @default(true)
+  notify_admins        Boolean  @default(true)
+  notify_parents       Boolean  @default(true)
+  email_staff          Boolean  @default(true)
+  updated_by           String?  @db.Uuid
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+  school               school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+/// A student below an attendance threshold. Open while resolved_at is null; at most one open per student and kind, so a condition alerts again only after it has cleared.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model attendance_alert {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id       String    @db.Uuid
+  student_id      String    @db.Uuid
+  /// low_rate | consecutive_absences
+  kind            String
+  /// The rate (percent) or the number of absences in a row when opened.
+  value           Float
+  threshold       Float
+  window_days     Int?      @db.SmallInt
+  opened_at       DateTime  @default(now()) @db.Timestamptz(6)
+  resolved_at     DateTime? @db.Timestamptz(6)
+  acknowledged_at DateTime? @db.Timestamptz(6)
+  acknowledged_by String?   @db.Uuid
+  school          school    @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student         student   @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([student_id, kind], map: "attendance_alert_open_key", where: raw("(resolved_at IS NULL)"))
+  @@index([school_id, opened_at(sort: Desc)], map: "idx_attendance_alert_school_opened")
+  @@index([student_id], map: "idx_attendance_alert_student")
+  @@schema("student")
+}

@@ -17,7 +17,19 @@ export type ModuleItemType =
   | "activity"
   | "file"
   | "link"
-  | "discussion";
+  | "discussion"
+  | "external_tool";
+
+/** An external tool (LTI) item's link. Students only get items whose tool is on. */
+export interface ModuleItemExternalTool {
+  toolId: string;
+  toolName: string;
+  toolEnabled?: boolean;
+  resourceLinkId: string;
+  /** The gradebook column the tool sends scores to, if any. */
+  activityId: string | null;
+  points: number | null;
+}
 
 export interface ModuleItem {
   id: string;
@@ -40,6 +52,8 @@ export interface ModuleItem {
     status: "draft" | "published" | "closed";
   } | null;
   file?: { name?: string | null; contentType?: string | null } | null;
+  /** Set on `external_tool` items. */
+  externalTool?: ModuleItemExternalTool | null;
 }
 
 export interface CourseModule {
