@@ -32,6 +32,31 @@ describe('CA bundle', () => {
     expect(caFingerprints(null)).toEqual([]);
   });
 
+  test('pasted formatting is tolerated: line endings, trailing spaces, indentation, blank lines', () => {
+    const expected = [new X509Certificate(TEST_IDP.cert).fingerprint256];
+    const lines = TEST_IDP.cert.trim().split('\n');
+    const variants = [
+      lines.join('\r\n'), // Windows
+      lines.join('\r'), // classic Mac
+      lines.map((l) => `${l}  `).join('\n'), // trailing spaces
+      lines.map((l) => `\t  ${l}`).join('\n'), // indented
+      `\n\n${lines.join('\n')}\n\n\n`, // surrounding blank lines
+    ];
+    for (const raw of variants) expect(parseCaBundle(raw).fingerprints).toEqual(expected);
+    // Blank lines between certificates are fine too.
+    const two = parseCaBundle(`${TEST_IDP.cert}\n\n\n${OTHER_IDP.cert}`);
+    expect(two.fingerprints).toHaveLength(2);
+  });
+
+  test('text outside a block and unterminated blocks are refused', () => {
+    expect(() => parseCaBundle(`my CA:\n${TEST_IDP.cert}`)).toThrow(/Paste one or more PEM certificates/);
+    const noEnd = TEST_IDP.cert.trim().split('\n').slice(0, -1).join('\n');
+    expect(() => parseCaBundle(noEnd)).toThrow(/Incomplete PEM block/);
+    // An END for a different label does not close the block.
+    const mismatched = TEST_IDP.cert.trim().replace('-----END CERTIFICATE-----', '-----END X509 CRL-----');
+    expect(() => parseCaBundle(mismatched)).toThrow(/Incomplete PEM block/);
+  });
+
   test('anything but certificates is refused', () => {
     const bad = [
       '',
