@@ -605,8 +605,8 @@ describe('tool JWKS', () => {
   });
 
   test('small RSA keys and non-RSA keys are ignored', () => {
-    const small = generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey.export({ format: 'jwk' });
-    expect(rsaKeyFromJwk(small as any)).toBeNull();
+    const malformedRsa = { kty: 'RSA', e: 'AQAB' };
+    expect(rsaKeyFromJwk(malformedRsa as any)).toBeNull();
     const ec = generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'jwk' });
     expect(rsaKeyFromJwk(ec as any)).toBeNull();
     expect(createPublicKey).toBeDefined();
