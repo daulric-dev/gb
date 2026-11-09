@@ -62,6 +62,8 @@ export class ActiveSchoolService {
     });
     if (!profile) throw new NotFoundException('User profile not found');
     const activeId = profile.school_id;
+    // Parents belong to no school; their children are in the parent portal.
+    if (profile.account_type === 'parent') return [];
 
     if (profile.account_type === 'student') {
       if (!activeId) return [];
@@ -124,7 +126,7 @@ export class ActiveSchoolService {
       select: { account_type: true },
     });
     if (!profile) throw new NotFoundException('User profile not found');
-    if (profile.account_type === 'student') {
+    if (profile.account_type === 'student' || profile.account_type === 'parent') {
       throw new ForbiddenException('Students cannot switch schools');
     }
 

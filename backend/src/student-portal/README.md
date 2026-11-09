@@ -22,6 +22,7 @@ Both controllers are `@Controller('portal/me')` with `@UseGuards(AuthGuard, Stud
 | GET | `/api/portal/me/courses/:courseId/pages/:pageId` | A published page (`PageService.getPublished`); drafts are 404. |
 | GET | `/api/portal/me/courses/:courseId/files/:fileId` | Streams a file the course offers - linked from a published item in a published module, or shared with the course. Otherwise 404. Sent with `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. |
 | GET | `/api/portal/me/courses/:courseId/announcements` | Course announcements (`AnnouncementService.findForStudent`). |
+| GET | `/api/portal/me/announcements` | The student's school's announcements with `audience = everyone`, newest first (`AnnouncementService.findEveryoneForSchool(ctx.schoolId)`): `[{ id, title, body, created_at, updated_at, author }]`, no read receipts, no author id. Staff-only notices and course posts never appear. Needs `announcements`. |
 
 `PortalActivityController` (`portal-activity.controller.ts`), backed by `src/grading`:
 
@@ -41,7 +42,7 @@ Other `/api/portal/me/...` routes live in the modules that own them: attendance 
 ### Services / exports
 
 - `StudentGuard` (exported) - see below.
-- `StudentPortalService` (not exported): `getMe`, `listCourses`, `getCourse`, `joinCourse`, `getModules`, `getPage`, `getCourseFile`, `getAnnouncements`.
+- `StudentPortalService` (not exported): `getMe`, `listCourses`, `getCourse`, `joinCourse`, `getModules`, `getPage`, `getCourseFile`, `getAnnouncements`, `getSchoolAnnouncements`.
 - Types `StudentContext` (`{ studentId, schoolId }`) and `StudentRequest` (request with `user` and `student`), exported from `student.guard.ts`.
 
 ### `StudentGuard`
@@ -94,7 +95,7 @@ None.
 cd backend && bun test src/student-portal
 ```
 
-Guard: fails closed without a user, pins the linked student, denies staff accounts, students without a linked record, deactivated accounts and inactive records, resolves from the account (never the request), serves the cached context. Service: `getMe` scoping and 404, course cards (teachers and grade, no join code, grade failure tolerated, no enrolments, drafts hidden, dropped students refused, join passes the guard-resolved ids, wrong join codes counted per student with a 429 after 20 and successful joins not counted, unpublished pages 404), and course files (module link served, course share served, anything else 404, dropped students refused).
+Guard: fails closed without a user, pins the linked student, denies staff accounts, students without a linked record, deactivated accounts and inactive records, resolves from the account (never the request), serves the cached context. Service: `getMe` scoping and 404, course cards (teachers and grade, no join code, grade failure tolerated, no enrolments, drafts hidden, dropped students refused, join passes the guard-resolved ids, wrong join codes counted per student with a 429 after 20 and successful joins not counted, unpublished pages 404), and course files (module link served, course share served, anything else 404, dropped students refused), and school announcements (only the student's own school's `everyone` posts; staff-only, course and other-school posts never returned).
 
 ## See also
 

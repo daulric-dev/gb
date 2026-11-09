@@ -18,6 +18,7 @@ export const RESOURCES = [
   'chat',
   'join-code',
   'audit-log',
+  'report-card',
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -39,6 +40,10 @@ const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
   student: ['read', 'update'],
   'join-code': ['read', 'update'],
   'audit-log': ['read'],
+  // report-card: read = the release dashboard, previews and any student's
+  // report; update = head comments, deadlines, publishing. Teachers write
+  // their own course comments through their course role, not this key.
+  'report-card': ['read', 'update'],
   'academic-year': ['create', 'read', 'update'],
 };
 
@@ -71,6 +76,7 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   chat: 'chat messages',
   'join-code': 'school join code',
   'audit-log': 'audit log',
+  'report-card': 'report cards',
 };
 
 const ACTION_VERBS: Record<Action, string> = {
@@ -83,6 +89,8 @@ const ACTION_VERBS: Record<Action, string> = {
 const CUSTOM_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
   'join-code:read': 'View school join code status',
   'join-code:update': 'Issue and revoke the school join code',
+  'report-card:read': 'View report card progress, previews and published reports',
+  'report-card:update': 'Write head comments and publish report cards',
 };
 
 /** The full catalog: every resource x each action it supports. */

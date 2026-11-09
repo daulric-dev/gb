@@ -111,7 +111,7 @@ export class DashboardService {
       where: { id: userId },
       select: { account_type: true },
     });
-    if (profile?.account_type === 'student') {
+    if (profile?.account_type === 'student' || profile?.account_type === 'parent') {
       throw new ForbiddenException('Staff only');
     }
 

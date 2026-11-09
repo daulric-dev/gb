@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 import { UploadLimitSettings } from "./_components/upload-limit-settings";
 import { SchoolLogoSettings } from "./_components/school-logo-settings";
 import { SchoolFeatureSettings } from "./_components/school-feature-settings";
+import { SchoolParentSettings } from "./_components/school-parent-settings";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { AccountSettings } from "@/components/account/account-settings";
@@ -56,6 +57,8 @@ export default function SettingsPage() {
       <SchoolLogoSettings />
 
       <SchoolFeatureSettings />
+
+      <SchoolParentSettings />
 
       <SchoolSsoSettings />
 

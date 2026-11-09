@@ -8,13 +8,16 @@ import type { FeatureKey } from './feature.catalog';
 interface FeatureRequest {
   user?: { id: string };
   student?: { schoolId: string };
+  /** Set by ParentGuard: the linked child's school. */
+  parent?: { schoolId: string | null };
   params?: Record<string, string | undefined>;
 }
 
 /**
  * Refuses routes whose `@RequireFeature` keys are off for the caller's
  * school with 403 FEATURE_DISABLED. The school is resolved like
- * PermissionGuard and StudentGuard do: the student StudentGuard pinned, the
+ * PermissionGuard and StudentGuard do: the student StudentGuard pinned (or
+ * the child ParentGuard checked), the
  * route's `:schoolId`, the `:courseId`'s school, then the caller's active
  * school (a student's own school). No school at all checks the
  * organisation's settings. Runs after AuthGuard (and StudentGuard).
@@ -42,6 +45,7 @@ export class FeatureGuard implements CanActivate {
 
   private async resolveSchool(request: FeatureRequest): Promise<string | null> {
     if (request.student?.schoolId) return request.student.schoolId;
+    if (request.parent?.schoolId) return request.parent.schoolId;
     if (request.params?.schoolId) return request.params.schoolId;
 
     const courseId = request.params?.courseId;

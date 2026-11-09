@@ -26,6 +26,9 @@ export const FEATURE_KEYS = [
   'course_copy',
   'push_notifications',
   'integrations',
+  'report_cards',
+  'parent_portal',
+  'parent_notifications',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -113,6 +116,30 @@ export const FEATURES: readonly FeatureDefinition[] = [
       "Schools send platform events (grades, attendance, people, courses) to their own systems' URLs as signed webhooks. Off by default: data leaves the platform.",
     default: false,
     requires: [],
+  },
+  {
+    key: 'report_cards',
+    label: 'Report cards & transcripts',
+    description:
+      'Term report cards with teacher and head comments, published as PDFs to students, plus transcripts across terms.',
+    default: true,
+    requires: [],
+  },
+  {
+    key: 'parent_portal',
+    label: 'Parent portal',
+    description:
+      "Parents and guardians the school invites can sign in to see their own children's grades, upcoming and missing work, attendance and course announcements (read-only). Off by default.",
+    default: false,
+    requires: [],
+  },
+  {
+    key: 'parent_notifications',
+    label: 'Parent notifications',
+    description:
+      'Parents can opt in to email and push notices about missing work, absences, new grades and announcements.',
+    default: false,
+    requires: ['parent_portal'],
   },
 ];
 

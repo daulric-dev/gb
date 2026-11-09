@@ -11,7 +11,7 @@ as a single schema (`prisma.config.ts` points here).
 | `course.prisma` | `course` | Courses, staff and students, modules and items, pages, assignment groups, attendance, course notifications |
 | `discussion.prisma` | `course` | Discussion topics, replies, read markers, per-course discussion settings |
 | `grading.prisma` | `grading` | Activities, quizzes, submissions, rubrics and rubric assessments, grade scales |
-| `student.prisma` | `student` | Student roster, school join codes |
+| `student.prisma` | `student` | Student roster, school join codes, parent links, parent invitations and parent notice preferences / sent log (see `src/parent-portal`) |
 | `files.prisma` | `file_manager` | Files, folders, shares, notifications |
 | `chat.prisma` | `chat` | Conversations, members, messages |
 | `compliance.prisma` | `compliance` | The GDPR erasure log (`erasure_log`): ids-only record of every erasure, replayed after a backup restore (see `src/erasure`) |
@@ -19,6 +19,7 @@ as a single schema (`prisma.config.ts` points here).
 | `integration.prisma` | `public` | School webhooks (`school_webhook`: name, URL - any http(s), events as explicit type keys, signing secret encrypted and bound to the school and webhook, on/off, consecutive failures and why it was switched off), their deliveries (`webhook_delivery`: event id and type, the JSON payload, `pending`/`succeeded`/`failed`/`abandoned`, attempts, next attempt, last status/error, a 1 KB response excerpt; purged after `WEBHOOK_DELIVERY_RETENTION_DAYS`) and the integrations audit log (`integration_audit_log`, never a secret). See `src/integrations`. |
 | `audit.prisma` | `public` | The school- and organisation-scoped, field-level audit log (`audit_log`): actor and school-name snapshots, entity and record id, action, previous/new values, and timestamp. See `src/audit-log` and [the audit log guide](../../../docs/content/guide/audit-log.md). |
 | `sso.prisma` | `public` | Each school's own sign-in apps (`school_sso_provider`, keyed by school and provider `google`/`azure`: on/off, client ID, client secret encrypted and bound to the school and provider, non-secret `settings`); no row = the env fallback. The SSO audit log (`sso_audit_log`): one row per change to a school's SSO settings, never a secret. See `src/sso`. |
+| `report.prisma` | `grading` | Report cards: `report_release` (per school and term: comment deadline, published at/by), `report_comment` (teacher comment per term, course and student, `draft`/`ready`), `report_head_comment` (head / form tutor comment per term and student) and `report_document` (each student's generated term PDF: status, storage key, attempts, error). See `src/report-card`. |
 
 ## Changing the schema
 

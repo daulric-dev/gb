@@ -57,6 +57,7 @@ describe("featureForPath", () => {
     ["/dashboard/files/abc", "files"],
     ["/dashboard/calendar", "calendar"],
     ["/portal/messages", "student_messaging"],
+    ["/portal/announcements", "announcements"],
     ["/portal/calendar/", "calendar"],
     ["/portal/attendance/scan", "attendance"],
     ["/scan", "attendance"],

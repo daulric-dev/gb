@@ -32,6 +32,7 @@ model activity {
   submission            submission[]
   course_notification   course_notification[]
   activity_extension    activity_extension[]
+  activity_accommodation activity_accommodation[]
 
   @@index([assignment_group_id])
   @@index([course_id])
@@ -300,5 +301,49 @@ enum submission_status {
   submitted
   graded
 
+  @@schema("grading")
+}
+
+/// Per-student quiz accommodation on one activity: more time (a multiplier
+/// or extra minutes, never both) and/or an exemption from Lockdown. Replaces
+/// the student's school-wide default on this activity.
+model activity_accommodation {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id       String        @db.Uuid
+  student_id        String        @db.Uuid
+  time_multiplier   Decimal?      @db.Decimal(3, 2)
+  extra_minutes     Int?
+  lockdown_exempt   Boolean       @default(false)
+  reason            String?
+  created_by        String?       @db.Uuid
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  activity          activity      @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student           student       @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile      user_profile? @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([activity_id, student_id], map: "activity_accommodation_activity_student_key")
+  @@index([student_id], map: "idx_activity_accommodation_student")
+  @@index([created_by], map: "idx_activity_accommodation_created_by")
+  @@schema("grading")
+}
+
+/// A student's school-wide quiz accommodation, applied to every timed or
+/// Lockdown quiz unless an activity_accommodation row overrides it. The
+/// student row is school-scoped, so this is too.
+model student_accommodation {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_id        String        @unique(map: "student_accommodation_student_key") @db.Uuid
+  time_multiplier   Decimal?      @db.Decimal(3, 2)
+  extra_minutes     Int?
+  lockdown_exempt   Boolean       @default(false)
+  reason            String?
+  created_by        String?       @db.Uuid
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  student           student       @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile      user_profile? @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([created_by], map: "idx_student_accommodation_created_by")
   @@schema("grading")
 }

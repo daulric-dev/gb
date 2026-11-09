@@ -19,6 +19,9 @@ Platform features the organisation switches on or off for its schools. A school'
 | `course_copy` | Course templates & copying | on | |
 | `push_notifications` | Push notifications | on | |
 | `integrations` | Integrations (webhooks) | off | Data leaves the platform, so the organisation turns it on. |
+| `report_cards` | Report cards & transcripts | on | |
+| `parent_portal` | Parent portal | off | Read-only views of a child for invited parents; each school turns it on when ready. |
+| `parent_notifications` | Parent notifications | off | `parent_portal` |
 
 Effective for a school = the organisation's value AND not in the school's `disabled_features` AND every `requires` effective (`effectiveForSchool`). Without a school, the organisation's values and requirements (`effectiveForOrganisation`). `organisationSettings(stored)` applies the stored overrides to the defaults, ignoring unknown keys and non-booleans.
 
@@ -31,7 +34,7 @@ Effective for a school = the organisation's value AND not in the school's `disab
   - `organisationFeatures()` / `updateOrganisationFeatures(patch)`: rows `{ key, label, description, enabled, default, requires }`; `enabled` is the organisation's own setting. The patch merges into `organisation.features` (unknown stored keys drop out); 400 for an unknown key or a non-boolean, 404 before setup.
   - `schoolFeatures(schoolId)` / `updateSchoolFeatures(schoolId, patch)`: rows `{ key, label, description, availableInOrganisation, enabledForSchool, effective, requires }`. `false` adds the key to `school.disabled_features`, `true` removes it; `true` for a feature the organisation does not make available (`availableInOrganisation` false) is a 400 "<Label> is turned off for your organisation".
   - Caches `features:org` and `features:school:<id>` for 30 seconds; every change drops them and the whole `profile:` prefix (profiles carry `features`).
-- `FeatureGuard` + `@RequireFeature(...keys)` (`require-feature.decorator.ts`): inert without the decorator; a method's keys replace the controller's. Resolves the school like `PermissionGuard` / `StudentGuard`: `req.student.schoolId` (after `StudentGuard`), `:schoolId`, the `:courseId`'s school, then `FeatureService.schoolOfUser`. Put it after `AuthGuard` (and `StudentGuard`).
+- `FeatureGuard` + `@RequireFeature(...keys)` (`require-feature.decorator.ts`): inert without the decorator; a method's keys replace the controller's. Resolves the school like `PermissionGuard` / `StudentGuard`: `req.student.schoolId` (after `StudentGuard`), `req.parent.schoolId` (after `ParentGuard`: the linked child's school), `:schoolId`, the `:courseId`'s school, then `FeatureService.schoolOfUser`. Put it after `AuthGuard` (and `StudentGuard`).
 - `FeatureDisabledException` (`feature-disabled.exception.ts`): a `ForbiddenException` with body `{ statusCode: 403, code: 'FEATURE_DISABLED', feature, message: '<Label> is turned off for your school' }`.
 - `UpdateFeaturesDto` (`feature.dto.ts`): `{ features: Record<string, boolean> }`, used by both PATCH routes.
 
@@ -42,13 +45,16 @@ Effective for a school = the organisation's value AND not in the school's `disab
 | `messaging` | `src/chat/chat.controller.ts` (class); `ChatSystemService.notifyFileShares` posts nothing while it is off. |
 | `student_messaging` | `src/chat/chat-access.guard.ts` (students on every chat route) and `ChatService` (directory, starting DMs, posting to or as a student). |
 | `chat_channels` | `POST /chat/channels` (`@RequireFeature('messaging', 'chat_channels')`), `ChatService.createChannel` and posting in a channel. Replaces the old `CHAT_CHANNELS_ENABLED` env var. |
-| `announcements` | `src/announcement/announcement.controller.ts`, `course-announcement.controller.ts`, and the portal's `GET /portal/me/courses/:courseId/announcements` (`src/student-portal/student-portal.controller.ts`). |
+| `announcements` | `src/announcement/announcement.controller.ts`, `course-announcement.controller.ts`, the portal's `GET /portal/me/courses/:courseId/announcements` and `GET /portal/me/announcements` (school posts for everyone) (`src/student-portal/student-portal.controller.ts`), and the parent portal's `GET /parent/children/:studentId/announcements` (with `parent_portal`). Off: no school announcement reaches students or parents, and the parent sweep sends no announcement notices. |
 | `discussions` | `src/discussion/discussion.controller.ts`, `portal-discussion.controller.ts`. |
 | `attendance` | `src/attendance/attendance.controller.ts`, `portal-attendance.controller.ts` (including `/portal/me/stream`), and the public `scan-claim.controller.ts` (school from the session's course, checked with `assertEnabled`). |
 | `files` | Only the Files page's own tools: folders, moving files, sharing and share notifications (`src/file-manager/file-manager.controller.ts`). Listing, uploading (`upload-ticket`), opening, renaming and deleting your own files stay available, because course content attaches files from the file manager. Course content files (`src/course/course-file.controller.ts`, the portal's course files) are not gated. |
 | `calendar` | `src/calendar/calendar.controller.ts` (staff and portal, including `.ics`). |
 | `course_copy` | `src/course/course-copy.controller.ts` (templates, copy, import) and `PATCH /courses/:courseId` with `isTemplate: true` (`src/course/course.controller.ts`). |
 | `integrations` | `src/integrations`: every webhook route (school admin and organisation console) and `WebhookEvents.emit` / the delivery worker (nothing is queued or sent for a school with it off). |
+| `parent_portal` | `src/parent-portal`: every `/api/parent/...` route (`ParentPortalController`; school from the child in `:studentId`, else a linked child's school), the staff routes `/api/students/:studentId/parents/...` (active school), and redeeming an invitation or code (`ParentLinkService`, the invitation's school, with `assertEnabled`). |
+| `parent_notifications` | `/api/parent/notifications/preferences` and `ParentNotificationService` (no notice is collected for a child whose school has it, or `parent_portal`, off). |
+| `report_cards` | `src/report-card`: `report-comment.controller.ts`, `report-release.controller.ts`, `portal-report.controller.ts` (class); the public signed-link route checks it with `assertEnabled`; `ReportGenerationService.generate` skips a school with it off. |
 | `push_notifications` | `src/notifications/push.service.ts`: `sendToUsers` drops recipients whose school has it off (checked once per school). Registration routes stay; in-app course notifications are still created. |
 
 The routes for changing features live with their owners: `GET`/`PATCH /api/organisation/features` in `src/organisation` (organisation admins) and `GET`/`PATCH /api/schools/current/features` in `src/school` (`school:update`), plus `GET`/`PATCH /api/organisation/schools/:id/features` in `src/organisation` (organisation admins, any school; same rules). The profile's `features` map is added in `src/auth/auth.service.ts`.

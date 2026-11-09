@@ -359,6 +359,11 @@ export class InviteService implements OnModuleInit {
       where: { id: user.id },
       select: { id: true, school_id: true, account_type: true },
     });
+    // Parent accounts take no staff or organisation role (src/parent-portal).
+    if (existing?.account_type === 'parent') {
+      this.logger.warn(`Invites for ${user.id} left open: a parent account takes no staff role`);
+      return 0;
+    }
     const isStudent = existing?.account_type === 'student';
     const applicable = invites.filter((invite) => {
       if (invite.kind !== 'school_admin' || !isStudent) return true;

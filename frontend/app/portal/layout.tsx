@@ -35,9 +35,11 @@ import {
   BookOpen,
   CalendarDays,
   CheckSquare,
+  FileBadge,
   GraduationCap,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   MessagesSquare,
   Settings,
   type LucideIcon,
@@ -55,6 +57,13 @@ const NAV: {
   { href: "/portal/grades", label: "Grades", icon: GraduationCap },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
   { href: "/portal/calendar", label: "Calendar", icon: CalendarDays, feature: "calendar" },
+  {
+    href: "/portal/announcements",
+    label: "Announcements",
+    icon: Megaphone,
+    feature: "announcements",
+  },
+  { href: "/portal/reports", label: "Reports", icon: FileBadge, feature: "report_cards" },
   {
     href: "/portal/messages",
     label: "Messages",
@@ -91,7 +100,7 @@ export default function PortalLayout({
     // school join code yet, so there is nothing to show them here.
     if (!isStudentProfile(profile.value)) {
       if (isScan) return;
-      router.replace("/dashboard");
+      router.replace(homePathFor(profile.value));
       return;
     }
     if (!profile.value.school) {

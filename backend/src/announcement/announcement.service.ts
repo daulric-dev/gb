@@ -17,6 +17,11 @@ import {
 } from '@/course/access/course-access.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
+import type {
+  AnnouncementAudience,
+  CreateSchoolAnnouncementDto,
+  UpdateSchoolAnnouncementDto,
+} from './dto/school-announcement.dto';
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
@@ -37,6 +42,7 @@ const CONTENT_SELECT = {
   author_user_profile_id: true,
   title: true,
   body: true,
+  audience: true,
   created_at: true,
   updated_at: true,
   user_profile: AUTHOR_SELECT,
@@ -47,6 +53,7 @@ interface ContentDbRow {
   school_id: string;
   course_id: string | null;
   author_user_profile_id: string | null;
+  audience: AnnouncementAudience;
   title: string;
   body: string | null;
   created_at: Date | null;
@@ -66,13 +73,28 @@ const toContent = (r: ContentDbRow) => ({
   author_user_profile_id: r.author_user_profile_id,
   title: r.title,
   body: r.body,
+  audience: r.audience,
   created_at: isoDate(r.created_at),
   updated_at: isoDate(r.updated_at),
   author: r.user_profile,
 });
 type Content = ReturnType<typeof toContent>;
 const CONTENT_TTL = 60 * 60 * 24 * 30;
-const contentKey = (schoolId: string) => `announcements:content:${schoolId}`;
+// v2: rows carry `audience` (entries cached before it are skipped).
+const contentKey = (schoolId: string) => `announcements:content:v2:${schoolId}`;
+
+/**
+ * What a student or parent sees of a school announcement meant for everyone:
+ * no read receipts, no internal author id, no audience (always `everyone`).
+ */
+const SCHOOL_PUBLIC_SELECT = {
+  id: true,
+  title: true,
+  body: true,
+  created_at: true,
+  updated_at: true,
+  user_profile: AUTHOR_SELECT,
+} as const;
 
 /**
  * What a student sees of a course announcement: no read receipts (other
@@ -216,8 +238,9 @@ export class AnnouncementService {
     return (await this.attachReaders([toContent(data)]))[0];
   }
 
-  async create(userId: string, dto: CreateAnnouncementDto) {
+  async create(userId: string, dto: CreateSchoolAnnouncementDto) {
     const { school_id }: { school_id: string } = await this.getProfile(userId);
+    const audience: AnnouncementAudience = dto.audience ?? 'staff';
 
     let data: Content;
     try {
@@ -228,6 +251,7 @@ export class AnnouncementService {
             author_user_profile_id: userId,
             title: dto.title,
             body: dto.body ?? null,
+            audience,
           },
           select: CONTENT_SELECT,
         });
@@ -238,6 +262,7 @@ export class AnnouncementService {
           changes: auditChanges(null, {
             title: created.title,
             body: created.body,
+            audience: created.audience,
           }),
         });
         return toContent(created);
@@ -250,16 +275,21 @@ export class AnnouncementService {
     }
     await this.cache.delete(contentKey(school_id));
     this.announcePosted(school_id, data, null, userId);
+    // Students hear about it now (push); parents through their notice sweep.
+    if (data.audience === 'everyone') {
+      void this.notices?.schoolAnnouncementPosted(school_id, data);
+    }
     return { ...data, readers: [] as ReaderRow[] };
   }
 
-  async update(userId: string, id: string, dto: UpdateAnnouncementDto) {
+  async update(userId: string, id: string, dto: UpdateSchoolAnnouncementDto) {
     const { school_id }: { school_id: string } = await this.assertCanManage(
       userId,
       id,
     );
 
     let data: Content;
+    let widened = false;
     try {
       data = await this.prisma.$transaction(async (tx) => {
         const before = await tx.announcement.findFirst({
@@ -272,17 +302,20 @@ export class AnnouncementService {
             updated_at: new Date(),
             ...(dto.title !== undefined ? { title: dto.title } : {}),
             ...(dto.body !== undefined ? { body: dto.body } : {}),
+            ...(dto.audience !== undefined ? { audience: dto.audience } : {}),
           },
           select: CONTENT_SELECT,
         });
         if (before) {
+          widened =
+            before.audience !== 'everyone' && updated.audience === 'everyone';
           await this.auditLog?.record(tx, school_id, { id: userId }, {
             entity: 'announcement',
             entityId: id,
             action: 'update',
             changes: auditChanges(
-              { title: before.title, body: before.body },
-              { title: updated.title, body: updated.body },
+              { title: before.title, body: before.body, audience: before.audience },
+              { title: updated.title, body: updated.body, audience: updated.audience },
             ),
           });
         }
@@ -295,6 +328,8 @@ export class AnnouncementService {
       throw new BadRequestException('Failed to update announcement');
     }
     await this.cache.delete(contentKey(school_id));
+    // A staff notice opened up to everyone reaches students for the first time.
+    if (widened) void this.notices?.schoolAnnouncementPosted(school_id, data);
     return (await this.attachReaders([data]))[0];
   }
 
@@ -323,7 +358,7 @@ export class AnnouncementService {
             entityId: id,
             action: 'delete',
             changes: auditChanges(
-              { title: before.title, body: before.body },
+              { title: before.title, body: before.body, audience: before.audience },
               null,
             ),
           });
@@ -536,6 +571,37 @@ export class AnnouncementService {
     } catch (err) {
       this.logger.error(
         `Failed to fetch course announcements: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('Failed to fetch announcements');
+    }
+  }
+
+  /**
+   * A school's announcements meant for everyone, newest first, for the
+   * student and parent portals. Staff-only notices (`audience = staff`) and
+   * course posts never appear. There are no drafts or scheduled posts: a row
+   * is live from creation. The caller has already resolved the school from
+   * the student (or the parent's linked child), never from the request.
+   */
+  async findEveryoneForSchool(schoolId: string) {
+    try {
+      const rows = await this.prisma.announcement.findMany({
+        where: { school_id: schoolId, course_id: null, audience: 'everyone' },
+        orderBy: { created_at: { sort: 'desc', nulls: 'first' } },
+        take: MAX_ANNOUNCEMENTS,
+        select: SCHOOL_PUBLIC_SELECT,
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        body: r.body,
+        created_at: isoDate(r.created_at),
+        updated_at: isoDate(r.updated_at),
+        author: r.user_profile,
+      }));
+    } catch (err) {
+      this.logger.error(
+        `Failed to fetch school announcements: ${(err as Error).message}`,
       );
       throw new BadRequestException('Failed to fetch announcements');
     }

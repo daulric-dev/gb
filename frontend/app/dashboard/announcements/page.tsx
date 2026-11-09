@@ -8,6 +8,8 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { AUDIENCE_BADGES, audienceOf } from "@/lib/announcement-audience";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +23,7 @@ import { usePermissions } from "@/providers/PermissionsProvider";
 import { PermissionDenied } from "@/components/dashboard/permission-denied";
 import { useProfile } from "@/providers/AuthProvider";
 import { markAnnouncementsRead } from "@/lib/announcements";
-import { Plus, Megaphone, Pencil, Trash2 } from "lucide-react";
+import { Plus, Megaphone, Pencil, Trash2, Users, ShieldCheck } from "lucide-react";
 import type { Announcement } from "./_components/types";
 import { AnnouncementForm } from "./_components/AnnouncementForm";
 import { ReaderAvatars } from "./_components/ReaderAvatars";
@@ -95,7 +97,7 @@ export default function AnnouncementsPage() {
     <div className="space-y-6">
       <DashboardPageHeader
         title="Announcements"
-        description="Notices for all staff in your school"
+        description="Notices for your school's staff, or for everyone: staff, students and parents"
         action={
           can("announcement", "create") ? (
             <Dialog
@@ -110,7 +112,8 @@ export default function AnnouncementsPage() {
                 <DialogHeader>
                   <DialogTitle>New Announcement</DialogTitle>
                   <DialogDescription>
-                    Post a notice visible to everyone in your school
+                    Post a notice for staff only, or for everyone in your
+                    school including students and parents
                   </DialogDescription>
                 </DialogHeader>
                 <AnnouncementForm
@@ -142,7 +145,20 @@ export default function AnnouncementsPage() {
             <Card key={a.id}>
               <CardHeader className="flex flex-row items-start justify-between gap-4">
                 <div className="space-y-1">
-                  <CardTitle className="text-base">{a.title}</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="text-base">{a.title}</CardTitle>
+                    {audienceOf(a.audience) === "everyone" ? (
+                      <Badge>
+                        <Users aria-hidden />
+                        {AUDIENCE_BADGES.everyone}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">
+                        <ShieldCheck aria-hidden />
+                        {AUDIENCE_BADGES.staff}
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {authorName(a)} · {formatWhen(a.created_at)}
                   </p>

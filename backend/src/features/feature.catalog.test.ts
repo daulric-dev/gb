@@ -25,6 +25,9 @@ describe('feature catalog', () => {
       course_copy: true,
       push_notifications: true,
       integrations: false,
+      report_cards: true,
+      parent_portal: false,
+      parent_notifications: false,
     });
   });
 
@@ -32,6 +35,16 @@ describe('feature catalog', () => {
     expect(featureDefinition('student_messaging').requires).toEqual(['messaging']);
     expect(featureDefinition('chat_channels').requires).toEqual(['messaging']);
     expect(featureDefinition('messaging').requires).toEqual([]);
+  });
+
+  test('parent notifications require the parent portal; both default off', () => {
+    expect(featureDefinition('parent_notifications').requires).toEqual(['parent_portal']);
+    expect(featureDefinition('parent_portal').default).toBe(false);
+    const org = organisationSettings({ parent_notifications: true });
+    expect(effectiveForOrganisation(org).parent_notifications).toBe(false);
+    const both = organisationSettings({ parent_portal: true, parent_notifications: true });
+    expect(effectiveForSchool(both, []).parent_notifications).toBe(true);
+    expect(effectiveForSchool(both, ['parent_portal']).parent_notifications).toBe(false);
   });
 
   test('every requirement is a catalog key and every feature has a label', () => {

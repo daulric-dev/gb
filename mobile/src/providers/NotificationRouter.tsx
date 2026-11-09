@@ -61,6 +61,10 @@ export function NotificationRouter() {
         student: noticeHref(data, "student"),
         staff: noticeHref(data, "staff"),
       });
+    } else if (data?.type === "school.announcement") {
+      // A school announcement for everyone (pushed to students only) opens
+      // portal home, which lists it.
+      setPending({ student: "/(portal)", staff: null });
     } else if (
       data?.type === "course.activity_published" ||
       data?.type === "course.announcement"

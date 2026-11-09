@@ -20,6 +20,7 @@ import {
   Building2,
   ChevronsUpDown,
   FileText,
+  FileBadge,
   FolderOpen,
   KeyRound,
   LayoutDashboard,
@@ -142,6 +143,13 @@ const adminNavItems: NavItem[] = [
     adminOnly: true,
   },
   {
+    title: "Report cards",
+    href: "/dashboard/reports",
+    icon: FileBadge,
+    permission: ["report-card", "read"],
+    feature: "report_cards",
+  },
+  {
     title: "Audit log",
     href: "/dashboard/audit-log",
     icon: ClipboardClock,
@@ -190,10 +198,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     toast.success("Logged out");
   }
 
-  const visibleAdminNavItems = adminNavItems.filter((item) =>
-    item.adminOnly
-      ? isAdmin
-      : !item.permission || can(item.permission[0], item.permission[1]),
+  const visibleAdminNavItems = adminNavItems.filter(
+    (item) =>
+      (!item.feature || hasFeature(item.feature)) &&
+      (item.adminOnly
+        ? isAdmin
+        : !item.permission || can(item.permission[0], item.permission[1])),
   );
 
   const displayName = profile?.first_name

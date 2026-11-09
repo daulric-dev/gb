@@ -64,7 +64,7 @@ The management routes use `AdminGuard` rather than `PermissionGuard`, because ga
 
 ## Permission catalog
 
-Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route). That makes 31 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
+Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route); `audit-log` has `read`; `report-card` has `read` and `update`. That makes 34 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
 
 | Key | Description | teacher | member | Enforced by |
 | --- | --- | :---: | :---: | --- |
@@ -99,6 +99,8 @@ Keys are `<resource>:<action>`, and a key exists only when something enforces it
 | `chat:read` | View chat messages | yes | yes | `chat.controller.ts` |
 | `chat:update` | Edit chat messages | yes | yes | `chat.controller.ts` (ownership is checked per row) |
 | `chat:delete` | Delete chat messages | yes | yes | `chat.controller.ts` |
+| `report-card:read` | View report card progress, previews and published reports | | | `report-card/report-release.controller.ts` (release dashboard, previews, PDFs, zips, transcripts). Teachers write their own course comments through their course role, not this key. |
+| `report-card:update` | Write head comments and publish report cards | | | `report-card/report-release.controller.ts` (deadline, head comments, publish, unpublish, regenerate) |
 
 A custom role can grant any of these keys on top of the base role's defaults. System roles (`school_role.is_system`) are read-only and report their code defaults.
 

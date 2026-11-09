@@ -55,6 +55,7 @@ import {
 import type { SubmissionRow } from "./types";
 import { RubricMarkDialog } from "./RubricMarkDialog";
 import { ExtensionActions, ExtensionBadge } from "./ExtensionControls";
+import { AccommodationActions, AccommodationBadge } from "./AccommodationControls";
 import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
 import { userMessage } from "@/lib/errors";
 
@@ -303,6 +304,9 @@ export function MarksTable({
                   <TableCell className="align-top">
                     <p className="font-medium">{row.name}</p>
                     {online && <ExtensionBadge extension={row.extension} />}
+                    {kind === "quiz" && (
+                      <AccommodationBadge accommodation={row.accommodation} />
+                    )}
                     {lockdownBrowser && <LockdownPresence submission={sub} />}
                     {row.enrollmentStatus && row.enrollmentStatus !== "active" && (
                       <p className="text-xs capitalize text-muted-foreground">
@@ -478,6 +482,19 @@ export function MarksTable({
                   <TableCell className="text-right align-top">
                     {editable && (
                       <div className="flex justify-end gap-1">
+                        {kind === "quiz" && (
+                          <AccommodationActions
+                            activityId={activityId}
+                            row={row}
+                            onChangedAction={(changed) =>
+                              onRowsChangeAction(
+                                rows.map((r) =>
+                                  r.studentId === changed.studentId ? changed : r,
+                                ),
+                              )
+                            }
+                          />
+                        )}
                         {online && (
                           <ExtensionActions
                             activityId={activityId}

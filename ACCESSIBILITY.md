@@ -30,6 +30,7 @@ We aim to meet the **[Web Content Accessibility Guidelines (WCAG) 2.2, level AA]
 **Course design**
 
 - Teachers can give an individual student a later due date, excuse a student from a piece of work, and mark work done offline or on paper, so students are not forced through one online format.
+- **Quiz accommodations:** a student can get extra time on timed quizzes (×1.25, ×1.5, ×2 or extra minutes) and be exempt from Lockdown, on one quiz or as a school-wide default. An exempt student takes a Lockdown quiz without fullscreen or app pinning and is never reported as away. Accommodations are shown only to staff.
 
 ## Known gaps
 
@@ -49,12 +50,7 @@ These are the problems we know about. They are tracked and will be fixed; if one
 
 **Quizzes and attendance**
 
-- **Quiz time limits cannot be extended for one student.** A time limit applies to everyone taking the quiz. A student who needs extra time currently needs a separate quiz, or no time limit.
-- **Lockdown is set per quiz, not per student.** Lockdown may conflict with assistive technology:
-  - on the web, moving focus to a separate dictation, magnifier or screen-reader window can be reported to the teacher as leaving the quiz;
-  - in the mobile app, pinning (Guided Access on iPhone, screen pinning on Android) blocks switching to other apps, including some assistive apps.
-
-  Teachers should not use Lockdown for students who rely on such tools, and should treat "away" reports with that in mind.
+- **A Lockdown exemption is not automatic.** Until a teacher or school staff exempt a student (see *Quiz accommodations* above), Lockdown may conflict with assistive technology: on the web, moving focus to a separate dictation, magnifier or screen-reader window can be reported as leaving the quiz; in the mobile app, pinning (Guided Access on iPhone, screen pinning on Android) blocks switching to other apps, including some assistive apps. Treat "away" reports for students without an exemption with that in mind.
 - **Attendance check-in** by QR code needs a camera. The 4-digit room code is the alternative, and teachers can also mark attendance by hand.
 - **Location-based check-in** depends on the device's location services and can be refused indoors. Teachers can turn the location check off for a session.
 

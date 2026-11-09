@@ -55,6 +55,7 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 ### Onboarding rules (`AuthService.onboard`)
 
 - A student account can never onboard again as staff.
+- A parent account (`account_type = 'parent'`, see [`src/parent-portal`](../parent-portal/README.md)) can never onboard as staff or a student, and cannot switch school (it has none).
 - `accountType: 'student'` saves the profile with `account_type = 'student'` and `role = null`.
 - A user who already has a `school_id` (because they created a school) only has their name updated.
 - A `schoolId` in the request files a `school_join_request` for an admin to approve. Admin rights are never granted from a client-supplied id.

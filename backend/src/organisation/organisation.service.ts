@@ -693,6 +693,9 @@ export class OrganisationService implements OnApplicationBootstrap {
     if (user.account_type === 'student') {
       throw new BadRequestException('A student account cannot run a school');
     }
+    if (user.account_type === 'parent') {
+      throw new BadRequestException('A parent account cannot run a school');
+    }
 
     let previous: string | null;
     try {

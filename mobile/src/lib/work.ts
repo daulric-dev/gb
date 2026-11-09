@@ -62,7 +62,11 @@ export interface PortalWorkDetail {
   courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
+  /** The student's own time limit, after any accommodation. */
   timeLimitMinutes: number | null;
+  /** The quiz's limit for everyone else (absent on older servers). */
+  standardTimeLimitMinutes?: number | null;
+  /** False for a student exempt from Lockdown, even on a Lockdown quiz. */
   lockdownBrowser?: boolean;
   attemptsUsed: number;
   quizAttempt: {

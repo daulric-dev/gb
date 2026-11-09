@@ -25,6 +25,9 @@ Defined once in `backend/src/features/feature.catalog.ts`.
 | `course_copy` | Course templates & copying | on | |
 | `push_notifications` | Push notifications | on | |
 | `integrations` | Integrations (webhooks) | off | Data leaves the platform, so the organisation turns it on. |
+| `parent_portal` | Parent portal | off | Each school turns it on when it is ready. |
+| `parent_notifications` | Parent notifications | off | `parent_portal` |
+| `report_cards` | Report cards & transcripts | on | |
 
 **Effective for a school** = the organisation's value AND the school has not switched it off AND every feature it requires is effective. Without a school (an organisation admin with none), the organisation's values and requirements decide.
 
@@ -81,11 +84,14 @@ Added by migration `20261102120000_features`. Lookups are cached for 30 seconds 
 | `messaging` | Every `/api/chat` route. Also: no "shared a file with you" chat message is posted. |
 | `student_messaging` | Students on `/api/chat` (see [Chat](./chat.md)); staff writing to a student. |
 | `chat_channels` | `POST /api/chat/channels` and posting in an existing channel. |
-| `announcements` | `/api/announcements`, `/api/courses/:courseId/announcements`, `GET /api/portal/me/courses/:courseId/announcements` |
+| `announcements` | `/api/announcements`, `/api/courses/:courseId/announcements`, `GET /api/portal/me/courses/:courseId/announcements`, `GET /api/portal/me/announcements`, `GET /api/parent/children/:studentId/announcements` |
 | `discussions` | `/api/courses/:courseId/discussions`, `/api/portal/me/courses/:courseId/discussions` |
 | `attendance` | `/api/courses/:courseId/attendance`, the portal's attendance routes and stream (`/api/portal/me/attendance/...`, `/api/portal/me/courses/:courseId/attendance`, `/api/portal/me/stream`) and the public `POST /api/attendance/scan-claim` (school from the session's course) |
 | `files` | The Files page's own tools under `/api/files`: folders, moving files, sharing and share notifications. Listing, uploading, opening, renaming and deleting your own files stay available, because course content attaches files from the file manager; course content files (`/api/courses/:courseId/files`, the portal's course files) are not gated. |
 | `calendar` | `/api/calendar`, `/api/calendar/ics`, `/api/portal/me/calendar`, `/api/portal/me/calendar/ics` |
 | `course_copy` | `GET /api/courses/templates`, `POST /api/courses/:courseId/copy`, `POST /api/courses/:courseId/import`, and `PATCH /api/courses/:courseId` with `isTemplate: true` |
 | `integrations` | Every webhook route (`/api/schools/current/webhooks/...`, `/api/organisation/schools/:schoolId/webhooks/...`); no events are queued and no deliveries are sent for a school with it off. See [webhooks.md](./webhooks.md). |
+| `parent_portal` | Every `/api/parent/...` route, `/api/students/:studentId/parents/...`, and redeeming a parent invitation or code. See [the parent portal guide](../guide/parent-portal.md). |
+| `parent_notifications` | `/api/parent/notifications/preferences`; no parent notice is sent for a child whose school has it off. |
+| `report_cards` | `/api/courses/:courseId/report-comments`, every `/api/report-cards/...` route (release dashboard and signed report links), and `/api/portal/me/reports...` / `/api/portal/me/transcript...`; queued PDF jobs for a school with it off do nothing. See [the report cards guide](../guide/report-cards.md). |
 | `push_notifications` | `PushService` sends nothing to users whose school has it off. Device registration still works, and in-app course notifications are still created. |

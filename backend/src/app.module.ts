@@ -47,6 +47,8 @@ import { RetentionModule } from '@/retention/retention.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
 import { IntegrationsModule } from '@/integrations/integrations.module';
 import { AuditLogModule } from '@/audit-log/audit-log.module';
+import { ReportCardModule } from '@/report-card/report-card.module';
+import { ParentPortalModule } from '@/parent-portal/parent-portal.module';
 import { HealthService } from '@/health/health.service';
 
 @Module({
@@ -136,6 +138,7 @@ import { HealthService } from '@/health/health.service';
     DashboardModule,
     NotificationsModule,
     AttendanceModule,
+    ParentPortalModule,
     DiscussionModule,
     CalendarModule,
     CourseNotificationModule,
@@ -145,6 +148,7 @@ import { HealthService } from '@/health/health.service';
     AppVersionModule,
     IntegrationsModule.forRoot(),
     AuditLogModule,
+    ReportCardModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [

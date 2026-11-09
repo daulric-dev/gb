@@ -42,6 +42,13 @@ export class StudentPortalController {
     return this.portal.getMe(req.student!);
   }
 
+  /** School-wide announcements meant for everyone (never staff-only ones). */
+  @RequireFeature('announcements')
+  @Get('announcements')
+  async schoolAnnouncements(@Req() req: StudentRequest) {
+    return this.portal.getSchoolAnnouncements(req.student!);
+  }
+
   @Get('courses')
   async courses(@Req() req: StudentRequest) {
     return this.portal.listCourses(req.student!);

@@ -8,6 +8,7 @@ These are the request bodies for creating and editing announcements. The school-
 |------|-------|---------|------------|
 | `create-announcement.dto.ts` | `CreateAnnouncementDto` | `POST /api/announcements` and `POST /api/courses/:courseId/announcements` | `title`: required, non-empty string, at most 200 characters. `body`: optional string, at most 5000 characters; it is stored as `null` when left out. |
 | `update-announcement.dto.ts` | `UpdateAnnouncementDto` | `PATCH /api/announcements/:id` and `PATCH /api/courses/:courseId/announcements/:id` | `title`: optional, but non-empty when given, at most 200 characters. `body`: optional, at most 5000 characters. Only the fields you send are changed, and `updated_at` is always set. |
+| `school-announcement.dto.ts` | `CreateSchoolAnnouncementDto`, `UpdateSchoolAnnouncementDto` | `POST /api/announcements`, `PATCH /api/announcements/:id` (school-wide only) | Extend the two above with `audience`: optional, one of `ANNOUNCEMENT_AUDIENCES` (`staff`, `everyone`). Left out on create it is `staff`; left out on update it is unchanged. Course routes keep the base DTOs, so an `audience` there is rejected as an unknown field. |
 
 ## Adding a DTO
 

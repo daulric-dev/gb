@@ -9,6 +9,8 @@ import type { UserProfile } from "@/providers/AuthProvider";
  */
 export function homeRouteFor(profile: UserProfile | null) {
   if (!profile) return "/(auth)/login" as const;
+  // Parents belong to no school; their children are in the parent tabs.
+  if (profile.account_type === "parent") return "/(parent)" as const;
   // An organisation admin need not belong to a school; their console is on
   // the web, so the app just points them there.
   if (profile.is_org_admin && !profile.school) {
@@ -22,6 +24,11 @@ export function homeRouteFor(profile: UserProfile | null) {
   return profile.account_type === "student"
     ? ("/(portal)" as const)
     : ("/(tabs)" as const);
+}
+
+/** True for a parent account (the parent tabs, never the staff tabs or portal). */
+export function isParentProfile(profile: UserProfile | null): boolean {
+  return profile?.account_type === "parent";
 }
 
 /** True when this profile belongs to the student portal rather than the tabs. */
