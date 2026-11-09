@@ -12,6 +12,7 @@
 import { safeWebhookFetch, type FetchLike } from '@/integrations/delivery/webhook-sender';
 import { cleanDate, cleanEmail, enrolmentRole, sessionType, userKind } from './roster-csv';
 import { emptySnapshot, type RosterSnapshot } from './roster-types';
+import { trimTrailingSlashes } from '@/common/trim-slashes';
 
 export const ONEROSTER_PAGE_SIZE = 100;
 /** Most pages read per collection (a runaway server cannot loop forever). */
@@ -182,7 +183,7 @@ export class OneRosterClient {
   }
 
   private collectionUrl(path: string, offset: number): string {
-    const base = this.config.baseUrl.replace(/\/+$/, '');
+    const base = trimTrailingSlashes(this.config.baseUrl);
     const url = new URL(`${base}/${path}`);
     url.searchParams.set('limit', String(ONEROSTER_PAGE_SIZE));
     url.searchParams.set('offset', String(offset));
@@ -231,7 +232,7 @@ export class OneRosterClient {
   /** "Test connection": a token and one page of orgs. */
   async test(): Promise<{ orgs: number }> {
     await this.accessToken(true);
-    const base = this.config.baseUrl.replace(/\/+$/, '');
+    const base = trimTrailingSlashes(this.config.baseUrl);
     const url = new URL(`${base}/orgs`);
     url.searchParams.set('limit', '1');
     const token = await this.accessToken();

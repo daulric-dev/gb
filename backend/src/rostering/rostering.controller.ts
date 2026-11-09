@@ -18,6 +18,7 @@ import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
 import { RequireStepUp, stepUpRequired } from '@/auth/step-up.guard';
+import { Throttle } from '@nestjs/throttler';
 import { OrganisationAdminGuard } from '@/organisation/organisation-admin.guard';
 import { RosteringFeatureGuard } from './rostering-feature.guard';
 import { RosterSourceService } from './roster-source.service';
@@ -62,6 +63,11 @@ export class RosteringController {
       .send(templateCsv(name as TemplateKind));
   }
 
+  // Calls a URL the admin types in (through the SSRF-guarded fetch), so it
+  // needs step-up like saving credentials does, and is rate-limited so it
+  // can't be used to scan hosts.
+  @RequireStepUp()
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
   @Post('test-connection')
   @HttpCode(200)
   testConnection(@Body() dto: TestConnectionDto) {

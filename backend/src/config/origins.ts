@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { trimTrailingSlashes } from '@/common/trim-slashes';
 /**
  * The browser origins allowed to call this API.
  *
@@ -164,7 +165,7 @@ export function authCookieSecure(): boolean {
 export function configuredApiUrl(
   env: Record<string, string | undefined> = process.env,
 ): string | undefined {
-  return env.API_URL?.trim().replace(/\/+$/, '') || undefined;
+  return (env.API_URL ? trimTrailingSlashes(env.API_URL.trim()) : '') || undefined;
 }
 
 export function insecureCookieWarning(): string | null {

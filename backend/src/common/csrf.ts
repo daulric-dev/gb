@@ -6,6 +6,7 @@ import { allowedOrigins, isDevelopmentOrigin } from '@/config/origins';
 import { NATIVE_CLIENT_HEADER, sessionTokenVia } from '@/account/session.service';
 import { QUERY_METHOD } from './http-query';
 import { LTI_AGS_PREFIX, LTI_AUTH_PATH, LTI_TOKEN_PATH, MEDIA as LTI_MEDIA } from '@/lti/lti.constants';
+import { trimTrailingSlashes } from './trim-slashes';
 
 /**
  * Cross-site request forgery protection for the session cookie.
@@ -62,7 +63,7 @@ type CsrfRequest = {
 /** The path of a request URL: no query string, no trailing slash. */
 export function requestPath(url: string): string {
   const path = url.split('?')[0].split('#')[0];
-  return path.length > 1 ? path.replace(/\/+$/, '') : path;
+  return path.length > 1 ? trimTrailingSlashes(path) : path;
 }
 
 function header(req: CsrfRequest, name: string): string | undefined {

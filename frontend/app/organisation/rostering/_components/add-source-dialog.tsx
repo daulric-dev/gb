@@ -63,6 +63,8 @@ export function AddSourceDialog({
       test.value = await api<{ ok: boolean; message: string }>(`${ROSTERING_API}/test-connection`, {
         method: "POST",
         body: { baseUrl: baseUrl.value.trim(), tokenUrl: tokenUrl.value.trim(), clientId: clientId.value.trim(), clientSecret: clientSecret.value },
+        // The API requires step-up here (it calls a URL the admin typed in).
+        stepUp: true,
       });
     } catch (err) {
       test.value = { ok: false, message: userMessage(err, "The test could not run") };
