@@ -65,8 +65,6 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       PM2_VERSION: "7.1.2"
-      PM2_HOME: ${{ runner.temp }}/pm2
-      PM2_LOG_DIR: ${{ runner.temp }}/pm2-logs
       # Production-shaped settings for the smoke test only; nothing is real.
       DATABASE_URL: postgresql://gradebook:gradebook@127.0.0.1:5432/gradebook
       USE_REDIS: "true"
@@ -103,6 +101,10 @@ jobs:
       - name: Generating test secrets
         run: |
           {
+            # The runner context isn't available in job-level env, so the
+            # PM2 paths under RUNNER_TEMP are set here for later steps.
+            echo "PM2_HOME=${RUNNER_TEMP}/pm2"
+            echo "PM2_LOG_DIR=${RUNNER_TEMP}/pm2-logs"
             echo "AUTH_SECRET=$(openssl rand -hex 32)"
             echo "CHAT_ENCRYPTION_KEY=$(openssl rand -base64 32)"
             echo "STUDENT_CLAIM_CODE_PEPPER=$(openssl rand -hex 32)"

@@ -106,16 +106,19 @@ export function wrapText(font: FontFace, text: string, size: number, width: numb
   return lines;
 }
 
-function formatDate(value: string | Date | null): string | null {
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "1 Sep 2026", in UTC. Spelled out rather than `toLocaleDateString`, whose
+ * month abbreviations come from the runtime's ICU data and differ between
+ * machines (newer en-GB data says "Sept"), so a printed report would change
+ * with the server it was generated on.
+ */
+export function formatDate(value: string | Date | null): string | null {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
 export function formatPercent(percent: number | null): string {
