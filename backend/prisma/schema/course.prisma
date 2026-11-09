@@ -118,6 +118,7 @@ model course {
   rubric              rubric[]
   discussion_topic    discussion_topic[]
   discussion_reply    discussion_reply[]
+  report_comment      report_comment[]
   discussion_setting  discussion_setting?
   course_notification course_notification[]
 

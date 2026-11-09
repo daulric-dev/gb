@@ -8,6 +8,8 @@ import {
 } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
+import { Button } from "@/components/ui/Button";
+import { useFeatures } from "@/lib/use-features";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -77,6 +79,8 @@ function CourseGradeCard({ course }: { course: PortalCourseCard }) {
  */
 export default function PortalGradesScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
+  const { hasFeature } = useFeatures();
   const [courses, setCourses] = useState<PortalCourseCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -109,6 +113,13 @@ export default function PortalGradesScreen() {
     <Screen
       title="Grades"
       description="How you are doing in each course"
+      action={
+        hasFeature("report_cards") ? (
+          <Button size="sm" variant="outline" onPress={() => router.push("/reports")}>
+            Reports
+          </Button>
+        ) : undefined
+      }
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

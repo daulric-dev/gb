@@ -29,9 +29,14 @@ Group channels are not available yet.
 
 ## Announcements
 
-**Announcements** are notices for staff across the school — a staff meeting, a deadline, a policy change.
+**Announcements** are school-wide notices — a staff meeting, a deadline, a policy change, a sports day. When you post one (or edit it), choose **Who can see this?**:
 
-School-wide announcements appear for staff, with an unread marker until read. For something a course needs to know, post a **course announcement** from inside the course - those reach its students too.
+- **Staff only** (the default) — the staff notice board, as before. Staff see an unread marker until they have read it, and each post shows which staff have read it.
+- **Everyone — staff, students and parents** — also shown to every student of your school (on their portal home and the **Announcements** page, and in the app's **Home**) and to parents in the parent portal, if your school has the parent portal on and shows parents announcements. Students get a push notification when it is posted; parents who turned on announcement notices get an email or push. Read receipts still count staff only.
+
+Each post on the board is badged **Staff only** or **Everyone**. You can change a post's audience later; the change is recorded in the [audit log](./audit-log.md). Opening a staff-only post up to everyone notifies students then; narrowing it back to staff only hides it from students and parents straight away (notifications already sent cannot be recalled). Every announcement posted before audiences existed is **Staff only**.
+
+For something one course needs to know, post a **course announcement** from inside the course - those reach its students (and, if the school shows them, their parents).
 
 ## Settings
 

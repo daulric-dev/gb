@@ -3,6 +3,8 @@
  * and staff (/courses/...). Mirrors frontend/lib/courses/types.ts and
  * frontend/lib/courses/discussions.ts so both clients read the same shapes.
  */
+
+import type { AccommodationSummary } from "./accommodations";
 import type { Href } from "expo-router";
 import type { WorkKind } from "@/lib/work";
 import type { CourseGrade } from "@/lib/grades";
@@ -274,6 +276,8 @@ export interface TeacherSubmissionRow {
   effectiveDueAt?: string | null;
   /** A later due date for this student only. */
   extension?: StudentExtension | null;
+  /** Quiz accommodation (staff only; absent on older servers). */
+  accommodation?: AccommodationSummary | null;
   submission: {
     id: string;
     status: "draft" | "submitted" | "graded";

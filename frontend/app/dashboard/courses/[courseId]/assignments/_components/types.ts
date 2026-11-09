@@ -1,4 +1,5 @@
 import type { Activity, SubmissionStatus } from "@/lib/courses/types";
+import type { AccommodationSummary } from "@/lib/courses/accommodations";
 
 export interface QuizOption {
   id: string;
@@ -36,6 +37,10 @@ export interface SubmissionRow {
   effectiveDueAt?: string | null;
   /** A later due date for this student only. */
   extension?: StudentExtension | null;
+  /** A quiz accommodation (extra time, no Lockdown): this quiz's, else the default. */
+  accommodation?: AccommodationSummary | null;
+  /** The student's school-wide default, which applies without this quiz's own. */
+  defaultAccommodation?: AccommodationSummary | null;
   submission: {
     id: string;
     status: SubmissionStatus;

@@ -20,7 +20,7 @@ export interface UserProfile {
   last_name: string | null;
   role: string | null;
   /** 'staff' | 'student' - students use the portal, staff use the tabs. */
-  account_type: "staff" | "student" | null;
+  account_type: "staff" | "student" | "parent" | null;
   avatar_url: string | null;
   school_management: {
     role: string | null;

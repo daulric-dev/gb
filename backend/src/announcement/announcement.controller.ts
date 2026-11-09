@@ -17,8 +17,10 @@ import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { VersioningService } from '@/versioning/versioning.service';
 import { AnnouncementService } from './announcement.service';
-import { CreateAnnouncementDto } from './dto/create-announcement.dto';
-import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
+import {
+  CreateSchoolAnnouncementDto,
+  UpdateSchoolAnnouncementDto,
+} from './dto/school-announcement.dto';
 
 @ApiTags('Announcements')
 @ApiBearerAuth()
@@ -65,7 +67,7 @@ export class AnnouncementController {
 
   @RequirePermission('announcement', 'create')
   @Post()
-  async create(@Req() req: any, @Body() dto: CreateAnnouncementDto) {
+  async create(@Req() req: any, @Body() dto: CreateSchoolAnnouncementDto) {
     const userId: string = req.user.id;
     const raw = await this.announcementService.create(userId, dto);
     return this.versioning.resolve(req, 'announcement.created')(raw);
@@ -76,7 +78,7 @@ export class AnnouncementController {
   async update(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: UpdateAnnouncementDto,
+    @Body() dto: UpdateSchoolAnnouncementDto,
   ) {
     const userId: string = req.user.id;
     const raw = await this.announcementService.update(userId, id, dto);

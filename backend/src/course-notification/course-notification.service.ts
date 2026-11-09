@@ -107,6 +107,47 @@ export class CourseNotificationService {
   }
 
   /**
+   * A school-wide announcement meant for everyone was posted (or opened up to
+   * everyone). Every active, signed-up student of the school gets a push;
+   * there is no in-app notice row because those belong to a course. Parents
+   * hear through ParentNotificationService's sweep instead. PushService drops
+   * recipients while `push_notifications` is off. Never throws.
+   */
+  async schoolAnnouncementPosted(
+    schoolId: string,
+    announcement: { id: string; title: string; body: string | null },
+  ): Promise<void> {
+    try {
+      const students = await this.prisma.student.findMany({
+        where: {
+          school_id: schoolId,
+          is_active: { not: false },
+          user_profile_id: { not: null },
+        },
+        select: { user_profile_id: true },
+      });
+      const userIds = [
+        ...new Set(
+          students
+            .map((s) => s.user_profile_id)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      if (userIds.length === 0) return;
+      await this.push.sendToUsers(userIds, {
+        title: `School announcement: ${announcement.title}`,
+        body: preview(announcement.body) ?? 'Tap to open',
+        data: { type: 'school.announcement', announcementId: announcement.id },
+        channelId: COURSE_CHANNEL,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify school ${schoolId} of an announcement: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * A discussion topic went up (created published, or published later).
    * Each student hears about a topic once; its author is not told about
    * their own topic. Never throws.

@@ -49,7 +49,7 @@ Students are created by `POST /api/auth/join-school` (`src/student-account`) or 
 ## Data
 
 - `student.student` - read, updated ([`student.prisma`](../../prisma/schema/student.prisma)).
-- `student.parent_student_link` - read for guardians ([`student.prisma`](../../prisma/schema/student.prisma)).
+- `student.parent_student_link` - read for guardians ([`student.prisma`](../../prisma/schema/student.prisma)). Links are made and removed by [`src/parent-portal`](../parent-portal/README.md).
 - `course.course_student` with `course.course` - read for the profile's courses ([`course.prisma`](../../prisma/schema/course.prisma)).
 - `public.user_profile` - read for the caller's school and the linked account ([`school.prisma`](../../prisma/schema/school.prisma)).
 

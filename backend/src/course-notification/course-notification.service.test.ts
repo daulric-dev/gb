@@ -286,3 +286,34 @@ describe('CourseNotificationService list', () => {
     expect(args.data.read_at).toBeInstanceOf(Date);
   });
 });
+
+describe('CourseNotificationService school announcements', () => {
+  test("pushes to the school's active, signed-up students only, with no in-app rows", async () => {
+    const { prisma, service, pushes } = setup();
+    await service.schoolAnnouncementPosted('school-1', {
+      id: 'ann-9',
+      title: 'Sports day',
+      body: 'Friday   afternoon',
+    });
+    expect(prisma.student.findMany.mock.calls[0][0].where).toEqual({
+      school_id: 'school-1',
+      is_active: { not: false },
+      user_profile_id: { not: null },
+    });
+    expect(prisma.course_notification.createMany).not.toHaveBeenCalled();
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].userIds).toEqual(['u-1', 'u-2']);
+    expect(pushes[0].message).toMatchObject({
+      title: 'School announcement: Sports day',
+      body: 'Friday afternoon',
+      data: { type: 'school.announcement', announcementId: 'ann-9' },
+    });
+  });
+
+  test('never throws', async () => {
+    const { prisma, service, pushes } = setup();
+    prisma.student.findMany.mockRejectedValue(new Error('db down'));
+    await service.schoolAnnouncementPosted('school-1', { id: 'a', title: 't', body: null });
+    expect(pushes).toHaveLength(0);
+  });
+});

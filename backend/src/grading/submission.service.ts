@@ -39,6 +39,15 @@ import {
 } from './due-date';
 import { CacheService } from '@/cache/cache.service';
 import {
+  accommodatedTimeLimit,
+  effectiveAccommodation,
+  lockdownFor,
+  toAccommodationSummary,
+  type AccommodationRow,
+  type EffectiveAccommodation,
+} from './accommodation';
+import { loadAccommodation } from './accommodation.service';
+import {
   scoreValue,
   toActivityRef,
   WebhookEvents,
@@ -215,6 +224,45 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * The quiz accommodation that applies to this student on each activity:
+   * the activity's own, else their school-wide default.
+   */
+  private async accommodationsFor(
+    studentId: string,
+    activityIds: string[],
+  ): Promise<Map<string, EffectiveAccommodation | null>> {
+    if (activityIds.length === 0) return new Map();
+    const [own, fallback] = await Promise.all([
+      this.prisma.activity_accommodation.findMany({
+        where: { student_id: studentId, activity_id: { in: activityIds } },
+        select: {
+          activity_id: true,
+          time_multiplier: true,
+          extra_minutes: true,
+          lockdown_exempt: true,
+        },
+      }),
+      this.prisma.student_accommodation.findUnique({
+        where: { student_id: studentId },
+        select: {
+          time_multiplier: true,
+          extra_minutes: true,
+          lockdown_exempt: true,
+        },
+      }),
+    ]);
+    const ownOf = new Map<string, AccommodationRow>(
+      (own ?? []).map((r) => [r.activity_id, r]),
+    );
+    return new Map(
+      activityIds.map((id) => [
+        id,
+        effectiveAccommodation(ownOf.get(id), fallback),
+      ]),
+    );
+  }
+
+  /**
    * The student's to-do: published and closed work across every course they
    * can see. Drafts are the teacher's working copy; closed work stays so a
    * student can still see what they did and what it scored.
@@ -312,7 +360,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     if (rows.length === 0) return [];
 
     const activityIds = rows.map((a) => a.id);
-    const [submissions, extensions] = await Promise.all([
+    const quizIds = rows.filter((a) => a.kind === 'quiz').map((a) => a.id);
+    const [submissions, extensions, accommodations] = await Promise.all([
       this.prisma.submission.findMany({
         where: {
           student_id: studentId,
@@ -331,6 +380,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         },
       }),
       this.extensionsFor(studentId, activityIds),
+      this.accommodationsFor(studentId, quizIds),
     ]);
 
     const byActivity = new Map(submissions.map((s) => [s.activity_id, s]));
@@ -338,8 +388,15 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
     return rows.map((a) => {
       const submission = byActivity.get(a.id);
+      const accommodation = accommodations.get(a.id);
       return {
         ...toPortalActivity(a, submission),
+        // The student's own time and Lockdown, after any accommodation.
+        timeLimitMinutes: accommodatedTimeLimit(
+          a.time_limit_minutes,
+          accommodation,
+        ),
+        lockdownBrowser: lockdownFor(a.lockdown_browser, accommodation),
         ...studentDueFields(a.due_at, extensions.get(a.id), submission, now),
       };
     });
@@ -396,6 +453,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         },
       });
     }
+
+    const accommodation =
+      activity.kind === 'quiz'
+        ? await loadAccommodation(this.prisma, studentId, activityId)
+        : null;
 
     const savedAnswers =
       activity.kind === 'quiz' && submission?.quiz_started_at
@@ -502,8 +564,14 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       allowText: activity.allow_text,
       // 0 means unlimited, matching the teacher's editor.
       maxAttempts: activity.max_attempts ?? 0,
-      timeLimitMinutes: activity.time_limit_minutes,
-      lockdownBrowser: !!activity.lockdown_browser,
+      // The student's own time limit and Lockdown, after any accommodation;
+      // standardTimeLimitMinutes is the quiz's, so the page can show both.
+      timeLimitMinutes: accommodatedTimeLimit(
+        activity.time_limit_minutes,
+        accommodation,
+      ),
+      standardTimeLimitMinutes: activity.time_limit_minutes,
+      lockdownBrowser: lockdownFor(activity.lockdown_browser, accommodation),
       attemptsUsed: submission?.attempt_count ?? 0,
       questions,
       quizAttempt:
@@ -763,6 +831,9 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     }
 
     const draft = await this.ensureDraft(studentId, activityId);
+    const accommodation = activity.time_limit_minutes
+      ? await loadAccommodation(this.prisma, studentId, activityId)
+      : null;
     return this.prisma.$transaction(async (tx) => {
       const [locked] = await tx.$queryRaw<
         {
@@ -805,10 +876,12 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
       const startedAt = new Date();
       // With no time limit the attempt ends when the quiz is due, so the
-      // expiry sweep submits it then.
+      // expiry sweep submits it then. A timed attempt gets the student's
+      // accommodated time (extra time never applies to an untimed one: only
+      // an extension moves the due date).
       const expiresAt = newQuizAttemptExpiry(
         startedAt,
-        activity.time_limit_minutes,
+        accommodatedTimeLimit(activity.time_limit_minutes, accommodation),
         activity.effective_due_at,
       );
       await tx.quiz_answer.deleteMany({
@@ -918,6 +991,16 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     // Only lockdown quizzes are monitored; a normal quiz must not collect
     // tab-switch counts from a client that calls this anyway.
     if (!activity.lockdown_browser) {
+      return { ok: true };
+    }
+    // Nor is a student exempt from Lockdown: their assistive tools may take
+    // focus, and that must not read as leaving the quiz.
+    const accommodation = await loadAccommodation(
+      this.prisma,
+      studentId,
+      activityId,
+    );
+    if (accommodation?.lockdownExempt) {
       return { ok: true };
     }
 
@@ -1879,12 +1962,18 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       },
     });
     const extensionOf = new Map(extensions.map((e) => [e.student_id, e]));
+    const accommodationOf = await this.rosterAccommodations(
+      activity,
+      studentIds,
+    );
 
     const now = Date.now();
     const rows = await Promise.all(
       students.map(async (s) => {
         const submission = byStudent.get(s.id);
         const extension = extensionOf.get(s.id);
+        const accommodations = accommodationOf.get(s.id);
+        const accommodation = accommodations?.effective ?? null;
         const dueAt = effectiveDueAt(activity.due_at, extension?.due_at);
         const isActiveAttempt =
           activity.kind === 'quiz' &&
@@ -1894,8 +1983,12 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         let isAway = false;
         let awayReason: string | null = null;
         // Only lockdown quizzes send presence; without it every attempt
-        // would read as away once the heartbeat window passed.
-        if (isActiveAttempt && activity.lockdown_browser) {
+        // would read as away once the heartbeat window passed. A student
+        // exempt from Lockdown sends none either.
+        if (
+          isActiveAttempt &&
+          lockdownFor(activity.lockdown_browser, accommodation)
+        ) {
           const presence = (await this.cache?.get(
             `quiz:presence:${activityId}:${s.id}`,
           )) as
@@ -1939,6 +2032,12 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
                 updatedAt: ts(extension.updated_at) as string,
               }
             : null,
+          // Staff only: never sent to students.
+          accommodation: toAccommodationSummary(accommodation),
+          // What applies if this quiz's own accommodation is removed.
+          defaultAccommodation: toAccommodationSummary(
+            accommodations?.schoolDefault ?? null,
+          ),
           submission: submission
             ? {
                 id: submission.id,
@@ -1971,6 +2070,56 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       }),
     );
     return rows.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Each roster student's effective quiz accommodation on a quiz, and their
+   * school-wide default on its own.
+   */
+  private async rosterAccommodations(
+    activity: { id: string; kind: string },
+    studentIds: string[],
+  ): Promise<
+    Map<
+      string,
+      {
+        effective: EffectiveAccommodation | null;
+        schoolDefault: EffectiveAccommodation | null;
+      }
+    >
+  > {
+    if (activity.kind !== 'quiz' || studentIds.length === 0) return new Map();
+    const [own, defaults] = await Promise.all([
+      this.prisma.activity_accommodation.findMany({
+        where: { activity_id: activity.id },
+        select: {
+          student_id: true,
+          time_multiplier: true,
+          extra_minutes: true,
+          lockdown_exempt: true,
+        },
+      }),
+      this.prisma.student_accommodation.findMany({
+        where: { student_id: { in: studentIds } },
+        select: {
+          student_id: true,
+          time_multiplier: true,
+          extra_minutes: true,
+          lockdown_exempt: true,
+        },
+      }),
+    ]);
+    const ownOf = new Map((own ?? []).map((r) => [r.student_id, r]));
+    const defaultOf = new Map((defaults ?? []).map((r) => [r.student_id, r]));
+    return new Map(
+      studentIds.map((id) => [
+        id,
+        {
+          effective: effectiveAccommodation(ownOf.get(id), defaultOf.get(id)),
+          schoolDefault: effectiveAccommodation(null, defaultOf.get(id)),
+        },
+      ]),
+    );
   }
 
   private toMarked(row: any) {

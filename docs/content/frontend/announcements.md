@@ -13,11 +13,11 @@ A school-wide notice board. Any staff member with the `announcement:create` perm
 
 ### Board feed
 
-Announcements render as cards, newest first - title, author and timestamp, body, and a "Read by" row of avatars. Opening the page marks everything read.
+Announcements render as cards, newest first - title with an audience badge (**Everyone** or **Staff only**), author and timestamp, body, and a "Read by" row of avatars (staff only). Opening the page marks everything read.
 
 ### Composer
 
-A permission-gated **"New Announcement"** button opens a dialog with title + body. The same form is reused for editing. Edit/delete controls appear on a card only when the current user is the **author or a school admin**.
+A permission-gated **"New Announcement"** button opens a dialog with title + body and a **Who can see this?** choice: "Staff only" (default) or "Everyone — staff, students and parents" (labels in `lib/announcement-audience.ts`). The same form is reused for editing, where the audience can be changed. Edit/delete controls appear on a card only when the current user is the **author or a school admin**.
 
 ### Unread badge
 
@@ -40,6 +40,10 @@ Opening the board calls `markAnnouncementsRead()`, which clears the badge immedi
 | File | Purpose |
 |------|---------|
 | `page.tsx` | Board, composer dialog, edit/delete |
-| `_components/AnnouncementForm.tsx` | Create/edit form (title + body) |
+| `_components/AnnouncementForm.tsx` | Create/edit form (title, body, audience) |
 | `_components/ReaderAvatars.tsx` | Reader avatar stack with tooltips |
 | `_components/types.ts` | `Announcement` / `AnnouncementReader` types |
+
+## Students and parents
+
+`everyone` announcements also appear in the student portal (`app/portal/page.tsx` "School announcements" card with the newest three, and `app/portal/announcements/page.tsx` for all, both from `GET /portal/me/announcements`; nav item behind the `announcements` feature) and in the parent portal's per-child Announcements page (`app/parent/[studentId]/announcements/page.tsx`, badged **School**). Staff-only posts never reach either.

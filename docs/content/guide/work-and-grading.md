@@ -64,6 +64,25 @@ What students see on each platform:
 
 If pinning does not work on a device (for example Guided Access was never set up and the student cannot change Settings), the student can **Start without pinning**; you see **App not pinned** for that attempt. Phones still cannot be locked down completely - treat these reports as signals, not proof.
 
+### Accommodations: extra time and Lockdown exemption
+
+Some students need more time, or rely on assistive technology (a screen reader, dictation, a magnifier) that Lockdown would block or report as leaving the quiz. Give them an **accommodation** instead of a separate quiz:
+
+- **Extra time** - ×1.25, ×1.5 or ×2 the time limit, or a number of extra minutes (1 to 600). A ×1.5 student gets 45 minutes on a 30-minute quiz; their timer shows their own time.
+- **Exempt from Lockdown** - the student takes a Lockdown quiz without the rules screen, fullscreen or app pinning, and is never shown as **Away**.
+
+**On one quiz:** in the quiz's marks table, use the accessibility icon on a student's row (next to the due date action) and choose **Accommodations**. The row shows a badge such as **×1.5 time** or **No lockdown**.
+
+**For every quiz (school-wide):** on the student's page (**Students**, then the student), **Quiz accommodations** sets a default that applies to every timed or Lockdown quiz. Changing it needs permission to edit students. An accommodation set on one quiz replaces the default on that quiz; removing it brings the default back.
+
+Good to know:
+
+- Extra time only applies to quizzes with a time limit. A quiz without one already runs until it is due; to give more time there, **extend the due date** instead.
+- A timed attempt runs its full time, even past the due date, as for everyone else.
+- Adding or increasing an accommodation while the student is mid-quiz gives them the extra time straight away; reducing or removing one applies from their next attempt.
+- Accommodations and their reasons are only shown to staff. Other students never see them, and the student only sees their own time limit.
+- Every change is recorded in the audit log.
+
 ## Publishing
 
 **Publish** makes the work visible to students. **Questions lock at publish** - changing them afterwards would silently rescore work already handed in. Title, instructions, due date and points stay editable. **Close** stops new submissions without hiding anything.

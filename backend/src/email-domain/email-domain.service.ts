@@ -655,6 +655,8 @@ export class EmailDomainService {
       select: { school_id: true, account_type: true, first_name: true },
     });
     if (!profile || profile.school_id || !profile.first_name) return null;
+    // A parent account never joins a school by its address.
+    if (profile.account_type === 'parent') return null;
 
     const audience: AccountAudience =
       profile.account_type === 'student' ? 'student' : 'staff';

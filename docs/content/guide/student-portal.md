@@ -9,7 +9,7 @@ Students get their own view - on the web and in the mobile app - showing one per
 
 ## Dashboard and courses
 
-Your course cards, each with your current grade, and what is due next across all of them. **Join a course** takes the six-character code your teacher gives you. **Courses** also lists past (archived) courses, which stay readable.
+Your course cards, each with your current grade, and what is due next across all of them. **School announcements** - news your school posted for everyone - appear at the top of the dashboard (the newest three), and all of them on the **Announcements** page; in the app they are on **Home**. Staff-only notices are never shown to students. **Join a course** takes the six-character code your teacher gives you. **Courses** also lists past (archived) courses, which stay readable.
 
 Inside a course: **Home**, **Modules** (pages, work, files and links in order), **Assignments**, **Grades**, **Announcements**, **Discussions** and **Attendance**.
 
@@ -22,6 +22,7 @@ The mobile app has the same course screen: tap a course on **Home** and switch b
 - **Assignments** - attach a file, type an answer, or both. Attaching is not handing in: press **Hand in** when you are ready.
 - **Quizzes** - track how many questions you have answered and see which ones still need an answer. Once all are answered, confirm before submitting; the confirmation explains how the submission affects your attempts. The score appears straight away. If retakes are allowed, **Try again** appears after your result. Correct answers are never shown.
 - **Lockdown quizzes** - in the app, the quiz is pinned to the screen: on Android confirm the **Pin this app?** prompt; on iPhone/iPad turn on Guided Access (set it up once in **Settings > Accessibility > Guided Access**, then triple-click the side button and tap **Start**). Screenshots and recordings are blocked and reported, and leaving or unpinning the app is shown to your teacher. After submitting, iPhone users triple-click and enter their Guided Access passcode to end it.
+- **Extra time or no Lockdown** - if you need more time or use assistive technology that Lockdown gets in the way of, ask your teacher or school. With an accommodation, the quiz shows your own time limit, and a Lockdown quiz starts without fullscreen or pinning.
 - **Offline work** - done on paper; your teacher records the mark here.
 
 Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes show answer progress and unanswered question numbers, and ask you to confirm before submission. **Try again** appears when retakes are allowed.
@@ -31,6 +32,8 @@ Once work is marked you see your score (to two decimal places) and your teacher'
 **Calendar** shows a month at a time with every piece of work on the day it is due, coloured by course. Pick a day to see what is due, at what time, and whether you have handed it in. **Export .ics** saves the month's due dates for Google Calendar, Outlook or Apple Calendar (a one-off copy; export again to pick up changes). In the app, the **Calendar** tab lists the next two months day by day.
 
 When a teacher publishes new work, posts a course announcement or publishes a discussion topic, or someone replies in a discussion you started or posted in, you get a notification (several replies to the same topic are gathered into one): the **bell** in the portal header shows how many are unread, and the app sends a push. Opening a notification marks it read and takes you to the work, or to the course's announcements - in the app too: a new-work push opens the work screen and an announcement push opens the course on its **Announcements** section. **Mark all read** clears the bell. Draft courses never notify, and work that is closed and reopened does not notify you twice.
+
+When your school posts an announcement for everyone, the app sends a push (tapping it opens **Home**). School announcements are not in the bell; they stay on the dashboard and the **Announcements** page.
 
 ## Grades
 

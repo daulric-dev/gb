@@ -17,6 +17,7 @@ import { formatScore } from "@/lib/format-number";
 import { href, type StaffActivity, type TeacherSubmissionRow } from "@/lib/course";
 import { WebHint } from "@/features/course/StaffSections";
 import { ExtensionBadge, LockdownMonitorSummary, LockdownPresence } from "@/features/course/LockdownPresence";
+import { AccommodationBadge } from "@/features/course/AccommodationBadge";
 import { useLiveRoster } from "@/lib/use-live-roster";
 
 type Filter = "all" | "tomark" | "marked";
@@ -238,6 +239,9 @@ export default function ActivitySubmissionsScreen() {
                         : ""}
                     </Text>
                     <ExtensionBadge extension={r.extension} />
+                    {activity.kind === "quiz" ? (
+                      <AccommodationBadge accommodation={r.accommodation} />
+                    ) : null}
                     {lockdown ? (
                       <LockdownPresence submission={r.submission} />
                     ) : null}

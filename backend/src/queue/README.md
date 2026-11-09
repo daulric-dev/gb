@@ -67,6 +67,7 @@ The tests run the handler directly against `createMockPrisma()` (no Redis): a us
 ## See also
 
 - [src/integrations/README.md](../integrations/README.md) - webhook deliveries use their own BullMQ queue (`webhook-deliver`) in Redis mode, and a database poller otherwise.
+- [src/report-card/README.md](../report-card/README.md) - report card PDFs use their own BullMQ queue (`report-card-generate`) in Redis mode, sharing this module's connection, and run in-process otherwise.
 
 - [docs/content/backend/file-manager.md](../../../docs/content/backend/file-manager.md)
 - [src/file-manager/README.md](../file-manager/README.md), [src/storage/README.md](../storage/README.md), [src/realtime/README.md](../realtime/README.md) (the other Redis user)

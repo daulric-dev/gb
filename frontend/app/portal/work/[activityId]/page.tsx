@@ -51,6 +51,7 @@ import { DueDateNotice } from "../../_components/due-notice";
 import { userMessage } from "@/lib/errors";
 import { useQuizLockdown } from "@/hooks/use-quiz-lockdown";
 import { enterFullscreen, exitFullscreen } from "@/lib/quiz-lockdown";
+import { quizMinutesLabel } from "@/lib/courses/accommodations";
 import {
   LockdownOverlay,
   LockdownStartCard,
@@ -555,7 +556,7 @@ export default function PortalWorkDetailPage() {
             <LockdownStartCard
               details={`${
                 w.timeLimitMinutes
-                  ? `You have ${w.timeLimitMinutes} minutes, and the timer keeps running if you leave.`
+                  ? `You have ${quizMinutesLabel(w.timeLimitMinutes, w.standardTimeLimitMinutes)}, and the timer keeps running if you leave.`
                   : "Your answers are saved as you work."
               }${
                 w.maxAttempts === 0
@@ -575,7 +576,7 @@ export default function PortalWorkDetailPage() {
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {w.timeLimitMinutes
-                    ? `You have ${w.timeLimitMinutes} minutes. The timer starts when you begin and continues if you leave the quiz.`
+                    ? `You have ${quizMinutesLabel(w.timeLimitMinutes, w.standardTimeLimitMinutes)}. The timer starts when you begin and continues if you leave the quiz.`
                     : "Your answers are saved as you work. You can leave and return to this attempt."}
                   {w.maxAttempts === 0
                     ? " Retakes are unlimited."

@@ -32,6 +32,7 @@ import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
 import { CourseThumb } from "@/features/course/CourseBanner";
 import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
 import { useFeatures } from "@/lib/use-features";
+import { SchoolAnnouncements } from "@/features/announcements/SchoolAnnouncements";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
@@ -41,6 +42,7 @@ export default function PortalHomeScreen() {
   const { profile } = useAuth();
   const { hasFeature } = useFeatures();
   const attendanceOn = hasFeature("attendance");
+  const announcementsOn = hasFeature("announcements");
   const router = useRouter();
   const { colors } = useTheme();
   const [me, setMe] = useState<PortalMe | null>(null);
@@ -99,6 +101,8 @@ export default function PortalHomeScreen() {
           <OpenAttendanceCards refreshKey={refreshKey} />
         </>
       )}
+
+      {announcementsOn && <SchoolAnnouncements refreshKey={refreshKey} />}
 
       <View style={styles.stats}>
         <StatCard

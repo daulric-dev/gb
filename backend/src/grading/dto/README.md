@@ -20,6 +20,12 @@ Marks and rubric points may have at most **two decimal places** (`IsNumber({ max
 
 The service adds its own checks. Choice questions need at least two options with exactly one correct, and a short answer needs at least one accepted wording. An assignment must accept a file or text.
 
+## `accommodation.dto.ts`
+
+| Class | Used by | Key rules |
+| --- | --- | --- |
+| `SetAccommodationDto` | `PUT /api/activities/:activityId/accommodations/:studentId`, `PUT /api/students/:studentId/accommodation` | `timeMultiplier`: optional, `1.25`, `1.5` or `2`. `extraMinutes`: optional int, 1 to 600. `lockdownExempt`: optional boolean. `reason`: optional, at most 500. The service refuses both kinds of time at once, and an accommodation that changes nothing. |
+
 ## `assignment-group.dto.ts`
 
 | Class | Used by | Key rules |

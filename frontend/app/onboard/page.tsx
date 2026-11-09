@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
 import { useAuth, type UserProfile } from "@/providers/AuthProvider";
 import { homePathFor } from "@/lib/routing";
+import { PARENT_LINK_PATH } from "@/lib/parent";
 import { useSetupGate } from "@/lib/setup";
 import type { SsoSuggestedProfile } from "@/lib/sso";
 import { cn } from "@/lib/utils";
@@ -213,6 +215,12 @@ export default function OnboardPage() {
               {loading.value ? "Saving..." : "Continue"}
             </Button>
           </form>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            A parent or guardian?{" "}
+            <Link href={PARENT_LINK_PATH} className="underline underline-offset-4">
+              Enter the code from your child&apos;s school
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </AuthPageShell>

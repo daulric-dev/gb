@@ -508,7 +508,7 @@ export class PermissionService {
     // school_management row, so computing an effective set would query for a
     // membership that is never there. Their access comes from StudentGuard and
     // the /portal surface instead.
-    if (accountType === 'student') {
+    if (accountType === 'student' || accountType === 'parent') {
       return {
         schoolId,
         role: null,

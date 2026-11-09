@@ -87,7 +87,7 @@ type AuthorRecord = {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
-  account_type: 'staff' | 'student';
+  account_type: 'staff' | 'student' | 'parent';
 } | null;
 
 type TopicRecord = Prisma.discussion_topicGetPayload<{ select: typeof TOPIC_SELECT }>;

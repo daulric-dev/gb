@@ -94,6 +94,11 @@ describe("homePathFor", () => {
     expect(homePathFor(null)).toBe("/login");
   });
 
+  test("parents go to the parent portal, school or not", () => {
+    expect(homePathFor(profile({ account_type: "parent", school: null, role: null }))).toBe("/parent");
+    expect(homePathFor(profile({ account_type: "parent" }))).toBe("/parent");
+  });
+
   test("staff and students with a school go to their app", () => {
     expect(homePathFor(profile())).toBe("/dashboard");
     expect(homePathFor(profile({ account_type: "student" }))).toBe("/portal");

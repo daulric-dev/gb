@@ -1,0 +1,104 @@
+/// One term's report cards for one school: the comment deadline, and whether
+/// (and by whom) they are published. Students only see a term's reports while
+/// published_at is set. See src/report-card.
+model report_release {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id        String        @db.Uuid
+  term_id          String        @db.Uuid
+  comment_deadline DateTime?     @db.Timestamptz(6)
+  published_at     DateTime?     @db.Timestamptz(6)
+  published_by     String?       @db.Uuid
+  created_at       DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime      @default(now()) @db.Timestamptz(6)
+  school           school        @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term             term          @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile     user_profile? @relation(fields: [published_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([school_id, term_id], map: "report_release_school_term_key")
+  @@index([term_id], map: "idx_report_release_term")
+  @@index([published_by], map: "idx_report_release_published_by")
+  @@schema("grading")
+}
+
+/// A course teacher's comment on one student for one term.
+model report_comment {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  term_id      String                @db.Uuid
+  course_id    String                @db.Uuid
+  student_id   String                @db.Uuid
+  author_id    String?               @db.Uuid
+  body         String                @default("")
+  status       report_comment_status @default(draft)
+  created_at   DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime              @default(now()) @db.Timestamptz(6)
+  term         term                  @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course       course                @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student      student               @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile user_profile?         @relation(fields: [author_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([term_id, course_id, student_id], map: "report_comment_term_course_student_key")
+  @@index([course_id], map: "idx_report_comment_course")
+  @@index([student_id], map: "idx_report_comment_student")
+  @@index([author_id], map: "idx_report_comment_author")
+  @@schema("grading")
+}
+
+/// The head's or form tutor's comment on one student for one term.
+model report_head_comment {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  term_id      String        @db.Uuid
+  student_id   String        @db.Uuid
+  author_id    String?       @db.Uuid
+  body         String        @default("")
+  created_at   DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime      @default(now()) @db.Timestamptz(6)
+  term         term          @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student      student       @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile user_profile? @relation(fields: [author_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([term_id, student_id], map: "report_head_comment_term_student_key")
+  @@index([student_id], map: "idx_report_head_comment_student")
+  @@index([author_id], map: "idx_report_head_comment_author")
+  @@schema("grading")
+}
+
+/// A generated term report PDF for one student, stored at storage_key
+/// (report-cards/schools/<school>/terms/<term>/<student>.pdf). Written by the
+/// generation job; one row per (term, student), regenerated in place.
+model report_document {
+  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id    String                 @db.Uuid
+  term_id      String                 @db.Uuid
+  student_id   String                 @db.Uuid
+  status       report_document_status @default(pending)
+  storage_key  String?
+  byte_size    Int?
+  attempts     Int                    @default(0)
+  error        String?
+  generated_at DateTime?              @db.Timestamptz(6)
+  created_at   DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime               @default(now()) @db.Timestamptz(6)
+  school       school                 @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  term         term                   @relation(fields: [term_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student      student                @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([term_id, student_id], map: "report_document_term_student_key")
+  @@index([school_id, term_id], map: "idx_report_document_school_term")
+  @@index([student_id], map: "idx_report_document_student")
+  @@schema("grading")
+}
+
+enum report_comment_status {
+  draft
+  ready
+
+  @@schema("grading")
+}
+
+enum report_document_status {
+  pending
+  ready
+  failed
+
+  @@schema("grading")
+}

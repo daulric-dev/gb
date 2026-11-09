@@ -109,6 +109,19 @@ GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/sr
 | `ERASURE_LOG_S3_PREFIX` | No | `erasure-log` | Prefix in `S3_BUCKET` for the off-database copy of the erasure log (one signed JSON object per entry). `off` disables the copy - then a restore can only replay entries still in the restored database. |
 | `ERASURE_LOG_RETENTION_DAYS` | No | `400` | How long erasure-log entries (rows and storage copies) are kept. Must be longer than any backup you could restore (30-day dumps + 7 days of old versions by default). |
 
+### Parent portal
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `PARENT_NOTIFICATIONS_SWEEP` | No | `true` | `false` stops the 15-minute sweep that sends parent notices (see `backend/src/parent-portal/README.md`). The notices also need the `parent_notifications` feature. |
+
+### Report cards
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `REPORT_GENERATION_SWEEP` | No | `true` | `false` stops the sweep that resumes report card PDFs a restart left behind (on boot and every 5 minutes, one instance at a time; see `backend/src/report-card/README.md`). |
+| `REPORT_PDF_EXTRA_FONT` | No | - | Path to an extra TrueType/OpenType font (not `.ttc`) for characters the bundled Noto Sans lacks, such as Chinese, Japanese, Korean or Arabic names on report cards and transcripts. Without it they are drawn as a replacement character. |
+
 ### Example `backend/.env`
 
 `backend/.env.example` is the full, commented template; its defaults match `docker-compose.dev.yml`.

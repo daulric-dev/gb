@@ -31,6 +31,7 @@ import { RubricView } from "@/features/course/RubricView";
 import { userMessage } from "@/lib/errors";
 import { useQuizLockdown } from "@/lib/use-quiz-lockdown";
 import { PINNING_PLATFORM, useAppPinning } from "@/lib/use-app-pinning";
+import { quizMinutesLabel } from "@/lib/accommodations";
 import {
   LockdownOverlay,
   LockdownStartCard,
@@ -599,7 +600,7 @@ export default function WorkDetailScreen() {
               <LockdownStartCard
                 details={`${
                   work.timeLimitMinutes
-                    ? `You have ${work.timeLimitMinutes} minutes, and the timer keeps running if you leave.`
+                    ? `You have ${quizMinutesLabel(work.timeLimitMinutes, work.standardTimeLimitMinutes)}, and the timer keeps running if you leave.`
                     : "Your answers are saved as you work."
                 }${
                   work.maxAttempts === 0
@@ -631,7 +632,7 @@ export default function WorkDetailScreen() {
                   </Text>
                   <Text variant="muted" size="sm">
                     {work.timeLimitMinutes
-                      ? `You have ${work.timeLimitMinutes} minutes. The timer starts when you begin and continues if you leave the quiz.`
+                      ? `You have ${quizMinutesLabel(work.timeLimitMinutes, work.standardTimeLimitMinutes)}. The timer starts when you begin and continues if you leave the quiz.`
                       : "Your answers are saved as you work. You can leave and return to this attempt."}
                     {work.maxAttempts === 0
                       ? " Retakes are unlimited."

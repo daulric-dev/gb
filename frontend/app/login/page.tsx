@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useProfile } from "@/providers/AuthProvider";
 import { homePathFor, NEXT_PARAM, safeNextPath } from "@/lib/routing";
+import { isParentJoinPath } from "@/lib/parent";
 import {
   isSsoRequiredMessage,
   ssoErrorMessage,
@@ -59,8 +60,9 @@ function LoginEmailForm() {
     if (!profile.value) return;
     const home = homePathFor(profile.value);
     // Unfinished setup comes first; otherwise go back where they came from.
-    const setupDone = home === "/portal" || home === "/dashboard";
-    router.replace(setupDone && next ? next : home);
+    const setupDone = home === "/portal" || home === "/dashboard" || home === "/parent";
+    // Accepting a parent invitation finishes setting the account up there.
+    router.replace((setupDone || (next && isParentJoinPath(next))) && next ? next : home);
   }, [profileLoading.value, profile.value, router, next]);
 
   // Buttons that work without knowing the school (the server's own apps). A

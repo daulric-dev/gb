@@ -51,7 +51,7 @@ Questions are frozen once a quiz is published, because changing the answer key w
 | PATCH | `/api/activities/:activityId/submissions/:studentId/excuse` | Staff | Excuse or un-excuse (`ExcuseSubmissionDto`). Any mark is kept. A student with no submission gets a `graded` row with no score. |
 | GET | `/api/activities/submissions/:submissionId/file` | Staff | The file a student handed in, served inline |
 
-Each roster row also carries `effectiveDueAt` (the student's extension, else the activity's due date) and `extension` (`{ dueAt, reason, createdBy, createdAt, updatedAt }` or `null`).
+Each roster row also carries `effectiveDueAt` (the student's extension, else the activity's due date) and `extension` (`{ dueAt, reason, createdBy, createdAt, updatedAt }` or `null`). On a quiz it carries `accommodation` (the effective one: `{ source: 'activity' | 'student', timeMultiplier, extraMinutes, lockdownExempt }` or `null`) and `defaultAccommodation` (the student's school-wide default on its own, which applies again if the quiz's own is removed). A Lockdown-exempt student is never reported away.
 
 #### Due date extensions (`extension.controller.ts`, served by `ExtensionService`)
 
@@ -62,6 +62,29 @@ Each roster row also carries `effectiveDueAt` (the student's extension, else the
 | DELETE | `/api/activities/:activityId/extensions/:studentId` | Staff | Remove the extension (`204`); `404` when there is none. Audited. |
 
 Due dates are enforced on the student routes (`due-date.ts`): after the student's effective due date, starting a quiz, saving quiz answers, handing in, upload tickets and attaching uploads are a `409` ("This was due on … UTC. Ask your teacher for an extension"). A quiz attempt started in time runs to its own `quiz_expires_at`; an untimed attempt is stamped to expire at the due date, so the expiry sweep submits it then, and moving the due date (an extension set or removed, the activity's date edited) moves running untimed attempts with it. Marking, excusing, import and offline work ignore due dates. Portal activity responses carry `effectiveDueAt`, `hasExtension` and `isClosed`.
+
+#### Quiz accommodations (`accommodation.controller.ts`, served by `AccommodationService`)
+
+A student can have more time on timed quizzes (a multiplier of ×1.25, ×1.5 or ×2, **or** 1 to 600 extra minutes) and/or be **exempt from Lockdown**. A school-wide default per student (`grading.student_accommodation`) applies to every quiz; an accommodation on one quiz (`grading.activity_accommodation`) replaces the default entirely on that quiz. An accommodation must change something (time or Lockdown).
+
+| Method | Path | Who | What it does |
+| --- | --- | --- | --- |
+| GET | `/api/activities/:activityId/accommodations` | Staff | Every accommodation on the activity (with `reason`) |
+| PUT | `/api/activities/:activityId/accommodations/:studentId` | Staff | Set or replace one student's accommodation (`SetAccommodationDto`). Quizzes only; the student must be enrolled (not dropped). Audited as `activity_accommodation`. |
+| DELETE | `/api/activities/:activityId/accommodations/:studentId` | Staff | Remove it (`204`); the default, if any, applies again. `404` when there is none. Audited. |
+| GET | `/api/students/:studentId/accommodation` | `student:read` | The student's school-wide default, or an empty body when there is none |
+| PUT | `/api/students/:studentId/accommodation` | `student:update` | Set or replace the default (`SetAccommodationDto`). Audited as `student_accommodation`. |
+| DELETE | `/api/students/:studentId/accommodation` | `student:update` | Remove the default (`204`). Audited. |
+
+"Staff" is the same check as extensions (teacher, TA or course admin in the activity's course). The `/students` routes are scoped to the caller's school; a student elsewhere is a `404`.
+
+How it applies (`accommodation.ts`):
+
+- **Start.** A timed attempt's `quiz_expires_at` is the start plus the accommodated limit: `ceil(limit × multiplier)` or `limit + extra minutes`. A ×1.5 student gets 45 minutes on a 30-minute quiz. As before, a timed attempt runs its full (accommodated) time even past the due date.
+- **Untimed quizzes.** Extra time does not apply: an untimed attempt still ends at the student's effective due date. Only an extension moves that.
+- **Changes mid-attempt.** Setting or changing an accommodation re-stamps the student's running timed attempts to `started + new limit`, but only ever later: a running attempt never loses time, so a reduction or removal applies from the next attempt. Resuming returns the stamped expiry; the expiry sweep and the submit-on-read path use it unchanged.
+- **Lockdown exemption.** The presence endpoint is a no-op for the student, the roster never marks them away, and their activity responses (`GET /api/portal/me/activities/:id`, the course list) report `lockdownBrowser: false`, so web and mobile skip the rules card, fullscreen and pinning.
+- **What the student sees.** Their own `timeLimitMinutes` (already accommodated) and `standardTimeLimitMinutes` (the quiz's). Never the reason, the source, or anyone else's accommodation.
 
 #### Assignment groups (`assignment-group.controller.ts`)
 
@@ -119,6 +142,8 @@ Due dates are enforced on the student routes (`due-date.ts`): after the student'
 
 **`SubmissionService`**, staff side: `listForTeacher()`, `grade()`, `gradeSubmission()`, `excuse()`, `readSubmissionFile()`.
 
+**`AccommodationService`**: `listForActivity()`, `setForActivity()`, `removeForActivity()`, `getForStudent()`, `setForStudent()`, `removeForStudent()`. Module-level helpers: `loadAccommodation(prisma, studentId, activityId)` (used by `SubmissionService`) and `restampRunningQuizAttempts()`.
+
 **`AssignmentGroupService`**: `loadForCourse()` (also used by the gradebook), `list()`, `create()`, `update()`, `reorder()`, `remove()`.
 
 **`RubricService`**: `list()`, `get()`, `create()`, `update()`, `copy()`, `remove()`, `attach()`, `forActivity()`, `assess()`. The module-level helpers `loadRubric()` and `loadAssessments()` are exported for the portal's work view, which reads a rubric without the staff checks. `SubmissionService.getForStudent()` uses them.
@@ -143,6 +168,7 @@ Due dates are enforced on the student routes (`due-date.ts`): after the student'
   - Wire shapes: `toActivity()`, `toPortalActivity()`, `toPortalSubmission()`. A score and feedback reach a student only once the work is graded.
   - Query fragments: `ACTIVITY_SELECT`, `ACTIVITY_ORDER`.
   - Dates: `toTimestamp()` (a date without an offset is read as UTC) and `ts()`.
+- **`accommodation.ts`**: `effectiveAccommodation()` (the activity's row, else the default), `accommodatedTimeLimit()`, `lockdownFor()`, `accommodationColumns()` (validation), `TIME_MULTIPLIERS`.
 - **`round.ts`**: `roundScore()` (two decimals) and `scoreOrNull()`. Stored values keep full precision. Totals are computed from the unrounded values and rounded once at the end.
 
 ## How the course grade is calculated
@@ -205,6 +231,7 @@ Rows are CRLF-terminated. `csvCell()` prefixes cells that start with `= + - @ ta
   - It also uses `SubmitAssignmentDto` and `SubmitQuizDto` from `dto/activity.dto.ts`.
   - `student-portal.service.ts` calls `GradebookService.studentSummary()` for each portal course card.
 - `src/attendance/attendance.service.ts` imports `csvCell` for its own CSV export.
+- `src/report-card` imports `calculateCourseGrade()`, `letterFor()` and the `Calc*` types from `gradebook.calc.ts` (a term's final grade per course), `scoreOrNull()` from `round.ts` and `contentDisposition()`.
 - `src/calendar/calendar.service.ts` imports `roundScore`.
 - `src/app.module.ts` imports `GradingModule`.
 - Front end:
@@ -237,6 +264,8 @@ See [`prisma/schema/grading.prisma`](../../prisma/schema/grading.prisma) and [`p
 | `grading.quiz_answer` | A student's answers for the current attempt |
 | `grading.submission` | Work and the mark: `status`, `score`, `feedback`, `excused`, `excused_reason`, `text_body`, `file_id`, `attempt_count`, `graded_by`, `graded_at`. Unique on `(activity_id, student_id)`. |
 | `grading.activity_extension` | One later due date per `(activity_id, student_id)`, with `reason` and `created_by` |
+| `grading.activity_accommodation` | One quiz accommodation per `(activity_id, student_id)`: `time_multiplier` (1.25, 1.5, 2) or `extra_minutes` (1-600), `lockdown_exempt`, `reason`, `created_by` |
+| `grading.student_accommodation` | One school-wide default per student (the student row is school-scoped), same columns |
 | `grading.rubric`, `rubric_criterion`, `rubric_rating`, `rubric_assessment` | Rubrics and per-criterion marks |
 | `grading.grade_scale`, `grade_scale_band` | Read for letters |
 | `course.assignment_group` | Groups, weights, positions, `drop_lowest` and `drop_highest` |
@@ -269,6 +298,8 @@ None.
 | `round.ts` | Two-decimal rounding |
 | `due-date.ts` | Effective due dates, past-due checks and the quiz attempt grace (pure) |
 | `extension.controller.ts`, `extension.service.ts` | Per-student due date extensions |
+| `accommodation.ts` | Effective accommodation and accommodated time limit (pure) |
+| `accommodation.controller.ts`, `accommodation.service.ts` | Per-student quiz accommodations, on one quiz and the school-wide default |
 | `activity.service.test.ts` | Activity tests |
 | `submission.service.test.ts` | Submission tests |
 | `rubric.service.test.ts` | Rubric tests |
@@ -286,6 +317,7 @@ None.
 - **`gradebook-import.test.ts`**: `parseCsv()` and `planImport()` matching and changes.
 - **`activity.service.test.ts`**: create, update and publish validation, and role checks.
 - **`submission.service.test.ts`**: file handling, student access to activities, and marking.
+- **`accommodation.test.ts`**, **`accommodation.service.test.ts`**, **`submission.accommodation.test.ts`**: effective time (multiplier, extra minutes, override vs default, none), validation, permissions and audit, quiz start expiry, untimed attempts and the due date, Lockdown exemption in presence, the roster and the student's view.
 - **`rubric.service.test.ts`**: create and update rules, attach, assess and `forActivity()`.
 
 ## See also

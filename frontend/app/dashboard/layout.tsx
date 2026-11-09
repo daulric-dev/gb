@@ -2,7 +2,7 @@
 
 import { useProfile } from "@/providers/AuthProvider";
 import { PermissionsProvider } from "@/providers/PermissionsProvider";
-import { homePathFor, isStudentProfile } from "@/lib/routing";
+import { homePathFor, isParentProfile, isStudentProfile } from "@/lib/routing";
 import { useSetupGate } from "@/lib/setup";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -38,6 +38,11 @@ export default function DashboardLayout({children}: { children: React.ReactNode 
       router.replace("/portal");
       return;
     }
+    // Parents have their own read-only portal.
+    if (isParentProfile(profile.value)) {
+      router.replace(homePathFor(profile.value));
+      return;
+    }
     // No school yet: onboarding, the school list, or - for an organisation
     // admin - the organisation console.
     if (!profile.value.school) {
@@ -46,7 +51,7 @@ export default function DashboardLayout({children}: { children: React.ReactNode 
   }, [loading.value, profile.value, router]);
 
   if (loading.value || !profile.value?.school) return null;
-  if (isStudentProfile(profile.value)) return null;
+  if (isStudentProfile(profile.value) || isParentProfile(profile.value)) return null;
 
   // A page whose feature is off (a bookmark, an old link) says so instead.
   const pageFeature = featureForPath(pathname);

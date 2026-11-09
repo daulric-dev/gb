@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { TextArea } from "@/components/ui/TextArea";
+import { Text } from "@/components/ui/Text";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import {
+  AUDIENCE_OPTIONS,
+  audienceOf,
+  type AnnouncementAudience,
+} from "@/lib/announcement-audience";
 import type { Announcement } from "./types";
 import { userMessage } from "@/lib/errors";
 
@@ -18,16 +25,21 @@ export function AnnouncementForm({
   onSuccess,
   basePath = "/announcements",
 }: {
-  announcement?: Pick<Announcement, "id" | "title" | "body">;
+  announcement?: Pick<Announcement, "id" | "title" | "body" | "audience">;
   onSuccess: () => void;
   /** Collection route; a course passes `/courses/:courseId/announcements`. */
   basePath?: string;
 }) {
+  // Only school-wide posts have an audience; course posts go to the course.
+  const schoolWide = basePath === "/announcements";
   const toast = useToast();
   const isEdit = !!announcement;
 
   const [title, setTitle] = useState(announcement?.title ?? "");
   const [body, setBody] = useState(announcement?.body ?? "");
+  const [audience, setAudience] = useState<AnnouncementAudience>(
+    audienceOf(announcement?.audience),
+  );
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -39,6 +51,7 @@ export function AnnouncementForm({
     const payload = {
       title: title.trim(),
       body: body.trim() || undefined,
+      ...(schoolWide ? { audience } : {}),
     };
     try {
       if (isEdit) {
@@ -80,6 +93,21 @@ export function AnnouncementForm({
           maxLength={5000}
         />
       </View>
+      {schoolWide ? (
+        <View style={{ gap: 6 }}>
+          <Label>Who can see this?</Label>
+          <SegmentedControl
+            options={AUDIENCE_OPTIONS}
+            value={audience}
+            onChange={setAudience}
+          />
+          <Text variant="muted" size="xs">
+            {audience === "everyone"
+              ? "Everyone: staff, students and parents. Students get a push notification; parents see it if your school shows them announcements."
+              : "Staff only: the staff notice board, with read receipts."}
+          </Text>
+        </View>
+      ) : null}
       <Button onPress={submit} loading={loading}>
         {isEdit ? "Save changes" : "Post announcement"}
       </Button>

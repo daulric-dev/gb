@@ -17,6 +17,9 @@ export const FEATURE_KEYS = [
   "course_copy",
   "push_notifications",
   "integrations",
+  "report_cards",
+  "parent_portal",
+  "parent_notifications",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -39,12 +42,18 @@ export const FALLBACK_FEATURES: FeatureMap = {
   course_copy: true,
   push_notifications: true,
   integrations: false,
+  // An older server has no report cards.
+  report_cards: false,
+  // Older servers have no parent portal.
+  parent_portal: false,
+  parent_notifications: false,
 };
 
 /** Features that only work while another one is on. */
 export const FEATURE_REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {
   student_messaging: ["messaging"],
   chat_channels: ["messaging"],
+  parent_notifications: ["parent_portal"],
 };
 
 /**
@@ -88,16 +97,20 @@ export function featureForPath(pathname: string): FeatureKey | null {
   if (under("/dashboard/announcements")) return "announcements";
   if (under("/dashboard/files")) return "files";
   if (under("/dashboard/calendar")) return "calendar";
+  if (under("/dashboard/reports")) return "report_cards";
 
   if (under("/portal/messages")) return "student_messaging";
+  if (under("/portal/announcements")) return "announcements";
   if (under("/portal/calendar")) return "calendar";
   if (under("/portal/attendance")) return "attendance";
+  if (under("/portal/reports")) return "report_cards";
   if (under("/scan")) return "attendance";
 
   const course = path.match(
     /^\/(?:dashboard|portal)\/courses\/[^/]+\/(announcements|discussions|attendance)(?:\/|$)/,
   );
   if (course) return course[1] as FeatureKey;
+  if (/^\/dashboard\/courses\/[^/]+\/reports(?:\/|$)/.test(path)) return "report_cards";
 
   return null;
 }
@@ -147,8 +160,12 @@ export const FEATURE_GROUPS: { title: string; keys: string[] }[] = [
       "push_notifications",
     ],
   },
-  { title: "Teaching", keys: ["attendance", "calendar", "course_copy"] },
+  {
+    title: "Teaching",
+    keys: ["attendance", "calendar", "course_copy", "report_cards"],
+  },
   { title: "Content", keys: ["files"] },
+  { title: "Families", keys: ["parent_portal", "parent_notifications"] },
   { title: "Integrations", keys: ["integrations"] },
 ];
 

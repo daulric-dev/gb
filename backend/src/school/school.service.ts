@@ -200,6 +200,9 @@ export class SchoolService {
         'Students join with the school join code, not a join request',
       );
     }
+    if (requester?.account_type === 'parent') {
+      throw new BadRequestException('A parent account cannot join a school as staff');
+    }
 
     if (request.school_id !== adminSchoolId) {
       throw new ForbiddenException(

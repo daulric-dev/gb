@@ -23,6 +23,7 @@ Event methods (never throw):
 
 - `activityPublished(courseId, { id, title, kind })` - notice titled "New quiz: ..." or "New work: ...". A student already told about this activity is not told again, so reopening does not repeat it.
 - `announcementPosted(courseId, { id, title, body })` - notice with the announcement title and a one-line body preview (whitespace collapsed, 140 characters max).
+- `schoolAnnouncementPosted(schoolId, { id, title, body })` - a school-wide announcement for everyone was posted (or widened from staff only): a push (`School announcement: <title>`, `data.type` `school.announcement`, `announcementId`) to every active student of the school with an account. No in-app row (notices belong to a course). `push_notifications` is applied by `PushService`.
 - `discussionTopicPublished(courseId, { id, title, body, authorUserProfileId })` - "New discussion: ..."; each student is told once per topic and the author is excluded.
 - `discussionReplied(courseId, topic, reply)` - tells the topic author and everyone who has posted in the topic, except the replier. Actively enrolled students get an in-app notice (at most one unread `discussion_reply` per topic, refreshed with the latest reply) and a push; course staff get the push only.
 
@@ -34,13 +35,13 @@ Recipient methods: `list(userId, opts)`, `unreadCount(userId)`, `markRead(userId
 
 - `CourseNotification` and `CourseNotificationKind` types (`activity_published`, `announcement`, `discussion_topic`, `discussion_reply`).
 - `COURSE_CHANNEL = 'coursework'`, the Android notification channel the mobile app creates for course news (mirrored in `mobile/src/lib/push.ts`).
-- Push payload `data.type` values: `course.activity_published`, `course.announcement`, `course.discussion`, with `courseId` and `activityId` / `announcementId` / `topicId`, used by the mobile app to route a tapped notification.
+- Push payload `data.type` values: `course.activity_published`, `course.announcement`, `course.discussion` (and `school.announcement`, which opens portal home in the app), with `courseId` and `activityId` / `announcementId` / `topicId`, used by the mobile app to route a tapped notification.
 
 ## Used by
 
 - `src/app.module.ts` imports `CourseNotificationModule`.
 - `src/grading/activity.service.ts` calls `activityPublished` after publishing an activity.
-- `src/announcement/announcement.service.ts` calls `announcementPosted` for course announcements.
+- `src/announcement/announcement.service.ts` calls `announcementPosted` for course announcements and `schoolAnnouncementPosted` for school announcements for everyone.
 - `src/discussion/discussion.service.ts` calls `discussionTopicPublished` and `discussionReplied`.
   All three inject the service as `@Optional()`.
 - Web: `frontend/lib/portal-notifications.ts` (list, unread count, read, read-all) used by `frontend/app/portal/_components/notification-bell.tsx`; types in `frontend/lib/courses/types.ts`.

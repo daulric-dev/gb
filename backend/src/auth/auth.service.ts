@@ -305,6 +305,11 @@ export class AuthService {
       .findUnique({ where: { id: userId }, select: { account_type: true } })
       .catch(() => null);
 
+    // Parent accounts (src/parent-portal) never become staff or students.
+    if (current?.account_type === 'parent') {
+      throw new ForbiddenException('Parent accounts cannot onboard as staff or students');
+    }
+
     if (current?.account_type === 'student' && dto.accountType !== 'student') {
       throw new ForbiddenException('Student accounts cannot onboard as staff');
     }

@@ -18,6 +18,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight, Mail, UserRound } from "lucide-react";
 import type { StudentProfile } from "../_components/types";
 import { bannerAccent } from "@/lib/courses/appearance";
+import { AccommodationCard } from "../_components/AccommodationCard";
+import { ParentLinksCard } from "../_components/ParentLinksCard";
+import { useFeatures } from "@/hooks/use-features";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -42,6 +45,7 @@ export default function StudentProfilePage() {
   const params = useParams<{ studentId: string }>();
   const studentId = params?.studentId ?? "";
 
+  const parentPortalOn = useFeatures().hasFeature("parent_portal");
   const profile = useSignal<StudentProfile | null>(null);
   const loading = useSignal(true);
 
@@ -124,6 +128,10 @@ export default function StudentProfilePage() {
         </CardContent>
       </Card>
 
+      <AccommodationCard studentId={student.id} />
+
+      <ParentLinksCard studentId={student.id} />
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Courses</CardTitle>
@@ -186,7 +194,7 @@ export default function StudentProfilePage() {
         </CardContent>
       </Card>
 
-      {guardians.length > 0 && (
+      {guardians.length > 0 && !parentPortalOn && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Guardians</CardTitle>

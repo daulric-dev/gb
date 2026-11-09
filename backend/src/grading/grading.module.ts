@@ -12,6 +12,11 @@ import { GradebookImportService } from './gradebook-import.service';
 import { RubricController } from './rubric.controller';
 import { ExtensionService } from './extension.service';
 import { ExtensionController } from './extension.controller';
+import { AccommodationService } from './accommodation.service';
+import {
+  ActivityAccommodationController,
+  StudentAccommodationController,
+} from './accommodation.controller';
 
 /**
  * Course work and marks: activities, submissions, assignment groups, rubrics
@@ -27,6 +32,7 @@ import { ExtensionController } from './extension.controller';
     RubricService,
     GradebookImportService,
     ExtensionService,
+    AccommodationService,
   ],
   // The student portal submits work, lists course activities and reads
   // grades through these.
@@ -37,6 +43,8 @@ import { ExtensionController } from './extension.controller';
     GradebookController,
     RubricController,
     ExtensionController,
+    ActivityAccommodationController,
+    StudentAccommodationController,
   ],
 })
 export class GradingModule {}

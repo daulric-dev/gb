@@ -17,6 +17,9 @@ export const FEATURE_KEYS = [
   "course_copy",
   "push_notifications",
   "integrations",
+  "report_cards",
+  "parent_portal",
+  "parent_notifications",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -35,11 +38,17 @@ export const FALLBACK_FEATURES: FeatureMap = {
   course_copy: true,
   push_notifications: true,
   integrations: false,
+  // An older server has no report cards.
+  report_cards: false,
+  // Older servers have no parent portal.
+  parent_portal: false,
+  parent_notifications: false,
 };
 
 const REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {
   student_messaging: ["messaging"],
   chat_channels: ["messaging"],
+  parent_notifications: ["parent_portal"],
 };
 
 export function resolveFeatures(

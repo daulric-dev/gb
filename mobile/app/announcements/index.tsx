@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
+import { Badge } from "@/components/ui/Badge";
+import { AUDIENCE_BADGES, audienceOf } from "@/lib/announcement-audience";
 import { Sheet } from "@/components/ui/Sheet";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -92,7 +94,7 @@ function AnnouncementsScreen() {
   return (
     <Screen
       title="Announcements"
-      description="Notices for all staff in your school"
+      description="For your school's staff, or for everyone: staff, students and parents"
       onBack={() => router.back()}
       refreshing={refreshing}
       onRefresh={onRefresh}
@@ -132,6 +134,13 @@ function AnnouncementsScreen() {
                 <CardHeader style={styles.cardHeader}>
                   <View style={{ flex: 1 }}>
                     <CardTitle>{a.title}</CardTitle>
+                    <View style={{ flexDirection: "row", marginTop: 4 }}>
+                      {audienceOf(a.audience) === "everyone" ? (
+                        <Badge variant="default">{AUDIENCE_BADGES.everyone}</Badge>
+                      ) : (
+                        <Badge variant="outline">{AUDIENCE_BADGES.staff}</Badge>
+                      )}
+                    </View>
                     <Text variant="muted" style={{ marginTop: 2 }}>
                       {authorName(a)} · {formatDate(a.created_at)}
                     </Text>
@@ -171,7 +180,7 @@ function AnnouncementsScreen() {
         description={
           editing
             ? "Update this notice"
-            : "Post a notice visible to everyone in your school"
+            : "Post a notice for staff only, or for everyone in your school"
         }
       >
         <AnnouncementForm
