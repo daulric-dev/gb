@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { plainText, redact, redactEmails, safeMarkdown, stripTags, suppliedUrls, trimTrailing } from './redact';
+import { MAX_SCAN_CHARS, plainText, redact, redactEmails, safeMarkdown, stripTags, suppliedUrls, trimTrailing } from './redact';
 
 const fast = (fn: () => unknown) => {
   const started = performance.now();
@@ -60,5 +60,21 @@ describe('trimTrailing', () => {
     expect(trimTrailing('!!!', '!')).toBe('');
     expect(fast(() => trimTrailing('!'.repeat(200_000) + 'x', '!'))).toBeLessThan(200);
     expect([...suppliedUrls('see https://a.example/p!!!')]).toEqual(['https://a.example/p']);
+  });
+});
+
+describe('loop bounds (CodeQL js/loop-bound-injection)', () => {
+  // Parsed JSON can hand a non-string with a huge `length` to these scanners.
+  const evil = { length: 1e12, 0: '<', 1: 'a' } as unknown as string;
+
+  test('a non-string is treated as empty text, without looping', () => {
+    expect(fast(() => stripTags(evil))).toBeLessThan(50);
+    expect(stripTags(evil)).toBe('');
+    expect(redactEmails(evil)).toBe('');
+    expect(trimTrailing(evil, '!')).toBe('');
+  });
+
+  test('scanning is capped at MAX_SCAN_CHARS', () => {
+    expect(stripTags('x'.repeat(MAX_SCAN_CHARS + 50)).length).toBe(MAX_SCAN_CHARS);
   });
 });

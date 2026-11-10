@@ -41,7 +41,8 @@ const DOMAIN_CHAR = /[A-Za-z0-9.-]/;
  * polynomial on runs like '%%%%'): the local part and domain stop at the
  * next '@', so every character is visited a bounded number of times.
  */
-export function redactEmails(text: string): string {
+export function redactEmails(input: string): string {
+  const text = scanText(input);
   let out = '';
   let copied = 0;
   for (let at = text.indexOf('@'); at !== -1; at = text.indexOf('@', at + 1)) {
@@ -64,7 +65,8 @@ export function redactEmails(text: string): string {
 }
 
 /** `value` without trailing characters from `chars`, in linear time. */
-export function trimTrailing(value: string, chars: string): string {
+export function trimTrailing(input: string, chars: string): string {
+  const value = scanText(input);
   let end = value.length;
   while (end > 0 && chars.includes(value[end - 1])) end--;
   return value.slice(0, end);
@@ -78,7 +80,7 @@ export function trimTrailing(value: string, chars: string): string {
  * and strictly shortens the text.
  */
 export function stripTags(text: string): string {
-  let current = text;
+  let current = scanText(text);
   for (;;) {
     let out = '';
     let i = 0;
@@ -96,6 +98,20 @@ export function stripTags(text: string): string {
     if (out === current) return out;
     current = out;
   }
+}
+
+/**
+ * Text that comes from parsed JSON (model output, request bodies) is typed
+ * as string but not guaranteed to be one at runtime: an object such as
+ * `{ length: 1e12 }` would turn a scanning loop into a denial of service
+ * (CodeQL js/loop-bound-injection). Every scanner below starts with this
+ * check, and the size cap bounds their work regardless of the caller.
+ */
+export const MAX_SCAN_CHARS = 200_000;
+
+function scanText(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.length > MAX_SCAN_CHARS ? value.slice(0, MAX_SCAN_CHARS) : value;
 }
 
 function escape(s: string): string {
