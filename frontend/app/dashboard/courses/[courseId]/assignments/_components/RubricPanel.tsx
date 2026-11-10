@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { Copy, Pencil, Plus, Table2, Unlink } from "lucide-react";
+import { Copy, Loader2, Pencil, Plus, Sparkles, Table2, Unlink } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ActivityRubric, Rubric } from "@/lib/courses/types";
 import { RubricGrid } from "@/components/rubric/RubricGrid";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/empty";
 import { RubricEditorDialog } from "./RubricEditorDialog";
 import { userMessage } from "@/lib/errors";
+import { aiCourseApi, aiErrorMessage, type RubricDraft } from "@/lib/ai";
 
 /**
  * The activity's rubric: what is attached, and (for the teacher) picking one
@@ -38,6 +39,7 @@ export function RubricPanel({
   rubric,
   canManage,
   onChangedAction,
+  ai = null,
 }: {
   courseId: string;
   activityId: string;
@@ -45,11 +47,34 @@ export function RubricPanel({
   rubric: Rubric | null;
   canManage: boolean;
   onChangedAction: () => void;
+  /** AI assistance on: "Draft a rubric with AI" from the activity's title and instructions. */
+  ai?: { title: string; instructions: string | null } | null;
 }) {
   useSignals();
   const rubrics = useSignal<Rubric[]>([]);
   const editing = useSignal<Rubric | null | "new">(null);
   const working = useSignal(false);
+  const drafting = useSignal(false);
+  const aiDraft = useSignal<RubricDraft["rubric"] | null>(null);
+
+  async function draftWithAi() {
+    if (!ai) return;
+    drafting.value = true;
+    try {
+      const out = await aiCourseApi.rubric(courseId, {
+        title: ai.title,
+        ...(ai.instructions?.trim() ? { instructions: ai.instructions } : {}),
+        ...(points >= 1 ? { totalPoints: points } : {}),
+      });
+      if (out.dropped) toast.message(`${out.dropped} criterion draft${out.dropped === 1 ? " was" : "s were"} left out (levels worth more than the criterion).`);
+      aiDraft.value = out.rubric;
+      editing.value = "new";
+    } catch (err) {
+      toast.error(aiErrorMessage(err));
+    } finally {
+      drafting.value = false;
+    }
+  }
 
   function loadRubrics() {
     api<Rubric[]>(`/courses/${courseId}/rubrics`)
@@ -123,10 +148,26 @@ export function RubricPanel({
               </SelectContent>
             </Select>
           )}
-          <Button variant="outline" onClick={() => (editing.value = "new")}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              aiDraft.value = null;
+              editing.value = "new";
+            }}
+          >
             <Plus className="mr-1.5 size-4" />
             New rubric
           </Button>
+          {ai && (
+            <Button variant="outline" onClick={() => void draftWithAi()} disabled={drafting.value}>
+              {drafting.value ? (
+                <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="mr-1.5 size-4" aria-hidden />
+              )}
+              {drafting.value ? "Drafting…" : "Draft a rubric with AI"}
+            </Button>
+          )}
           {rubric && (
             <>
               {rubric.assessed ? (
@@ -190,8 +231,12 @@ export function RubricPanel({
         open={editing.value !== null}
         courseId={courseId}
         rubric={editing.value === "new" ? null : editing.value}
+        aiDraft={editing.value === "new" ? aiDraft.value : null}
         onOpenChangeAction={(open) => {
-          if (!open) editing.value = null;
+          if (!open) {
+            editing.value = null;
+            aiDraft.value = null;
+          }
         }}
         onSavedAction={(saved) => {
           loadRubrics();

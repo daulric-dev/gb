@@ -24,6 +24,12 @@ export const FEATURE_KEYS = [
   "attendance_alerts",
   "rostering",
   "lti",
+  "mastery",
+  "peer_review",
+  "similarity_check",
+  "pastoral_notes",
+  "ai_assistance",
+  "analytics",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -58,6 +64,17 @@ export const FALLBACK_FEATURES: FeatureMap = {
   rostering: false,
   // Older servers have no external tools (LTI).
   lti: false,
+  // Older servers have no mastery tracking.
+  mastery: false,
+  // Older servers have no peer review or similarity check.
+  peer_review: false,
+  similarity_check: false,
+  // Older servers have no pastoral notes.
+  pastoral_notes: false,
+  // Older servers have no AI assistance.
+  ai_assistance: false,
+  // Older servers have no analytics.
+  analytics: false,
 };
 
 /** Features that only work while another one is on. */
@@ -114,6 +131,9 @@ export function featureForPath(pathname: string): FeatureKey | null {
   if (under("/dashboard/timetable")) return "timetable";
   if (under("/dashboard/settings/timetable")) return "timetable";
   if (under("/dashboard/attendance")) return "attendance_alerts";
+  if (under("/dashboard/pastoral")) return "pastoral_notes";
+  if (under("/dashboard/library")) return "course_copy";
+  if (under("/dashboard/analytics")) return "analytics";
 
   if (under("/portal/messages")) return "student_messaging";
   if (under("/portal/announcements")) return "announcements";
@@ -121,6 +141,9 @@ export function featureForPath(pathname: string): FeatureKey | null {
   if (under("/portal/timetable")) return "timetable";
   if (under("/portal/attendance")) return "attendance";
   if (under("/portal/reports")) return "report_cards";
+  if (under("/portal/outcomes")) return "mastery";
+  if (under("/dashboard/settings/mastery")) return "mastery";
+  if (under("/portal/peer-reviews")) return "peer_review";
   if (under("/scan")) return "attendance";
 
   const course = path.match(
@@ -129,6 +152,8 @@ export function featureForPath(pathname: string): FeatureKey | null {
   if (course) return course[1] as FeatureKey;
   if (/^\/dashboard\/courses\/[^/]+\/reports(?:\/|$)/.test(path)) return "report_cards";
   if (/^\/dashboard\/courses\/[^/]+\/timetable(?:\/|$)/.test(path)) return "timetable";
+  if (/^\/dashboard\/courses\/[^/]+\/outcomes(?:\/|$)/.test(path)) return "mastery";
+  if (/^\/dashboard\/courses\/[^/]+\/analytics(?:\/|$)/.test(path)) return "analytics";
 
   return null;
 }
@@ -187,6 +212,12 @@ export const FEATURE_GROUPS: { title: string; keys: string[] }[] = [
       "calendar",
       "course_copy",
       "report_cards",
+      "mastery",
+      "peer_review",
+      "similarity_check",
+      "pastoral_notes",
+      "ai_assistance",
+      "analytics",
     ],
   },
   { title: "Content", keys: ["files"] },

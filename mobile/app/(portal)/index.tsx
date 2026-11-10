@@ -9,7 +9,7 @@ import {
   Plus,
   ScanLine,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { useOfflineReads } from "@/features/offline/OfflineReads";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -55,17 +55,18 @@ export default function PortalHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [joinOpen, setJoinOpen] = useState(false);
+  const { get, savedAt } = useOfflineReads();
 
   const load = useCallback(async () => {
     const [meData, courseData, workData] = await Promise.all([
-      api<PortalMe>("/portal/me").catch(() => null),
-      api<PortalCourseCard[]>("/portal/me/courses").catch(() => []),
-      api<PortalWorkItem[]>("/portal/me/activities").catch(() => []),
+      get<PortalMe>("/portal/me").catch(() => null),
+      get<PortalCourseCard[]>("/portal/me/courses").catch(() => []),
+      get<PortalWorkItem[]>("/portal/me/activities").catch(() => []),
     ]);
     setMe(meData);
     setCourses(courseData ?? []);
     setWork(workData ?? []);
-  }, []);
+  }, [get]);
 
   useEffect(() => {
     load().finally(() => setLoading(false));
@@ -84,6 +85,7 @@ export default function PortalHomeScreen() {
     <Screen
       title={`Hello ${me?.firstName ?? profile?.first_name ?? "there"}`}
       description={profile?.school?.name ?? undefined}
+      offlineSavedAt={savedAt}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

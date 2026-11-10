@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { FeatureService } from '@/features/feature.service';
+import { type ReportOutcomeLine, loadReportOutcomes } from '@/mastery/mastery-report';
 import { PrismaService } from '@/prisma/prisma.service';
 import { logoForPdf } from './report-logo';
 import { StorageService } from '@/storage/storage.service';
@@ -71,7 +73,31 @@ export class ReportDataService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    @Optional() private readonly features?: FeatureService,
   ) {}
+
+  /**
+   * The optional outcomes section per course (src/mastery): only with the
+   * `mastery` feature on and the school's `report_card_section` setting.
+   * A year-long course counts evidence up to the term's last day.
+   */
+  async reportOutcomes(
+    term: TermContext,
+    studentId: string,
+    courses: TermCourse[],
+  ): Promise<Map<string, ReportOutcomeLine[]>> {
+    const out = new Map<string, ReportOutcomeLine[]>();
+    if (!this.features || courses.length === 0) return out;
+    if (!(await this.features.isEnabled(term.schoolId, 'mastery'))) return out;
+    const whole = courses.filter((c) => c.mode !== 'year').map((c) => c.id);
+    const year = courses.filter((c) => c.mode === 'year').map((c) => c.id);
+    const [a, b] = await Promise.all([
+      loadReportOutcomes(this.prisma, term.schoolId, studentId, whole, null),
+      loadReportOutcomes(this.prisma, term.schoolId, studentId, year, termCutoff(term.end_date)),
+    ]);
+    for (const m of [a, b]) for (const [k, v] of m) out.set(k, v);
+    return out;
+  }
 
   /** A term of the school, or 404 (also for another school's term). */
   async term(schoolId: string, termId: string): Promise<TermContext> {
@@ -370,7 +396,7 @@ export class ReportDataService {
     const enrolled = await this.enrolments(courses.map((c) => c.id));
     const mine = courses.filter((c) => (enrolled.get(c.id) ?? []).includes(studentId));
 
-    const [grades, comments, head, attendance, school] = await Promise.all([
+    const [grades, comments, head, attendance, school, outcomes] = await Promise.all([
       Promise.all(mine.map((c) => this.courseGrades(c, term, [studentId]))),
       mine.length
         ? this.prisma.report_comment.findMany({
@@ -384,6 +410,7 @@ export class ReportDataService {
       }),
       this.attendance(term, studentId),
       this.school(term.schoolId),
+      this.reportOutcomes(term, studentId, mine),
     ]);
     const commentOf = new Map(comments.map((c) => [c.course_id, c.body]));
 
@@ -403,6 +430,7 @@ export class ReportDataService {
         percent: grades[i].get(studentId)?.percent ?? null,
         letter: grades[i].get(studentId)?.letter ?? null,
         comment: commentOf.get(c.id) ?? null,
+        ...(outcomes.has(c.id) ? { outcomes: outcomes.get(c.id) } : {}),
       })),
       attendance,
       headComment: head?.body ?? null,

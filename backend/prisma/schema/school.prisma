@@ -152,9 +152,23 @@ model school {
   bell_period                                 bell_period[]
   school_closure                              school_closure[]
   attendance_alert_setting                    attendance_alert_setting?
+  analytics_setting                           analytics_setting?
+  analytics_course_summary                    analytics_course_summary[]
+  analytics_at_risk                           analytics_at_risk[]
+  analytics_refresh                           analytics_refresh?
   attendance_alert                            attendance_alert[]
   lti_deployment                              lti_deployment[]
+  library_item                                library_item[]
+  library_import                              library_import[]
+  pastoral_category                           pastoral_category[]
+  pastoral_note                               pastoral_note[]
+  pastoral_setting                            pastoral_setting?
+  similarity_setting                          similarity_setting?
+  ai_school_setting                           ai_school_setting?
 
+  mastery_setting                             mastery_setting?
+  outcome_set                                 outcome_set[]
+  outcome                                     outcome[]
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")
 }
@@ -355,6 +369,11 @@ model user_profile {
   organisation_invite_sent                                          organisation_invite[]      @relation("organisation_invite_invited_byTouser_profile")
   organisation_invite_accepted                                      organisation_invite[]      @relation("organisation_invite_accepted_byTouser_profile")
   lti_subject                                                       lti_subject[]
+  library_item                                                      library_item[]             @relation("library_item_created_by")
+  library_item_version                                              library_item_version[]     @relation("library_item_version_published_by")
+  library_import                                                    library_import[]           @relation("library_import_requested_by")
+  pastoral_note_authored                                            pastoral_note[]            @relation("pastoral_note_author")
+  pastoral_note_assigned                                            pastoral_note[]            @relation("pastoral_note_assignee")
 
   @@index([school_id], map: "idx_user_profile_school")
   @@schema("public")

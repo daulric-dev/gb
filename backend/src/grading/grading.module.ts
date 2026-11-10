@@ -40,7 +40,9 @@ import {
   // The student portal submits work, lists course activities and reads
   // grades through these.
   // LTI creates gradebook columns for external tools through ActivityService.
-  exports: [SubmissionService, GradebookService, ActivityService],
+  // The AI course builder (src/ai) creates activities and matches assignment
+  // groups through these.
+  exports: [SubmissionService, GradebookService, ActivityService, AssignmentGroupService],
   controllers: [
     ActivityController,
     AssignmentGroupController,

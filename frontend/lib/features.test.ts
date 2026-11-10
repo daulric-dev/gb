@@ -56,6 +56,8 @@ describe("featureForPath", () => {
     ["/dashboard/announcements", "announcements"],
     ["/dashboard/files/abc", "files"],
     ["/dashboard/calendar", "calendar"],
+    ["/dashboard/pastoral", "pastoral_notes"],
+    ["/dashboard/library/abc", "course_copy"],
     ["/portal/messages", "student_messaging"],
     ["/portal/announcements", "announcements"],
     ["/portal/calendar/", "calendar"],
@@ -69,6 +71,12 @@ describe("featureForPath", () => {
     ["/dashboard/courses/c1/timetable", "timetable"],
     ["/portal/timetable", "timetable"],
     ["/dashboard/attendance/students/s1", "attendance_alerts"],
+    ["/dashboard/courses/c1/outcomes/students/s1", "mastery"],
+    ["/portal/outcomes", "mastery"],
+    ["/dashboard/settings/mastery", "mastery"],
+    ["/portal/peer-reviews/a1", "peer_review"],
+    ["/dashboard/analytics", "analytics"],
+    ["/dashboard/courses/c1/analytics", "analytics"],
   ])("%s → %s", (path, key) => {
     expect(featureForPath(path)).toBe(key as never);
   });

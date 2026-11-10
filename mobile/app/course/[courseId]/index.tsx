@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { api } from "@/lib/api";
+import { useOfflineReads } from "@/features/offline/OfflineReads";
 import { Screen } from "@/components/layout/Screen";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -51,6 +51,7 @@ export default function StudentCourseScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const { features } = useFeatures();
+  const { get, savedAt } = useOfflineReads();
   const tabs = TABS.filter((t) => sectionEnabled(features, t.value));
   // A section switched off (or a push for one) lands on Home instead.
   const shownTab: CourseTab = sectionEnabled(features, tab) ? tab : "home";
@@ -62,11 +63,11 @@ export default function StudentCourseScreen() {
   const load = useCallback(async () => {
     if (!courseId) return;
     setCourse(
-      await api<PortalCourseCard>(`/portal/me/courses/${courseId}`).catch(
+      await get<PortalCourseCard>(`/portal/me/courses/${courseId}`).catch(
         () => null,
       ),
     );
-  }, [courseId]);
+  }, [courseId, get]);
 
   useEffect(() => {
     load().finally(() => setLoading(false));
@@ -128,6 +129,7 @@ export default function StudentCourseScreen() {
       title={course?.name ?? "Course"}
       description={course?.code ?? undefined}
       onBack={() => router.back()}
+      offlineSavedAt={savedAt}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

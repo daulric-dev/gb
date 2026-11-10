@@ -30,6 +30,8 @@ export interface ReportCourseLine {
   percent: number | null;
   letter: string | null;
   comment: string | null;
+  /** Optional outcomes section (src/mastery), when the school shows it. */
+  outcomes?: { code: string; title: string; label: string | null; mastered: boolean }[];
 }
 
 export interface ReportCardDocument {
@@ -295,6 +297,19 @@ export async function renderReportCard(data: ReportCardDocument): Promise<Uint8A
     if (course.teachers) w.text(course.teachers, { size: 9, x: MARGIN + 6, color: MUTED });
     if (course.comment?.trim()) {
       w.text(course.comment.trim(), { size: 10, x: MARGIN + 6, width: CONTENT_W - 12, gap: 2 });
+    }
+    if (course.outcomes?.length) {
+      w.text('Outcomes', { size: 9, bold: true, x: MARGIN + 6, color: MUTED });
+      for (const o of course.outcomes) {
+        const level = o.label ? `${o.label}${o.mastered ? ' (mastered)' : ''}` : 'Not yet assessed';
+        w.row(
+          [
+            { text: `${o.code}  ${o.title}`, x: MARGIN + 12, width: colGrade - MARGIN - 18 },
+            { text: level, x: colGrade, width: CONTENT_W - (colGrade - MARGIN) },
+          ],
+          9,
+        );
+      }
     }
     w.rule(5);
   }

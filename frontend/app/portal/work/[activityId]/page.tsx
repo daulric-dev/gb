@@ -58,6 +58,7 @@ import {
   type PortalWorkDetail,
 } from "../../_components/work-types";
 import { DueDateNotice } from "../../_components/due-notice";
+import { PeerReviewSection } from "../../_components/peer-review-section";
 import { userMessage } from "@/lib/errors";
 import { useQuizLockdown } from "@/hooks/use-quiz-lockdown";
 import { enterFullscreen, exitFullscreen } from "@/lib/quiz-lockdown";
@@ -736,6 +737,8 @@ export default function PortalWorkDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {w.kind === "assignment" && <PeerReviewSection activityId={activityId} />}
 
       {offline ? (
         !submitted && (

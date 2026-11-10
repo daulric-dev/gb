@@ -126,6 +126,15 @@ How it applies (`accommodation.ts`):
 - **Lockdown exemption.** The presence endpoint is a no-op for the student, the roster never marks them away, and their activity responses (`GET /api/portal/me/activities/:id`, the course list) report `lockdownBrowser: false`, so web and mobile skip the rules card, fullscreen and pinning.
 - **What the student sees.** Their own `timeLimitMinutes` (already accommodated) and `standardTimeLimitMinutes` (the quiz's). Never the reason, the source, or anyone else's accommodation.
 
+#### Peer review and similarity check
+
+Two modules build on submissions without living here:
+
+- **Peer review** ([`src/peer-review`](../peer-review/README.md), feature `peer_review`): an assignment's settings (reviews per student, anonymous, opening after the due date or by hand, close date, a course rubric or comments only), a stored allocation that never pairs a student with their own work and tops up late submitters, reviews through the portal, hiding a review. **Review quality** is marked in a separate published offline activity "Peer review: <title>" that the module creates, so the mark lives in `submission.score` like every other and the assignment's own mark never changes.
+- **Similarity check** ([`src/similarity`](../similarity/README.md), feature `similarity_check`): assignment text and essay answers are fingerprinted after hand-in; teachers see a marker and a side-by-side view. It never touches a mark or anything a student reads.
+
+Both hear about hand-ins through **`SubmissionEvents`** (`submission-events.ts`, global `SubmissionEventsModule`): `SubmissionService` calls `events.handedIn({ submissionId, activityId, studentId, kind })` after an assignment is handed in and whenever a quiz attempt is scored (submit, submit-on-read and the expiry sweep). Listeners are not awaited by the request and a failing one is only logged.
+
 #### Assignment groups (`assignment-group.controller.ts`)
 
 | Method | Path | Who | What it does |
@@ -277,6 +286,8 @@ Rows are CRLF-terminated. `csvCell()` prefixes cells that start with `= + - @ ta
 - `src/attendance/attendance.service.ts` imports `csvCell` for its own CSV export.
 - `src/report-card` imports `calculateCourseGrade()`, `letterFor()` and the `Calc*` types from `gradebook.calc.ts` (a term's final grade per course), `scoreOrNull()` from `round.ts` and `contentDisposition()`.
 - `src/calendar/calendar.service.ts` imports `roundScore`.
+- `src/mastery`: `refreshOutcomeEvidence()` is called from `SubmissionService.withLateness()` / `afterQuizScored()` / `excuse()`, `RubricService.assess()` (after the criterion marks), `ActivityService.update()` (points) and `GradebookImportService.apply()`, so every mark keeps mastery evidence in step (before any late penalty). It reads `questionCredit()` from `quiz-questions.ts`. Mastery never changes a score.
+- `src/peer-review` imports `loadRubric()`, `toTimestamp()`, `ts()`, `roundScore()` and listens on `SubmissionEvents`; `src/similarity` listens on `SubmissionEvents`.
 - `src/app.module.ts` imports `GradingModule`.
 - Front end:
   - `frontend/app/dashboard/courses/[courseId]/assignments/` (the page, `[activityId]/page.tsx`, `CreateActivityDialog.tsx`, `QuestionCard.tsx`, `MarksTable.tsx`, `AssignmentGroupsDialog.tsx`, `RubricPanel.tsx`, `RubricEditorDialog.tsx`, `RubricMarkDialog.tsx`).
@@ -352,6 +363,7 @@ None.
 | `extension.controller.ts`, `extension.service.ts` | Per-student due date extensions |
 | `accommodation.ts` | Effective accommodation and accommodated time limit (pure) |
 | `accommodation.controller.ts`, `accommodation.service.ts` | Per-student quiz accommodations, on one quiz and the school-wide default |
+| `submission-events.ts` | `SubmissionEvents` (hand-in listeners for peer review and similarity) and the global `SubmissionEventsModule` |
 | `activity.service.test.ts` | Activity tests |
 | `submission.service.test.ts` | Submission tests |
 | `rubric.service.test.ts` | Rubric tests |

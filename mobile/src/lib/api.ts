@@ -11,6 +11,10 @@ import {
   setSessionToken,
 } from "@/lib/session-token";
 import { clearPushState } from "@/lib/push-state";
+import {
+  reportNetworkFailure,
+  reportNetworkSuccess,
+} from "@/lib/connectivity";
 
 const API_PORT = 3001;
 
@@ -43,6 +47,11 @@ export function developmentServerUrl(): string | null {
 /** Set the selected platform instance at runtime. The API lives under `/api`. */
 export function setApiServerUrl(origin: string | null): void {
   apiOrigin = origin ? `${origin.replace(/\/+$/, "")}/api` : null;
+}
+
+/** The selected API origin (".../api"), or null before one is chosen. */
+export function apiServerOrigin(): string | null {
+  return apiOrigin;
 }
 
 function baseUrl(): string {
@@ -160,12 +169,18 @@ async function fetchOrThrow(
   input: string,
   init: RequestInit,
 ): Promise<Response> {
+  let res: Response;
   try {
-    return await fetch(input, init);
+    res = await fetch(input, init);
   } catch {
+    // Offline mode (connectivity.ts) is judged from real requests; a request
+    // the caller cancelled says nothing about the network.
+    if (!init.signal?.aborted) reportNetworkFailure();
     // Same text as NETWORK_ERROR_MESSAGE in lib/errors.ts.
     throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
   }
+  reportNetworkSuccess();
+  return res;
 }
 
 /**

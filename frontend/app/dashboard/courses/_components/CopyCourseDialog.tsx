@@ -117,7 +117,8 @@ export function CopyCourseDialog({
               Modules, pages, activities, rubrics, assignment groups and
               discussion prompts are copied into a new draft course you teach.
               Students, work, marks and announcements stay behind; copied
-              activities start as drafts.
+              activities start as drafts. Linked files are copied into your
+              own files.
             </DialogDescription>
           </DialogHeader>
 

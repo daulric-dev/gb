@@ -79,3 +79,7 @@ cd backend && bun test src/throttle
 
 - [src/account/README.md](../account/README.md) (session tokens), [src/README.md](../README.md) (request flow)
 - [docs/content/environment-variables.md](../../../docs/content/environment-variables.md)
+
+## Per-route limits
+
+`default` is one counter per session (or IP) across every route. Never override it on a single route with `@Throttle({ default: ... })`: that compares the route's small limit against everything the session has called, so a busy page gets 429 on its first click. Use the `route` throttler instead: `@Throttle({ route: { limit, ttl } })`. It applies only where declared (`skipUnlessDeclared('route')`) and keeps a counter per route (`generateKey`). `route-throttle.test.ts` fails if a route overrides `default`.

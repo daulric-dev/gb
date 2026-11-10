@@ -16,6 +16,9 @@ import { SchoolLogoSettings } from "./_components/school-logo-settings";
 import { SchoolFeatureSettings } from "./_components/school-feature-settings";
 import { SchoolParentSettings } from "./_components/school-parent-settings";
 import { SchoolTimetableLink } from "./_components/school-timetable-link";
+import { SchoolMasteryLink } from "./_components/school-mastery-link";
+import { SchoolSimilaritySettings } from "./_components/school-similarity-settings";
+import { SchoolAiSettings } from "./_components/school-ai-settings";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { AccountSettings } from "@/components/account/account-settings";
@@ -64,6 +67,12 @@ export default function SettingsPage() {
       <SchoolParentSettings />
 
       <SchoolTimetableLink />
+
+      <SchoolMasteryLink />
+
+      <SchoolSimilaritySettings />
+
+      <SchoolAiSettings />
 
       <SchoolSsoSettings />
 

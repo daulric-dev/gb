@@ -1,0 +1,100 @@
+// Course template library (src/course/library). Migration
+// 20261127100000_template_library. A library item is a course (or chosen
+// modules, quizzes, rubrics and pages) published for the publisher's school
+// or the whole organisation. Each publish is an immutable version: a JSON
+// snapshot of the design plus copies of its files under
+// `course-library/<itemId>/<versionId>/` in storage, so the library never
+// points at the author's own files. Imports copy those files again into the
+// importer's own file-manager storage.
+
+/// A published template. `visibility` is `school` (staff of `school_id`) or
+/// `organisation` (staff of every school). `unpublished_at` hides it from
+/// browsing and importing; imports already made are unaffected.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model library_item {
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id        String                 @db.Uuid
+  source_course_id String?                @db.Uuid
+  title            String
+  description      String?
+  subject          String?
+  grade_level      String?
+  tags             String[]               @default([])
+  visibility       String                 @default("school")
+  latest_version   Int                    @default(0)
+  created_by       String?                @db.Uuid
+  unpublished_at   DateTime?              @db.Timestamptz(6)
+  created_at       DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime               @default(now()) @db.Timestamptz(6)
+  school           school                 @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  source_course    course?                @relation(fields: [source_course_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  user_profile     user_profile?          @relation("library_item_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  versions         library_item_version[]
+
+  @@index([school_id, visibility], map: "idx_library_item_school")
+  @@index([visibility], map: "idx_library_item_visibility", where: raw("(unpublished_at IS NULL)"))
+  @@index([source_course_id], map: "idx_library_item_source_course")
+  @@schema("course")
+}
+
+/// One immutable publish of a library item. `content` is the design snapshot
+/// (see course-snapshot.ts): never students, submissions, grades, peer
+/// reviews, attendance, extensions, accommodations or LTI deployments.
+/// `counts` is the summary shown when browsing.
+model library_item_version {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  item_id      String           @db.Uuid
+  version      Int
+  content      Json
+  counts       Json             @default("{}")
+  file_count   Int              @default(0)
+  file_bytes   BigInt           @default(0)
+  note         String?
+  published_by String?          @db.Uuid
+  created_at   DateTime         @default(now()) @db.Timestamptz(6)
+  item         library_item     @relation(fields: [item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile user_profile?    @relation("library_item_version_published_by", fields: [published_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  imports      library_import[]
+
+  @@unique([item_id, version], map: "library_item_version_item_version_key")
+  @@schema("course")
+}
+
+/// One import of a library version into a course (`append`) or a new course
+/// (`new_course`), run as a background job. `status`: queued -> copying
+/// (files) -> done | failed. Progress is `files_done` / `files_total`.
+/// `target_course_id` is the course written into (the new course once
+/// created). Idempotent: the content is written in one transaction that also
+/// marks the row done, so a re-run after that changes nothing.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model library_import {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version_id       String               @db.Uuid
+  school_id        String               @db.Uuid
+  requested_by     String               @db.Uuid
+  mode             String
+  target_course_id String?              @db.Uuid
+  options          Json                 @default("{}")
+  status           String               @default("queued")
+  files_total      Int                  @default(0)
+  files_done       Int                  @default(0)
+  bytes_total      BigInt               @default(0)
+  result           Json?
+  notes            String[]             @default([])
+  error            String?
+  attempts         Int                  @default(0)
+  created_at       DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime             @default(now()) @db.Timestamptz(6)
+  finished_at      DateTime?            @db.Timestamptz(6)
+  version          library_item_version @relation(fields: [version_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school           school               @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile     user_profile         @relation("library_import_requested_by", fields: [requested_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  target_course    course?              @relation(fields: [target_course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([requested_by, created_at(sort: Desc)], map: "idx_library_import_requested_by")
+  @@index([status, updated_at], map: "idx_library_import_active", where: raw("(status = ANY (ARRAY['queued'::text, 'copying'::text]))"))
+  @@index([version_id])
+  @@index([school_id])
+  @@index([target_course_id])
+  @@schema("course")
+}

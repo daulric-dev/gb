@@ -33,6 +33,7 @@ There is no row-level security in the database: guards and service code are the 
 | [account](./account/README.md) | Our own authentication (global): users, sessions (`gb_session` cookie), email sign-in codes and their mail templates. |
 | [announcement](./announcement/README.md) | School-wide announcements with read receipts, and course announcements. |
 | [app-version](./app-version/README.md) | Mobile app update check: public `GET /api/app/version` (minimum / latest version and store URL per platform) and a global guard answering 426 to app builds below the minimum. |
+| [analytics](./analytics/README.md) | Analytics dashboard (feature `analytics`): course analytics on request (submission rates, grade distributions with median and quartiles, group averages, weekly trend, students at risk with reasons) and school roll-ups per course and teacher (`analytics:read`) from summary rows refreshed hourly under an advisory lock; CSV exports. |
 | [attendance](./attendance/README.md) | Course attendance: check-in sessions, codes and rotating QR, student self check-in, live SSE feed; students who have not checked in when a session closes are marked absent. |
 | [auth](./auth/README.md) | Auth HTTP routes (email code sign-in, `me`, onboarding, join school by code, profile, avatar, logout), `AuthGuard` and `AdminGuard`. |
 | [cache](./cache/README.md) | Global `CacheService` over a pluggable store (memory or Redis). |
@@ -53,15 +54,19 @@ There is no row-level security in the database: guards and service code are the 
 | [images](./images/README.md) | Avatar uploads (direct and presigned) and the public avatar route. |
 | [integrations](./integrations/README.md) | School webhooks: signed event POSTs to school-chosen URLs (`WebhookEvents.emit`), retries, auto-disable, delivery log and audit; the `integrations` feature. Routes: `/schools/current/webhooks`, `/organisation/schools/:schoolId/webhooks`, `/webhooks/event-types`. |
 | [mail](./mail/README.md) | Global `MailService` over SMTP (nodemailer). |
+| [mastery](./mastery/README.md) | Mastery / standards-based grading (feature `mastery`): school proficiency scale, outcome sets and course outcomes (CSV import, archive), alignment to activities, rubric rows and quiz questions, evidence from marks (`refreshOutcomeEvidence`, before late penalties), the course mastery grid, student and parent views, CSV export, report card section. Alongside the points gradebook. |
 | [notifications](./notifications/README.md) | Push device registration and Expo push delivery. |
 | [organisation](./organisation/README.md) | The organisation that self-hosts the install: public first-run setup (`/setup`), organisation admins (`ORG_ADMIN_EMAILS` or `organisation_admin` rows) and their routes to create schools, appoint school admins and sign users out (`/organisation`). |
 | [features](./features/README.md) | Platform features the organisation switches on or off and schools may switch off (`FeatureService`, `FeatureGuard`, `@RequireFeature`); the catalog, the effective rule and where each one is enforced. Routes: `/organisation/features`, `/schools/current/features`. |
 | [pagination](./pagination/README.md) | Shared DTO and result type for offset and cursor pagination (`PaginationQueryDto`, `PaginatedResult`). |
+| [peer-review](./peer-review/README.md) | Peer review on assignments (feature `peer_review`): settings, stored fair allocation (late joiners topped up), reviewer routes on the portal, hiding a review, review-quality column, sweep that opens windows and announces reviews. |
 | [permission](./permission/README.md) | Permission catalog, custom school roles, `PermissionGuard` and `@RequirePermission`. |
 | [prisma](./prisma/README.md) | Global `PrismaService`: Prisma 7 with the `pg` driver adapter. |
 | [queue](./queue/README.md) | Background job for file share notifications on BullMQ, or inline without Redis. |
 | [realtime](./realtime/README.md) | Redis (or in-process) pub/sub bus and presence tracking for SSE features. |
 | [retention](./retention/README.md) | Daily purge (advisory-locked) of soft-deleted files, folders, chat messages and discussion replies past `SOFT_DELETE_RETENTION_DAYS`, expired sessions and sign-in codes, old erasure-log entries and webhook deliveries; `bun run retention:purge`. |
+| [ai](./ai/README.md) | AI assistance (feature `ai_assistance`): the organisation's own AI providers (Anthropic through the official SDK, or any OpenAI-compatible endpoint; keys encrypted, every call SSRF-guarded), school settings, and teacher-approved drafts (quiz questions, rubric feedback suggestions, page summaries) with a request log and limits. |
+| [similarity](./similarity/README.md) | Similarity check on text submissions (feature `similarity_check`): winnowed shingle fingerprints per submission on a BullMQ queue (in-process without Redis), teacher-only markers and side-by-side view, school settings. |
 | [school](./school/README.md) | Schools, staff membership, join requests, members. |
 | [sso](./sso/README.md) | Single sign-on with our own OpenID Connect (Google, Microsoft) and SAML; adapter registry. |
 | [storage](./storage/README.md) | Global `StorageService` for S3-compatible object storage and presigned URLs. |

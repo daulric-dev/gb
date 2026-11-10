@@ -1,0 +1,143 @@
+// Mastery / standards-based grading (src/mastery). Sits alongside the points
+// gradebook: nothing here changes a score, a course total or a letter.
+// Migration 20261126100000_mastery.
+
+/// A school's proficiency scale and how mastery is worked out. One row per school; missing means the defaults in mastery.calc.ts.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mastery_setting {
+  school_id           String   @id @db.Uuid
+  /// Level labels, lowest first; a level's value is its position (1..n).
+  levels              Json     @default("[\"Beginning\", \"Developing\", \"Proficient\", \"Exceeding\"]")
+  /// The level value at or above which an outcome counts as mastered.
+  mastery_threshold   Int      @default(3) @db.SmallInt
+  /// most_recent | highest | mean | decaying_average
+  calculation         String   @default("decaying_average")
+  /// decaying_average: the weight of the newest evidence (0.65 = 65%).
+  decay_weight        Decimal  @default(0.65) @db.Decimal(3, 2)
+  /// Evidence items needed before an outcome can be mastered.
+  min_evidence        Int      @default(1) @db.SmallInt
+  /// Score bands mapping an activity's percent to a level: [{ minPercent, level }], ascending.
+  score_bands         Json     @default("[{\"minPercent\": 0, \"level\": 1}, {\"minPercent\": 50, \"level\": 2}, {\"minPercent\": 70, \"level\": 3}, {\"minPercent\": 90, \"level\": 4}]")
+  /// Report cards show an outcomes section per course.
+  report_card_section Boolean  @default(false)
+  updated_by          String?  @db.Uuid
+  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  school              school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("grading")
+}
+
+/// A school-level outcome set, such as a curriculum framework. Archived sets stay readable and keep their evidence.
+model outcome_set {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id   String    @db.Uuid
+  title       String
+  description String?
+  /// Where it came from, e.g. "CSV import".
+  source      String?
+  archived_at DateTime? @db.Timestamptz(6)
+  created_by  String?   @db.Uuid
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+  school      school    @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  outcome     outcome[]
+
+  @@unique([school_id, title], map: "outcome_set_school_title_key")
+  @@schema("grading")
+}
+
+/// A learning outcome: in a school outcome set (set_id) or a course's own (course_id), exactly one. Nested by parent_id within the same set or course. Never hard-deleted once it has evidence: archive instead.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model outcome {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id         String              @db.Uuid
+  set_id            String?             @db.Uuid
+  course_id         String?             @db.Uuid
+  parent_id         String?             @db.Uuid
+  code              String
+  title             String
+  description       String?
+  subject           String?
+  grade_level       String?
+  position          Int                 @default(0)
+  archived_at       DateTime?           @db.Timestamptz(6)
+  created_by        String?             @db.Uuid
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  school            school              @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  outcome_set       outcome_set?        @relation(fields: [set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course            course?             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parent            outcome?            @relation("outcome_parent", fields: [parent_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  children          outcome[]           @relation("outcome_parent")
+  outcome_alignment outcome_alignment[]
+  outcome_evidence  outcome_evidence[]
+
+  @@unique([set_id, code], map: "outcome_set_code_key")
+  @@unique([course_id, code], map: "outcome_course_code_key")
+  @@index([school_id], map: "idx_outcome_school")
+  @@index([parent_id], map: "idx_outcome_parent")
+  @@schema("grading")
+}
+
+/// An outcome linked to what measures it in a course: a whole activity, a rubric row (criterion) or a quiz question; exactly one.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model outcome_alignment {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outcome_id       String             @db.Uuid
+  course_id        String             @db.Uuid
+  activity_id      String?            @db.Uuid
+  criterion_id     String?            @db.Uuid
+  question_id      String?            @db.Uuid
+  created_by       String?            @db.Uuid
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  outcome          outcome            @relation(fields: [outcome_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course           course             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  activity         activity?          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rubric_criterion rubric_criterion?  @relation(fields: [criterion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_question    quiz_question?     @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  outcome_evidence outcome_evidence[]
+
+  @@unique([outcome_id, activity_id], map: "outcome_alignment_activity_key")
+  @@unique([outcome_id, criterion_id], map: "outcome_alignment_criterion_key")
+  @@unique([outcome_id, question_id], map: "outcome_alignment_question_key")
+  @@index([course_id], map: "idx_outcome_alignment_course")
+  @@index([activity_id], map: "idx_outcome_alignment_activity")
+  @@index([criterion_id], map: "idx_outcome_alignment_criterion")
+  @@index([question_id], map: "idx_outcome_alignment_question")
+  @@schema("grading")
+}
+
+/// One piece of evidence: a marked submission measured against an aligned outcome. Derived from marks (refreshOutcomeEvidence); the level is worked out from `ratio` or the rubric rank with the school's current scale when read. Late penalties never apply.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model outcome_evidence {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outcome_id        String            @db.Uuid
+  alignment_id      String            @db.Uuid
+  submission_id     String            @db.Uuid
+  student_id        String            @db.Uuid
+  course_id         String            @db.Uuid
+  activity_id       String            @db.Uuid
+  /// activity | rubric | question
+  source            String
+  /// Earned over possible, 0..1 (before any late penalty).
+  ratio             Float
+  /// rubric: the chosen rating's rank among the criterion's ratings (0 = lowest) and how many there are.
+  rating_rank       Int?              @db.SmallInt
+  rating_count      Int?              @db.SmallInt
+  assessed_at       DateTime          @db.Timestamptz(6)
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  outcome           outcome           @relation(fields: [outcome_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  outcome_alignment outcome_alignment @relation(fields: [alignment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission        submission        @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student           student           @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course            course            @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  activity          activity          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([alignment_id, submission_id], map: "outcome_evidence_alignment_submission_key")
+  @@index([student_id, outcome_id], map: "idx_outcome_evidence_student_outcome")
+  @@index([course_id], map: "idx_outcome_evidence_course")
+  @@index([outcome_id], map: "idx_outcome_evidence_outcome")
+  @@index([submission_id], map: "idx_outcome_evidence_submission")
+  @@index([activity_id], map: "idx_outcome_evidence_activity")
+  @@schema("grading")
+}

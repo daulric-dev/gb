@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
@@ -49,6 +50,7 @@ export function ModuleCard({
   onRenameAction,
   onDeleteAction,
   onAddItemAction,
+  onSuggestItemsAction,
   onReorderItemsAction,
   itemActionsAction,
 }: {
@@ -62,6 +64,8 @@ export function ModuleCard({
   onRenameAction: () => void;
   onDeleteAction: () => void;
   onAddItemAction: () => void;
+  /** AI assistance on: "Suggest items with AI" for this module. */
+  onSuggestItemsAction?: () => void;
   onReorderItemsAction: (activeId: string, overId: string) => void;
   itemActionsAction: (item: ModuleItem) => ItemActions;
 }) {
@@ -157,7 +161,7 @@ export function ModuleCard({
                 >
                   <MoreVertical className="size-4" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuContent align="end" className="w-52">
                   <DropdownMenuItem onClick={onRenameAction}>
                     <Pencil className="mr-2 size-4" />
                     Rename
@@ -166,6 +170,12 @@ export function ModuleCard({
                     <Plus className="mr-2 size-4" />
                     Add item
                   </DropdownMenuItem>
+                  {onSuggestItemsAction && (
+                    <DropdownMenuItem onClick={onSuggestItemsAction}>
+                      <Sparkles className="mr-2 size-4" />
+                      Suggest items with AI
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" onClick={onDeleteAction}>
                     <Trash2 className="mr-2 size-4" />

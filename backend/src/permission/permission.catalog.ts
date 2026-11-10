@@ -1,5 +1,13 @@
 export const ACTIONS = ['create', 'read', 'update', 'delete'] as const;
-export type Action = (typeof ACTIONS)[number];
+/**
+ * Actions beyond the CRUD four, only ever listed explicitly in
+ * RESOURCE_ACTIONS (never a default): `safeguarding` is the stricter key that
+ * pastoral notes in a safeguarding category need on top of read/create/update.
+ */
+export const EXTRA_ACTIONS = ['safeguarding'] as const;
+export type Action =
+  | (typeof ACTIONS)[number]
+  | (typeof EXTRA_ACTIONS)[number];
 
 // One entry per school-level surface. Work inside a course (content, marking,
 // people) is governed by the caller's course role instead - see
@@ -20,6 +28,9 @@ export const RESOURCES = [
   'audit-log',
   'report-card',
   'attendance-report',
+  'course-library',
+  'pastoral-note',
+  'analytics',
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -50,9 +61,24 @@ const RESOURCE_ACTIONS: Partial<Record<Resource, readonly Action[]>> = {
   // settings stay on school:update and form tutors on student:update.
   'attendance-report': ['read'],
   'academic-year': ['create', 'read', 'update'],
+  // course-library: create = publish a library item (template) visible to
+  // every school in the organisation. Publishing for your own school only
+  // needs a manage role on the source course.
+  'course-library': ['create'],
+  // pastoral-note: read / create / update staff notes about students;
+  // safeguarding is additionally needed to see, create or change a note in a
+  // safeguarding category. There is no plain delete key: deleting a note is
+  // an erasure and needs update (src/pastoral).
+  'pastoral-note': ['read', 'create', 'update', 'safeguarding'],
+  // analytics: read = the school analytics page (roll-ups per course and
+  // teacher, the school at-risk list, their CSV exports and refresh) and any
+  // course's analytics. Course staff always see their own course's analytics
+  // through their course role, without this key (src/analytics).
+  analytics: ['read'],
 };
 
 export function actionsFor(resource: Resource): readonly Action[] {
+  // Extra actions exist only where RESOURCE_ACTIONS lists them.
   return RESOURCE_ACTIONS[resource] ?? ACTIONS;
 }
 
@@ -83,6 +109,9 @@ const RESOURCE_LABELS: Record<Resource, string> = {
   'audit-log': 'audit log',
   'report-card': 'report cards',
   'attendance-report': 'attendance reports',
+  'course-library': 'course library',
+  'pastoral-note': 'pastoral notes',
+  analytics: 'analytics',
 };
 
 const ACTION_VERBS: Record<Action, string> = {
@@ -90,6 +119,7 @@ const ACTION_VERBS: Record<Action, string> = {
   read: 'View',
   update: 'Edit',
   delete: 'Delete',
+  safeguarding: 'Safeguarding',
 };
 
 const CUSTOM_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
@@ -98,6 +128,12 @@ const CUSTOM_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
   'report-card:read': 'View report card progress, previews and published reports',
   'report-card:update': 'Write head comments and publish report cards',
   'attendance-report:read': "View the school attendance report and any student's attendance",
+  'course-library:create': 'Share course templates with every school in the organisation',
+  'pastoral-note:read': 'View behaviour and pastoral notes about students',
+  'pastoral-note:create': 'Write behaviour and pastoral notes',
+  'pastoral-note:update': 'Edit, resolve and delete behaviour and pastoral notes',
+  'pastoral-note:safeguarding': 'See, write and edit safeguarding notes (with the read, create or edit key)',
+  'analytics:read': 'View school analytics (roll-ups per course and teacher) and students at risk in any course',
 };
 
 /** The full catalog: every resource x each action it supports. */
@@ -137,6 +173,9 @@ export const ROLE_DEFAULTS: Record<SystemRole, PermissionKey[] | '*'> = {
   teacher: [
     ...allKeys('announcement', 'file', 'chat'),
     permKey('course', 'create'),
+    // Teachers can record a note and always see their own; reading other
+    // staff's notes is granted by a role (pastoral lead, head of year).
+    permKey('pastoral-note', 'create'),
     ...readKeys(
       'student',
       'term',

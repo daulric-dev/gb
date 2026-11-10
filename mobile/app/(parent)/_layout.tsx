@@ -1,5 +1,5 @@
 import { Redirect, Tabs } from "expo-router";
-import { CalendarCheck, FileBadge, GraduationCap, LayoutDashboard, Megaphone, Settings } from "lucide-react-native";
+import { CalendarCheck, FileBadge, GraduationCap, LayoutDashboard, Megaphone, Settings, Target } from "lucide-react-native";
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
@@ -76,6 +76,15 @@ function ParentTabs() {
           title: "Reports",
           href: v && !v.reports ? null : undefined,
           tabBarIcon: ({ color, size }) => <FileBadge color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="child-outcomes"
+        options={{
+          title: "Outcomes",
+          // Hidden unless the school shows mastery (older servers send nothing).
+          href: v?.mastery ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Target color={color} size={size} />,
         }}
       />
       <Tabs.Screen

@@ -121,35 +121,37 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 ## P3: later or needs a decision
 
-### 10. Mastery / standards-based grading — [ ]
+### 10. Mastery / standards-based grading — [x] (PR #TBD)
 
-Link assignments and rubric rows to learning outcomes; track each student's mastery per outcome over time; an optional outcome-based report card view. Decision needed: alongside the points gradebook, or as a per-course alternative.
+Link assignments and rubric rows to learning outcomes; track each student's mastery per outcome over time; an optional outcome-based report card view. **Decided:** alongside the points gradebook (nothing existing changes). Feature flag `mastery` (default off); see [backend/src/mastery/README.md](backend/src/mastery/README.md).
 
-### 11. Peer review — [ ]
+### 11. Peer review — [x] (PR #TBD)
 
 Students review classmates' submissions against a rubric, optionally anonymous; the teacher sets how many reviews each student does and whether review quality counts toward the grade.
 
-### 12. Similarity check on text submissions — [ ]
+### 12. Similarity check on text submissions — [x] (PR #TBD)
 
 Flag text submissions that closely match others in the same class or school (not an external database). Decision needed on how results are shown, so a flag is a prompt to look, not a verdict.
 
-### 13. Course template library — [ ]
+### 13. Course template library — [x] (PR #TBD)
 
-A shared library of modules, quizzes and rubrics across courses and schools. **Decision needed first:** today, importing a template keeps the author's linked files, which gives the importer access to them. Decide whether import should copy those files, drop them, or ask the author.
+A shared library of modules, quizzes and rubrics across courses and schools (feature `course_copy`).
 
-### 14. Behaviour and pastoral notes — [ ]
+**Decision (owner):** when a template is imported, the files the author linked are **copied** into the importer's own storage; the importer never gains access to the author's files. Publishing copies them into the library's own storage, and each import copies them again into the importer's files, checked against the school's upload limit before anything is written. The same rule now applies to ordinary course copy and import, which used to keep the author's file.
+
+### 14. Behaviour and pastoral notes — [x] (PR #TBD)
 
 **Feature flag:** `pastoral_notes` (default off). Private staff notes per student with categories and a timeline; visible only to staff with a dedicated permission; never shown to students or parents.
 
-### 15. Offline mode in the mobile app — [ ]
+### 15. Offline mode in the mobile app — [x] (PR #TBD)
 
 Read course pages and assignment instructions without signal; draft text submissions and quiz answers offline and sync them when back online, with conflict handling if the deadline passed meanwhile.
 
-### 16. Analytics dashboard — [ ]
+### 16. Analytics dashboard — [x] (PR #TBD)
 
 Submission rates, grade distributions and at-risk students per course and school. Heavy queries run in background jobs or on cached aggregates, not on request.
 
-### 17. AI assistance — [ ]
+### 17. AI assistance — [x] (PR #TBD)
 
 **Feature flag:** `ai_assistance`, off by default; the organisation chooses whether to enable it and each school can switch it off.
 

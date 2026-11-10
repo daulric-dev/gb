@@ -160,7 +160,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Delete('account')
-  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } })
+  @Throttle({ route: { limit: 3, ttl: 60 * 60 * 1000 } })
   async deleteAccount(@Req() req: any) {
     const userId: string = req.user.id;
     const message = await this.authService.deleteAccount(userId);

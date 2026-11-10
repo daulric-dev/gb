@@ -19,6 +19,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { userMessage } from "@/lib/errors";
+import type { RubricDraft } from "@/lib/ai";
+import { AiDraftNote } from "@/components/ai/ai-draft-note";
 
 interface DraftRating {
   label: string;
@@ -59,6 +61,20 @@ function fromRubric(r: Rubric): DraftCriterion[] {
   }));
 }
 
+/** An AI rubric draft as the editor's starting criteria. */
+export function fromAiDraft(d: RubricDraft["rubric"]): DraftCriterion[] {
+  return d.criteria.map((c) => ({
+    title: c.title,
+    description: c.description ?? "",
+    points: String(c.points),
+    ratings: c.ratings.map((x) => ({
+      label: x.label,
+      description: x.description ?? "",
+      points: String(x.points),
+    })),
+  }));
+}
+
 const TWO_DP = /^\d+(\.\d{1,2})?$/;
 
 /**
@@ -72,11 +88,14 @@ export function RubricEditorDialog({
   rubric,
   onOpenChangeAction,
   onSavedAction,
+  aiDraft = null,
 }: {
   open: boolean;
   courseId: string;
   /** null to create a new one. */
   rubric: Rubric | null;
+  /** An AI draft to start a new rubric from (saved only by Save, like any rubric). */
+  aiDraft?: RubricDraft["rubric"] | null;
   onOpenChangeAction: (open: boolean) => void;
   onSavedAction: (rubric: Rubric) => void;
 }) {
@@ -88,9 +107,9 @@ export function RubricEditorDialog({
 
   useEffect(() => {
     if (!open) return;
-    title.value = rubric?.title ?? "";
-    criteria.value = rubric ? fromRubric(rubric) : [blankCriterion()];
-  }, [open, rubric, title, criteria]);
+    title.value = rubric?.title ?? aiDraft?.title ?? "";
+    criteria.value = rubric ? fromRubric(rubric) : aiDraft ? fromAiDraft(aiDraft) : [blankCriterion()];
+  }, [open, rubric, aiDraft, title, criteria]);
 
   const update = (i: number, patch: Partial<DraftCriterion>) => {
     criteria.value = criteria.value.map((c, j) =>
@@ -194,6 +213,12 @@ export function RubricEditorDialog({
               : "Rubrics belong to the course: build one once and attach it to any assignment or offline work."}
           </DialogDescription>
         </DialogHeader>
+
+        {!rubric && aiDraft && (
+          <AiDraftNote>
+            Check every criterion, level and point value. Nothing is saved until you press Save.
+          </AiDraftNote>
+        )}
 
         <div className="space-y-1">
           <Label htmlFor="rubricTitle" className="text-xs">

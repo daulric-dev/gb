@@ -40,6 +40,8 @@ import { ModuleList } from "./ModuleList";
 import { AnnouncementList } from "./AnnouncementList";
 import { useSection } from "./useSection";
 import { useOpenModuleItem } from "./useOpenModuleItem";
+import { useOfflineReads } from "@/features/offline/OfflineReads";
+import { DraftBadge } from "@/features/offline/DraftBadge";
 
 interface SectionProps {
   courseId: string;
@@ -110,6 +112,7 @@ export function WorkRow({ item }: { item: PortalGradeActivity }) {
       ) : item.status === "closed" ? (
         <Badge variant="outline">Closed</Badge>
       ) : null}
+      <DraftBadge activityId={item.id} />
       <ChevronRight color={colors.mutedForeground} size={16} />
     </Pressable>
   );
@@ -124,12 +127,13 @@ export function HomeSection({
   course: PortalCourseCard | null;
   onTab: (tab: CourseTab) => void;
 }) {
+  const { get } = useOfflineReads();
   const work = useSection(
-    () => api<PortalGradeActivity[]>(`/portal/me/courses/${courseId}/activities`),
+    () => get<PortalGradeActivity[]>(`/portal/me/courses/${courseId}/activities`),
     refreshKey,
   );
   const news = useSection(
-    () => api<CourseAnnouncement[]>(`/portal/me/courses/${courseId}/announcements`),
+    () => get<CourseAnnouncement[]>(`/portal/me/courses/${courseId}/announcements`),
     refreshKey,
   );
 
@@ -228,8 +232,9 @@ export function HomeSection({
 
 export function ModulesSection({ courseId, refreshKey }: SectionProps) {
   const { open } = useOpenModuleItem(courseId, "student");
+  const { get } = useOfflineReads();
   const { data, loading, failed } = useSection(
-    () => api<CourseModule[]>(`/portal/me/courses/${courseId}/modules`),
+    () => get<CourseModule[]>(`/portal/me/courses/${courseId}/modules`),
     refreshKey,
   );
   if (loading) return <Skeleton style={{ height: 240 }} />;
@@ -238,8 +243,9 @@ export function ModulesSection({ courseId, refreshKey }: SectionProps) {
 }
 
 export function WorkSection({ courseId, refreshKey }: SectionProps) {
+  const { get } = useOfflineReads();
   const { data, loading, failed } = useSection(
-    () => api<PortalGradeActivity[]>(`/portal/me/courses/${courseId}/activities`),
+    () => get<PortalGradeActivity[]>(`/portal/me/courses/${courseId}/activities`),
     refreshKey,
   );
   if (loading) return <Skeleton style={{ height: 200 }} />;

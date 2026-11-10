@@ -20,7 +20,7 @@ Why it exists: restoring a backup brings back everything deleted since the backu
 | Column | What |
 | --- | --- |
 | `id`, `occurred_at` | uuid, commit-time timestamp |
-| `kind` | `account`, `student`, `school_membership`, `file`, `folder`, `chat_message`, `discussion_topic`, `discussion_reply`, `course`, `attendance_session` (CHECK) |
+| `kind` | `account`, `student`, `school_membership`, `file`, `folder`, `chat_message`, `discussion_topic`, `discussion_reply`, `course`, `attendance_session`, `pastoral_note` (CHECK; `pastoral_note` added by `20261128100000_pastoral_notes`) |
 | `subject_table`, `subject_ids` | e.g. `file_manager.file` and the uuids erased (non-empty) |
 | `school_id` | the school it happened in, or null |
 | `actor` | the user who asked (uuid) or `system` (CHECK) |
@@ -59,7 +59,8 @@ What each path writes:
 | Delete a discussion topic / reply (`DiscussionService`) | `discussion_topic`, `discussion_reply` / author: `user_request`, moderator: `admin` | delete (replies cascade with a topic); a reply with answers is blanked instead |
 | Delete a course (`CourseService.remove`) | `course` / `admin` | delete (cascades enrolments, work, marks, attendance, discussions); storage prefix `images/course-banners/<course id>-` (cover images) |
 | Delete an attendance session (`AttendanceService.remove`) | `attendance_session` / `admin` | delete (cascades its attendance records) |
-| Retention purge ([`src/retention`](../retention/README.md)) | `file`, `folder`, `chat_message`, `discussion_reply` / `retention_purge`, actor `system` | delete (files with objects); answered discussion placeholders lose `author_user_profile_id` |
+| Delete a pastoral note (`PastoralService.remove`, [src/pastoral](../pastoral/README.md)) | `pastoral_note` / `admin` | delete `student.pastoral_note` |
+| Retention purge ([`src/retention`](../retention/README.md)) | `file`, `folder`, `chat_message`, `discussion_reply`, `pastoral_note` (resolved notes past the school's `retention_days`) / `retention_purge`, actor `system` | delete (files with objects); answered discussion placeholders lose `author_user_profile_id` |
 
 Not logged, on purpose: deleting content that is not personal data (modules, pages, activities - refused when they have work - rubrics, grade scales, terms, announcements, roles, email domains, join codes); roster changes inside a course (`course_student` / `course_staff` removal - access changes, not erasures; a student with work is only marked `dropped`); push-token removal; expired sessions and sign-in codes (a restore signs everyone out anyway, BACKUPS.md step 4); quiz-answer replacement during an attempt.
 
@@ -85,7 +86,7 @@ bun run erasure:replay --since 2026-10-24T04:00:00Z [--source both|db|storage] [
 
 ## Used by
 
-`AuthService`, `StudentMembershipService`, `SchoolService`, `FileManagerService`, `FolderService`, `ChatService`, `DiscussionService`, `CourseService`, `AttendanceService` (all call `record(tx, ...)`), `RetentionService` and `RetentionScheduler` ([src/retention](../retention/README.md)), and the CLIs `scripts/erasure-replay.ts` and `scripts/retention-purge.ts`.
+`AuthService`, `StudentMembershipService`, `SchoolService`, `FileManagerService`, `FolderService`, `ChatService`, `DiscussionService`, `CourseService`, `AttendanceService`, `PastoralService` (all call `record(tx, ...)`), `RetentionService` and `RetentionScheduler` ([src/retention](../retention/README.md)), and the CLIs `scripts/erasure-replay.ts` and `scripts/retention-purge.ts`.
 
 ## Depends on
 

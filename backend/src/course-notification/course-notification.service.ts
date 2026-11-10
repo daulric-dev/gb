@@ -7,7 +7,9 @@ export type CourseNotificationKind =
   | 'activity_published'
   | 'announcement'
   | 'discussion_topic'
-  | 'discussion_reply';
+  | 'discussion_reply'
+  | 'peer_review_assigned'
+  | 'peer_review_ready';
 
 /** What the portal bell and the mobile inbox show for one notice. */
 export interface CourseNotification {
@@ -277,6 +279,124 @@ export class CourseNotificationService {
     }
   }
 
+  /**
+   * Peer review: these students were given classmates' work to review
+   * (once per student and activity). Never throws.
+   */
+  async peerReviewAssigned(
+    courseId: string,
+    activity: { id: string; title: string },
+    studentIds: string[],
+  ): Promise<void> {
+    await this.notifyStudents(courseId, studentIds, {
+      kind: 'peer_review_assigned',
+      activity_id: activity.id,
+      title: `Peer review: ${activity.title}`,
+      body: 'You have classmates\' work to review',
+      data: { type: 'course.peer_review', courseId, activityId: activity.id },
+    });
+  }
+
+  /**
+   * Peer review: the window closed and these authors' reviews can be read
+   * (once per student and activity). Never throws.
+   */
+  async peerReviewsReady(
+    courseId: string,
+    activity: { id: string; title: string },
+    studentIds: string[],
+  ): Promise<void> {
+    await this.notifyStudents(courseId, studentIds, {
+      kind: 'peer_review_ready',
+      activity_id: activity.id,
+      title: `Reviews ready: ${activity.title}`,
+      body: 'Your classmates\' reviews of your work are ready',
+      data: { type: 'course.peer_review', courseId, activityId: activity.id },
+    });
+  }
+
+  /**
+   * A notice for some of a course's students (by student id), limited to
+   * those still actively enrolled with an account. Rows already written for
+   * the same (kind, activity) are skipped by the partial unique keys.
+   */
+  private async notifyStudents(
+    courseId: string,
+    studentIds: string[],
+    notice: {
+      kind: CourseNotificationKind;
+      activity_id: string;
+      title: string;
+      body: string | null;
+      data: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      if (studentIds.length === 0) return;
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: { id: true, name: true, status: true },
+      });
+      if (course?.status !== 'published') return;
+      const enrolments = await this.prisma.course_student.findMany({
+        where: {
+          course_id: courseId,
+          status: 'active',
+          student_id: { in: studentIds },
+        },
+        select: { student_id: true },
+      });
+      const students = await this.prisma.student.findMany({
+        where: {
+          id: { in: enrolments.map((e) => e.student_id) },
+          is_active: { not: false },
+          user_profile_id: { not: null },
+        },
+        select: { user_profile_id: true },
+      });
+      const userIds = [
+        ...new Set(
+          students
+            .map((s) => s.user_profile_id)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      if (userIds.length === 0) return;
+      const existing = await this.prisma.course_notification.findMany({
+        where: {
+          kind: notice.kind,
+          activity_id: notice.activity_id,
+          user_profile_id: { in: userIds },
+        },
+        select: { user_profile_id: true },
+      });
+      const already = new Set(existing.map((e) => e.user_profile_id));
+      const fresh = userIds.filter((id) => !already.has(id));
+      if (fresh.length === 0) return;
+      await this.prisma.course_notification.createMany({
+        data: fresh.map((user_profile_id) => ({
+          user_profile_id,
+          course_id: course.id,
+          kind: notice.kind,
+          activity_id: notice.activity_id,
+          title: notice.title,
+          body: notice.body,
+        })),
+        skipDuplicates: true,
+      });
+      await this.push.sendToUsers(fresh, {
+        title: `${course.name}: ${notice.title}`,
+        body: notice.body ?? 'Tap to open',
+        data: notice.data,
+        channelId: COURSE_CHANNEL,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify students in ${courseId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   private async notify(
     courseId: string,
     notice: {
@@ -310,6 +430,7 @@ export class CourseNotificationService {
       const existing = notice.activity_id
         ? await this.prisma.course_notification.findMany({
             where: {
+              kind: notice.kind,
               activity_id: notice.activity_id,
               user_profile_id: { in: userIds },
             },

@@ -44,6 +44,10 @@ Guards: `AuthGuard`, `ParentGuard` (link, active child and school, age limit; an
 
 Hidden by the school's setting: **403 `{ code: 'PARENT_VIEW_HIDDEN' }`**.
 
+### Outcomes (`ParentMasteryController`, `parent-mastery.controller.ts`)
+
+`GET /api/parent/children/:studentId/outcomes`: the child's mastery of learning outcomes ([`src/mastery`](../mastery/README.md)), the same body the student gets from `/api/portal/me/outcomes` (`MasteryService.studentOutcomes`: courses the child sees, each outcome's level and evidence timeline; no feedback, answers or other students). Guards: `AuthGuard`, `ParentGuard`, `FeatureGuard` with `@RequireFeature('parent_portal', 'mastery')`. `ParentMasteryService` checks the school's **`showMastery`** first: it is **off by default** (unlike the other areas), so a school opts in once its outcomes are set up; hidden is 403 `PARENT_VIEW_HIDDEN` with nothing read. `visibility.mastery` on `/api/parent/children` is `showMastery` and the `mastery` feature.
+
 ### Becoming a parent (`ParentLinkController`, `@Controller('parent/link')`, `AuthGuard` only)
 
 | Method | Path | Body | What it does |
@@ -69,7 +73,7 @@ Invitations, codes and link changes are written to the audit log.
 
 ### School setting (`ParentSettingsController`, `@Controller('schools/current/parent-settings')`)
 
-`GET` / `PATCH` with `school:update` (not feature-gated, so a school can prepare before switching the portal on). Body `{ settings: { showGrades?, showWork?, showAttendance?, showAnnouncements?, showReports?, maxStudentAge? } }` (all booleans default `true`; `showReports` covers published report cards and the transcript); unknown keys and wrong types are a 400. Audit-logged.
+`GET` / `PATCH` with `school:update` (not feature-gated, so a school can prepare before switching the portal on). Body `{ settings: { showGrades?, showWork?, showAttendance?, showAnnouncements?, showReports?, showMastery?, maxStudentAge? } }` (booleans default `true` except `showMastery`, which defaults to `false`; `showReports` covers published report cards and the transcript, `showMastery` learning outcomes); unknown keys and wrong types are a 400. Audit-logged.
 
 ## Services
 
@@ -112,4 +116,5 @@ cd backend && bun test src/parent-portal
 - `parent-link.service.test.ts`: tokens stored only as hashes and emailed; another school's student 404; a failed email withdraws the invitation; codes hashed; single use (used, lost claim race), expiry and withdrawal are 410; wrong address 403; feature off 403; student and staff accounts 409; wrong-code counting and 429.
 - `parent-report.test.ts`: every report route needs both `parent_portal` and `report_cards` (403 `FEATURE_DISABLED`), another family's child and a child over the age limit are 404, `showReports` defaults on and parses/merges, hidden is 403 `PARENT_VIEW_HIDDEN` with nothing read, reads go to the guarded child only, the transcript JSON has no logo, and with the real `StudentReportsService` an unpublished term lists nothing and its document is 404.
 - `parent-portal.service.test.ts`: school announcements for everyone merged with course posts, only from the child's own school, no audience/readers/author id/avatar, nothing read while `showAnnouncements` is off; no teacher-only field (feedback, instructions, lockdown, location, accommodations, answers, attempts) in grades, work or attendance; attendance selects no location columns; hiding grades makes the grades route 403 and drops grades and scores elsewhere; hidden areas 403; children filtered by feature and age; settings parsing, merging and the age limit; work states on effective due dates.
+- `parent-mastery.test.ts`: the outcomes route needs `parent_portal` and `mastery` (organisation and school), another family's child is 404, `showMastery` defaults off and parses/merges, hidden is 403 `PARENT_VIEW_HIDDEN` with nothing read, the guarded child's own data only.
 - `parent-notification.service.test.ts`: attendance alert notices keyed by the alert and gated by the feature, opt-in, `showAttendance`, `notify_parents` and `parent_notifications`; school announcements only for the child's school and `audience = everyone`, gated by `showAnnouncements`, `announcements` and the opt-in, one notice for siblings; notices only with both features on (organisation and school), only for shown areas and chosen kinds, dedupe sends only fresh rows, email and push follow the parent's switches and `push_notifications`, preferences default off.

@@ -139,6 +139,26 @@ Prefer either to deleting work or entering a zero - a zero is a real mark that p
 
 In the app, a course's **Marking** section lists its work; open one for the roster (filter **To mark** / **Marked**) and tap a student. You see what they typed, can open their file (it downloads and opens in your phone's viewer), and enter a score from 0 to the work's points with at most two decimals, plus feedback. If the work has a rubric, tap a level per criterion: the score fills in with their sum and can still be overridden. **Excuse from this work** (and **Remove excuse**) is there too, and **Previous / Next** steps through the roster.
 
+### Peer review
+
+Turn on **Peer review** on an assignment (its **Peer review** tab) to have students review each other's work. A school can switch the feature off.
+
+- **Settings:** how many classmates' submissions each student reviews (1-10), whether it is **anonymous** (reviewers and authors never see each other's names; file names are replaced with "Attachment 1.pdf"), when it opens (**after the due date**, or **when I start it**), when it **closes**, and the review form: one of the course's **rubrics**, or **comments only**.
+- **Who reviews whom:** when the window opens, every student who handed in (not excused) is given that many classmates' submissions, never their own, and every submission gets the same number of reviews. The allocation is stored, so it does not change between visits. A student who hands in later (in a late window) is added: they review the submissions with the fewest reviews, and theirs is reviewed by the students with the lightest load (no one gets more than one extra). **Allocate late submitters** does the same on demand. You can move a review that has not been handed in to another student, add one, or remove one.
+- **Students** see "Reviews for you to write" on the assignment, open each classmate's work (text and files, through the same protected viewer as marking), fill in the rubric or comment, and hand it in. They can edit until the window closes. When it closes, each author sees the reviews of their own work. Both are on the web and in the app, with notifications when reviews are assigned and when they are ready.
+- **You** see every review, including drafts, and can **hide** an inappropriate one from its author (with a reason; recorded in the audit log). Hiding never deletes it.
+- **Review quality can count.** Turn on **Review quality counts** with a number of points: a separate offline column, "Peer review: <title>", is added to the gradebook, and you mark each reviewer there like any offline work. It never changes the assignment's own mark. Turning it off removes the column if nobody has a mark in it yet (otherwise it stays, as an ordinary offline column).
+- Once reviews are assigned, the number per student can only go up and an anonymous review cannot be made named. The review form cannot change after a review is handed in.
+
+### Similarity check
+
+When the organisation turns on **Similarity check**, text answers (assignment text and essay quiz answers) are compared with other students' answers to the same work, and optionally the school's other work from recent terms (**Settings → Similarity check**: what to compare with, how many recent terms, and the marker threshold, 40% by default).
+
+- It is **a prompt to look, not a verdict.** Quoting the same source, common phrases or agreed group work all match. It never changes a mark, and **students never see it**.
+- In the roster, a small "Similar to 2 submissions · 62%" link appears under a student only above the threshold. It opens the list of matches and a side-by-side view with the shared passages highlighted. For work from a course you do not teach, the other student's name and the rest of their text are hidden; only the shared passages show.
+- Texts under about 50 words are not checked, and anything also in the work's instructions (or an essay question's prompt) is ignored, so quoting the question is not a match.
+- Nothing leaves the school: there is no external database. Fingerprints are deleted with the submission.
+
 ## The gradebook
 
 **Grades** shows every student against every published piece of work, grouped by assignment group, with each student's percentage and letter (from the course's grade scale, or the school default). Hover a total for the per-group breakdown. **Export** downloads a CSV.

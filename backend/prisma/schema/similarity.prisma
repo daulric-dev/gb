@@ -1,0 +1,60 @@
+/// Text fingerprints of one part of a submission (src/similarity): the
+/// assignment's text (part '') or one essay answer (part = the question id).
+/// Deleted with the submission. Never read by a student route.
+model similarity_fingerprint {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submission_id String             @db.Uuid
+  part          String             @default("")
+  /// Copied from the submission for pool queries (no foreign keys: the row goes with the submission).
+  activity_id   String             @db.Uuid
+  course_id     String             @db.Uuid
+  school_id     String             @db.Uuid
+  word_count    Int
+  /// Winnowed 5-word shingle hashes, the activity's own text subtracted.
+  hashes        Int[]
+  /// sha256 of the normalised text and settings: an unchanged text is not recomputed.
+  text_hash     String
+  computed_at   DateTime           @default(now()) @db.Timestamptz(6)
+  submission    submission         @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  matches       similarity_match[] @relation("similarity_match_from")
+  matched_by    similarity_match[] @relation("similarity_match_to")
+
+  @@unique([submission_id, part], map: "similarity_fingerprint_submission_part_key")
+  @@index([activity_id, part], map: "idx_similarity_fingerprint_activity")
+  @@index([school_id], map: "idx_similarity_fingerprint_school")
+  @@index([hashes], map: "idx_similarity_fingerprint_hashes", type: Gin)
+  @@schema("grading")
+}
+
+/// How much of fingerprint_id's text appears in other_id's (directed).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model similarity_match {
+  fingerprint_id String                 @db.Uuid
+  other_id       String                 @db.Uuid
+  /// Percent of fingerprint_id's fingerprints found in other_id's.
+  score          Decimal                @db.Decimal(5, 2)
+  shared         Int
+  created_at     DateTime               @default(now()) @db.Timestamptz(6)
+  fingerprint    similarity_fingerprint @relation("similarity_match_from", fields: [fingerprint_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other          similarity_fingerprint @relation("similarity_match_to", fields: [other_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([fingerprint_id, other_id])
+  @@index([other_id], map: "idx_similarity_match_other")
+  @@schema("grading")
+}
+
+/// A school's similarity check settings (defaults apply without a row).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model similarity_setting {
+  school_id  String   @id @db.Uuid
+  /// activity: the same activity only; school: also the school's other work from the last pool_terms terms.
+  pool       String   @default("activity")
+  pool_terms Int      @default(2)
+  /// Percent at or above which teachers see a marker.
+  threshold  Int      @default(40)
+  updated_by String?  @db.Uuid
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  school     school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("grading")
+}

@@ -21,6 +21,7 @@ export const ERASURE_KINDS = [
   'discussion_reply',
   'course',
   'attendance_session',
+  'pastoral_note',
 ] as const;
 export type ErasureKind = (typeof ERASURE_KINDS)[number];
 
@@ -82,6 +83,7 @@ export const REGISTRY: Readonly<Record<string, TableSpec>> = {
   },
   'course.course': { where: ['id'], set: {} },
   'course.attendance_session': { where: ['id'], set: {} },
+  'student.pastoral_note': { where: ['id'], set: {} },
 };
 
 /** Column filter: `col = ANY(uuids)`, or `col IS NULL` for null. */

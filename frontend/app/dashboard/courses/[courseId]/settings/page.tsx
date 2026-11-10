@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { Loader2, Lock, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Loader2, Lock, Sparkles, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { CourseStatus } from "@/lib/courses/types";
 import {
@@ -43,6 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useCourse } from "../_components/course-context";
 import { CourseAppearanceCard } from "../_components/CourseAppearanceCard";
+import { PublishToLibraryCard } from "../_components/PublishToLibraryCard";
 import { SectionHeader } from "../_components/SectionHeader";
 import { MarkdownEditor } from "../_components/MarkdownEditor";
 import { CourseCalendarFields } from "../../_components/CourseCalendarFields";
@@ -308,7 +310,29 @@ export default function CourseSettingsPage() {
         </div>
       </form>
 
+      {hasFeature("ai_assistance") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Plan this course with AI</CardTitle>
+            <CardDescription>
+              Describe the course (subject, level, length, goals or a pasted syllabus) and get a draft outline of modules, pages,
+              assignments and quizzes to edit. Only what you tick is created, all unpublished.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" nativeButton={false} render={<Link href={`/dashboard/courses/${course.id}/plan`} />}>
+              <Sparkles className="mr-2 size-4" aria-hidden />
+              Plan this course with AI
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <CourseAppearanceCard />
+
+      {hasFeature("course_copy") && (
+        <PublishToLibraryCard courseId={course.id} courseName={course.name} />
+      )}
 
       {hasFeature("course_copy") && (
       <Card>

@@ -53,6 +53,15 @@ describe('permission catalog', () => {
     }
   });
 
+  test('analytics has read only; admins hold it, teachers and members do not', () => {
+    expect(actionsFor('analytics')).toEqual(['read']);
+    expect(isPermissionKey('analytics:read')).toBe(true);
+    expect(isPermissionKey('analytics:update')).toBe(false);
+    expect(defaultsForRole('admin').has('analytics:read')).toBe(true);
+    expect(defaultsForRole('teacher').has('analytics:read')).toBe(false);
+    expect(defaultsForRole('member').has('analytics:read')).toBe(false);
+  });
+
   test('catalog contains exactly the supported resource/action pairs', () => {
     const expected = RESOURCES.flatMap((r) =>
       actionsFor(r).map((a) => permKey(r, a)),
@@ -90,5 +99,31 @@ describe('permission catalog', () => {
       expect(keys.has('join-code:read')).toBe(true);
       expect(keys.has('join-code:update' as never)).toBe(false);
     }
+  });
+
+  test('course-library has create only, held by admins', () => {
+    expect(actionsFor('course-library')).toEqual(['create']);
+    expect(isPermissionKey('course-library:create')).toBe(true);
+    expect(isPermissionKey('course-library:read')).toBe(false);
+    expect(defaultsForRole('admin').has('course-library:create')).toBe(true);
+    expect(defaultsForRole('teacher').has('course-library:create')).toBe(false);
+  });
+
+  test('pastoral-note has read, create, update and safeguarding; teachers may only create', () => {
+    expect(actionsFor('pastoral-note')).toEqual(['read', 'create', 'update', 'safeguarding']);
+    expect(isPermissionKey('pastoral-note:safeguarding')).toBe(true);
+    expect(isPermissionKey('pastoral-note:delete')).toBe(false);
+    // The extra action never leaks onto other resources.
+    expect(isPermissionKey('student:safeguarding')).toBe(false);
+    const admin = defaultsForRole('admin');
+    for (const a of ['read', 'create', 'update', 'safeguarding']) {
+      expect(admin.has(`pastoral-note:${a}` as never)).toBe(true);
+    }
+    const teacher = defaultsForRole('teacher');
+    expect(teacher.has('pastoral-note:create')).toBe(true);
+    expect(teacher.has('pastoral-note:read')).toBe(false);
+    expect(teacher.has('pastoral-note:safeguarding')).toBe(false);
+    const member = defaultsForRole('member');
+    expect([...member].some((k) => k.startsWith('pastoral-note:'))).toBe(false);
   });
 });

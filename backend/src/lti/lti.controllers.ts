@@ -181,7 +181,7 @@ export class LtiCourseController {
     return this.links.updateItem(req.user.id, courseId, itemId, dto.customParams ?? {});
   }
 
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Throttle({ route: { limit: 60, ttl: 60_000 } })
   @Post('launches')
   async launch(
     @Req() req: UserReq,

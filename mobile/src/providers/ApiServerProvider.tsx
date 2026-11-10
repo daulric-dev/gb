@@ -17,6 +17,7 @@ import {
 import { setSessionToken } from "@/lib/session-token";
 import { clearPushState } from "@/lib/push-state";
 import { clearOpenedFiles } from "@/lib/open-file";
+import { clearOfflineData } from "@/lib/offline-store";
 
 interface ApiServerContextValue {
   ready: boolean;
@@ -81,6 +82,7 @@ export function ApiServerProvider({ children }: { children: ReactNode }) {
       await setSessionToken(null);
       clearPushState();
       clearOpenedFiles();
+      clearOfflineData();
       setApiServerUrl(selected);
       setServerUrl(selected);
     } catch (cause) {

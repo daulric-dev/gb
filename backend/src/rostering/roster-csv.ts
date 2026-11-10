@@ -76,7 +76,8 @@ function requireColumns(table: Table, cols: string[], snap: RosterSnapshot): boo
   return false;
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Dots separate domain labels, so the pattern is unambiguous (linear).
+const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function cleanEmail(value: string): string | null | undefined {

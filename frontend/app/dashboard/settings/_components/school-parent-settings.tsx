@@ -21,6 +21,7 @@ const TOGGLES: { key: keyof Omit<ParentSettings, "maxStudentAge">; label: string
   { key: "showAttendance", label: "Attendance" },
   { key: "showAnnouncements", label: "Announcements (course posts and school posts for everyone)" },
   { key: "showReports", label: "Published report cards and transcript" },
+  { key: "showMastery", label: "Mastery of learning outcomes (needs Mastery under Features; off by default)" },
 ];
 
 /** What parents see in the parent portal (school:update). */
@@ -74,7 +75,7 @@ export function SchoolParentSettings() {
             <Label htmlFor={`parent-${t.key}`}>{t.label}</Label>
             <Switch
               id={`parent-${t.key}`}
-              checked={settings.value![t.key]}
+              checked={settings.value![t.key] ?? false}
               onCheckedChange={(on) => void save({ [t.key]: on })}
             />
           </div>

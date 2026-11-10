@@ -28,6 +28,7 @@ import {
   ts,
 } from './activity.mapper';
 import { loadAssessments, loadRubric } from './rubric.service';
+import { SubmissionEvents } from './submission-events';
 import {
   assertNotClosed,
   closedError,
@@ -39,6 +40,7 @@ import {
   studentDueFields,
 } from './due-date';
 import { refreshLateness } from './lateness';
+import { refreshOutcomeEvidence } from '@/mastery/outcome-evidence';
 import { toLatePolicy, toLateness, type Lateness } from './late-policy';
 import { randomInt } from 'node:crypto';
 import {
@@ -183,6 +185,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly webhooks?: WebhookEvents,
     @Optional() private readonly auditLog?: AuditLogService,
     @Optional() private readonly cache?: CacheService,
+    @Optional() private readonly events?: SubmissionEvents,
   ) {}
 
   onModuleInit() {
@@ -1384,6 +1387,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
   ): Promise<QuizScoredRow[]> {
     if (scored.length === 0) return [];
     await refreshLateness(tx, activityId, [studentId]);
+    await refreshOutcomeEvidence(tx, activityId, [studentId]);
     const after = await tx.submission.findUnique({
       where: { id: submissionId },
       select: { score: true, status: true },
@@ -1407,6 +1411,13 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     submissionId: string,
     row: QuizScoredRow,
   ) {
+    // Handed in (essay answers are fingerprinted whether or not marked yet).
+    void this.events?.handedIn({
+      submissionId,
+      activityId: activity.id,
+      studentId,
+      kind: 'quiz',
+    });
     const webhooks = this.webhooks;
     if (!webhooks) return;
     // Not completed until the teacher marks the essay and file questions.
@@ -2063,6 +2074,12 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     }
 
     const handedIn = data;
+    void this.events?.handedIn({
+      submissionId: handedIn.id,
+      activityId,
+      studentId,
+      kind: 'assignment',
+    });
     void this.webhooks?.emitForCourse(
       activity.course_id,
       'submission.handed_in',
@@ -2546,6 +2563,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     written?: ReturnType<SubmissionService['toMarked']>,
   ) {
     await refreshLateness(tx, activityId, [studentId]);
+    // Mastery evidence follows every mark (before any late penalty).
+    await refreshOutcomeEvidence(tx, activityId, [studentId]);
     const row = await tx.submission.findUnique({
       where: {
         activity_id_student_id: {
@@ -2791,6 +2810,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         fields,
         tx,
       );
+      // Excused work is no evidence; un-excused work is again.
+      await refreshOutcomeEvidence(tx, activityId, [studentId]);
       await this.auditLog?.record(
         tx,
         activity.school_id,

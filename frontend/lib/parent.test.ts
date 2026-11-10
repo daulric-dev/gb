@@ -46,6 +46,15 @@ describe("childTabs", () => {
       label: "Reports",
     });
   });
+
+  test("Outcomes only when the school shows mastery (older servers send nothing)", () => {
+    expect(childTabs(A, all).some((t) => t.label === "Outcomes")).toBe(false);
+    expect(childTabs(A, { ...all, mastery: false }).some((t) => t.label === "Outcomes")).toBe(false);
+    expect(childTabs(A, { ...all, mastery: true }).at(-1)).toEqual({
+      href: `/parent/${A}/outcomes`,
+      label: "Outcomes",
+    });
+  });
 });
 
 describe("child selection", () => {

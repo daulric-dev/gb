@@ -45,7 +45,12 @@ model activity {
   shuffle_options       Boolean           @default(false)
   quiz_bank_draw        quiz_bank_draw[]
   lti_line_item          lti_line_item?
+  peer_review_setting    peer_review_setting? @relation("peer_review_setting_activity")
+  peer_review_quality_of peer_review_setting? @relation("peer_review_setting_quality")
+  peer_review_allocation peer_review_allocation[]
 
+  outcome_alignment      outcome_alignment[]
+  outcome_evidence       outcome_evidence[]
   @@index([assignment_group_id])
   @@index([course_id])
   @@index([status], map: "idx_activity_status")
@@ -173,6 +178,7 @@ model quiz_question {
   question_bank question_bank? @relation(fields: [bank_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   rubric      rubric?       @relation(fields: [rubric_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  outcome_alignment outcome_alignment[]
   @@index([activity_id], map: "idx_quiz_question_activity")
   @@index([bank_id], map: "idx_quiz_question_bank")
   @@index([rubric_id], map: "idx_quiz_question_rubric")
@@ -216,9 +222,12 @@ model submission {
   activity       activity          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   file           file?             @relation(fields: [file_id], references: [id], onUpdate: NoAction)
   submission_file submission_file[]
+  peer_review_allocation peer_review_allocation[]
+  similarity_fingerprint similarity_fingerprint[]
   user_profile   user_profile?     @relation(fields: [graded_by], references: [id], onUpdate: NoAction)
   student        student           @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  outcome_evidence outcome_evidence[]
   @@unique([activity_id, student_id], map: "idx_submission_one_per_student")
   @@index([student_id], map: "idx_submission_student")
   @@index([quiz_expires_at], map: "idx_submission_quiz_expires")
@@ -271,6 +280,7 @@ model rubric {
   updated_at       DateTime           @default(now()) @db.Timestamptz(6)
   activity         activity[]
   quiz_question    quiz_question[]
+  peer_review_setting peer_review_setting[]
   course           course             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user_profile     user_profile?      @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   rubric_criterion rubric_criterion[]
@@ -291,6 +301,7 @@ model rubric_criterion {
   rubric_rating     rubric_rating[]
   rubric_assessment rubric_assessment[]
 
+  outcome_alignment outcome_alignment[]
   @@index([rubric_id, position], map: "idx_rubric_criterion_rubric")
   @@schema("grading")
 }

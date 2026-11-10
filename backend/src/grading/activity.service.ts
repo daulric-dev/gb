@@ -28,6 +28,7 @@ import { CourseNotificationService } from '@/course-notification/course-notifica
 import { syncUntimedQuizAttempts } from './extension.service';
 import { rescoreQuizFromAnswers } from './quiz-rescore';
 import { refreshLateness } from './lateness';
+import { refreshOutcomeEvidence } from '@/mastery/outcome-evidence';
 import { latePolicyColumns, type LatePenaltyMode } from './late-policy';
 import {
   createQuestion,
@@ -477,6 +478,10 @@ export class ActivityService {
         if (lateTouched || patch.dueAt !== undefined || patch.points !== undefined) {
           // Lateness and penalties follow the new dates and policy.
           await refreshLateness(tx, activityId);
+        }
+        if (patch.points !== undefined) {
+          // Whole-activity evidence is the mark over the points.
+          await refreshOutcomeEvidence(tx, activityId);
         }
         await this.auditLog?.record(
           tx,

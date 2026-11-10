@@ -19,7 +19,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { ChevronsDownUp, ChevronsUpDown, Layers, Loader2, Plus } from "lucide-react";
+import Link from "next/link";
+import { ChevronsDownUp, ChevronsUpDown, Layers, Loader2, Plus, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,8 @@ import {
 import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { ModuleCard } from "./_components/ModuleCard";
+import { AiModuleItemsDialog } from "./_components/AiModuleItemsDialog";
+import { useFeatures } from "@/hooks/use-features";
 import { AddItemDialog } from "./_components/AddItemDialog";
 import { userMessage } from "@/lib/errors";
 
@@ -74,6 +77,9 @@ export default function CourseModulesPage() {
   const promptValue = useSignal("");
   const saving = useSignal(false);
   const addingTo = useSignal<CourseModule | null>(null);
+  const suggestingFor = useSignal<CourseModule | null>(null);
+  const { hasFeature } = useFeatures();
+  const aiOn = hasFeature("ai_assistance");
   const deleting = useSignal<CourseModule | null>(null);
 
   const url = `/courses/${course.id}/modules`;
@@ -296,6 +302,12 @@ export default function CourseModulesPage() {
                 {allCollapsed ? "Expand all" : "Collapse all"}
               </Button>
             )}
+            {canManage && aiOn && (
+              <Button variant="outline" nativeButton={false} render={<Link href={`${base}/plan`} />}>
+                <Sparkles className="mr-2 size-4" aria-hidden />
+                Plan with AI
+              </Button>
+            )}
             {canManage && (
               <Button onClick={() => openPrompt({ kind: "new-module" })}>
                 <Plus className="mr-2 size-4" />
@@ -335,6 +347,12 @@ export default function CourseModulesPage() {
                 <Plus className="mr-2 size-4" />
                 Create the first module
               </Button>
+              {aiOn && (
+                <Button variant="outline" nativeButton={false} render={<Link href={`${base}/plan`} />}>
+                  <Sparkles className="mr-2 size-4" aria-hidden />
+                  Plan this course with AI
+                </Button>
+              )}
             </EmptyContent>
           )}
         </Empty>
@@ -366,6 +384,7 @@ export default function CourseModulesPage() {
                   }
                   onDeleteAction={() => (deleting.value = m)}
                   onAddItemAction={() => (addingTo.value = m)}
+                  onSuggestItemsAction={canManage && aiOn ? () => (suggestingFor.value = m) : undefined}
                   onReorderItemsAction={(a, o) => void reorderItems(m, a, o)}
                   itemActionsAction={itemActions}
                 />
@@ -415,6 +434,16 @@ export default function CourseModulesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AiModuleItemsDialog
+        courseId={course.id}
+        base={base}
+        module={suggestingFor.value}
+        onOpenChangeAction={(open) => {
+          if (!open) suggestingFor.value = null;
+        }}
+        onAddedAction={load}
+      />
 
       <AddItemDialog
         open={!!addingTo.value}

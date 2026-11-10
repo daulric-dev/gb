@@ -64,7 +64,7 @@ The management routes use `AdminGuard` rather than `PermissionGuard`, because ga
 
 ## Permission catalog
 
-Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route); `audit-log` has `read`; `report-card` has `read` and `update`; `attendance-report` has `read`. That makes 35 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
+Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route); `audit-log` has `read`; `report-card` has `read` and `update`; `attendance-report` has `read`; `course-library` has `create`; `pastoral-note` has `read`, `create`, `update` and the extra action `safeguarding` (`EXTRA_ACTIONS`: listed only where `RESOURCE_ACTIONS` names it, never a default); `analytics` has `read`. That makes 41 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
 
 | Key | Description | teacher | member | Enforced by |
 | --- | --- | :---: | :---: | --- |
@@ -101,19 +101,29 @@ Keys are `<resource>:<action>`, and a key exists only when something enforces it
 | `chat:delete` | Delete chat messages | yes | yes | `chat.controller.ts` |
 | `report-card:read` | View report card progress, previews and published reports | | | `report-card/report-release.controller.ts` (release dashboard, previews, PDFs, zips, transcripts). Teachers write their own course comments through their course role, not this key. |
 | `report-card:update` | Write head comments and publish report cards | | | `report-card/report-release.controller.ts` (deadline, head comments, publish, unpublish, regenerate) |
+| `course-library:create` | Share course templates with every school in the organisation | | | Not a route decorator: `src/course/library/library-access.ts` (`assertMayShareWithOrganisation`) when publishing or widening a library item to `organisation` visibility. Publishing for your own school needs only a manage role on the source course. |
+| `pastoral-note:read` | View behaviour and pastoral notes about students | | | `src/pastoral` (`pastoral-access.ts`): every non-safeguarding note of the school, the CSV export. Authors always see their own notes. |
+| `pastoral-note:create` | Write behaviour and pastoral notes | yes | | `src/pastoral`: writing notes (and editing your own). |
+| `pastoral-note:update` | Edit, resolve and delete behaviour and pastoral notes | | | `src/pastoral`: changing or deleting any note the holder can see. |
+| `pastoral-note:safeguarding` | See, write and edit safeguarding notes | | | `src/pastoral`: needed on top of read/create/update for notes in a safeguarding category; every read of such a note is audit-logged. The catalog rows are inserted by `20261128100000_pastoral_notes`; no grants were needed (no earlier key gated notes). |
 | `attendance-report:read` | View the school attendance report and any student's attendance | | | Not a route decorator: `attendance-alerts/attendance-report.service.ts` (`REPORT_PERMISSION`, via `loadEffectivePermissions`) for the school report, any student's report, their CSV exports and the school-wide alert list. Form tutors still see their own tutees and course staff their course report without it. Alert settings stay on `school:update`, form tutors on `student:update`. Added by `20261122110000_attendance_report_permission`, which granted it to every custom role holding `report-card:read` (previously the gate) so nobody lost access on upgrade. |
+| `analytics:read` | View school analytics (roll-ups per course and teacher) and students at risk in any course | | | `@RequirePermission('analytics', 'read')` on `/api/analytics/school...` (roll-ups, at-risk list, CSV, refresh) in `src/analytics/analytics.controller.ts`, and `AnalyticsService.authorizeCourse` (via `loadEffectivePermissions`) for any course's analytics. Course staff see their own course's analytics through their course role without it. Added by `20261129100000_analytics`; no role gets it automatically except admins (a school grants it on the Roles page). |
 
 A custom role can grant any of these keys on top of the base role's defaults. System roles (`school_role.is_system`) are read-only and report their code defaults.
 
 ## Used by
 
 - **`PermissionGuard` + `@RequirePermission`**: the controllers in the table above, which are `academic-year`, `announcement`, `chat`, `course` (`course.controller.ts`, `course-copy.controller.ts`), `file-manager`, `grade-scale`, `school`, `student`, `student-account/school-join-code.controller.ts` and `term`.
+- **AI assistance** (`src/ai`) adds no keys: `/api/schools/current/ai` uses `PermissionGuard` + `school:update`; the teacher draft routes use the course role (`CourseAccessService`: manage roles for quiz questions and page summaries, any staff role for rubric feedback suggestions); the provider routes are for organisation admins (`OrganisationAdminGuard`).
 - **`loadEffectivePermissions`**:
   - `course/access/course-access.service.ts`: `course:update` means course admin.
   - `course/course.service.ts`: sees all courses.
   - `course/course-copy.service.ts`: `course:create`.
   - `dashboard/dashboard.service.ts`: admin view.
   - `attendance-alerts/attendance-report.service.ts`: `attendance-report:read` sees every student's attendance.
+  - `course/library/library-access.ts`: `course-library:create`, `course:update` and membership for the template library.
+  - `pastoral/pastoral-access.ts`: the `pastoral-note:*` keys and `school:update`.
+  - `analytics/analytics.service.ts`: `analytics:read` opens any course's analytics in the school.
 - **`permCacheKey`**: `email-domain/email-domain.service.ts` clears a user's cached set after a domain auto-join.
 - **`PermissionModule`** is imported by `src/app.module.ts`. `src/organisation` uses `permCacheKey` to drop the cached permissions of users whose school role it changes.
 - **Front end**:
@@ -173,7 +183,7 @@ None. The cache TTL (`PERM_TTL` = 45 seconds) is a constant in `permission.effec
 
 `cd backend && bun test src/permission`. Covers:
 
-- **Catalog**: resources without an override expose every action; `course`, `student` and `academic-year` have exactly their reduced sets and the four removed keys are not valid; `school` has only `read` and `update`; admins get exactly the catalog; teachers and members get `school:read` only.
+- **Catalog**: `course-library` has only `create`; `pastoral-note` has read/create/update/safeguarding (teachers get create only, members nothing) and `safeguarding` exists on no other resource; resources without an override expose every action; `course`, `student` and `academic-year` have exactly their reduced sets and the four removed keys are not valid; `school` has only `read` and `update`; admins get exactly the catalog; teachers and members get `school:read` only.
 - **Guard**: inert without metadata; fails closed without a user; admin passes, teacher defaults allow and deny the right keys; a custom role adds a key; students and non-members are denied; the school is resolved from `:courseId`; the cache is used.
 - **Service**: role creation and duplicates, system-role protection, setting keys (rejects unknown keys, invalidates the cache), `getMyPermissions` for no school, students, admins and the cached path, cross-school membership rejection, `changeMemberRole` (null role, school owner, the not-null migration hint).
 - **Sync**: every catalog entry is upserted on boot.

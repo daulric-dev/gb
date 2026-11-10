@@ -11,12 +11,19 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import type { CatalogEntry, PermissionAction, SchoolRole } from "./types";
 import { userMessage } from "@/lib/errors";
 
-const ACTION_ORDER: PermissionAction[] = ["read", "create", "update", "delete"];
+const ACTION_ORDER: PermissionAction[] = [
+  "read",
+  "create",
+  "update",
+  "delete",
+  "safeguarding",
+];
 const ACTION_LABEL: Record<PermissionAction, string> = {
   read: "View",
   create: "Create",
   update: "Edit",
   delete: "Delete",
+  safeguarding: "Safeguarding",
 };
 
 const RESOURCE_PRETTY: Record<string, string> = {
