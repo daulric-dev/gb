@@ -21,11 +21,11 @@ import { objectKey } from '@/storage/keys';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { optionalImageUrl } from '@/images/public-url';
+import { isOrgAdmin, organisationSummary } from '@/organisation/org-admin';
 import {
-  isLastStoredOrgAdmin,
-  isOrgAdmin,
-  organisationSummary,
-} from '@/organisation/org-admin';
+  AccountDeletionBlockedException,
+  accountDeletionCheck,
+} from './account-deletion';
 import { FeatureService } from '@/features/feature.service';
 
 const PROFILE_TTL = 60 * 60 * 24 * 30;
@@ -437,12 +437,20 @@ export class AuthService {
     return data;
   }
 
+  /**
+   * Whether this account may be deleted now, and if not why (see
+   * account-deletion.ts): `{ canDelete, blockers: [{ code, message, action? }] }`.
+   */
+  deletionCheck(userId: string) {
+    return accountDeletionCheck(this.prisma, userId);
+  }
+
   async deleteAccount(userId: string) {
-    if (await isLastStoredOrgAdmin(this.prisma, userId)) {
-      throw new BadRequestException(
-        "You're the organisation's last administrator. Add another administrator before deleting your account.",
-      );
-    }
+    // Refuse before anything is touched: owners must hand over first, and a
+    // school-managed student account is the school's to remove. This also
+    // keeps the Restrict owner foreign keys from failing the transaction.
+    const { blockers } = await accountDeletionCheck(this.prisma, userId);
+    if (blockers.length > 0) throw new AccountDeletionBlockedException(blockers);
 
     const [files, profile] = await Promise.all([
       this.prisma.file

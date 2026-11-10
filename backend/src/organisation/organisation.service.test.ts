@@ -182,12 +182,19 @@ describe('OrganisationService', () => {
         id: 'org-1',
         name: 'Riverside Trust',
         createdAt: NOW.toISOString(),
+        ownerId: ME,
       });
       // Under the advisory lock, inside the transaction.
       expect(prisma.$executeRaw).toHaveBeenCalled();
+      // Whoever runs setup owns the organisation.
       expect(prisma.organisation.create.mock.calls[0][0].data).toEqual({
         name: 'Riverside Trust',
+        owner_id: ME,
       });
+      // The profile the owner key references exists first.
+      expect(
+        prisma.user_profile.upsert.mock.invocationCallOrder[0],
+      ).toBeLessThan(prisma.organisation.create.mock.invocationCallOrder[0]);
       expect(prisma.organisation_admin.upsert.mock.calls[0][0].create).toEqual({
         user_id: ME,
         created_by: ME,
@@ -385,6 +392,8 @@ describe('OrganisationService', () => {
           name: 'A u-db',
           createdAt: NOW.toISOString(),
           fromEnv: false,
+          isOwner: false,
+          stored: true,
         },
         {
           userId: 'u-both',
@@ -392,6 +401,8 @@ describe('OrganisationService', () => {
           name: 'A u-both',
           createdAt: NOW.toISOString(),
           fromEnv: true,
+          isOwner: false,
+          stored: true,
         },
         {
           userId: 'u-env',
@@ -399,6 +410,8 @@ describe('OrganisationService', () => {
           name: 'Env Admin',
           createdAt: NOW.toISOString(),
           fromEnv: true,
+          isOwner: false,
+          stored: false,
         },
       ]);
       // Only verified, live accounts count.
@@ -593,6 +606,7 @@ describe('OrganisationService', () => {
           isActive: true,
           createdAt: NOW.toISOString(),
           admin: { userId: 'u-a', email: 'ada@x.org', name: 'Ada L' },
+          ownerId: null,
           staffCount: 5,
           studentCount: 40,
           pendingAdminInvite: null,
@@ -605,6 +619,7 @@ describe('OrganisationService', () => {
           isActive: true,
           createdAt: NOW.toISOString(),
           admin: null,
+          ownerId: null,
           staffCount: 0,
           studentCount: 7,
           pendingAdminInvite: null,

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api } from "@/lib/api";
-import { useProfile } from "@/providers/AuthProvider";
+import { useAuth, useProfile } from "@/providers/AuthProvider";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import { SchoolTimetableLink } from "./_components/school-timetable-link";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { AccountSettings } from "@/components/account/account-settings";
+import { SchoolOwnership } from "@/components/account/school-ownership";
 import { useMySchools } from "@/hooks/use-my-schools";
 import { managingViaOrganisation } from "@/lib/active-school";
 import { userMessage } from "@/lib/errors";
@@ -28,6 +29,7 @@ export default function SettingsPage() {
 
   const router = useRouter();
   const { profile } = useProfile();
+  const { refreshSilently } = useAuth();
   const leaving = useSignal(false);
   // An organisation admin managing the school is not a member: nothing to leave.
   const viaOrganisation = managingViaOrganisation(useMySchools());
@@ -66,6 +68,12 @@ export default function SettingsPage() {
       <SchoolSsoSettings />
 
       <SchoolIntegrationSettings />
+
+      <SchoolOwnership
+        schoolId={profile.value?.school?.id}
+        // Their role in the school may have changed (admin -> teacher).
+        onTransferred={() => void refreshSilently()}
+      />
 
       <AccountSettings
         profileExtra={

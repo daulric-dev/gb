@@ -4,12 +4,13 @@
 model organisation {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String
-  /// Platform feature overrides (key -> on/off) over the catalog defaults in
-  /// src/features/feature.catalog.ts. Unknown keys are ignored.
   features   Json     @default("{}")
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @db.Timestamptz(6)
+  owner_id   String?       @db.Uuid
+  owner      user_profile? @relation("organisation_owner_idTouser_profile", fields: [owner_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
+  @@index([owner_id])
   @@schema("public")
 }
 

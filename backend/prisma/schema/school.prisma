@@ -351,6 +351,7 @@ model user_profile {
   discussion_read                                                   discussion_read[]
   organisation_admin                                                organisation_admin?        @relation("organisation_admin_user_idTouser_profile")
   organisation_admin_created                                        organisation_admin[]       @relation("organisation_admin_created_byTouser_profile")
+  organisation_owned                                                organisation[]             @relation("organisation_owner_idTouser_profile")
   organisation_invite_sent                                          organisation_invite[]      @relation("organisation_invite_invited_byTouser_profile")
   organisation_invite_accepted                                      organisation_invite[]      @relation("organisation_invite_accepted_byTouser_profile")
   lti_subject                                                       lti_subject[]

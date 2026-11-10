@@ -91,6 +91,7 @@ describe('OrganisationController', () => {
         'DELETE schools/:id/logo',
         'PUT schools/:id/admin',
         'POST users/:userId/sessions/revoke',
+        'POST transfer-ownership',
       ].sort(),
     );
   });
@@ -154,6 +155,7 @@ describe("OrganisationController: one school's settings", () => {
       uploadLimits,
       logos,
       versioning,
+      {} as any,
     );
   });
 
