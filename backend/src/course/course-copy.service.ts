@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -19,6 +20,16 @@ import {
   toCourseRow,
 } from './access/course-access.service';
 import { CourseService } from './course.service';
+import { CourseFileCopyService } from './course-file-copy.service';
+import {
+  readSnapshot,
+  writeSnapshot,
+  type CourseSnapshot,
+  type WriteResult,
+} from './course-snapshot';
+import { copyOutcomeAlignments } from '@/mastery/outcome-evidence';
+
+export { relinkIds, shiftDate, type CopyCounts } from './course-snapshot';
 
 type Tx = Prisma.TransactionClient;
 
@@ -32,36 +43,23 @@ export interface CopyDates {
   clearDueDates?: boolean;
 }
 
-/** What one copy wrote, so the caller can show it and the smoke test check it. */
-export interface CopyCounts {
-  assignmentGroups: number;
-  rubrics: number;
-  activities: number;
-  quizQuestions: number;
-  pages: number;
-  modules: number;
-  moduleItems: number;
-  discussionTopics: number;
-}
-
 /** Content can be large; the default 5s interactive transaction is not enough. */
-const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
+export const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 
 /**
  * Course copy, import and templates.
  *
- * A copy carries a course's *design* - grade setup, rubrics, activities,
- * pages, modules and discussion prompts - into a fresh draft course, and
- * leaves every trace of the class behind: students, submissions, marks,
- * attendance, announcements and replies. The copier teaches the new course.
+ * A copy carries a course's *design* (see `course-snapshot.ts`) into a fresh
+ * draft course, and leaves every trace of the class behind: students,
+ * submissions, marks, attendance, announcements and replies. The copier
+ * teaches the new course.
  *
  * Everything is re-created with new ids inside one transaction, and every
- * pointer (an item's page or activity, an activity's group or rubric) is
- * repointed at the copy, so the two courses never share a row. Files are the
- * exception: a file item keeps the same file, which the source course already
- * offered, and the portal serves it through the new course's module item.
- * Content only moves within one school, and a file item is only carried over
- * while its file is live and belongs to the target's school.
+ * pointer is repointed at the copy, so the two courses never share a row.
+ * Files too: each linked file is copied into the copier's own storage
+ * (`CourseFileCopyService`) and the copy's items link those, so copying never
+ * gives anyone access to the author's files. Content only moves within one
+ * school here; across schools it goes through the template library.
  */
 @Injectable()
 export class CourseCopyService {
@@ -72,6 +70,7 @@ export class CourseCopyService {
     private readonly access: CourseAccessService,
     private readonly courses: CourseService,
     private readonly prisma: PrismaService,
+    private readonly files: CourseFileCopyService,
   ) {}
 
   // ── templates ─────────────────────────────────────────────────────────────
@@ -147,30 +146,7 @@ export class CourseCopyService {
    * due time keeps its time of day.
    */
   shiftOf(dates: CopyDates): number | null {
-    const byDays = dates.shiftDays !== undefined && dates.shiftDays !== null;
-    const byStarts = !!dates.sourceStartDate || !!dates.targetStartDate;
-
-    if ([byDays, byStarts, !!dates.clearDueDates].filter(Boolean).length > 1) {
-      throw new BadRequestException(
-        'Choose one of: shift by days, shift by start dates, or clear due dates',
-      );
-    }
-    if (dates.clearDueDates) return null;
-    if (byDays) return dates.shiftDays! * DAY_MS;
-    if (byStarts) {
-      if (!dates.sourceStartDate || !dates.targetStartDate) {
-        throw new BadRequestException(
-          'Give both the old and the new start date',
-        );
-      }
-      const from = Date.parse(`${dates.sourceStartDate.slice(0, 10)}T00:00:00Z`);
-      const to = Date.parse(`${dates.targetStartDate.slice(0, 10)}T00:00:00Z`);
-      if (Number.isNaN(from) || Number.isNaN(to)) {
-        throw new BadRequestException('Start dates must be YYYY-MM-DD');
-      }
-      return Math.round((to - from) / DAY_MS) * DAY_MS;
-    }
-    return 0;
+    return shiftOf(dates);
   }
 
   // ── copy ──────────────────────────────────────────────────────────────────
@@ -206,10 +182,14 @@ export class CourseCopyService {
       input,
     );
 
-    let created: CourseRow;
-    let counts: CopyCounts;
-    try {
-      [created, counts] = await this.prisma.$transaction(async (tx) => {
+    const snapshot = await readSnapshot(this.prisma, source);
+    let created!: CourseRow;
+    const written = await this.withCopiedFiles(
+      snapshot,
+      userId,
+      source.school_id,
+      'Failed to copy the course',
+      async (tx, write) => {
         const row = await tx.course.create({
           data: {
             school_id: source.school_id,
@@ -228,47 +208,28 @@ export class CourseCopyService {
           select: COURSE_SELECT,
         });
         await tx.course_staff.create({
-          data: {
-            course_id: row.id,
-            user_profile_id: userId,
-            role: 'teacher',
-          },
+          data: { course_id: row.id, user_profile_id: userId, role: 'teacher' },
         });
-
-        const setting = await tx.discussion_setting.findUnique({
-          where: { course_id: source.id },
-          select: { students_can_create_topics: true },
-        });
-        if (setting) {
+        if (snapshot.discussion) {
           await tx.discussion_setting.create({
             data: {
               course_id: row.id,
-              students_can_create_topics: setting.students_can_create_topics,
+              students_can_create_topics: snapshot.discussion.studentsCanCreateTopics,
             },
           });
         }
-
-        const written = await this.copyContent(
-          tx,
-          source.id,
-          row.id,
-          userId,
-          shift,
-          source.school_id,
-        );
-        return [toCourseRow(row), written] as const;
-      }, TX_OPTIONS);
-    } catch (error) {
-      this.logger.error(`Failed to copy course: ${(error as Error).message}`);
-      throw new BadRequestException('Failed to copy the course');
-    }
+        created = toCourseRow(row);
+        return write(row.id, shift);
+      },
+    );
 
     this.courses.announceCreated?.(created.id, userId);
     return {
       ...this.courses.toCourse(created),
       role: 'teacher' as const,
       studentCount: 0,
-      copied: counts,
+      copied: written.counts,
+      notes: written.notes,
     };
   }
 
@@ -298,353 +259,105 @@ export class CourseCopyService {
     }
     const shift = this.shiftOf(input);
 
-    try {
-      const copied = await this.prisma.$transaction(
-        (tx) =>
-          this.copyContent(
-            tx,
-            source.id,
-            targetId,
-            userId,
-            shift,
-            target.school_id,
-          ),
-        TX_OPTIONS,
-      );
-      return { copied };
-    } catch (error) {
-      this.logger.error(
-        `Failed to import course content: ${(error as Error).message}`,
-      );
-      throw new BadRequestException('Failed to import the content');
-    }
+    const snapshot = await readSnapshot(this.prisma, source);
+    const written = await this.withCopiedFiles(
+      snapshot,
+      userId,
+      target.school_id,
+      'Failed to import the content',
+      (_tx, write) => write(targetId, shift),
+    );
+    return { copied: written.counts, notes: written.notes };
   }
 
   /**
-   * Re-create one course's content inside another. Ids are minted here so
-   * each pointer can be repointed before anything is written, and every
-   * table goes in with one `createMany`.
+   * Run `body` in one transaction with the snapshot's files already copied
+   * into the caller's storage: files are checked against the school's upload
+   * limit (nothing written if one is too large), reserved, copied, and marked
+   * ready in the same transaction as the content. On failure the copies are
+   * discarded.
    */
-  async copyContent(
-    tx: Tx,
-    sourceId: string,
-    targetId: string,
+  private async withCopiedFiles(
+    snapshot: CourseSnapshot,
     userId: string,
-    shift: number | null,
-    targetSchoolId: string,
-  ): Promise<CopyCounts> {
-    const [groups, rubrics, activities, pages, modules, items, topics] =
-      await Promise.all([
-        tx.assignment_group.findMany({
-          where: { course_id: sourceId },
-          orderBy: { position: 'asc' },
-        }),
-        tx.rubric.findMany({
-          where: { course_id: sourceId },
-          include: { rubric_criterion: { include: { rubric_rating: true } } },
-        }),
-        tx.activity.findMany({
-          where: { course_id: sourceId },
-          include: { quiz_question: { include: { quiz_option: true } } },
-          orderBy: { created_at: 'asc' },
-        }),
-        tx.page.findMany({
-          where: { course_id: sourceId },
-          orderBy: { created_at: 'asc' },
-        }),
-        tx.module.findMany({
-          where: { course_id: sourceId },
-          orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
-        }),
-        tx.module_item.findMany({
-          where: { course_id: sourceId },
-          orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
-        }),
-        tx.discussion_topic.findMany({
-          where: { course_id: sourceId },
-          include: { user_profile: { select: { account_type: true } } },
-          orderBy: { created_at: 'asc' },
-        }),
-      ]);
-
-    // Existing target rows, for an import: merge groups by name, and put the
-    // imported modules after the course's own.
-    const [targetGroups, lastModule, lastGroup] = await Promise.all([
-      tx.assignment_group.findMany({
-        where: { course_id: targetId },
-        select: { id: true, name: true },
-      }),
-      tx.module.aggregate({
-        where: { course_id: targetId },
-        _max: { position: true },
-      }),
-      tx.assignment_group.aggregate({
-        where: { course_id: targetId },
-        _max: { position: true },
-      }),
-    ]);
-    const moduleOffset =
-      lastModule._max.position === null ? 0 : lastModule._max.position + 1;
-    const groupOffset =
-      lastGroup._max.position === null ? 0 : lastGroup._max.position + 1;
-
-    // source id -> copy id, for every row anything points at; also used to
-    // rewrite links to the source course inside page and activity text.
-    const ids = new Map<string, string>([[sourceId, targetId]]);
-    const mint = (oldId: string) => {
-      const id = randomUUID();
-      ids.set(oldId, id);
-      return id;
-    };
-
-    const byName = new Map(
-      targetGroups.map((g) => [g.name.trim().toLowerCase(), g.id]),
-    );
-    const newGroups: Prisma.assignment_groupCreateManyInput[] = [];
-    for (const g of groups) {
-      const existing = byName.get(g.name.trim().toLowerCase());
-      if (existing) {
-        ids.set(g.id, existing);
-        continue;
-      }
-      newGroups.push({
-        id: mint(g.id),
-        course_id: targetId,
-        name: g.name,
-        weight: g.weight,
-        position: g.position + groupOffset,
-        drop_lowest: g.drop_lowest,
-        drop_highest: g.drop_highest,
-      });
-    }
-
-    const newRubrics: Prisma.rubricCreateManyInput[] = [];
-    const newCriteria: Prisma.rubric_criterionCreateManyInput[] = [];
-    const newRatings: Prisma.rubric_ratingCreateManyInput[] = [];
-    for (const r of rubrics) {
-      const rubricId = mint(r.id);
-      newRubrics.push({
-        id: rubricId,
-        course_id: targetId,
-        title: r.title,
-        created_by: userId,
-      });
-      for (const c of r.rubric_criterion) {
-        const criterionId = randomUUID();
-        newCriteria.push({
-          id: criterionId,
-          rubric_id: rubricId,
-          title: c.title,
-          description: c.description,
-          points: c.points,
-          position: c.position,
-        });
-        for (const x of c.rubric_rating) {
-          newRatings.push({
-            criterion_id: criterionId,
-            label: x.label,
-            description: x.description,
-            points: x.points,
-            position: x.position,
+    schoolId: string,
+    failure: string,
+    body: (
+      tx: Tx,
+      write: (targetId: string, shift: number | null) => Promise<WriteResult>,
+    ) => Promise<WriteResult>,
+  ): Promise<WriteResult> {
+    await this.files.assertFits(snapshot.files, schoolId);
+    const owner = { schoolId, ownerId: userId };
+    let fileIds = new Map<string, string>();
+    try {
+      const tools = snapshot.items
+        .map((i) => i.externalTool?.toolId)
+        .filter((id): id is string => !!id);
+      const lti = await this.files.ltiDeployments(schoolId, tools);
+      fileIds = await this.files.reserve(snapshot.files, owner, () => randomUUID());
+      await this.files.copyObjects(snapshot.files, fileIds, owner);
+      return await this.prisma.$transaction(async (tx) => {
+        const result = await body(tx, async (targetId, shift) => {
+          const written = await writeSnapshot(tx, snapshot, {
+            targetId,
+            userId,
+            shift,
+            fileIds,
+            ltiDeployments: lti.deployments,
+            toolNames: lti.names,
           });
-        }
-      }
-    }
-
-    // Mint every page and activity id before writing any text, so a link
-    // from one page to another copied page can be rewritten either way round.
-    for (const a of activities) mint(a.id);
-    for (const p of pages) mint(p.id);
-    const relink = (text: string) => relinkIds(text, ids);
-
-    // Activities arrive as drafts: due dates moved and everything reviewed
-    // before students see it, and publishing then notifies them as usual.
-    const newActivities: Prisma.activityCreateManyInput[] = [];
-    const newQuestions: Prisma.quiz_questionCreateManyInput[] = [];
-    const newOptions: Prisma.quiz_optionCreateManyInput[] = [];
-    for (const a of activities) {
-      const activityId = ids.get(a.id)!;
-      newActivities.push({
-        id: activityId,
-        course_id: targetId,
-        kind: a.kind,
-        title: a.title,
-        instructions: a.instructions === null ? null : relink(a.instructions),
-        points: a.points,
-        due_at: shiftDate(a.due_at, shift),
-        status: 'draft',
-        published_at: null,
-        allow_file: a.allow_file,
-        allow_text: a.allow_text,
-        max_attempts: a.max_attempts,
-        assignment_group_id: a.assignment_group_id
-          ? (ids.get(a.assignment_group_id) ?? null)
-          : null,
-        omit_from_final_grade: a.omit_from_final_grade,
-        rubric_id: a.rubric_id ? (ids.get(a.rubric_id) ?? null) : null,
-        created_by: userId,
-      });
-      for (const q of a.quiz_question) {
-        const questionId = randomUUID();
-        newQuestions.push({
-          id: questionId,
-          activity_id: activityId,
-          prompt: q.prompt,
-          kind: q.kind,
-          points: q.points,
-          sort_order: q.sort_order,
-        });
-        for (const o of q.quiz_option) {
-          newOptions.push({
-            question_id: questionId,
-            label: o.label,
-            is_correct: o.is_correct,
-            sort_order: o.sort_order,
+          // Learning outcomes and their alignments (src/mastery).
+          await copyOutcomeAlignments(tx, {
+            sourceCourseId: snapshot.sourceCourseId,
+            targetCourseId: targetId,
+            activityIds: written.ids,
+            criterionIds: written.ids,
+            questionIds: written.ids,
+            userId,
           });
-        }
-      }
+          return written;
+        });
+        await this.files.markReady(tx, fileIds.values());
+        return result;
+      }, TX_OPTIONS);
+    } catch (error) {
+      await this.files.discard(fileIds.values());
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`${failure}: ${(error as Error).message}`);
+      throw new BadRequestException(failure);
     }
-
-    // Pages, modules and items keep their published flags: the new course
-    // is a draft, so nothing is visible until it is published, and then the
-    // structure is as the teacher left it (minus the draft activities).
-    const newPages: Prisma.pageCreateManyInput[] = pages.map((p) => ({
-      id: ids.get(p.id)!,
-      course_id: targetId,
-      title: p.title,
-      body: relink(p.body),
-      is_published: p.is_published,
-      created_by: userId,
-    }));
-
-    const newModules: Prisma.moduleCreateManyInput[] = modules.map((m) => ({
-      id: mint(m.id),
-      course_id: targetId,
-      title: m.title,
-      position: m.position + moduleOffset,
-      is_published: m.is_published,
-    }));
-
-    // Discussion prompts the staff wrote come along unpublished and empty;
-    // topics students started are part of the old class, not the design.
-    const newTopics: Prisma.discussion_topicCreateManyInput[] = topics
-      .filter((t) => t.user_profile?.account_type !== 'student')
-      .map((t) => ({
-        id: mint(t.id),
-        course_id: targetId,
-        author_user_profile_id: userId,
-        title: t.title,
-        body: relink(t.body),
-        is_pinned: t.is_pinned,
-        is_locked: t.is_locked,
-        is_published: false,
-        require_initial_post: t.require_initial_post,
-      }));
-
-    // A file item may only keep pointing at a live file of the target's
-    // school; anything else (deleted, or another school's) is left behind.
-    const fileIds = [
-      ...new Set(items.map((i) => i.file_id).filter((id): id is string => !!id)),
-    ];
-    const usableFiles = new Set(
-      fileIds.length === 0
-        ? []
-        : (
-            await tx.file.findMany({
-              where: {
-                id: { in: fileIds },
-                school_id: targetSchoolId,
-                deleted_at: null,
-              },
-              select: { id: true },
-            })
-          ).map((f) => f.id),
-    );
-
-    const newItems: Prisma.module_itemCreateManyInput[] = [];
-    for (const i of items) {
-      if (i.file_id && !usableFiles.has(i.file_id)) continue;
-      // External tool items carry an LTI resource link (and a deployment
-      // that may not reach the target's school); they are not copied.
-      if (i.item_type === 'external_tool') continue;
-      const moduleId = ids.get(i.module_id);
-      const pageId = i.page_id ? ids.get(i.page_id) : null;
-      const activityId = i.activity_id ? ids.get(i.activity_id) : null;
-      const topicId = i.discussion_topic_id
-        ? ids.get(i.discussion_topic_id)
-        : null;
-      // An item whose target is gone or was not copied (a topic a student
-      // started) would break the item-type check; leave it behind.
-      if (
-        !moduleId ||
-        pageId === undefined ||
-        activityId === undefined ||
-        topicId === undefined
-      ) {
-        continue;
-      }
-      newItems.push({
-        module_id: moduleId,
-        course_id: targetId,
-        position: i.position,
-        item_type: i.item_type,
-        title: i.title,
-        page_id: pageId,
-        activity_id: activityId,
-        file_id: i.file_id,
-        discussion_topic_id: topicId,
-        url: i.url,
-        indent: i.indent,
-        is_published: i.is_published,
-      });
-    }
-
-    // Parents before children, so every foreign key already exists.
-    const writes: [string, unknown[], (rows: any[]) => Promise<unknown>][] = [
-      ['groups', newGroups, (data) => tx.assignment_group.createMany({ data })],
-      ['rubrics', newRubrics, (data) => tx.rubric.createMany({ data })],
-      ['criteria', newCriteria, (data) => tx.rubric_criterion.createMany({ data })],
-      ['ratings', newRatings, (data) => tx.rubric_rating.createMany({ data })],
-      ['activities', newActivities, (data) => tx.activity.createMany({ data })],
-      ['questions', newQuestions, (data) => tx.quiz_question.createMany({ data })],
-      ['options', newOptions, (data) => tx.quiz_option.createMany({ data })],
-      ['pages', newPages, (data) => tx.page.createMany({ data })],
-      ['modules', newModules, (data) => tx.module.createMany({ data })],
-      ['topics', newTopics, (data) => tx.discussion_topic.createMany({ data })],
-      ['items', newItems, (data) => tx.module_item.createMany({ data })],
-    ];
-    for (const [, rows, write] of writes) {
-      if (rows.length > 0) await write(rows);
-    }
-
-    return {
-      assignmentGroups: newGroups.length,
-      rubrics: newRubrics.length,
-      activities: newActivities.length,
-      quizQuestions: newQuestions.length,
-      pages: newPages.length,
-      modules: newModules.length,
-      moduleItems: newItems.length,
-      discussionTopics: newTopics.length,
-    };
   }
 }
 
-/** A date moved by `shift` ms; null `shift` clears it. */
-export function shiftDate(date: Date | null, shift: number | null) {
-  if (!date || shift === null) return null;
-  return shift === 0 ? date : new Date(date.getTime() + shift);
-}
-
-const UUID_RE =
-  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-
 /**
- * Rewrite ids of copied rows inside text (a link from one page to another
- * page or activity of the same course, or to the course itself), so links in
- * the copy stay inside the copy. Ids that were not copied are left alone.
+ * Milliseconds to move every date by, or null to drop due dates. Start
+ * dates are calendar days, so their gap is a whole number of days and a
+ * due time keeps its time of day.
  */
-export function relinkIds(text: string, ids: Map<string, string>) {
-  if (!text) return text;
-  return text.replace(UUID_RE, (id) => ids.get(id.toLowerCase()) ?? id);
+export function shiftOf(dates: CopyDates): number | null {
+  const byDays = dates.shiftDays !== undefined && dates.shiftDays !== null;
+  const byStarts = !!dates.sourceStartDate || !!dates.targetStartDate;
+
+  if ([byDays, byStarts, !!dates.clearDueDates].filter(Boolean).length > 1) {
+    throw new BadRequestException(
+      'Choose one of: shift by days, shift by start dates, or clear due dates',
+    );
+  }
+  if (dates.clearDueDates) return null;
+  if (byDays) return dates.shiftDays! * DAY_MS;
+  if (byStarts) {
+    if (!dates.sourceStartDate || !dates.targetStartDate) {
+      throw new BadRequestException(
+        'Give both the old and the new start date',
+      );
+    }
+    const from = Date.parse(`${dates.sourceStartDate.slice(0, 10)}T00:00:00Z`);
+    const to = Date.parse(`${dates.targetStartDate.slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(from) || Number.isNaN(to)) {
+      throw new BadRequestException('Start dates must be YYYY-MM-DD');
+    }
+    return Math.round((to - from) / DAY_MS) * DAY_MS;
+  }
+  return 0;
 }

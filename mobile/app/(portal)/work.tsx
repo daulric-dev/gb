@@ -7,7 +7,8 @@ import {
   FileText,
   NotebookPen,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { useOfflineReads } from "@/features/offline/OfflineReads";
+import { DraftBadge } from "@/features/offline/DraftBadge";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -61,6 +62,7 @@ function WorkRow({ item }: { item: PortalWorkItem }) {
       ) : handedIn ? (
         <Badge variant="secondary">Handed in</Badge>
       ) : null}
+      <DraftBadge activityId={item.id} />
       <ChevronRight color={colors.mutedForeground} size={16} />
     </Pressable>
   );
@@ -76,13 +78,14 @@ export default function PortalWorkScreen() {
   const [items, setItems] = useState<PortalWorkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { get, savedAt } = useOfflineReads();
 
   const load = useCallback(
     () =>
-      api<PortalWorkItem[]>("/portal/me/activities")
+      get<PortalWorkItem[]>("/portal/me/activities")
         .then(setItems)
         .catch(() => setItems([])),
-    [],
+    [get],
   );
 
   useEffect(() => {
@@ -101,6 +104,7 @@ export default function PortalWorkScreen() {
     <Screen
       title="Work"
       description="Quizzes and assignments across your courses"
+      offlineSavedAt={savedAt}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

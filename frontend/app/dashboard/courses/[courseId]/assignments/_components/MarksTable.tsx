@@ -61,6 +61,8 @@ import { ExtensionActions, ExtensionBadge } from "./ExtensionControls";
 import { AccommodationActions, AccommodationBadge } from "./AccommodationControls";
 import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
 import { userMessage } from "@/lib/errors";
+import { similarityLabel, type SimilarityFlag } from "@/lib/similarity";
+import { SimilarityDialog } from "./SimilarityDialog";
 
 /** What the grade and excuse endpoints answer with. */
 interface MarkResult {
@@ -122,6 +124,7 @@ export function MarksTable({
   assessments = {},
   onAssessedAction,
   lockdownBrowser = false,
+  similarity = {},
 }: {
   activityId: string;
   kind: ActivityKind;
@@ -138,6 +141,11 @@ export function MarksTable({
   onAssessedAction?: (studentId: string, marks: RubricAssessment[]) => void;
   /** A lockdown quiz: show who is taking it now, away, and how often they left. */
   lockdownBrowser?: boolean;
+  /**
+   * Teacher-only similarity markers keyed by student (above the school's
+   * threshold). A prompt to look, never a verdict; never shown to students.
+   */
+  similarity?: Record<string, SimilarityFlag>;
 }) {
   useSignals();
   const search = useSignal("");
@@ -155,6 +163,7 @@ export function MarksTable({
     contentType: string;
   } | null>(null);
   const working = useSignal(false);
+  const similarFor = useSignal<{ submissionId: string; name: string } | null>(null);
 
   const editable = canGrade && !isDraft;
   const online = kind !== "offline";
@@ -343,6 +352,23 @@ export function MarksTable({
                       <AccommodationBadge accommodation={row.accommodation} />
                     )}
                     {lockdownBrowser && <LockdownPresence submission={sub} />}
+                    {similarity[row.studentId] && (
+                      <p className="mt-1">
+                        <button
+                          type="button"
+                          className="rounded-sm text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                          aria-label={`${similarityLabel(similarity[row.studentId])}. Compare ${row.name}'s text`}
+                          onClick={() =>
+                            (similarFor.value = {
+                              submissionId: similarity[row.studentId].submissionId,
+                              name: row.name,
+                            })
+                          }
+                        >
+                          {similarityLabel(similarity[row.studentId])}
+                        </button>
+                      </p>
+                    )}
                     {sub?.needsMarking && (
                       <p className="mt-1">
                         <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300">
@@ -735,6 +761,15 @@ export function MarksTable({
           saving={savingId.value === fileFor.value.row.studentId}
           onSaveGrade={(score) => saveGrade(fileFor.value!.row, score)}
           onClose={() => (fileFor.value = null)}
+        />
+      )}
+
+      {similarFor.value && (
+        <SimilarityDialog
+          activityId={activityId}
+          submissionId={similarFor.value.submissionId}
+          studentName={similarFor.value.name}
+          onCloseAction={() => (similarFor.value = null)}
         />
       )}
 

@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
-import { sendWebhook, signWebhook, USER_AGENT, webhookHeaders } from './webhook-sender';
+import { safeWebhookFetch, sendWebhook, signWebhook, USER_AGENT, webhookHeaders } from './webhook-sender';
 
 const REQ = {
   url: 'http://10.0.0.5:8080/hooks',
@@ -123,5 +123,25 @@ describe('sendWebhook', () => {
     });
     expect(r).toMatchObject({ ok: false, statusCode: null });
     expect(r.error).toContain('ECONNREFUSED');
+  });
+});
+
+describe('WEBHOOK_ALLOW_PRIVATE still governs webhooks (AI passes its own allowPrivate)', () => {
+  test('with the switch on, a webhook reaches a local receiver; per-request allowPrivate: false still refuses', async () => {
+    const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('ok') });
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+    try {
+      const url = `http://127.0.0.1:${server.port}/hooks`;
+      const result = await sendWebhook({ ...REQ, url });
+      expect(result.ok).toBe(true);
+      await expect(
+        safeWebhookFetch(url, { method: 'GET', allowPrivate: false }),
+      ).rejects.toThrow('private or reserved');
+    } finally {
+      if (previous === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+      else process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+      server.stop(true);
+    }
   });
 });

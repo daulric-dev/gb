@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SignedInDevices } from "@/features/account/SignedInDevices";
 import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
+import { OfflineDataCard } from "@/features/offline/OfflineDataCard";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { offlineUsage } from "@/lib/offline-store";
 
 /**
  * Student settings: identity, appearance, signed-in devices and sign-out. Deliberately narrower
@@ -19,6 +22,14 @@ export default function PortalSettingsScreen() {
   const { profile, logout, refresh } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [confirmLogout, setConfirmLogout] = useState<number | null>(null);
+
+  // Logging out deletes offline data, including drafts never sent.
+  const onLogout = useCallback(() => {
+    const unsent = offlineUsage().unsentDrafts;
+    if (unsent > 0) setConfirmLogout(unsent);
+    else void logout();
+  }, [logout]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -70,11 +81,26 @@ export default function PortalSettingsScreen() {
 
       <SignedInDevices refreshKey={refreshKey} />
 
+      <OfflineDataCard refreshKey={refreshKey} />
+
       <CheckForUpdates />
 
-      <Button variant="outline" onPress={logout}>
+      <Button variant="outline" onPress={onLogout}>
         Log out
       </Button>
+      <ConfirmDialog
+        open={confirmLogout !== null}
+        title="Delete unsent drafts?"
+        message={`${confirmLogout} ${confirmLogout === 1 ? "draft is" : "drafts are"} saved only on this device and haven't reached the server. Logging out deletes ${confirmLogout === 1 ? "it" : "them"}. Open your work while online to send or hand in first.`}
+        confirmLabel="Log out anyway"
+        cancelLabel="Keep my drafts"
+        destructive
+        onConfirm={() => {
+          setConfirmLogout(null);
+          void logout();
+        }}
+        onCancel={() => setConfirmLogout(null)}
+      />
     </Screen>
   );
 }

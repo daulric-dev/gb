@@ -70,7 +70,10 @@ For each linked child, only what the school shows parents:
   at different schools, each child's page shows only that child's school;
 - the child's [report cards](./report-cards.md) for published terms (as
   PDFs, under **Reports**) and the transcript across published terms. A
-  term the school has not published, or has unpublished, is never shown.
+  term the school has not published, or has unpublished, is never shown;
+- only if the school turns on **Mastery of learning outcomes** (off by
+  default) and [mastery](./mastery.md) is on: the child's level on each
+  learning outcome and the evidence behind it, under **Outcomes**.
 
 ## What parents never see
 

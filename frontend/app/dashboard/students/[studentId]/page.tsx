@@ -20,6 +20,7 @@ import type { StudentProfile } from "../_components/types";
 import { bannerAccent } from "@/lib/courses/appearance";
 import { AccommodationCard } from "../_components/AccommodationCard";
 import { ParentLinksCard } from "../_components/ParentLinksCard";
+import { PastoralTimelineCard } from "../_components/PastoralTimelineCard";
 import { useFeatures } from "@/hooks/use-features";
 
 function formatDate(value: string | null) {
@@ -131,6 +132,8 @@ export default function StudentProfilePage() {
       <AccommodationCard studentId={student.id} />
 
       <ParentLinksCard studentId={student.id} />
+
+      <PastoralTimelineCard studentId={student.id} studentName={name} />
 
       <Card>
         <CardHeader className="pb-3">

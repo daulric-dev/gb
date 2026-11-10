@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useCourse } from "../_components/course-context";
 import { CourseAppearanceCard } from "../_components/CourseAppearanceCard";
+import { PublishToLibraryCard } from "../_components/PublishToLibraryCard";
 import { SectionHeader } from "../_components/SectionHeader";
 import { MarkdownEditor } from "../_components/MarkdownEditor";
 import { CourseCalendarFields } from "../../_components/CourseCalendarFields";
@@ -309,6 +310,10 @@ export default function CourseSettingsPage() {
       </form>
 
       <CourseAppearanceCard />
+
+      {hasFeature("course_copy") && (
+        <PublishToLibraryCard courseId={course.id} courseName={course.name} />
+      )}
 
       {hasFeature("course_copy") && (
       <Card>

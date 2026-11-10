@@ -18,6 +18,8 @@ export interface ParentVisibility {
   announcements: boolean;
   /** Published report cards and the transcript (`showReports` and `report_cards`). */
   reports: boolean;
+  /** Mastery of learning outcomes (`showMastery` and `mastery`); missing from older servers. */
+  mastery?: boolean;
   notifications: boolean;
 }
 
@@ -202,6 +204,8 @@ export interface ParentSettings {
   showAttendance: boolean;
   showAnnouncements: boolean;
   showReports: boolean;
+  /** Mastery of learning outcomes; off by default. Missing from older servers. */
+  showMastery?: boolean;
   maxStudentAge: number | null;
 }
 
@@ -237,6 +241,7 @@ export function childTabs(
   if (visibility.attendance) tabs.push({ href: `${base}/attendance`, label: "Attendance" });
   if (visibility.announcements) tabs.push({ href: `${base}/announcements`, label: "Announcements" });
   if (visibility.reports) tabs.push({ href: `${base}/reports`, label: "Reports" });
+  if (visibility.mastery) tabs.push({ href: `${base}/outcomes`, label: "Outcomes" });
   return tabs;
 }
 

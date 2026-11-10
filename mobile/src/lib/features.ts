@@ -24,6 +24,12 @@ export const FEATURE_KEYS = [
   "attendance_alerts",
   "rostering",
   "lti",
+  "mastery",
+  "peer_review",
+  "similarity_check",
+  "pastoral_notes",
+  "ai_assistance",
+  "analytics",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -54,6 +60,17 @@ export const FALLBACK_FEATURES: FeatureMap = {
   rostering: false,
   // Older servers have no external tools (LTI).
   lti: false,
+  // Older servers have no mastery tracking.
+  mastery: false,
+  // Older servers have no peer review or similarity check.
+  peer_review: false,
+  similarity_check: false,
+  // Older servers have no pastoral notes.
+  pastoral_notes: false,
+  // Older servers have no AI assistance.
+  ai_assistance: false,
+  // Older servers have no analytics.
+  analytics: false,
 };
 
 const REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {

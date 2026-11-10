@@ -16,6 +16,12 @@ export interface ParentSettings {
   /** Published term report cards (PDFs) and the transcript. */
   showReports: boolean;
   /**
+   * Mastery of learning outcomes (src/mastery). Off by default, unlike the
+   * others: a school opts in once its outcomes are set up. Also needs the
+   * `mastery` feature.
+   */
+  showMastery: boolean;
+  /**
    * Students this age or older are left out of the parent portal (their
    * parents cannot see them). Null: no age limit. A student with no date of
    * birth is never excluded.
@@ -29,6 +35,7 @@ export const DEFAULT_PARENT_SETTINGS: ParentSettings = {
   showAttendance: true,
   showAnnouncements: true,
   showReports: true,
+  showMastery: false,
   maxStudentAge: null,
 };
 
@@ -38,6 +45,7 @@ const BOOLEAN_KEYS = [
   'showAttendance',
   'showAnnouncements',
   'showReports',
+  'showMastery',
 ] as const;
 
 export const MIN_AGE_LIMIT = 10;

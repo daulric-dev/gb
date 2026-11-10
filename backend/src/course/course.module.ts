@@ -5,6 +5,7 @@ import { CourseBannerService } from './course-banner.service';
 import { CourseController } from './course.controller';
 import { CourseCopyController } from './course-copy.controller';
 import { CourseCopyService } from './course-copy.service';
+import { CourseFileCopyService } from './course-file-copy.service';
 import { CourseFileController } from './course-file.controller';
 import { CourseFileService } from './course-file.service';
 import { CourseService } from './course.service';
@@ -26,12 +27,13 @@ import { PageService } from './page.service';
     CourseService,
     CourseBannerService,
     CourseCopyService,
+    CourseFileCopyService,
     CourseFileService,
     ModuleService,
     PageService,
   ],
   // The portal enrols students by join code and shows published modules and
-  // pages through these.
-  exports: [CourseService, ModuleService, PageService],
+  // pages through these; the template library reuses the file copier.
+  exports: [CourseService, ModuleService, PageService, CourseFileCopyService],
 })
 export class CourseModule {}

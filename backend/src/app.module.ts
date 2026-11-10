@@ -20,6 +20,10 @@ import { SchoolModule } from '@/school/school.module';
 import { StudentModule } from '@/student/student.module';
 import { TermModule } from '@/term/term.module';
 import { GradingModule } from '@/grading/grading.module';
+import { SubmissionEventsModule } from '@/grading/submission-events';
+import { PeerReviewModule } from '@/peer-review/peer-review.module';
+import { SimilarityModule } from '@/similarity/similarity.module';
+import { AiModule } from '@/ai/ai.module';
 import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
 import { PermissionModule } from '@/permission/permission.module';
 import { AnnouncementModule } from '@/announcement/announcement.module';
@@ -33,12 +37,15 @@ import { VersioningModule } from '@/versioning/versioning.module';
 import { DashboardModule } from '@/dashboard/dashboard.module';
 import { CourseAccessModule } from '@/course/access/course-access.module';
 import { CourseModule } from '@/course/course.module';
+import { CourseLibraryModule } from '@/course/library/library.module';
+import { PastoralModule } from '@/pastoral/pastoral.module';
 import { SsoCoreModule } from '@/sso/sso-core.module';
 import { SsoModule } from '@/sso/sso.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { AttendanceModule } from '@/attendance/attendance.module';
 import { TimetableModule } from '@/timetable/timetable.module';
 import { AttendanceAlertsModule } from '@/attendance-alerts/attendance-alerts.module';
+import { AnalyticsModule } from '@/analytics/analytics.module';
 import { DiscussionModule } from '@/discussion/discussion.module';
 import { CalendarModule } from '@/calendar/calendar.module';
 import { CourseNotificationModule } from '@/course-notification/course-notification.module';
@@ -53,6 +60,7 @@ import { ReportCardModule } from '@/report-card/report-card.module';
 import { ParentPortalModule } from '@/parent-portal/parent-portal.module';
 import { LtiModule } from '@/lti/lti.module';
 import { RosteringModule } from '@/rostering/rostering.module';
+import { MasteryModule } from '@/mastery/mastery.module';
 import { HealthService } from '@/health/health.service';
 
 @Module({
@@ -124,6 +132,8 @@ import { HealthService } from '@/health/health.service';
     VersioningModule,
     CourseAccessModule,
     CourseModule,
+    CourseLibraryModule.forRoot(),
+    PastoralModule,
     SsoCoreModule,
     SsoModule,
 
@@ -132,6 +142,10 @@ import { HealthService } from '@/health/health.service';
     StudentModule,
     TermModule,
     GradingModule,
+    SubmissionEventsModule,
+    PeerReviewModule,
+    SimilarityModule.forRoot(),
+    AiModule,
     GradeScaleModule,
     PermissionModule,
     AnnouncementModule,
@@ -144,6 +158,7 @@ import { HealthService } from '@/health/health.service';
     AttendanceModule,
     TimetableModule,
     AttendanceAlertsModule,
+    AnalyticsModule,
     ParentPortalModule,
     DiscussionModule,
     CalendarModule,
@@ -157,6 +172,7 @@ import { HealthService } from '@/health/health.service';
     LtiModule,
     ReportCardModule.forRoot(),
     RosteringModule.forRoot(),
+    MasteryModule,
   ],
   controllers: [AppController],
   providers: [

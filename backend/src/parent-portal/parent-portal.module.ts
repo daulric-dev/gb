@@ -12,6 +12,8 @@ import { ParentLinkController, ParentPortalController } from './parent-portal.co
 import { ParentSettingsController, StudentParentsController } from './parent-staff.controller';
 import { ParentReportController } from './parent-report.controller';
 import { ParentReportsService } from './parent-reports.service';
+import { MasteryModule } from '@/mastery/mastery.module';
+import { ParentMasteryController, ParentMasteryService } from './parent-mastery.controller';
 
 /**
  * Parent / guardian portal, behind the `parent_portal` feature (notices
@@ -20,13 +22,14 @@ import { ParentReportsService } from './parent-reports.service';
  * ReportCardModule's StudentReportsService.
  */
 @Module({
-  imports: [GradingModule, AnnouncementModule, NotificationsModule, ReportCardModule.forRoot()],
+  imports: [GradingModule, AnnouncementModule, NotificationsModule, ReportCardModule.forRoot(), MasteryModule],
   controllers: [
     ParentPortalController,
     ParentLinkController,
     StudentParentsController,
     ParentSettingsController,
     ParentReportController,
+    ParentMasteryController,
   ],
   providers: [
     ParentGuard,
@@ -35,6 +38,7 @@ import { ParentReportsService } from './parent-reports.service';
     ParentNotificationService,
     ParentNotificationScheduler,
     ParentReportsService,
+    ParentMasteryService,
   ],
 })
 export class ParentPortalModule {}

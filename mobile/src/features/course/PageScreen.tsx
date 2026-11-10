@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { api } from "@/lib/api";
+import { useOfflineReads } from "@/features/offline/OfflineReads";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Markdown } from "@/components/ui/Markdown";
@@ -24,10 +24,12 @@ export function PageScreen({
   const [page, setPage] = useState<CoursePage | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Students read pages offline from the copy saved on their last visit.
+  const { get, savedAt } = useOfflineReads();
 
   const load = useCallback(async () => {
-    setPage(await api<CoursePage>(path).catch(() => null));
-  }, [path]);
+    setPage(await get<CoursePage>(path).catch(() => null));
+  }, [path, get]);
 
   useEffect(() => {
     load().finally(() => setLoading(false));
@@ -50,7 +52,7 @@ export function PageScreen({
     return (
       <Screen
         title="Page"
-        description="This page could not be loaded"
+        description="This page could not be loaded. Pages you have not opened before need a connection the first time."
         onBack={() => router.back()}
         refreshing={refreshing}
         onRefresh={onRefresh}
@@ -65,6 +67,7 @@ export function PageScreen({
       title={page.title}
       description={page.updatedAt ? `Updated ${formatDate(page.updatedAt)}` : undefined}
       onBack={() => router.back()}
+      offlineSavedAt={savedAt}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

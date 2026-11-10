@@ -32,6 +32,12 @@ describe('feature catalog', () => {
       attendance_alerts: false,
       rostering: false,
       lti: false,
+      mastery: false,
+      peer_review: true,
+      similarity_check: false,
+      pastoral_notes: false,
+      ai_assistance: false,
+      analytics: true,
     });
   });
 
@@ -42,6 +48,50 @@ describe('feature catalog', () => {
     expect(effectiveForOrganisation(org).lti).toBe(true);
     expect(effectiveForSchool(org, []).lti).toBe(true);
     expect(effectiveForSchool(org, ['lti']).lti).toBe(false);
+  });
+
+  test('mastery is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('mastery').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).mastery).toBe(false);
+    const org = organisationSettings({ mastery: true });
+    expect(effectiveForSchool(org, []).mastery).toBe(true);
+    expect(effectiveForSchool(org, ['mastery']).mastery).toBe(false);
+  });
+
+  test('peer review is on by default and similarity check off; a school can switch either off', () => {
+    expect(featureDefinition('peer_review').requires).toEqual([]);
+    expect(featureDefinition('similarity_check').requires).toEqual([]);
+    const defaults = effectiveForOrganisation(organisationSettings({}));
+    expect(defaults.peer_review).toBe(true);
+    expect(defaults.similarity_check).toBe(false);
+    const org = organisationSettings({ similarity_check: true });
+    expect(effectiveForSchool(org, []).similarity_check).toBe(true);
+    expect(effectiveForSchool(org, ['similarity_check']).similarity_check).toBe(false);
+    expect(effectiveForSchool(org, ['peer_review']).peer_review).toBe(false);
+  });
+
+  test('pastoral notes are off by default, need nothing else, and a school can switch them off', () => {
+    expect(featureDefinition('pastoral_notes').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).pastoral_notes).toBe(false);
+    const org = organisationSettings({ pastoral_notes: true });
+    expect(effectiveForSchool(org, []).pastoral_notes).toBe(true);
+    expect(effectiveForSchool(org, ['pastoral_notes']).pastoral_notes).toBe(false);
+  });
+
+  test('AI assistance is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('ai_assistance').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).ai_assistance).toBe(false);
+    const org = organisationSettings({ ai_assistance: true });
+    expect(effectiveForOrganisation(org).ai_assistance).toBe(true);
+    expect(effectiveForSchool(org, []).ai_assistance).toBe(true);
+    expect(effectiveForSchool(org, ['ai_assistance']).ai_assistance).toBe(false);
+  });
+
+  test('analytics is on by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('analytics').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).analytics).toBe(true);
+    expect(effectiveForSchool(organisationSettings({}), ['analytics']).analytics).toBe(false);
+    expect(effectiveForSchool(organisationSettings({ analytics: false }), []).analytics).toBe(false);
   });
 
   test('rostering is off by default and needs nothing else', () => {

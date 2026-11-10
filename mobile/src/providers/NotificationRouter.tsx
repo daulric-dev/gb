@@ -67,7 +67,8 @@ export function NotificationRouter() {
       setPending({ student: "/(portal)", staff: null });
     } else if (
       data?.type === "course.activity_published" ||
-      data?.type === "course.announcement"
+      data?.type === "course.announcement" ||
+      data?.type === "course.peer_review"
     ) {
       // New work opens its work screen; an announcement opens the course on
       // its Announcements section.

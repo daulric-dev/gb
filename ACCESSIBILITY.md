@@ -32,6 +32,10 @@ We aim to meet the **[Web Content Accessibility Guidelines (WCAG) 2.2, level AA]
 - Teachers can give an individual student a later due date, excuse a student from a piece of work, and mark work done offline or on paper, so students are not forced through one online format.
 - **Quiz question types work without dragging:** ordering questions use Move up / Move down buttons and matching questions use a labelled choice per item, on the web (keyboard) and in the app (VoiceOver and TalkBack labels say which item and where it is).
 - **Late work:** teachers can accept work after the due date (with or without a penalty) and waive the penalty for one student.
+- **Peer review:** rubric levels are a labelled radio group (web: keyboard; app: VoiceOver/TalkBack roles and checked state), and a classmate's files open in the same viewer as marking (in the app, the system viewer). A teacher can add, move or remove a student's reviews.
+- **Mastery levels are never colour-only:** the mastery grid, outcome pages and the app show each level's name (and score) next to its colour, mark mastered outcomes with a symbol and text, and give screen readers a full description of each cell.
+- **Analytics charts are never chart-only or colour-only:** every chart has a written summary and a Chart / Table switch with the same numbers as a table; charts are single-colour with values printed on them, and at-risk reasons are text labels, not colours.
+- **AI drafts are labelled in text, not only by colour or icon:** every AI suggestion carries the words "AI-generated — review before using"; a page summary is plain text in labelled, editable fields, and a summary inserted into a page uses real headings and a list. Rubric suggestions sit under their criterion with a "Use" button named after it.
 - **Quiz accommodations:** a student can get extra time on timed quizzes (×1.25, ×1.5, ×2 or extra minutes) and be exempt from Lockdown, on one quiz or as a school-wide default. An exempt student takes a Lockdown quiz without fullscreen or app pinning and is never reported as away. Accommodations are shown only to staff.
 
 ## Known gaps

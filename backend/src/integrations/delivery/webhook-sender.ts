@@ -70,8 +70,13 @@ export interface WebhookAttempt {
   tlsVerified: boolean | null;
 }
 
-/** Request settings plus TLS verification options for the Node HTTPS transport. */
-export type WebhookFetchInit = RequestInit & { tls?: FetchTlsOptions };
+/**
+ * Request settings plus TLS verification options for the Node HTTPS
+ * transport. `allowPrivate` overrides WEBHOOK_ALLOW_PRIVATE for this request
+ * only (see `resolveWebhookDestination`); webhooks, LTI and OneRoster leave
+ * it out and keep the install-wide switch.
+ */
+export type WebhookFetchInit = RequestInit & { tls?: FetchTlsOptions; allowPrivate?: boolean };
 export type FetchLike = (url: string, init: WebhookFetchInit) => Promise<Response>;
 
 export const safeWebhookFetch: FetchLike = async (target, init) => {
@@ -79,7 +84,7 @@ export const safeWebhookFetch: FetchLike = async (target, init) => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('Webhook URL must use HTTP or HTTPS');
   }
-  const destination = await resolveUntilAborted(url.hostname, init.signal);
+  const destination = await resolveUntilAborted(url.hostname, init.signal, init.allowPrivate);
   const headers = new Headers(init.headers);
   headers.set('accept-encoding', 'identity');
   const options = {
@@ -157,15 +162,18 @@ function pinnedLookup(address: string, family: number): LookupFunction {
 function resolveUntilAborted(
   hostname: string,
   signal: AbortSignal | null | undefined,
+  allowPrivate: boolean | undefined,
 ): Promise<{ address: string; family: number }> {
-  if (!signal) return resolveWebhookDestination(hostname);
+  const resolveDestination = () =>
+    resolveWebhookDestination(hostname, undefined, { allowPrivate });
+  if (!signal) return resolveDestination();
   if (signal.aborted) {
     return Promise.reject(new Error('Webhook request was aborted'));
   }
   return new Promise((resolve, reject) => {
     const onAbort = () => reject(new Error('Webhook request was aborted'));
     signal.addEventListener('abort', onAbort, { once: true });
-    resolveWebhookDestination(hostname).then(resolve, reject).finally(() => {
+    resolveDestination().then(resolve, reject).finally(() => {
       signal.removeEventListener('abort', onAbort);
     });
   });

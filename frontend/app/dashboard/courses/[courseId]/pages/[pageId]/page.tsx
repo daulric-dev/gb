@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useCourse } from "../../_components/course-context";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
+import { AiPageSummary } from "../../_components/AiPageSummary";
+import { useFeatures } from "@/hooks/use-features";
 import { userMessage } from "@/lib/errors";
 
 export default function CoursePageDetail() {
@@ -36,6 +38,8 @@ export default function CoursePageDetail() {
   const params = useParams<{ pageId: string }>();
   const pageId = params?.pageId ?? "";
   const { course, base, canManage } = useCourse();
+  const { hasFeature } = useFeatures();
+  const aiOn = hasFeature("ai_assistance");
 
   const page = useSignal<CoursePage | null>(null);
   const loading = useSignal(true);
@@ -213,6 +217,21 @@ export default function CoursePageDetail() {
               rows={18}
               placeholder="Write the page..."
             />
+            {aiOn && (
+              <AiPageSummary
+                courseId={course.id}
+                pageId={pageId}
+                text={draftBody.value}
+                onInsertAction={(block, where) => {
+                  const body = draftBody.value.trim();
+                  draftBody.value = !body
+                    ? block
+                    : where === "top"
+                      ? `${block}\n\n${body}`
+                      : `${body}\n\n${block}`;
+                }}
+              />
+            )}
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"

@@ -35,10 +35,21 @@ const RESTRICTED_IPV6_RANGES = [
   { base: '3fff::', prefix: 20 },
 ];
 
+export interface DestinationOptions {
+  /**
+   * Whether private / loopback / reserved addresses are allowed. When left
+   * out, the install-wide WEBHOOK_ALLOW_PRIVATE switch decides (webhooks,
+   * LTI keysets, OneRoster). Callers with their own rule (AI providers, per
+   * provider) pass an explicit boolean and the environment is not read.
+   */
+  allowPrivate?: boolean;
+}
+
 export async function resolveWebhookDestination(
   hostname: string,
   resolver: Resolver = (name) =>
     dnsLookup(name, { all: true, verbatim: true }),
+  options: DestinationOptions = {},
 ): Promise<ResolvedAddress> {
   const host = hostname.replace(/^\[|\]$/g, '');
   const literalFamily = isIP(host);
@@ -50,7 +61,9 @@ export async function resolveWebhookDestination(
     throw new Error('Webhook host did not resolve to an IP address');
   }
 
-  if (process.env.WEBHOOK_ALLOW_PRIVATE !== 'true') {
+  const allowPrivate =
+    options.allowPrivate ?? process.env.WEBHOOK_ALLOW_PRIVATE === 'true';
+  if (!allowPrivate) {
     if (addresses.some(({ address }) => !isPublicAddress(address))) {
       throw new Error('Webhook host resolves to a private or reserved address');
     }

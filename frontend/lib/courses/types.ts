@@ -63,10 +63,14 @@ export interface CopyCounts {
   modules: number;
   moduleItems: number;
   discussionTopics: number;
+  /** Older servers leave these out. */
+  questionBanks?: number;
+  /** Linked files, copied into your own files (never the author's). */
+  files?: number;
 }
 
 /** `POST /courses/:id/copy` answers with the new course and its counts. */
-export type CopiedCourse = Course & { copied: CopyCounts };
+export type CopiedCourse = Course & { copied: CopyCounts; notes?: string[] };
 
 export interface CourseStaffMember {
   userProfileId: string;
@@ -530,7 +534,13 @@ export interface PortalCalendarItem extends CalendarItem {
   } | null;
 }
 
-export type CourseNotificationKind = "activity_published" | "announcement";
+export type CourseNotificationKind =
+  | "activity_published"
+  | "announcement"
+  | "discussion_topic"
+  | "discussion_reply"
+  | "peer_review_assigned"
+  | "peer_review_ready";
 
 /** A notice in the portal bell (`QUERY /portal/me/notifications`). */
 export interface CourseNotification {

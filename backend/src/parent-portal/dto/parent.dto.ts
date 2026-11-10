@@ -106,7 +106,7 @@ export class UpdateParentSettingsDto {
   @ApiProperty({
     example: { showGrades: false, maxStudentAge: 18 },
     description:
-      'Any of showGrades, showWork, showAttendance, showAnnouncements, showReports (booleans) and maxStudentAge (null or 10-30). Unknown keys are a 400.',
+      'Any of showGrades, showWork, showAttendance, showAnnouncements, showReports, showMastery (booleans; showMastery defaults to false) and maxStudentAge (null or 10-30). Unknown keys are a 400.',
   })
   @IsObject()
   settings!: Record<string, unknown>;

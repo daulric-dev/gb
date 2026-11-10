@@ -26,6 +26,12 @@ Platform features the organisation switches on or off for its schools. A school'
 | `timetable` | Timetable & automatic attendance | off | `attendance` |
 | `attendance_alerts` | Attendance reports & alerts | off | `attendance` |
 | `rostering` | Rostering sync (OneRoster, CSV) | off | Organisation-level only: checked against the organisation's setting, a school's switch has no effect. |
+| `peer_review` | Peer review | on | |
+| `similarity_check` | Similarity check | off | Teacher-only text similarity markers; the organisation turns it on, a school can switch it off. |
+| `mastery` | Mastery & learning outcomes | off | Outcomes, alignment and mastery alongside the points gradebook; parents also need the school's `showMastery`. |
+| `pastoral_notes` | Behaviour & pastoral notes | off | Private staff notes; each school turns it on when ready. |
+| `ai_assistance` | AI assistance | off | Teacher-initiated AI drafts through the organisation's own provider (BYO); the organisation turns it on, a school can switch it off. |
+| `analytics` | Analytics | on | Course analytics for course staff; school roll-ups need `analytics:read`. |
 
 Effective for a school = the organisation's value AND not in the school's `disabled_features` AND every `requires` effective (`effectiveForSchool`). Without a school, the organisation's values and requirements (`effectiveForOrganisation`). `organisationSettings(stored)` applies the stored overrides to the defaults, ignoring unknown keys and non-booleans.
 
@@ -54,7 +60,10 @@ Effective for a school = the organisation's value AND not in the school's `disab
 | `attendance` | `src/attendance/attendance.controller.ts`, `portal-attendance.controller.ts` (including `/portal/me/stream`), and the public `scan-claim.controller.ts` (school from the session's course, checked with `assertEnabled`). |
 | `files` | Only the Files page's own tools: folders, moving files, sharing and share notifications (`src/file-manager/file-manager.controller.ts`). Listing, uploading (`upload-ticket`), opening, renaming and deleting your own files stay available, because course content attaches files from the file manager. Course content files (`src/course/course-file.controller.ts`, the portal's course files) are not gated. |
 | `calendar` | `src/calendar/calendar.controller.ts` (staff and portal, including `.ics`). |
-| `course_copy` | `src/course/course-copy.controller.ts` (templates, copy, import) and `PATCH /courses/:courseId` with `isTemplate: true` (`src/course/course.controller.ts`). |
+| `course_copy` | `src/course/course-copy.controller.ts` (templates, copy, import), `PATCH /courses/:courseId` with `isTemplate: true` (`src/course/course.controller.ts`), and the template library `src/course/library/library.controller.ts` (every `/api/library` route). |
+| `pastoral_notes` | `src/pastoral/pastoral.controller.ts` (every `/api/pastoral` route). Nothing else reads pastoral notes, so there is no other place to gate. |
+| `ai_assistance` | `src/ai`: the organisation console's `/api/organisation/ai/...` routes (`AiOrgFeatureGuard`: organisation value only, 403 while off), `/api/schools/current/ai` and every teacher draft route (`/api/courses/:courseId/ai`, `.../ai/quiz-questions`, `/api/courses/:courseId/pages/:pageId/ai/summary`, `/api/activities/:activityId/ai/rubric-feedback`), checked by the services against the course's or active school before anything is read or sent. A school with it off never has data sent to a provider. |
+| `analytics` | `src/analytics/analytics.controller.ts` (`/api/analytics/...` and `/api/courses/:courseId/analytics...`); the summary sweep skips a school with it off (`AnalyticsService.refreshSchool`). |
 | `integrations` | `src/integrations`: every webhook route (school admin and organisation console) and `WebhookEvents.emit` / the delivery worker (nothing is queued or sent for a school with it off). |
 | `parent_portal` | `src/parent-portal`: every `/api/parent/...` route (`ParentPortalController`; school from the child in `:studentId`, else a linked child's school), the staff routes `/api/students/:studentId/parents/...` (active school), and redeeming an invitation or code (`ParentLinkService`, the invitation's school, with `assertEnabled`). |
 | `parent_notifications` | `/api/parent/notifications/preferences` and `ParentNotificationService` (no notice is collected for a child whose school has it, or `parent_portal`, off). |
@@ -63,7 +72,10 @@ Effective for a school = the organisation's value AND not in the school's `disab
 | `report_cards` | `src/report-card`: `report-comment.controller.ts`, `report-release.controller.ts`, `portal-report.controller.ts` (class); the public signed-link route checks it with `assertEnabled`; `ReportGenerationService.generate` skips a school with it off. |
 | `push_notifications` | `src/notifications/push.service.ts`: `sendToUsers` drops recipients whose school has it off (checked once per school). Registration routes stay; in-app course notifications are still created. |
 | `lti` | `src/lti`: course routes (`LtiCourseController`, `@RequireFeature('lti')`), organisation registry (`LtiOrganisationFeatureGuard`: organisation value only), the OIDC auth endpoint (course's school, refused with an error page), the token endpoint (organisation value, 403) and AGS (course's school, `FeatureDisabledException`). |
+| `peer_review` | `src/peer-review`: staff routes check it in `PeerReviewService` against the activity's course's school (`assertEnabled`); portal routes `PortalPeerReviewController` (`@RequireFeature('peer_review')`, after `StudentGuard`); `PeerReviewScheduler`'s sweep and the late hand-in listener skip a school with it off. |
+| `similarity_check` | `src/similarity`: every route checks it in `SimilarityService` (the activity's course's school, or the active school for `/schools/current/similarity`); `SimilarityService.process()` (the hand-in job) does nothing for a school with it off. No student route exists. |
 | `rostering` | `src/rostering`: every `/api/organisation/rostering` route (`RosteringFeatureGuard`, organisation value only), dry runs and applies (`RosterRunService` stops while it is off) and the scheduler's daily syncs. |
+| `mastery` | `src/mastery`: every `/api/mastery/...` route, the course routes `/api/courses/:courseId/outcomes`, `/outcome-alignments`, `/mastery...`, and `/api/portal/me/outcomes`; the parent route `/api/parent/children/:studentId/outcomes` (`@RequireFeature('parent_portal', 'mastery')`); `ReportDataService` adds no outcomes section while it is off. Evidence is still recorded from marks (so switching it on later shows history), but nothing is aligned unless a teacher could reach the routes. |
 
 The routes for changing features live with their owners: `GET`/`PATCH /api/organisation/features` in `src/organisation` (organisation admins) and `GET`/`PATCH /api/schools/current/features` in `src/school` (`school:update`), plus `GET`/`PATCH /api/organisation/schools/:id/features` in `src/organisation` (organisation admins, any school; same rules). The profile's `features` map is added in `src/auth/auth.service.ts`.
 

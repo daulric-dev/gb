@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { refreshLateness } from './lateness';
+import { refreshOutcomeEvidence } from '@/mastery/outcome-evidence';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
@@ -703,6 +704,8 @@ export class RubricService {
             data: rows.map((r) => ({ ...r, submission_id: submission.id })),
           });
         }
+        // After the criterion marks: rubric rows aligned to outcomes read them.
+        await refreshOutcomeEvidence(tx, activityId, [studentId]);
         await this.auditLog?.record(
           tx,
           activity.school_id,

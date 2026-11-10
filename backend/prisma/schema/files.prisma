@@ -25,6 +25,7 @@ model file {
   submission   submission[]
   submission_file submission_file[]
   quiz_answer  quiz_answer[]
+  pastoral_note_file pastoral_note_file[]
 
   @@index([owner_id, created_at(sort: Desc)], map: "idx_file_owner_active", where: raw("(deleted_at IS NULL)"))
   @@index([owner_id, folder_id], map: "idx_file_owner_folder", where: raw("(deleted_at IS NULL)"))

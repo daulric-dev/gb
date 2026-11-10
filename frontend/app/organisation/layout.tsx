@@ -17,6 +17,7 @@ import {
   School,
   Settings,
   ShieldCheck,
+  Sparkles,
   ToggleRight,
   UserRound,
 } from "lucide-react";
@@ -78,6 +79,12 @@ const NAV: {
     label: "Rostering",
     icon: RefreshCw,
     feature: "rostering",
+  },
+  {
+    href: `${ORGANISATION_PATH}/ai`,
+    label: "AI providers",
+    icon: Sparkles,
+    feature: "ai_assistance",
   },
   { href: `${ORGANISATION_PATH}/settings`, label: "Settings", icon: Settings },
 ];

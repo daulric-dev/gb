@@ -63,4 +63,51 @@ describe('resolveWebhookDestination', () => {
     );
     expect(resolved).toEqual({ address: '8.8.8.8', family: 4 });
   });
+
+  describe('the allowPrivate option (AI providers decide per provider)', () => {
+    const withEnv = async (value: string | undefined, fn: () => Promise<void>) => {
+      const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+      if (value === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+      else process.env.WEBHOOK_ALLOW_PRIVATE = value;
+      try {
+        await fn();
+      } finally {
+        if (previous === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+        else process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+      }
+    };
+
+    test('without the option, webhooks keep following WEBHOOK_ALLOW_PRIVATE', async () => {
+      await withEnv(undefined, async () => {
+        await expect(resolveWebhookDestination('127.0.0.1')).rejects.toThrow('private or reserved');
+        await expect(resolveWebhookDestination('127.0.0.1', undefined, {})).rejects.toThrow('private or reserved');
+      });
+      await withEnv('true', async () => {
+        expect(await resolveWebhookDestination('127.0.0.1')).toEqual({ address: '127.0.0.1', family: 4 });
+        expect(await resolveWebhookDestination('10.0.0.1', undefined, {})).toEqual({ address: '10.0.0.1', family: 4 });
+      });
+    });
+
+    test('allowPrivate: false refuses private addresses even with WEBHOOK_ALLOW_PRIVATE=true', async () => {
+      await withEnv('true', async () => {
+        await expect(
+          resolveWebhookDestination('127.0.0.1', undefined, { allowPrivate: false }),
+        ).rejects.toThrow('private or reserved');
+        await expect(
+          resolveWebhookDestination('llm.example', async () => [{ address: '192.168.1.5', family: 4 }], {
+            allowPrivate: false,
+          }),
+        ).rejects.toThrow('private or reserved');
+      });
+    });
+
+    test('allowPrivate: true allows them without WEBHOOK_ALLOW_PRIVATE', async () => {
+      await withEnv('false', async () => {
+        expect(await resolveWebhookDestination('127.0.0.1', undefined, { allowPrivate: true })).toEqual({
+          address: '127.0.0.1',
+          family: 4,
+        });
+      });
+    });
+  });
 });

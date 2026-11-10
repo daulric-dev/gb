@@ -1,0 +1,83 @@
+// Analytics dashboard (src/analytics), behind the `analytics` feature.
+// Migration 20261129100000_analytics. The school views read only these
+// summary rows; a sweep (under an advisory lock) refreshes them from the raw
+// tables. Course views compute on request for one course.
+
+/// A school's at-risk rules. A null threshold switches that rule off; the attendance and mastery rules also need their features. Missing row: the defaults in src/analytics/analytics.calc.ts.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model analytics_setting {
+  school_id           String   @id @db.Uuid
+  /// Current course grade below this percent.
+  min_grade           Int?     @default(60) @db.SmallInt
+  /// At least this many pieces of missing work in the last window_weeks.
+  missing_count       Int?     @default(3) @db.SmallInt
+  window_weeks        Int      @default(4) @db.SmallInt
+  /// Course attendance over the last window_weeks below this percent.
+  min_attendance      Int?     @default(90) @db.SmallInt
+  /// Average mastery level (across the course's outcomes with evidence) below this level.
+  mastery_below_level Int?     @default(2) @db.SmallInt
+  updated_by          String?  @db.Uuid
+  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  school              school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+/// One course's aggregates, refreshed by the analytics sweep. Counts are kept (not only rates) so roll-ups per teacher and school are exact.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model analytics_course_summary {
+  course_id           String   @id @db.Uuid
+  school_id           String   @db.Uuid
+  /// Active and completed students.
+  students            Int
+  /// Students with a current grade, and the sum of their percents.
+  graded_students     Int
+  grade_sum           Float
+  on_time             Int
+  late                Int
+  missing             Int
+  excused             Int
+  /// Attendance records counted (present + late + absent) and attended (present + late).
+  attendance_counted  Int
+  attendance_attended Int
+  at_risk             Int
+  computed_at         DateTime @default(now()) @db.Timestamptz(6)
+  school              school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course              course   @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([school_id])
+  @@schema("public")
+}
+
+/// A student at risk in a course at the last refresh, with the reasons. Replaced per course on every refresh.
+model analytics_at_risk {
+  course_id       String   @db.Uuid
+  student_id      String   @db.Uuid
+  school_id       String   @db.Uuid
+  grade           Float?
+  missing         Int
+  attendance_rate Float?
+  mastery_score   Float?
+  /// [{ rule, text }]
+  reasons         Json
+  computed_at     DateTime @default(now()) @db.Timestamptz(6)
+  school          school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course          course   @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student         student  @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([course_id, student_id])
+  @@index([school_id])
+  @@index([student_id])
+  @@schema("public")
+}
+
+/// When a school's summaries were last refreshed ("last updated").
+model analytics_refresh {
+  school_id    String   @id @db.Uuid
+  refreshed_at DateTime @db.Timestamptz(6)
+  courses      Int
+  duration_ms  Int
+  school       school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}

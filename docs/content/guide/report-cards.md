@@ -100,6 +100,11 @@ before it is published, and lose it again if it is unpublished.
 
 ## Good to know
 
+- With [mastery](./mastery.md) on, a school can add an **outcomes section**
+  (Settings → Mastery setup → *Show an outcomes section on report cards*):
+  each course then lists its learning outcomes with the student's level and
+  whether mastered. Grades are not affected.
+
 - Branding comes from your school name and logo (**Settings**). PNG and JPEG
   logos appear on the PDF. A WebP logo is converted when the server has the
   image converter (`sharp`) installed, and is otherwise left off; ask your

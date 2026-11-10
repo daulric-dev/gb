@@ -10,7 +10,28 @@ import {
   Paperclip,
   Upload,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { api, isNetworkError } from "@/lib/api";
+import { isOffline } from "@/lib/connectivity";
+import { draftQueue, offlineScopeKey } from "@/lib/offline-store";
+import {
+  runDraftSync,
+  serverStateOf,
+  workForStorage,
+  workPath,
+} from "@/lib/offline-sync";
+import {
+  answersVersion,
+  closesAtFor,
+  textVersion,
+  type AnswerLike,
+} from "@/lib/sync-queue";
+import { quizDraftText, textDraftText } from "@/lib/offline-draft-text";
+import {
+  useConnectivity,
+  useDraft,
+  useOfflineReads,
+} from "@/features/offline/OfflineReads";
+import { OfflineDraftNotice } from "@/features/offline/OfflineDraftNotice";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
@@ -35,6 +56,7 @@ import { formatMb, uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { formatScore } from "@/lib/format-number";
 import { Markdown } from "@/components/ui/Markdown";
 import { RubricView } from "@/features/course/RubricView";
+import { PeerReviewSection } from "@/features/work/PeerReviewSection";
 import { userMessage } from "@/lib/errors";
 import { useQuizLockdown } from "@/lib/use-quiz-lockdown";
 import { PINNING_PLATFORM, useAppPinning } from "@/lib/use-app-pinning";
@@ -44,6 +66,17 @@ import {
   LockdownStartCard,
   UnpinCard,
 } from "@/features/work/QuizLockdown";
+
+/** The quiz screen's own answer state, kept with an offline draft to restore it. */
+interface QuizDraftState {
+  answers: Record<string, string>;
+  written: Record<string, string>;
+  multi: Record<string, string[]>;
+  numeric: Record<string, string>;
+  matching: Record<string, Record<string, string>>;
+  ordering: Record<string, string[]>;
+  file: Record<string, { fileId: string; fileName?: string }>;
+}
 
 export default function WorkDetailScreen() {
   const router = useRouter();
@@ -92,14 +125,43 @@ export default function WorkDetailScreen() {
   const quizSaveRevision = useRef(0);
   const quizSavedRevision = useRef(0);
   const timeoutHandled = useRef<string | null>(null);
+  // Offline mode: saved copies, the network state and this work's drafts.
+  const { get, savedAt } = useOfflineReads();
+  const network = useConnectivity();
+  const offlineNow = network === "offline";
+  const quizDraft = useDraft(activityId, "quiz_answers");
+  const textDraft = useDraft(activityId, "assignment_text");
+  /** The server version the next offline draft starts from. */
+  const baseVersion = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!activityId) return;
-    const data = await api<PortalWorkDetail>(
-      `/portal/me/activities/${activityId}`,
+    const data = await get<PortalWorkDetail>(
+      workPath(activityId),
+      workForStorage,
     ).catch(() => null);
     setWork(data);
-    setText(data?.submission?.textBody ?? "");
+    const scopeKey = offlineScopeKey();
+    // An assignment's text drafted on this device comes back, unless the
+    // server copy moved on meanwhile: then both are kept and the student
+    // chooses (OfflineDraftNotice).
+    const localText =
+      scopeKey && data?.kind === "assignment"
+        ? draftQueue.get(scopeKey, activityId, "assignment_text")
+        : null;
+    const serverText = data?.submission?.textBody ?? "";
+    if (localText && data) {
+      const draftText = (localText.draft as { text?: string })?.text ?? "";
+      if (
+        localText.baseVersion !== textVersion(data.submission) &&
+        draftText !== serverText
+      ) {
+        draftQueue.flag(scopeKey!, activityId, "assignment_text", "conflict");
+      }
+      setText(draftText);
+    } else {
+      setText(serverText);
+    }
     setServerClockOffset(
       data?.quizAttempt
         ? Date.parse(data.quizAttempt.serverNow) - Date.now()
@@ -178,10 +240,39 @@ export default function WorkDetailScreen() {
         ),
       ),
     );
+    baseVersion.current = data?.quizAttempt
+      ? serverStateOf(data).version
+      : null;
+    // Answers drafted offline for this attempt are what the student sees.
+    const localQuiz =
+      scopeKey && data?.quizAttempt
+        ? draftQueue.get(scopeKey, activityId, "quiz_answers")
+        : null;
+    if (
+      localQuiz &&
+      localQuiz.state !== "synced" &&
+      localQuiz.attemptStartedAt === data?.quizAttempt?.startedAt
+    ) {
+      const d = localQuiz.draft as QuizDraftState;
+      setAnswers(d.answers ?? {});
+      setWritten(d.written ?? {});
+      setMultiAnswers(d.multi ?? {});
+      setNumericAnswers(d.numeric ?? {});
+      setMatchingAnswers(d.matching ?? {});
+      if (d.ordering) setOrderingAnswers((prev) => ({ ...prev, ...d.ordering }));
+      setFileAnswers(d.file ?? {});
+    }
     quizSaveRevision.current = 0;
     quizSavedRevision.current = 0;
     setQuizSaveState("saved");
-  }, [activityId]);
+  }, [activityId, get]);
+
+  // The queue sent this quiz's draft: later drafts start from what it sent.
+  useEffect(() => {
+    if (quizDraft?.state === "synced" && quizDraft.syncedVersion) {
+      baseVersion.current = quizDraft.syncedVersion;
+    }
+  }, [quizDraft?.state, quizDraft?.syncedVersion]);
 
   useEffect(() => {
     load().finally(() => setLoading(false));
@@ -191,6 +282,45 @@ export default function WorkDetailScreen() {
     setRefreshing(true);
     load().finally(() => setRefreshing(false));
   }, [load]);
+
+  // An assignment's text is kept on this device as it is typed (there is no
+  // draft endpoint, only the hand-in), so it survives going offline or
+  // closing the app. Text matching the server copy needs no draft.
+  useEffect(() => {
+    if (
+      !work ||
+      work.kind !== "assignment" ||
+      !work.allowText ||
+      work.status !== "published" ||
+      work.isClosed ||
+      (work.submission && work.submission.status !== "draft")
+    ) {
+      return;
+    }
+    const scopeKey = offlineScopeKey();
+    if (!scopeKey) return;
+    const timer = setTimeout(() => {
+      const current = draftQueue.get(scopeKey, work.id, "assignment_text");
+      const draftText = (current?.draft as { text?: string } | undefined)?.text;
+      if (text === (work.submission?.textBody ?? "")) {
+        if (current && current.state !== "needs_attention") {
+          draftQueue.remove(scopeKey, work.id, "assignment_text");
+        }
+        return;
+      }
+      if (draftText === text) return;
+      draftQueue.enqueue({
+        scope: scopeKey,
+        activityId: work.id,
+        kind: "assignment_text",
+        payload: text,
+        draft: { text },
+        baseVersion: textVersion(work.submission),
+        closesAt: closesAtFor(work),
+      });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [text, work]);
 
   const deadline = work?.quizAttempt?.expiresAt ?? null;
   useEffect(() => {
@@ -362,17 +492,87 @@ export default function WorkDetailScreen() {
     }, []);
   }
 
+  function draftState(
+    a = answers,
+    w = written,
+    m = multiAnswers,
+    n = numericAnswers,
+    mt = matchingAnswers,
+    o = orderingAnswers,
+    f = fileAnswers,
+  ): QuizDraftState {
+    return { answers: a, written: w, multi: m, numeric: n, matching: mt, ordering: o, file: f };
+  }
+
+  /**
+   * Keep the answers on this device for the sync queue. Not for Lockdown
+   * quizzes: an offline attempt can't report that the student is still in
+   * the quiz, so they need a connection to keep answering.
+   */
+  function queueQuizDraft(
+    snapshot: ReturnType<typeof quizAnswers>,
+    state: QuizDraftState,
+  ): boolean {
+    const scopeKey = offlineScopeKey();
+    if (!scopeKey || !work?.quizAttempt || lockdownQuiz) return false;
+    // A draft left from an earlier attempt that needs the student is not
+    // overwritten; it is shown above until they view, copy or delete it.
+    const earlier = draftQueue.get(scopeKey, activityId, "quiz_answers");
+    if (
+      earlier &&
+      earlier.state === "needs_attention" &&
+      earlier.attemptStartedAt !== work.quizAttempt.startedAt
+    ) {
+      return false;
+    }
+    draftQueue.enqueue({
+      scope: scopeKey,
+      activityId,
+      kind: "quiz_answers",
+      payload: { answers: snapshot },
+      draft: state,
+      baseVersion: baseVersion.current,
+      attemptStartedAt: work.quizAttempt.startedAt,
+      quizExpiresAt: work.quizAttempt.expiresAt,
+      closesAt: closesAtFor(work),
+    });
+    return true;
+  }
+
   function persistQuizAnswers(
     revision: number,
     snapshot: ReturnType<typeof quizAnswers>,
+    state: QuizDraftState = draftState(),
   ) {
     const save = quizSaveQueue.current
       .catch(() => undefined)
       .then(async () => {
-        await api(`/portal/me/activities/${activityId}/quiz/answers`, {
-          method: "POST",
-          body: { answers: snapshot },
-        });
+        const scopeKey = offlineScopeKey();
+        const pending = scopeKey
+          ? draftQueue.get(scopeKey, activityId, "quiz_answers")
+          : null;
+        // Offline, or a draft is still waiting: queue behind it, in order.
+        const queueIt =
+          isOffline() ||
+          (!!pending &&
+            pending.state !== "synced" &&
+            pending.attemptStartedAt === (work?.quizAttempt?.startedAt ?? null));
+        if (!(queueIt && queueQuizDraft(snapshot, state))) {
+          try {
+            await api(`/portal/me/activities/${activityId}/quiz/answers`, {
+              method: "POST",
+              body: { answers: snapshot },
+            });
+            baseVersion.current = answersVersion(
+              work?.quizAttempt?.startedAt ?? null,
+              snapshot as AnswerLike[],
+            );
+          } catch (err) {
+            if (!isNetworkError(err) || !queueQuizDraft(snapshot, state)) {
+              throw err;
+            }
+          }
+        }
         quizSavedRevision.current = Math.max(
           quizSavedRevision.current,
           revision,
@@ -409,7 +609,19 @@ export default function WorkDetailScreen() {
     if (quizSaveTimer.current) clearTimeout(quizSaveTimer.current);
     quizSaveTimer.current = setTimeout(() => {
       quizSaveTimer.current = null;
-      void persistQuizAnswers(revision, snapshot).catch(() => {
+      void persistQuizAnswers(
+        revision,
+        snapshot,
+        draftState(
+          nextAnswers,
+          nextWritten,
+          nextMulti,
+          nextNumeric,
+          nextMatching,
+          nextOrdering,
+          nextFile,
+        ),
+      ).catch(() => {
         if (quizSaveRevision.current === revision) setQuizSaveState("error");
       });
     }, 400);
@@ -471,7 +683,9 @@ export default function WorkDetailScreen() {
       })
       .catch((err) => {
         toast.error(
-          userMessage(err, "Time is up; the server will submit your saved answers."),
+          isNetworkError(err)
+            ? "Time is up. The server submits the answers it received; answers saved only on this device stay here."
+            : userMessage(err, "Time is up; the server will submit your saved answers."),
         );
         void load();
       });
@@ -495,10 +709,33 @@ export default function WorkDetailScreen() {
 
   async function submitQuiz() {
     if (!work) return;
+    // A final hand-in is never queued: it uses up an attempt and can't be
+    // repeated safely, so it needs a connection.
+    if (isOffline()) {
+      setSubmitConfirmation(false);
+      toast.error(
+        "Submitting needs a connection. Your answers are saved on this device.",
+      );
+      return;
+    }
 
     setWorking(true);
     try {
       await flushQuizSave();
+      const scopeKey = offlineScopeKey();
+      if (scopeKey && draftQueue.get(scopeKey, activityId, "quiz_answers")) {
+        await runDraftSync();
+        const left = draftQueue.get(scopeKey, activityId, "quiz_answers");
+        if (left && left.state !== "synced") {
+          setSubmitConfirmation(false);
+          toast.error(
+            left.state === "needs_attention"
+              ? "Your offline answers need attention before you submit."
+              : "Your offline answers have not synced yet. Try again in a moment.",
+          );
+          return;
+        }
+      }
       const result = await api<{ score: number; points: number }>(
         `/portal/me/activities/${activityId}/quiz`,
         {
@@ -520,9 +757,14 @@ export default function WorkDetailScreen() {
       setOrderingAnswers({});
       setFileAnswers({});
       setSubmitConfirmation(false);
+      if (scopeKey) draftQueue.remove(scopeKey, activityId, "quiz_answers");
       await load();
     } catch (err) {
-      toast.error(userMessage(err, "Failed to submit"));
+      toast.error(
+        isNetworkError(err)
+          ? "Submitting needs a connection. Your answers are saved on this device."
+          : userMessage(err, "Failed to submit"),
+      );
     } finally {
       setWorking(false);
     }
@@ -578,16 +820,29 @@ export default function WorkDetailScreen() {
       return;
     }
 
+    if (isOffline()) {
+      toast.error(
+        "Handing in needs a connection. Your text is saved on this device.",
+      );
+      return;
+    }
+
     setWorking(true);
     try {
       await api(`/portal/me/activities/${activityId}/submit`, {
         method: "POST",
         body: { textBody: text.trim() || undefined },
       });
+      const scopeKey = offlineScopeKey();
+      if (scopeKey) draftQueue.remove(scopeKey, activityId, "assignment_text");
       toast.success("Handed in");
       await load();
     } catch (err) {
-      toast.error(userMessage(err, "Failed to hand in"));
+      toast.error(
+        isNetworkError(err)
+          ? "Can't reach the server. Your text is saved on this device; hand in when you're back online."
+          : userMessage(err, "Failed to hand in"),
+      );
     } finally {
       setWorking(false);
     }
@@ -640,7 +895,11 @@ export default function WorkDetailScreen() {
     return (
       <Screen
         title="Work"
-        description="This could not be loaded"
+        description={
+          offlineNow
+            ? "You're offline and this hasn't been saved on this device yet. Open it once while online to read it offline."
+            : "This could not be loaded"
+        }
         onBack={() => router.back()}
       >
         <View />
@@ -660,8 +919,32 @@ export default function WorkDetailScreen() {
     (!submitted || canRetake);
   const quizInProgress = !!work.quizAttempt?.startedAt;
   const canStartQuiz = open && !quizInProgress;
+  // Lockdown quizzes can't be answered offline: presence can't be reported.
+  const lockdownOffline = lockdownQuiz && offlineNow;
   const quizCanAnswer =
-    open && quizInProgress && secondsRemaining !== 0;
+    open && quizInProgress && secondsRemaining !== 0 && !lockdownOffline;
+  const scopeKey = offlineScopeKey();
+  const keepDeviceDraft = (kind: "quiz_answers" | "assignment_text") => {
+    if (!scopeKey) return;
+    draftQueue.keepDeviceCopy(
+      scopeKey,
+      work.id,
+      kind,
+      kind === "quiz_answers"
+        ? serverStateOf(work).version
+        : textVersion(work.submission),
+    );
+    if (kind === "quiz_answers") void runDraftSync();
+  };
+  const dropDraft = (kind: "quiz_answers" | "assignment_text") => {
+    if (!scopeKey) return;
+    draftQueue.remove(scopeKey, work.id, kind);
+    if (kind === "assignment_text") setText(work.submission?.textBody ?? "");
+    else void load();
+  };
+  const quizDraftAnswers =
+    ((quizDraft?.payload as { answers?: AnswerLike[] } | undefined)?.answers ??
+      []);
   const submissionFiles = work.submission?.files?.length
     ? work.submission.files
     : work.submission?.fileId
@@ -733,10 +1016,48 @@ export default function WorkDetailScreen() {
         .filter(Boolean)
         .join(" · ")}
       onBack={() => router.back()}
+      offlineSavedAt={savedAt}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
       <View style={{ gap: 12 }}>
+        {work.kind === "quiz" && quizDraft && (
+          <OfflineDraftNotice
+            draft={quizDraft}
+            kind="quiz"
+            draftText={quizDraftText(work.title, work.questions, quizDraftAnswers)}
+            serverText={
+              work.quizAttempt
+                ? quizDraftText(
+                    work.title,
+                    work.questions,
+                    work.quizAttempt.answers as AnswerLike[],
+                  )
+                : null
+            }
+            onKeepDevice={() => keepDeviceDraft("quiz_answers")}
+            onUseServer={() => dropDraft("quiz_answers")}
+            onDiscard={() => dropDraft("quiz_answers")}
+          />
+        )}
+        {work.kind === "assignment" && textDraft && (
+          <OfflineDraftNotice
+            draft={textDraft}
+            kind="assignment"
+            draftText={textDraftText(
+              work.title,
+              (textDraft.draft as { text?: string } | undefined)?.text ?? "",
+            )}
+            serverText={
+              work.submission?.textBody
+                ? textDraftText(work.title, work.submission.textBody)
+                : null
+            }
+            onKeepDevice={() => keepDeviceDraft("assignment_text")}
+            onUseServer={() => dropDraft("assignment_text")}
+            onDiscard={() => dropDraft("assignment_text")}
+          />
+        )}
         {!submitted && work.isLate && work.lateUntil && (
           <Card>
             <CardContent style={{ paddingVertical: 12, gap: 4 }}>
@@ -827,6 +1148,8 @@ export default function WorkDetailScreen() {
           </Card>
         ) : null}
 
+        {work.kind === "assignment" ? <PeerReviewSection activityId={work.id} /> : null}
+
         {offline ? (
           !submitted ? (
             <Card>
@@ -864,6 +1187,12 @@ export default function WorkDetailScreen() {
                 }}
               />
             )}
+            {canStartQuiz && work.lockdownBrowser && offlineNow && (
+              <Text variant="muted" size="xs" style={{ textAlign: "center" }}>
+                You're offline. Lockdown quizzes need a connection the whole
+                time, so start this one when you're back online.
+              </Text>
+            )}
             {work.lockdownBrowser &&
               !lockdownActive &&
               unpinHint &&
@@ -882,9 +1211,19 @@ export default function WorkDetailScreen() {
                       ? " Retakes are unlimited."
                       : ` ${left} attempt${left === 1 ? "" : "s"} available.`}
                   </Text>
-                  <Button onPress={startQuiz} loading={working}>
+                  <Button
+                    onPress={startQuiz}
+                    loading={working}
+                    disabled={offlineNow}
+                  >
                     {submitted ? "Start another attempt" : "Start quiz"}
                   </Button>
+                  {offlineNow && (
+                    <Text variant="muted" size="xs">
+                      Starting a quiz needs a connection. Once started, you can
+                      keep answering offline and your answers sync later.
+                    </Text>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -897,12 +1236,26 @@ export default function WorkDetailScreen() {
                         ? "Your progress is saved automatically"
                         : "Time remaining"}
                     </Text>
-                    <Text variant="muted" size="xs">
+                    <Text
+                      variant="muted"
+                      size="xs"
+                      accessibilityLiveRegion="polite"
+                    >
                       {quizSaveState === "saving"
                         ? "Saving answers..."
                         : quizSaveState === "error"
-                          ? "Could not save your latest answers."
-                          : "All changes saved"}
+                          ? lockdownOffline
+                            ? "Not saved: you're offline."
+                            : "Could not save your latest answers."
+                          : quizDraft?.state === "saved_offline"
+                            ? "Saved offline on this device. Syncs when you're back online."
+                            : quizDraft?.state === "syncing"
+                              ? "Syncing answers..."
+                              : quizDraft?.state === "needs_attention"
+                                ? "Needs attention: see above."
+                                : quizDraft?.state === "synced"
+                                  ? "Synced. All changes saved"
+                                  : "All changes saved"}
                     </Text>
                   </View>
                   {secondsRemaining !== null && (
@@ -926,6 +1279,21 @@ export default function WorkDetailScreen() {
                       Retry save
                     </Button>
                   )}
+                </CardContent>
+              </Card>
+            )}
+            {quizInProgress && lockdownOffline && (
+              <Card>
+                <CardContent style={{ gap: 4 }}>
+                  <Text weight="500" accessibilityRole="alert">
+                    Reconnect to keep answering
+                  </Text>
+                  <Text variant="muted" size="sm">
+                    Lockdown quizzes can't be answered offline: the app can't
+                    report to your teacher that you're still in the quiz. Your
+                    saved answers are safe on the server, and the timer keeps
+                    running.
+                  </Text>
                 </CardContent>
               </Card>
             )}
@@ -1391,7 +1759,13 @@ export default function WorkDetailScreen() {
                           </Text>
                         </View>
                       )}
-                      {quizCanAnswer && (
+                      {quizCanAnswer && offlineNow && (
+                        <Text variant="muted" size="xs">
+                          Files can't be attached offline: they upload straight
+                          to your school. Attach one when you're back online.
+                        </Text>
+                      )}
+                      {quizCanAnswer && !offlineNow && (
                         <Button
                           variant="outline"
                           loading={questionUploading[q.id]}
@@ -1472,10 +1846,17 @@ export default function WorkDetailScreen() {
                     setSubmitConfirmation(true);
                   }}
                   loading={working}
-                  disabled={secondsRemaining === 0}
+                  disabled={secondsRemaining === 0 || offlineNow}
                 >
                   {submitted ? "Try again" : "Submit quiz"}
                 </Button>
+                {offlineNow && (
+                  <Text variant="muted" size="xs" style={{ textAlign: "center" }}>
+                    Submitting needs a connection, so it is never done
+                    offline. Your answers are saved on this device and sync
+                    when you're back online; then submit.
+                  </Text>
+                )}
                 <Text variant="muted" size="xs" style={{ textAlign: "center" }}>
                   {work.maxAttempts === 0
                     ? "Marked as soon as you submit, and you can retake it."
@@ -1493,6 +1874,7 @@ export default function WorkDetailScreen() {
             </CardHeader>
             <CardContent style={{ gap: 12 }}>
               {work.allowText ? (
+                <>
                 <TextArea
                   placeholder="Type your answer here"
                   value={text}
@@ -1500,6 +1882,17 @@ export default function WorkDetailScreen() {
                   onChangeText={setText}
                   style={{ minHeight: 140 }}
                 />
+                {open && textDraft && textDraft.state !== "needs_attention" ? (
+                  <Text
+                    variant="muted"
+                    size="xs"
+                    accessibilityLiveRegion="polite"
+                  >
+                    Draft saved on this device. It isn't on the server until
+                    you hand it in.
+                  </Text>
+                ) : null}
+                </>
               ) : (
                 <Text variant="muted" size="sm">
                   This assignment is handed in as a file.
@@ -1520,7 +1913,14 @@ export default function WorkDetailScreen() {
                     </View>
                   ))}
 
+                  {open && offlineNow && (
+                    <Text variant="muted" size="xs">
+                      Files can't be attached offline: they upload straight to
+                      your school. Attach them when you're back online.
+                    </Text>
+                  )}
                   {open &&
+                    !offlineNow &&
                     (work.allowMultipleFiles || submissionFiles.length === 0) && (
                       <>
                         <Button
@@ -1553,9 +1953,19 @@ export default function WorkDetailScreen() {
               )}
 
               {open && (
-                <Button onPress={submitAssignment} loading={working}>
+                <Button
+                  onPress={submitAssignment}
+                  loading={working}
+                  disabled={offlineNow}
+                >
                   Hand in
                 </Button>
+              )}
+              {open && offlineNow && (
+                <Text variant="muted" size="xs" style={{ textAlign: "center" }}>
+                  Handing in needs a connection. Your text is saved on this
+                  device until you hand it in.
+                </Text>
               )}
             </CardContent>
           </Card>

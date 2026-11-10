@@ -81,7 +81,7 @@ Only used while the organisation has the `integrations` feature on. See [Webhook
 | --- | --- | --- | --- |
 | `WEBHOOK_MAX_ATTEMPTS` | No | `8` | Attempts per delivery (the first included) before it is given up (`abandoned`). The default spreads them over about 24 hours. |
 | `WEBHOOK_MAX_CONSECUTIVE_FAILURES` | No | `50` | Failed attempts in a row after which a webhook switches itself off and the school's admins are emailed. |
-| `WEBHOOK_ALLOW_PRIVATE` | No | `false` | Allow webhook deliveries to private, loopback, and reserved IP addresses. Keep disabled unless trusted school integrations need private-network access. DNS results are checked and pinned for each send. Also applies to LTI tool keyset (JWKS) URLs. |
+| `WEBHOOK_ALLOW_PRIVATE` | No | `false` | Allow webhook deliveries to private, loopback, and reserved IP addresses. Keep disabled unless trusted school integrations need private-network access. DNS results are checked and pinned for each send. Also applies to LTI tool keyset (JWKS) URLs and OneRoster endpoints. It does **not** apply to AI providers: the organisation marks a provider as running on its private network in the organisation console instead. |
 | `LTI_TOOL_RATE_LIMIT` | No | `300` | Requests per LTI tool per minute on the AGS token and grade endpoints (`src/lti`). The LTI platform issuer is `API_URL`. |
 | `WEBHOOK_DELIVERY_RETENTION_DAYS` | No | `30` | Days a delivery (and its payload, which holds personal data) is kept; purged by the daily retention job. |
 | `WEBHOOK_POLL_INTERVAL_MS` | No | `5000` | How often each API instance looks for due deliveries when Redis is off. With `USE_REDIS=true` a BullMQ queue sends them and the database is checked once a minute as a backstop. |
@@ -117,13 +117,21 @@ GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/sr
 | `PARENT_NOTIFICATIONS_SWEEP` | No | `true` | `false` stops the 15-minute sweep that sends parent notices (see `backend/src/parent-portal/README.md`). The notices also need the `parent_notifications` feature. |
 | `TIMETABLE_SCHEDULER` | No | `true` | `false` stops the per-minute timetable scheduler that opens a check-in session at each timetabled period (see `backend/src/timetable/README.md`). Also needs the `timetable` feature; uses a Postgres advisory lock, no Redis. |
 | `ATTENDANCE_ALERTS_SWEEP` | No | `true` | `false` stops the hourly attendance alert sweep (see `backend/src/attendance-alerts/README.md`). Also needs the `attendance_alerts` feature and a threshold in the school's settings. |
+| `ANALYTICS_SWEEP` | No | `true` | `false` stops the hourly refresh of the school analytics summaries in this instance (see `backend/src/analytics/README.md`). "Refresh now" on the Analytics page still works. Uses a Postgres advisory lock, no Redis. |
 
 ### Report cards
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `REPORT_GENERATION_SWEEP` | No | `true` | `false` stops the sweep that resumes report card PDFs a restart left behind (on boot and every 5 minutes, one instance at a time; see `backend/src/report-card/README.md`). |
+| `PEER_REVIEW_SWEEP` | No | `true` | `false` stops the once-a-minute sweep that opens peer review windows at the due date and tells authors their reviews are ready (one instance at a time; see `backend/src/peer-review/README.md`). Opening the assignment still opens a due window. |
 | `REPORT_PDF_EXTRA_FONT` | No | - | Path to an extra TrueType/OpenType font (not `.ttc`) for characters the bundled Noto Sans lacks, such as Chinese, Japanese, Korean or Arabic names on report cards and transcripts. Without it they are drawn as a replacement character. |
+
+### AI assistance
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `AI_REQUEST_TIMEOUT_MS` | No | `120000` | How long one AI request may take (5 000 to 600 000 ms) before it fails as a timeout. Providers, keys and models are set by organisation admins in the organisation console (stored encrypted), not in the environment. A model server on your own network (Ollama, vLLM, LM Studio, often plain `http`) is allowed per provider by ticking "This provider runs on our private network"; `WEBHOOK_ALLOW_PRIVATE` has no effect on AI providers. See `backend/src/ai/README.md`. |
 
 ### Rostering
 

@@ -33,6 +33,12 @@ export const FEATURE_KEYS = [
   'attendance_alerts',
   'rostering',
   'lti',
+  'mastery',
+  'peer_review',
+  'similarity_check',
+  'pastoral_notes',
+  'ai_assistance',
+  'analytics',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -175,6 +181,54 @@ export const FEATURES: readonly FeatureDefinition[] = [
     description:
       "The organisation registers external learning tools; teachers add them to course modules, students open them signed in as themselves, and tools can send grades back to the gradebook. Off by default: names, emails (if the tool is allowed them) and course details leave the platform.",
     default: false,
+    requires: [],
+  },
+  {
+    key: 'mastery',
+    label: 'Mastery & learning outcomes',
+    description:
+      "Learning outcomes (school frameworks and course outcomes) linked to activities, rubric rows and quiz questions, with each student's mastery per outcome tracked alongside the points gradebook. Off by default.",
+    default: false,
+    requires: [],
+  },
+  {
+    key: 'peer_review',
+    label: 'Peer review',
+    description:
+      "Teachers can turn on peer review for an assignment: after the due date (or when the teacher starts it) each student who handed in reviews classmates' work against a rubric or with comments, optionally anonymously, and sees the reviews of their own work when the window closes.",
+    default: true,
+    requires: [],
+  },
+  {
+    key: 'similarity_check',
+    label: 'Similarity check',
+    description:
+      'Compares text submissions (assignment text and essay answers) with others for the same activity, or across the school, and shows teachers a quiet marker with a side-by-side view. Never shown to students and never changes a grade: a prompt to look, not a verdict. No external databases. Off by default.',
+    default: false,
+    requires: [],
+  },
+  {
+    key: 'pastoral_notes',
+    label: 'Behaviour & pastoral notes',
+    description:
+      'Private staff notes per student (behaviour, pastoral, safeguarding, medical-related and other categories) with follow-ups and a timeline. Visible only to staff holding the pastoral-note permissions; never shown to students, parents, webhooks or report cards. Off by default.',
+    default: false,
+    requires: [],
+  },
+  {
+    key: 'ai_assistance',
+    label: 'AI assistance',
+    description:
+      "Teacher-initiated AI drafts (quiz questions, rubric feedback suggestions, page summaries) through the organisation's own AI provider. Teachers review and accept every draft; AI never grades. Student work is sent only when the school allows it. Off by default; a school can switch it off.",
+    default: false,
+    requires: [],
+  },
+  {
+    key: 'analytics',
+    label: 'Analytics',
+    description:
+      'Course analytics for teachers (submission rates, grade distributions, group averages, weekly trend and students at risk) and school roll-ups per course and teacher for staff holding analytics:read. Counts and averages only; never shown to students or parents.',
+    default: true,
     requires: [],
   },
 ];

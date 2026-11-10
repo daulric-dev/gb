@@ -1,6 +1,6 @@
 # Courses (`src/course`)
 
-The course module is the core of the learning side of GradeBook. A course belongs to a school (optionally to an academic year and term, with an optional grade scale), has a status (`draft`, `published`, `archived`), a staff list (teachers and TAs), an enrolled student roster, and content: **modules** that hold ordered **module items**, and Markdown **pages**. A module item either carries its own content (an external link or a section header) or points at something else in the course (a page, an activity, a file or a discussion topic). The module also handles student join codes, course **templates**, **copying** a course's design into a new course or **importing** it into an existing one (with due-date shifting), and serving **files** the course offers to its staff.
+The course module is the core of the learning side of GradeBook. A course belongs to a school (optionally to an academic year and term, with an optional grade scale), has a status (`draft`, `published`, `archived`), a staff list (teachers and TAs), an enrolled student roster, and content: **modules** that hold ordered **module items**, and Markdown **pages**. A module item either carries its own content (an external link or a section header) or points at something else in the course (a page, an activity, a file or a discussion topic). The module also handles student join codes, course **templates**, **copying** a course's design into a new course or **importing** it into an existing one (with due-date shifting), the cross-school **template library** (`library/`), and serving **files** the course offers to its staff.
 
 Access inside a course is decided by the caller's course role, worked out by `CourseAccessService` in the [`access/`](access/README.md) sub-folder, not by school-wide permissions. Only listing templates, creating a course and copying into a new course are gated by the `course:create` permission.
 
@@ -72,7 +72,26 @@ All routes use `AuthGuard`. `CourseController` and `CourseCopyController` also u
 | POST | `/api/courses/:courseId/copy` | `course:create`, and a manage role on the source or the source is a template in the caller's school | Copy the source's design into a new **draft** course the caller teaches. Returns the course plus `copied` counts. |
 | POST | `/api/courses/:courseId/import` | Manage role on the target, and the same source rule | Append another course's content (`sourceCourseId`) to this course. Returns `{ copied }`. A course cannot import from itself. |
 
-What a copy carries, all inside one transaction (60 s timeout) with new ids: assignment groups, rubrics (criteria and ratings), activities with quiz questions and options (always as **drafts**, due dates shifted or cleared), pages, modules, module items, staff-written discussion topics (unpublished, no replies), and the discussion setting (copy only). It leaves behind students, submissions, marks, attendance, announcements, replies and student-started topics. Every internal pointer is repointed at the copy, and UUIDs of copied rows inside page bodies, activity instructions and topic bodies are rewritten (`relinkIds`) so links stay inside the copy. File items keep pointing at the same file. On import, assignment groups with the same name (case-insensitive) are merged and modules and groups are placed after the target's own. Dates: at most one of `shiftDays`, the gap between `sourceStartDate` and `targetStartDate` (whole days, so times of day are kept), or `clearDueDates`; none keeps dates unchanged.
+What a copy carries, all inside one transaction (60 s timeout) with new ids, is the design snapshot of `course-snapshot.ts`: assignment groups, rubrics (criteria and ratings), question banks and draws, activities with quiz questions and options (every question type's settings; always as **drafts**, due and late-until dates shifted or cleared), pages, modules, module items, staff-written discussion topics (unpublished, no replies), the discussion setting (copy only), external tool items (only when the tool is enabled, `lti` is on and a deployment reaches the school; otherwise skipped with a line in the response's `notes`), and course learning outcomes with their alignments (`copyOutcomeAlignments`, `src/mastery`). It leaves behind students, submissions, marks, rubric assessments, peer reviews, attendance, extensions, accommodations, announcements, replies, student-started topics and LTI deployments. Every internal pointer is repointed at the copy, and UUIDs of copied rows inside page bodies, activity instructions and topic bodies are rewritten (`relinkIds`) so links stay inside the copy.
+
+**Files are copied, never shared.** Each file a module item links is copied into the copier's own storage (`CourseFileCopyService`): checked against the school's upload limit first (a 400 naming the files, nothing written), reserved as a `pending` file row owned by the copier at `file-manager/<school>/<copier>/<id>-<slug>`, copied inside the bucket, and marked `ready` in the content transaction; on failure the reserved rows and objects are removed. The copy's items link the copies, so copying or importing never gives anyone access to the author's file (before, the item kept the author's `file_id`, which `CourseFileService` then served to the copy's staff and students). On import, assignment groups with the same name (case-insensitive) are merged and modules and groups are placed after the target's own. Dates: at most one of `shiftDays`, the gap between `sourceStartDate` and `targetStartDate` (whole days, so times of day are kept), or `clearDueDates`; none keeps dates unchanged.
+
+### Template library
+
+`library/` (`CourseLibraryModule.forRoot()`, `LibraryController` at `/api/library`, `FeatureGuard` with `course_copy`; every other rule in the services). Staff of the caller's active school only (students, parents and non-members get 403).
+
+| Method | Path | Who | What it does |
+|--------|------|-----|--------------|
+| GET | `/api/library/items` (`q`, `subject`, `gradeLevel`, `tag`, `scope` = `all`/`school`/`organisation`/`mine`, `sourceCourseId`) | Staff | Published items of the caller's school or shared with the organisation (`mine`: the caller's own, published or not), newest first, with the latest version's counts. |
+| POST | `/api/library/items` | Manage role on `sourceCourseId` (in the active school); `course-library:create` for `visibility: 'organisation'` | Publish version 1: title, description, subject, grade level, tags (lower-cased, at most 20), visibility, optional `selection` (`moduleIds`, `activityIds`, `pageIds`, `rubricIds`; what they need comes along). |
+| GET | `/api/library/items/:itemId` (`version`) | Visible item, or one the caller manages | Item, versions and a read-only `preview` of one version (outline, pages, activities with questions, rubrics, file names and sizes; never storage keys). Another school's school-only item is 404. |
+| PATCH | `/api/library/items/:itemId` | Publisher or `course:update` in the item's school | Details and visibility (widening to the organisation needs `course-library:create`). |
+| POST | `/api/library/items/:itemId/versions` | Same, plus a manage role on the source course | A new version from the source course (`selection` omitted keeps the previous one; optional `note`); lists the item again if unpublished. Earlier versions are never changed. |
+| POST | `/api/library/items/:itemId/unpublish` | Publisher or school admin | Hidden from browsing and importing; imports already made are unaffected. |
+| POST | `/api/library/items/:itemId/import` (202) | Manage role on `targetCourseId`, or `course:create` for `newCourse: { name, code?, academicYearId?, termId? }` | `version` (latest by default), date options as for copy. Checks every file against the school's upload limit (400 before anything is written), records a `library_import` and runs it in the background. Returns the import. |
+| GET | `/api/library/imports`, `/api/library/imports/:importId` | The person who started it | Progress (`status` queued/copying/done/failed, `filesDone`/`filesTotal`), counts, `notes`, the course written into. |
+
+Publishing reads the snapshot, copies each linked file into `course-library/<itemId>/<versionId>/<fileId>-<slug>` and stores the snapshot (with those keys) as an immutable `library_item_version`; copied objects are removed if the version write fails. An import (`LibraryImportService.run`) reserves the importer's file rows with ids fixed by the import and source file (`stableUuid`), copies the objects (progress after each), then in one transaction locks the import row (`FOR UPDATE`; stops unless it is still `copying`), creates the new course if asked (the importer teaches it), writes the snapshot, copies outcome alignments still on the source course, marks the files ready and the import done. Runs on the BullMQ queue `course-library-import` with Redis (3 attempts, exponential backoff), in-process otherwise (same attempts); the final failure marks the import `failed` and discards its files. `LibraryImportScheduler` (on boot and every 5 minutes, advisory lock, not under `NODE_ENV=test`) resumes imports left `queued`/`copying` for 10 minutes. See [library/README.md](library/README.md).
 
 **Course files** (`CourseFileController`, `course-file.controller.ts`)
 
@@ -84,12 +103,14 @@ All `:courseId`, `:moduleId`, `:itemId`, `:pageId`, `:fileId`, `:userProfileId` 
 
 ### Services / exports
 
-`CourseModule` exports `CourseService`, `ModuleService` and `PageService` (the student portal uses them).
+`CourseModule` exports `CourseService`, `ModuleService`, `PageService` (the student portal uses them) and `CourseFileCopyService` (the template library).
 
 - `CourseService` - `list`, `get`, `create`, `update`, `remove`, `regenerateJoinCode`, `disableJoinCode`, `joinByCode(studentId, schoolId, code)` (a student self-enrols: published, non-template course in their school; code upper-cased; a dropped student is reactivated), `people`, `addStaff`, `updateStaff`, `removeStaff`, `enrollStudents`, `removeStudent`, plus `validateLinks(schoolId, links)` and `toCourse(row)` which `CourseCopyService` reuses.
 - `ModuleService` - `list` (staff), `listForStudent(courseId, studentId)` (published modules and items only, hiding items whose page is unpublished, activity is a draft, file is deleted or topic is unpublished; an activity item's `activity.dueAt` is the student's effective due date - their extension, else the activity's - with `activity.hasExtension`; the caller must already have checked enrolment), `create`, `update`, `remove`, `reorder`, `createItem`, `updateItem`, `removeItem`, `reorderItems`.
 - `PageService` - `list`, `get`, `getPublished(courseId, pageId)` (for students; an unpublished page is `404`), `create`, `update`, `remove`.
-- `CourseCopyService` (not exported) - `listTemplates`, `copy`, `importInto`, `copyContent(tx, sourceId, targetId, userId, shift, targetSchoolId)`, `shiftOf(dates)`. Also exports the pure helpers `shiftDate` and `relinkIds`, and the `CopyDates` / `CopyCounts` types.
+- `CourseCopyService` (not exported) - `listTemplates`, `copy`, `importInto`, `shiftOf(dates)`. The file also exports `shiftOf`, `TX_OPTIONS` and re-exports `shiftDate`, `relinkIds` and `CopyCounts`.
+- `course-snapshot.ts` - `readSnapshot`, `selectSnapshot`, `writeSnapshot`, `snapshotCounts`, `isWholeCourse`, `shiftDate`, `relinkIds` and the `CourseSnapshot` format (shared by copy, import and the library).
+- `CourseFileCopyService` - `assertFits(files, schoolId)`, `reserve(files, owner, idFor)`, `copyObjects`, `markReady(tx, ids)`, `discard(ids)`, `ltiDeployments(schoolId, toolIds)`; plus `stableUuid` and `fileSlug`.
 - `CourseFileService` (not exported) - `read(userId, courseId, fileId)`.
 - `CourseBannerService` (not exported) - `createTicket`, `complete`, `remove` for the cover image, built on `ImagesService`'s shared upload steps.
 
@@ -140,7 +161,8 @@ Also:
 
 - `prisma/schema/grading.prisma`: `grading.activity`, `grading.submission` (read for checks), and on copy/import `grading.assignment_group`, `grading.rubric`, `grading.rubric_criterion`, `grading.rubric_rating`, `grading.quiz_question`, `grading.quiz_option` (read/write); `grading.grade_scale` (read, validation).
 - `prisma/schema/discussion.prisma`: `course.discussion_topic` (read; written by copy/import), `course.discussion_setting` (copied).
-- `prisma/schema/files.prisma`: `file_manager.file`, `file_manager.file_share` (read).
+- `prisma/schema/files.prisma`: `file_manager.file` (read; copies written by `CourseFileCopyService`), `file_manager.file_share` (read).
+- `prisma/schema/library.prisma`: `course.library_item`, `course.library_item_version`, `course.library_import` (read/write, `library/`).
 - `prisma/schema/school.prisma`: `public.academic_year`, `public.term`, `public.school_management`, `public.user_profile` (read).
 - `prisma/schema/student.prisma`: `student.student` (read).
 
@@ -162,7 +184,10 @@ None.
 | `page.controller.ts` | Pages. |
 | `page.service.ts` | Page CRUD and the student `getPublished`. |
 | `course-copy.controller.ts` | Templates, copy, import. |
-| `course-copy.service.ts` | Template listing, source checks, date shifting, the transactional content copy, `shiftDate`, `relinkIds`. |
+| `course-copy.service.ts` | Template listing, source checks, date shifting, copy and import with copied files. |
+| `course-snapshot.ts` | The design snapshot: read, select, write, counts, `shiftDate`, `relinkIds`. |
+| `course-file-copy.service.ts` | Copies linked files into the importer's own storage (limit check, reserve, copy, ready, discard); LTI availability. |
+| `library/` | The template library: controller, services, import job, scheduler, DTOs. See [library/README.md](library/README.md). |
 | `course-file.controller.ts` | Streams a course file to staff. |
 | `course-file.service.ts` | Decides which files a course's staff may open. |
 | `access/` | `CourseAccessModule` and `CourseAccessService`. See [access/README.md](access/README.md). |
@@ -170,7 +195,7 @@ None.
 | `course.service.test.ts` | Create, list, roles, join codes, people, staff, enrolment, delete, templates. |
 | `module.service.test.ts` | Staff and student listings, module writes and reorder, item target checks, moves. |
 | `page.service.test.ts` | Page list, scoping, role checks, create defaults, empty updates, `getPublished`. |
-| `course-copy.service.test.ts` | Copy and import behaviour, date handling, permissions, helpers. |
+| `course-copy.service.test.ts` | Copy and import behaviour, date handling, permissions, helpers, file copies (new key and owner, author's file never referenced), the upload-limit refusal before writes, clean-up on failure, excluded data, outcome alignments carried over. |
 | `course-file.service.test.ts` | Which files course staff may open. |
 | `course-banner.service.test.ts` | `bannerColor` validation and storage, banner fields in responses, cover ticket/complete/remove and who may use them. |
 

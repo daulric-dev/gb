@@ -86,6 +86,7 @@ export class ParentPortalService {
       attendance: settings.showAttendance && f.attendance,
       announcements: settings.showAnnouncements && f.announcements,
       reports: settings.showReports && f.report_cards,
+      mastery: settings.showMastery && f.mastery,
       notifications: f.parent_notifications,
     };
   }

@@ -59,6 +59,7 @@ import { useCourse } from "../../_components/course-context";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
 import { QuestionCard } from "../_components/QuestionCard";
 import { QuestionForm, type QuestionPayload } from "../_components/QuestionForm";
+import { AiQuestionDrafts } from "../_components/AiQuestionDrafts";
 import { BankDrawsDialog } from "../_components/BankDrawsDialog";
 import { MarksTable } from "../_components/MarksTable";
 import { RubricPanel } from "../_components/RubricPanel";
@@ -70,6 +71,9 @@ import type { ActivityDetail, SubmissionRow } from "../_components/types";
 import { LockdownMonitorSummary } from "../_components/LockdownPresence";
 import { useLiveRoster } from "../_components/use-live-roster";
 import { userMessage } from "@/lib/errors";
+import { useFeatures } from "@/hooks/use-features";
+import { flagsByStudent, similarityApi, type SimilarityFlag } from "@/lib/similarity";
+import { PeerReviewPanel } from "../_components/PeerReviewPanel";
 
 const UNGROUPED = "none";
 
@@ -88,6 +92,11 @@ export default function CourseActivityPage() {
   const working = useSignal(false);
   const confirmDelete = useSignal(false);
   const bankDrawsOpen = useSignal(false);
+  const { hasFeature } = useFeatures();
+  const peerReviewOn = hasFeature("peer_review");
+  const similarityOn = hasFeature("similarity_check");
+  const aiOn = hasFeature("ai_assistance");
+  const similarity = useSignal<Record<string, SimilarityFlag>>({});
 
   const editing = useSignal(false);
   const draftTitle = useSignal("");
@@ -160,6 +169,19 @@ export default function CourseActivityPage() {
       .then((data) => (groups.value = data))
       .catch(() => (groups.value = []));
   }, [load, loadSubmissions, loadRubric, course.id, groups]);
+
+  // Teacher-only similarity markers (assignment text and essay answers).
+  const activityKind = activity.value?.kind;
+  useEffect(() => {
+    if (!similarityOn || !activityId || !activityKind || activityKind === "offline") {
+      similarity.value = {};
+      return;
+    }
+    similarityApi
+      .flags(activityId)
+      .then((res) => (similarity.value = flagsByStudent(res.flags)))
+      .catch(() => (similarity.value = {}));
+  }, [similarityOn, activityId, activityKind, similarity]);
 
   const backToList = () => router.push(`${base}/assignments`);
 
@@ -751,6 +773,9 @@ export default function CourseActivityPage() {
               ? `Marks (${marked}/${submissions.value.length})`
               : `Submissions (${handedIn}/${submissions.value.length})`}
           </TabsTrigger>
+          {a.kind === "assignment" && peerReviewOn && (
+            <TabsTrigger value="peer-review">Peer review</TabsTrigger>
+          )}
           {a.kind !== "quiz" && (
             <TabsTrigger value="rubric">
               Rubric{rubric.value.rubric ? "" : " (none)"}
@@ -817,6 +842,11 @@ export default function CourseActivityPage() {
                 onChangedAction={load}
               />
             ))}
+            {canManage && isDraft && aiOn && (
+              <div className="space-y-3">
+                <AiQuestionDrafts courseId={course.id} activityId={activityId} onAddedAction={load} />
+              </div>
+            )}
             {canManage && isDraft && (
               <Card>
                 <CardHeader>
@@ -864,6 +894,7 @@ export default function CourseActivityPage() {
             isDraft={isDraft}
             onRowsChangeAction={(rows) => (submissions.value = rows)}
             lockdownBrowser={a.kind === "quiz" && !!a.lockdownBrowser}
+            similarity={similarity.value}
             rubric={a.kind === "quiz" ? null : rubric.value.rubric}
             assessments={rubric.value.assessments}
             onAssessedAction={(studentId, marks) => {
@@ -877,6 +908,18 @@ export default function CourseActivityPage() {
             }}
           />
         </TabsContent>
+
+        {a.kind === "assignment" && peerReviewOn && (
+          <TabsContent value="peer-review" className="mt-3">
+            <PeerReviewPanel
+              courseId={course.id}
+              activityId={activityId}
+              dueAt={a.dueAt}
+              canManage={canManage}
+              base={base}
+            />
+          </TabsContent>
+        )}
 
         {a.kind !== "quiz" && (
           <TabsContent value="rubric" className="mt-3">

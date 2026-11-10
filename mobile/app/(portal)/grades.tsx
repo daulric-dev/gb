@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import {
   ChevronDown,
   ChevronRight,
@@ -114,10 +114,19 @@ export default function PortalGradesScreen() {
       title="Grades"
       description="How you are doing in each course"
       action={
-        hasFeature("report_cards") ? (
-          <Button size="sm" variant="outline" onPress={() => router.push("/reports")}>
-            Reports
-          </Button>
+        hasFeature("report_cards") || hasFeature("mastery") ? (
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {hasFeature("mastery") && (
+              <Button size="sm" variant="outline" onPress={() => router.push("/outcomes" as Href)}>
+                Outcomes
+              </Button>
+            )}
+            {hasFeature("report_cards") && (
+              <Button size="sm" variant="outline" onPress={() => router.push("/reports")}>
+                Reports
+              </Button>
+            )}
+          </View>
         ) : undefined
       }
       refreshing={refreshing}

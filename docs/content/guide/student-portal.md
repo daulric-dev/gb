@@ -27,6 +27,18 @@ The mobile app has the same course screen: tap a course on **Home** and switch b
 
 Once work is marked you see your score (to two decimal places) and your teacher's feedback. If the work has a **rubric**, it is shown up front so you know how it will be marked, and once marked it shows the level your teacher picked for each criterion. In the app all of this is on the work screen: type an answer and/or **Attach a file**, then **Hand in**; quizzes show answer progress and unanswered question numbers, and ask you to confirm before submission. **Try again** appears when retakes are allowed.
 
+## Using the app offline
+
+The app keeps a copy of your courses on your phone so you can keep reading and working without a signal.
+
+- **Reading.** Course pages, module lists, work instructions and due dates, and your work list are saved for your active courses (refreshed in the background when you are online, and whenever you open them). Offline, screens show **Offline - showing saved copy from** a date and time, and refresh on their own when you are back online. Something you have never opened, and has not been saved yet, needs a connection the first time. **Settings > Offline data** shows how much is stored, saves your courses now, or clears the saved copies.
+- **Quiz answers.** Start a quiz online; if the signal drops, keep answering. Answers are **Saved offline** on your phone and sent in order when you are back online (**Syncing**, then **Synced**). **Submitting** always needs a connection.
+- **Written work.** What you type in an assignment is kept on your phone as a draft until you **Hand in**, which needs a connection.
+- **Deadlines.** A draft is never sent after its deadline: if the quiz time ran out or the work closed while you were offline, the work screen says **This was due while you were offline** and keeps your draft on the phone, where you can view it and share or copy it (for example to send to your teacher with a request for an extension). For a timed quiz, the answers that reached the server in time were submitted.
+- **Changed somewhere else.** If you also worked on the same quiz or assignment on another device, the app does not overwrite either copy: it shows **Changed on another device** and lets you compare them, keep this phone's draft or use the server copy.
+- **Not offline:** file uploads (they go straight to your school's storage), starting a quiz, submitting or handing in, and **Lockdown quizzes**, which need a connection the whole time because the app has to keep telling your teacher you are still in the quiz.
+- **Signing out** deletes everything saved on the phone, including drafts that were never sent; the app warns you first.
+
 ## Calendar and notifications
 
 **Calendar** shows a month at a time with every piece of work on the day it is due, coloured by course. Pick a day to see what is due, at what time, and whether you have handed it in. **Export .ics** saves the month's due dates for Google Calendar, Outlook or Apple Calendar (a one-off copy; export again to pick up changes). In the app, the **Calendar** tab lists the next two months day by day.

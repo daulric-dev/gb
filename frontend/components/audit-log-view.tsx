@@ -52,6 +52,8 @@ function actionLabel(action: string) {
   if (action === "create") return "created";
   if (action === "update") return "updated";
   if (action === "delete") return "deleted";
+  // Safeguarding pastoral notes record every read.
+  if (action === "read") return "viewed";
   return action;
 }
 

@@ -87,7 +87,7 @@ Name, code, description, year and term, grade scale and status.
 - **move from the old start date to a new one** - GradeBook works out the gap in whole days, so a due time keeps its time of day, or
 - **remove** them.
 
-The copy is a new **draft** course and you are its teacher. It takes the description, grade scale, assignment groups (weights and drop rules), rubrics, pages, modules and their items, every activity with its quiz questions and rubric, and the discussion prompts staff wrote. Activities arrive as **drafts** so you can check dates before publishing them (publishing notifies students as usual); discussion topics arrive unpublished. Pages, modules and items keep whether they were published, so once you publish the course and its activities the layout is as you left it. Files linked from modules are the same files - nothing is re-uploaded.
+The copy is a new **draft** course and you are its teacher. It takes the description, grade scale, assignment groups (weights and drop rules), rubrics, pages, modules and their items, every activity with its quiz questions and rubric, and the discussion prompts staff wrote. Activities arrive as **drafts** so you can check dates before publishing them (publishing notifies students as usual); discussion topics arrive unpublished. Pages, modules and items keep whether they were published, so once you publish the course and its activities the layout is as you left it. Files linked from modules are copied into **your own Files** (the original author's files are never shared with you); each must fit your school's upload limit, or nothing is copied and you are told which file is too large. External tools come along only if your school can use them.
 
 Nothing about the old class comes along: no students, enrolments, submissions, marks, rubric scores, attendance, announcements, replies or topics students started. The join code is not copied; create one in People when you are ready.
 
@@ -96,3 +96,14 @@ Nothing about the old class comes along: no students, enrolments, submissions, m
 **Templates.** Turn on **School template** in Settings to offer a course to the whole school. Anyone who can create courses sees it under **New course → Start from a template** and gets their own copy, without needing a place in the template course. A template never takes students: it has no join code, enrolling is refused, and it never shows in the student portal. A course that already has students can't be made a template.
 
 You need permission to create courses to copy one, and must teach the course (or be a school admin) unless it is a template.
+
+## The course library
+
+**Course library** (in the sidebar) is a shared shelf of templates. Teachers publish a course, or just some of its modules, quizzes, rubrics and pages, from **Settings → Course library → Publish to library**, with a title, description, subject, grade level and tags. A template is visible to **your school**, or - for staff with the *Share course templates with every school* permission (admins have it) - to **every school in the organisation**.
+
+- **Browse and search** by text, subject, grade level and tag; open one to **preview** its modules, pages, activities, rubrics and file list (read-only).
+- **Import** it into one of your courses (its modules go after your own) or into a **new draft course**. Choose the version and what happens to due dates. Files are copied into your own Files in the background - the dialog shows the progress and links to the course when it is done. If a file is larger than your school's upload limit, nothing is imported and you are told which one.
+- **Versions.** Publishing again from the course (**Publish new version**) creates a new version. Courses that imported an earlier version keep exactly what they imported.
+- **Unpublish** hides a template from the library; courses that already imported it are not affected.
+
+Nothing about the class ever goes into a template: no students, work, marks, peer reviews, attendance, extensions or accommodations. External tools come along only if the importing school can use the same tool; otherwise they are skipped and the import says so.

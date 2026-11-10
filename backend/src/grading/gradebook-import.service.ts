@@ -1,3 +1,4 @@
+import { refreshOutcomeEvidence } from '@/mastery/outcome-evidence';
 import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type PersonRef,
@@ -176,8 +177,33 @@ export class GradebookImportService {
       throw new BadRequestException('Failed to import the marks');
     }
 
+    await this.refreshEvidence(plan.changes);
     this.emitGrades(userId, courseId, plan.changes, written);
     return { applied: plan.changes.length, unchanged: plan.unchanged };
+  }
+
+  /**
+   * Mastery evidence for the imported marks, right after they are written
+   * (the marks go in one batch transaction). A failure is logged and never
+   * undoes the import; the next mark on that work recomputes it.
+   */
+  private async refreshEvidence(changes: ImportPlan['changes']) {
+    const byActivity = new Map<string, string[]>();
+    for (const c of changes) {
+      byActivity.set(c.activityId, [...(byActivity.get(c.activityId) ?? []), c.studentId]);
+    }
+    if (byActivity.size === 0) return;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const [activityId, studentIds] of byActivity) {
+          await refreshOutcomeEvidence(tx, activityId, studentIds);
+        }
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update mastery evidence after an import: ${(error as Error).message}`,
+      );
+    }
   }
 
   /** grade.recorded for every mark the import changed; fire and forget. */

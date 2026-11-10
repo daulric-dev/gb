@@ -35,6 +35,11 @@ receipts, notifications, and ephemeral system activity are not audit-log
 targets. Other changed values can include personal information; access should
 be granted only to roles that need it.
 
+**Pastoral notes** are the one place where *reading* is recorded: every time
+a safeguarding note is opened, listed, exported or has an attachment opened,
+an entry with action **viewed** (`read`) is written. Pastoral entries hold ids
+and settings only, never the text of a note, and are never sent to webhooks.
+
 ## Current coverage
 
 The current write services record changes to:
@@ -47,6 +52,11 @@ The current write services record changes to:
   scales.
 - Student records, school-wide announcements, and file, folder, and share
   metadata.
+- Mastery: the school's proficiency scale and mastery settings, outcome sets
+  (a CSV import is one entry with created/updated counts), school and course
+  outcomes, and outcome alignments. Student evidence, which is recalculated
+  from marks automatically, is not recorded; the marks and alignments that
+  produce it are.
 
 Coverage is explicit in the backend write services, not a database-wide
 trigger. Private chat message content, authentication-provider and webhook

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import { useRouter, type Href } from "expo-router";
 import { Search } from "lucide-react-native";
 import { apiQuery } from "@/lib/api";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -18,13 +19,17 @@ import { Sheet } from "@/components/ui/Sheet";
 import { StudentForm } from "@/features/students/StudentForm";
 import { SchoolJoinCodeSheet } from "@/features/students/SchoolJoinCodeSheet";
 import { getInitials, capitalize } from "@/lib/utils";
+import { useFeatures } from "@/lib/use-features";
 
 function StudentRow({
   student,
   onPress,
+  onNotes,
 }: {
   student: Student;
   onPress?: () => void;
+  /** Opens the student's pastoral notes (staff with a pastoral permission). */
+  onNotes?: () => void;
 }) {
   const fullName = `${student.first_name} ${student.last_name}`.trim();
   return (
@@ -50,6 +55,16 @@ function StudentRow({
             ) : null}
           </View>
           {!student.is_active && <Badge variant="outline">Inactive</Badge>}
+          {onNotes ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={onNotes}
+              accessibilityLabel={`Pastoral notes for ${fullName || "this student"}`}
+            >
+              Notes
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     </Pressable>
@@ -71,6 +86,12 @@ export default function StudentsScreen() {
   const canUpdate = can("student", "update");
   const canJoinCode = can("join-code", "read") || can("join-code", "update");
   const canIssueJoinCode = can("join-code", "update");
+  const router = useRouter();
+  const pastoral =
+    useFeatures().hasFeature("pastoral_notes") &&
+    (can("pastoral-note", "read") ||
+      can("pastoral-note", "create") ||
+      can("pastoral-note", "update"));
 
   const fetchStudents = useCallback(
     async (query?: string) => {
@@ -168,6 +189,18 @@ export default function StudentsScreen() {
               onPress={
                 canUpdate
                   ? () => setEditing(s)
+                  : undefined
+              }
+              onNotes={
+                pastoral
+                  ? () =>
+                      router.push({
+                        pathname: "/pastoral/[studentId]",
+                        params: {
+                          studentId: s.id,
+                          name: `${s.first_name} ${s.last_name}`.trim(),
+                        },
+                      } as unknown as Href)
                   : undefined
               }
             />

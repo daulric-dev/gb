@@ -12,6 +12,8 @@ export interface ParentVisibility {
   announcements: boolean;
   /** Published report cards and the transcript. */
   reports: boolean;
+  /** Mastery of learning outcomes (`showMastery` and `mastery`); missing from older servers. */
+  mastery?: boolean;
   notifications: boolean;
 }
 
@@ -188,6 +190,8 @@ export interface ParentSettings {
   showAttendance: boolean;
   showAnnouncements: boolean;
   showReports: boolean;
+  /** Mastery of learning outcomes; off by default. Missing from older servers. */
+  showMastery?: boolean;
   maxStudentAge: number | null;
 }
 

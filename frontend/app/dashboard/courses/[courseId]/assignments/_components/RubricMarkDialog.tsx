@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   Rubric,
@@ -25,6 +25,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { userMessage } from "@/lib/errors";
+import { useFeatures } from "@/hooks/use-features";
+import { aiDraftApi, aiErrorMessage, type RubricSuggestions } from "@/lib/ai";
+import { AiDraftNote } from "@/components/ai/ai-draft-note";
 
 /** PUT /activities/:id/submissions/:studentId/rubric */
 export interface RubricMarkResult {
@@ -78,9 +81,14 @@ export function RubricMarkDialog({
   const override = useSignal("");
   const note = useSignal("");
   const working = useSignal(false);
+  const { hasFeature } = useFeatures();
+  const aiOn = hasFeature("ai_assistance");
+  const ai = useSignal<RubricSuggestions | null>(null);
+  const aiBusy = useSignal(false);
 
   useEffect(() => {
     if (!open) return;
+    ai.value = null;
     const next: Record<string, CriterionPick> = {};
     for (const a of existing) {
       next[a.criterionId] = {
@@ -105,6 +113,31 @@ export function RubricMarkDialog({
     };
     picks.value = { ...picks.value, [criterionId]: { ...was, ...patch } };
   };
+
+  /** Ask for suggestions: shown beside each criterion, applied only when the teacher picks them. */
+  async function suggest() {
+    if (!student) return;
+    aiBusy.value = true;
+    try {
+      ai.value = await aiDraftApi.rubricFeedback(activityId, student.studentId);
+    } catch (err) {
+      toast.error(aiErrorMessage(err));
+    } finally {
+      aiBusy.value = false;
+    }
+  }
+
+  const suggestionFor = (criterionId: string) =>
+    ai.value?.suggestions.find((s) => s.criterionId === criterionId);
+
+  function applySuggestion(criterionId: string) {
+    const s = suggestionFor(criterionId);
+    if (!s) return;
+    set(criterionId, {
+      ...(s.ratingId ? { ratingId: s.ratingId, points: s.points } : {}),
+      comment: s.comment,
+    });
+  }
 
   const total =
     Math.round(
@@ -178,6 +211,31 @@ export function RubricMarkDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {aiOn && (
+          <div className="space-y-2">
+            {!ai.value ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void suggest()}
+                disabled={aiBusy.value || !student}
+              >
+                {aiBusy.value ? (
+                  <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Sparkles className="mr-1.5 size-4" aria-hidden />
+                )}
+                {aiBusy.value ? "Reading the work…" : "Suggest levels and feedback with AI"}
+              </Button>
+            ) : (
+              <AiDraftNote>
+                Suggestions appear under each criterion. Nothing changes until you use one, and
+                the mark is saved only when you press Save mark.
+              </AiDraftNote>
+            )}
+          </div>
+        )}
+
         <div className="space-y-4">
           {rubric.criteria.map((c) => {
             const pick = picks.value[c.id];
@@ -224,6 +282,31 @@ export function RubricMarkDialog({
                     </button>
                   ))}
                 </div>
+                {(() => {
+                  const s = suggestionFor(c.id);
+                  if (!s) return null;
+                  const level = c.ratings.find((r) => r.id === s.ratingId);
+                  return (
+                    <div className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/20">
+                      <p className="min-w-0 flex-1 whitespace-pre-wrap">
+                        <span className="font-medium">
+                          AI suggests: {level ? `${level.label} (${level.points})` : "no level"}
+                        </span>
+                        {s.comment && <span className="block text-muted-foreground">{s.comment}</span>}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        onClick={() => applySuggestion(c.id)}
+                        aria-label={`Use the AI suggestion for ${c.title}`}
+                      >
+                        Use
+                      </Button>
+                    </div>
+                  );
+                })()}
                 <Input
                   value={pick?.comment ?? ""}
                   onChange={(e) => set(c.id, { comment: e.target.value })}
@@ -240,6 +323,23 @@ export function RubricMarkDialog({
               <Label htmlFor="rubricFeedback" className="text-xs">
                 Feedback
               </Label>
+              {ai.value?.feedback && (
+                <div className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/20">
+                  <p className="min-w-0 flex-1 whitespace-pre-wrap">
+                    <span className="font-medium">AI suggests: </span>
+                    {ai.value.feedback}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => (note.value = ai.value?.feedback ?? note.value)}
+                  >
+                    Use feedback
+                  </Button>
+                </div>
+              )}
               <Textarea
                 id="rubricFeedback"
                 rows={3}
