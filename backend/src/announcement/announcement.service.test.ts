@@ -1,4 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { CreateAnnouncementDto } from './dto/create-announcement.dto';
+import {
+  CreateSchoolAnnouncementDto,
+  UpdateSchoolAnnouncementDto,
+} from './dto/school-announcement.dto';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AnnouncementService } from './announcement.service';
 import { expectRejection } from '@/test/mocks';
@@ -168,5 +177,164 @@ describe('AnnouncementService school announcements audit', () => {
       after: 'New',
     });
     for (const call of calls) expect(call[0]).toBe(prisma);
+  });
+});
+
+/** A tiny stand-in for the announcement table that applies `where`. */
+const TABLE = [
+  { id: 'staff-1', school_id: 'school-1', course_id: null, audience: 'staff' },
+  { id: 'all-1', school_id: 'school-1', course_id: null, audience: 'everyone' },
+  { id: 'course-1', school_id: 'school-1', course_id: 'c1', audience: 'staff' },
+  { id: 'all-2', school_id: 'school-2', course_id: null, audience: 'everyone' },
+].map((r) => ({
+  ...r,
+  author_user_profile_id: 'staff-author',
+  title: r.id,
+  body: null,
+  created_at: new Date('2026-11-01'),
+  updated_at: null,
+  user_profile: { first_name: 'A', last_name: 'B', avatar_url: null },
+}));
+
+function filtered(where: Record<string, unknown>) {
+  return TABLE.filter((r) =>
+    Object.entries(where).every(
+      ([k, v]) => (r as Record<string, unknown>)[k] === v,
+    ),
+  );
+}
+
+describe('AnnouncementService audiences', () => {
+  function withNotices(prisma: MockPrisma) {
+    const notices = { schoolAnnouncementPosted: mock(async () => undefined) };
+    const svc = new AnnouncementService(
+      prisma as any,
+      { delete: async () => undefined, get: async () => null, set: async () => undefined } as any,
+      {} as any,
+      notices as any,
+      undefined,
+      { record: async () => undefined } as any,
+    );
+    return { svc, notices };
+  }
+
+  test('the migration defaults every existing row to staff', () => {
+    const sql = readFileSync(
+      join(
+        __dirname,
+        '../../prisma/migrations/20261114100000_announcement_audience/migration.sql',
+      ),
+      'utf8',
+    );
+    expect(sql).toContain("CREATE TYPE public.announcement_audience AS ENUM ('staff', 'everyone')");
+    expect(sql).toMatch(
+      /ADD COLUMN audience public\.announcement_audience NOT NULL DEFAULT 'staff'/,
+    );
+  });
+
+  test('students and parents get only everyone posts of the given school', async () => {
+    const prisma = createMockPrisma();
+    prisma.announcement.findMany.mockImplementation(async ({ where }: any) =>
+      filtered(where),
+    );
+    const { svc } = withNotices(prisma);
+
+    const one = await svc.findEveryoneForSchool('school-1');
+    expect(one.map((a) => a.id)).toEqual(['all-1']);
+    const two = await svc.findEveryoneForSchool('school-2');
+    expect(two.map((a) => a.id)).toEqual(['all-2']);
+    expect(prisma.announcement.findMany.mock.calls[0][0].where).toEqual({
+      school_id: 'school-1',
+      course_id: null,
+      audience: 'everyone',
+    });
+    // No read receipts, internal author id or audience in the public shape.
+    expect(Object.keys(one[0]).sort()).toEqual(
+      ['author', 'body', 'created_at', 'id', 'title', 'updated_at'].sort(),
+    );
+  });
+
+  test('create defaults to staff and does not notify students', async () => {
+    const prisma = createMockPrisma();
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1', role: 'admin' });
+    prisma.announcement.create.mockImplementation(async ({ data }: any) => ({
+      ...TABLE[0],
+      ...data,
+      id: 'new',
+    }));
+    const { svc, notices } = withNotices(prisma);
+    const out = await svc.create('admin-1', { title: 'Staff meeting' });
+    expect(prisma.announcement.create.mock.calls[0][0].data.audience).toBe('staff');
+    expect(out.audience).toBe('staff');
+    expect(notices.schoolAnnouncementPosted).not.toHaveBeenCalled();
+  });
+
+  test('an everyone post notifies the school once', async () => {
+    const prisma = createMockPrisma();
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1', role: 'admin' });
+    prisma.announcement.create.mockImplementation(async ({ data }: any) => ({
+      ...TABLE[0],
+      ...data,
+      id: 'new',
+    }));
+    const { svc, notices } = withNotices(prisma);
+    await svc.create('admin-1', { title: 'Sports day', audience: 'everyone' });
+    expect(notices.schoolAnnouncementPosted).toHaveBeenCalledTimes(1);
+    expect((notices.schoolAnnouncementPosted.mock.calls[0] as any)[0]).toBe('school-1');
+  });
+
+  test('widening staff to everyone notifies and is audited; other edits do not notify', async () => {
+    const prisma = createMockPrisma();
+    const calls: any[] = [];
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1', role: 'admin' });
+    let current = { ...TABLE[0] };
+    prisma.announcement.findFirst.mockImplementation(async () => current);
+    prisma.announcement.update.mockImplementation(async ({ data }: any) => {
+      current = { ...current, ...data };
+      return current;
+    });
+    prisma.announcement_read.findMany.mockResolvedValue([]);
+    const notices = { schoolAnnouncementPosted: mock(async () => undefined) };
+    const svc = new AnnouncementService(
+      prisma as any,
+      { delete: async () => undefined } as any,
+      {} as any,
+      notices as any,
+      undefined,
+      { record: async (...a: any[]) => void calls.push(a) } as any,
+    );
+
+    await svc.update('admin-1', 'staff-1', { audience: 'everyone' });
+    expect(notices.schoolAnnouncementPosted).toHaveBeenCalledTimes(1);
+    expect(calls[0][3].changes.audience).toEqual({ before: 'staff', after: 'everyone' });
+
+    // Already everyone: a title edit sends nothing new.
+    await svc.update('admin-1', 'staff-1', { title: 'Renamed' });
+    expect(notices.schoolAnnouncementPosted).toHaveBeenCalledTimes(1);
+
+    // Narrowing back to staff is audited and sends nothing.
+    await svc.update('admin-1', 'staff-1', { audience: 'staff' });
+    expect(notices.schoolAnnouncementPosted).toHaveBeenCalledTimes(1);
+    expect(calls[2][3].changes.audience).toEqual({ before: 'everyone', after: 'staff' });
+  });
+});
+
+describe('announcement audience validation', () => {
+  const check = async (cls: any, body: Record<string, unknown>) =>
+    validate(plainToInstance(cls, body), {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+  test('school posts accept staff and everyone only', async () => {
+    expect(await check(CreateSchoolAnnouncementDto, { title: 'x', audience: 'everyone' })).toHaveLength(0);
+    expect(await check(CreateSchoolAnnouncementDto, { title: 'x' })).toHaveLength(0);
+    expect(await check(CreateSchoolAnnouncementDto, { title: 'x', audience: 'parents' })).not.toHaveLength(0);
+    expect(await check(UpdateSchoolAnnouncementDto, { audience: 'staff' })).toHaveLength(0);
+    expect(await check(UpdateSchoolAnnouncementDto, { audience: 'all' })).not.toHaveLength(0);
+  });
+
+  test('course posts take no audience', async () => {
+    expect(await check(CreateAnnouncementDto, { title: 'x', audience: 'everyone' })).not.toHaveLength(0);
   });
 });

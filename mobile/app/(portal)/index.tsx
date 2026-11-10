@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import {
   BookOpen,
+  CalendarClock,
   ChevronRight,
   NotebookPen,
   Plus,
   ScanLine,
 } from "lucide-react-native";
-import { api } from "@/lib/api";
+import { useOfflineReads } from "@/features/offline/OfflineReads";
 import { useAuth } from "@/providers/AuthProvider";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -32,6 +33,8 @@ import { JoinCourseSheet } from "@/features/course/JoinCourseSheet";
 import { CourseThumb } from "@/features/course/CourseBanner";
 import { SchoolLogo } from "@/features/dashboard/SchoolLogo";
 import { useFeatures } from "@/lib/use-features";
+import { SchoolAnnouncements } from "@/features/announcements/SchoolAnnouncements";
+import { AttendanceSummaryCard } from "@/features/attendance/AttendanceSummaryCard";
 
 /**
  * Student home: the courses they sit and how much work is outstanding. A
@@ -41,6 +44,8 @@ export default function PortalHomeScreen() {
   const { profile } = useAuth();
   const { hasFeature } = useFeatures();
   const attendanceOn = hasFeature("attendance");
+  const announcementsOn = hasFeature("announcements");
+  const timetableOn = hasFeature("timetable");
   const router = useRouter();
   const { colors } = useTheme();
   const [me, setMe] = useState<PortalMe | null>(null);
@@ -50,17 +55,18 @@ export default function PortalHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [joinOpen, setJoinOpen] = useState(false);
+  const { get, savedAt } = useOfflineReads();
 
   const load = useCallback(async () => {
     const [meData, courseData, workData] = await Promise.all([
-      api<PortalMe>("/portal/me").catch(() => null),
-      api<PortalCourseCard[]>("/portal/me/courses").catch(() => []),
-      api<PortalWorkItem[]>("/portal/me/activities").catch(() => []),
+      get<PortalMe>("/portal/me").catch(() => null),
+      get<PortalCourseCard[]>("/portal/me/courses").catch(() => []),
+      get<PortalWorkItem[]>("/portal/me/activities").catch(() => []),
     ]);
     setMe(meData);
     setCourses(courseData ?? []);
     setWork(workData ?? []);
-  }, []);
+  }, [get]);
 
   useEffect(() => {
     load().finally(() => setLoading(false));
@@ -79,6 +85,7 @@ export default function PortalHomeScreen() {
     <Screen
       title={`Hello ${me?.firstName ?? profile?.first_name ?? "there"}`}
       description={profile?.school?.name ?? undefined}
+      offlineSavedAt={savedAt}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
@@ -99,6 +106,19 @@ export default function PortalHomeScreen() {
           <OpenAttendanceCards refreshKey={refreshKey} />
         </>
       )}
+
+      {timetableOn && (
+        <Button
+          variant="outline"
+          icon={<CalendarClock color={colors.foreground} size={18} />}
+          accessibilityLabel="Open your timetable"
+          onPress={() => router.push("/timetable" as Href)}
+        >
+          My timetable
+        </Button>
+      )}
+
+      {announcementsOn && <SchoolAnnouncements refreshKey={refreshKey} />}
 
       <View style={styles.stats}>
         <StatCard
@@ -188,6 +208,8 @@ export default function PortalHomeScreen() {
           </CardContent>
         </Card>
       )}
+
+      {attendanceOn && <AttendanceSummaryCard refreshKey={refreshKey} />}
 
       <JoinCourseSheet
         open={joinOpen}

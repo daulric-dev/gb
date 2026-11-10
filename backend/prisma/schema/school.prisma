@@ -24,6 +24,8 @@ model announcement {
   created_at             DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
   updated_at             DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)")) @db.Timestamptz(6)
   course_id              String?             @db.Uuid
+  /// Who a school-wide post (course_id null) is for: staff only (default) or everyone (staff, students and parents). Course posts always go to the course and keep the default.
+  audience               announcement_audience @default(staff)
   user_profile           user_profile?       @relation(fields: [author_user_profile_id], references: [id], onUpdate: NoAction)
   course                 course?             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   school                 school              @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -34,6 +36,15 @@ model announcement {
   @@index([author_user_profile_id], map: "idx_announcement_author")
   @@index([school_id], map: "idx_announcement_school")
   @@index([school_id, created_at(sort: Desc)], map: "idx_announcement_school_created")
+  @@index([school_id, audience, created_at(sort: Desc)], map: "idx_announcement_school_audience_created", where: raw("(course_id IS NULL)"))
+  @@schema("public")
+}
+
+/// Who a school-wide announcement is for. More values (e.g. students, parents) can be added with ALTER TYPE ... ADD VALUE.
+enum announcement_audience {
+  staff
+  everyone
+
   @@schema("public")
 }
 
@@ -106,6 +117,10 @@ model school {
   logo_path                                   String?
   /// Feature keys the school's admin switched off (see src/features). A school can only switch off what the organisation allows.
   disabled_features                           String[]              @default([])
+  /// What parents see (src/parent-portal): { showGrades, showWork, showAttendance, showAnnouncements, maxStudentAge }. Missing keys use the defaults in parent-settings.ts.
+  parent_settings                             Json                  @default("{}")
+  /// IANA time zone (e.g. Europe/London) for the timetable and attendance reports. Null until an admin sets it deliberately: the scheduler skips the school and reports count UTC days meanwhile (src/timetable).
+  time_zone                                   String?
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]
@@ -130,7 +145,30 @@ model school {
   school_webhook                              school_webhook[]
   integration_audit_log                       integration_audit_log[]
   audit_log                                   audit_log[]
+  report_release                              report_release[]
+  report_document                             report_document[]
+  timetable_setting                           timetable_setting?
+  room                                        room[]
+  bell_period                                 bell_period[]
+  school_closure                              school_closure[]
+  attendance_alert_setting                    attendance_alert_setting?
+  analytics_setting                           analytics_setting?
+  analytics_course_summary                    analytics_course_summary[]
+  analytics_at_risk                           analytics_at_risk[]
+  analytics_refresh                           analytics_refresh?
+  attendance_alert                            attendance_alert[]
+  lti_deployment                              lti_deployment[]
+  library_item                                library_item[]
+  library_import                              library_import[]
+  pastoral_category                           pastoral_category[]
+  pastoral_note                               pastoral_note[]
+  pastoral_setting                            pastoral_setting?
+  similarity_setting                          similarity_setting?
+  ai_school_setting                           ai_school_setting?
 
+  mastery_setting                             mastery_setting?
+  outcome_set                                 outcome_set[]
+  outcome                                     outcome[]
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")
 }
@@ -257,6 +295,10 @@ model term {
   sort_order       Int?           @db.SmallInt
   course           course[]
   academic_year    academic_year? @relation(fields: [academic_year_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  report_release      report_release[]
+  report_comment      report_comment[]
+  report_head_comment report_head_comment[]
+  report_document     report_document[]
 
   @@unique([academic_year_id, name], map: "term_academic_year_id_name_unique")
   @@index([academic_year_id], map: "idx_term_year")
@@ -294,6 +336,13 @@ model user_profile {
   grade_scale_grade_scale_updated_byTouser_profile                  grade_scale[]              @relation("grade_scale_updated_byTouser_profile")
   submission                                                        submission[]
   activity_extension                                                activity_extension[]
+  report_release                                                    report_release[]
+  report_comment                                                    report_comment[]
+  report_head_comment                                               report_head_comment[]
+  activity_accommodation                                            activity_accommodation[]
+  question_bank                                                     question_bank[]
+  quiz_answer_marked                                                quiz_answer[]           @relation("quiz_answer_marked_by")
+  student_accommodation                                             student_accommodation[]
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]
   push_device                                                       push_device[]
@@ -307,6 +356,8 @@ model user_profile {
   app_user                                                          app_user                   @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   school_user_profile_school_idToschool                             school?                    @relation("user_profile_school_idToschool", fields: [school_id], references: [id], onUpdate: NoAction)
   parent_student_link                                               parent_student_link[]
+  parent_notification_pref                                          parent_notification_pref?
+  parent_notification_sent                                          parent_notification_sent[]
   school_join_code                                                  school_join_code[]
   student                                                           student?
   discussion_topic                                                  discussion_topic[]
@@ -314,8 +365,15 @@ model user_profile {
   discussion_read                                                   discussion_read[]
   organisation_admin                                                organisation_admin?        @relation("organisation_admin_user_idTouser_profile")
   organisation_admin_created                                        organisation_admin[]       @relation("organisation_admin_created_byTouser_profile")
+  organisation_owned                                                organisation[]             @relation("organisation_owner_idTouser_profile")
   organisation_invite_sent                                          organisation_invite[]      @relation("organisation_invite_invited_byTouser_profile")
   organisation_invite_accepted                                      organisation_invite[]      @relation("organisation_invite_accepted_byTouser_profile")
+  lti_subject                                                       lti_subject[]
+  library_item                                                      library_item[]             @relation("library_item_created_by")
+  library_item_version                                              library_item_version[]     @relation("library_item_version_published_by")
+  library_import                                                    library_import[]           @relation("library_import_requested_by")
+  pastoral_note_authored                                            pastoral_note[]            @relation("pastoral_note_author")
+  pastoral_note_assigned                                            pastoral_note[]            @relation("pastoral_note_assignee")
 
   @@index([school_id], map: "idx_user_profile_school")
   @@schema("public")
@@ -324,6 +382,7 @@ model user_profile {
 enum account_type {
   staff
   student
+  parent
 
   @@schema("public")
 }

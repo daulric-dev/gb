@@ -25,11 +25,14 @@ import { UpdateUploadLimitDto } from '@/school/dto/update-upload-limit.dto';
 import { CreateResumableUploadDto } from '@/images/dto/create-resumable-upload.dto';
 import { CompleteUploadDto } from '@/images/dto/complete-upload.dto';
 import { VersioningService } from '@/versioning/versioning.service';
+import { RequireStepUp } from '@/auth/step-up.guard';
+import { OwnershipService } from './ownership.service';
 import {
   AdminEmailDto,
   CreateOrganisationSchoolDto,
   ListOrganisationSchoolsQueryDto,
   SetupDto,
+  TransferOwnershipDto,
   UpdateOrganisationDto,
   UpdateOrganisationSchoolDto,
 } from './dto/organisation.dto';
@@ -76,6 +79,7 @@ export class OrganisationController {
     private readonly uploadLimits: UploadLimitService,
     private readonly logos: SchoolLogoService,
     private readonly versioning: VersioningService,
+    private readonly ownership: OwnershipService,
   ) {}
 
   @Get()
@@ -120,6 +124,18 @@ export class OrganisationController {
     @Param('userId', new ParseUUIDPipe()) userId: string,
   ) {
     return this.organisation.removeAdmin(req.user.id, userId);
+  }
+
+  /**
+   * Hand the organisation to another organisation admin (a stored row).
+   * Only the owner (any organisation admin while there is none); needs a
+   * recent step-up. The previous owner stays an admin.
+   */
+  @RequireStepUp()
+  @Post('transfer-ownership')
+  @HttpCode(200)
+  transferOwnership(@Req() req: Req, @Body() dto: TransferOwnershipDto) {
+    return this.ownership.transferOrganisation(req.user.id, dto.userId);
   }
 
   /** QUERY: `search` and `status` in the JSON body; empty lists every school. */

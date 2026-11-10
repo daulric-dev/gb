@@ -1,8 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { CircleX, Loader2, TimerOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { storeScanClaim } from "@/lib/attendance-scan";
@@ -26,11 +28,12 @@ type State =
  * which checks them in with it.
  */
 function ScanLanding() {
+  useSignals();
   const params = useSearchParams();
   const router = useRouter();
   const sessionId = params?.get("s") ?? "";
   const token = params?.get("t") ?? "";
-  const [state, setState] = useState<State>({ kind: "working" });
+  const state = useSignal<State>({ kind: "working" });
   const started = useRef(false);
 
   const valid = UUID.test(sessionId) && !!token;
@@ -50,28 +53,28 @@ function ScanLanding() {
       })
       .catch((err) => {
         if (isFeatureDisabledError(err)) {
-          setState({
+          state.value = {
             kind: "error",
             icon: CircleX,
             title: "Attendance is turned off",
             body: "Your school has switched attendance check-in off.",
-          });
+          };
           return;
         }
         const closed = err instanceof ApiError && /closed/i.test(err.message);
-        setState({
+        state.value = {
           kind: "error",
           icon: closed ? CircleX : TimerOff,
           title: closed ? "Attendance has closed" : "That code has expired",
           body: closed
             ? "Ask your teacher if you still need to be marked in."
             : "The code changes every few seconds. Scan the one on screen again.",
-        });
+        };
       });
-  }, [valid, sessionId, token, router]);
+  }, [valid, sessionId, token, router, state]);
 
   const shown: State = valid
-    ? state
+    ? state.value
     : {
         kind: "error",
         icon: CircleX,

@@ -117,6 +117,8 @@ describe('student due fields', () => {
     expect(studentDueFields(PAST, null, null, NOW)).toEqual({
       effectiveDueAt: PAST.toISOString(),
       hasExtension: false,
+      lateUntil: null,
+      isLate: false,
       isClosed: true,
     });
   });
@@ -125,6 +127,8 @@ describe('student due fields', () => {
     expect(studentDueFields(PAST, FUTURE, null, NOW)).toEqual({
       effectiveDueAt: FUTURE.toISOString(),
       hasExtension: true,
+      lateUntil: null,
+      isLate: false,
       isClosed: false,
     });
   });
@@ -133,6 +137,8 @@ describe('student due fields', () => {
     expect(studentDueFields(null, null, null, NOW)).toEqual({
       effectiveDueAt: null,
       hasExtension: false,
+      lateUntil: null,
+      isLate: false,
       isClosed: false,
     });
   });

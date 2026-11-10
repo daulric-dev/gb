@@ -17,6 +17,19 @@ export const FEATURE_KEYS = [
   "course_copy",
   "push_notifications",
   "integrations",
+  "report_cards",
+  "parent_portal",
+  "parent_notifications",
+  "timetable",
+  "attendance_alerts",
+  "rostering",
+  "lti",
+  "mastery",
+  "peer_review",
+  "similarity_check",
+  "pastoral_notes",
+  "ai_assistance",
+  "analytics",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -39,12 +52,38 @@ export const FALLBACK_FEATURES: FeatureMap = {
   course_copy: true,
   push_notifications: true,
   integrations: false,
+  // An older server has no report cards.
+  report_cards: false,
+  // Older servers have no parent portal.
+  parent_portal: false,
+  parent_notifications: false,
+  // Older servers have no timetable or attendance alerts.
+  timetable: false,
+  attendance_alerts: false,
+  // Older servers have no rostering sync.
+  rostering: false,
+  // Older servers have no external tools (LTI).
+  lti: false,
+  // Older servers have no mastery tracking.
+  mastery: false,
+  // Older servers have no peer review or similarity check.
+  peer_review: false,
+  similarity_check: false,
+  // Older servers have no pastoral notes.
+  pastoral_notes: false,
+  // Older servers have no AI assistance.
+  ai_assistance: false,
+  // Older servers have no analytics.
+  analytics: false,
 };
 
 /** Features that only work while another one is on. */
 export const FEATURE_REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {
   student_messaging: ["messaging"],
   chat_channels: ["messaging"],
+  parent_notifications: ["parent_portal"],
+  timetable: ["attendance"],
+  attendance_alerts: ["attendance"],
 };
 
 /**
@@ -88,16 +127,33 @@ export function featureForPath(pathname: string): FeatureKey | null {
   if (under("/dashboard/announcements")) return "announcements";
   if (under("/dashboard/files")) return "files";
   if (under("/dashboard/calendar")) return "calendar";
+  if (under("/dashboard/reports")) return "report_cards";
+  if (under("/dashboard/timetable")) return "timetable";
+  if (under("/dashboard/settings/timetable")) return "timetable";
+  if (under("/dashboard/attendance")) return "attendance_alerts";
+  if (under("/dashboard/pastoral")) return "pastoral_notes";
+  if (under("/dashboard/library")) return "course_copy";
+  if (under("/dashboard/analytics")) return "analytics";
 
   if (under("/portal/messages")) return "student_messaging";
+  if (under("/portal/announcements")) return "announcements";
   if (under("/portal/calendar")) return "calendar";
+  if (under("/portal/timetable")) return "timetable";
   if (under("/portal/attendance")) return "attendance";
+  if (under("/portal/reports")) return "report_cards";
+  if (under("/portal/outcomes")) return "mastery";
+  if (under("/dashboard/settings/mastery")) return "mastery";
+  if (under("/portal/peer-reviews")) return "peer_review";
   if (under("/scan")) return "attendance";
 
   const course = path.match(
     /^\/(?:dashboard|portal)\/courses\/[^/]+\/(announcements|discussions|attendance)(?:\/|$)/,
   );
   if (course) return course[1] as FeatureKey;
+  if (/^\/dashboard\/courses\/[^/]+\/reports(?:\/|$)/.test(path)) return "report_cards";
+  if (/^\/dashboard\/courses\/[^/]+\/timetable(?:\/|$)/.test(path)) return "timetable";
+  if (/^\/dashboard\/courses\/[^/]+\/outcomes(?:\/|$)/.test(path)) return "mastery";
+  if (/^\/dashboard\/courses\/[^/]+\/analytics(?:\/|$)/.test(path)) return "analytics";
 
   return null;
 }
@@ -147,9 +203,26 @@ export const FEATURE_GROUPS: { title: string; keys: string[] }[] = [
       "push_notifications",
     ],
   },
-  { title: "Teaching", keys: ["attendance", "calendar", "course_copy"] },
+  {
+    title: "Teaching",
+    keys: [
+      "attendance",
+      "timetable",
+      "attendance_alerts",
+      "calendar",
+      "course_copy",
+      "report_cards",
+      "mastery",
+      "peer_review",
+      "similarity_check",
+      "pastoral_notes",
+      "ai_assistance",
+      "analytics",
+    ],
+  },
   { title: "Content", keys: ["files"] },
-  { title: "Integrations", keys: ["integrations"] },
+  { title: "Families", keys: ["parent_portal", "parent_notifications"] },
+  { title: "Integrations", keys: ["integrations", "rostering", "lti"] },
 ];
 
 /** Splits a feature list into the display groups, dropping empty ones. */

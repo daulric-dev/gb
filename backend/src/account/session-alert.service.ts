@@ -45,7 +45,12 @@ export class SessionAlertService {
     const profile = await this.prisma.user_profile
       .findUnique({ where: { id: userId }, select: { account_type: true } })
       .catch(() => null);
-    const page = profile?.account_type === 'student' ? '/portal/settings' : '/dashboard/settings';
+    const page =
+      profile?.account_type === 'student'
+        ? '/portal/settings'
+        : profile?.account_type === 'parent'
+          ? '/parent/settings'
+          : '/dashboard/settings';
     return `${primaryOrigin()}${page}#devices`;
   }
 

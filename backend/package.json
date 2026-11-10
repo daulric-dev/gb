@@ -29,6 +29,7 @@
     "test:watch": "bun test src --watch"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.4.0",
     "@aws-sdk/client-s3": "3.1154.0",
     "@aws-sdk/s3-request-presigner": "3.1154.0",
     "@fastify/aws-lambda": "^6.4.2",
@@ -44,6 +45,7 @@
     "@nestjs/swagger": "^12.0.1",
     "@nestjs/throttler": "^6.7.0",
     "@node-saml/node-saml": "5.2.0",
+    "@pdfme/pdf-lib": "6.2.8",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
     "@react-pdf/renderer": "^4.9.0",
@@ -53,6 +55,7 @@
     "class-validator": "^0.15.1",
     "dotenv": "^18.0.8",
     "fastify": "^5.12.1",
+    "fontkit": "2.0.4",
     "ioredis": "^6.0.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
@@ -63,6 +66,7 @@
     "react": "^19.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "0.35.5",
     "write-excel-file": "^4.1.1"
   },
   "devDependencies": {

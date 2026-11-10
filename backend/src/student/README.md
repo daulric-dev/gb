@@ -1,6 +1,6 @@
 # Student (`src/student`)
 
-The school's student roster, as staff see it: list and search students, look one up, see their full profile (courses, linked login, guardians) and edit records. Nobody creates a student here: a `student.student` row only comes from a user who signed up and joined as a student - by redeeming the school's join code, or automatically through a verified student email domain - which creates the record linked to their login (`user_profile_id`). Join codes are in [`src/student-account`](../student-account/README.md); what a student sees of themselves is in [`src/student-portal`](../student-portal/README.md).
+The school's student roster, as staff see it: list and search students, look one up, see their full profile (courses, linked login, guardians) and edit records. Nobody creates a student here: a `student.student` row only comes from a user who signed up and joined as a student - by redeeming the school's join code, or automatically through a verified student email domain - which creates the record linked to their login (`user_profile_id`). Organisation admins can also import students with rostering ([`src/rostering`](../rostering/README.md)): those records start without a login and are linked to the account that signs in with their roster email; rostering also sets `student_number` (unique per school when set). Join codes are in [`src/student-account`](../student-account/README.md); what a student sees of themselves is in [`src/student-portal`](../student-portal/README.md).
 
 Every query is scoped to the caller's active school (`user_profile.school_id`, via `userSchoolId()` from `src/common`).
 
@@ -49,7 +49,7 @@ Students are created by `POST /api/auth/join-school` (`src/student-account`) or 
 ## Data
 
 - `student.student` - read, updated ([`student.prisma`](../../prisma/schema/student.prisma)).
-- `student.parent_student_link` - read for guardians ([`student.prisma`](../../prisma/schema/student.prisma)).
+- `student.parent_student_link` - read for guardians ([`student.prisma`](../../prisma/schema/student.prisma)). Links are made and removed by [`src/parent-portal`](../parent-portal/README.md).
 - `course.course_student` with `course.course` - read for the profile's courses ([`course.prisma`](../../prisma/schema/course.prisma)).
 - `public.user_profile` - read for the caller's school and the linked account ([`school.prisma`](../../prisma/schema/school.prisma)).
 

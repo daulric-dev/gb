@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { QRCodeSVG } from "qrcode.react";
 import { Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -41,7 +43,8 @@ export function useQrFrame(
   active: boolean,
   onClosedAction?: () => void,
 ): QrState {
-  const [state, setState] = useState<QrState>(EMPTY);
+  useSignals();
+  const state = useSignal<QrState>(EMPTY);
 
   useEffect(() => {
     if (!active) return;
@@ -63,13 +66,13 @@ export function useQrFrame(
               Math.max(rotatesAt - now + ROTATE_SLACK_MS, 500),
               windowMs + ROTATE_SLACK_MS,
             );
-        setState({
+        state.value = {
           frame,
           fetchedAt: now,
           nextAt: now + delay,
           retrying: false,
           unavailable: false,
-        });
+        };
         timer = setTimeout(() => void fetchFrame(), delay);
       } catch (err) {
         if (cancelled) return;
@@ -78,10 +81,10 @@ export function useQrFrame(
             onClosedAction?.();
             return;
           }
-          setState({ ...EMPTY, unavailable: true });
+          state.value = { ...EMPTY, unavailable: true };
           return;
         }
-        setState((s) => ({ ...s, retrying: true }));
+        state.value = { ...state.value, retrying: true };
         timer = setTimeout(() => void fetchFrame(), RETRY_MS);
       }
     };
@@ -91,9 +94,9 @@ export function useQrFrame(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [sessionPath, active, onClosedAction]);
+  }, [sessionPath, active, onClosedAction, state]);
 
-  return active ? state : EMPTY;
+  return active ? state.value : EMPTY;
 }
 
 export const QR_CAPTION = "Scan with your phone camera or the GradeBook app";

@@ -8,6 +8,7 @@ import {
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { HttpException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { AnnouncementService } from '@/announcement/announcement.service';
 
 const CTX = { studentId: 'student-1', schoolId: 'school-1' };
 
@@ -360,5 +361,59 @@ describe('StudentPortalService.getCourseFile', () => {
         ),
       ),
     ).toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('StudentPortalService.getSchoolAnnouncements', () => {
+  /** School posts as the table holds them; findMany applies `where`. */
+  const ROWS = [
+    { id: 'staff-only', school_id: 'school-1', course_id: null, audience: 'staff' },
+    { id: 'for-all', school_id: 'school-1', course_id: null, audience: 'everyone' },
+    { id: 'course-post', school_id: 'school-1', course_id: 'course-1', audience: 'staff' },
+    { id: 'other-school', school_id: 'school-2', course_id: null, audience: 'everyone' },
+  ].map((r) => ({
+    ...r,
+    title: r.id,
+    body: null,
+    created_at: new Date('2026-11-01'),
+    updated_at: null,
+    user_profile: null,
+  }));
+
+  function portal(prisma: MockPrisma) {
+    const announcements = new AnnouncementService(
+      prisma as any,
+      createMockCacheService() as any,
+      {} as any,
+    );
+    return new StudentPortalService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      announcements,
+      {} as any,
+      {} as any,
+      createMockCacheService() as any,
+    );
+  }
+
+  test("only the student's own school's posts for everyone", async () => {
+    const prisma = createMockPrisma();
+    prisma.announcement.findMany.mockImplementation(async ({ where }: any) =>
+      ROWS.filter((r) =>
+        Object.entries(where).every(([k, v]) => (r as any)[k] === v),
+      ),
+    );
+    const svc = portal(prisma);
+    expect((await svc.getSchoolAnnouncements(CTX)).map((a) => a.id)).toEqual([
+      'for-all',
+    ]);
+    expect(
+      (
+        await svc.getSchoolAnnouncements({ studentId: 's-2', schoolId: 'school-2' })
+      ).map((a) => a.id),
+    ).toEqual(['other-school']);
   });
 });

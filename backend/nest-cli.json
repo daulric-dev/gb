@@ -11,6 +11,10 @@
       {
         "include": "**/*.lua",
         "outDir": "dist"
+      },
+      {
+        "include": "report-card/fonts/*.{ttf,otf,txt,md}",
+        "outDir": "dist"
       }
     ]
   }

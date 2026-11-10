@@ -25,13 +25,104 @@ describe('feature catalog', () => {
       course_copy: true,
       push_notifications: true,
       integrations: false,
+      report_cards: true,
+      parent_portal: false,
+      parent_notifications: false,
+      timetable: false,
+      attendance_alerts: false,
+      rostering: false,
+      lti: false,
+      mastery: false,
+      peer_review: true,
+      similarity_check: false,
+      pastoral_notes: false,
+      ai_assistance: false,
+      analytics: true,
     });
+  });
+
+  test('lti is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('lti').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).lti).toBe(false);
+    const org = organisationSettings({ lti: true });
+    expect(effectiveForOrganisation(org).lti).toBe(true);
+    expect(effectiveForSchool(org, []).lti).toBe(true);
+    expect(effectiveForSchool(org, ['lti']).lti).toBe(false);
+  });
+
+  test('mastery is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('mastery').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).mastery).toBe(false);
+    const org = organisationSettings({ mastery: true });
+    expect(effectiveForSchool(org, []).mastery).toBe(true);
+    expect(effectiveForSchool(org, ['mastery']).mastery).toBe(false);
+  });
+
+  test('peer review is on by default and similarity check off; a school can switch either off', () => {
+    expect(featureDefinition('peer_review').requires).toEqual([]);
+    expect(featureDefinition('similarity_check').requires).toEqual([]);
+    const defaults = effectiveForOrganisation(organisationSettings({}));
+    expect(defaults.peer_review).toBe(true);
+    expect(defaults.similarity_check).toBe(false);
+    const org = organisationSettings({ similarity_check: true });
+    expect(effectiveForSchool(org, []).similarity_check).toBe(true);
+    expect(effectiveForSchool(org, ['similarity_check']).similarity_check).toBe(false);
+    expect(effectiveForSchool(org, ['peer_review']).peer_review).toBe(false);
+  });
+
+  test('pastoral notes are off by default, need nothing else, and a school can switch them off', () => {
+    expect(featureDefinition('pastoral_notes').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).pastoral_notes).toBe(false);
+    const org = organisationSettings({ pastoral_notes: true });
+    expect(effectiveForSchool(org, []).pastoral_notes).toBe(true);
+    expect(effectiveForSchool(org, ['pastoral_notes']).pastoral_notes).toBe(false);
+  });
+
+  test('AI assistance is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('ai_assistance').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).ai_assistance).toBe(false);
+    const org = organisationSettings({ ai_assistance: true });
+    expect(effectiveForOrganisation(org).ai_assistance).toBe(true);
+    expect(effectiveForSchool(org, []).ai_assistance).toBe(true);
+    expect(effectiveForSchool(org, ['ai_assistance']).ai_assistance).toBe(false);
+  });
+
+  test('analytics is on by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('analytics').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).analytics).toBe(true);
+    expect(effectiveForSchool(organisationSettings({}), ['analytics']).analytics).toBe(false);
+    expect(effectiveForSchool(organisationSettings({ analytics: false }), []).analytics).toBe(false);
+  });
+
+  test('rostering is off by default and needs nothing else', () => {
+    expect(featureDefinition('rostering').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).rostering).toBe(false);
+    expect(effectiveForOrganisation(organisationSettings({ rostering: true })).rostering).toBe(true);
+  });
+
+  test('timetable and attendance alerts require attendance; both default off', () => {
+    expect(featureDefinition('timetable').requires).toEqual(['attendance']);
+    expect(featureDefinition('attendance_alerts').requires).toEqual(['attendance']);
+    const org = organisationSettings({ timetable: true, attendance_alerts: true });
+    expect(effectiveForSchool(org, []).timetable).toBe(true);
+    expect(effectiveForSchool(org, ['attendance']).timetable).toBe(false);
+    expect(effectiveForSchool(org, ['attendance']).attendance_alerts).toBe(false);
   });
 
   test('student messaging and channels require messaging', () => {
     expect(featureDefinition('student_messaging').requires).toEqual(['messaging']);
     expect(featureDefinition('chat_channels').requires).toEqual(['messaging']);
     expect(featureDefinition('messaging').requires).toEqual([]);
+  });
+
+  test('parent notifications require the parent portal; both default off', () => {
+    expect(featureDefinition('parent_notifications').requires).toEqual(['parent_portal']);
+    expect(featureDefinition('parent_portal').default).toBe(false);
+    const org = organisationSettings({ parent_notifications: true });
+    expect(effectiveForOrganisation(org).parent_notifications).toBe(false);
+    const both = organisationSettings({ parent_portal: true, parent_notifications: true });
+    expect(effectiveForSchool(both, []).parent_notifications).toBe(true);
+    expect(effectiveForSchool(both, ['parent_portal']).parent_notifications).toBe(false);
   });
 
   test('every requirement is a catalog key and every feature has a label', () => {

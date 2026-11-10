@@ -1095,3 +1095,77 @@ describe('AttendanceService.checkIn location readings', () => {
     expect(rec.location_flags).toEqual([]);
   });
 });
+
+describe('openScheduled (timetable)', () => {
+  const stamp = (sb: ReturnType<typeof fakeDb>) => {
+    Object.assign(sb.tables['course.course'][0], {
+      created_at: new Date(),
+      updated_at: new Date(),
+      is_template: false,
+    });
+  };
+
+  test('opens with the given point and closes at the period end, with no opener', async () => {
+    const { service, sb, pushes } = setup();
+    stamp(sb);
+    const closesAt = new Date(Date.now() + 50 * 60_000);
+    const s = await service.openScheduled(COURSE, {
+      title: 'Period 1 · Lab',
+      location: { latitude: 51.5, longitude: -0.12, radiusM: 40 },
+      lateAfterMinutes: 10,
+      closesAt,
+    });
+    const row = sb.tables['course.attendance_session'].find((r) => r.id === s.id)!;
+    expect(row.opened_by).toBeNull();
+    expect(row.latitude).toBe(51.5);
+    expect(row.radius_m).toBe(40);
+    expect(row.closes_at.getTime()).toBe(closesAt.getTime());
+    expect(row.check_in_code).toMatch(/^\d{4}$/);
+    await tick();
+    expect(pushes).toHaveLength(1);
+  });
+
+  test('refuses an unpublished course, an ended period and a second open session', async () => {
+    const draft = setup({ status: 'draft' });
+    stamp(draft.sb);
+    expect(
+      await expectRejection(draft.service.openScheduled(COURSE, { closesAt: new Date(Date.now() + 60_000) })),
+    ).toBeInstanceOf(ConflictException);
+    const { service, sb } = setup();
+    stamp(sb);
+    expect(
+      await expectRejection(service.openScheduled(COURSE, { closesAt: new Date(Date.now() - 1000) })),
+    ).toBeInstanceOf(ConflictException);
+    await service.open(TEACHER, COURSE, {});
+    expect(
+      await expectRejection(service.openScheduled(COURSE, { closesAt: new Date(Date.now() + 60_000) })),
+    ).toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('summaryForStudent', () => {
+  test('overall and per-course percentages from the student\'s own records', async () => {
+    const { service, sb } = setup();
+    sb.prisma.course_student.findMany.mockResolvedValueOnce([
+      { course: { id: COURSE, name: 'Biology 101', code: 'BIO-101', status: 'published' } },
+    ]);
+    sb.prisma.course_attendance_record.findMany.mockResolvedValueOnce([
+      { course_id: COURSE, status: 'present' },
+      { course_id: COURSE, status: 'absent' },
+      { course_id: COURSE, status: 'excused' },
+    ]);
+    const s = await service.summaryForStudent('st-1');
+    expect(s.overall.rate).toBe(50);
+    expect(s.courses).toEqual([
+      {
+        courseId: COURSE,
+        courseName: 'Biology 101',
+        courseCode: 'BIO-101',
+        archived: false,
+        summary: { present: 1, late: 0, absent: 1, excused: 1, rate: 50 },
+      },
+    ]);
+    const where = sb.prisma.course_attendance_record.findMany.mock.calls.at(-1)![0].where;
+    expect(where.student_id).toBe('st-1');
+  });
+});

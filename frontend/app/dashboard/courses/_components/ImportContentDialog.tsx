@@ -180,7 +180,8 @@ export function ImportContentDialog({
                 Copy the modules, pages, activities, rubrics, assignment groups
                 and discussion prompts of another course into this one. Nothing
                 here is replaced: imported modules go after your own, and
-                imported activities start as drafts.
+                imported activities start as drafts. Linked files are copied
+                into your own files.
               </DialogDescription>
             </DialogHeader>
 

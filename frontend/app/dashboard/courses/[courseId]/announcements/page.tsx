@@ -32,6 +32,8 @@ import {
 import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { MarkdownEditor } from "../_components/MarkdownEditor";
+import { AiAnnouncementDraft } from "./_components/AiAnnouncementDraft";
+import { useFeatures } from "@/hooks/use-features";
 import {
   announcementAuthor,
   type CourseAnnouncement,
@@ -54,6 +56,8 @@ export default function CourseAnnouncementsPage() {
   const { course, canManage } = useCourse();
   const { profile } = useProfile();
   const myId = profile.value?.id;
+  const { hasFeature } = useFeatures();
+  const aiOn = hasFeature("ai_assistance");
 
   const items = useSignal<CourseAnnouncement[]>([]);
   const loading = useSignal(true);
@@ -217,6 +221,15 @@ export default function CourseAnnouncementsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {aiOn && !editing.value && (
+              <AiAnnouncementDraft
+                courseId={course.id}
+                onUseAction={(t, b) => {
+                  title.value = t;
+                  body.value = b;
+                }}
+              />
+            )}
             <div className="space-y-2">
               <Label htmlFor="annTitle">Title</Label>
               <Input

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import {
   BadRequestException,
   ForbiddenException,
@@ -7,6 +7,7 @@ import {
 import { CourseCopyService, relinkIds, shiftDate } from './course-copy.service';
 import { CourseService } from './course.service';
 import { CourseAccessService } from './access/course-access.service';
+import { CourseFileCopyService } from './course-file-copy.service';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockErasureLog } from '@/test/erasure-mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
@@ -150,23 +151,44 @@ function db(opts: {
       { id: 'tp2', title: 'Help?', body: '', is_pinned: false, is_locked: false, require_initial_post: false, is_published: true, user_profile: { account_type: 'student' } },
     ]),
   );
-  // f1 is a live file of school-1.
+  // f1 is a live, ready file of school-1 owned by the author.
   prisma.file.findMany.mockImplementation(async ({ where }: any) =>
-    where.school_id === 'school-1' && where.deleted_at === null
-      ? where.id.in.filter((id: string) => id === 'f1').map((id: string) => ({ id }))
+    where.school_id === 'school-1' && where.deleted_at === null && where.status === 'ready'
+      ? where.id.in
+          .filter((id: string) => id === 'f1')
+          .map((id: string) => ({
+            id,
+            name: 'Notes.pdf',
+            content_type: 'application/pdf',
+            size_bytes: 1024n,
+            bucket: 'file-manager',
+            storage_path: `school-1/author/${id}-notes.pdf`,
+          }))
       : [],
   );
   return prisma;
 }
 
-function service(prisma: MockPrisma) {
+function storageMock() {
+  return {
+    copy: mock(async () => undefined),
+    delete: mock(async () => undefined),
+  };
+}
+
+function service(prisma: MockPrisma, storage = storageMock(), limitMb = 100) {
   const cache = createMockCacheService() as any;
   const access = new CourseAccessService(cache, prisma as any);
+  const limits = {
+    forSchool: async () => ({ uploadLimitBytes: limitMb * 1024 * 1024, uploadLimitMb: limitMb }),
+  };
+  const features = { isEnabled: async () => true };
   return new CourseCopyService(
     cache,
     access,
     new CourseService(cache, access, prisma as any, createMockErasureLog() as any),
     prisma as any,
+    new CourseFileCopyService(prisma as any, storage as any, limits as any, features as any),
   );
 }
 
@@ -204,6 +226,8 @@ describe('CourseCopyService.copy', () => {
       modules: 1,
       moduleItems: 4,
       discussionTopics: 1,
+      questionBanks: 0,
+      files: 1,
     });
     expect(prisma.course_student.createMany).not.toHaveBeenCalled();
     expect(prisma.submission.createMany).not.toHaveBeenCalled();
@@ -220,7 +244,7 @@ describe('CourseCopyService.copy', () => {
     const [module] = rows(prisma, 'module');
     const items = rows(prisma, 'module_item');
 
-    expect(group).toMatchObject({ course_id: TARGET, weight: 40, drop_lowest: 1 });
+    expect(group).toMatchObject({ course_id: TARGET, weight: '40', drop_lowest: 1 });
     expect(group.id).not.toBe('g1');
     expect(activity).toMatchObject({
       course_id: TARGET,
@@ -247,8 +271,9 @@ describe('CourseCopyService.copy', () => {
     ]);
     expect(items[0].page_id).toBe(page.id);
     expect(items[1].activity_id).toBe(activity.id);
-    // A file item keeps the same file the source course offered.
-    expect(items[2].file_id).toBe('f1');
+    // A file item links the copier's own copy, never the author's file.
+    expect(items[2].file_id).not.toBe('f1');
+    expect(items[2].file_id).toBe(rows(prisma, 'file')[0].id);
 
     const topics = rows(prisma, 'discussion_topic');
     expect(topics).toHaveLength(1);
@@ -377,7 +402,7 @@ describe('CourseCopyService.importInto', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  test('file items whose file is deleted or in another school are left behind', async () => {
+  test('file items whose file is deleted, not ready or in another school are left behind', async () => {
     const prisma = db({ courseRole: 'teacher' });
     prisma.module_item.findMany.mockImplementation(async ({ where }: any) =>
       where.course_id === SOURCE
@@ -387,15 +412,19 @@ describe('CourseCopyService.importInto', () => {
           ]
         : [],
     );
-    await service(prisma).importInto(USER, TARGET, { sourceCourseId: SOURCE });
+    const { notes } = await service(prisma).importInto(USER, TARGET, { sourceCourseId: SOURCE });
 
     const lookup = prisma.file.findMany.mock.calls[0][0].where;
     expect(lookup).toEqual({
       id: { in: ['f1', 'f-deleted'] },
       school_id: 'school-1',
       deleted_at: null,
+      status: 'ready',
     });
-    expect(rows(prisma, 'module_item').map((i: any) => i.file_id)).toEqual(['f1']);
+    const items = rows(prisma, 'module_item');
+    expect(items).toHaveLength(1);
+    expect(items[0].file_id).not.toBe('f1');
+    expect(notes.join(' ')).toContain('skipped');
   });
 
   test('a course cannot import from itself', async () => {
@@ -418,5 +447,129 @@ describe('helpers', () => {
   test('relinkIds leaves ids that were not copied alone', () => {
     const ids = new Map([[PAGE, 'new-page']]);
     expect(relinkIds(`a ${PAGE} b ${ACT}`, ids)).toBe(`a new-page b ${ACT}`);
+  });
+});
+
+describe('course copy no longer shares the author\'s files', () => {
+  test('each linked file is copied to a new key owned by the copier, then marked ready with the content', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    const storage = storageMock();
+    await service(prisma, storage).importInto(USER, TARGET, { sourceCourseId: SOURCE });
+
+    const [file] = rows(prisma, 'file');
+    expect(file).toMatchObject({
+      owner_id: USER,
+      school_id: 'school-1',
+      bucket: 'file-manager',
+      status: 'pending',
+      name: 'Notes.pdf',
+    });
+    expect(file.id).not.toBe('f1');
+    expect(file.storage_path).toBe(`school-1/${USER}/${file.id}-notes.pdf`);
+    expect(storage.copy).toHaveBeenCalledWith(
+      'file-manager/school-1/author/f1-notes.pdf',
+      `file-manager/school-1/${USER}/${file.id}-notes.pdf`,
+      'application/pdf',
+    );
+    const ready = prisma.file.updateMany.mock.calls.at(-1)![0];
+    expect(ready.where.id.in).toEqual([file.id]);
+    expect(ready.data.status).toBe('ready');
+    // Nothing written anywhere points at the author's file.
+    const written = JSON.stringify(
+      Object.keys(prisma)
+        .filter((k) => !k.startsWith('$'))
+        .flatMap((k) => (prisma as any)[k].createMany?.mock?.calls ?? []),
+      (_k, v) => (typeof v === 'bigint' ? Number(v) : v),
+    );
+    expect(written).not.toContain('"f1"');
+  });
+
+  test('a file over the school upload limit stops the copy before anything is written', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.file.findMany.mockResolvedValue([
+      { id: 'f1', name: 'Huge.mp4', content_type: 'video/mp4', size_bytes: BigInt(200 * 1024 * 1024), bucket: 'file-manager', storage_path: 'school-1/author/f1-huge.mp4' },
+    ]);
+    const storage = storageMock();
+    const err = await expectRejection(
+      service(prisma, storage, 100).importInto(USER, TARGET, { sourceCourseId: SOURCE }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toContain('Huge.mp4');
+    expect(prisma.file.createMany).not.toHaveBeenCalled();
+    expect(storage.copy).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  test('a failed content write discards the copied files', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    const storage = storageMock();
+    prisma.page.createMany.mockRejectedValue(new Error('boom'));
+    prisma.file.findMany.mockImplementation(async ({ where }: any) =>
+      where.status === 'pending'
+        ? [{ id: where.id.in[0], bucket: 'file-manager', storage_path: 'x' }]
+        : [{ id: 'f1', name: 'Notes.pdf', content_type: 'application/pdf', size_bytes: 1n, bucket: 'file-manager', storage_path: 'school-1/author/f1-notes.pdf' }],
+    );
+    const err = await expectRejection(
+      service(prisma, storage).importInto(USER, TARGET, { sourceCourseId: SOURCE }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(storage.delete).toHaveBeenCalled();
+    expect(prisma.file.deleteMany).toHaveBeenCalled();
+  });
+
+  test('student work, marks, attendance and accommodations are never read or written', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    await service(prisma).copy(USER, SOURCE, { name: 'Copy' });
+    for (const model of [
+      'submission',
+      'course_student',
+      'course_attendance_record',
+      'attendance_session',
+      'activity_extension',
+      'activity_accommodation',
+      'rubric_assessment',
+      'quiz_answer',
+      'discussion_reply',
+      'lti_deployment',
+    ]) {
+      expect(prisma[model].findMany).not.toHaveBeenCalled();
+      expect(prisma[model].createMany).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe('learning outcomes on copy and import', () => {
+  test('an import carries course outcomes and their alignments onto the copied activity, rubric row and question', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.outcome.findMany.mockImplementation(async ({ where }: any) =>
+      where.course_id === SOURCE
+        ? [{ id: 'oc1', parent_id: null, code: 'B1', title: 'Cells', description: null, subject: null, grade_level: null, position: 0, archived_at: null }]
+        : [],
+    );
+    prisma.outcome.create.mockResolvedValue({ id: 'oc1-copy' });
+    prisma.outcome_alignment.findMany.mockImplementation(async ({ where }: any) =>
+      where.course_id === SOURCE
+        ? [
+            { outcome_id: 'oc1', activity_id: ACT, criterion_id: null, question_id: null, outcome: { course_id: SOURCE, school_id: 'school-1' } },
+            { outcome_id: 'oc1', activity_id: null, criterion_id: 'c1', question_id: null, outcome: { course_id: SOURCE, school_id: 'school-1' } },
+            { outcome_id: 'oc1', activity_id: null, criterion_id: null, question_id: 'q1', outcome: { course_id: SOURCE, school_id: 'school-1' } },
+          ]
+        : [],
+    );
+
+    await service(prisma).importInto(USER, TARGET, { sourceCourseId: SOURCE });
+
+    const [activity] = rows(prisma, 'activity');
+    const [criterion] = rows(prisma, 'rubric_criterion');
+    const [question] = rows(prisma, 'quiz_question');
+    expect(prisma.outcome.create.mock.calls[0][0].data).toMatchObject({ course_id: TARGET, title: 'Cells' });
+    const aligned = rows(prisma, 'outcome_alignment');
+    expect(aligned).toEqual([
+      expect.objectContaining({ outcome_id: 'oc1-copy', course_id: TARGET, activity_id: activity.id }),
+      expect.objectContaining({ outcome_id: 'oc1-copy', course_id: TARGET, criterion_id: criterion.id }),
+      expect.objectContaining({ outcome_id: 'oc1-copy', course_id: TARGET, question_id: question.id }),
+    ]);
+    // The alignment never points back at the source's rows.
+    expect(JSON.stringify(aligned)).not.toContain(ACT);
   });
 });

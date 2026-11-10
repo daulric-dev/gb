@@ -59,6 +59,7 @@ import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
 import { CountBadges } from "./_components/attendance-ui";
 import { TakeAttendanceDialog } from "./_components/TakeAttendanceDialog";
+import { CourseAttendanceReport } from "./_components/course-report";
 import { userMessage } from "@/lib/errors";
 
 export default function CourseAttendancePage() {
@@ -319,6 +320,11 @@ export default function CourseAttendancePage() {
           )}
         </CardContent>
       </Card>
+
+      <CourseAttendanceReport
+        courseId={course.id}
+        fileBase={(course.code || course.name).replace(/[^\w-]+/g, "_")}
+      />
 
       <TakeAttendanceDialog
         open={creating.value}

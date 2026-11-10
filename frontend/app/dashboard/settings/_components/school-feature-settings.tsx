@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -46,44 +48,45 @@ export function SchoolFeatureSettings({
 }
 
 function SchoolFeatureCard({ path }: { path: string }) {
+  useSignals();
   const { refreshSilently } = useAuth();
-  const [features, setFeatures] = useState<SchoolFeature[] | null>(null);
-  const [draft, setDraft] = useState<Record<string, boolean>>({});
-  const [saving, setSaving] = useState(false);
+  const features = useSignal<SchoolFeature[] | null>(null);
+  const draft = useSignal<Record<string, boolean>>({});
+  const saving = useSignal(false);
 
   useEffect(() => {
     api<SchoolFeature[]>(path)
       .then((list) => {
-        setFeatures(list);
-        setDraft(toMap(list));
+        features.value = list;
+        draft.value = toMap(list);
       })
       .catch((err) =>
         toast.error(
           userMessage(err, "Failed to load features"),
         ),
       );
-  }, [path]);
+  }, [path, draft, features]);
 
-  const changes = features ? changedFeatures(toMap(features), draft) : {};
+  const changes = features.value ? changedFeatures(toMap(features.value), draft.value) : {};
   const dirty = Object.keys(changes).length > 0;
 
   async function save() {
     if (!dirty) return;
-    setSaving(true);
+    saving.value = true;
     try {
       const list = await api<SchoolFeature[]>(path, {
         method: "PATCH",
         body: { features: changes },
       });
-      setFeatures(list);
-      setDraft(toMap(list));
+      features.value = list;
+      draft.value = toMap(list);
       toast.success("Features saved");
       // Navigation everywhere reads the profile's features.
       void refreshSilently();
     } catch (err) {
       toast.error(userMessage(err, "Failed to save features"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -97,13 +100,13 @@ function SchoolFeatureCard({ path }: { path: string }) {
             organisation has turned off cannot be switched on here.
           </p>
         </div>
-        <Button size="sm" onClick={save} disabled={!dirty || saving}>
-          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+        <Button size="sm" onClick={save} disabled={!dirty || saving.value}>
+          {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
           Save
         </Button>
       </div>
 
-      {!features ? (
+      {!features.value ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12" />
@@ -111,14 +114,14 @@ function SchoolFeatureCard({ path }: { path: string }) {
         </div>
       ) : (
         <FeatureToggleList
-          rows={features.map((f) => ({
+          rows={features.value.map((f) => ({
             ...f,
             lockedReason: f.availableInOrganisation ? null : ORG_LOCKED,
           }))}
-          value={draft}
-          disabled={saving}
+          value={draft.value}
+          disabled={saving.value}
           onToggle={(key, on) =>
-            setDraft((d) => applyFeatureToggle(d, features, key, on))
+            (draft.value = applyFeatureToggle(draft.value, features.value ?? [], key, on))
           }
         />
       )}

@@ -217,6 +217,15 @@ export class StudentMembershipService {
     userId: string,
     rawCode: string,
   ): Promise<{ studentId: string; schoolId: string }> {
+    const account = await this.prisma.user_profile.findUnique({
+      where: { id: userId },
+      select: { account_type: true },
+    });
+    if (account?.account_type === 'parent') {
+      // Parents link to children with a parent code, never a student join.
+      throw new ConflictException('A parent account cannot join a school as a student');
+    }
+
     const normalized = this.normalize(rawCode);
 
     if (normalized.length !== CODE_LENGTH) {

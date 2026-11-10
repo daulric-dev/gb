@@ -102,15 +102,19 @@ export function accountEmailHtml(email: AccountEmail): string {
 `;
 }
 
-/** "26 October 2026, 14:05 UTC" - no time zone of the reader is known. */
+const MONTHS_LONG = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/**
+ * "26 October 2026, 14:05 UTC" - no time zone of the reader is known.
+ * Spelled out rather than `toLocaleString`, whose separators come from the
+ * runtime's ICU data (newer data writes "26 October 2026 at 14:05"), so the
+ * email would change with the server.
+ */
 export function formatWhen(at: Date): string {
-  return `${at.toLocaleString('en-GB', {
-    timeZone: 'UTC',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })} UTC`;
+  const hh = String(at.getUTCHours()).padStart(2, '0');
+  const mm = String(at.getUTCMinutes()).padStart(2, '0');
+  return `${at.getUTCDate()} ${MONTHS_LONG[at.getUTCMonth()]} ${at.getUTCFullYear()}, ${hh}:${mm} UTC`;
 }

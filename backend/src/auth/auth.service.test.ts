@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
   NotFoundException,
@@ -589,18 +590,23 @@ describe('AuthService', () => {
       expect(prisma.app_user.deleteMany.mock.calls[0][0]).toEqual({ where: { id: userId } });
     });
 
-    test("refuses the organisation's last stored administrator", async () => {
+    test("refuses the organisation's last stored administrator with a 409", async () => {
       prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'admin-1' });
       prisma.organisation_admin.count.mockResolvedValue(0);
       const err = await expectRejection(service.deleteAccount('admin-1'));
-      expect(err).toBeInstanceOf(BadRequestException);
-      expect((err as Error).message).toBe(
-        "You're the organisation's last administrator. Add another administrator before deleting your account.",
-      );
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        statusCode: 409,
+        code: 'ACCOUNT_DELETION_BLOCKED',
+        message:
+          "You're the organisation's last administrator. Add another administrator before deleting your account.",
+        blockers: [{ code: 'LAST_ORG_ADMIN' }],
+      });
       expect(prisma.organisation_admin.count.mock.calls[0][0]).toEqual({
         where: { user_id: { not: 'admin-1' } },
       });
       expect(sessions.revokeAll).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(prisma.app_user.deleteMany).not.toHaveBeenCalled();
     });
 

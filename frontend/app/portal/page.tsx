@@ -4,9 +4,10 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { BookOpen, CalendarClock, CheckCircle2 } from "lucide-react";
+import { BookOpen, CalendarClock, CheckCircle2, Megaphone } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProfile } from "@/providers/AuthProvider";
+import { useFeatures } from "@/hooks/use-features";
 import type { PortalCourseCard } from "@/lib/courses/types";
 import {
   Card,
@@ -19,6 +20,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CourseCard, CourseCardSkeleton, CourseGrid } from "./_components/course-card";
 import { JoinCourseDialog } from "./_components/join-course-dialog";
 import { EmptyState, WorkRow } from "./_components/portal-ui";
+import { SchoolAnnouncementItem } from "./_components/school-announcements";
+import type { PortalAnnouncement } from "./_components/types";
 import {
   byDueDate,
   isOutstanding,
@@ -36,7 +39,10 @@ export default function PortalDashboardPage() {
   useSignals();
 
   const { profile } = useProfile();
+  const { hasFeature } = useFeatures();
+  const announcementsOn = hasFeature("announcements");
   const courses = useSignal<PortalCourseCard[]>([]);
+  const news = useSignal<PortalAnnouncement[]>([]);
   const work = useSignal<PortalWorkItem[]>([]);
   const loading = useSignal(true);
 
@@ -51,6 +57,13 @@ export default function PortalDashboardPage() {
       })
       .finally(() => (loading.value = false));
   }, [courses, work, loading]);
+
+  useEffect(() => {
+    if (!announcementsOn) return;
+    api<PortalAnnouncement[]>("/portal/me/announcements")
+      .then((data) => (news.value = data ?? []))
+      .catch(() => (news.value = []));
+  }, [announcementsOn, news]);
 
   const firstName = profile.value?.first_name ?? null;
   const active = courses.value.filter((c) => c.status !== "archived");
@@ -75,6 +88,30 @@ export default function PortalDashboardPage() {
         </div>
         <JoinCourseDialog variant="outline" />
       </div>
+
+      {announcementsOn && news.value.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Megaphone className="size-4 text-muted-foreground" />
+              School announcements
+            </CardTitle>
+            <CardAction>
+              <Link
+                href="/portal/announcements"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                View all
+              </Link>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {news.value.slice(0, 3).map((a) => (
+              <SchoolAnnouncementItem key={a.id} announcement={a} compact />
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">

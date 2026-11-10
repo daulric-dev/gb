@@ -546,7 +546,7 @@ describe('SubmissionService student access', () => {
     });
 
     const result = await service.submitQuiz('stu-1', 'act-1', []);
-    expect(result).toEqual({ score: 5, points: 20 });
+    expect(result).toEqual({ score: 5, points: 20, needsMarking: false });
     // The row lock, then submit_quiz.
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(prisma.grade.create).not.toHaveBeenCalled();
@@ -743,7 +743,6 @@ describe('SubmissionService student access', () => {
     // Every earlier answer goes, not just those to questions sent this time.
     expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
       submission_id: 'sub-1',
-      quiz_question: { activity_id: 'act-1' },
     });
   });
 
@@ -760,7 +759,7 @@ describe('SubmissionService student access', () => {
       { questionId: 'q-2', optionId: 'o-1a' },
     ]);
 
-    expect(prisma.quiz_answer.createMany.mock.calls[0][0].data).toEqual([
+    expect(prisma.quiz_answer.createMany.mock.calls[0][0].data).toMatchObject([
       {
         submission_id: 'sub-1',
         question_id: 'q-1',
@@ -889,7 +888,6 @@ describe('SubmissionService student access', () => {
     expect(prisma.submission.create).toHaveBeenCalledTimes(1);
     expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
       submission_id: 'sub-other',
-      quiz_question: { activity_id: 'act-1' },
     });
   });
 
@@ -955,6 +953,9 @@ describe('SubmissionService student access', () => {
       attemptCount: 0,
       submittedAt: '2026-09-02T00:00:00.000Z',
       feedback: 'Good',
+      lateSeconds: 0,
+      latePenaltyPercent: 0,
+      rawScore: null,
     });
   });
 });
@@ -1342,12 +1343,9 @@ describe('SubmissionService marking', () => {
 
       expect(res.savedAt).toBeDefined();
       expect(prisma.quiz_answer.deleteMany).toHaveBeenCalledWith({
-        where: {
-          submission_id: 'sub-1',
-          quiz_question: { activity_id: 'act-1' },
-        },
+        where: { submission_id: 'sub-1' },
       });
-      expect(prisma.quiz_answer.createMany).toHaveBeenCalledWith({
+      expect(prisma.quiz_answer.createMany.mock.calls[0][0]).toMatchObject({
         data: [
           {
             submission_id: 'sub-1',
@@ -1417,7 +1415,7 @@ describe('SubmissionService marking', () => {
       const res = await service.submitQuiz('stu-1', 'act-1', [
         { questionId: 'q-1', optionId: 'opt-1' },
       ]);
-      expect(res).toEqual({ score: 10, points: 10 });
+      expect(res).toEqual({ score: 10, points: 10, needsMarking: false });
       // When expired, client answers are not written.
       expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
       expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();

@@ -63,10 +63,14 @@ export interface CopyCounts {
   modules: number;
   moduleItems: number;
   discussionTopics: number;
+  /** Older servers leave these out. */
+  questionBanks?: number;
+  /** Linked files, copied into your own files (never the author's). */
+  files?: number;
 }
 
 /** `POST /courses/:id/copy` answers with the new course and its counts. */
-export type CopiedCourse = Course & { copied: CopyCounts };
+export type CopiedCourse = Course & { copied: CopyCounts; notes?: string[] };
 
 export interface CourseStaffMember {
   userProfileId: string;
@@ -99,7 +103,20 @@ export type ModuleItemType =
   | "file"
   | "link"
   | "header"
-  | "discussion";
+  | "discussion"
+  | "external_tool";
+
+/** An external tool (LTI) item's link, on module listings. */
+export interface ModuleItemExternalTool {
+  toolId: string;
+  toolName: string;
+  /** Off in the organisation console: staff still see the item, students do not. */
+  toolEnabled?: boolean;
+  resourceLinkId: string;
+  /** The gradebook column the tool sends scores to, if any. */
+  activityId: string | null;
+  points: number | null;
+}
 
 export interface ModuleItem {
   id: string;
@@ -125,6 +142,8 @@ export interface ModuleItem {
     /** Student portal only: `dueAt` is the student's extension. */
     hasExtension?: boolean;
   };
+  /** Present when itemType is "external_tool". */
+  externalTool?: ModuleItemExternalTool | null;
 }
 
 export interface CourseModule {
@@ -193,6 +212,13 @@ export interface Activity {
   omitFromFinalGrade: boolean;
   /** The course rubric marking uses; quizzes never have one. */
   rubricId: string | null;
+  lateUntil?: string | null;
+  latePenaltyMode?: "none" | "percent_per_day" | "percent_per_hour";
+  latePenaltyValue?: number | null;
+  latePenaltyCap?: number | null;
+  shuffleQuestions?: boolean;
+  /** Each student's own option order (choice and matching kinds). */
+  shuffleOptions?: boolean;
   createdAt: string;
 }
 
@@ -226,6 +252,11 @@ export interface GradebookCell {
   submittedAt: string | null;
   /** Left out of the total by its group's drop rule. */
   dropped: boolean;
+  /** The mark before the late penalty (score is after it). */
+  rawScore?: number | null;
+  lateSeconds?: number;
+  latePenaltyPercent?: number;
+  latePenaltyWaived?: boolean;
 }
 
 export interface GradebookRow {
@@ -503,7 +534,13 @@ export interface PortalCalendarItem extends CalendarItem {
   } | null;
 }
 
-export type CourseNotificationKind = "activity_published" | "announcement";
+export type CourseNotificationKind =
+  | "activity_published"
+  | "announcement"
+  | "discussion_topic"
+  | "discussion_reply"
+  | "peer_review_assigned"
+  | "peer_review_ready";
 
 /** A notice in the portal bell (`QUERY /portal/me/notifications`). */
 export interface CourseNotification {

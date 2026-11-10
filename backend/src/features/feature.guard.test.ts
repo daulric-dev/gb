@@ -69,6 +69,7 @@ describe('FeatureGuard on representative routes', () => {
     ['school announcements', AnnouncementController, 'findAll', staff, 'announcements'],
     ['course announcements', CourseAnnouncementController, 'list', inCourse, 'announcements'],
     ['portal announcements', StudentPortalController, 'announcements', student, 'announcements'],
+    ['portal school announcements', StudentPortalController, 'schoolAnnouncements', student, 'announcements'],
     ['file sharing', FileManagerController, 'share', staff, 'files'],
     ['file folders', FileManagerController, 'listFolders', staff, 'files'],
     ['staff calendar', CalendarController, 'list', staff, 'calendar'],

@@ -598,3 +598,59 @@ describe('ModuleService items', () => {
     ).toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('ModuleService external tool items (LTI)', () => {
+  function toolItem(enabled: boolean) {
+    return item({
+      id: 'x1',
+      item_type: 'external_tool',
+      title: 'Lab sim',
+      lti_resource_link: {
+        id: 'rl1',
+        tool: { id: 't1', name: 'Sim', enabled },
+        line_items: [{ activity_id: 'a9', activity: { points: { toString: () => '15' } } }],
+      },
+    });
+  }
+
+  function world(enabled: boolean) {
+    const prisma = createMockPrisma();
+    prisma.module.findMany.mockResolvedValue([MODULES[0]]);
+    prisma.module_item.findMany.mockResolvedValue([toolItem(enabled)]);
+    return prisma;
+  }
+
+  test('listings carry the tool and its gradebook column', async () => {
+    const modules = await service(world(true), 'teacher').list(USER, COURSE);
+    expect(modules[0].items[0]).toMatchObject({
+      itemType: 'external_tool',
+      title: 'Lab sim',
+      externalTool: {
+        toolId: 't1',
+        toolName: 'Sim',
+        toolEnabled: true,
+        resourceLinkId: 'rl1',
+        activityId: 'a9',
+        points: 15,
+      },
+    });
+  });
+
+  test('students do not see items of a switched-off tool', async () => {
+    expect((await service(world(false)).listForStudent(COURSE, 's1'))[0].items).toEqual([]);
+    expect((await service(world(true)).listForStudent(COURSE, 's1'))[0].items).toHaveLength(1);
+  });
+
+  test('the generic item route refuses external tools', async () => {
+    const prisma = createMockPrisma();
+    prisma.module.findFirst.mockResolvedValue(MODULES[0]);
+    expect(
+      await expectRejection(
+        service(prisma).createItem(USER, COURSE, 'm1', {
+          itemType: 'external_tool',
+          title: 'X',
+        }),
+      ),
+    ).toBeInstanceOf(BadRequestException);
+  });
+});

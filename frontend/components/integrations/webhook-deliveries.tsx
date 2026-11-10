@@ -1,6 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Inbox, Loader2, RotateCw } from "lucide-react";
 import { api } from "@/lib/api";
@@ -61,13 +63,16 @@ export function WebhookDeliveries({
   refreshKey?: number;
   onChangedAction: () => void;
 }) {
-  const [status, setStatus] = useState<DeliveryStatus | "">("");
-  const [eventType, setEventType] = useState("");
-  const [rows, setRows] = useState<WebhookDelivery[] | null>(null);
-  const [more, setMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  useSignals();
+  const status = useSignal<DeliveryStatus | "">("");
+  const eventType = useSignal("");
+  const rows = useSignal<WebhookDelivery[] | null>(null);
+  const more = useSignal(false);
+  const loadingMore = useSignal(false);
+  const error = useSignal<string | null>(null);
+  const openId = useSignal<string | null>(null);
+  const statusValue = status.value;
+  const eventTypeValue = eventType.value;
 
   useEffect(() => {
     let live = true;
@@ -79,24 +84,26 @@ export function WebhookDeliveries({
         const page = await listDeliveries(
           apiBase,
           webhookId,
-          { status, eventType },
+          { status: statusValue, eventType: eventTypeValue },
           controller.signal,
         );
         if (!live) return;
-        setRows((current) => {
-          if (!current) return page;
+        const current = rows.value;
+        if (!current) {
+          rows.value = page;
+        } else {
           const currentPageIds = new Set(page.map((delivery) => delivery.id));
-          return [
+          rows.value = [
             ...page,
             ...current.filter((delivery) => !currentPageIds.has(delivery.id)),
           ];
-        });
-        setMore(page.length === DELIVERY_PAGE);
-        setError(null);
+        }
+        more.value = page.length === DELIVERY_PAGE;
+        error.value = null;
       } catch (err) {
         if (!live) return;
-        setRows((current) => current ?? []);
-        setError(userMessage(err, "Failed to load deliveries"));
+        rows.value = rows.value ?? [];
+        error.value = userMessage(err, "Failed to load deliveries");
       } finally {
         if (live) timer = setTimeout(() => void refreshRows(), LIVE_REFRESH_MS);
       }
@@ -108,22 +115,26 @@ export function WebhookDeliveries({
       controller.abort();
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [apiBase, webhookId, status, eventType, refreshKey]);
+  }, [apiBase, webhookId, statusValue, eventTypeValue, refreshKey, rows, more, error]);
 
   const loadMore = useCallback(async () => {
-    const last = rows?.at(-1);
+    const last = rows.value?.at(-1);
     if (!last) return;
-    setLoadingMore(true);
+    loadingMore.value = true;
     try {
-      const page = await listDeliveries(apiBase, webhookId, { status, eventType, before: last.id });
-      setRows((list) => [...(list ?? []), ...page]);
-      setMore(page.length === DELIVERY_PAGE);
+      const page = await listDeliveries(apiBase, webhookId, {
+        status: status.value,
+        eventType: eventType.value,
+        before: last.id,
+      });
+      rows.value = [...(rows.value ?? []), ...page];
+      more.value = page.length === DELIVERY_PAGE;
     } catch (err) {
-      setError(userMessage(err, "Failed to load deliveries"));
+      error.value = userMessage(err, "Failed to load deliveries");
     } finally {
-      setLoadingMore(false);
+      loadingMore.value = false;
     }
-  }, [apiBase, webhookId, status, eventType, rows]);
+  }, [apiBase, webhookId, status, eventType, rows, more, error, loadingMore]);
 
   return (
     <div className="space-y-2">
@@ -139,8 +150,8 @@ export function WebhookDeliveries({
         </span>
         <NativeSelect
           size="sm"
-          value={status}
-          onChange={(e) => setStatus(e.target.value as DeliveryStatus | "")}
+          value={status.value}
+          onChange={(e) => (status.value = e.target.value as DeliveryStatus | "")}
           aria-label="Filter by status"
         >
           <NativeSelectOption value="">Any status</NativeSelectOption>
@@ -151,8 +162,8 @@ export function WebhookDeliveries({
         </NativeSelect>
         <NativeSelect
           size="sm"
-          value={eventType}
-          onChange={(e) => setEventType(e.target.value)}
+          value={eventType.value}
+          onChange={(e) => (eventType.value = e.target.value)}
           aria-label="Filter by event"
         >
           <NativeSelectOption value="">Any event</NativeSelectOption>
@@ -164,12 +175,12 @@ export function WebhookDeliveries({
         </NativeSelect>
       </div>
 
-      {rows === null ? (
+      {rows.value === null ? (
         <Skeleton className="h-16 w-full" />
-      ) : rows.length === 0 ? (
+      ) : rows.value.length === 0 ? (
         <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           <Inbox className="size-4 shrink-0" />
-          {error ?? "No deliveries yet."}
+          {error.value ?? "No deliveries yet."}
         </div>
       ) : (
         <div className="rounded-lg border">
@@ -184,13 +195,15 @@ export function WebhookDeliveries({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((d) => (
+              {rows.value.map((d) => (
                 <TableRow
                   key={d.id}
                   className="cursor-pointer"
                   tabIndex={0}
-                  onClick={() => setOpenId(d.id)}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setOpenId(d.id)}
+                  onClick={() => (openId.value = d.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") openId.value = d.id;
+                  }}
                 >
                   <TableCell>
                     <DeliveryStatusBadge status={d.status} />
@@ -216,20 +229,20 @@ export function WebhookDeliveries({
           </Table>
         </div>
       )}
-      {more && (
+      {more.value && (
         <div className="flex justify-center">
-          <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore && <Loader2 className="mr-2 size-4 animate-spin" />}
+          <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore.value}>
+            {loadingMore.value && <Loader2 className="mr-2 size-4 animate-spin" />}
             Load more
           </Button>
         </div>
       )}
 
       <DeliveryDialog
-        key={openId ?? "closed"}
+        key={openId.value ?? "closed"}
         apiBase={apiBase}
-        deliveryId={openId}
-        onCloseAction={() => setOpenId(null)}
+        deliveryId={openId.value}
+        onCloseAction={() => (openId.value = null)}
         onRedeliveredAction={onChangedAction}
       />
     </div>
@@ -247,33 +260,36 @@ function DeliveryDialog({
   onCloseAction: () => void;
   onRedeliveredAction: () => void;
 }) {
-  const [detail, setDetail] = useState<WebhookDeliveryDetail | null>(null);
-  const [sending, setSending] = useState(false);
+  useSignals();
+  const detail = useSignal<WebhookDeliveryDetail | null>(null);
+  const sending = useSignal(false);
 
   // Remounted per delivery (key), so it starts empty.
   useEffect(() => {
     if (!deliveryId) return;
     getDelivery(apiBase, deliveryId)
-      .then(setDetail)
+      .then((d) => {
+        detail.value = d;
+      })
       .catch((err) => toast.error(userMessage(err, "Failed to load the delivery")));
-  }, [apiBase, deliveryId]);
+  }, [apiBase, deliveryId, detail]);
 
   async function redeliver() {
-    if (!detail) return;
-    setSending(true);
+    if (!detail.value) return;
+    sending.value = true;
     try {
       const sent = await api<WebhookDeliveryDetail>(
-        `${webhooksApi(apiBase)}/deliveries/${detail.id}/redeliver`,
+        `${webhooksApi(apiBase)}/deliveries/${detail.value.id}/redeliver`,
         { method: "POST" },
       );
       if (sent.status === "succeeded") toast.success("Delivered");
       else toast.error(`Not delivered: ${sent.lastError ?? "the receiver did not accept it"}`);
-      setDetail(sent);
+      detail.value = sent;
       onRedeliveredAction();
     } catch (err) {
       toast.error(userMessage(err, "Failed to send it again"));
     } finally {
-      setSending(false);
+      sending.value = false;
     }
   }
 
@@ -281,54 +297,54 @@ function DeliveryDialog({
     <Dialog open={!!deliveryId} onOpenChange={(open) => !open && onCloseAction()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="font-mono text-base">{detail?.eventType ?? "Delivery"}</DialogTitle>
+          <DialogTitle className="font-mono text-base">{detail.value?.eventType ?? "Delivery"}</DialogTitle>
           <DialogDescription>
-            {detail
-              ? `${deliveryStatusText(detail)} · created ${when(detail.createdAt)}`
+            {detail.value
+              ? `${deliveryStatusText(detail.value)} · created ${when(detail.value.createdAt)}`
               : "Loading…"}
           </DialogDescription>
         </DialogHeader>
-        {detail && (
+        {detail.value && (
           <div className="space-y-3 text-sm">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Delivery</dt>
-              <dd className="font-mono break-all">{detail.id}</dd>
+              <dd className="font-mono break-all">{detail.value.id}</dd>
               <dt className="text-muted-foreground">Event id</dt>
-              <dd className="font-mono break-all">{detail.eventId}</dd>
+              <dd className="font-mono break-all">{detail.value.eventId}</dd>
               <dt className="text-muted-foreground">Attempts</dt>
               <dd>
-                {detail.attempts} of {detail.maxAttempts}
+                {detail.value.attempts} of {detail.value.maxAttempts}
               </dd>
-              {detail.nextAttemptAt && (
+              {detail.value.nextAttemptAt && (
                 <>
                   <dt className="text-muted-foreground">Next attempt</dt>
-                  <dd>{when(detail.nextAttemptAt)}</dd>
+                  <dd>{when(detail.value.nextAttemptAt)}</dd>
                 </>
               )}
-              {detail.tlsVerified === false && (
+              {detail.value.tlsVerified === false && (
                 <>
                   <dt className="text-muted-foreground">TLS</dt>
                   <dd className="text-destructive">Sent without verifying the certificate</dd>
                 </>
               )}
               <dt className="text-muted-foreground">HTTP status</dt>
-              <dd>{detail.lastStatusCode ?? "—"}</dd>
+              <dd>{detail.value.lastStatusCode ?? "—"}</dd>
               <dt className="text-muted-foreground">Duration</dt>
-              <dd>{detail.durationMs === null ? "—" : `${detail.durationMs} ms`}</dd>
-              {detail.lastError && (
+              <dd>{detail.value.durationMs === null ? "—" : `${detail.value.durationMs} ms`}</dd>
+              {detail.value.lastError && (
                 <>
                   <dt className="text-muted-foreground">Error</dt>
-                  <dd className="text-destructive">{detail.lastError}</dd>
+                  <dd className="text-destructive">{detail.value.lastError}</dd>
                 </>
               )}
             </dl>
-            {payloadMessage(detail.payload) && (
-              <p className="rounded-md border bg-muted/30 p-2 text-sm">{payloadMessage(detail.payload)}</p>
+            {payloadMessage(detail.value.payload) && (
+              <p className="rounded-md border bg-muted/30 p-2 text-sm">{payloadMessage(detail.value.payload)}</p>
             )}
             <div>
               <p className="mb-1 text-xs font-medium text-muted-foreground">Headers (besides signature and timestamp)</p>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border bg-muted/50 p-2 font-mono text-xs">
-                {deliveryHeaders(detail, payloadSchoolId(detail.payload)).map(([name, value]) => (
+                {deliveryHeaders(detail.value, payloadSchoolId(detail.value.payload)).map(([name, value]) => (
                   <Fragment key={name}>
                     <dt className="text-muted-foreground">{name}</dt>
                     <dd className="break-all">{value}</dd>
@@ -341,20 +357,20 @@ function DeliveryDialog({
                 Body (<code>event_type</code>, <code>message</code>, <code>data</code>)
               </p>
               <pre className="max-h-72 overflow-auto rounded-md border bg-muted/50 p-2 text-xs">
-                {JSON.stringify(detail.payload, null, 2)}
+                {JSON.stringify(detail.value.payload, null, 2)}
               </pre>
             </div>
             <div>
               <p className="mb-1 text-xs font-medium text-muted-foreground">Response (first 1 KB)</p>
               <pre className="max-h-40 overflow-auto rounded-md border bg-muted/50 p-2 text-xs whitespace-pre-wrap">
-                {detail.responseExcerpt ?? "(empty)"}
+                {detail.value.responseExcerpt ?? "(empty)"}
               </pre>
             </div>
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={redeliver} disabled={!detail || sending}>
-            {sending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RotateCw className="mr-2 size-4" />}
+          <Button variant="outline" onClick={redeliver} disabled={!detail.value || sending.value}>
+            {sending.value ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RotateCw className="mr-2 size-4" />}
             Redeliver
           </Button>
         </DialogFooter>

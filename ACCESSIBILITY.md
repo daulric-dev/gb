@@ -30,6 +30,13 @@ We aim to meet the **[Web Content Accessibility Guidelines (WCAG) 2.2, level AA]
 **Course design**
 
 - Teachers can give an individual student a later due date, excuse a student from a piece of work, and mark work done offline or on paper, so students are not forced through one online format.
+- **Quiz question types work without dragging:** ordering questions use Move up / Move down buttons and matching questions use a labelled choice per item, on the web (keyboard) and in the app (VoiceOver and TalkBack labels say which item and where it is).
+- **Late work:** teachers can accept work after the due date (with or without a penalty) and waive the penalty for one student.
+- **Peer review:** rubric levels are a labelled radio group (web: keyboard; app: VoiceOver/TalkBack roles and checked state), and a classmate's files open in the same viewer as marking (in the app, the system viewer). A teacher can add, move or remove a student's reviews.
+- **Mastery levels are never colour-only:** the mastery grid, outcome pages and the app show each level's name (and score) next to its colour, mark mastered outcomes with a symbol and text, and give screen readers a full description of each cell.
+- **Analytics charts are never chart-only or colour-only:** every chart has a written summary and a Chart / Table switch with the same numbers as a table; charts are single-colour with values printed on them, and at-risk reasons are text labels, not colours.
+- **AI drafts are labelled in text, not only by colour or icon:** every AI suggestion carries the words "AI-generated — review before using"; a page summary is plain text in labelled, editable fields, and a summary inserted into a page uses real headings and a list. Rubric suggestions sit under their criterion with a "Use" button named after it.
+- **Quiz accommodations:** a student can get extra time on timed quizzes (×1.25, ×1.5, ×2 or extra minutes) and be exempt from Lockdown, on one quiz or as a school-wide default. An exempt student takes a Lockdown quiz without fullscreen or app pinning and is never reported as away. Accommodations are shown only to staff.
 
 ## Known gaps
 
@@ -49,14 +56,10 @@ These are the problems we know about. They are tracked and will be fixed; if one
 
 **Quizzes and attendance**
 
-- **Quiz time limits cannot be extended for one student.** A time limit applies to everyone taking the quiz. A student who needs extra time currently needs a separate quiz, or no time limit.
-- **Lockdown is set per quiz, not per student.** Lockdown may conflict with assistive technology:
-  - on the web, moving focus to a separate dictation, magnifier or screen-reader window can be reported to the teacher as leaving the quiz;
-  - in the mobile app, pinning (Guided Access on iPhone, screen pinning on Android) blocks switching to other apps, including some assistive apps.
-
-  Teachers should not use Lockdown for students who rely on such tools, and should treat "away" reports with that in mind.
+- **A Lockdown exemption is not automatic.** Until a teacher or school staff exempt a student (see *Quiz accommodations* above), Lockdown may conflict with assistive technology: on the web, moving focus to a separate dictation, magnifier or screen-reader window can be reported as leaving the quiz; in the mobile app, pinning (Guided Access on iPhone, screen pinning on Android) blocks switching to other apps, including some assistive apps. Treat "away" reports for students without an exemption with that in mind.
 - **Attendance check-in** by QR code needs a camera. The 4-digit room code is the alternative, and teachers can also mark attendance by hand.
 - **Location-based check-in** depends on the device's location services and can be refused indoors. Teachers can turn the location check off for a session.
+- **Automatic check-in from the timetable** opens and closes on the bell schedule, which can be too short for some students. Teachers can mark any student present by hand at any time, including after the session closes, and a school can turn the room-code requirement and the location check off (a room without a saved location has no location check).
 
 ## Reporting an accessibility problem
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2, LogOut } from "lucide-react";
 import {
@@ -18,20 +19,21 @@ export function SignOutSessionsButton({
   userId: string;
   who: string;
 }) {
-  const [busy, setBusy] = useState(false);
+  useSignals();
+  const busy = useSignal(false);
 
   async function signOut() {
     if (!window.confirm(`Sign ${who} out of every device? They can sign in again.`)) {
       return;
     }
-    setBusy(true);
+    busy.value = true;
     try {
       const res = await revokeUserSessions(userId);
       toast.success(revokedMessage(who, res?.revoked));
     } catch (err) {
       toast.error(userMessage(err, "Failed to sign out"));
     } finally {
-      setBusy(false);
+      busy.value = false;
     }
   }
 
@@ -40,10 +42,10 @@ export function SignOutSessionsButton({
       variant="ghost"
       size="sm"
       onClick={signOut}
-      disabled={busy}
+      disabled={busy.value}
       title="Sign out all sessions"
     >
-      {busy ? (
+      {busy.value ? (
         <Loader2 className="size-4 animate-spin" />
       ) : (
         <LogOut className="size-4" />

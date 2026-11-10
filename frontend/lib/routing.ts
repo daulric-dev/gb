@@ -11,6 +11,8 @@ import type { UserProfile } from "@/providers/AuthProvider";
  */
 export function homePathFor(profile: UserProfile | null): string {
   if (!profile) return "/login";
+  // Parents belong to no school; their children are in the parent portal.
+  if (profile.account_type === "parent") return PARENT_HOME_PATH;
   // An organisation admin need not belong to a school (nor finish the
   // staff/student onboarding); their home is the organisation console.
   if (profile.is_org_admin && !profile.school) return ORGANISATION_PATH;
@@ -20,6 +22,14 @@ export function homePathFor(profile: UserProfile | null): string {
   // school join code. Both wait on the school list.
   if (!profile.school) return "/schools";
   return profile.account_type === "student" ? "/portal" : "/dashboard";
+}
+
+/** The parent portal (`app/parent`). */
+export const PARENT_HOME_PATH = "/parent";
+
+/** True for a parent account (the parent portal, never the staff app or portal). */
+export function isParentProfile(profile: UserProfile | null): boolean {
+  return profile?.account_type === "parent";
 }
 
 /** The organisation console, for organisation admins. */

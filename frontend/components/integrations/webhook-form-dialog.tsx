@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2, Plus, ShieldAlert, X } from "lucide-react";
 import { api } from "@/lib/api";
@@ -69,22 +70,26 @@ export function WebhookFormDialog({
   onSavedAction: (webhook: Webhook) => void;
 }) {
   // Fresh fields each time: the parent remounts this (key) when it opens.
-  const [draft, setDraft] = useState<WebhookDraft>(() => draftOf(existing));
-  const [saving, setSaving] = useState(false);
+  useSignals();
+  const draft = useSignal<WebhookDraft>(draftOf(existing));
+  const saving = useSignal(false);
 
-  const set = (patch: Partial<WebhookDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: Partial<WebhookDraft>) => (draft.value = { ...draft.value, ...patch });
   const setHeader = (key: string, patch: Partial<HeaderDraft>) =>
-    setDraft((d) => ({ ...d, headers: d.headers.map((h) => (h.key === key ? { ...h, ...patch } : h)) }));
+    (draft.value = {
+      ...draft.value,
+      headers: draft.value.headers.map((h) => (h.key === key ? { ...h, ...patch } : h)),
+    });
   const unreadable = new Set(existing?.headers.filter((h) => h.valueUnreadable).map((h) => h.id) ?? []);
-  const problem = draftProblem(draft);
-  const patch = existing ? webhookPatch(existing, draft) : null;
+  const problem = draftProblem(draft.value);
+  const patch = existing ? webhookPatch(existing, draft.value) : null;
   const groups = catalog ? groupEventTypes(catalog) : [];
   const idPrefix = `webhook-${existing?.id ?? "new"}`;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (problem) return;
-    setSaving(true);
+    saving.value = true;
     try {
       if (existing) {
         if (!patch) return onOpenChangeAction(false);
@@ -98,7 +103,7 @@ export function WebhookFormDialog({
       } else {
         const created = await api<WebhookWithSecret>(webhooksApi(apiBase), {
           method: "POST",
-          body: createBody(draft),
+          body: createBody(draft.value),
           stepUp: true,
         });
         toast.success(created.secretGenerated ? "Webhook added" : "Webhook added with your signing secret");
@@ -108,7 +113,7 @@ export function WebhookFormDialog({
     } catch (err) {
       toast.error(userMessage(err, "Failed to save the webhook"));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -128,7 +133,7 @@ export function WebhookFormDialog({
             <Label htmlFor={`${idPrefix}-name`}>Name</Label>
             <Input
               id={`${idPrefix}-name`}
-              value={draft.name}
+              value={draft.value.name}
               maxLength={100}
               placeholder="Student information system"
               onChange={(e) => set({ name: e.target.value })}
@@ -139,7 +144,7 @@ export function WebhookFormDialog({
             <Label htmlFor={`${idPrefix}-url`}>URL</Label>
             <Input
               id={`${idPrefix}-url`}
-              value={draft.url}
+              value={draft.value.url}
               maxLength={2048}
               inputMode="url"
               placeholder="https://sis.example.edu/gradebook-events"
@@ -148,7 +153,7 @@ export function WebhookFormDialog({
             <p className="text-xs text-muted-foreground">
               Any http or https address, including ones on your own network.
             </p>
-            {isInsecureUrl(draft.url) && (
+            {isInsecureUrl(draft.value.url) && (
               <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400" role="alert">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                 Plain http sends names, emails and marks unencrypted. Use https
@@ -162,14 +167,14 @@ export function WebhookFormDialog({
             {!catalog && <p className="text-sm text-muted-foreground">Loading event types…</p>}
             {groups.map((g) => {
               const keys = g.types.map((t) => t.key);
-              const state = groupState(draft.events, keys);
+              const state = groupState(draft.value.events, keys);
               return (
                 <div key={g.key} className="rounded-lg border p-3">
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <Checkbox
                       checked={state === "all"}
                       indeterminate={state === "some"}
-                      onCheckedChange={(on) => set({ events: toggleGroup(draft.events, keys, !!on) })}
+                      onCheckedChange={(on) => set({ events: toggleGroup(draft.value.events, keys, !!on) })}
                       aria-label={`All events in ${g.label}`}
                     />
                     {g.label}
@@ -180,8 +185,8 @@ export function WebhookFormDialog({
                       <label key={t.key} className="flex items-start gap-2 text-sm">
                         <Checkbox
                           className="mt-0.5"
-                          checked={draft.events.includes(t.key)}
-                          onCheckedChange={(on) => set({ events: toggleEvent(draft.events, t.key, !!on) })}
+                          checked={draft.value.events.includes(t.key)}
+                          onCheckedChange={(on) => set({ events: toggleEvent(draft.value.events, t.key, !!on) })}
                         />
                         <span className="min-w-0">
                           <span className="block">{t.label}</span>
@@ -207,7 +212,7 @@ export function WebhookFormDialog({
               Only needed if your endpoint expects a key, e.g. <code>Authorization: Bearer …</code> or{" "}
               <code>X-API-Key</code>. Values are stored encrypted and never shown again.
             </p>
-            {draft.headers.map((h, i) => (
+            {draft.value.headers.map((h, i) => (
               <div key={h.key} className="space-y-1">
                 <div className="flex items-start gap-2">
                   <Input
@@ -234,7 +239,7 @@ export function WebhookFormDialog({
                     variant="ghost"
                     size="icon"
                     aria-label={`Remove header ${h.name || i + 1}`}
-                    onClick={() => set({ headers: draft.headers.filter((x) => x.key !== h.key) })}
+                    onClick={() => set({ headers: draft.value.headers.filter((x) => x.key !== h.key) })}
                   >
                     <X className="size-4" />
                   </Button>
@@ -250,8 +255,8 @@ export function WebhookFormDialog({
               type="button"
               size="sm"
               variant="outline"
-              disabled={draft.headers.length >= MAX_HEADERS}
-              onClick={() => set({ headers: [...draft.headers, newHeaderDraft()] })}
+              disabled={draft.value.headers.length >= MAX_HEADERS}
+              onClick={() => set({ headers: [...draft.value.headers, newHeaderDraft()] })}
             >
               <Plus className="mr-1.5 size-3.5" />
               Add header
@@ -263,7 +268,7 @@ export function WebhookFormDialog({
               <Label htmlFor={`${idPrefix}-signing-secret`}>Use my own signing secret (optional)</Label>
               <SecretInput
                 id={`${idPrefix}-signing-secret`}
-                value={draft.signingSecret}
+                value={draft.value.signingSecret}
                 maxLength={256}
                 placeholder="Leave blank to generate one"
                 label="signing secret"
@@ -288,11 +293,11 @@ export function WebhookFormDialog({
               </div>
               <Switch
                 id={`${idPrefix}-verify-tls`}
-                checked={draft.tlsVerify}
+                checked={draft.value.tlsVerify}
                 onCheckedChange={(v) => set({ tlsVerify: v })}
               />
             </div>
-            {!draft.tlsVerify && (
+            {!draft.value.tlsVerify && (
               <p
                 className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
                 role="alert"
@@ -304,7 +309,7 @@ export function WebhookFormDialog({
             )}
             <div className="space-y-2">
               <Label htmlFor={`${idPrefix}-ca-cert`}>Trusted CA certificate (optional)</Label>
-              {existing && existing.tls.caFingerprints.length > 0 && !draft.clearCa && (
+              {existing && existing.tls.caFingerprints.length > 0 && !draft.value.clearCa && (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>
                     Saved: {existing.tls.caFingerprints.length} certificate
@@ -317,7 +322,7 @@ export function WebhookFormDialog({
                   </Button>
                 </div>
               )}
-              {draft.clearCa && (
+              {draft.value.clearCa && (
                 <p className="text-xs text-muted-foreground">
                   The saved CA certificate will be removed when you save.{" "}
                   <button type="button" className="underline" onClick={() => set({ clearCa: false })}>
@@ -327,7 +332,7 @@ export function WebhookFormDialog({
               )}
               <Textarea
                 id={`${idPrefix}-ca-cert`}
-                value={draft.tlsCaCert}
+                value={draft.value.tlsCaCert}
                 rows={4}
                 maxLength={MAX_CA_BYTES}
                 spellCheck={false}
@@ -347,19 +352,19 @@ export function WebhookFormDialog({
             <Label htmlFor={`${idPrefix}-enabled`}>Send events</Label>
             <Switch
               id={`${idPrefix}-enabled`}
-              checked={draft.enabled}
+              checked={draft.value.enabled}
               onCheckedChange={(v) => set({ enabled: v })}
             />
           </div>
 
-          {problem && draft.name && <p className="text-sm text-destructive">{problem}</p>}
+          {problem && draft.value.name && <p className="text-sm text-destructive">{problem}</p>}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChangeAction(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!!problem || saving || (!!existing && !patch)}>
-              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+            <Button type="submit" disabled={!!problem || saving.value || (!!existing && !patch)}>
+              {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
               {existing ? "Save" : "Add webhook"}
             </Button>
           </DialogFooter>

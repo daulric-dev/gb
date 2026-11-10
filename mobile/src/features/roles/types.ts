@@ -14,7 +14,12 @@ export interface SchoolRole {
   updated_at: string;
 }
 
-export type PermissionAction = "create" | "read" | "update" | "delete";
+export type PermissionAction =
+  | "create"
+  | "read"
+  | "update"
+  | "delete"
+  | "safeguarding";
 
 export interface CatalogEntry {
   resource: string;

@@ -255,6 +255,15 @@ export class StudentPortalService {
   }
 
   /**
+   * The student's school's announcements meant for everyone. The school is
+   * the one StudentGuard resolved from the student record; staff-only notices
+   * never appear, and students get no read receipts.
+   */
+  async getSchoolAnnouncements(ctx: StudentContext) {
+    return this.announcements.findEveryoneForSchool(ctx.schoolId);
+  }
+
+  /**
    * Shape courses as portal cards: teachers by name and the student's own
    * running grade. A grade that fails to compute leaves the card without one
    * rather than failing the whole list.

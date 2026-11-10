@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { api, apiQuery } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -50,6 +52,8 @@ function actionLabel(action: string) {
   if (action === "create") return "created";
   if (action === "update") return "updated";
   if (action === "delete") return "deleted";
+  // Safeguarding pastoral notes record every read.
+  if (action === "read") return "viewed";
   return action;
 }
 
@@ -97,12 +101,13 @@ export function AuditLogView({
   endpoint: string;
   allowRevert?: boolean;
 }) {
-  const [items, setItems] = useState<AuditEntry[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [pendingRevert, setPendingRevert] = useState<AuditEntry | null>(null);
-  const [reverting, setReverting] = useState(false);
+  useSignals();
+  const items = useSignal<AuditEntry[]>([]);
+  const cursor = useSignal<string | null>(null);
+  const loading = useSignal(true);
+  const loadingMore = useSignal(false);
+  const pendingRevert = useSignal<AuditEntry | null>(null);
+  const reverting = useSignal(false);
 
   const load = useCallback(
     async (before?: string) => {
@@ -110,12 +115,10 @@ export function AuditLogView({
         limit: 50,
         ...(before ? { before } : {}),
       });
-      setItems((current) =>
-        before ? [...current, ...page.items] : page.items,
-      );
-      setCursor(page.nextCursor);
+      items.value = before ? [...items.value, ...page.items] : page.items;
+      cursor.value = page.nextCursor;
     },
-    [endpoint],
+    [endpoint, items, cursor],
   );
 
   useEffect(() => {
@@ -123,51 +126,51 @@ export function AuditLogView({
     apiQuery<AuditPage>(endpoint, { limit: 50 })
       .then((page) => {
         if (!active) return;
-        setItems(page.items);
-        setCursor(page.nextCursor);
+        items.value = page.items;
+        cursor.value = page.nextCursor;
       })
       .catch((error: unknown) => {
         if (active) toast.error(userMessage(error, "Failed to load audit log"));
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) loading.value = false;
       });
     return () => {
       active = false;
     };
-  }, [endpoint]);
+  }, [endpoint, items, cursor, loading]);
 
   async function loadMore() {
-    if (!cursor) return;
-    setLoadingMore(true);
+    if (!cursor.value) return;
+    loadingMore.value = true;
     try {
-      await load(cursor);
+      await load(cursor.value);
     } catch (error) {
       toast.error(userMessage(error, "Failed to load more audit entries"));
     } finally {
-      setLoadingMore(false);
+      loadingMore.value = false;
     }
   }
 
   async function confirmRevert() {
-    if (!pendingRevert) return;
-    setReverting(true);
+    if (!pendingRevert.value) return;
+    reverting.value = true;
     try {
-      await api(`/organisation/audit-log/${pendingRevert.id}/revert`, {
+      await api(`/organisation/audit-log/${pendingRevert.value.id}/revert`, {
         method: "POST",
       });
       toast.success("Revert completed and recorded in the audit log");
-      setPendingRevert(null);
-      setCursor(null);
+      pendingRevert.value = null;
+      cursor.value = null;
       await load();
     } catch (error) {
       toast.error(userMessage(error, "Failed to revert this audit entry"));
     } finally {
-      setReverting(false);
+      reverting.value = false;
     }
   }
 
-  if (loading) {
+  if (loading.value) {
     return (
       <div className="space-y-3">
         {[0, 1, 2].map((row) => (
@@ -179,14 +182,14 @@ export function AuditLogView({
 
   return (
     <div className="space-y-3">
-      {items.length === 0 ? (
+      {items.value.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             No changes have been recorded yet.
           </CardContent>
         </Card>
       ) : (
-        items.map((item) => (
+        items.value.map((item) => (
           <Card key={item.id}>
             <CardContent className="space-y-3 py-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -211,7 +214,7 @@ export function AuditLogView({
                     size="sm"
                     disabled={!!revertReason(item)}
                     title={revertReason(item) ?? undefined}
-                    onClick={() => setPendingRevert(item)}
+                    onClick={() => (pendingRevert.value = item)}
                   >
                     Revert
                   </Button>
@@ -240,18 +243,18 @@ export function AuditLogView({
           </Card>
         ))
       )}
-      {cursor && (
+      {cursor.value && (
         <div className="flex justify-center">
-          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore ? "Loading…" : "Load older changes"}
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore.value}>
+            {loadingMore.value ? "Loading…" : "Load older changes"}
           </Button>
         </div>
       )}
       {allowRevert && (
         <AlertDialog
-          open={pendingRevert !== null}
+          open={pendingRevert.value !== null}
           onOpenChange={(open) => {
-            if (!open && !reverting) setPendingRevert(null);
+            if (!open && !reverting.value) pendingRevert.value = null;
           }}
         >
           <AlertDialogContent>
@@ -266,13 +269,13 @@ export function AuditLogView({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={reverting}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={reverting.value}>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 onClick={confirmRevert}
-                disabled={reverting}
+                disabled={reverting.value}
               >
-                {reverting ? "Reverting…" : "Revert change"}
+                {reverting.value ? "Reverting…" : "Revert change"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

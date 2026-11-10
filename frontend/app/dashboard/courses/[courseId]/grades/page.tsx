@@ -16,6 +16,7 @@ import type {
 } from "@/lib/courses/types";
 import { formatPercent, personName } from "@/lib/courses/format";
 import { cn } from "@/lib/utils";
+import { penaltyBreakdown } from "@/lib/courses/late";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -107,6 +108,13 @@ function Cell({
   }
   if (cell?.score !== null && cell?.score !== undefined) {
     const pct = activity.points ? cell.score / activity.points : 0;
+    const breakdown = penaltyBreakdown(
+      cell.rawScore,
+      cell.latePenaltyPercent,
+      cell.score,
+      cell.latePenaltyWaived,
+    );
+    const penalised = !!breakdown && !cell.latePenaltyWaived;
     return (
       <span
         className={cn(
@@ -115,9 +123,21 @@ function Cell({
           (activity.omitFromFinalGrade || cell.dropped) &&
             "text-muted-foreground line-through",
         )}
-        title={cell.dropped ? "Dropped by the group's rule" : undefined}
+        title={
+          [cell.dropped ? "Dropped by the group's rule" : null, breakdown]
+            .filter(Boolean)
+            .join(". ") || undefined
+        }
       >
         {cell.score}
+        {penalised && (
+          <>
+            <span aria-hidden className="ml-0.5 text-[10px] text-amber-700 dark:text-amber-400">
+              L
+            </span>
+            <span className="sr-only"> ({breakdown})</span>
+          </>
+        )}
       </span>
     );
   }

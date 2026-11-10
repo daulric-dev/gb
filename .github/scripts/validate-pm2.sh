@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+# Static checks for infrastructure/pm2 (shellcheck, .cjs syntax, config guards, Caddyfile). Runs locally too.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -6,7 +8,8 @@ cd "${REPO_ROOT}"
 
 if command -v shellcheck > /dev/null; then
   echo "shellcheck"
-  shellcheck "${PM2_DIR}"/*.sh
+  # --shell=bash: the scripts are bash even if a shebang goes missing.
+  shellcheck --shell=bash "${PM2_DIR}"/*.sh
 else
   echo "shellcheck not installed: skipped"
 fi

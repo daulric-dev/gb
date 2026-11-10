@@ -35,11 +35,38 @@ const RESTRICTED_IPV6_RANGES = [
   { base: '3fff::', prefix: 20 },
 ];
 
+export interface DestinationOptions {
+  /**
+   * Whether private / loopback / reserved addresses are allowed. When left
+   * out, the install-wide WEBHOOK_ALLOW_PRIVATE switch decides (webhooks,
+   * LTI keysets, OneRoster). Callers with their own rule (AI providers, per
+   * provider) pass an explicit boolean and the environment is not read.
+   */
+  allowPrivate?: boolean;
+}
+
 export async function resolveWebhookDestination(
   hostname: string,
   resolver: Resolver = (name) =>
     dnsLookup(name, { all: true, verbatim: true }),
+  options: DestinationOptions = {},
 ): Promise<ResolvedAddress> {
+  return (await resolveWebhookDestinations(hostname, resolver, options))[0];
+}
+
+/**
+ * Every address the host resolves to, in resolver order, after the same
+ * check as `resolveWebhookDestination` (all of them must pass). The sender
+ * tries them in turn, so a host that answers on only one family (e.g.
+ * `localhost` resolving to ::1 first while the server listens on 127.0.0.1)
+ * is still reached - each attempt pinned to a checked address.
+ */
+export async function resolveWebhookDestinations(
+  hostname: string,
+  resolver: Resolver = (name) =>
+    dnsLookup(name, { all: true, verbatim: true }),
+  options: DestinationOptions = {},
+): Promise<ResolvedAddress[]> {
   const host = hostname.replace(/^\[|\]$/g, '');
   const literalFamily = isIP(host);
   const addresses = literalFamily
@@ -50,13 +77,17 @@ export async function resolveWebhookDestination(
     throw new Error('Webhook host did not resolve to an IP address');
   }
 
-  if (process.env.WEBHOOK_ALLOW_PRIVATE !== 'true') {
+  const allowPrivate =
+    options.allowPrivate ?? process.env.WEBHOOK_ALLOW_PRIVATE === 'true';
+  if (!allowPrivate) {
     if (addresses.some(({ address }) => !isPublicAddress(address))) {
       throw new Error('Webhook host resolves to a private or reserved address');
     }
   }
 
-  return addresses[0];
+  // Duplicates add nothing to try.
+  const seen = new Set<string>();
+  return addresses.filter(({ address }) => !seen.has(address) && seen.add(address));
 }
 
 function isPublicAddress(address: string): boolean {

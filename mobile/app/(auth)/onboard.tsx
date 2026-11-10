@@ -138,6 +138,9 @@ export default function OnboardScreen() {
           <Button onPress={handleSubmit} loading={loading}>
             Continue
           </Button>
+          <Button variant="ghost" onPress={() => router.push("/parent-link")}>
+            A parent or guardian? Enter the school's code
+          </Button>
         </CardContent>
       </Card>
     </AuthShell>

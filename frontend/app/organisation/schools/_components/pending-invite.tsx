@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2, RotateCw, X } from "lucide-react";
 import {
@@ -24,10 +25,12 @@ export function InviteActions({
   invite: InviteSummary;
   onChanged: () => void;
 }) {
-  const [busy, setBusy] = useState<"resend" | "cancel" | null>(null);
+  useSignals();
+  const busySignal = useSignal<"resend" | "cancel" | null>(null);
+  const busy = busySignal.value;
 
   async function resend() {
-    setBusy("resend");
+    busySignal.value = "resend";
     try {
       await resendInvite(invite.id);
       toast.success(`Invite to ${invite.email} sent again`);
@@ -35,13 +38,13 @@ export function InviteActions({
     } catch (err) {
       toast.error(userMessage(err, "Failed to resend the invite"));
     } finally {
-      setBusy(null);
+      busySignal.value = null;
     }
   }
 
   async function cancel() {
     if (!window.confirm(`Cancel the invite to ${invite.email}?`)) return;
-    setBusy("cancel");
+    busySignal.value = "cancel";
     try {
       await revokeInvite(invite.id);
       toast.success(`Invite to ${invite.email} cancelled`);
@@ -49,7 +52,7 @@ export function InviteActions({
     } catch (err) {
       toast.error(userMessage(err, "Failed to cancel the invite"));
     } finally {
-      setBusy(null);
+      busySignal.value = null;
     }
   }
 

@@ -18,6 +18,8 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { LATE_PENALTY_MODES, type LatePenaltyMode } from '../late-policy';
+import { QUESTION_KINDS, type QuestionKind } from '../quiz-questions';
 
 /** Generous caps: far above real use, low enough to refuse abuse. */
 const MAX_INSTRUCTIONS = 50_000;
@@ -82,6 +84,52 @@ export class CreateActivityDto {
   @IsOptional()
   @IsBoolean()
   lockdownBrowser?: boolean;
+
+
+  /** Quiz only: each student gets the questions in their own order. */
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  shuffleQuestions?: boolean;
+
+  /** Quiz only: each student gets choice options in their own order. */
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  shuffleOptions?: boolean;
+
+  /**
+   * Accept late work until then (after dueAt). Omit or null to close at the
+   * due date.
+   */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsDateString()
+  lateUntil?: string | null;
+
+  /** Penalty per started day or hour late; `none` by default. */
+  @ApiPropertyOptional({ enum: LATE_PENALTY_MODES })
+  @IsOptional()
+  @IsIn(LATE_PENALTY_MODES)
+  latePenaltyMode?: LatePenaltyMode;
+
+  /** Percent per day or hour, more than 0 and at most 100. */
+  @ApiPropertyOptional({ example: 10, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(100)
+  latePenaltyValue?: number | null;
+
+  /** The most the penalty can take, in percent. Null for no cap below 100. */
+  @ApiPropertyOptional({ example: 50, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(100)
+  latePenaltyCap?: number | null;
 }
 
 /** Excuse one student from one piece of work, keeping any mark they have. */
@@ -165,6 +213,59 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsBoolean()
   lockdownBrowser?: boolean;
+
+
+  /** Quiz only: each student gets the questions in their own order. */
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  shuffleQuestions?: boolean;
+
+  /** Quiz only: each student gets choice options in their own order. */
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  shuffleOptions?: boolean;
+
+  /**
+   * Accept late work until then (after dueAt). Omit or null to close at the
+   * due date.
+   */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsDateString()
+  lateUntil?: string | null;
+
+  /** Penalty per started day or hour late; `none` by default. */
+  @ApiPropertyOptional({ enum: LATE_PENALTY_MODES })
+  @IsOptional()
+  @IsIn(LATE_PENALTY_MODES)
+  latePenaltyMode?: LatePenaltyMode;
+
+  /** Percent per day or hour, more than 0 and at most 100. */
+  @ApiPropertyOptional({ example: 10, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(100)
+  latePenaltyValue?: number | null;
+
+  /** The most the penalty can take, in percent. Null for no cap below 100. */
+  @ApiPropertyOptional({ example: 50, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(100)
+  latePenaltyCap?: number | null;
+}
+
+/** Waive or restore one student's late penalty. */
+export class WaiveLatePenaltyDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  waived!: boolean;
 }
 
 export class QuizPresenceDto {
@@ -181,15 +282,72 @@ export class QuizPresenceDto {
 
 export class QuestionOptionDto {
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(300) label!: string;
-  @ApiProperty() @IsBoolean() isCorrect!: boolean;
+
+  /** Choice kinds: whether this option is right. Ignored by matching and ordering. */
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() isCorrect?: boolean;
+
+  /** Matching: the right-hand item this one matches. */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  matchLabel?: string | null;
 }
 
-export class UpdateQuestionDto {
+/** Per-kind settings, shared by adding and editing a question. */
+class QuestionSettingsDto {
+  /** Numeric: the answer. */
+  @ApiPropertyOptional({ nullable: true, example: 3.14 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  numericAnswer?: number | null;
+
+  /** Numeric: how far from the answer still counts (absolute, 0 or more). */
+  @ApiPropertyOptional({ nullable: true, example: 0.01 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  numericTolerance?: number | null;
+
+  /** Multiple select, matching, ordering: all or nothing (default) or partial credit. */
+  @ApiPropertyOptional({ enum: ['all_or_nothing', 'partial'] })
+  @IsOptional()
+  @IsIn(['all_or_nothing', 'partial'])
+  scoring?: 'all_or_nothing' | 'partial';
+
+  /** Essay: a course rubric to mark with (a guide; the mark is points). */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUUID()
+  rubricId?: string | null;
+
+  /** File upload: extensions (.pdf) or MIME types (image/*); empty accepts any. */
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  fileTypes?: string[];
+
+  /** File upload: a lower size limit than the school's, in MB. */
+  @ApiPropertyOptional({ nullable: true, example: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  fileMaxMb?: number | null;
+}
+
+export class UpdateQuestionDto extends QuestionSettingsDto {
   @ApiPropertyOptional()
   @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(500)
+  @MaxLength(2000)
   prompt?: string;
 
   @ApiPropertyOptional({ example: 1 })
@@ -209,12 +367,12 @@ export class UpdateQuestionDto {
   options?: QuestionOptionDto[];
 }
 
-export class AddQuestionDto {
-  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(500) prompt!: string;
+export class AddQuestionDto extends QuestionSettingsDto {
+  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(2000) prompt!: string;
 
-  @ApiProperty({ enum: ['multiple_choice', 'true_false', 'short_answer'] })
-  @IsIn(['multiple_choice', 'true_false', 'short_answer'])
-  kind!: 'multiple_choice' | 'true_false' | 'short_answer';
+  @ApiProperty({ enum: QUESTION_KINDS })
+  @IsIn(QUESTION_KINDS)
+  kind!: QuestionKind;
 
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()
@@ -223,12 +381,18 @@ export class AddQuestionDto {
   @Min(0.01)
   points?: number;
 
-  @ApiProperty({ type: [QuestionOptionDto] })
+  /**
+   * Choices (multiple choice, true/false, multiple select), accepted
+   * wordings (short answer), pairs (matching: label and matchLabel) or items
+   * in the right order (ordering). Omit for numeric, essay and file upload.
+   */
+  @ApiPropertyOptional({ type: [QuestionOptionDto] })
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_OPTIONS)
   @ValidateNested({ each: true })
   @Type(() => QuestionOptionDto)
-  options!: QuestionOptionDto[];
+  options?: QuestionOptionDto[];
 }
 
 export class SubmitAssignmentDto {
@@ -240,21 +404,60 @@ export class SubmitAssignmentDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() fileId?: string;
 }
 
+export class QuizMatchDto {
+  @ApiProperty() @IsUUID() optionId!: string;
+  @ApiProperty() @IsString() @MaxLength(300) label!: string;
+}
+
+/**
+ * One answer. Which field is used depends on the question's kind; an answer
+ * of the wrong shape for its question is dropped.
+ */
 export class QuizAnswerDto {
   @ApiProperty() @IsUUID() questionId!: string;
 
-  /** The chosen option, for the kinds answered by picking one. */
+  /** Multiple choice, true/false: the chosen option. */
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
   optionId?: string;
 
-  /** What the student typed, for a short answer. */
+  /** Multiple select: the chosen options. Ordering: every item, in order. */
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_OPTIONS)
+  @IsUUID('all', { each: true })
+  optionIds?: string[];
+
+  /** Matching: the right-hand item chosen for each left-hand item. */
+  @ApiPropertyOptional({ type: [QuizMatchDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_OPTIONS)
+  @ValidateNested({ each: true })
+  @Type(() => QuizMatchDto)
+  matches?: QuizMatchDto[];
+
+  /** Short answer (at most 500 characters) or essay. */
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(MAX_TEXT_BODY)
   text?: string;
+
+  /** Numeric. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  numeric?: number;
+
+  /** File upload: the student's finished upload for this question. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  fileId?: string;
 }
 
 export class SubmitQuizDto {
@@ -287,6 +490,24 @@ export class GradeSubmissionDto {
   )
   @Min(0)
   score!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  feedback?: string;
+}
+
+/** The teacher's points on one essay or file question. */
+export class MarkQuestionDto {
+  @ApiProperty({ example: 4 })
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'Marks can have at most two decimal places' },
+  )
+  @Min(0)
+  points!: number;
 
   @ApiPropertyOptional()
   @IsOptional()

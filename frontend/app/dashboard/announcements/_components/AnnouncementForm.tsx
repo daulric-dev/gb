@@ -8,6 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  ANNOUNCEMENT_AUDIENCES,
+  AUDIENCE_LABELS,
+  audienceOf,
+  type AnnouncementAudience,
+} from "@/lib/announcement-audience";
 import type { Announcement } from "./types";
 import { userMessage } from "@/lib/errors";
 
@@ -22,6 +29,9 @@ export function AnnouncementForm({
   const isEdit = !!announcement;
   const title = useSignal(announcement?.title ?? "");
   const body = useSignal(announcement?.body ?? "");
+  const audience = useSignal<AnnouncementAudience>(
+    audienceOf(announcement?.audience),
+  );
   const loading = useSignal(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -31,7 +41,11 @@ export function AnnouncementForm({
       return;
     }
     loading.value = true;
-    const payload = { title: title.value.trim(), body: body.value.trim() || undefined };
+    const payload = {
+      title: title.value.trim(),
+      body: body.value.trim() || undefined,
+      audience: audience.value,
+    };
 
     try {
       if (isEdit) {
@@ -76,6 +90,32 @@ export function AnnouncementForm({
           rows={5}
           maxLength={5000}
         />
+      </div>
+      <div className="space-y-2">
+        <Label id="annAudienceLabel">Who can see this?</Label>
+        <RadioGroup
+          aria-labelledby="annAudienceLabel"
+          value={audience.value}
+          onValueChange={(v) => (audience.value = audienceOf(v))}
+          className="grid-cols-1"
+        >
+          {ANNOUNCEMENT_AUDIENCES.map((value) => (
+            <Label
+              key={value}
+              className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 font-normal has-data-checked:border-primary has-data-checked:bg-primary/5"
+            >
+              <RadioGroupItem value={value} />
+              {AUDIENCE_LABELS[value]}
+            </Label>
+          ))}
+        </RadioGroup>
+        {audience.value === "everyone" && (
+          <p className="text-xs text-muted-foreground">
+            Students see it in their portal and get a push notification;
+            parents see it in the parent portal if your school shows them
+            announcements. Read receipts only count staff.
+          </p>
+        )}
       </div>
       <div className="flex justify-end gap-2">
         <Button type="submit" disabled={loading.value}>

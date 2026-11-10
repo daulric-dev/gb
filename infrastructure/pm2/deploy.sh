@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+# Deploys GradeBook with PM2 on a server: install, build, migrate, reload. See infrastructure/pm2/README.md.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

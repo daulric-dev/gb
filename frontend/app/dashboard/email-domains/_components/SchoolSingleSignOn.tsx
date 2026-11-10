@@ -1,67 +1,50 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { KeyRound } from "lucide-react";
 import { api } from "@/lib/api";
 import type { EmailDomain } from "@/lib/email-domains";
-import {
-  ssoProvidersApi,
-  usesEmailCodesOnly,
-  type SchoolSsoProvider,
-} from "@/lib/sign-in-providers";
+import { ssoProvidersApi, usesEmailCodesOnly, type SchoolSsoProvider } from "@/lib/sign-in-providers";
 import { EmailDomainsManager } from "./EmailDomainsManager";
 import { SignInApps } from "./SignInApps";
 import { SsoActivity } from "./SsoActivity";
 import { userMessage } from "@/lib/errors";
 
-/**
- * One school's single sign-on, end to end: its own sign-in apps (Google,
- * Microsoft) and its email domains, each picking one of the providers the
- * school has available, and the Activity log of changes to them. Changes
- * need a step-up confirmation (`stepUp: true` on the API calls; the dialog
- * is `StepUpDialogHost`). Used on the school admin's Settings and Email
- * domains pages (the active school) and on a school's page in the
- * organisation console (`apiBase` = `organisationSchoolApi(id)`).
- */
-export function SchoolSingleSignOn({
-  apiBase,
-  schoolName,
-}: {
-  /** Default: the active school. */
-  apiBase?: string;
-  schoolName: string;
-}) {
-  const [providers, setProviders] = useState<SchoolSsoProvider[] | null>(null);
-  const [domains, setDomains] = useState<EmailDomain[] | null>(null);
+export function SchoolSingleSignOn({ apiBase, schoolName }: { apiBase?: string; schoolName: string }) {
+  useSignals();
+  const providers = useSignal<SchoolSsoProvider[] | null>(null);
+  const domains = useSignal<EmailDomain[] | null>(null);
 
   useEffect(() => {
     api<SchoolSsoProvider[]>(ssoProvidersApi(apiBase))
-      .then((list) => setProviders(Array.isArray(list) ? list : []))
+      .then((list) => (providers.value = Array.isArray(list) ? list : []))
       .catch((err) => {
-        setProviders([]);
+        providers.value = [];
         toast.error(userMessage(err, "Failed to load sign-in apps"));
       });
-  }, [apiBase]);
+  }, [apiBase, providers]);
 
   // Bumped after every change, so Activity shows it.
-  const [activityKey, setActivityKey] = useState(0);
+  const activityKey = useSignal(0);
   const domainsLoaded = useRef(false);
 
   const onSaved = useCallback((saved: SchoolSsoProvider) => {
-    setProviders((list) => list?.map((p) => (p.key === saved.key ? saved : p)) ?? list);
-    setActivityKey((k) => k + 1);
-  }, []);
+    providers.value = providers.value?.map((p) => (p.key === saved.key ? saved : p)) ?? providers.value;
+    activityKey.value = activityKey.value + 1;
+  }, [activityKey, providers]);
 
   const onDomainsChange = useCallback((list: EmailDomain[]) => {
-    setDomains(list);
+    domains.value = list;
     // The first call is the initial load, not a change.
-    if (domainsLoaded.current) setActivityKey((k) => k + 1);
+    if (domainsLoaded.current) activityKey.value = activityKey.value + 1;
     domainsLoaded.current = true;
-  }, []);
+  }, [activityKey, domains]);
 
   const emailCodesOnly =
-    providers !== null && domains !== null && usesEmailCodesOnly(providers, domains);
+    providers.value !== null && domains.value !== null && usesEmailCodesOnly(providers.value, domains.value);
 
   return (
     <div className="space-y-6">
@@ -74,14 +57,14 @@ export function SchoolSingleSignOn({
           </p>
         </div>
       )}
-      <SignInApps providers={providers} apiBase={apiBase} onSavedAction={onSaved} />
+      <SignInApps providers={providers.value} apiBase={apiBase} onSavedAction={onSaved} />
       <EmailDomainsManager
         apiBase={apiBase}
         schoolName={schoolName}
-        providers={providers}
+        providers={providers.value}
         onDomainsChangeAction={onDomainsChange}
       />
-      <SsoActivity apiBase={apiBase} refreshKey={activityKey} />
+      <SsoActivity apiBase={apiBase} refreshKey={activityKey.value} />
     </div>
   );
 }

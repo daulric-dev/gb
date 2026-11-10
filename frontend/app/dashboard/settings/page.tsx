@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api } from "@/lib/api";
-import { useProfile } from "@/providers/AuthProvider";
+import { useAuth, useProfile } from "@/providers/AuthProvider";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,15 @@ import { Loader2 } from "lucide-react";
 import { UploadLimitSettings } from "./_components/upload-limit-settings";
 import { SchoolLogoSettings } from "./_components/school-logo-settings";
 import { SchoolFeatureSettings } from "./_components/school-feature-settings";
+import { SchoolParentSettings } from "./_components/school-parent-settings";
+import { SchoolTimetableLink } from "./_components/school-timetable-link";
+import { SchoolMasteryLink } from "./_components/school-mastery-link";
+import { SchoolSimilaritySettings } from "./_components/school-similarity-settings";
+import { SchoolAiSettings } from "./_components/school-ai-settings";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { AccountSettings } from "@/components/account/account-settings";
+import { SchoolOwnership } from "@/components/account/school-ownership";
 import { useMySchools } from "@/hooks/use-my-schools";
 import { managingViaOrganisation } from "@/lib/active-school";
 import { userMessage } from "@/lib/errors";
@@ -26,6 +32,7 @@ export default function SettingsPage() {
 
   const router = useRouter();
   const { profile } = useProfile();
+  const { refreshSilently } = useAuth();
   const leaving = useSignal(false);
   // An organisation admin managing the school is not a member: nothing to leave.
   const viaOrganisation = managingViaOrganisation(useMySchools());
@@ -57,9 +64,25 @@ export default function SettingsPage() {
 
       <SchoolFeatureSettings />
 
+      <SchoolParentSettings />
+
+      <SchoolTimetableLink />
+
+      <SchoolMasteryLink />
+
+      <SchoolSimilaritySettings />
+
+      <SchoolAiSettings />
+
       <SchoolSsoSettings />
 
       <SchoolIntegrationSettings />
+
+      <SchoolOwnership
+        schoolId={profile.value?.school?.id}
+        // Their role in the school may have changed (admin -> teacher).
+        onTransferred={() => void refreshSilently()}
+      />
 
       <AccountSettings
         profileExtra={

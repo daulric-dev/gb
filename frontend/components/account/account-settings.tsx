@@ -7,7 +7,15 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { api } from "@/lib/api";
 import { uploadAvatar } from "@/lib/files/upload";
-import { useAuth } from "@/providers/AuthProvider";
+import Link from "next/link";
+import { useAuth, useProfile } from "@/providers/AuthProvider";
+import {
+  blockerLink,
+  blockersFromError,
+  getDeletionCheck,
+  isSchoolManaged,
+  type DeletionBlocker,
+} from "@/lib/account-deletion";
 import { AvatarCropDialog } from "@/components/dashboard/avatar-crop-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -25,7 +33,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Camera, Loader2, Trash2 } from "lucide-react";
+import { Camera, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { SignedInDevices } from "@/components/account/signed-in-devices";
 import { userMessage } from "@/lib/errors";
 
@@ -53,6 +61,9 @@ export function AccountSettings({
 
   const router = useRouter();
   const { refreshSilently } = useAuth();
+  const { profile: me } = useProfile();
+  /** null until the deletion check answers; [] = nothing in the way. */
+  const blockers = useSignal<DeletionBlocker[] | null>(null);
   const profile = useSignal<AccountProfile | null>(null);
   const loading = useSignal(true);
   const saving = useSignal(false);
@@ -85,6 +96,15 @@ export function AccountSettings({
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // Ask before offering the button: owners must hand over first, and a
+  // student account run by the school's sign-in is the school's to remove.
+  useEffect(() => {
+    getDeletionCheck()
+      .then((check) => (blockers.value = Array.isArray(check?.blockers) ? check.blockers : []))
+      // An older server without the check: the delete itself still refuses.
+      .catch(() => (blockers.value = []));
+  }, [blockers]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -119,6 +139,12 @@ export function AccountSettings({
       toast.success("Account deleted");
       router.push("/login");
     } catch (err) {
+      const refused = blockersFromError(err);
+      if (refused) {
+        blockers.value = refused;
+        deleteOpen.value = false;
+        confirmText.value = "";
+      }
       const message = userMessage(err, "Failed to delete account");
       toast.error(message);
       deleting.value = false;
@@ -309,12 +335,60 @@ export function AccountSettings({
 
       <Separator />
 
+      {blockers.value && isSchoolManaged(blockers.value) ? (
+        <Card className="p-6">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 space-y-1">
+              <h2 className="text-lg font-semibold">Account managed by your school</h2>
+              {blockers.value
+                .filter((b) => b.code === "SSO_STUDENT")
+                .map((b) => (
+                  <p key={b.code} className="text-sm text-muted-foreground">
+                    {b.message}
+                  </p>
+                ))}
+              <p className="text-sm text-muted-foreground">
+                You sign in with your school account, so your school decides
+                when it is removed.
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : (
       <Card className="border-destructive/50 p-6">
         <h2 className="text-lg font-semibold text-destructive">Danger Zone</h2>
         <p className="text-sm text-muted-foreground mt-1 mb-4">
           Permanently delete your account and all associated data. This action
           cannot be undone.
         </p>
+
+        {blockers.value && blockers.value.length > 0 && (
+          <div className="mb-4 space-y-2 rounded-lg border border-dashed p-4">
+            <p className="text-sm font-medium">Before you can delete your account</p>
+            <ul className="space-y-2">
+              {blockers.value.map((b, i) => {
+                const link = blockerLink(b, {
+                  isOrgAdmin: !!me.value?.is_org_admin,
+                  activeSchoolId: me.value?.school?.id,
+                });
+                return (
+                  <li
+                    key={`${b.code}-${i}`}
+                    className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                  >
+                    <span className="min-w-0 text-muted-foreground">{b.message}</span>
+                    {link && (
+                      <Link href={link.href} className="shrink-0 font-medium underline">
+                        {link.label}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
 
         <Dialog
           open={deleteOpen.value}
@@ -325,7 +399,10 @@ export function AccountSettings({
         >
           <DialogTrigger
             render={
-              <Button variant="destructive">
+              <Button
+                variant="destructive"
+                disabled={blockers.value === null || blockers.value.length > 0}
+              >
                 <Trash2 className="mr-2 size-4" />
                 Delete Account
               </Button>
@@ -370,6 +447,7 @@ export function AccountSettings({
           </DialogContent>
         </Dialog>
       </Card>
+      )}
     </>
   );
 }

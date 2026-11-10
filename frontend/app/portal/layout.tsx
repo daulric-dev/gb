@@ -33,11 +33,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   CheckSquare,
+  Clock,
+  FileBadge,
+  Target,
   GraduationCap,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   MessagesSquare,
   Settings,
   type LucideIcon,
@@ -53,8 +58,18 @@ const NAV: {
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/portal/courses", label: "Courses", icon: BookOpen },
   { href: "/portal/grades", label: "Grades", icon: GraduationCap },
+  { href: "/portal/outcomes", label: "Outcomes", icon: Target, feature: "mastery" },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
   { href: "/portal/calendar", label: "Calendar", icon: CalendarDays, feature: "calendar" },
+  { href: "/portal/timetable", label: "Timetable", icon: Clock, feature: "timetable" },
+  { href: "/portal/attendance", label: "Attendance", icon: CalendarCheck, feature: "attendance" },
+  {
+    href: "/portal/announcements",
+    label: "Announcements",
+    icon: Megaphone,
+    feature: "announcements",
+  },
+  { href: "/portal/reports", label: "Reports", icon: FileBadge, feature: "report_cards" },
   {
     href: "/portal/messages",
     label: "Messages",
@@ -91,7 +106,7 @@ export default function PortalLayout({
     // school join code yet, so there is nothing to show them here.
     if (!isStudentProfile(profile.value)) {
       if (isScan) return;
-      router.replace("/dashboard");
+      router.replace(homePathFor(profile.value));
       return;
     }
     if (!profile.value.school) {

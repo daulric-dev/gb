@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
   CalendarX,
@@ -71,7 +72,9 @@ function ScanCheckIn() {
   const token = params?.get("t") ?? "";
   // Set by the public /scan page when the QR was scanned before signing in;
   // a live token in the URL still wins when there is one.
-  const [claim] = useState(() => (sessionId ? readScanClaim(sessionId) : null));
+  // Read once on mount: useSignal keeps its first value, so clearing the claim
+  // after check-in does not change it.
+  const claim = useSignal(sessionId ? readScanClaim(sessionId) : null).value;
   const proof = token
     ? { qrToken: token }
     : claim
@@ -80,7 +83,7 @@ function ScanCheckIn() {
   const { profile } = useProfile();
   const isStudent = isStudentProfile(profile.value);
 
-  const [state, setState] = useState<ScanState>({ kind: "checking" });
+  const scanState = useSignal<ScanState>({ kind: "checking" });
   // One automatic attempt per scanned link (Strict Mode runs effects twice).
   const startedFor = useRef<string | null>(null);
 
@@ -92,7 +95,7 @@ function ScanCheckIn() {
         accuracy: number;
       } | null = null;
       if (withLocation) {
-        setState({ kind: "location", session, busy: true });
+        scanState.value = { kind: "location", session, busy: true };
         const pos = await getCurrentPosition();
         location = {
           latitude: pos.latitude,
@@ -100,7 +103,7 @@ function ScanCheckIn() {
           accuracy: pos.accuracy,
         };
       }
-      setState({ kind: "checking" });
+      scanState.value = { kind: "checking" };
       const result = await api<PortalOpenAttendance>(
         `/portal/me/attendance/${session.sessionId}/check-in`,
         {
@@ -110,35 +113,35 @@ function ScanCheckIn() {
       );
       clearScanClaim(session.sessionId);
       upsertOpenAttendance(result);
-      setState({ kind: "success", session: result, already: false });
+      scanState.value = { kind: "success", session: result, already: false };
     } catch (err) {
       if (!(err instanceof ApiError)) {
         // Geolocation refused or failed: explain and let them try again.
-        setState({
+        scanState.value = {
           kind: "location",
           session,
           error: checkInErrorMessage(err),
-        });
+        };
         return;
       }
       if (err.status === 409 && /already/i.test(err.message)) {
         const fresh = await fetchOpen(session.sessionId).catch(() => null);
-        setState({
+        scanState.value = {
           kind: "success",
           session: fresh ?? session,
           already: true,
-        });
+        };
         return;
       }
       if (err.status === 400 && /location/i.test(err.message)) {
-        setState({ kind: "location", session, error: checkInErrorMessage(err) });
+        scanState.value = { kind: "location", session, error: checkInErrorMessage(err) };
         return;
       }
-      setState({
+      scanState.value = {
         kind: "error",
         reason: errorReason(err),
         message: checkInErrorMessage(err),
-      });
+      };
     }
   }
 
@@ -146,28 +149,28 @@ function ScanCheckIn() {
     try {
       const session = await fetchOpen(sessionId);
       if (!session) {
-        setState({
+        scanState.value = {
           kind: "error",
           reason: "closed",
           message: "This attendance session is no longer open.",
-        });
+        };
         return;
       }
       if (session.myStatus) {
-        setState({ kind: "success", session, already: true });
+        scanState.value = { kind: "success", session, already: true };
         return;
       }
       if (session.requiresLocation) {
-        setState({ kind: "location", session });
+        scanState.value = { kind: "location", session };
         return;
       }
       await checkIn(session, false);
     } catch (err) {
-      setState({
+      scanState.value = {
         kind: "error",
         reason: "other",
         message: checkInErrorMessage(err),
-      });
+      };
     }
   }
 
@@ -206,6 +209,7 @@ function ScanCheckIn() {
     );
   }
 
+  const state = scanState.value;
   switch (state.kind) {
     case "checking":
       return (

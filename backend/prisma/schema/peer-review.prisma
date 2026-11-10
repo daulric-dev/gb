@@ -1,0 +1,63 @@
+/// Peer review on one assignment (src/peer-review). The window opens at the
+/// activity's due date (open_mode after_due) or when the teacher starts it
+/// (manual), and closes at closes_at. started_at is when reviews were first
+/// allocated (the window opened).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model peer_review_setting {
+  activity_id         String                   @id @db.Uuid
+  enabled             Boolean                  @default(true)
+  reviews_per_student Int                      @default(2)
+  anonymous           Boolean                  @default(true)
+  /// after_due | manual
+  open_mode           String                   @default("after_due")
+  closes_at           DateTime                 @db.Timestamptz(6)
+  /// A course rubric to review against; null is a comment-only form.
+  rubric_id           String?                  @db.Uuid
+  /// Points for review quality, marked by the teacher in a separate offline
+  /// gradebook column (quality_activity_id); null: review quality does not count.
+  quality_points      Decimal?                 @db.Decimal
+  quality_activity_id String?                  @unique(map: "peer_review_setting_quality_activity_key") @db.Uuid
+  /// Seed for the deterministic allocation order (fixed when first saved).
+  seed                String                   @default(dbgenerated("(gen_random_uuid())::text"))
+  started_at          DateTime?                @db.Timestamptz(6)
+  /// When authors were told their reviews are ready (after closes_at).
+  ready_notified_at   DateTime?                @db.Timestamptz(6)
+  created_at          DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime                 @default(now()) @db.Timestamptz(6)
+  activity            activity                 @relation("peer_review_setting_activity", fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quality_activity    activity?                @relation("peer_review_setting_quality", fields: [quality_activity_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  rubric              rubric?                  @relation(fields: [rubric_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([rubric_id], map: "idx_peer_review_setting_rubric")
+  @@index([closes_at], map: "idx_peer_review_setting_closes_at")
+  @@schema("grading")
+}
+
+/// One review: reviewer_id reviews submission_id (never their own). Stored
+/// when the window opens (and for late joiners), so allocation is stable.
+model peer_review_allocation {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id   String     @db.Uuid
+  submission_id String     @db.Uuid
+  reviewer_id   String     @db.Uuid
+  comment       String?
+  /// [{ criterionId, ratingId, points, comment }] against the setting's rubric.
+  rubric_marks  Json       @default("[]")
+  submitted_at  DateTime?  @db.Timestamptz(6)
+  /// Hidden by staff (inappropriate): never shown to the author.
+  hidden        Boolean    @default(false)
+  hidden_reason String?
+  /// Staff user who hid it (no foreign key; the audit log keeps the actor).
+  hidden_by     String?    @db.Uuid
+  hidden_at     DateTime?  @db.Timestamptz(6)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime   @default(now()) @db.Timestamptz(6)
+  activity      activity   @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission    submission @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reviewer      student    @relation(fields: [reviewer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([activity_id, reviewer_id, submission_id], map: "peer_review_allocation_unique")
+  @@index([reviewer_id], map: "idx_peer_review_allocation_reviewer")
+  @@index([submission_id], map: "idx_peer_review_allocation_submission")
+  @@schema("grading")
+}

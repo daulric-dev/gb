@@ -12,10 +12,12 @@ import { NotificationRouter } from "@/providers/NotificationRouter";
 import { UpdateGate } from "@/features/app-update/UpdateGate";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { clearOpenedFiles } from "@/lib/open-file";
+import { clearOfflineReads } from "@/lib/offline-store";
 import { ErrorScreen } from "@/components/layout/ErrorScreen";
 import { Loading } from "@/components/layout/Loading";
 import { ServerSetupScreen } from "@/components/auth/ServerSetupScreen";
 import { ApiServerProvider, useApiServer } from "@/providers/ApiServerProvider";
+import { OfflineProvider } from "@/providers/OfflineProvider";
 
 /** A render error anywhere shows a friendly screen with "Try again", never the error text. */
 export { ErrorScreen as ErrorBoundary };
@@ -29,6 +31,8 @@ function RootNavigator() {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       clearOpenedFiles();
+      // Saved copies go; this account's unsent drafts stay for its next sign-in.
+      clearOfflineReads();
       router.replace("/(auth)/login");
     });
     return () => setUnauthorizedHandler(null);
@@ -87,9 +91,11 @@ function ConfiguredApp() {
 
   return (
     <AuthProvider>
-      <PermissionsProvider>
-        <RootNavigator />
-      </PermissionsProvider>
+      <OfflineProvider>
+        <PermissionsProvider>
+          <RootNavigator />
+        </PermissionsProvider>
+      </OfflineProvider>
     </AuthProvider>
   );
 }

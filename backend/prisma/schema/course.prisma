@@ -71,6 +71,7 @@ model attendance_session {
   created_at         DateTime                   @default(now()) @db.Timestamptz(6)
   qr_secret          String?
   attendance_record  course_attendance_record[]
+  timetable_occurrence timetable_occurrence[]
   course             course                     @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user_profile       user_profile?              @relation(fields: [opened_by], references: [id], onUpdate: NoAction)
 
@@ -116,11 +117,23 @@ model course {
   activity            activity[]
   announcement        announcement[]
   rubric              rubric[]
+  question_bank       question_bank[]
   discussion_topic    discussion_topic[]
   discussion_reply    discussion_reply[]
+  report_comment      report_comment[]
   discussion_setting  discussion_setting?
   course_notification course_notification[]
+  timetable_entry     timetable_entry[]
+  lti_resource_link   lti_resource_link[]
+  lti_line_item       lti_line_item[]
+  library_item        library_item[]
+  library_import      library_import[]
+  analytics_course_summary analytics_course_summary?
+  analytics_at_risk   analytics_at_risk[]
 
+  outcome             outcome[]
+  outcome_alignment   outcome_alignment[]
+  outcome_evidence    outcome_evidence[]
   @@index([academic_year_id])
   @@index([created_by])
   @@index([grade_scale_id])
@@ -198,6 +211,7 @@ model module_item {
   module              module            @relation(fields: [module_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   page                page?             @relation(fields: [page_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   discussion_topic    discussion_topic? @relation(fields: [discussion_topic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lti_resource_link   lti_resource_link?
 
   @@index([activity_id])
   @@index([discussion_topic_id])
@@ -277,6 +291,7 @@ enum module_item_type {
   link
   header
   discussion
+  external_tool
 
   @@schema("course")
 }
@@ -300,7 +315,9 @@ model course_notification {
   course              course            @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user_profile        user_profile      @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([user_profile_id, activity_id], map: "course_notification_user_activity_key")
+  @@unique([user_profile_id, activity_id], map: "course_notification_user_activity_key", where: raw("(kind = 'activity_published'::text)"))
+  @@unique([user_profile_id, activity_id], map: "course_notification_user_peer_review_assigned_key", where: raw("(kind = 'peer_review_assigned'::text)"))
+  @@unique([user_profile_id, activity_id], map: "course_notification_user_peer_review_ready_key", where: raw("(kind = 'peer_review_ready'::text)"))
   @@unique([user_profile_id, announcement_id], map: "course_notification_user_announcement_key")
   @@unique([user_profile_id, discussion_topic_id], map: "course_notification_user_topic_published_key", where: raw("(kind = 'discussion_topic'::text)"))
   @@unique([user_profile_id, discussion_topic_id], map: "course_notification_user_topic_unread_reply_key", where: raw("((kind = 'discussion_reply'::text) AND (read_at IS NULL))"))

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
 import { useRouter } from "next/navigation";
 import { useSignals } from "@preact/signals-react/runtime";
 import { Building2, Loader2, LogOut } from "lucide-react";
@@ -31,12 +32,12 @@ export default function SetupPage() {
   useSignals();
   const router = useRouter();
   const { profile, loading, refresh } = useAuth();
-  const [checking, setChecking] = useState(true);
+  const checking = useSignal(true);
   /** Setup is pending but this user may not run it. */
-  const [waiting, setWaiting] = useState(false);
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<{ message: string; forbidden: boolean } | null>(null);
+  const waiting = useSignal(false);
+  const name = useSignal("");
+  const saving = useSignal(false);
+  const error = useSignal<{ message: string; forbidden: boolean } | null>(null);
 
   const signedIn = !loading.value && !!profile.value;
 
@@ -47,21 +48,21 @@ export default function SetupPage() {
       if (cancelled) return;
       if (!needsSetup) router.replace(homePathFor(profile.value));
       else {
-        setWaiting(!canSetUp);
-        setChecking(false);
+        waiting.value = !canSetUp;
+        checking.value = false;
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [signedIn, profile.value, router]);
+  }, [signedIn, profile.value, router, checking, waiting]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const organisationName = name.trim();
+    const organisationName = name.value.trim();
     if (!organisationName) return;
-    setSaving(true);
-    setError(null);
+    saving.value = true;
+    error.value = null;
     try {
       await api("/setup", { method: "POST", body: { organisationName } });
       resetSetupStatus(true);
@@ -70,24 +71,24 @@ export default function SetupPage() {
       router.replace(ORGANISATION_SCHOOLS_WELCOME_PATH);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
-        setWaiting(true);
-        setError({
+        waiting.value = true;
+        error.value = {
           message: userMessage(err, "You are not allowed to set up this install."),
           forbidden: true,
-        });
+        };
       } else if (err instanceof ApiError && err.status === 409) {
         // Someone else finished setup meanwhile.
         resetSetupStatus(true);
         await refresh();
         router.replace(homePathFor(profile.value));
       } else {
-        setError({
+        error.value = {
           message: userMessage(err, "Setup failed. Try again."),
           forbidden: false,
-        });
+        };
       }
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -111,19 +112,19 @@ export default function SetupPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {!signedIn || checking ? (
+          {!signedIn || checking.value ? (
             <div className="space-y-3">
               <Skeleton className="h-9" />
               <Skeleton className="h-9" />
             </div>
-          ) : waiting ? (
+          ) : waiting.value ? (
             <div
               role="status"
               className="space-y-2 rounded-lg border bg-muted/40 p-3 text-sm"
             >
               <p className="font-medium">GradeBook isn&apos;t set up yet</p>
               <p className="text-muted-foreground">
-                {error?.message ??
+                {error.value?.message ??
                   "Only a school administrator on this server, or an email listed in ORG_ADMIN_EMAILS, can finish setting up GradeBook. Sign in as one, or ask whoever runs this server."}
               </p>
             </div>
@@ -133,23 +134,23 @@ export default function SetupPage() {
                 <Label htmlFor="organisation-name">Organisation name</Label>
                 <Input
                   id="organisation-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={name.value}
+                  onChange={(e) => (name.value = e.target.value)}
                   placeholder="Northside Schools Trust"
                   required
                   autoFocus
                 />
               </div>
-              {error && (
+              {error.value && (
                 <div
                   role="alert"
                   className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm"
                 >
-                  <p>{error.message}</p>
+                  <p>{error.value.message}</p>
                 </div>
               )}
-              <Button type="submit" className="w-full" disabled={saving || !name.trim()}>
-                {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              <Button type="submit" className="w-full" disabled={saving.value || !name.value.trim()}>
+                {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
                 Create organisation
               </Button>
             </form>

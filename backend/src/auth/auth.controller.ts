@@ -144,10 +144,23 @@ export class AuthController {
     return this.versioning.resolve(req, 'auth.profile')(raw);
   }
 
+  /**
+   * Whether the caller may delete their account, and what to do first if
+   * not: `{ canDelete, blockers: [{ code, message, action? }] }`. The same
+   * rules `DELETE /auth/account` enforces with a 409.
+   */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Get('account/deletion-check')
+  async deletionCheck(@Req() req: any) {
+    const userId: string = req.user.id;
+    return this.authService.deletionCheck(userId);
+  }
+
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
   @Delete('account')
-  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } })
+  @Throttle({ route: { limit: 3, ttl: 60 * 60 * 1000 } })
   async deleteAccount(@Req() req: any) {
     const userId: string = req.user.id;
     const message = await this.authService.deleteAccount(userId);

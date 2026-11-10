@@ -33,7 +33,9 @@ The S3 client only sends checksums when an operation requires them (`requestChec
 - `src/erasure`, `src/retention`, `src/auth/auth.service.ts` - the erasure log's copy under `ERASURE_LOG_S3_PREFIX`, deleting purged files' objects, deleting a deleted account's files and avatar.
 - `src/file-manager/file-manager.service.ts` - uploads, downloads, presigned upload tickets, deletes for the file manager (and, through it, course files and student submissions).
 - `src/images/images.service.ts` - avatar uploads (direct and presigned) and serving.
-- Both use `objectKey()` to build keys. No other module talks to the store.
+- `src/report-card` - generated report card PDFs under `report-cards/schools/<schoolId>/terms/<termId>/<studentId>.pdf` (written by the generation job, read for downloads and zips; never presigned), and the school logo for the PDF header.
+- `src/course` - `CourseFileCopyService` copies linked files (server-side `copy`) into the copier's `file-manager/<school>/<user>/` keys on course copy, import and library import; the template library (`src/course/library`) copies them into `course-library/<item>/<version>/` when publishing.
+- These use `objectKey()` (or, for report cards, `reportKey()`) to build keys. No other module talks to the store.
 
 ## Depends on
 

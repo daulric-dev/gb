@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { organisationSchoolPath } from "@/lib/organisation";
@@ -28,17 +30,21 @@ import {
  * single sign-on section. Hidden until a school has a domain.
  */
 export function SchoolDomains() {
-  const [domains, setDomains] = useState<OrganisationDomain[] | null>(null);
-  const [providers, setProviders] = useState<SsoProvider[]>([]);
+  useSignals();
+  const domainsSignal = useSignal<OrganisationDomain[] | null>(null);
+  const providersSignal = useSignal<SsoProvider[]>([]);
 
   useEffect(() => {
     api<OrganisationDomain[]>("/organisation/sign-in/domains")
-      .then((list) => setDomains(Array.isArray(list) ? list : []))
-      .catch(() => setDomains([]));
+      .then((list) => (domainsSignal.value = Array.isArray(list) ? list : []))
+      .catch(() => (domainsSignal.value = []));
     api<SsoProvider[]>("/auth/sso/providers")
-      .then((list) => setProviders(Array.isArray(list) ? list : []))
-      .catch(() => setProviders([]));
-  }, []);
+      .then((list) => (providersSignal.value = Array.isArray(list) ? list : []))
+      .catch(() => (providersSignal.value = []));
+  }, [domainsSignal, providersSignal]);
+
+  const domains = domainsSignal.value;
+  const providers = providersSignal.value;
 
   if (!domains || domains.length === 0) return null;
 

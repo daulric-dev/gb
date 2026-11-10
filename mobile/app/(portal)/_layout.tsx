@@ -10,7 +10,7 @@ import {
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
-import { isStudentProfile } from "@/lib/routing";
+import { homeRouteFor, isStudentProfile } from "@/lib/routing";
 import { resolveFeatures } from "@/lib/features";
 
 /**
@@ -24,7 +24,7 @@ export default function PortalLayout() {
   if (loading) return <Loading />;
   if (!profile) return <Redirect href="/(auth)/login" />;
   if (!profile.first_name) return <Redirect href="/(auth)/onboard" />;
-  if (!isStudentProfile(profile)) return <Redirect href="/(tabs)" />;
+  if (!isStudentProfile(profile)) return <Redirect href={homeRouteFor(profile)} />;
   if (!profile.school) return <Redirect href="/(auth)/schools" />;
 
   // Tabs for switched-off features are hidden (href: null), not removed, so

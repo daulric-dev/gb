@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { MapPin, TriangleAlert } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { AttendanceRosterEntry } from "@/lib/courses/types";
@@ -49,7 +51,8 @@ export function useLiveTeacherLocation({
   onUpdated: (update: LocationUpdate) => void;
   onClosed: () => void;
 }): LiveState {
-  const [state, setState] = useState<LiveState>("waiting");
+  useSignals();
+  const state = useSignal<LiveState>("waiting");
   const last = useRef<SentPoint | null>(current);
   const callbacks = useRef({ onUpdated, onClosed });
   useEffect(() => {
@@ -65,11 +68,10 @@ export function useLiveTeacherLocation({
   useEffect(() => {
     if (!active || !sharing) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reports a missing browser API once
-      setState("unavailable");
+      state.value = "unavailable";
       return;
     }
-    setState("waiting");
+    state.value = "waiting";
     let stopped = false;
     let inFlight = false;
 
@@ -82,7 +84,7 @@ export function useLiveTeacherLocation({
           accuracy: pos.coords.accuracy,
         };
         if (!shouldSendLocation(last.current, fix, Date.now())) {
-          setState((s) => (s === "waiting" && last.current ? "live" : s));
+          state.value = state.value === "waiting" && last.current ? "live" : state.value;
           return;
         }
         inFlight = true;
@@ -92,7 +94,7 @@ export function useLiveTeacherLocation({
         })
           .then((res) => {
             if (stopped) return;
-            setState("live");
+            state.value = "live";
             // 204: the API judged the fix too coarse; the point stays.
             if (!res || typeof res !== "object") return;
             last.current = {
@@ -111,7 +113,7 @@ export function useLiveTeacherLocation({
               callbacks.current.onClosed();
               return;
             }
-            setState("error");
+            state.value = "error";
           })
           .finally(() => {
             inFlight = false;
@@ -119,7 +121,7 @@ export function useLiveTeacherLocation({
       },
       (err) => {
         if (stopped) return;
-        setState(err.code === err.PERMISSION_DENIED ? "denied" : "error");
+        state.value = err.code === err.PERMISSION_DENIED ? "denied" : "error";
       },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 60_000 },
     );
@@ -128,9 +130,9 @@ export function useLiveTeacherLocation({
       stopped = true;
       navigator.geolocation.clearWatch(watch);
     };
-  }, [active, sharing, sessionPath]);
+  }, [active, sharing, sessionPath, state]);
 
-  return state;
+  return state.value;
 }
 
 /** "Location live · updated 12s ago" with the switch to stop sharing. */

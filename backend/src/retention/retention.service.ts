@@ -55,6 +55,8 @@ export interface PurgeReport {
   stagedObjects: number;
   /** Webhook deliveries (with their payloads) older than WEBHOOK_DELIVERY_RETENTION_DAYS. */
   webhookDeliveries: number;
+  /** Resolved pastoral notes past their school's retention period. */
+  pastoralNotes: number;
   exported: number;
   errors: string[];
 }
@@ -117,6 +119,7 @@ export class RetentionService {
       abandonedUploads: 0,
       stagedObjects: 0,
       webhookDeliveries: 0,
+      pastoralNotes: 0,
       exported: 0,
       errors: [],
     };
@@ -129,6 +132,7 @@ export class RetentionService {
       ['folders', () => this.purgeFolders(cutoff('folders'), ctx)],
       ['chat messages', () => this.purgeChatMessages(cutoff('chat_messages'), ctx)],
       ['discussion replies', () => this.purgeReplies(cutoff('discussion_replies'), ctx)],
+      ['pastoral notes', () => this.purgePastoralNotes(now, ctx)],
     ];
     if (!opts.only) {
       jobs.push(
@@ -500,6 +504,54 @@ export class RetentionService {
       });
       report.discussionRepliesScrubbed += scrubbed;
       if (scrubbed === 0) return;
+    }
+  }
+
+  /**
+   * Pastoral notes (src/pastoral): a resolved note is erased once its
+   * school's `retention_days` have passed since it was resolved. Schools
+   * without a retention period keep notes until the student is removed (the
+   * notes cascade with the student). One erasure-log entry per school and
+   * batch, reason `retention_purge`.
+   */
+  private async purgePastoralNotes(now: Date, { opts, deadline, report }: Ctx) {
+    const settings = await this.prisma.pastoral_setting.findMany({
+      where: { retention_days: { not: null } },
+      select: { school_id: true, retention_days: true },
+    });
+    for (const s of settings) {
+      const where = {
+        school_id: s.school_id,
+        status: 'resolved',
+        resolved_at: { lt: new Date(now.getTime() - s.retention_days! * DAY_MS) },
+        ...this.idFilter(opts.only),
+      };
+      if (opts.dryRun) {
+        report.pastoralNotes += await this.prisma.pastoral_note.count({ where });
+        continue;
+      }
+      for (;;) {
+        this.checkTime(deadline);
+        const ids = (
+          await this.prisma.pastoral_note.findMany({ where, select: { id: true }, take: batchSize() })
+        ).map((r) => r.id);
+        if (ids.length === 0) break;
+        const deleted = await this.prisma.$transaction(async (tx) => {
+          const { count } = await tx.pastoral_note.deleteMany({ where: { ...where, id: { in: ids } } });
+          await this.erasure.record(tx, {
+            kind: 'pastoral_note',
+            subjectTable: 'student.pastoral_note',
+            subjectIds: ids,
+            schoolId: s.school_id,
+            actor: 'system',
+            reason: 'retention_purge',
+            replay: plan.of(plan.del('student.pastoral_note', { id: ids })),
+          });
+          return count;
+        });
+        report.pastoralNotes += deleted;
+        if (deleted === 0) break;
+      }
     }
   }
 

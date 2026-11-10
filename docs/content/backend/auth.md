@@ -286,6 +286,20 @@ Signs out every session, this one included, and clears the cookie: `{ revoked }`
 
 Both log at info level; neither touches the erasure log.
 
+### Account deletion: `GET /api/auth/account/deletion-check`, `DELETE /api/auth/account`
+
+The check returns `{ canDelete, blockers: [{ code, message, action? }] }`; `DELETE` runs the same check first and answers **409** `{ statusCode: 409, code: "ACCOUNT_DELETION_BLOCKED", message, blockers }` without touching anything (no session revoked, no transaction), so the Restrict owner keys never fail a delete half-way.
+
+| Code | Blocked when |
+| --- | --- |
+| `ORG_OWNER` | The user is `organisation.owner_id` - transfer the organisation first. |
+| `LAST_ORG_ADMIN` | The user holds the only stored organisation admin row. |
+| `SCHOOL_OWNER` | One per school whose `owner_id` is the user - transfer each school first. |
+| `SCHOOL_ADMIN` | The user holds the admin seat of a school with no owner that still has other members or students. |
+| `SSO_STUDENT` | A student (account type or linked student record) with any SSO identity (`google`, `azure`, `saml`, OIDC). The school removes these accounts. |
+
+SSO staff, SSO parents, email-code students and parents delete normally. `action` tells clients where to go (`transfer_organisation_ownership`, `add_organisation_admin`, `transfer_school_ownership` with `schoolId`/`schoolName`, `contact_school`). See the transfer routes in [Organisation](./organisation.md#ownership).
+
 ## Avatar Endpoints
 
 The auth controller also handles avatar management by delegating to `ImagesService` (from the `ImagesModule`). The avatar endpoints are grouped under `/api/auth/avatar`.

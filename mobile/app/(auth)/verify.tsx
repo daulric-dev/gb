@@ -87,7 +87,7 @@ export default function VerifyScreen() {
         user: {
           is_onboarded: boolean;
           first_name: string | null;
-          account_type: "staff" | "student" | null;
+          account_type: "staff" | "student" | "parent" | null;
           school: { id: string } | null;
         };
       }>("/auth/otp/verify", {
@@ -98,7 +98,9 @@ export default function VerifyScreen() {
       await refresh();
       const isStudent = data.user.account_type === "student";
 
-      if (data.user.school) {
+      if (data.user.account_type === "parent") {
+        router.replace("/(parent)");
+      } else if (data.user.school) {
         router.replace(isStudent ? "/(portal)" : "/(tabs)");
       } else if (data.user.first_name) {
         // Named but school-less: students still owe a school code, staff still

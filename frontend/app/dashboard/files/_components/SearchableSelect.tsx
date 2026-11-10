@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -45,11 +46,12 @@ export function SearchableSelect({
   emptyText?: string;
   disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  useSignals();
+  const open = useSignal(false);
   const selected = options.find((o) => o.value === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open.value} onOpenChange={(v) => (open.value = v)}>
       <PopoverTrigger
         render={
           <Button
@@ -76,7 +78,7 @@ export function SearchableSelect({
                   value={o.label}
                   onSelect={() => {
                     onChange(o.value);
-                    setOpen(false);
+                    open.value = false;
                   }}
                 >
                   <Check

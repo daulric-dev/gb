@@ -17,7 +17,8 @@ All paths start with `/api/auth`. "Public" means no guard, though the routes are
 | PATCH | `/api/auth/onboard` | `AuthGuard` | Saves the name and either onboards as a student or files a `school_join_request` when `schoolId` is given. If the user ends up with no school, it also tries `EmailDomainService.tryAutoJoin()` on the email domain. |
 | POST | `/api/auth/join-school` | `AuthGuard`. Throttled: `claim-code` 10 per 15 min. | Joins a school with a school-issued code (`StudentMembershipService.joinByCode`). |
 | PATCH | `/api/auth/profile` | `AuthGuard` | Updates the first and last name. |
-| DELETE | `/api/auth/account` | `AuthGuard`. Throttled: `default` 3/hour. | Revokes every session (`revoked_reason = 'account_deleted'`), then deletes `user_profile` and `app_user` (cascading to sessions, identities, memberships, files, messages, ...) and writes an `account` entry to the [erasure log](../erasure/README.md), all in one transaction. After commit the user's stored files and avatar are deleted (best effort; the retention job retries). |
+| GET | `/api/auth/account/deletion-check` | `AuthGuard` | `{ canDelete, blockers: [{ code, message, action? }] }`: whether the caller may delete their account and what to do first (see [Account deletion safeguards](#account-deletion-safeguards)). Clients call it before offering the button. |
+| DELETE | `/api/auth/account` | `AuthGuard`. Throttled: `default` 3/hour. | First runs the deletion check: any blocker is a **409** `{ statusCode: 409, code: 'ACCOUNT_DELETION_BLOCKED', message, blockers }` (`message` is the first blocker's, plus "(and N more ...)"), before sessions are revoked or a transaction opens - so the Restrict owner keys (`school.owner_id`, `organisation.owner_id`) can never fail the delete half-way. Otherwise revokes every session (`revoked_reason = 'account_deleted'`), then deletes `user_profile` and `app_user` (cascading to sessions, identities, memberships, files, messages, ...) and writes an `account` entry to the [erasure log](../erasure/README.md), all in one transaction. After commit the user's stored files and avatar are deleted (best effort; the retention job retries). |
 | POST | `/api/auth/logout` | `AuthGuard` | Revokes this device's session and clears the cookie. |
 | GET | `/api/auth/sessions` | `AuthGuard` | Signed-in devices: the caller's live sessions, `[{ id, current, method, device, ip, createdAt, lastSeenAt, expiresAt }]`, the one making the request first with `current: true`. `device` is a label such as "Chrome on macOS" or "GradeBook app on iPhone 15 (iOS 19.0)". Never returns tokens or their hashes. |
 | DELETE | `/api/auth/sessions/:id` | `AuthGuard` | Signs out one of the caller's sessions (`{ revoked: 1, current }`). Another user's session, or one already ended, is a 404. Revoking the current session is a logout (the cookie is cleared). |
@@ -55,6 +56,7 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 ### Onboarding rules (`AuthService.onboard`)
 
 - A student account can never onboard again as staff.
+- A parent account (`account_type = 'parent'`, see [`src/parent-portal`](../parent-portal/README.md)) can never onboard as staff or a student, and cannot switch school (it has none).
 - `accountType: 'student'` saves the profile with `account_type = 'student'` and `role = null`.
 - A user who already has a `school_id` (because they created a school) only has their name updated.
 - A `schoolId` in the request files a `school_join_request` for an admin to approve. Admin rights are never granted from a client-supplied id.
@@ -136,6 +138,22 @@ Schemas: [`prisma/schema/school.prisma`](../../prisma/schema/school.prisma) and 
 | `auth.service.test.ts` | Tests for `AuthService`. |
 | `auth.guard.test.ts` | Tests for `AuthGuard`. |
 
+## Account deletion safeguards
+
+`account-deletion.ts` (`accountDeletionCheck(prisma, userId)`, `AccountDeletionBlockedException`). Blockers, in order:
+
+| Code | When | Message | `action` |
+| --- | --- | --- | --- |
+| `ORG_OWNER` | They are `organisation.owner_id` | "Transfer ownership of the organisation before deleting your account" | `{ type: 'transfer_organisation_ownership' }` |
+| `LAST_ORG_ADMIN` | They hold the only stored `organisation_admin` row (unchanged rule; env-listed admins don't count) | "You're the organisation's last administrator. Add another administrator before deleting your account." | `{ type: 'add_organisation_admin' }` |
+| `SCHOOL_OWNER` | One per school whose `owner_id` they are | "Transfer ownership of <school> before deleting your account" | `{ type: 'transfer_school_ownership', schoolId, schoolName }` |
+| `SCHOOL_ADMIN` | They hold the admin seat of a school with **no owner** that still has other staff or students (it would be left with nobody to run it). A school with an owner is not orphaned (the owner is covered above, or someone else still owns it); an empty school is not harmed | "You're the only administrator of <school>. Hand the school over to another staff member before deleting your account" | as `SCHOOL_OWNER` (the seat holder may transfer an ownerless school) |
+| `SSO_STUDENT` | A student (`account_type = 'student'` or a linked `student.user_profile_id`) with any single sign-on identity in `account.identity` (`google`, `azure` = Microsoft, `saml`, or a configured OIDC provider; email-code sign-in never writes an identity row) | "Your account is managed by your school through <Google \| Microsoft \| your school's single sign-on \| your school's sign-in provider>. Ask your school to remove it." | `{ type: 'contact_school' }` |
+
+Not blocked: staff and parents who sign in with SSO (only students are provisioned and managed by the school; staff accounts are their own), students who sign in with email codes, parents, and organisation admins who neither own the organisation nor are its last admin. Ownership is handed over with `POST /api/organisation/transfer-ownership` and `POST /api/schools/:schoolId/transfer-ownership` ([`src/organisation`](../organisation/README.md)).
+
+There is no staff route that deletes a student's **account**: a school removes an SSO student by deactivating or removing the student record (`PATCH /api/students/:id`, [`src/student`](../student/README.md)), stopping them at its identity provider (an SSO-required domain then cannot sign in), and an organisation admin can sign them out everywhere (`POST /api/organisation/users/:userId/sessions/revoke`). Erasing the login itself on request stays an operator task.
+
 ## Tests
 
 ```bash
@@ -150,6 +168,8 @@ cd backend && bun test src/auth
 - **getProfile**: cache hit and miss; a single `school_management` row collapses to an object; the email is backfilled; `is_org_admin`, `organisation` and `features` (effective for the active school) are added, and a cached profile without them is rebuilt.
 - **onboard**: joining a school never grants admin.
 - **updateProfile** and **deleteAccount**.
+
+`account-deletion.test.ts` covers every blocker (owner, last org admin, school owner listing each school, the ownerless-school admin seat, SSO student by account type or linked record), that SSO staff, SSO parents, email-code students and parents are not blocked, that `deleteAccount` answers 409 `ACCOUNT_DELETION_BLOCKED` for each blocker without revoking sessions or opening the transaction, the `deletion-check` route, and the owner backfill rule of migration `20261123100000_account_ownership` (as text).
 
 `auth.guard.test.ts` covers active, deactivated and brand-new users, a missing `is_active` field, no session, and how errors are mapped.
 

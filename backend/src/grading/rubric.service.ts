@@ -6,6 +6,8 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { refreshLateness } from './lateness';
+import { refreshOutcomeEvidence } from '@/mastery/outcome-evidence';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
@@ -43,6 +45,23 @@ const RUBRIC_INCLUDE = {
 } satisfies Prisma.rubricInclude;
 
 type RubricRow = Prisma.rubricGetPayload<{ include: typeof RUBRIC_INCLUDE }>;
+
+/**
+ * The structure rules every rubric write applies (also used to check AI
+ * rubric drafts before a teacher sees them): every level fits inside its
+ * criterion. Throws BadRequestException naming the first level that does not.
+ */
+export function validateRubricCriteria(input: RubricInput['criteria']) {
+  for (const c of input) {
+    for (const r of c.ratings) {
+      if (r.points > c.points) {
+        throw new BadRequestException(
+          `"${r.label}" on "${c.title}" is worth more than the criterion (${c.points})`,
+        );
+      }
+    }
+  }
+}
 
 /** The `Rubric` contract. */
 export function toRubric(r: RubricRow, assessed = false) {
@@ -196,15 +215,7 @@ export class RubricService {
 
   /** Every level must fit inside its criterion. */
   private validate(input: RubricInput['criteria']) {
-    for (const c of input) {
-      for (const r of c.ratings) {
-        if (r.points > c.points) {
-          throw new BadRequestException(
-            `"${r.label}" on "${c.title}" is worth more than the criterion (${c.points})`,
-          );
-        }
-      }
-    }
+    validateRubricCriteria(input);
   }
 
   private async writeCriteria(
@@ -657,6 +668,8 @@ export class RubricService {
           : [];
         const fields = {
           status: 'graded' as const,
+          // The rubric's mark; score is it less any late penalty.
+          raw_score: score,
           score,
           feedback: input.feedback ?? null,
           graded_at: now,
@@ -683,6 +696,12 @@ export class RubricService {
             graded_at: true,
           },
         });
+        await refreshLateness(tx, activityId, [studentId]);
+        const penalised = await tx.submission.findUnique({
+          where: { id: submission.id },
+          select: { score: true },
+        });
+        if (penalised) submission.score = penalised.score;
         await tx.rubric_assessment.deleteMany({
           where: {
             submission_id: submission.id,
@@ -694,6 +713,8 @@ export class RubricService {
             data: rows.map((r) => ({ ...r, submission_id: submission.id })),
           });
         }
+        // After the criterion marks: rubric rows aligned to outcomes read them.
+        await refreshOutcomeEvidence(tx, activityId, [studentId]);
         await this.auditLog?.record(
           tx,
           activity.school_id,

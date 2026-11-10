@@ -17,6 +17,19 @@ export const FEATURE_KEYS = [
   "course_copy",
   "push_notifications",
   "integrations",
+  "report_cards",
+  "parent_portal",
+  "parent_notifications",
+  "timetable",
+  "attendance_alerts",
+  "rostering",
+  "lti",
+  "mastery",
+  "peer_review",
+  "similarity_check",
+  "pastoral_notes",
+  "ai_assistance",
+  "analytics",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -35,11 +48,37 @@ export const FALLBACK_FEATURES: FeatureMap = {
   course_copy: true,
   push_notifications: true,
   integrations: false,
+  // An older server has no report cards.
+  report_cards: false,
+  // Older servers have no parent portal.
+  parent_portal: false,
+  parent_notifications: false,
+  // Older servers have no timetable or attendance alerts.
+  timetable: false,
+  attendance_alerts: false,
+  // Older servers have no rostering sync.
+  rostering: false,
+  // Older servers have no external tools (LTI).
+  lti: false,
+  // Older servers have no mastery tracking.
+  mastery: false,
+  // Older servers have no peer review or similarity check.
+  peer_review: false,
+  similarity_check: false,
+  // Older servers have no pastoral notes.
+  pastoral_notes: false,
+  // Older servers have no AI assistance.
+  ai_assistance: false,
+  // Older servers have no analytics.
+  analytics: false,
 };
 
 const REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {
   student_messaging: ["messaging"],
   chat_channels: ["messaging"],
+  parent_notifications: ["parent_portal"],
+  timetable: ["attendance"],
+  attendance_alerts: ["attendance"],
 };
 
 export function resolveFeatures(

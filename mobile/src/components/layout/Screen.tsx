@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -10,6 +10,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Text } from "@/components/ui/Text";
+import {
+  OfflineBanner,
+  OfflineReadProvider,
+  useConnectivity,
+  useOfflineReadScope,
+} from "@/features/offline/OfflineReads";
 
 /**
  * Page shell: safe-area aware, optional title/description header, and pull to
@@ -20,6 +26,11 @@ import { Text } from "@/components/ui/Text";
  * side, and the home indicator sits over the bottom of any screen that is not
  * inside the tab bar. `useSafeAreaInsets` reports all of them, so all of them
  * are honoured here rather than in every screen.
+ *
+ * Offline: loads made with `useOfflineReads()` inside the screen (or passed
+ * in as `offlineSavedAt`) that came from a saved copy show the "Offline -
+ * showing saved copy from ..." banner, and the screen refreshes itself
+ * (`onRefresh`) once the server answers again.
  */
 export function Screen({
   children,
@@ -31,6 +42,7 @@ export function Screen({
   refreshing,
   onRefresh,
   topInset = true,
+  offlineSavedAt = null,
 }: {
   children: ReactNode;
   title?: string;
@@ -41,9 +53,25 @@ export function Screen({
   refreshing?: boolean;
   onRefresh?: () => void;
   topInset?: boolean;
+  /** When the copy this screen loaded itself was saved, if it came from the device. */
+  offlineSavedAt?: number | null;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const reads = useOfflineReadScope();
+  const savedAt =
+    offlineSavedAt !== null && reads.savedAt !== null
+      ? Math.min(offlineSavedAt, reads.savedAt)
+      : (offlineSavedAt ?? reads.savedAt);
+
+  // Back online while showing a saved copy: load the live one.
+  const network = useConnectivity();
+  const refreshRef = useRef(onRefresh);
+  refreshRef.current = onRefresh;
+  const showingSaved = savedAt !== null;
+  useEffect(() => {
+    if (network === "online" && showingSaved) refreshRef.current?.();
+  }, [network, showingSaved]);
 
   const header = title ? (
     <View style={{ gap: 8 }}>
@@ -73,6 +101,8 @@ export function Screen({
     </View>
   ) : null;
 
+  const banner = savedAt !== null ? <OfflineBanner savedAt={savedAt} /> : null;
+
   const paddingTop = topInset ? insets.top + 8 : 8;
   // Landscape on a notched phone puts the cutout on a side, so the horizontal
   // gutter grows by whatever the system reports rather than being a constant.
@@ -97,7 +127,8 @@ export function Screen({
         ]}
       >
         {header}
-        {children}
+        {banner}
+        <OfflineReadProvider value={reads.value}>{children}</OfflineReadProvider>
       </View>
     );
   }
@@ -133,7 +164,8 @@ export function Screen({
       }
     >
       {header}
-      {children}
+      {banner}
+      <OfflineReadProvider value={reads.value}>{children}</OfflineReadProvider>
     </ScrollView>
   );
 }

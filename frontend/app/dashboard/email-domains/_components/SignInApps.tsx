@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -77,17 +78,18 @@ function ProviderRow({
   apiBase?: string;
   onSaved: (p: SchoolSsoProvider) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<ProviderDraft>(() => draftOf(p));
-  const [saving, setSaving] = useState(false);
-  const body = providerUpdate(p, draft);
+  useSignals();
+  const open = useSignal(false);
+  const draft = useSignal<ProviderDraft>(draftOf(p));
+  const saving = useSignal(false);
+  const body = providerUpdate(p, draft.value);
   const status = providerStatus(p);
   const id = `sign-in-app-${p.key}${apiBase ? `-${apiBase.replace(/\W+/g, "-")}` : ""}`;
-  const set = (patch: Partial<ProviderDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: Partial<ProviderDraft>) => (draft.value = { ...draft.value, ...patch });
 
   async function save() {
     if (!body) return;
-    setSaving(true);
+    saving.value = true;
     try {
       const saved = await api<SchoolSsoProvider>(
         `${ssoProvidersApi(apiBase)}/${encodeURIComponent(p.key)}`,
@@ -98,7 +100,7 @@ function ProviderRow({
     } catch (err) {
       toast.error(userMessage(err, `Failed to save ${p.label}`));
     } finally {
-      setSaving(false);
+      saving.value = false;
     }
   }
 
@@ -108,12 +110,12 @@ function ProviderRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
+          onClick={() => (open.value = !open.value)}
+          aria-expanded={open.value}
           aria-controls={`${id}-body`}
         >
           <ChevronDown
-            className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")}
+            className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open.value && "-rotate-90")}
           />
           <span className="truncate font-medium">{p.label}</span>
           <Badge
@@ -131,16 +133,16 @@ function ProviderRow({
         </button>
         <Switch
           id={`${id}-enabled`}
-          checked={draft.enabled}
+          checked={draft.value.enabled}
           onCheckedChange={(v) => {
             set({ enabled: v });
-            setOpen(true);
+            open.value = true;
           }}
           aria-label={`Turn ${p.label} on`}
         />
       </div>
 
-      {open && (
+      {open.value && (
         <div id={`${id}-body`} className="mt-3 space-y-4 pl-6">
           {p.notes && <p className="text-xs text-muted-foreground">{p.notes}</p>}
           {p.redirectUri && (
@@ -157,7 +159,7 @@ function ProviderRow({
                 <Label htmlFor={`${id}-client-id`}>Client ID</Label>
                 <Input
                   id={`${id}-client-id`}
-                  value={draft.clientId}
+                  value={draft.value.clientId}
                   placeholder={p.configSource === "env" ? (p.clientId ?? "") : ""}
                   onChange={(e) => set({ clientId: e.target.value })}
                   autoComplete="off"
@@ -172,9 +174,9 @@ function ProviderRow({
                 <Input
                   id={`${id}-client-secret`}
                   type="password"
-                  value={draft.clientSecret}
+                  value={draft.value.clientSecret}
                   placeholder={
-                    draft.clearSecret
+                    draft.value.clearSecret
                       ? "Will be cleared"
                       : p.hasSecret
                         ? "•••••••• (type to replace)"
@@ -186,13 +188,13 @@ function ProviderRow({
                 />
                 <p className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <span>{secretStatus(p)}</span>
-                  {p.secretSource === "school" && !draft.clientSecret && (
+                  {p.secretSource === "school" && !draft.value.clientSecret && (
                     <button
                       type="button"
                       className="underline underline-offset-4 hover:text-foreground"
-                      onClick={() => set({ clearSecret: !draft.clearSecret })}
+                      onClick={() => set({ clearSecret: !draft.value.clearSecret })}
                     >
-                      {draft.clearSecret ? "Keep it" : "Clear saved secret"}
+                      {draft.value.clearSecret ? "Keep it" : "Clear saved secret"}
                     </button>
                   )}
                 </p>
@@ -205,10 +207,10 @@ function ProviderRow({
               <Label htmlFor={`${id}-${f.key}`}>{f.label}</Label>
               <Input
                 id={`${id}-${f.key}`}
-                value={draft.settings[f.key] ?? ""}
+                value={draft.value.settings[f.key] ?? ""}
                 placeholder={f.placeholder}
                 onChange={(e) =>
-                  set({ settings: { ...draft.settings, [f.key]: e.target.value } })
+                  set({ settings: { ...draft.value.settings, [f.key]: e.target.value } })
                 }
                 spellCheck={false}
               />
@@ -216,7 +218,7 @@ function ProviderRow({
             </div>
           ))}
 
-          {p.enabled && !draft.enabled && (
+          {p.enabled && !draft.value.enabled && (
             <p className="text-xs text-muted-foreground">
               Domains that require {p.label} fall back to email codes while it is off.
             </p>
@@ -229,8 +231,8 @@ function ProviderRow({
           )}
 
           <div className="flex justify-end">
-            <Button size="sm" onClick={save} disabled={!body || saving}>
-              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+            <Button size="sm" onClick={save} disabled={!body || saving.value}>
+              {saving.value && <Loader2 className="mr-2 size-4 animate-spin" />}
               Save
             </Button>
           </div>

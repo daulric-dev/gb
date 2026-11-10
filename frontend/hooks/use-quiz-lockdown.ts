@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import type { SyntheticEvent } from "react";
 import { toast } from "sonner";
 import {
@@ -25,9 +27,8 @@ export function useQuizLockdown({
   activityId: string;
   enabled: boolean;
 }) {
-  const [state, setState] = useState<QuizLockdownState>(
-    INACTIVE_LOCKDOWN_STATE,
-  );
+  useSignals();
+  const state = useSignal<QuizLockdownState>(INACTIVE_LOCKDOWN_STATE);
   const controller = useRef<QuizLockdownController | null>(null);
   const mounted = useRef(false);
 
@@ -47,14 +48,16 @@ export function useQuizLockdown({
     if (!enabled || !activityId) return;
     const lockdown = createQuizLockdown({
       send: (payload) => sendQuizPresence(activityId, payload),
-      onChange: setState,
+      onChange: (next) => {
+        state.value = next;
+      },
     });
     controller.current = lockdown;
     return () => {
       lockdown.stop();
       if (controller.current === lockdown) controller.current = null;
     };
-  }, [activityId, enabled]);
+  }, [activityId, enabled, state]);
 
   // Submitted or out of time: leave fullscreen with the attempt.
   const wasEnabled = useRef(false);
@@ -84,7 +87,7 @@ export function useQuizLockdown({
     };
   }, [enabled]);
 
-  const current = enabled ? state : INACTIVE_LOCKDOWN_STATE;
+  const current = enabled ? state.value : INACTIVE_LOCKDOWN_STATE;
   return {
     state: current,
     /** Show the blocking overlay. */

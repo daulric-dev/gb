@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FeatureService } from './feature.service';
+import { FEATURES } from './feature.catalog';
 import { FeatureDisabledException } from './feature-disabled.exception';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
@@ -82,7 +83,7 @@ describe('FeatureService', () => {
     test('lists every feature with its setting, default and requirements', async () => {
       orgFeatures = { calendar: false };
       const rows = await service.organisationFeatures();
-      expect(rows).toHaveLength(11);
+      expect(rows).toHaveLength(FEATURES.length);
       expect(rows.find((r) => r.key === 'calendar')).toMatchObject({
         enabled: false,
         default: true,

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { History, Loader2 } from "lucide-react";
 import {
   AUDIT_ACTION_LABEL,
@@ -35,44 +37,45 @@ const VIA: Record<IntegrationAuditEntry["actorVia"], string> = {
  * redelivery, and automatic switch-offs - newest first. Never the secret.
  */
 export function IntegrationActivity({ apiBase, refreshKey = 0 }: { apiBase?: string; refreshKey?: number }) {
-  const [entries, setEntries] = useState<IntegrationAuditEntry[] | null>(null);
-  const [more, setMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  useSignals();
+  const entries = useSignal<IntegrationAuditEntry[] | null>(null);
+  const more = useSignal(false);
+  const loadingMore = useSignal(false);
+  const error = useSignal<string | null>(null);
 
   useEffect(() => {
     let live = true;
     listIntegrationAudit(apiBase)
       .then((page) => {
         if (!live) return;
-        setEntries(page);
-        setMore(page.length === AUDIT_PAGE);
-        setError(null);
+        entries.value = page;
+        more.value = page.length === AUDIT_PAGE;
+        error.value = null;
       })
       .catch((err) => {
         if (!live) return;
-        setEntries([]);
-        setError(userMessage(err, "Failed to load activity"));
+        entries.value = [];
+        error.value = userMessage(err, "Failed to load activity");
       });
     return () => {
       live = false;
     };
-  }, [apiBase, refreshKey]);
+  }, [apiBase, refreshKey, entries, more, error]);
 
   const loadMore = useCallback(async () => {
-    const last = entries?.at(-1);
+    const last = entries.value?.at(-1);
     if (!last) return;
-    setLoadingMore(true);
+    loadingMore.value = true;
     try {
       const page = await listIntegrationAudit(apiBase, last.id);
-      setEntries((list) => [...(list ?? []), ...page]);
-      setMore(page.length === AUDIT_PAGE);
+      entries.value = [...(entries.value ?? []), ...page];
+      more.value = page.length === AUDIT_PAGE;
     } catch (err) {
-      setError(userMessage(err, "Failed to load activity"));
+      error.value = userMessage(err, "Failed to load activity");
     } finally {
-      setLoadingMore(false);
+      loadingMore.value = false;
     }
-  }, [apiBase, entries]);
+  }, [apiBase, entries, more, error, loadingMore]);
 
   return (
     <div className="space-y-2">
@@ -82,12 +85,12 @@ export function IntegrationActivity({ apiBase, refreshKey = 0 }: { apiBase?: str
           Every change to these webhooks, tests and redeliveries.
         </p>
       </div>
-      {entries === null ? (
+      {entries.value === null ? (
         <Skeleton className="h-16 w-full" />
-      ) : entries.length === 0 ? (
+      ) : entries.value.length === 0 ? (
         <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           <History className="size-4 shrink-0" />
-          {error ?? "No changes yet."}
+          {error.value ?? "No changes yet."}
         </div>
       ) : (
         <div className="rounded-lg border">
@@ -100,7 +103,7 @@ export function IntegrationActivity({ apiBase, refreshKey = 0 }: { apiBase?: str
               </TableRow>
             </TableHeader>
             <TableBody>
-              {entries.map((e) => {
+              {entries.value.map((e) => {
                 const changes = integrationAuditChanges(e);
                 return (
                   <TableRow key={e.id} className="align-top">
@@ -130,10 +133,10 @@ export function IntegrationActivity({ apiBase, refreshKey = 0 }: { apiBase?: str
           </Table>
         </div>
       )}
-      {more && (
+      {more.value && (
         <div className="flex justify-center">
-          <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore && <Loader2 className="mr-2 size-4 animate-spin" />}
+          <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore.value}>
+            {loadingMore.value && <Loader2 className="mr-2 size-4 animate-spin" />}
             Load more
           </Button>
         </div>

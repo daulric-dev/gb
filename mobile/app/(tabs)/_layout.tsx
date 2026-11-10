@@ -8,7 +8,7 @@ import {
 import { useAuth } from "@/providers/AuthProvider";
 import { useTheme } from "@/theme/ThemeProvider";
 import { Loading } from "@/components/layout/Loading";
-import { isStudentProfile } from "@/lib/routing";
+import { isParentProfile, isStudentProfile } from "@/lib/routing";
 
 export default function TabsLayout() {
   const { profile, loading } = useAuth();
@@ -20,6 +20,7 @@ export default function TabsLayout() {
   // The staff API denies students everything, so show them the portal rather
   // than a tab bar of permission errors.
   if (isStudentProfile(profile)) return <Redirect href="/(portal)" />;
+  if (isParentProfile(profile)) return <Redirect href="/(parent)" />;
   if (!profile.school) return <Redirect href="/(auth)/schools" />;
 
   return (

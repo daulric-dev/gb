@@ -28,18 +28,46 @@ Every route is behind `AuthGuard`. Ids in the path are checked with `ParseUUIDPi
 | GET | `/api/courses/:courseId/activities` | Staff | Every activity in the course, drafts included. Soonest due first; undated work last. |
 | POST | `/api/courses/:courseId/activities` | Manage | Create (`CreateActivityDto`). An assignment must accept a file, text or both. `allowMultipleFiles` is opt-in and only applies when `allowFile` is enabled. Offline work accepts nothing. `maxAttempts` 0 means unlimited (stored as null); the default is 1. |
 | GET | `/api/activities/:activityId` | Staff | One activity, with its quiz questions and options, correct answers included |
-| PATCH | `/api/activities/:activityId` | Manage | Update (`UpdateActivityDto`): title, instructions, points, due date, group (`null` means Ungrouped), `omitFromFinalGrade`, accepted inputs (including `allowMultipleFiles`), attempts |
+| PATCH | `/api/activities/:activityId` | Manage | Update (`UpdateActivityDto`): title, instructions, points, due date, group (`null` means Ungrouped), `omitFromFinalGrade`, accepted inputs (including `allowMultipleFiles`), attempts, the late policy (`lateUntil`, `latePenaltyMode`, `latePenaltyValue`, `latePenaltyCap`) and, on a quiz, `shuffleQuestions` / `shuffleOptions` |
 | POST | `/api/activities/:activityId/publish` | Manage | Set status `published`. A quiz needs at least one question. `published_at` keeps the first publish date when reopening. Fires `CourseNotificationService.activityPublished()` without waiting for it. |
-| POST | `/api/activities/:activityId/close` | Manage | Set status `closed`. No more submissions, but the activity stays visible and can still be graded. A due date alone does not close an activity; assignments may be handed in after it and are marked late in the clients. |
+| POST | `/api/activities/:activityId/close` | Manage | Set status `closed`. No more submissions, but the activity stays visible and can still be graded. |
 | DELETE | `/api/activities/:activityId` | Manage | Delete. Refused (409) once any submission exists; close it or omit it from the final grade instead. |
 | POST | `/api/activities/:activityId/questions` | Manage, draft quiz only | Add a question (`AddQuestionDto`) |
 | PATCH | `/api/activities/:activityId/questions/:questionId` | Manage, draft quiz only | Edit a question. Options are replaced as a whole list (`UpdateQuestionDto`). |
 | DELETE | `/api/activities/:activityId/questions/:questionId` | Manage, draft quiz only | Remove a question |
 
-Questions are frozen once a quiz is published, because changing the answer key would silently rescore work already handed in. The option rules are:
+Questions are frozen once a quiz is published, because changing the answer key would silently rescore work already handed in. The rules per kind (`validateQuestion` in `quiz-questions.ts`; `AddQuestionDto` / `UpdateQuestionDto` carry the per-kind settings) and how each is scored (credit 0 to 1, times the question's points):
 
-- **Multiple choice and true/false**: at least two options, exactly one marked correct.
-- **Short answer**: at least one accepted wording. Every wording counts as correct, and the comparison ignores case and surrounding spaces.
+| Kind | Needs | Scored |
+| --- | --- | --- |
+| `multiple_choice`, `true_false` | At least two options, exactly one correct | The chosen option is correct |
+| `short_answer` | At least one accepted wording (all correct) | Equal to a wording, ignoring case and surrounding spaces |
+| `multiple_select` | At least two options, one or more correct; `scoring` | All or nothing (exactly the correct set), or `partial`: (right picks − wrong picks) / correct options, at least 0 |
+| `numeric` | `numericAnswer`, `numericTolerance` (absolute, >= 0) | Within the tolerance, inclusive |
+| `matching` | At least two options, each with a `matchLabel`; `scoring` | Every pair right, or `partial`: the share of pairs right |
+| `ordering` | At least two options, in the right order; `scoring` | Every item in place, or `partial`: the share in place |
+| `essay` | Optional course `rubricId` (a guide for the marker) | By the teacher (`manual_points / points`) |
+| `file_upload` | Optional `fileTypes` (`.pdf`, `image/*`) and `fileMaxMb` | By the teacher |
+
+An answered essay or file question with no mark leaves the submission `submitted` ("needs marking", `needsMarking` on the roster and the student's view); auto-scored parts are scored at once, and the score is final (`graded`) once every one is marked. The rules live in `grading.submit_quiz`, its TypeScript copy `QUIZ_CREDIT` / `rescoreSql` in `quiz-rescore.ts` (checked word for word against the latest migration by `quiz-rescore.test.ts`), and `questionCredit()` in `quiz-questions.ts` (the teacher's per-question view and unit tests).
+
+**Exposure.** A student never receives the answer key: no `isCorrect`, no numeric answer, no short-answer wordings, and matching right-hand items as a separate alphabetical `matchChoices` list. Ordering items are never sent in the right order. Staff routes include the key.
+
+#### Question banks and draws (`question-bank.controller.ts`, served by `QuestionBankService`)
+
+| Method | Path | Who | What it does |
+| --- | --- | --- | --- |
+| GET | `/api/courses/:courseId/question-banks` | Staff | The course's banks with `questionCount` |
+| POST | `/api/courses/:courseId/question-banks` | Manage | Create (`QuestionBankDto`: `title`). Audited. |
+| GET | `/api/question-banks/:bankId` | Staff | One bank with its questions (answer key included) and `locked` per question |
+| PATCH | `/api/question-banks/:bankId` | Manage | Rename |
+| DELETE | `/api/question-banks/:bankId` | Manage | Delete (`204`); `409` once an attempt was given one of its questions or a published quiz draws from it |
+| POST / PATCH / DELETE | `/api/question-banks/:bankId/questions[/:questionId]` | Manage | Add, edit, remove a bank question (same DTOs and rules as a quiz's). A question an attempt has been given is frozen (`409`). |
+| PUT | `/api/activities/:activityId/bank-draws` | Manage, draft quiz only | Replace the quiz's draws (`SetBankDrawsDto`: `[{ bankId, count }]`, at most 20, each bank once, in the course, `count` at most the bank's size) |
+
+A quiz needs a question or a draw to publish. `GET /api/activities/:activityId` also returns `bankDraws`.
+
+**Attempts.** Starting an attempt (`startQuizAttempt`) fixes its questions in `grading.quiz_attempt_question`: the quiz's own, then `count` random questions from each draw (never one twice), the whole list shuffled with `shuffleQuestions`, and options shuffled with `shuffleOptions` (multiple choice, multiple select, matching; true/false never; ordering always, never left in the right order). It is built by `buildAttemptPlan(seed, …)` from a random seed and stored, so resuming shows the same quiz and scoring and later re-scoring use exactly those questions. A retake clears the answers and plans again. Attempts from before this have no rows and use the quiz's own questions.
 
 #### Marking (`activity.controller.ts`, served by `SubmissionService`)
 
@@ -49,9 +77,12 @@ Questions are frozen once a quiz is published, because changing the answer key w
 | PATCH | `/api/activities/:activityId/submissions/:studentId/grade` | Staff | Mark one student (`GradeSubmissionDto`: 0 to the activity's points, at most two decimals). Creates the submission if there is none, which is how offline work and non-submitters get marks. The activity must not be a draft. |
 | POST | `/api/activities/submissions/:submissionId/grade` | Staff | The same, addressed by submission id |
 | PATCH | `/api/activities/:activityId/submissions/:studentId/excuse` | Staff | Excuse or un-excuse (`ExcuseSubmissionDto`). Any mark is kept. A student with no submission gets a `graded` row with no score. |
+| PATCH | `/api/activities/:activityId/submissions/:studentId/late-penalty` | Staff | Waive or restore the late penalty (`WaiveLatePenaltyDto`: `waived`). The score goes back to the raw mark, or the penalty applies again. Audited. `404` with no submission. |
+| GET | `/api/activities/:activityId/submissions/:studentId/answers` | Staff | One student's quiz, question by question: the attempt's questions with the key, the answer (and file), `earned`, `needsMarking` and the teacher's `mark` |
+| PUT | `/api/activities/:activityId/submissions/:studentId/questions/:questionId/mark` | Staff | Mark an essay or file question (`MarkQuestionDto`: `points` 0 to the question's, `feedback`). Rescores the quiz from its answers (`rescoreQuizFromAnswers(…, submissionId)`), which becomes `graded` once nothing is unmarked, applies the late policy, audited as `quiz_answer`. Refused while the attempt runs or when a whole-quiz mark was entered by hand. |
 | GET | `/api/activities/submissions/:submissionId/file` | Staff | The file a student handed in, served inline |
 
-Each roster row also carries `effectiveDueAt` (the student's extension, else the activity's due date) and `extension` (`{ dueAt, reason, createdBy, createdAt, updatedAt }` or `null`).
+Each roster row also carries `effectiveDueAt` (the student's extension, else the activity's due date), `closesAt` (see late work below), on the submission `rawScore`, `lateSeconds`, `latePenaltyPercent`, `latePenaltyWaived` and (quizzes) `needsMarking`, and `extension` (`{ dueAt, reason, createdBy, createdAt, updatedAt }` or `null`). On a quiz it carries `accommodation` (the effective one: `{ source: 'activity' | 'student', timeMultiplier, extraMinutes, lockdownExempt }` or `null`) and `defaultAccommodation` (the student's school-wide default on its own, which applies again if the quiz's own is removed). A Lockdown-exempt student is never reported away.
 
 #### Due date extensions (`extension.controller.ts`, served by `ExtensionService`)
 
@@ -61,7 +92,48 @@ Each roster row also carries `effectiveDueAt` (the student's extension, else the
 | PUT | `/api/activities/:activityId/extensions/:studentId` | Staff | Set or replace one student's due date (`SetExtensionDto`: `dueAt` in the future, optional `reason` up to 500). The student must be enrolled (not dropped); offline work is refused. Audited as `activity_extension`. |
 | DELETE | `/api/activities/:activityId/extensions/:studentId` | Staff | Remove the extension (`204`); `404` when there is none. Audited. |
 
-Due dates are enforced on the student routes (`due-date.ts`): after the student's effective due date, starting a quiz, saving quiz answers, handing in, upload tickets and attaching uploads are a `409` ("This was due on … UTC. Ask your teacher for an extension"). A quiz attempt started in time runs to its own `quiz_expires_at`; an untimed attempt is stamped to expire at the due date, so the expiry sweep submits it then, and moving the due date (an extension set or removed, the activity's date edited) moves running untimed attempts with it. Marking, excusing, import and offline work ignore due dates. Portal activity responses carry `effectiveDueAt`, `hasExtension` and `isClosed`.
+Due dates are enforced on the student routes (`due-date.ts`): after the student's close date (their extension, else the activity's late-until, else its due date; see *Late work* below), starting a quiz, saving quiz answers, handing in, upload tickets and attaching uploads are a `409` ("This was due on … UTC. Ask your teacher for an extension"). A quiz attempt started in time runs to its own `quiz_expires_at`; an untimed attempt is stamped to expire at the due date, so the expiry sweep submits it then, and moving the due date (an extension set or removed, the activity's date edited) moves running untimed attempts with it. Marking, excusing, import and offline work ignore due dates. Portal activity responses carry `effectiveDueAt`, `hasExtension`, `lateUntil`, `isLate` and `isClosed`.
+
+#### Late work (`late-policy.ts`, `lateness.ts`)
+
+An activity can accept work after its due date until `late_until`, with a penalty (`late_penalty_mode` `none` / `percent_per_day` / `percent_per_hour`, `late_penalty_value` percent per unit, optional `late_penalty_cap`). Checked by `latePolicyColumns()`: late-until needs a due date before it; a penalty needs a late-until; offline work has none.
+
+- **Dates.** A student's due date is their extension, else the activity's. Work closes to them (`effectiveCloseAt`) at their extension when they have one (it wins entirely: no late window, no penalty before it), else at `late_until`, else at the due date. Every enforcement point above uses the close date; past it the 409 reads "Late work closed on … UTC" when there was a late window. Portal responses add `lateUntil` (null with an extension), `isLate` and the policy fields. An untimed quiz attempt started on time still ends at the due date; started late, at the close.
+- **Lateness** is stored on the submission (`late_seconds`): whole seconds from the effective due date to the hand-in (`submitted_at`), or for a quiz to when its attempt started (`attempt_started_at`), so a timed attempt begun in time is never late.
+- **Penalty** (`latePenaltyPercent`): every started day or hour counts in full (one minute late = one day), times the value, capped, never above 100. It is a percentage of the mark: `score = raw_score × (100 − percent) / 100` (85 with 10% is 76.5).
+- **Where it is applied.** `refreshLateness(tx, activityId, studentIds?)` recomputes lateness, the percent and `score` from `raw_score` in the caller's transaction after every hand-in, teacher mark, rubric mark, quiz submit (`submit_quiz` writes `raw_score` = `score`, then the API applies the penalty), question mark, waiver, extension change, and change of the activity's dates, policy or points. `score` is therefore always the final mark, and the gradebook, CSV export, report cards (`report-data.service.ts` reads `score`), portals and webhooks agree. An imported mark is taken as final (`raw_score` null), as are marks from before this.
+
+#### Quiz accommodations (`accommodation.controller.ts`, served by `AccommodationService`)
+
+A student can have more time on timed quizzes (a multiplier of ×1.25, ×1.5 or ×2, **or** 1 to 600 extra minutes) and/or be **exempt from Lockdown**. A school-wide default per student (`grading.student_accommodation`) applies to every quiz; an accommodation on one quiz (`grading.activity_accommodation`) replaces the default entirely on that quiz. An accommodation must change something (time or Lockdown).
+
+| Method | Path | Who | What it does |
+| --- | --- | --- | --- |
+| GET | `/api/activities/:activityId/accommodations` | Staff | Every accommodation on the activity (with `reason`) |
+| PUT | `/api/activities/:activityId/accommodations/:studentId` | Staff | Set or replace one student's accommodation (`SetAccommodationDto`). Quizzes only; the student must be enrolled (not dropped). Audited as `activity_accommodation`. |
+| DELETE | `/api/activities/:activityId/accommodations/:studentId` | Staff | Remove it (`204`); the default, if any, applies again. `404` when there is none. Audited. |
+| GET | `/api/students/:studentId/accommodation` | `student:read` | The student's school-wide default, or an empty body when there is none |
+| PUT | `/api/students/:studentId/accommodation` | `student:update` | Set or replace the default (`SetAccommodationDto`). Audited as `student_accommodation`. |
+| DELETE | `/api/students/:studentId/accommodation` | `student:update` | Remove the default (`204`). Audited. |
+
+"Staff" is the same check as extensions (teacher, TA or course admin in the activity's course). The `/students` routes are scoped to the caller's school; a student elsewhere is a `404`.
+
+How it applies (`accommodation.ts`):
+
+- **Start.** A timed attempt's `quiz_expires_at` is the start plus the accommodated limit: `ceil(limit × multiplier)` or `limit + extra minutes`. A ×1.5 student gets 45 minutes on a 30-minute quiz. As before, a timed attempt runs its full (accommodated) time even past the due date.
+- **Untimed quizzes.** Extra time does not apply: an untimed attempt still ends at the student's effective due date. Only an extension moves that.
+- **Changes mid-attempt.** Setting or changing an accommodation re-stamps the student's running timed attempts to `started + new limit`, but only ever later: a running attempt never loses time, so a reduction or removal applies from the next attempt. Resuming returns the stamped expiry; the expiry sweep and the submit-on-read path use it unchanged.
+- **Lockdown exemption.** The presence endpoint is a no-op for the student, the roster never marks them away, and their activity responses (`GET /api/portal/me/activities/:id`, the course list) report `lockdownBrowser: false`, so web and mobile skip the rules card, fullscreen and pinning.
+- **What the student sees.** Their own `timeLimitMinutes` (already accommodated) and `standardTimeLimitMinutes` (the quiz's). Never the reason, the source, or anyone else's accommodation.
+
+#### Peer review and similarity check
+
+Two modules build on submissions without living here:
+
+- **Peer review** ([`src/peer-review`](../peer-review/README.md), feature `peer_review`): an assignment's settings (reviews per student, anonymous, opening after the due date or by hand, close date, a course rubric or comments only), a stored allocation that never pairs a student with their own work and tops up late submitters, reviews through the portal, hiding a review. **Review quality** is marked in a separate published offline activity "Peer review: <title>" that the module creates, so the mark lives in `submission.score` like every other and the assignment's own mark never changes.
+- **Similarity check** ([`src/similarity`](../similarity/README.md), feature `similarity_check`): assignment text and essay answers are fingerprinted after hand-in; teachers see a marker and a side-by-side view. It never touches a mark or anything a student reads.
+
+Both hear about hand-ins through **`SubmissionEvents`** (`submission-events.ts`, global `SubmissionEventsModule`): `SubmissionService` calls `events.handedIn({ submissionId, activityId, studentId, kind })` after an assignment is handed in and whenever a quiz attempt is scored (submit, submit-on-read and the expiry sweep). Listeners are not awaited by the request and a failing one is only logged.
 
 #### Assignment groups (`assignment-group.controller.ts`)
 
@@ -119,6 +191,12 @@ Due dates are enforced on the student routes (`due-date.ts`): after the student'
 
 **`SubmissionService`**, staff side: `listForTeacher()`, `grade()`, `gradeSubmission()`, `excuse()`, `readSubmissionFile()`.
 
+**`SubmissionService`**, quizzes: `startQuizAttempt()` (plans the attempt), `saveQuizAnswers()` / `submitQuiz()` (answers per kind via `answerRow()`; a file answer must be the student's own ready upload), `createQuizUploadTicket()` / `finaliseQuizUpload()` (files for a file question, checked against its types and size; `POST /api/portal/me/activities/:id/quiz/questions/:questionId/upload-ticket[/:fileId/complete]`), `quizAnswers()`, `markQuestion()`, `waiveLatePenalty()`.
+
+**`QuestionBankService`**: `list()`, `create()`, `get()`, `rename()`, `remove()`, `addQuestion()`, `updateQuestion()`, `removeQuestion()`, `setDraws()`.
+
+**`AccommodationService`**: `listForActivity()`, `setForActivity()`, `removeForActivity()`, `getForStudent()`, `setForStudent()`, `removeForStudent()`. Module-level helpers: `loadAccommodation(prisma, studentId, activityId)` (used by `SubmissionService`) and `restampRunningQuizAttempts()`.
+
 **`AssignmentGroupService`**: `loadForCourse()` (also used by the gradebook), `list()`, `create()`, `update()`, `reorder()`, `remove()`.
 
 **`RubricService`**: `list()`, `get()`, `create()`, `update()`, `copy()`, `remove()`, `attach()`, `forActivity()`, `assess()`. The module-level helpers `loadRubric()` and `loadAssessments()` are exported for the portal's work view, which reads a rubric without the staff checks. `SubmissionService.getForStudent()` uses them.
@@ -143,6 +221,7 @@ Due dates are enforced on the student routes (`due-date.ts`): after the student'
   - Wire shapes: `toActivity()`, `toPortalActivity()`, `toPortalSubmission()`. A score and feedback reach a student only once the work is graded.
   - Query fragments: `ACTIVITY_SELECT`, `ACTIVITY_ORDER`.
   - Dates: `toTimestamp()` (a date without an offset is read as UTC) and `ts()`.
+- **`accommodation.ts`**: `effectiveAccommodation()` (the activity's row, else the default), `accommodatedTimeLimit()`, `lockdownFor()`, `accommodationColumns()` (validation), `TIME_MULTIPLIERS`.
 - **`round.ts`**: `roundScore()` (two decimals) and `scoreOrNull()`. Stored values keep full precision. Totals are computed from the unrounded values and rounded once at the end.
 
 ## How the course grade is calculated
@@ -205,7 +284,10 @@ Rows are CRLF-terminated. `csvCell()` prefixes cells that start with `= + - @ ta
   - It also uses `SubmitAssignmentDto` and `SubmitQuizDto` from `dto/activity.dto.ts`.
   - `student-portal.service.ts` calls `GradebookService.studentSummary()` for each portal course card.
 - `src/attendance/attendance.service.ts` imports `csvCell` for its own CSV export.
+- `src/report-card` imports `calculateCourseGrade()`, `letterFor()` and the `Calc*` types from `gradebook.calc.ts` (a term's final grade per course), `scoreOrNull()` from `round.ts` and `contentDisposition()`.
 - `src/calendar/calendar.service.ts` imports `roundScore`.
+- `src/mastery`: `refreshOutcomeEvidence()` is called from `SubmissionService.withLateness()` / `afterQuizScored()` / `excuse()`, `RubricService.assess()` (after the criterion marks), `ActivityService.update()` (points) and `GradebookImportService.apply()`, so every mark keeps mastery evidence in step (before any late penalty). It reads `questionCredit()` from `quiz-questions.ts`. Mastery never changes a score.
+- `src/peer-review` imports `loadRubric()`, `toTimestamp()`, `ts()`, `roundScore()` and listens on `SubmissionEvents`; `src/similarity` listens on `SubmissionEvents`.
 - `src/app.module.ts` imports `GradingModule`.
 - Front end:
   - `frontend/app/dashboard/courses/[courseId]/assignments/` (the page, `[activityId]/page.tsx`, `CreateActivityDialog.tsx`, `QuestionCard.tsx`, `MarksTable.tsx`, `AssignmentGroupsDialog.tsx`, `RubricPanel.tsx`, `RubricEditorDialog.tsx`, `RubricMarkDialog.tsx`).
@@ -224,7 +306,7 @@ Rows are CRLF-terminated. `csvCell()` prefixes cells that start with `= + - @ ta
 - `FileManagerService` (`src/file-manager`): hand-in uploads and reading submission files.
 - `CourseNotificationService` (`src/course-notification`), injected as optional: the "activity published" notice and push.
 - `pgCode()`, `raisedMessage()` and `isUniqueViolation()` from `src/common/db-values.ts`.
-- The Postgres function `grading.submit_quiz(submission_id, student_id)`, defined in `prisma/migrations/0_baseline/migration.sql`.
+- The Postgres function `grading.submit_quiz(submission_id, student_id)`, last defined in `prisma/migrations/20261117100000_quiz_question_types/migration.sql`.
 
 ## Data
 
@@ -233,10 +315,14 @@ See [`prisma/schema/grading.prisma`](../../prisma/schema/grading.prisma) and [`p
 | Table | Read or written for |
 | --- | --- |
 | `grading.activity` | Activities: kind, points, due date, status, inputs, `max_attempts`, `omit_from_final_grade`, `rubric_id` |
-| `grading.quiz_question`, `grading.quiz_option` | Quiz content and answer key |
-| `grading.quiz_answer` | A student's answers for the current attempt |
+| `grading.quiz_question`, `grading.quiz_option` | Quiz and bank content, per-kind settings and answer key |
+| `grading.quiz_answer` | A student's answers for the current attempt (per kind), and the teacher's marks on essay and file answers |
+| `grading.question_bank`, `grading.quiz_bank_draw` | Banks per course; how many questions a quiz draws from each |
+| `grading.quiz_attempt_question` | The questions, order and option order an attempt was given |
 | `grading.submission` | Work and the mark: `status`, `score`, `feedback`, `excused`, `excused_reason`, `text_body`, `file_id`, `attempt_count`, `graded_by`, `graded_at`. Unique on `(activity_id, student_id)`. |
 | `grading.activity_extension` | One later due date per `(activity_id, student_id)`, with `reason` and `created_by` |
+| `grading.activity_accommodation` | One quiz accommodation per `(activity_id, student_id)`: `time_multiplier` (1.25, 1.5, 2) or `extra_minutes` (1-600), `lockdown_exempt`, `reason`, `created_by` |
+| `grading.student_accommodation` | One school-wide default per student (the student row is school-scoped), same columns |
 | `grading.rubric`, `rubric_criterion`, `rubric_rating`, `rubric_assessment` | Rubrics and per-criterion marks |
 | `grading.grade_scale`, `grade_scale_band` | Read for letters |
 | `course.assignment_group` | Groups, weights, positions, `drop_lowest` and `drop_highest` |
@@ -267,8 +353,17 @@ None.
 | `gradebook-import.ts` | CSV parsing and import planning (pure) |
 | `gradebook-import.service.ts` | Import preview and transactional apply |
 | `round.ts` | Two-decimal rounding |
+| `late-policy.ts` | Late policy: lateness, penalty percent, validation, wire fields (pure) |
+| `lateness.ts` | `refreshLateness()`: lateness and penalised scores in a transaction |
+| `quiz-questions.ts` | Question kinds: validation, scoring mirror, attempt plan, student shape, answers (pure) |
+| `quiz-rescore.ts` | `QUIZ_CREDIT` and `rescoreQuizFromAnswers()`: the TypeScript copy of `submit_quiz`'s scoring |
+| `question-write.ts` | Creating, editing and reading questions (quiz and bank) |
+| `question-bank.controller.ts`, `question-bank.service.ts` | Question banks and quiz draws |
 | `due-date.ts` | Effective due dates, past-due checks and the quiz attempt grace (pure) |
 | `extension.controller.ts`, `extension.service.ts` | Per-student due date extensions |
+| `accommodation.ts` | Effective accommodation and accommodated time limit (pure) |
+| `accommodation.controller.ts`, `accommodation.service.ts` | Per-student quiz accommodations, on one quiz and the school-wide default |
+| `submission-events.ts` | `SubmissionEvents` (hand-in listeners for peer review and similarity) and the global `SubmissionEventsModule` |
 | `activity.service.test.ts` | Activity tests |
 | `submission.service.test.ts` | Submission tests |
 | `rubric.service.test.ts` | Rubric tests |
@@ -286,7 +381,10 @@ None.
 - **`gradebook-import.test.ts`**: `parseCsv()` and `planImport()` matching and changes.
 - **`activity.service.test.ts`**: create, update and publish validation, and role checks.
 - **`submission.service.test.ts`**: file handling, student access to activities, and marking.
+- **`accommodation.test.ts`**, **`accommodation.service.test.ts`**, **`submission.accommodation.test.ts`**: effective time (multiplier, extra minutes, override vs default, none), validation, permissions and audit, quiz start expiry, untimed attempts and the due date, Lockdown exemption in presence, the roster and the student's view.
 - **`rubric.service.test.ts`**: create and update rules, attach, assess and `forActivity()`.
+- **`late-policy.test.ts`**: lateness, day vs hour rounding, the cap, validation, close dates and extension precedence, untimed attempts in the late window, `refreshLateness()` (penalty, extension removes it, waiver, quiz measured from the start, imported marks). **`submission.due-date.test.ts`** adds hand-ins in and after the late window and the audited waiver; **`gradebook.service.test.ts`** checks the grid, CSV and student summary use the same penalised mark.
+- **`quiz-questions.test.ts`**: validation and scoring per kind (tolerance edges, partial credit, all or nothing), attempt plans (deterministic per seed, distinct draws, ordering never in order), what a student is sent, answer shapes. **`quiz-rescore.test.ts`**: the TypeScript copy matches the latest `submit_quiz`. **`submission.quiz-types.test.ts`**: attempts stored at start and kept on resume, the student's view, needs-marking and question marking, banks (permissions, frozen questions, draws).
 
 ## See also
 

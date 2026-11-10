@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -29,7 +30,7 @@ export default function HomePage() {
   useSignals();
   const router = useRouter();
   const { profile, loading } = useProfile();
-  const [status, setStatus] = useState<InstallStatus | null>(null);
+  const status = useSignal<InstallStatus | null>(null);
 
   useEffect(() => {
     if (!loading.value && profile.value) {
@@ -41,19 +42,19 @@ export default function HomePage() {
     let live = true;
     api<InstallStatus>("/setup/status", { skipAuthRedirect: true })
       .then((res) => {
-        if (live) setStatus(res);
+        if (live) status.value = res;
       })
       .catch(() => {
         // Unreachable API: still offer sign-in rather than a blank page.
-        if (live) setStatus({ needsSetup: false, organisation: null });
+        if (live) status.value = { needsSetup: false, organisation: null };
       });
     return () => {
       live = false;
     };
-  }, []);
+  }, [status]);
 
   const redirecting = loading.value || !!profile.value;
-  const name = status?.organisation?.name;
+  const name = status.value?.organisation?.name;
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -73,9 +74,9 @@ export default function HomePage() {
               priority
             />
 
-            {redirecting || !status ? (
+            {redirecting || !status.value ? (
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            ) : status.needsSetup ? (
+            ) : status.value.needsSetup ? (
               <>
                 <div className="space-y-2">
                   <h1 className="text-2xl font-bold tracking-tight">

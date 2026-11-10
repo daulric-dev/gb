@@ -18,10 +18,14 @@ import {
   userPermCachePrefix,
 } from '@/permission/permission.effective';
 import { seatSchoolAdmin } from './school-admin';
+import { setSchoolMembership } from '@/common/school-membership';
 import { inviteEmail } from './invite.email';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
-export const INVITE_KINDS = ['school_admin', 'organisation_admin'] as const;
+export const INVITE_KINDS = ['school_admin', 'organisation_admin', 'school_staff'] as const;
+
+/** Kinds tied to a school (school_id set). `school_staff` comes from rostering (src/rostering). */
+const SCHOOL_KINDS: readonly InviteKind[] = ['school_admin', 'school_staff'];
 export type InviteKind = (typeof INVITE_KINDS)[number];
 
 /** An invite lasts 14 days from when it was sent or last resent. */
@@ -109,8 +113,10 @@ export class InviteService implements OnModuleInit {
     kind: InviteKind,
     rawEmail: string,
     schoolId: string | null = null,
+    opts: { sendEmail?: boolean } = {},
   ): Promise<InviteSummary> {
     const email = normalizeEmail(rawEmail);
+    const bySchool = SCHOOL_KINDS.includes(kind);
     const now = new Date();
     let created: { id: string; email: string; expires_at: Date };
     try {
@@ -118,7 +124,9 @@ export class InviteService implements OnModuleInit {
         const where =
           kind === 'school_admin'
             ? { kind, school_id: schoolId, ...OPEN }
-            : { kind, email, ...OPEN };
+            : kind === 'school_staff'
+              ? { kind, school_id: schoolId, email, ...OPEN }
+              : { kind, email, ...OPEN };
         const replaced = this.auditLog
           ? await tx.organisation_invite.findMany({
               where,
@@ -133,7 +141,7 @@ export class InviteService implements OnModuleInit {
           data: {
             email,
             kind,
-            school_id: kind === 'school_admin' ? schoolId : null,
+            school_id: bySchool ? schoolId : null,
             invited_by: actorId,
             created_at: now,
             expires_at: new Date(now.getTime() + INVITE_TTL_MS),
@@ -158,7 +166,7 @@ export class InviteService implements OnModuleInit {
         }
         await this.auditLog?.record(
           tx,
-          kind === 'school_admin' ? schoolId : null,
+          bySchool ? schoolId : null,
           { id: actorId },
           {
             entity: 'organisation_invite',
@@ -167,7 +175,7 @@ export class InviteService implements OnModuleInit {
             changes: auditChanges(null, {
               email,
               kind,
-              school_id: kind === 'school_admin' ? schoolId : null,
+              school_id: bySchool ? schoolId : null,
               expires_at: invite.expires_at,
             }),
           },
@@ -188,7 +196,7 @@ export class InviteService implements OnModuleInit {
         (schoolId ? ` for ${schoolId}` : '') +
         ` (invite ${created.id})`,
     );
-    await this.sendEmail(created.id);
+    if (opts.sendEmail !== false) await this.sendEmail(created.id);
     return {
       id: created.id,
       email: created.email,
@@ -359,17 +367,23 @@ export class InviteService implements OnModuleInit {
       where: { id: user.id },
       select: { id: true, school_id: true, account_type: true },
     });
+    // Parent accounts take no staff or organisation role (src/parent-portal).
+    if (existing?.account_type === 'parent') {
+      this.logger.warn(`Invites for ${user.id} left open: a parent account takes no staff role`);
+      return 0;
+    }
     const isStudent = existing?.account_type === 'student';
     const applicable = invites.filter((invite) => {
-      if (invite.kind !== 'school_admin' || !isStudent) return true;
+      if (!SCHOOL_KINDS.includes(invite.kind as InviteKind) || !isStudent) return true;
       this.logger.warn(
-        `Invite ${invite.id}: ${user.id} is a student account and cannot run school ${invite.school_id}; left open`,
+        `Invite ${invite.id}: ${user.id} is a student account and cannot join the staff of school ${invite.school_id}; left open`,
       );
       return false;
     });
     if (applicable.length === 0) return 0;
 
     const seated: { schoolId: string; demoted: string | null }[] = [];
+    const staffed: string[] = [];
     let orgAdmin = false;
     await this.prisma.$transaction(async (tx) => {
       // Both admin tables reference the profile; a first sign-in has none yet
@@ -510,6 +524,46 @@ export class InviteService implements OnModuleInit {
           }
           if (!profile.school_id)
             profile = { ...profile, school_id: invite.school_id };
+        } else if (invite.kind === 'school_staff' && invite.school_id) {
+          // A rostered teacher (src/rostering): a teacher membership, never
+          // admin; an existing membership keeps its role.
+          const membership = await tx.school_management.findUnique({
+            where: {
+              user_id_school_id: { user_id: user.id, school_id: invite.school_id },
+            },
+            select: { id: true },
+          });
+          if (!membership) {
+            const created = await setSchoolMembership(tx, user.id, invite.school_id, 'teacher');
+            await this.auditLog?.record(
+              tx,
+              invite.school_id,
+              { id: user.id },
+              {
+                entity: 'school_membership',
+                entityId: created.id,
+                action: 'create',
+                changes: auditChanges(null, {
+                  user_id: user.id,
+                  school_id: invite.school_id,
+                  role: 'teacher',
+                }),
+              },
+            );
+          }
+          if (!profile.school_id) {
+            await tx.user_profile.update({
+              where: { id: user.id },
+              data: {
+                school_id: invite.school_id,
+                role: 'teacher',
+                account_type: 'staff',
+                is_active: true,
+              },
+            });
+            profile = { ...profile, school_id: invite.school_id };
+          }
+          staffed.push(invite.school_id);
         } else if (invite.kind === 'organisation_admin') {
           const has = await tx.organisation_admin.findUnique({
             where: { user_id: user.id },
@@ -551,18 +605,22 @@ export class InviteService implements OnModuleInit {
         );
       }
     }
+    for (const schoolId of staffed) {
+      clears.push(this.cache.delete(permCacheKey(user.id, schoolId)));
+    }
     if (orgAdmin)
       clears.push(this.cache.deleteByPrefix(userPermCachePrefix(user.id)));
     if (seated.length > 0) clears.push(this.cache.delete('schools:all'));
     await Promise.all(clears);
 
-    const applied = seated.length + (orgAdmin ? 1 : 0);
+    const applied = seated.length + staffed.length + (orgAdmin ? 1 : 0);
     if (applied > 0) {
       this.logger.log(
         `Applied ${applied} invite(s) for ${user.id}` +
           (seated.length
             ? `: admin of ${seated.map((s) => s.schoolId).join(', ')}`
             : '') +
+          (staffed.length ? `; staff of ${staffed.join(', ')}` : '') +
           (orgAdmin ? '; organisation admin' : ''),
       );
     }
@@ -587,7 +645,7 @@ export class InviteService implements OnModuleInit {
       if (!invite) return;
       const kind = invite.kind as InviteKind;
       const place =
-        kind === 'school_admin'
+        kind !== 'organisation_admin'
           ? invite.school?.name || 'a school'
           : (
               await this.prisma.organisation.findFirst({

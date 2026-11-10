@@ -23,6 +23,7 @@ import {
   type RubricAssessment,
   type StaffActivity,
   type TeacherSubmissionRow,
+  lateLabel,
 } from "@/lib/course";
 import { RubricView } from "@/features/course/RubricView";
 import { userMessage } from "@/lib/errors";
@@ -202,6 +203,24 @@ export default function MarkSubmissionScreen() {
     }
   }
 
+  async function toggleLatePenalty() {
+    const waived = !row?.submission?.latePenaltyWaived;
+    setExcusing(true);
+    try {
+      await api(`/activities/${activityId}/submissions/${studentId}/late-penalty`, {
+        method: "PATCH",
+        body: { waived },
+      });
+      toast.success(waived ? "Late penalty waived" : "Late penalty applied");
+      const res = await load();
+      resetForm(res?.subs, res?.r ?? null);
+    } catch (err) {
+      toast.error(userMessage(err, "Failed to update"));
+    } finally {
+      setExcusing(false);
+    }
+  }
+
   async function openFile() {
     const sub = row?.submission;
     if (!sub?.fileId) return;
@@ -306,6 +325,42 @@ export default function MarkSubmissionScreen() {
                 {activity.kind === "quiz" && sub.attemptCount
                   ? ` · attempt ${sub.attemptCount}`
                   : ""}
+              </Text>
+            ) : null}
+            {lateLabel(sub?.lateSeconds) ? (
+              <View style={{ gap: 6 }}>
+                <Text size="sm" weight="600" style={{ color: colors.destructive }}>
+                  {lateLabel(sub?.lateSeconds)}
+                </Text>
+                {sub?.latePenaltyPercent ? (
+                  <>
+                    <Text size="sm">
+                      {sub.latePenaltyWaived
+                        ? `${sub.latePenaltyPercent}% late penalty waived`
+                        : sub.rawScore !== null && sub.rawScore !== undefined
+                          ? `${formatScore(sub.rawScore)} − ${sub.latePenaltyPercent}% late = ${formatScore(sub.score ?? 0)}`
+                          : `${sub.latePenaltyPercent}% late penalty will apply to the mark`}
+                    </Text>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={excusing}
+                      onPress={() => void toggleLatePenalty()}
+                      accessibilityLabel={
+                        sub.latePenaltyWaived ? "Apply the late penalty" : "Waive the late penalty"
+                      }
+                    >
+                      {sub.latePenaltyWaived ? "Apply penalty" : "Waive penalty"}
+                    </Button>
+                  </>
+                ) : null}
+              </View>
+            ) : null}
+            {sub?.needsMarking ? (
+              <Text variant="muted" size="sm">
+                Needs marking: mark the essay and file questions on the web
+                (Answers on the activity&apos;s roster), or enter a mark for
+                the whole quiz here.
               </Text>
             ) : null}
             {activity.kind === "offline" ? (

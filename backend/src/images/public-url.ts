@@ -1,5 +1,6 @@
 import { configuredApiUrl } from '@/config/origins';
 import { objectKey } from '@/storage/keys';
+import { trimTrailingSlashes } from '@/common/trim-slashes';
 
 /**
  * The URL clients load an image from: the CDN when S3_PUBLIC_URL is set, else
@@ -8,12 +9,12 @@ import { objectKey } from '@/storage/keys';
  * so a forged Host can never end up in a stored avatar URL.
  */
 export function publicImageUrl(path: string, requestOrigin?: string): string {
-  const cdn = process.env.S3_PUBLIC_URL?.replace(/\/+$/, '');
+  const cdn = (process.env.S3_PUBLIC_URL ? trimTrailingSlashes(process.env.S3_PUBLIC_URL) : undefined);
   if (cdn) return `${cdn}/${objectKey('images', path)}`;
   const fromRequest =
     process.env.NODE_ENV === 'production'
       ? undefined
-      : requestOrigin?.replace(/\/+$/, '');
+      : requestOrigin === undefined ? undefined : trimTrailingSlashes(requestOrigin);
   const api =
     configuredApiUrl() ||
     fromRequest ||

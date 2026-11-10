@@ -10,6 +10,8 @@ export interface Announcement {
   author_user_profile_id: string | null;
   title: string;
   body: string | null;
+  /** School-wide posts: `staff` (staff only) or `everyone` (also students and parents). */
+  audience?: 'staff' | 'everyone';
   created_at: string | null;
   updated_at: string | null;
   author?: AnnouncementAuthor | null;

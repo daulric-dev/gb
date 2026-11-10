@@ -23,6 +23,7 @@ Each kind works in batches (`RETENTION_PURGE_BATCH_SIZE`, default 500), one tran
 | Folders (`file_manager.folder`) | Expired, every child folder expired too, no live file inside | Rows deleted (child folders cascade; files' `folder_id` is set null). |
 | Chat messages (`chat.message`) | Expired tombstones | Rows deleted. Nothing references a message, so conversations stay consistent; the "message deleted" placeholder simply disappears. |
 | Discussion replies (`course.discussion_reply`) | Expired | Replies nobody answered are deleted (which can make an expired parent placeholder a leaf; the next batch takes it). A reply others answered stays as the "This post was deleted" placeholder so the thread holds together, but loses its author (`author_user_profile_id = null`; the body is already blank). |
+| Pastoral notes (`student.pastoral_note`, [src/pastoral](../pastoral/README.md)) | `status = 'resolved'` and `resolved_at` older than the school's `pastoral_setting.retention_days` (schools without one keep notes until the student is removed; open notes are never purged) | Rows deleted, one erasure-log entry (`pastoral_note`, `retention_purge`) per school and batch. Honours `--only`. Counted as `pastoralNotes`. |
 | Sessions, sign-in codes, remembered devices (`account`) | Sessions expired (sliding or absolute lifetime) or revoked, codes created, more than a day ago; `account.known_device` rows unused for 90 days | Deleted. **Not** written to the erasure log: nobody asked for these to be erased, and a restore signs everyone out anyway. SSO state and handoff codes live in the cache with a TTL. |
 | Webhook deliveries (`public.webhook_delivery`) | `created_at` older than `WEBHOOK_DELIVERY_RETENTION_DAYS` (30); their payloads hold personal data | Deleted in batches (`webhookDeliveries` in the report). **Not** written to the erasure log: an operational record, like sessions. Deleting a webhook or school cascades anyway. See `src/integrations`. |
 | Erasure log | Entries older than `ERASURE_LOG_RETENTION_DAYS` (400) | Rows and their storage copies deleted. |
@@ -52,6 +53,7 @@ A dry run counts what each kind would purge and changes nothing (no storage call
 | `course.discussion_reply` | expired rows, child counts | delete, or clear author |
 | `account.session`, `account.email_code`, `account.known_device` | old rows | delete |
 | `public.webhook_delivery` | old rows | delete |
+| `student.pastoral_setting`, `student.pastoral_note` | retention periods, resolved rows | delete |
 | `compliance.erasure_log` | - | insert (purges), delete (pruning) |
 
 ## Configuration

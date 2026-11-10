@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, GraduationCap, LogOut, Trash2 } from "lucide-react-native";
+import { Camera, GraduationCap, LogOut, ShieldCheck, Trash2 } from "lucide-react-native";
 import { api } from "@/lib/api";
 import { uploadAvatar } from "@/lib/upload";
 import { useAuth } from "@/providers/AuthProvider";
@@ -23,6 +23,14 @@ import { SignedInDevices } from "@/features/account/SignedInDevices";
 import { SwitchSchool } from "@/features/account/SwitchSchool";
 import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
 import { userMessage } from "@/lib/errors";
+import {
+  blockerHint,
+  blockersFromError,
+  DELETION_CHECK_PATH,
+  isSchoolManaged,
+  type DeletionBlocker,
+  type DeletionCheck,
+} from "@/lib/account-deletion";
 
 /**
  * The signed-in person's account: picture, name, appearance, devices, log out
@@ -53,6 +61,26 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+  /** null until the check answers; [] = the account can be deleted. */
+  const [blockers, setBlockers] = useState<DeletionBlocker[] | null>(null);
+
+  // Ask before offering deletion: owners hand over first (on the web), and a
+  // student account run by the school's sign-in is the school's to remove.
+  useEffect(() => {
+    let cancelled = false;
+    api<DeletionCheck>(DELETION_CHECK_PATH)
+      .then((check) => {
+        if (!cancelled) setBlockers(Array.isArray(check?.blockers) ? check.blockers : []);
+      })
+      // An older server: the delete itself still refuses.
+      .catch(() => {
+        if (!cancelled) setBlockers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+  const schoolManaged = !!blockers && isSchoolManaged(blockers);
 
   const displayName =
     profile?.first_name || profile?.last_name
@@ -146,6 +174,12 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       await logout();
       router.replace("/(auth)/login");
     } catch (err) {
+      const refused = blockersFromError(err);
+      if (refused) {
+        setBlockers(refused);
+        setDeleteOpen(false);
+        setConfirmText("");
+      }
       toast.error(userMessage(err, "Failed to delete account"));
       setDeleting(false);
     }
@@ -269,25 +303,62 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       </Button>
 
       {/* Danger zone */}
-      <Card style={{ borderColor: colors.destructive }}>
-        <CardContent style={{ gap: 10 }}>
-          <Text variant="subtitle" tone="destructive">
-            Danger Zone
-          </Text>
-          <Text variant="muted">
-            Permanently delete your account and all associated data. This cannot
-            be undone.
-          </Text>
-          <Button
-            variant="destructive"
-            onPress={() => setDeleteOpen(true)}
-            icon={<Trash2 size={16} color={colors.destructiveForeground} />}
-            style={{ alignSelf: "flex-start" }}
-          >
-            Delete Account
-          </Button>
-        </CardContent>
-      </Card>
+      {schoolManaged ? (
+        <Card>
+          <CardContent style={{ gap: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <ShieldCheck size={18} color={colors.mutedForeground} />
+              <Text variant="subtitle">Account managed by your school</Text>
+            </View>
+            {blockers!
+              .filter((b) => b.code === "SSO_STUDENT")
+              .map((b) => (
+                <Text key={b.code} variant="muted">
+                  {b.message}
+                </Text>
+              ))}
+            <Text variant="muted">
+              You sign in with your school account, so your school decides when
+              it is removed.
+            </Text>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card style={{ borderColor: colors.destructive }}>
+          <CardContent style={{ gap: 10 }}>
+            <Text variant="subtitle" tone="destructive">
+              Danger Zone
+            </Text>
+            <Text variant="muted">
+              Permanently delete your account and all associated data. This cannot
+              be undone.
+            </Text>
+            {blockers && blockers.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <Text variant="label">Before you can delete your account</Text>
+                {blockers.map((b, i) => {
+                  const hint = blockerHint(b);
+                  return (
+                    <View key={`${b.code}-${i}`} style={{ gap: 2 }}>
+                      <Text variant="muted">{b.message}</Text>
+                      {hint && <Text variant="muted" style={{ fontSize: 12 }}>{hint}</Text>}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+            <Button
+              variant="destructive"
+              onPress={() => setDeleteOpen(true)}
+              disabled={blockers === null || blockers.length > 0}
+              icon={<Trash2 size={16} color={colors.destructiveForeground} />}
+              style={{ alignSelf: "flex-start" }}
+            >
+              Delete Account
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <ConfirmDialog
         open={leaveOpen}

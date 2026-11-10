@@ -11,7 +11,16 @@ import { api } from "@/lib/api";
 import type { Rubric, RubricAssessment } from "@/lib/course";
 
 export type WorkKind = "quiz" | "assignment" | "offline";
-export type QuestionKind = "multiple_choice" | "true_false" | "short_answer";
+export type QuestionKind =
+  | "multiple_choice"
+  | "true_false"
+  | "short_answer"
+  | "essay"
+  | "multiple_select"
+  | "numeric"
+  | "matching"
+  | "ordering"
+  | "file_upload";
 
 export interface PortalWorkItem {
   id: string;
@@ -26,6 +35,11 @@ export interface PortalWorkItem {
   hasExtension?: boolean;
   /** Past the student's due date and not inside a running quiz attempt. */
   isClosed?: boolean;
+  lateUntil?: string | null;
+  latePenaltyMode?: "none" | "percent_per_day" | "percent_per_hour";
+  latePenaltyValue?: number | null;
+  latePenaltyCap?: number | null;
+  isLate?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowMultipleFiles: boolean;
@@ -54,6 +68,11 @@ export interface PortalWorkDetail {
   hasExtension?: boolean;
   /** Past the student's due date and not inside a running quiz attempt. */
   isClosed?: boolean;
+  lateUntil?: string | null;
+  latePenaltyMode?: "none" | "percent_per_day" | "percent_per_hour";
+  latePenaltyValue?: number | null;
+  latePenaltyCap?: number | null;
+  isLate?: boolean;
   status: "published" | "closed";
   allowFile: boolean;
   allowMultipleFiles: boolean;
@@ -62,14 +81,26 @@ export interface PortalWorkDetail {
   courseName?: string | null;
   /** 0 means unlimited. */
   maxAttempts: number;
+  /** The student's own time limit, after any accommodation. */
   timeLimitMinutes: number | null;
+  /** The quiz's limit for everyone else (absent on older servers). */
+  standardTimeLimitMinutes?: number | null;
+  /** False for a student exempt from Lockdown, even on a Lockdown quiz. */
   lockdownBrowser?: boolean;
   attemptsUsed: number;
   quizAttempt: {
     startedAt: string;
     expiresAt: string | null;
     serverNow: string;
-    answers: { questionId: string; optionId: string | null; text: string | null }[];
+    answers: {
+      questionId: string;
+      optionId?: string | null;
+      optionIds?: string[] | null;
+      matches?: Record<string, string> | { optionId: string; label: string }[] | null;
+      text?: string | null;
+      numeric?: number | null;
+      fileId?: string | null;
+    }[];
   } | null;
   questions: {
     id: string;
@@ -77,7 +108,11 @@ export interface PortalWorkDetail {
     kind: QuestionKind;
     points: number;
     options: { id: string; label: string }[];
+    matchChoices?: string[];
+    fileTypes?: string[];
+    fileMaxMb?: number | null;
   }[];
+  markedQuestions?: { questionId: string; points: number | null; feedback: string | null }[];
   /** Shown up front so the student knows how the work will be marked. */
   rubric?: Rubric | null;
   /** The levels picked, once marked with the rubric. */
@@ -90,11 +125,16 @@ export interface PortalWorkDetail {
     fileName: string | null;
     files?: { id: string; name: string; contentType: string }[];
     score: number | null;
+    rawScore?: number | null;
     feedback: string | null;
     excused?: boolean;
     submittedAt: string | null;
     gradedAt: string | null;
     attemptCount: number;
+    lateSeconds?: number;
+    latePenaltyPercent?: number;
+    latePenaltyWaived?: boolean;
+    needsMarking?: boolean;
   } | null;
 }
 

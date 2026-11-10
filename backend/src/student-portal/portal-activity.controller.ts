@@ -156,6 +156,38 @@ export class PortalActivityController {
     );
   }
 
+  /** Start a direct upload answering a file question of the running attempt. */
+  @Post('activities/:activityId/quiz/questions/:questionId/upload-ticket')
+  async createQuizUploadTicket(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+    @Body() dto: CreateUploadTicketDto,
+  ) {
+    return this.submissions.createQuizUploadTicket(
+      req.student!.studentId,
+      activityId,
+      questionId,
+      dto,
+    );
+  }
+
+  /** Check the uploaded bytes; the client then saves `fileId` as the answer. */
+  @Post('activities/:activityId/quiz/questions/:questionId/upload-ticket/:fileId/complete')
+  async finaliseQuizUpload(
+    @Req() req: StudentRequest,
+    @Param('activityId') activityId: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.submissions.finaliseQuizUpload(
+      req.student!.studentId,
+      activityId,
+      questionId,
+      fileId,
+    );
+  }
+
   @Post('activities/:activityId/quiz/presence')
   async updateQuizPresence(
     @Req() req: StudentRequest,

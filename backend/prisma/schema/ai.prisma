@@ -1,0 +1,112 @@
+/// AI assistance (src/ai, feature `ai_assistance`, ROADMAP item 17). The
+/// organisation brings its own AI provider: one row per configured provider.
+/// `api_key_enc` is the provider's API key, AES-256-GCM through
+/// src/account/secret-box.ts (info `gradebook:ai-provider-key:v1`, AAD the
+/// provider id); never returned (only `api_key_last4`). Every outbound call
+/// goes through the SSRF-guarded fetch. Organisation-wide: no school_id.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_provider {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  /// anthropic | openai_compatible
+  kind          String
+  /// anthropic: optional override; openai_compatible: required (https unless allow_private_network).
+  base_url      String?
+  model         String
+  api_key_enc   String
+  /// The last four characters of the key, for recognising it in the UI.
+  api_key_last4 String
+  /// Requests per calendar month (UTC) through this provider; null = no cap.
+  monthly_cap   Int?
+  /// Exactly one provider is the default (partial unique index ai_provider_one_default, in the migration).
+  is_default    Boolean      @default(false)
+  /// The organisation runs this provider on its own private network (a local
+  /// Ollama / vLLM server): the SSRF guard allows private / loopback addresses
+  /// and plain http for this provider only. Every other provider is refused
+  /// private addresses whatever WEBHOOK_ALLOW_PRIVATE says.
+  allow_private_network Boolean @default(false)
+  /// Schools may choose this provider in their AI settings (and use it as the
+  /// organisation default). Schools never add providers or keys.
+  available_to_schools  Boolean @default(true)
+  created_by    String?      @db.Uuid
+  created_at    DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime     @default(now()) @db.Timestamptz(6)
+  requests      ai_request[]
+  school_settings ai_school_setting[]
+
+  @@unique([is_default], map: "ai_provider_one_default", where: raw("is_default"))
+  @@schema("public")
+}
+
+/// Organisation-wide AI settings, one row at most (id is always true).
+/// keep_prompts: store what was sent and received on each request for 30
+/// days (debugging; off by default). user_hourly_limit: AI requests per
+/// user per rolling hour.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_org_setting {
+  id                Boolean  @id @default(true)
+  keep_prompts      Boolean  @default(false)
+  user_hourly_limit Int      @default(30)
+  updated_by        String?  @db.Uuid
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+/// A school's AI settings (defaults apply without a row). allow_student_work:
+/// whether a submission's text may be sent to the provider for rubric
+/// feedback suggestions (off by default). provider_id: the school's choice
+/// among the organisation's providers that are available to schools; null
+/// (or a choice that is no longer available) = the organisation default.
+/// Set null when the provider is deleted.
+model ai_school_setting {
+  school_id          String       @id @db.Uuid
+  allow_student_work Boolean      @default(false)
+  provider_id        String?      @db.Uuid
+  updated_by         String?      @db.Uuid
+  updated_at         DateTime     @default(now()) @db.Timestamptz(6)
+  school             school       @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  provider           ai_provider? @relation(fields: [provider_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([provider_id], map: "idx_ai_school_setting_provider")
+
+  @@schema("public")
+}
+
+/// One row per AI request (who, feature, provider, model, token usage,
+/// status). No prompt or output is stored unless ai_org_setting.keep_prompts
+/// was on; then prompt_text / response_text are cleared at prompt_expires_at
+/// (30 days). Rows are deleted after a year. user_id, school_id and course_id
+/// have no foreign keys so the log outlives them; the provider's name is
+/// copied so it does too.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_request {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id           String?      @db.Uuid
+  school_id         String?      @db.Uuid
+  course_id         String?      @db.Uuid
+  /// quiz_questions | rubric_feedback | page_summary | course_outline |
+  /// module_items | page_content | assignment_instructions | rubric_draft |
+  /// announcement_draft | outcome_suggestions | test
+  feature           String
+  provider_id       String?      @db.Uuid
+  provider_name     String
+  provider_kind     String
+  model             String
+  /// pending | ok | refused | truncated | invalid_output | error | rate_limited | cap_reached
+  status            String       @default("pending")
+  error             String?
+  input_tokens      Int?
+  output_tokens     Int?
+  duration_ms       Int?
+  prompt_text       String?
+  response_text     String?
+  prompt_expires_at DateTime?    @db.Timestamptz(6)
+  created_at        DateTime     @default(now()) @db.Timestamptz(6)
+  provider          ai_provider? @relation(fields: [provider_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([user_id, created_at], map: "idx_ai_request_user")
+  @@index([provider_id, created_at], map: "idx_ai_request_provider")
+  @@index([created_at], map: "idx_ai_request_created")
+  @@schema("public")
+}

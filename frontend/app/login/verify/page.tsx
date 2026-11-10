@@ -24,6 +24,8 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { userMessage } from "@/lib/errors";
+import { PARENT_HOME_PATH } from "@/lib/routing";
+import { isParentJoinPath } from "@/lib/parent";
 
 const RESEND_COOLDOWN = 60;
 const CODE_LENGTH = 8;
@@ -60,7 +62,7 @@ function VerifyOtpForm() {
       const data = await api<{
         user: {
           is_onboarded: boolean;
-          account_type: "staff" | "student" | null;
+          account_type: "staff" | "student" | "parent" | null;
           first_name: string | null;
         };
       }>("/auth/otp/verify", {
@@ -73,7 +75,14 @@ function VerifyOtpForm() {
       const isStudent = data.user.account_type === "student";
 
       const me = profile.value;
-      if (me?.is_org_admin && !me.school) {
+      if (data.user.account_type === "parent") {
+        // Parents have no school; the parent portal is their home.
+        router.push(next ?? PARENT_HOME_PATH);
+      } else if (next && isParentJoinPath(next)) {
+        // Signing in to accept a parent invitation or redeem a code: that
+        // page finishes setting the account up, so skip onboarding.
+        router.push(next);
+      } else if (me?.is_org_admin && !me.school) {
         // Organisation admins without a school skip onboarding entirely.
         router.push(next ?? ORGANISATION_PATH);
       } else if (data.user.is_onboarded) {

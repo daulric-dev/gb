@@ -8,10 +8,17 @@ import {
   type ReactNode,
 } from "react";
 import { getSessionToken, setSessionToken } from "@/lib/session-token";
-import { api, ApiError, setFeatureDisabledHandler } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  apiServerOrigin,
+  isNetworkError,
+  setFeatureDisabledHandler,
+} from "@/lib/api";
 import { resolveFeatures } from "@/lib/features";
 import { registerForPush, unregisterPush } from "@/lib/push";
 import { clearOpenedFiles } from "@/lib/open-file";
+import { clearOfflineData, savedProfile } from "@/lib/offline-store";
 
 export interface UserProfile {
   id: string;
@@ -20,7 +27,7 @@ export interface UserProfile {
   last_name: string | null;
   role: string | null;
   /** 'staff' | 'student' - students use the portal, staff use the tabs. */
-  account_type: "staff" | "student" | null;
+  account_type: "staff" | "student" | "parent" | null;
   avatar_url: string | null;
   school_management: {
     role: string | null;
@@ -102,6 +109,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           return null;
         }
+        // Offline mode: a student opening the app without a signal gets the
+        // profile saved on their last visit (this server only), so saved
+        // copies and drafts are usable. OfflineProvider re-reads it once
+        // the server answers.
+        const server = apiServerOrigin();
+        const saved =
+          isNetworkError(err) && server
+            ? savedProfile<UserProfile>(server)
+            : null;
+        if (saved?.account_type === "student") {
+          setProfile((current) => current ?? saved);
+          return saved;
+        }
         retrying = true;
         retryTimer.current = setTimeout(() => {
           retryTimer.current = null;
@@ -169,6 +189,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     await setSessionToken(null);
     clearOpenedFiles();
+    // Saved copies, drafts and the remembered profile: the next person on
+    // this device finds nothing (settings warns about unsent drafts first).
+    clearOfflineData();
     setProfile(null);
   }, []);
 

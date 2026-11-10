@@ -14,11 +14,14 @@ import {
   Loader2,
   MessagesSquare,
   Paperclip,
+  Puzzle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fetchCourseFileBlob } from "@/lib/files/content";
 import { openOrDownloadFile, safeExternalUrl } from "@/lib/files/open";
 import { cn } from "@/lib/utils";
+import { ltiLaunchPath } from "@/lib/lti";
+import { useFeatures } from "@/hooks/use-features";
 import type { CourseModule, ModuleItem } from "@/lib/courses/types";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -122,6 +125,7 @@ function ModuleItemRow({
 }) {
   useSignals();
   const opening = useSignal(false);
+  const { hasFeature } = useFeatures();
   const indent = { paddingLeft: `${1 + Math.min(item.indent, 4) * 1.5}rem` };
 
   if (item.itemType === "header") {
@@ -193,6 +197,36 @@ function ModuleItemRow({
           <MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
         </Link>
+      </li>
+    );
+  }
+
+  // External tool (LTI): a new tab that starts the launch itself, so no
+  // popup blocker gets in the way.
+  if (item.itemType === "external_tool") {
+    if (!hasFeature("lti") || !item.externalTool) return null;
+    return (
+      <li>
+        <a
+          href={ltiLaunchPath(courseId, item.id)}
+          target="_blank"
+          rel="noopener"
+          style={indent}
+          className={rowClass}
+        >
+          <Puzzle className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{item.title}</span>
+            <span className="block text-xs text-muted-foreground">
+              {item.externalTool.toolName}
+            </span>
+          </span>
+          {item.externalTool.points != null && (
+            <Badge variant="secondary">{item.externalTool.points} pts</Badge>
+          )}
+          <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="sr-only">(opens in a new tab)</span>
+        </a>
       </li>
     );
   }

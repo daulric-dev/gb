@@ -31,9 +31,21 @@ export type AuditChanges = Record<string, AuditChange>;
 export type AuditLogEntry = {
   entity: string;
   entityId: string | null;
-  action: 'create' | 'update' | 'delete';
+  /** `read` records an access, not a change (safeguarding pastoral notes). */
+  action: 'create' | 'update' | 'delete' | 'read';
   changes: AuditChanges;
 };
+
+/**
+ * Entities whose audit entries never leave the platform: no `audit.changed`
+ * webhook is queued for them (pastoral notes are never sent to webhooks).
+ * Their entries carry ids and settings only, never note text.
+ */
+export const PRIVATE_AUDIT_ENTITIES: ReadonlySet<string> = new Set([
+  'pastoral_note',
+  'pastoral_category',
+  'pastoral_setting',
+]);
 
 type RevertableEntity = 'academic_year' | 'term';
 type RevertField = 'name' | 'start_date' | 'end_date' | 'sort_order';
@@ -116,7 +128,8 @@ export class AuditLogService {
     actor: AuditActor,
     entry: AuditLogEntry,
   ): Promise<void> {
-    if (Object.keys(entry.changes).length === 0) return;
+    // A read is recorded even without changes; a write that changed nothing is not.
+    if (entry.action !== 'read' && Object.keys(entry.changes).length === 0) return;
     const [profile, school] = await Promise.all([
       tx.user_profile.findUnique({
         where: { id: actor.id },
@@ -154,7 +167,12 @@ export class AuditLogService {
         changes: safeValue(entry.changes) as Prisma.InputJsonValue,
       },
     });
-    if (schoolId && school) {
+    if (
+      schoolId &&
+      school &&
+      entry.action !== 'read' &&
+      !PRIVATE_AUDIT_ENTITIES.has(entry.entity)
+    ) {
       const organisation = await tx.organisation.findFirst({
         select: { features: true },
       });

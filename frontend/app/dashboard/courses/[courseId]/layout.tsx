@@ -8,14 +8,18 @@ import { useSignals } from "@preact/signals-react/runtime";
 import {
   ArrowLeft,
   BarChart3,
+  ChartLine,
   CalendarCheck,
   ClipboardList,
+  Clock,
+  FileBadge,
   FileText,
   House,
   Layers,
   Megaphone,
   MessagesSquare,
   SearchX,
+  Target,
   Settings,
   Palette,
   Users,
@@ -147,7 +151,19 @@ export default function CourseLayout({
     ...(hasFeature("attendance")
       ? [{ href: `${base}/attendance`, label: "Attendance", icon: CalendarCheck }]
       : []),
+    ...(hasFeature("timetable")
+      ? [{ href: `${base}/timetable`, label: "Timetable", icon: Clock }]
+      : []),
     { href: `${base}/grades`, label: "Grades", icon: BarChart3 },
+    ...(hasFeature("mastery")
+      ? [{ href: `${base}/outcomes`, label: "Outcomes", icon: Target }]
+      : []),
+    ...(hasFeature("analytics")
+      ? [{ href: `${base}/analytics`, label: "Analytics", icon: ChartLine }]
+      : []),
+    ...(hasFeature("report_cards")
+      ? [{ href: `${base}/reports`, label: "Report comments", icon: FileBadge }]
+      : []),
     ...(canManage
       ? [{ href: `${base}/settings`, label: "Settings", icon: Settings }]
       : []),

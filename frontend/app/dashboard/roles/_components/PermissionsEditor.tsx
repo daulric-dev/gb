@@ -27,12 +27,14 @@ const ACTION_ORDER: CatalogEntry["action"][] = [
   "create",
   "update",
   "delete",
+  "safeguarding",
 ];
 const ACTION_LABEL: Record<CatalogEntry["action"], string> = {
   read: "View",
   create: "Create",
   update: "Edit",
   delete: "Delete",
+  safeguarding: "Safeguarding",
 };
 
 const RESOURCE_PRETTY: Record<string, string> = {

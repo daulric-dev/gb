@@ -98,6 +98,15 @@ A school's **upload limit, logo, features and email domains** they set from the 
 
 On the web, a school's name in **Organisation → Schools** opens its page in the console (`/organisation/schools/<id>`): its details and admin (edit, appoint admin, activate or deactivate, sign the admin out), the upload limit, logo, features, single sign-on and integrations (webhooks; shown once the `integrations` feature is on, otherwise a hint to turn it on in Organisation → Features - see [Webhooks](./webhooks.md)) sections, and "Open school dashboard". That action (also in each row's menu) switches and opens the school's settings; the dashboard then shows a banner "Managing <school> as organisation administrator · Back to organisation". The dashboard sidebar has a school switcher whenever more than one school is available, and the mobile app's Settings tab a "Switch school" row.
 
+### Ownership
+
+The organisation has an owner (`organisation.owner_id`, Restrict FK to `user_profile`): whoever ran setup, or whoever it was handed to; existing installs were backfilled with the earliest organisation admin (migration `20261123100000_account_ownership`). Schools have owners too (`school.owner_id`, who holds the school's single admin seat). Owners must hand over before deleting their account.
+
+- `POST /api/organisation/transfer-ownership` `{ userId }` - only the owner (any organisation admin while there is none); the target must be a stored organisation admin. Step-up required, audit-logged in the organisation log, both people emailed. The previous owner stays an admin; the current owner cannot be removed as an admin.
+- `GET /api/schools/:schoolId/transfer-ownership/candidates` and `POST /api/schools/:schoolId/transfer-ownership` `{ userId }` - the school's owner or an organisation admin; the target must be a staff member of that school. A school has one admin, so the new owner takes the admin seat and the previous admin stays as a teacher. Step-up required, audit-logged in the school's log, both people emailed.
+
+`GET /api/organisation` returns `ownerId`, the admins list `isOwner` and `stored`, and school rows `ownerId`.
+
 ## Configuration
 
 | Variable | Default | Effect |

@@ -15,14 +15,20 @@ import {
   AtSign,
   ClipboardClock,
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
+  ChartLine,
+  Clock,
   Building2,
   ChevronsUpDown,
   FileText,
+  FileBadge,
   FolderOpen,
+  HeartHandshake,
   KeyRound,
   LayoutDashboard,
+  Library,
   LogOut,
   Megaphone,
   MessagesSquare,
@@ -68,6 +74,8 @@ type NavItem = {
   icon: LucideIcon;
   /** Catalog permission required to see this item, as [resource, action]. */
   permission?: [string, string];
+  /** Shown when the caller holds any one of these permissions. */
+  anyPermission?: [string, string][];
   /** Mirrors a backend AdminGuard rather than a catalog permission. */
   adminOnly?: boolean;
   /** Platform feature that must be on for the school. */
@@ -86,11 +94,45 @@ const navItems: NavItem[] = [
     icon: CalendarDays,
     feature: "calendar",
   },
+  // The caller's own periods; the API returns only courses they staff.
+  {
+    title: "Timetable",
+    href: "/dashboard/timetable",
+    icon: Clock,
+    feature: "timetable",
+  },
+  // Reports and alerts; open to staff because form tutors see their own
+  // tutees here. The school report inside needs attendance-report:read.
+  {
+    title: "Attendance",
+    href: "/dashboard/attendance",
+    icon: CalendarCheck,
+    feature: "attendance_alerts",
+  },
   {
     title: "Students",
     href: "/dashboard/students",
     icon: UserRoundSearch,
     permission: ["student", "read"],
+  },
+  // Writers see their own notes and follow-ups; readers see the school's.
+  {
+    title: "Pastoral",
+    href: "/dashboard/pastoral",
+    icon: HeartHandshake,
+    feature: "pastoral_notes",
+    anyPermission: [
+      ["pastoral-note", "read"],
+      ["pastoral-note", "create"],
+      ["pastoral-note", "update"],
+    ],
+  },
+  // Templates from the school and the organisation; anyone on staff browses.
+  {
+    title: "Course library",
+    href: "/dashboard/library",
+    icon: Library,
+    feature: "course_copy",
   },
   {
     title: "Staff",
@@ -128,6 +170,14 @@ const navItems: NavItem[] = [
 ];
 
 const adminNavItems: NavItem[] = [
+  // Roll-ups per course and teacher, and the school's students at risk.
+  {
+    title: "Analytics",
+    href: "/dashboard/analytics",
+    icon: ChartLine,
+    permission: ["analytics", "read"],
+    feature: "analytics",
+  },
   {
     title: "Grade Scales",
     href: "/dashboard/grade-scales",
@@ -136,10 +186,24 @@ const adminNavItems: NavItem[] = [
   },
   { title: "Roles", href: "/dashboard/roles", icon: KeyRound, adminOnly: true },
   {
+    title: "Timetable setup",
+    href: "/dashboard/settings/timetable",
+    icon: Clock,
+    permission: ["school", "update"],
+    feature: "timetable",
+  },
+  {
     title: "Email Domains",
     href: "/dashboard/email-domains",
     icon: AtSign,
     adminOnly: true,
+  },
+  {
+    title: "Report cards",
+    href: "/dashboard/reports",
+    icon: FileBadge,
+    permission: ["report-card", "read"],
+    feature: "report_cards",
   },
   {
     title: "Audit log",
@@ -190,10 +254,12 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
     toast.success("Logged out");
   }
 
-  const visibleAdminNavItems = adminNavItems.filter((item) =>
-    item.adminOnly
-      ? isAdmin
-      : !item.permission || can(item.permission[0], item.permission[1]),
+  const visibleAdminNavItems = adminNavItems.filter(
+    (item) =>
+      (!item.feature || hasFeature(item.feature)) &&
+      (item.adminOnly
+        ? isAdmin
+        : !item.permission || can(item.permission[0], item.permission[1])),
   );
 
   const displayName = profile?.first_name
@@ -258,7 +324,9 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
                   (item) =>
                     (!item.feature || hasFeature(item.feature)) &&
                     (!item.permission ||
-                      can(item.permission[0], item.permission[1])),
+                      can(item.permission[0], item.permission[1])) &&
+                    (!item.anyPermission ||
+                      item.anyPermission.some(([r, a]) => can(r, a))),
                 )
                 .map((item) => {
                   const Icon = item.icon;

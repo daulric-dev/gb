@@ -168,6 +168,21 @@ export async function uploadSubmissionFile(activityId: string, file: PickedFile,
   );
 }
 
+/** Upload a file for a quiz question. */
+export async function uploadQuizQuestionFile(
+  activityId: string,
+  questionId: string,
+  file: PickedFile,
+  onProgress?: (fraction: number) => void,
+): Promise<{ fileId: string; name: string }> {
+  const base = `/portal/me/activities/${activityId}/quiz/questions/${questionId}/upload-ticket`;
+  return uploadWithTicket(
+    file,
+    { ticket: base, complete: (fileId) => `${base}/${fileId}/complete` },
+    { onProgress },
+  );
+}
+
 /** Upload a file to the caller's own files, optionally into one of their folders. */
 export async function uploadMyFile(
   file: PickedFile,
