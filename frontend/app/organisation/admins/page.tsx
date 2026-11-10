@@ -164,6 +164,15 @@ export default function OrganisationAdminsPage() {
                         {isMe && (
                           <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>
                         )}
+                        {a.isOwner && (
+                          <Badge
+                            variant="secondary"
+                            className="ml-1.5"
+                            title="Owns the organisation; transfer it under Settings"
+                          >
+                            Owner
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="max-w-64 truncate">{a.email}</TableCell>
                       <TableCell className="whitespace-nowrap">
@@ -186,7 +195,7 @@ export default function OrganisationAdminsPage() {
                               who={a.name || a.email}
                             />
                           )}
-                          {!a.fromEnv && (
+                          {!a.fromEnv && !a.isOwner && (
                             <Button
                               variant="ghost"
                               size="sm"

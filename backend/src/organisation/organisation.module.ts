@@ -9,6 +9,8 @@ import { OrganisationAdminGuard } from './organisation-admin.guard';
 import { InviteController } from './invite.controller';
 import { InviteService } from './invite.service';
 import { SignInController } from './sign-in.controller';
+import { OwnershipService } from './ownership.service';
+import { SchoolOwnershipController } from './ownership.controller';
 
 /**
  * The organisation that self-hosts this install: first-run setup, its
@@ -19,8 +21,14 @@ import { SignInController } from './sign-in.controller';
   // FileManagerModule (UploadLimitService) and SchoolModule (SchoolLogoService)
   // back the per-school settings routes; EmailDomainModule the sign-in ones.
   imports: [AuthModule, FileManagerModule, SchoolModule, EmailDomainModule],
-  controllers: [SetupController, OrganisationController, InviteController, SignInController],
-  providers: [OrganisationService, OrganisationAdminGuard, InviteService],
-  exports: [OrganisationService, InviteService],
+  controllers: [
+    SetupController,
+    OrganisationController,
+    InviteController,
+    SignInController,
+    SchoolOwnershipController,
+  ],
+  providers: [OrganisationService, OrganisationAdminGuard, InviteService, OwnershipService],
+  exports: [OrganisationService, InviteService, OwnershipService],
 })
 export class OrganisationModule {}

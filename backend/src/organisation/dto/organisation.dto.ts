@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -140,4 +141,14 @@ export class ListInvitesQueryDto {
   @IsOptional()
   @IsIn(INVITE_KINDS)
   kind?: InviteKind;
+}
+
+/**
+ * POST /organisation/transfer-ownership and
+ * POST /schools/:schoolId/transfer-ownership: who becomes the owner.
+ */
+export class TransferOwnershipDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  userId!: string;
 }

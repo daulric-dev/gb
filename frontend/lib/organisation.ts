@@ -7,6 +7,8 @@ export interface Organisation {
   id: string;
   name: string;
   createdAt: string;
+  /** The owner's user id; null when every admin comes from ORG_ADMIN_EMAILS. */
+  ownerId?: string | null;
 }
 
 export interface OrganisationOverview {
@@ -23,6 +25,10 @@ export interface OrganisationAdmin {
   createdAt: string;
   /** Listed in the server's environment: cannot be removed from the app. */
   fromEnv: boolean;
+  /** The organisation's owner (organisation.owner_id). */
+  isOwner?: boolean;
+  /** Has a stored admin row (false = only in ORG_ADMIN_EMAILS); only these can own it. */
+  stored?: boolean;
 }
 
 export type SchoolType =
@@ -68,6 +74,8 @@ export interface OrganisationSchool {
   isActive: boolean;
   createdAt: string;
   admin: OrganisationSchoolAdmin | null;
+  /** school.owner_id; the owner holds the admin seat. */
+  ownerId?: string | null;
   staffCount: number;
   studentCount: number;
   /** The open admin invite, while the school has no admin (may be expired). */

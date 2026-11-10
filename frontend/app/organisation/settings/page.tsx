@@ -6,8 +6,15 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { type Organisation } from "@/lib/organisation";
-import { useAuth } from "@/providers/AuthProvider";
+import { type Organisation, type OrganisationAdmin } from "@/lib/organisation";
+import {
+  canTransferOrganisation,
+  organisationTransferTargets,
+  ownerLabel,
+  transferOrganisationOwnership,
+} from "@/lib/ownership";
+import { useAuth, useProfile } from "@/providers/AuthProvider";
+import { TransferOwnershipCard } from "@/components/account/transfer-ownership-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,6 +32,8 @@ import { userMessage } from "@/lib/errors";
 export default function OrganisationSettingsPage() {
   useSignals();
   const { refresh } = useAuth();
+  const { profile } = useProfile();
+  const adminsSignal = useSignal<OrganisationAdmin[]>([]);
   const orgSignal = useSignal<Organisation | null>(null);
   const org = orgSignal.value;
   const nameSignal = useSignal("");
@@ -39,7 +48,21 @@ export default function OrganisationSettingsPage() {
         nameSignal.value = data?.name ?? "";
       })
       .catch((err) => toast.error(userMessage(err, "Failed to load the organisation")));
-  }, [nameSignal, orgSignal]);
+    api<OrganisationAdmin[]>("/organisation/admins")
+      .then((data) => (adminsSignal.value = Array.isArray(data) ? data : []))
+      .catch(() => (adminsSignal.value = []));
+  }, [adminsSignal, nameSignal, orgSignal]);
+
+  const admins = adminsSignal.value;
+  const owner = admins.find((a) => a.isOwner) ?? null;
+  const ownerId = org?.ownerId ?? owner?.userId ?? null;
+
+  async function transferTo(userId: string) {
+    const result = await transferOrganisationOwnership(userId);
+    toast.success(`${result.owner.name || result.owner.email} now owns the organisation`);
+    if (org) orgSignal.value = { ...org, ownerId: result.ownerId };
+    adminsSignal.value = admins.map((a) => ({ ...a, isOwner: a.userId === result.ownerId }));
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +127,35 @@ export default function OrganisationSettingsPage() {
         </CardContent>
       </Card>
 
+      {org && (
+        <div className="max-w-xl">
+          <TransferOwnershipCard
+            title="Ownership"
+            description={
+              <>
+                The owner set up this organisation or was handed it. Only the
+                owner can hand it on, and must do so before deleting their
+                account. They stay an administrator afterwards.
+              </>
+            }
+            ownerLabel={owner ? ownerLabel(owner) : null}
+            candidates={organisationTransferTargets(admins, ownerId).map((a) => ({
+              userId: a.userId,
+              label: ownerLabel(a),
+            }))}
+            canTransfer={canTransferOrganisation(
+              ownerId,
+              profile.value?.id,
+              !!profile.value?.is_org_admin,
+            )}
+            emptyHint="There is no other administrator to hand it to. Add one under Administrators first."
+            confirmText={(c) =>
+              `Make ${c.label} the owner of ${org.name}? Only they will be able to transfer it after this. You will need to confirm it's you.`
+            }
+            onTransfer={transferTo}
+          />
+        </div>
+      )}
     </div>
   );
 }

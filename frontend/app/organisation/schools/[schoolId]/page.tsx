@@ -36,6 +36,7 @@ import { AppointAdminDialog, SchoolFormDialog } from "../_components/school-dial
 import { toggleSchoolActive, useOpenSchoolDashboard } from "../_components/school-actions";
 import { PendingAdminInvite } from "../_components/pending-invite";
 import { userMessage } from "@/lib/errors";
+import { SchoolOwnership } from "@/components/account/school-ownership";
 
 const SCHOOLS_PATH = `${ORGANISATION_PATH}/schools`;
 
@@ -145,6 +146,9 @@ export default function OrganisationSchoolPage() {
             {school.admin ? (
               <>
                 <span className="truncate">{personLabel(school.admin)}</span>
+                {school.ownerId === school.admin.userId && (
+                  <Badge variant="secondary">Owner</Badge>
+                )}
                 <SignOutSessionsButton
                   userId={school.admin.userId}
                   who={school.admin.name || school.admin.email}
@@ -177,6 +181,8 @@ export default function OrganisationSchoolPage() {
           </Button>
         </div>
       </div>
+
+      <SchoolOwnership key={`owner-${school.id}`} schoolId={school.id} onTransferred={reload} />
 
       <UploadLimitSettings key={`limit-${school.id}`} apiBase={apiBase} canEdit />
       <SchoolLogoSettings

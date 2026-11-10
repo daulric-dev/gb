@@ -45,6 +45,13 @@ export interface OrganisationAdminRow {
   name: string;
   createdAt: string;
   fromEnv: boolean;
+  /** The organisation's owner (organisation.owner_id). */
+  isOwner: boolean;
+  /**
+   * Has a row in public.organisation_admin (false = only listed in
+   * ORG_ADMIN_EMAILS). Only stored admins can be given ownership.
+   */
+  stored: boolean;
 }
 
 export interface OrganisationSchoolRow {
@@ -55,6 +62,8 @@ export interface OrganisationSchoolRow {
   isActive: boolean;
   createdAt: string | null;
   admin: { userId: string; email: string; name: string } | null;
+  /** school.owner_id: who must hand the school over before deleting their account. */
+  ownerId: string | null;
   staffCount: number;
   studentCount: number;
   /** The open admin invite while nobody with an account was appointed. */
@@ -209,12 +218,17 @@ export class OrganisationService implements OnApplicationBootstrap {
         if ((await tx.organisation.count()) > 0) {
           throw new ConflictException('GradeBook is already set up');
         }
-        const created = await tx.organisation.create({ data: { name } });
-        // organisation_admin references the profile; make sure it exists.
+        // organisation.owner_id and organisation_admin reference the
+        // profile; make sure it exists.
         await tx.user_profile.upsert({
           where: { id: userId },
           create: { id: userId, email: account?.email ?? null },
           update: {},
+        });
+        // Whoever runs setup owns the organisation (owner_id; see
+        // POST /organisation/transfer-ownership to hand it on).
+        const created = await tx.organisation.create({
+          data: { name, owner_id: userId },
         });
         await tx.organisation_admin.upsert({
           where: { user_id: userId },
@@ -301,11 +315,18 @@ export class OrganisationService implements OnApplicationBootstrap {
     return { schools, activeSchools, staff, students };
   }
 
-  private orgDto(org: { id: string; name: string; created_at: Date }) {
+  private orgDto(org: {
+    id: string;
+    name: string;
+    created_at: Date;
+    owner_id?: string | null;
+  }) {
     return {
       id: org.id,
       name: org.name,
       createdAt: org.created_at.toISOString(),
+      /** The owner's user id (null on an install with no stored admins). */
+      ownerId: org.owner_id ?? null,
     };
   }
 
@@ -314,7 +335,8 @@ export class OrganisationService implements OnApplicationBootstrap {
   /** Admins with a row, plus accounts listed in ORG_ADMIN_EMAILS (fromEnv). */
   async admins(): Promise<OrganisationAdminRow[]> {
     const emails = [...orgAdminEmails()];
-    const [rows, envUsers] = await Promise.all([
+    const [org, rows, envUsers] = await Promise.all([
+      this.prisma.organisation.findFirst({ select: { owner_id: true } }),
       this.prisma.organisation_admin.findMany({
         select: {
           user_id: true,
@@ -356,6 +378,8 @@ export class OrganisationService implements OnApplicationBootstrap {
       name: displayName(r.user_profile),
       createdAt: r.created_at.toISOString(),
       fromEnv: envIds.has(r.user_id),
+      isOwner: r.user_id === org?.owner_id,
+      stored: true,
     }));
     const listed = new Set(list.map((a) => a.userId));
     for (const u of envUsers) {
@@ -366,6 +390,8 @@ export class OrganisationService implements OnApplicationBootstrap {
         name: displayName(u.user_profile),
         createdAt: u.created_at.toISOString(),
         fromEnv: true,
+        isOwner: u.id === org?.owner_id,
+        stored: false,
       });
     }
     return list;
@@ -429,6 +455,11 @@ export class OrganisationService implements OnApplicationBootstrap {
     const all = await this.admins();
     const target = all.find((a) => a.userId === userId);
     if (!target) throw new NotFoundException('Organisation admin not found');
+    if (target.isOwner) {
+      throw new BadRequestException(
+        'The organisation owner cannot be removed. Transfer ownership first.',
+      );
+    }
 
     const row = await this.prisma.organisation_admin.findUnique({
       where: { user_id: userId },
@@ -880,6 +911,7 @@ export class OrganisationService implements OnApplicationBootstrap {
         schoolType: s.school_type,
         isActive: s.is_active !== false,
         createdAt: s.created_at?.toISOString() ?? null,
+        ownerId: s.owner_id ?? null,
         admin: admin
           ? {
               userId: admin.user_id,
@@ -905,6 +937,7 @@ const SCHOOL_SELECT = {
   school_type: true,
   is_active: true,
   created_at: true,
+  owner_id: true,
 } as const;
 
 type SchoolSelected = Prisma.schoolGetPayload<{ select: typeof SCHOOL_SELECT }>;
