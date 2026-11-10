@@ -98,6 +98,21 @@ import { HealthService } from '@/health/health.service';
             skipIf: skipUnlessDeclared('auth-ip'),
           },
           {
+            // Per-route limits (account deletion, connection tests, signed
+            // links, LTI tokens). Only applies where a route declares it in
+            // @Throttle({ route: ... }); its counter is per route (see
+            // generateKey), unlike 'default', which is one counter per
+            // session across every route - overriding 'default' on one route
+            // would compare that route's limit against everything the
+            // session has called.
+            name: 'route',
+            ttl: 60_000,
+            limit: 100_000,
+            getTracker: (req: ThrottlerReq) =>
+              getSessionTracker(req) ?? `ip:${getClientIp(req) ?? 'unknown'}`,
+            skipIf: skipUnlessDeclared('route'),
+          },
+          {
             name: 'claim-code',
             ttl: 15 * 60 * 1000,
             limit: process.env.NODE_ENV === 'production' ? 10_000 : 100_000,

@@ -100,7 +100,7 @@ export class RosteringController {
 
   // Calls the source's saved endpoint (through the SSRF-guarded fetch);
   // rate-limited so it can't be used to probe hosts.
-  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
+  @Throttle({ route: { limit: 10, ttl: 60 * 1000 } })
   @Post('sources/:id/test')
   @HttpCode(200)
   test(@Param('id', uuid) id: string) {

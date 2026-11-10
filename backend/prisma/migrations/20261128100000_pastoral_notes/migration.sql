@@ -103,6 +103,14 @@ CREATE TABLE student.pastoral_setting (
   CONSTRAINT pastoral_setting_retention_check CHECK (retention_days IS NULL OR retention_days BETWEEN 30 AND 36500)
 );
 
+-- permission_catalog only allowed the four CRUD actions (baseline CHECK).
+-- pastoral-note:safeguarding is the first non-CRUD action (EXTRA_ACTIONS in
+-- src/permission/permission.catalog.ts), so widen the CHECK before inserting
+-- it; the boot-time catalog sync needs this too.
+ALTER TABLE public.permission_catalog DROP CONSTRAINT permission_catalog_action_check;
+ALTER TABLE public.permission_catalog ADD CONSTRAINT permission_catalog_action_check
+    CHECK ((action = ANY (ARRAY['create'::text, 'read'::text, 'update'::text, 'delete'::text, 'safeguarding'::text])));
+
 -- The catalog rows for the new keys (the boot sync adds them too, after
 -- migrations). No grants: no existing key gated pastoral notes, so nobody
 -- loses access; admins hold every key in code, teachers get :create by

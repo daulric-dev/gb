@@ -15,7 +15,7 @@ import { sendPdf } from './report-file';
 export class ReportLinkController {
   constructor(private readonly reports: StudentReportsService) {}
 
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Throttle({ route: { limit: 60, ttl: 60_000 } })
   @Get(':token')
   @ApiProduces('application/pdf')
   async open(@Param('token') token: string, @Res() res: FastifyReply) {

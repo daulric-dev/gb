@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveWebhookDestination } from './webhook-destination';
+import { resolveWebhookDestination, resolveWebhookDestinations } from './webhook-destination';
 
 describe('resolveWebhookDestination', () => {
   test('allows public IPv4 and IPv6 addresses', async () => {
@@ -109,5 +109,36 @@ describe('resolveWebhookDestination', () => {
         });
       });
     });
+  });
+});
+
+describe('resolveWebhookDestinations', () => {
+  test('returns every checked address in resolver order, without duplicates', async () => {
+    const out = await resolveWebhookDestinations(
+      'localhost',
+      async () => [
+        { address: '::1', family: 6 },
+        { address: '127.0.0.1', family: 4 },
+        { address: '127.0.0.1', family: 4 },
+      ],
+      { allowPrivate: true },
+    );
+    expect(out).toEqual([
+      { address: '::1', family: 6 },
+      { address: '127.0.0.1', family: 4 },
+    ]);
+  });
+
+  test('refuses the host if any address is private when private is not allowed', async () => {
+    await expect(
+      resolveWebhookDestinations(
+        'mixed.example',
+        async () => [
+          { address: '93.184.216.34', family: 4 },
+          { address: '10.0.0.5', family: 4 },
+        ],
+        { allowPrivate: false },
+      ),
+    ).rejects.toThrow('private or reserved');
   });
 });

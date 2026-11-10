@@ -51,6 +51,22 @@ export async function resolveWebhookDestination(
     dnsLookup(name, { all: true, verbatim: true }),
   options: DestinationOptions = {},
 ): Promise<ResolvedAddress> {
+  return (await resolveWebhookDestinations(hostname, resolver, options))[0];
+}
+
+/**
+ * Every address the host resolves to, in resolver order, after the same
+ * check as `resolveWebhookDestination` (all of them must pass). The sender
+ * tries them in turn, so a host that answers on only one family (e.g.
+ * `localhost` resolving to ::1 first while the server listens on 127.0.0.1)
+ * is still reached - each attempt pinned to a checked address.
+ */
+export async function resolveWebhookDestinations(
+  hostname: string,
+  resolver: Resolver = (name) =>
+    dnsLookup(name, { all: true, verbatim: true }),
+  options: DestinationOptions = {},
+): Promise<ResolvedAddress[]> {
   const host = hostname.replace(/^\[|\]$/g, '');
   const literalFamily = isIP(host);
   const addresses = literalFamily
@@ -69,7 +85,9 @@ export async function resolveWebhookDestination(
     }
   }
 
-  return addresses[0];
+  // Duplicates add nothing to try.
+  const seen = new Set<string>();
+  return addresses.filter(({ address }) => !seen.has(address) && seen.add(address));
 }
 
 function isPublicAddress(address: string): boolean {

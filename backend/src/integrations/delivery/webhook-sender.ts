@@ -6,7 +6,7 @@ import { request as httpsRequest } from 'node:https';
 import { DELIVERY_TIMEOUT_MS, RESPONSE_EXCERPT_BYTES } from '@/integrations/config/webhook.config';
 import { WEBHOOK_API_VERSION } from '@/integrations/events/webhook-event-types';
 import { fetchTlsOptions, type FetchTlsOptions, type WebhookTls } from '@/integrations/webhooks/webhook-tls';
-import { resolveWebhookDestination } from './webhook-destination';
+import { resolveWebhookDestinations } from './webhook-destination';
 
 export const USER_AGENT = 'GradeBook-Webhooks/1';
 
@@ -84,15 +84,14 @@ export const safeWebhookFetch: FetchLike = async (target, init) => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('Webhook URL must use HTTP or HTTPS');
   }
-  const destination = await resolveUntilAborted(url.hostname, init.signal, init.allowPrivate);
+  const destinations = await resolveUntilAborted(url.hostname, init.signal, init.allowPrivate);
   const headers = new Headers(init.headers);
   headers.set('accept-encoding', 'identity');
-  const options = {
+  const base = {
     method: init.method,
     headers: Object.fromEntries(headers.entries()),
     signal: init.signal ?? undefined,
     agent: false,
-    lookup: pinnedLookup(destination.address, destination.family),
     ...(url.protocol === 'https:'
       ? {
           rejectUnauthorized: init.tls?.rejectUnauthorized ?? true,
@@ -100,6 +99,36 @@ export const safeWebhookFetch: FetchLike = async (target, init) => {
         }
       : {}),
   };
+  // Try each checked address in turn, but only past a failure to connect:
+  // nothing has been sent then, so a retry can't deliver twice.
+  let lastError: unknown;
+  for (const destination of destinations) {
+    try {
+      return await requestOnce(url, {
+        ...base,
+        lookup: pinnedLookup(destination.address, destination.family),
+      }, init.body);
+    } catch (err) {
+      lastError = err;
+      if (!isConnectFailure(err) || init.signal?.aborted) throw err;
+    }
+  }
+  throw lastError;
+};
+
+/** Errors raised before a connection exists, when another address may work. */
+const CONNECT_FAILURES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL']);
+
+function isConnectFailure(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && CONNECT_FAILURES.has(code);
+}
+
+function requestOnce(
+  url: URL,
+  options: Record<string, unknown>,
+  body: WebhookFetchInit['body'],
+): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(
       url,
@@ -114,10 +143,10 @@ export const safeWebhookFetch: FetchLike = async (target, init) => {
         }
         const status = incoming.statusCode ?? 502;
         const hasBody = status !== 204 && status !== 205 && status !== 304;
-        const body = hasBody ? responseBody(incoming) : null;
+        const responseStream = hasBody ? responseBody(incoming) : null;
         if (!hasBody) incoming.resume();
         resolve(
-          new Response(body, {
+          new Response(responseStream, {
             status,
             statusText: incoming.statusMessage,
             headers: responseHeaders,
@@ -126,10 +155,10 @@ export const safeWebhookFetch: FetchLike = async (target, init) => {
       },
     );
     request.on('error', reject);
-    if (typeof init.body === 'string') request.write(init.body);
+    if (typeof body === 'string') request.write(body);
     request.end();
   });
-};
+}
 
 function responseBody(incoming: IncomingMessage): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -163,9 +192,9 @@ function resolveUntilAborted(
   hostname: string,
   signal: AbortSignal | null | undefined,
   allowPrivate: boolean | undefined,
-): Promise<{ address: string; family: number }> {
+): Promise<{ address: string; family: number }[]> {
   const resolveDestination = () =>
-    resolveWebhookDestination(hostname, undefined, { allowPrivate });
+    resolveWebhookDestinations(hostname, undefined, { allowPrivate });
   if (!signal) return resolveDestination();
   if (signal.aborted) {
     return Promise.reject(new Error('Webhook request was aborted'));

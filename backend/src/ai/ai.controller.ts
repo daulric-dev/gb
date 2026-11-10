@@ -85,7 +85,7 @@ export class OrganisationAiController {
   }
 
   // Calls the provider's saved endpoint (SSRF-guarded); rate-limited so it can't probe hosts.
-  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
+  @Throttle({ route: { limit: 10, ttl: 60 * 1000 } })
   @Post('providers/:id/test')
   @HttpCode(200)
   test(@Req() req: Req, @Param('id', uuid) id: string) {
