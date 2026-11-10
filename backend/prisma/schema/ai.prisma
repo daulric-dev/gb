@@ -85,7 +85,9 @@ model ai_request {
   user_id           String?      @db.Uuid
   school_id         String?      @db.Uuid
   course_id         String?      @db.Uuid
-  /// quiz_questions | rubric_feedback | page_summary | test
+  /// quiz_questions | rubric_feedback | page_summary | course_outline |
+  /// module_items | page_content | assignment_instructions | rubric_draft |
+  /// announcement_draft | outcome_suggestions | test
   feature           String
   provider_id       String?      @db.Uuid
   provider_name     String

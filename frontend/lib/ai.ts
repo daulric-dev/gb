@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api";
+import type { CreatePlanBody, PlanItem, PlanItemKind, PlanModule, SubmissionType } from "@/lib/ai-course-plan";
 
 /**
  * AI assistance (API `src/ai`, feature `ai_assistance`). The organisation
@@ -146,6 +147,122 @@ export interface PageSummary {
   note: string;
 }
 
+// ── course building (API src/ai/ai-course.service.ts) ─────────────────────
+
+interface DraftMeta {
+  requestId: string;
+  provider: string;
+  note: string;
+}
+
+export const OUTLINE_MIXES = ["balanced", "more_quizzes", "more_assignments", "quizzes_only", "assignments_only"] as const;
+export type OutlineMix = (typeof OUTLINE_MIXES)[number];
+export const OUTLINE_MIX_LABEL: Record<OutlineMix, string> = {
+  balanced: "Balanced quizzes and assignments",
+  more_quizzes: "Mostly quizzes",
+  more_assignments: "Mostly assignments",
+  quizzes_only: "Quizzes only",
+  assignments_only: "Assignments only",
+};
+
+export interface OutlineRequest {
+  subject: string;
+  level: string;
+  weeks?: number;
+  units?: number;
+  goals?: string;
+  syllabus?: string;
+  assessments?: number;
+  mix?: OutlineMix;
+  outcomes?: boolean;
+  groups?: boolean;
+}
+
+export interface OutlineDraft extends DraftMeta {
+  plan: { modules: PlanModule[] };
+  masteryOn: boolean;
+  /** The course's term (else academic year) start, YYYY-MM-DD, or null. */
+  startDate: string | null;
+  existingGroups: string[];
+}
+
+export type CreatedStatus = "created" | "failed" | "not_added" | "skipped";
+
+export interface PlanCreateResult {
+  ok: boolean;
+  created: { modules: number; items: number; groups: number; outcomes: number };
+  failed: number;
+  startDate: string | null;
+  modules: {
+    title: string;
+    moduleId: string | null;
+    status: "created" | "existing" | "failed";
+    error: string | null;
+    items: { kind: PlanItemKind; title: string; status: CreatedStatus; id: string | null; error: string | null; dueAt: string | null; aligned: string[] }[];
+  }[];
+  groups: { name: string; id: string | null; status: "existing" | "created" | "failed"; error: string | null }[];
+  outcomes: { code: string; title: string; id: string | null; status: "existing" | "created" | "failed"; error: string | null }[];
+  quizzes: { activityId: string; title: string; topic: string; questionCount: number | null }[];
+  draftQuestions: boolean;
+  notes: string[];
+}
+
+export interface ModuleItemsDraft extends DraftMeta {
+  moduleId: string;
+  moduleTitle: string;
+  items: PlanItem[];
+}
+
+export interface RubricDraft extends DraftMeta {
+  rubric: {
+    title: string;
+    criteria: { title: string; description: string | null; points: number; ratings: { label: string; description: string | null; points: number }[] }[];
+  };
+  dropped: number;
+}
+
+export interface AssignmentDraft extends DraftMeta {
+  instructions: string;
+  points: number;
+  submission: SubmissionType;
+  allowText: boolean;
+  allowFile: boolean;
+}
+
+export interface OutcomeSuggestion {
+  code: string;
+  title: string;
+  description: string;
+}
+
+export const aiCourseApi = {
+  outline: (courseId: string, body: OutlineRequest) =>
+    api<OutlineDraft>(`/courses/${courseId}/ai/outline`, { method: "POST", body }),
+  /** The only route that creates anything: the reviewed, selected plan, all unpublished. */
+  createPlan: (courseId: string, body: CreatePlanBody) =>
+    api<PlanCreateResult>(`/courses/${courseId}/ai/plan/create`, { method: "POST", body }),
+  moduleItems: (courseId: string, moduleId: string, body: { brief?: string; count?: number; level?: string }) =>
+    api<ModuleItemsDraft>(`/courses/${courseId}/modules/${moduleId}/ai/items`, { method: "POST", body }),
+  pageContent: (courseId: string, body: { title: string; outline?: string; level?: string }) =>
+    api<{ markdown: string } & DraftMeta>(`/courses/${courseId}/ai/page-content`, { method: "POST", body }),
+  assignment: (courseId: string, body: { title: string; brief?: string; level?: string; points?: number }) =>
+    api<AssignmentDraft>(`/courses/${courseId}/ai/assignment-instructions`, { method: "POST", body }),
+  rubric: (courseId: string, body: { title: string; instructions?: string; totalPoints?: number; criteria?: number; level?: string }) =>
+    api<RubricDraft>(`/courses/${courseId}/ai/rubric`, { method: "POST", body }),
+  announcement: (courseId: string, prompt: string) =>
+    api<{ title: string; body: string } & DraftMeta>(`/courses/${courseId}/ai/announcement`, { method: "POST", body: { prompt } }),
+  outcomes: (courseId: string, body: { brief?: string; count?: number; level?: string }) =>
+    api<{ outcomes: OutcomeSuggestion[] } & DraftMeta>(`/courses/${courseId}/ai/outcomes`, { method: "POST", body }),
+};
+
+/** One line summing up a plan creation for a toast. */
+export function planResultSummary(r: PlanCreateResult): string {
+  const parts = [`${r.created.modules} module${r.created.modules === 1 ? "" : "s"}`, `${r.created.items} item${r.created.items === 1 ? "" : "s"}`];
+  if (r.created.outcomes) parts.push(`${r.created.outcomes} outcome${r.created.outcomes === 1 ? "" : "s"}`);
+  const head = `Created ${parts.join(", ")} (unpublished).`;
+  return r.failed ? `${head} ${r.failed} could not be created: see the report.` : head;
+}
+
 export const AI_ORG_API = "/organisation/ai";
 
 /** Shown on every AI draft. */
@@ -205,7 +322,7 @@ export function aiErrorMessage(err: unknown): string {
       case "AI_REFUSED":
         return "The model declined this request. Try rewording the text, or write this yourself.";
       case "AI_TRUNCATED":
-        return "The answer was cut off. Ask for fewer questions or use a shorter text.";
+        return "The answer was cut off. Ask for less (fewer questions, units or items) or use a shorter text.";
       case "AI_INVALID_OUTPUT":
         return "The AI's answer was not in the expected format. Try again.";
       case "AI_NO_PROVIDER":

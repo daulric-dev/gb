@@ -56,3 +56,14 @@ describe("AI helpers", () => {
     expect(orgDefaultLabel(null)).toBe("Organisation default (none available)");
   });
 });
+
+describe("course builder helpers", () => {
+  test("planResultSummary says what was created (unpublished) and flags failures", async () => {
+    const { planResultSummary } = await import("@/lib/ai");
+    const base = { ok: true, created: { modules: 2, items: 5, groups: 1, outcomes: 0 }, failed: 0, startDate: null, modules: [], groups: [], outcomes: [], quizzes: [], draftQuestions: false, notes: [] };
+    expect(planResultSummary(base)).toBe("Created 2 modules, 5 items (unpublished).");
+    expect(planResultSummary({ ...base, ok: false, failed: 2, created: { ...base.created, outcomes: 1 } })).toBe(
+      "Created 2 modules, 5 items, 1 outcome (unpublished). 2 could not be created: see the report.",
+    );
+  });
+});

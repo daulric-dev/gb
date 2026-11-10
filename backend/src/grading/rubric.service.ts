@@ -46,6 +46,23 @@ const RUBRIC_INCLUDE = {
 
 type RubricRow = Prisma.rubricGetPayload<{ include: typeof RUBRIC_INCLUDE }>;
 
+/**
+ * The structure rules every rubric write applies (also used to check AI
+ * rubric drafts before a teacher sees them): every level fits inside its
+ * criterion. Throws BadRequestException naming the first level that does not.
+ */
+export function validateRubricCriteria(input: RubricInput['criteria']) {
+  for (const c of input) {
+    for (const r of c.ratings) {
+      if (r.points > c.points) {
+        throw new BadRequestException(
+          `"${r.label}" on "${c.title}" is worth more than the criterion (${c.points})`,
+        );
+      }
+    }
+  }
+}
+
 /** The `Rubric` contract. */
 export function toRubric(r: RubricRow, assessed = false) {
   const criteria = r.rubric_criterion.map((c) => ({
@@ -198,15 +215,7 @@ export class RubricService {
 
   /** Every level must fit inside its criterion. */
   private validate(input: RubricInput['criteria']) {
-    for (const c of input) {
-      for (const r of c.ratings) {
-        if (r.points > c.points) {
-          throw new BadRequestException(
-            `"${r.label}" on "${c.title}" is worth more than the criterion (${c.points})`,
-          );
-        }
-      }
-    }
+    validateRubricCriteria(input);
   }
 
   private async writeCriteria(

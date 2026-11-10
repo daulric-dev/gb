@@ -56,7 +56,7 @@ export class AnthropicAdapter implements AiAdapter {
     const model = this.config.model;
     return {
       model,
-      max_tokens: AI_MAX_OUTPUT_TOKENS,
+      max_tokens: Math.min(req.maxTokens ?? AI_MAX_OUTPUT_TOKENS, AI_MAX_OUTPUT_TOKENS),
       system: req.system,
       messages: [{ role: 'user', content: req.user }],
       output_config: {

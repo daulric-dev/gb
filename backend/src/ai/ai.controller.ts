@@ -23,12 +23,21 @@ import { AiOrgFeatureGuard } from './ai-feature.guard';
 import { AiProviderService } from './ai-provider.service';
 import { AiService } from './ai.service';
 import { AiDraftsService } from './ai-drafts.service';
+import { AiCourseService } from './ai-course.service';
 import {
   AiOrgSettingsDto,
   AiSchoolSettingsDto,
+  AnnouncementDraftDto,
+  AssignmentDraftDto,
   CreateAiProviderDto,
+  CreatePlanDto,
+  ModuleItemsDraftDto,
+  OutcomeSuggestDto,
+  OutlineDraftDto,
+  PageContentDraftDto,
   PageSummaryDto,
   QuizDraftDto,
+  RubricDraftDto,
   RubricFeedbackDto,
   UpdateAiProviderDto,
 } from './ai.dto';
@@ -37,6 +46,8 @@ type Req = { user: { id: string } };
 const uuid = new ParseUUIDPipe();
 /** Generating is slow and costs the organisation money: a tight per-session window on top of the hourly limit. */
 const GENERATE_THROTTLE = { default: { limit: 10, ttl: 60 * 1000 } };
+/** Creating a reviewed plan makes many rows: a few a minute is plenty. */
+const CREATE_PLAN_THROTTLE = { default: { limit: 5, ttl: 60 * 1000 } };
 
 /**
  * The organisation's AI providers and settings. Organisation admins only,
@@ -173,5 +184,82 @@ export class CourseAiController {
   @HttpCode(200)
   rubric(@Req() req: Req, @Param('activityId', uuid) activityId: string, @Body() dto: RubricFeedbackDto) {
     return this.drafts.rubricFeedback(req.user.id, activityId, dto);
+  }
+}
+
+/**
+ * The AI course builder. Course teachers and admins (not TAs; announcement
+ * drafts follow announcement permissions, so TAs too), `ai_assistance` on
+ * for the course's school (checked by the service). Every `ai/...` route
+ * returns drafts only and sends teacher material only (no student data).
+ * The one route that creates anything is `ai/plan/create`, with the plan
+ * the teacher reviewed; everything it creates starts unpublished.
+ */
+@ApiTags('AI assistance')
+@ApiBearerAuth()
+@UseGuards(AuthGuard)
+@Controller('courses/:courseId')
+export class CourseBuilderAiController {
+  constructor(private readonly builder: AiCourseService) {}
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('ai/outline')
+  @HttpCode(200)
+  outline(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: OutlineDraftDto) {
+    return this.builder.outline(req.user.id, courseId, dto);
+  }
+
+  @Throttle(CREATE_PLAN_THROTTLE)
+  @Post('ai/plan/create')
+  @HttpCode(200)
+  createPlan(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: CreatePlanDto) {
+    return this.builder.createFromPlan(req.user.id, courseId, dto);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('modules/:moduleId/ai/items')
+  @HttpCode(200)
+  moduleItems(
+    @Req() req: Req,
+    @Param('courseId', uuid) courseId: string,
+    @Param('moduleId', uuid) moduleId: string,
+    @Body() dto: ModuleItemsDraftDto,
+  ) {
+    return this.builder.moduleItems(req.user.id, courseId, moduleId, dto);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('ai/page-content')
+  @HttpCode(200)
+  pageContent(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: PageContentDraftDto) {
+    return this.builder.pageContent(req.user.id, courseId, dto);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('ai/assignment-instructions')
+  @HttpCode(200)
+  assignment(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: AssignmentDraftDto) {
+    return this.builder.assignmentInstructions(req.user.id, courseId, dto);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('ai/rubric')
+  @HttpCode(200)
+  rubric(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: RubricDraftDto) {
+    return this.builder.rubricDraft(req.user.id, courseId, dto);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('ai/announcement')
+  @HttpCode(200)
+  announcement(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: AnnouncementDraftDto) {
+    return this.builder.announcement(req.user.id, courseId, dto);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post('ai/outcomes')
+  @HttpCode(200)
+  outcomes(@Req() req: Req, @Param('courseId', uuid) courseId: string, @Body() dto: OutcomeSuggestDto) {
+    return this.builder.suggestOutcomes(req.user.id, courseId, dto);
   }
 }

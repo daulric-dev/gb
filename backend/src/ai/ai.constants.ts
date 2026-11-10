@@ -5,7 +5,20 @@ export const aiKeyAad = (providerId: string) => Buffer.from(`ai-provider:${provi
 export const AI_PROVIDER_KINDS = ['anthropic', 'openai_compatible'] as const;
 export type AiProviderKind = (typeof AI_PROVIDER_KINDS)[number];
 
-export const AI_FEATURES = ['quiz_questions', 'rubric_feedback', 'page_summary', 'test'] as const;
+export const AI_FEATURES = [
+  'quiz_questions',
+  'rubric_feedback',
+  'page_summary',
+  // Course building (ai-course.service.ts): teacher material only, never student data.
+  'course_outline',
+  'module_items',
+  'page_content',
+  'assignment_instructions',
+  'rubric_draft',
+  'announcement_draft',
+  'outcome_suggestions',
+  'test',
+] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 export type AiRequestStatus =
@@ -28,8 +41,24 @@ export const MODEL_SUGGESTIONS: Record<AiProviderKind, string[]> = {
   openai_compatible: ['gpt-5', 'gpt-5-mini', 'llama3.3', 'qwen3', 'mistral-small'],
 };
 
-/** Output token ceiling per request (non-streaming). */
+/** Output token ceiling per request (non-streaming); the default when a feature sets none. */
 export const AI_MAX_OUTPUT_TOKENS = 16_000;
+
+/**
+ * Output token ceiling per course-building feature (Anthropic `max_tokens`).
+ * The outline is the largest answer and gets the full ceiling; the rest are
+ * smaller so a runaway answer costs less. Never above AI_MAX_OUTPUT_TOKENS
+ * (non-streaming requests).
+ */
+export const AI_FEATURE_MAX_TOKENS = {
+  course_outline: AI_MAX_OUTPUT_TOKENS,
+  module_items: 8_000,
+  page_content: 12_000,
+  assignment_instructions: 6_000,
+  rubric_draft: 6_000,
+  announcement_draft: 4_000,
+  outcome_suggestions: 6_000,
+} as const;
 
 /** Whole-request timeout (ms); AI_REQUEST_TIMEOUT_MS overrides. */
 export function aiTimeoutMs(): number {
@@ -52,6 +81,20 @@ export const AI_MAX_SOURCE_CHARS = 30_000;
 /** Largest submission text sent for rubric feedback (characters). */
 export const AI_MAX_SUBMISSION_CHARS = 30_000;
 export const AI_MAX_QUESTIONS = 10;
+
+/** Course outline limits (the schema enforces them on the model's answer and the DTO on the teacher's plan). */
+export const AI_PLAN_MAX_MODULES = 20;
+export const AI_PLAN_MAX_ITEMS = 15;
+export const AI_PLAN_MAX_OUTCOMES = 8;
+/** Largest syllabus / scheme of work pasted for an outline (characters). */
+export const AI_MAX_SYLLABUS_CHARS = 30_000;
+/** Largest Markdown page the AI writes (characters). */
+export const AI_MAX_PAGE_CHARS = 20_000;
+export const AI_PLAN_ITEM_KINDS = ['page', 'assignment', 'quiz'] as const;
+export type AiPlanItemKind = (typeof AI_PLAN_ITEM_KINDS)[number];
+/** How an assignment is handed in: '' for pages and quizzes. */
+export const AI_SUBMISSION_TYPES = ['text', 'file', 'text_and_file'] as const;
+export type AiSubmissionType = (typeof AI_SUBMISSION_TYPES)[number];
 
 /** Question kinds the model may draft: auto-gradable ones and essay (never file upload). */
 export const AI_QUESTION_KINDS = [

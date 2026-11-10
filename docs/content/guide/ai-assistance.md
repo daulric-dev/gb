@@ -12,13 +12,19 @@ accept:
 - **Rubric feedback suggestions** while marking: a suggested level and a
   comment for each criterion, and overall feedback.
 - **A summary for students** of a course page, with key points.
+- **Building a course:** a draft outline of the whole course (modules,
+  pages, assignments, quizzes and, with mastery, learning outcomes), items
+  for one module, a page written in full, assignment instructions, a
+  rubric, an announcement, and learning outcomes.
 
 The AI **never marks work** and **never changes anything on its own**.
 Every draft is labelled "AI-generated — review before using", and nothing is
 saved until a teacher accepts it: a question is added only when the teacher
 presses *Accept and add*, a rubric suggestion changes the form only when
 they press *Use* (the mark is saved only with *Save mark*), and a summary
-goes into the page only when they insert it and save the page.
+goes into the page only when they insert it and save the page. A course
+plan creates nothing until the teacher presses *Create selected*, and then
+everything it creates is **unpublished**.
 
 AI assistance is **off by default**. Your organisation chooses whether to
 offer it and which AI service it uses; each school can switch it off.
@@ -155,6 +161,77 @@ Features**.
   with AI**. Edit the summary and key points, then insert them at the top or
   end of the page and save.
 
+### Building a course with AI
+
+Course teachers (not teaching assistants) can plan a course with AI. Open
+**Settings → Plan this course with AI** (also **Plan with AI** on the
+Modules page).
+
+1. **Describe the course:** subject, level or grade, length (in weeks or
+   units), optional goals, an optional pasted syllabus or scheme of work,
+   about how many assessments, and the mix of quizzes and assignments. Tick
+   *Suggest learning outcomes* if your school uses mastery.
+2. **Draft a plan.** The plan appears as a tree: each module has a title, an
+   overview and up to 15 items (at most 20 modules):
+   - **Pages** with a short outline (it becomes the page's starting text),
+   - **Assignments** with brief instructions, suggested points, a due week
+     and how students hand in,
+   - **Quizzes** with a topic and a number of questions,
+   - optional **learning outcomes** per module, and which assessments
+     measure them.
+3. **Edit it.** Rename anything, change points, due weeks and groups, add or
+   remove items and modules, and move them up or down with the arrow
+   buttons (everything works with the keyboard). Untick what you do not
+   want.
+4. **Create selected.** Only ticked modules and items are created, through
+   the same steps as creating them by hand, and **all unpublished**: new
+   modules are unpublished, pages unpublished, assignments and quizzes
+   drafts. Then:
+   - **Assignment groups** named in the plan are matched to your course's
+     groups by name, or created.
+   - **Due dates** count from the course's term start (or academic year
+     start), or a date you give: an item due in week 3 is due at 23:59 UTC
+     on the first day of week 3. Without a start date, assessments have no
+     due date.
+   - **Quizzes are created empty.** If you tick *Also draft questions*, the
+     report links to each quiz with **Draft questions with AI** open and
+     the quiz's topic filled in; every question is still added only when
+     you accept it.
+   - **Outcomes** (mastery on, and *Create the ticked outcomes* left on) are
+     created as course outcomes and aligned to the assessments that measure
+     them.
+   - A **report** lists everything with its status. If something could not
+     be created, it says what and why; the rest is still created.
+
+### Helpers while you build
+
+Each is a draft you review; nothing is saved until you save as usual.
+
+- **Pages:** while editing, **Write this page with AI** drafts the whole
+  page in Markdown from the title and what you have written so far (used
+  as an outline). Replace the page text or add it at the end, then save.
+- **Assignments:** **Draft instructions with AI** (when creating, and when
+  editing an assignment's details) drafts instructions, suggested points and
+  a submission type; **Use this** fills the form. On the **Rubric** tab,
+  **Draft a rubric with AI** opens the rubric editor with criteria, levels
+  and points filled in; the rubric is created only when you press **Save**.
+- **Modules:** in a module's menu, **Suggest items with AI** suggests pages,
+  assignments and quizzes for that module; tick what you want and **Add
+  selected** (unpublished).
+- **Announcements:** in the course announcement composer, **Draft an
+  announcement with AI** writes a title and message from a line or two;
+  **Use this draft** fills the form and nothing is posted until you post it.
+  Anyone who may post course announcements (teaching assistants too) can
+  use it.
+- **Outcomes** (mastery on): on the course's **Outcomes → Manage** tab,
+  **Suggest outcomes with AI** suggests outcomes from your modules', pages'
+  and assessments' titles; edit and tick them, then **Add selected**.
+
+These features send only your own material (what you type or paste, the
+course's name and description, and titles in the course). No student data is
+sent. Links and images are kept in drafts only if you supplied that exact
+address.
+
 If the model declines a request, you see "The model declined this request":
 reword the text or write that part yourself.
 
@@ -168,7 +245,9 @@ This is what happens to data when AI assistance is used:
 - **What is sent:** only the text needed for the request: the course page or
   pasted text for quiz questions and summaries; for rubric feedback, the
   rubric, the activity's title and instructions, and the text the student
-  handed in.
+  handed in; for course building, what the teacher typed or pasted, the
+  course's name and description and titles in the course (never student
+  data).
 - **Names and emails are removed:** before sending, students' names are
   replaced with `[Student]` / `[Classmate]`, and email addresses and phone
   numbers with placeholders.

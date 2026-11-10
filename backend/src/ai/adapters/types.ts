@@ -23,6 +23,8 @@ export interface StructuredRequest {
   /** Name for providers that want one (OpenAI's json_schema.name). */
   name: string;
   schema: JsonSchema;
+  /** Output token ceiling for this feature (Anthropic `max_tokens`); AI_MAX_OUTPUT_TOKENS when absent. */
+  maxTokens?: number;
 }
 
 export interface AdapterResult {

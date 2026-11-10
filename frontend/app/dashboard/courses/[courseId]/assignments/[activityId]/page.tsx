@@ -60,6 +60,7 @@ import { MarkdownEditor } from "../../_components/MarkdownEditor";
 import { QuestionCard } from "../_components/QuestionCard";
 import { QuestionForm, type QuestionPayload } from "../_components/QuestionForm";
 import { AiQuestionDrafts } from "../_components/AiQuestionDrafts";
+import { AiAssignmentInstructions } from "../_components/AiAssignmentInstructions";
 import { BankDrawsDialog } from "../_components/BankDrawsDialog";
 import { MarksTable } from "../_components/MarksTable";
 import { RubricPanel } from "../_components/RubricPanel";
@@ -96,6 +97,11 @@ export default function CourseActivityPage() {
   const peerReviewOn = hasFeature("peer_review");
   const similarityOn = hasFeature("similarity_check");
   const aiOn = hasFeature("ai_assistance");
+  // "?aiDraft=1" (from the AI course builder's report): open "Draft questions with AI" at once.
+  const aiDraftOpen = useSignal(false);
+  useEffect(() => {
+    aiDraftOpen.value = new URLSearchParams(window.location.search).get("aiDraft") === "1";
+  }, [aiDraftOpen]);
   const similarity = useSignal<Record<string, SimilarityFlag>>({});
 
   const editing = useSignal(false);
@@ -523,6 +529,19 @@ export default function CourseActivityPage() {
                 rows={6}
                 placeholder="What students need to know before they start"
               />
+              {aiOn && a.kind === "assignment" && (
+                <AiAssignmentInstructions
+                  courseId={course.id}
+                  title={draftTitle.value}
+                  current={draftInstructions.value}
+                  points={Number(draftPoints.value)}
+                  showSubmission={false}
+                  onAcceptAction={(d) => {
+                    draftInstructions.value = d.instructions;
+                    draftPoints.value = String(d.points);
+                  }}
+                />
+              )}
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
@@ -844,7 +863,14 @@ export default function CourseActivityPage() {
             ))}
             {canManage && isDraft && aiOn && (
               <div className="space-y-3">
-                <AiQuestionDrafts courseId={course.id} activityId={activityId} onAddedAction={load} />
+                <AiQuestionDrafts
+                  courseId={course.id}
+                  activityId={activityId}
+                  onAddedAction={load}
+                  // An empty quiz from the course builder: its topic (instructions) is the material.
+                  defaultText={(a.questions?.length ?? 0) === 0 ? (a.instructions ?? "") : ""}
+                  defaultOpen={aiDraftOpen.value}
+                />
               </div>
             )}
             {canManage && isDraft && (
@@ -929,6 +955,7 @@ export default function CourseActivityPage() {
               points={a.points}
               rubric={rubric.value.rubric}
               canManage={canManage}
+              ai={canManage && aiOn ? { title: a.title, instructions: a.instructions } : null}
               onChangedAction={() => {
                 loadRubric();
                 load();

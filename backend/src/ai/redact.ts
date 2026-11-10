@@ -76,3 +76,42 @@ export function plainText(text: string): string {
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .trim();
 }
+
+const URL_IN_TEXT = /https?:\/\/[^\s<>()[\]"']+/gi;
+
+/** The http(s) URLs a teacher typed or pasted, so a draft may keep links to them (and only them). */
+export function suppliedUrls(...texts: (string | null | undefined)[]): Set<string> {
+  const out = new Set<string>();
+  for (const t of texts) for (const m of (t ?? '').matchAll(URL_IN_TEXT)) out.add(m[0].replace(/[.,;:!?]+$/, ''));
+  return out;
+}
+
+/**
+ * Model Markdown made safe to insert into a page, instructions or an
+ * announcement: no HTML (tags removed), no images and no links unless the
+ * teacher supplied that exact URL (otherwise an image becomes its alt text,
+ * a link its label, a bare URL is dropped), no control characters. Markdown
+ * structure (headings, lists, emphasis, tables, line breaks) is kept.
+ */
+export function safeMarkdown(text: string, allowed: Set<string> = new Set()): string {
+  const ok = (url: string) => allowed.has(url.trim().replace(/[.,;:!?]+$/, ''));
+  return (
+    text
+      .replace(/\r\n?/g, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/!\[([^\]]*)\]\(([^)\s]*)[^)]*\)/g, (all, alt: string, url: string) => (ok(url) ? all : alt))
+      .replace(/\[([^\]]*)\]\(([^)\s]*)[^)]*\)/g, (all, label: string, url: string) => (ok(url) ? all : label))
+      // Reference-style link definitions: dropped unless supplied.
+      .replace(/^\s*\[[^\]]+\]:\s*(\S+).*$/gm, (all, url: string) => (ok(url) ? all : ''))
+      // Bare URLs (autolinked by the renderer) the teacher did not give.
+      .replace(URL_IN_TEXT, (url, offset: number, whole: string) => {
+        // Part of a kept [label](url): leave it.
+        if (whole[offset - 1] === '(' && whole[offset - 2] === ']') return url;
+        return ok(url) ? url : '';
+      })
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
+}

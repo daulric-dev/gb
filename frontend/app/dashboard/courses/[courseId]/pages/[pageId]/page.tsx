@@ -29,6 +29,7 @@ import {
 import { useCourse } from "../../_components/course-context";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
 import { AiPageSummary } from "../../_components/AiPageSummary";
+import { AiPageWriter } from "../../_components/AiPageWriter";
 import { useFeatures } from "@/hooks/use-features";
 import { userMessage } from "@/lib/errors";
 
@@ -217,6 +218,17 @@ export default function CoursePageDetail() {
               rows={18}
               placeholder="Write the page..."
             />
+            {aiOn && (
+              <AiPageWriter
+                courseId={course.id}
+                title={draftTitle.value}
+                text={draftBody.value}
+                onUseAction={(markdown, how) => {
+                  const body = draftBody.value.trim();
+                  draftBody.value = how === "replace" || !body ? markdown : `${body}\n\n${markdown}`;
+                }}
+              />
+            )}
             {aiOn && (
               <AiPageSummary
                 courseId={course.id}

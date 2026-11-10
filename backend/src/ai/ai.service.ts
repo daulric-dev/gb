@@ -45,6 +45,8 @@ export interface RunRequest {
   user: string;
   schema: JsonSchema;
   name: string;
+  /** Output token ceiling for the feature (see AI_FEATURE_MAX_TOKENS). */
+  maxTokens?: number;
 }
 
 const STATUS_FOR: Record<AiErrorKind, AiRequestStatus> = {

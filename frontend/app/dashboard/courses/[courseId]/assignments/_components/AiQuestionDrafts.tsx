@@ -47,25 +47,30 @@ interface Draft {
  * The teacher picks a course page or pastes text, how many questions and
  * which kinds; the drafts appear below as editable forms, each saved only
  * when the teacher accepts it (the normal add-question route). Nothing is
- * saved by asking.
+ * saved by asking. `defaultText` (the quiz's topic, from the AI course
+ * builder) pre-fills the pasted text; `defaultOpen` opens the dialog at once.
  */
 export function AiQuestionDrafts({
   courseId,
   activityId,
   onAddedAction,
+  defaultText,
+  defaultOpen = false,
 }: {
   courseId: string;
   activityId: string;
   onAddedAction: () => void;
+  defaultText?: string;
+  defaultOpen?: boolean;
 }) {
   useSignals();
   const id = useId();
-  const open = useSignal(false);
+  const open = useSignal(defaultOpen);
   const status = useSignal<AiStatus | null>(null);
   const pages = useSignal<CoursePageSummary[] | null>(null);
-  const source = useSignal<"page" | "text">("page");
+  const source = useSignal<"page" | "text">(defaultText?.trim() ? "text" : "page");
   const pageId = useSignal("");
-  const text = useSignal("");
+  const text = useSignal(defaultText ?? "");
   const count = useSignal("5");
   const kinds = useSignal<AiQuestionKind[]>(["multiple_choice", "true_false", "short_answer"]);
   const working = useSignal(false);

@@ -38,7 +38,7 @@ export class AiGateway {
 
   async generateStructured<T>(
     config: ProviderConfig,
-    req: { system: string; user: string; schema: JsonSchema; name: string },
+    req: { system: string; user: string; schema: JsonSchema; name: string; maxTokens?: number },
   ): Promise<StructuredResult<T>> {
     const raw = await this.adapter(config).complete(req);
     let value: unknown;

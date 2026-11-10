@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/select";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
 import { userMessage } from "@/lib/errors";
+import { useFeatures } from "@/hooks/use-features";
+import { AiAssignmentInstructions } from "./AiAssignmentInstructions";
 
 const KINDS: {
   kind: ActivityKind;
@@ -77,6 +79,8 @@ export function CreateActivityDialog({
 }) {
   useSignals();
   const router = useRouter();
+  const { hasFeature } = useFeatures();
+  const aiOn = hasFeature("ai_assistance");
 
   const kind = useSignal<ActivityKind>("assignment");
   const title = useSignal("");
@@ -244,6 +248,21 @@ export function CreateActivityDialog({
               rows={4}
               placeholder="What students need to know"
             />
+            {aiOn && kind.value === "assignment" && (
+              <AiAssignmentInstructions
+                courseId={courseId}
+                title={title.value}
+                current={instructions.value}
+                points={Number(points.value)}
+                onAcceptAction={(d) => {
+                  instructions.value = d.instructions;
+                  points.value = String(d.points);
+                  allowText.value = d.allowText;
+                  allowFile.value = d.allowFile;
+                  if (!d.allowFile) allowMultipleFiles.value = false;
+                }}
+              />
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">

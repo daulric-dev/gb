@@ -30,6 +30,8 @@ import { ScaleLegend, toneClass } from "@/components/mastery/mastery-ui";
 import { cn } from "@/lib/utils";
 import { useCourse } from "../_components/course-context";
 import { SectionHeader } from "../_components/SectionHeader";
+import { AiOutcomeSuggestions } from "./_components/AiOutcomeSuggestions";
+import { useFeatures } from "@/hooks/use-features";
 
 /**
  * A course's learning outcomes: the mastery grid (students × outcomes) and,
@@ -202,6 +204,8 @@ function targetChoices(targets: AlignmentTarget[]): { group: string; options: Ta
 
 function ManageView({ courseId, data, onChange }: { courseId: string; data: CourseOutcomes; onChange: () => Promise<void> }) {
   useSignals();
+  const { hasFeature } = useFeatures();
+  const aiOn = hasFeature("ai_assistance");
   const code = useSignal("");
   const title = useSignal("");
   const parentId = useSignal("");
@@ -442,6 +446,7 @@ function ManageView({ courseId, data, onChange }: { courseId: string; data: Cour
               </Button>
             </form>
           )}
+          {data.canEdit && aiOn && <AiOutcomeSuggestions courseId={courseId} onAddedAction={onChange} />}
         </CardContent>
       </Card>
     </div>
