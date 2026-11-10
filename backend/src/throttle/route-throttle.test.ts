@@ -19,9 +19,12 @@ describe('per-route throttle limits', () => {
   // called, so a busy page gets 429 on its first click. Per-route limits use
   // the 'route' throttler, whose counter is per route.
   test('no route overrides the shared default throttler', () => {
-    const offenders = sourceFiles(SRC).filter((file) =>
-      /@Throttle\(\s*\{\s*default\s*:/.test(readFileSync(file, 'utf8')),
-    );
+    // Inline (`@Throttle({ default: ... })`) or through a constant
+    // (`const X = { default: { limit ... } }` passed to @Throttle).
+    const offenders = sourceFiles(SRC).filter((file) => {
+      const text = readFileSync(file, 'utf8');
+      return /@Throttle\(\s*\{\s*default\s*:/.test(text) || /\{\s*default\s*:\s*\{\s*limit\s*:/.test(text);
+    });
     expect(offenders).toEqual([]);
   });
 

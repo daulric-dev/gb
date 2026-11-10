@@ -45,9 +45,9 @@ import {
 type Req = { user: { id: string } };
 const uuid = new ParseUUIDPipe();
 /** Generating is slow and costs the organisation money: a tight per-session window on top of the hourly limit. */
-const GENERATE_THROTTLE = { default: { limit: 10, ttl: 60 * 1000 } };
+const GENERATE_THROTTLE = { route: { limit: 10, ttl: 60 * 1000 } };
 /** Creating a reviewed plan makes many rows: a few a minute is plenty. */
-const CREATE_PLAN_THROTTLE = { default: { limit: 5, ttl: 60 * 1000 } };
+const CREATE_PLAN_THROTTLE = { route: { limit: 5, ttl: 60 * 1000 } };
 
 /**
  * The organisation's AI providers and settings. Organisation admins only,
@@ -195,7 +195,7 @@ export class CourseAiController {
  * The one route that creates anything is `ai/plan/create`, with the plan
  * the teacher reviewed; everything it creates starts unpublished.
  */
-@ApiTags('AI assistance')
+@ApiTags('AI Assistance')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
 @Controller('courses/:courseId')

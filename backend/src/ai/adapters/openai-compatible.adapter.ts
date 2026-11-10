@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { trimTrailingSlashes } from '@/common/trim-slashes';
 import { providerSchema } from '../json-schema';
 import { isGuardRefusal } from '../ai-fetch';
@@ -29,6 +30,8 @@ interface ChatCompletion {
  * (400/422) is asked once more with the schema in the prompt and "JSON
  * only". The caller validates the answer against the schema either way.
  */
+const logger = new Logger('OpenAiCompatibleAdapter');
+
 export class OpenAiCompatibleAdapter implements AiAdapter {
   constructor(
     private readonly config: ProviderConfig,
@@ -82,6 +85,10 @@ export class OpenAiCompatibleAdapter implements AiAdapter {
     } catch (err) {
       if (controller.signal.aborted) throw new AiProviderError('timeout', 'The provider took too long to answer.');
       if (isGuardRefusal(err)) throw new AiProviderError('blocked', (err as Error).message);
+      // Keep the real cause for operators (never request or response content).
+      const code = typeof (err as { code?: unknown })?.code === 'string' ? (err as { code: string }).code : '';
+      const message = err instanceof Error ? err.message : 'unknown error';
+      logger.warn(`OpenAI-compatible request failed: ${code} ${message}`.trim());
       throw new AiProviderError('provider', 'Could not reach the provider.');
     } finally {
       clearTimeout(timer);

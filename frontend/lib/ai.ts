@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api";
+import { userMessage } from "@/lib/errors";
 import type { CreatePlanBody, PlanItem, PlanItemKind, PlanModule, SubmissionType } from "@/lib/ai-course-plan";
 
 /**
@@ -336,8 +337,11 @@ export function aiErrorMessage(err: unknown): string {
       case "FEATURE_DISABLED":
         return "AI assistance is turned off for your school.";
     }
+    if (err.status === 429) return "Too many AI requests in the last minute. Wait a moment and try again.";
   }
-  return "The AI request failed. Try again.";
+  // Anything else (validation, permission, network, server): the API's own
+  // wording, or the generic text when there is none to show.
+  return userMessage(err, "The AI request failed. Try again.");
 }
 
 /** A draft as the question form's initial value (it never has an id until saved). */
