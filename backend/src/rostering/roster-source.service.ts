@@ -23,7 +23,6 @@ import type {
   CreateRosterSourceDto,
   RosterSettingsDto,
   RosterUploadTicketDto,
-  TestConnectionDto,
   UpdateRosterSourceDto,
 } from './dto/rostering.dto';
 
@@ -288,19 +287,15 @@ export class RosterSourceService {
     );
   }
 
-  /** Test unsaved credentials (the add form) or a saved source (`id`). */
-  async testConnection(input: TestConnectionDto | { id: string }) {
+  /**
+   * Test a saved source. Only saved sources can be tested: the endpoint URLs
+   * were validated and stored (behind step-up) when the source was saved, so
+   * no request body ever reaches an outbound request directly.
+   */
+  async testConnection(sourceId: string) {
     let client: OneRosterClient;
     try {
-      if ('id' in input) {
-        client = this.clientFor(await this.require(input.id));
-      } else {
-        this.checkApi(input);
-        client = new OneRosterClient(
-          { baseUrl: input.baseUrl.trim(), tokenUrl: input.tokenUrl.trim(), clientId: input.clientId.trim(), clientSecret: input.clientSecret, scope: input.scope ?? null },
-          this.clientDeps,
-        );
-      }
+      client = this.clientFor(await this.require(sourceId));
       const out = await client.test();
       return { ok: true as const, message: `Connected: the server answered with ${out.orgs} org${out.orgs === 1 ? '' : 's'} on the first page.` };
     } catch (err) {

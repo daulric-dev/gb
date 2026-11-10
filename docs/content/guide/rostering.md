@@ -69,7 +69,7 @@ Choose **OneRoster 1.2 endpoint** and enter what your SIS gives you:
 | Token URL | The OAuth 2.0 token endpoint (client credentials grant). |
 | Client ID, Client secret | The OAuth 2.0 credentials. The secret is encrypted and never shown again. |
 
-Use **Test connection** to check the credentials and that the endpoint answers.
+After adding the source, use **Test connection** on its page to check the credentials and that the endpoint answers (at most 10 tests a minute).
 The endpoint must use `https` and must not be on a private network (unless
 your install allows private destinations, the same setting as webhooks).
 GradeBook backs off and retries when the SIS answers "too many requests" or

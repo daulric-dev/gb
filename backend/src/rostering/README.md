@@ -11,7 +11,6 @@ All under `/api/organisation/rostering`, `AuthGuard` + `OrganisationAdminGuard` 
 | Method | Path | Step-up | What it does |
 | --- | --- | --- | --- |
 | GET | `/templates/:kind` | | `students`, `staff`, `classes` or `enrolments` template CSV (header + example row). |
-| POST | `/test-connection` | | Body `{ baseUrl, tokenUrl, clientId, clientSecret, scope? }` (unsaved) → `{ ok, message }`: a token and one page of orgs. |
 | GET | `/sources` | | Sources with their last run. Never the secret (`hasSecret`, `secretUnreadable`). |
 | POST | `/sources` | yes | `{ name, kind: 'csv' \| 'oneroster_api', baseUrl?, tokenUrl?, clientId?, clientSecret?, schedule?: 'off' \| 'daily', autoApply?, settings? }`. `daily` only for API sources. |
 | GET | `/sources/:id` | | One source. |

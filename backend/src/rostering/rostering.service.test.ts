@@ -10,7 +10,7 @@ import { FeatureDisabledException } from '@/features/feature-disabled.exception'
 import { OrganisationAdminGuard } from '@/organisation/organisation-admin.guard';
 import { AuthGuard } from '@/auth/auth.guard';
 import { STEP_UP_KEY } from '@/auth/step-up.guard';
-import { openSecret } from '@/account/secret-box';
+import { openSecret, sealSecret } from '@/account/secret-box';
 import { RosterSourceService } from './roster-source.service';
 import { RosterRunService } from './roster-run.service';
 import { RosterApplyService } from './roster-apply.service';
@@ -102,9 +102,16 @@ describe('RosterSourceService', () => {
     expect(await rejected(service.create({ name: 'CSV', kind: 'csv', schedule: 'daily' }, 'a'))).toBeInstanceOf(BadRequestException);
   });
 
-  test('test connection to a private address is refused by the SSRF guard', async () => {
+  test('testing a saved source at a private address is refused by the SSRF guard', async () => {
     delete process.env.WEBHOOK_ALLOW_PRIVATE;
-    const out = await service.testConnection({ baseUrl: 'https://127.0.0.1/or', tokenUrl: 'https://127.0.0.1/token', clientId: 'c', clientSecret: 's' });
+    prisma.roster_source.findUnique.mockResolvedValue(
+      sourceRow({
+        base_url: 'https://127.0.0.1/or',
+        token_url: 'https://127.0.0.1/token',
+        client_secret_enc: sealSecret(ROSTER_SECRET_INFO, rosterSecretAad(SOURCE), 's'),
+      }),
+    );
+    const out = await service.testConnection(SOURCE);
     expect(out.ok).toBe(false);
     expect(out.message).toContain('private or reserved address');
   });

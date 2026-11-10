@@ -57,14 +57,6 @@ export class UpdateRosterSourceDto {
   @IsOptional() @ValidateNested() @Type(() => RosterSettingsDto) settings?: RosterSettingsDto;
 }
 
-export class TestConnectionDto {
-  @IsString() @IsNotEmpty() @MaxLength(2000) baseUrl!: string;
-  @IsString() @IsNotEmpty() @MaxLength(2000) tokenUrl!: string;
-  @IsString() @IsNotEmpty() @MaxLength(500) clientId!: string;
-  @IsString() @IsNotEmpty() @MaxLength(2000) clientSecret!: string;
-  @IsOptional() @IsString() @MaxLength(500) scope?: string;
-}
-
 export class RosterUploadTicketDto {
   @IsString() @IsNotEmpty() @MaxLength(200) filename!: string;
   @IsIn(['text/csv', 'application/zip', 'application/x-zip-compressed', 'application/vnd.ms-excel', 'application/octet-stream'])

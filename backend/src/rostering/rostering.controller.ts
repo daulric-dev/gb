@@ -30,7 +30,6 @@ import {
   ListChangesQueryDto,
   RosterUploadTicketDto,
   StartDryRunDto,
-  TestConnectionDto,
   UpdateRosterSourceDto,
 } from './dto/rostering.dto';
 
@@ -61,17 +60,6 @@ export class RosteringController {
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', `attachment; filename="gradebook-${name}.csv"`)
       .send(templateCsv(name as TemplateKind));
-  }
-
-  // Calls a URL the admin types in (through the SSRF-guarded fetch), so it
-  // needs step-up like saving credentials does, and is rate-limited so it
-  // can't be used to scan hosts.
-  @RequireStepUp()
-  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
-  @Post('test-connection')
-  @HttpCode(200)
-  testConnection(@Body() dto: TestConnectionDto) {
-    return this.sources.testConnection(dto);
   }
 
   @Get('sources')
@@ -110,10 +98,13 @@ export class RosteringController {
     await this.sources.remove(id, req.user.id);
   }
 
+  // Calls the source's saved endpoint (through the SSRF-guarded fetch);
+  // rate-limited so it can't be used to probe hosts.
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
   @Post('sources/:id/test')
   @HttpCode(200)
   test(@Param('id', uuid) id: string) {
-    return this.sources.testConnection({ id });
+    return this.sources.testConnection(id);
   }
 
   @Post('sources/:id/uploads')

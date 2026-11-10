@@ -4,7 +4,7 @@ import { useId } from "react";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
-import { Loader2, PlugZap } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { userMessage } from "@/lib/errors";
 import { ROSTERING_API, type RosterSource, type SourceKind } from "@/lib/rostering";
@@ -49,29 +49,10 @@ export function AddSourceDialog({
   const clientSecret = useSignal("");
   const daily = useSignal(false);
   const autoApply = useSignal(false);
-  const testing = useSignal(false);
-  const test = useSignal<{ ok: boolean; message: string } | null>(null);
   const saving = useSignal(false);
 
   const api_ = kind.value === "oneroster_api";
   const ready = name.value.trim() && (!api_ || (baseUrl.value.trim() && tokenUrl.value.trim() && clientId.value.trim() && clientSecret.value));
-
-  async function testConnection() {
-    testing.value = true;
-    test.value = null;
-    try {
-      test.value = await api<{ ok: boolean; message: string }>(`${ROSTERING_API}/test-connection`, {
-        method: "POST",
-        body: { baseUrl: baseUrl.value.trim(), tokenUrl: tokenUrl.value.trim(), clientId: clientId.value.trim(), clientSecret: clientSecret.value },
-        // The API requires step-up here (it calls a URL the admin typed in).
-        stepUp: true,
-      });
-    } catch (err) {
-      test.value = { ok: false, message: userMessage(err, "The test could not run") };
-    } finally {
-      testing.value = false;
-    }
-  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -189,23 +170,9 @@ export function AddSourceDialog({
                   />
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={testing.value || !baseUrl.value || !tokenUrl.value || !clientId.value || !clientSecret.value}
-                  onClick={() => void testConnection()}
-                >
-                  {testing.value ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <PlugZap className="mr-1.5 size-4" />}
-                  Test connection
-                </Button>
-                {test.value && (
-                  <p role="status" className={test.value.ok ? "text-sm text-green-700 dark:text-green-400" : "text-sm text-destructive"}>
-                    {test.value.message}
-                  </p>
-                )}
-              </div>
+              <p className="text-xs text-muted-foreground">
+                After you add the source, use Test connection on its page to check these details.
+              </p>
               <div className="flex items-start justify-between gap-3">
                 <Label htmlFor={`${id}-daily`} className="font-normal">
                   Sync daily
