@@ -231,11 +231,67 @@ describe('ParentNotificationService', () => {
     expect(await service.getPrefs('p1')).toEqual({
       emailEnabled: false,
       pushEnabled: false,
-      kinds: ['missing_work', 'absence', 'new_grade', 'announcement'],
+      kinds: ['missing_work', 'absence', 'new_grade', 'announcement', 'attendance_alert'],
     });
     await service.setPrefs('p1', { emailEnabled: true, kinds: ['absence', 'absence'] });
     const call = prisma.parent_notification_pref.upsert.mock.calls[0][0];
     expect(call.where).toEqual({ user_profile_id: 'p1' });
     expect(call.create).toMatchObject({ user_profile_id: 'p1', email_enabled: true, kinds: ['absence'] });
+  });
+
+  describe('attendance alerts (attendance_alerts feature)', () => {
+    const fresh = () =>
+      new ParentNotificationService(
+        prisma as any,
+        new FeatureService(prisma as any, createMockCacheService() as any),
+        mail as any,
+        push as any,
+        submissions as any,
+      );
+    beforeEach(() => {
+      org = { parent_portal: true, parent_notifications: true, attendance_alerts: true };
+      pref.kinds = ['attendance_alert'];
+      prisma.attendance_alert_setting.findUnique.mockResolvedValue({ notify_parents: true });
+      prisma.attendance_alert.findMany.mockResolvedValue([
+        { id: 'al-1', kind: 'low_rate', value: 82.5, threshold: 90, window_days: 28 },
+      ]);
+      service = fresh();
+    });
+
+    test('an open alert from the lookback becomes one notice keyed by the alert', async () => {
+      const notices = await service.collect(NOW);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({ kind: 'attendance_alert', refId: 'al-1', title: 'Attendance alert for Ada L' });
+      expect(notices[0].body).toContain('82.5%');
+      const where = prisma.attendance_alert.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({ student_id: 'stu-1', school_id: 'school-1', resolved_at: null });
+      expect(where.opened_at.gte.getTime()).toBe(NOW.getTime() - 24 * HOUR);
+    });
+
+    test('a re-sent sweep sends nothing again (dedupe on the alert id)', async () => {
+      prisma.parent_notification_sent.createManyAndReturn.mockResolvedValueOnce([]);
+      expect(await service.sweep(NOW)).toBe(0);
+    });
+
+    test('gated by the feature, the opt-in, showAttendance, notify_parents and parent notifications', async () => {
+      for (const setup of [
+        () => (org = { parent_portal: true, parent_notifications: true }),
+        () => (pref.kinds = ['absence']),
+        () => (parentSettings = { showAttendance: false }),
+        () => prisma.attendance_alert_setting.findUnique.mockResolvedValue({ notify_parents: false }),
+        () => (org = { parent_portal: true, parent_notifications: false, attendance_alerts: true }),
+        () => (disabled = ['attendance']),
+      ]) {
+        org = { parent_portal: true, parent_notifications: true, attendance_alerts: true };
+        pref.kinds = ['attendance_alert'];
+        parentSettings = {};
+        disabled = [];
+        prisma.attendance_alert_setting.findUnique.mockResolvedValue({ notify_parents: true });
+        setup();
+        service = fresh();
+        const notices = await service.collect(NOW);
+        expect(notices.filter((n) => n.kind === 'attendance_alert')).toEqual([]);
+      }
+    });
   });
 });

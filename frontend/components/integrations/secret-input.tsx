@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Eye, EyeOff } from "lucide-react";
 import {
   InputGroup,
@@ -26,12 +27,13 @@ export function SecretInput({
   label: string;
   onChangeAction: (value: string) => void;
 }) {
-  const [shown, setShown] = useState(false);
+  useSignals();
+  const shown = useSignal(false);
   return (
     <InputGroup>
       <InputGroupInput
         id={id}
-        type={shown ? "text" : "password"}
+        type={shown.value ? "text" : "password"}
         value={value}
         placeholder={placeholder}
         maxLength={maxLength}
@@ -43,11 +45,11 @@ export function SecretInput({
       <InputGroupAddon align="inline-end">
         <InputGroupButton
           size="icon-xs"
-          aria-label={`${shown ? "Hide" : "Show"} ${label}`}
-          aria-pressed={shown}
-          onClick={() => setShown((s) => !s)}
+          aria-label={`${shown.value ? "Hide" : "Show"} ${label}`}
+          aria-pressed={shown.value}
+          onClick={() => (shown.value = !shown.value)}
         >
-          {shown ? <EyeOff /> : <Eye />}
+          {shown.value ? <EyeOff /> : <Eye />}
         </InputGroupButton>
       </InputGroupAddon>
     </InputGroup>

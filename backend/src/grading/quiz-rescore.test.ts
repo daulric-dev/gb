@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { rescoreQuizFromAnswers } from './quiz-rescore';
+import { QUIZ_CREDIT, rescoreQuizFromAnswers, rescoreSql } from './quiz-rescore';
 
 const MIGRATIONS = join(__dirname, '../../prisma/migrations');
 
@@ -23,45 +23,72 @@ function latestSubmitQuiz(): { folder: string; body: string } {
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
-async function rescoreSql(points: number, activityId: string) {
-  const $executeRaw = mock(async (..._args: unknown[]) => 3);
-  const n = await rescoreQuizFromAnswers({ $executeRaw } as never, activityId, points);
-  const [strings, ...values] = $executeRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
-  return { n, text: strings.join('$'), values };
-}
-
 describe('rescoreQuizFromAnswers', () => {
-  test('one statement with the new points and the activity, returning the row count', async () => {
-    const { n, values } = await rescoreSql(40, 'act-1');
+  test('one statement with the points, the activity and the submission, returning the row count', async () => {
+    const $executeRaw = mock(async (..._args: unknown[]) => 3);
+    const n = await rescoreQuizFromAnswers({ $executeRaw } as never, 'act-1', 40, 'sub-1');
     expect(n).toBe(3);
-    expect(values).toEqual([40, 'act-1']);
+    const sql = $executeRaw.mock.calls[0][0] as ReturnType<typeof rescoreSql>;
+    expect(sql.values).toEqual([40, 40, 'act-1', 'sub-1', 'sub-1']);
   });
 
-  test('scores exactly as the latest grading.submit_quiz does', async () => {
+  test('scores exactly as the latest grading.submit_quiz does', () => {
     const { folder, body } = latestSubmitQuiz();
     const fn = norm(body);
-    const { text } = await rescoreSql(40, 'act-1');
-    const ours = norm(text);
+    const ours = norm(rescoreSql('a', 40).sql);
+    const credit = norm(QUIZ_CREDIT.sql);
 
-    // The per-question "right answer" test, word for word.
-    const hit = fn.slice(fn.indexOf('select case when q.kind'), fn.indexOf('end as hit') + 'end as hit'.length);
-    expect(hit.length).toBeGreaterThan(50);
-    expect(ours).toContain(hit);
-    // Possible and earned points over the quiz's questions.
+    // The per-question credit, word for word: in the function and in ours.
+    const start = fn.indexOf('left join lateral (') + 'left join lateral ('.length;
+    const end = fn.indexOf(') correct on true');
+    expect(fn.slice(start, end).trim()).toBe(credit);
+    expect(ours).toContain(credit);
+    // Possible and earned points, and the unmarked count.
     expect(fn).toContain('coalesce(sum(q.points), 0)');
-    expect(fn).toContain('coalesce(sum(case when correct.hit then q.points else 0 end), 0)');
+    expect(fn).toContain('coalesce(sum(q.points * correct.credit), 0)');
+    expect(fn).toContain('count(*) filter (where correct.unmarked)');
     expect(ours).toContain('coalesce(sum(q.points), 0) as possible');
-    expect(ours).toContain('coalesce(sum(case when correct.hit then q.points else 0 end), 0) as earned');
+    expect(ours).toContain('coalesce(sum(q.points * correct.credit), 0) as earned');
+    expect(ours).toContain('count(*) filter (where correct.unmarked) as unmarked');
     // earned / possible * points, 0 when the questions are worth nothing.
     expect(fn).toContain('when v_possible > 0 then (v_earned / v_possible) * v_activity.points else 0');
-    expect(ours).toContain('when t.possible > 0 then (t.earned / t.possible) * $::numeric else 0');
-    // Short answers: case-insensitive, trimmed.
-    expect(ours).toContain('lower(btrim(ans.text_answer)) = lower(btrim(o.label))');
-    expect(folder >= '20261108110000_quiz_lockdown_presence').toBe(true);
+    expect(ours).toContain('when t.possible > 0 then (t.earned / t.possible) * ?::numeric else 0');
+    // The same question set: the attempt's own, else the quiz's.
+    expect(fn).toContain(
+      norm(
+        'q.id in ( select aq.question_id from grading.quiz_attempt_question aq where aq.submission_id = p_submission_id ) or (q.activity_id = v_activity.id and not exists ( select 1 from grading.quiz_attempt_question aq where aq.submission_id = p_submission_id ))',
+      ),
+    );
+    expect(ours).toContain(
+      norm(
+        'on q.id in ( select aq.question_id from grading.quiz_attempt_question aq where aq.submission_id = s2.id ) or (q.activity_id = s2.activity_id and not exists ( select 1 from grading.quiz_attempt_question aq where aq.submission_id = s2.id ))',
+      ),
+    );
+    // Needs marking while any answered essay or file question is unmarked.
+    expect(fn).toContain("when v_unmarked > 0 then 'submitted'::grading.submission_status");
+    expect(ours).toContain("when t.unmarked > 0 then 'submitted'::grading.submission_status");
+    expect(folder >= '20261117100000_quiz_question_types').toBe(true);
   });
 
-  test('only automatic scores of finished attempts', async () => {
-    const ours = norm((await rescoreSql(1, 'a')).text);
+  test('every question kind is scored in the SQL', () => {
+    const credit = norm(QUIZ_CREDIT.sql);
+    for (const kind of [
+      'short_answer',
+      "'multiple_choice', 'true_false'",
+      'numeric',
+      'multiple_select',
+      'matching',
+      'ordering',
+      "'essay', 'file_upload'",
+    ]) {
+      expect(credit).toContain(kind);
+    }
+    expect(credit).toContain('abs(ans.numeric_answer - q.numeric_answer) <= q.numeric_tolerance');
+    expect(credit).toContain('lower(btrim(ans.text_answer)) = lower(btrim(o.label))');
+  });
+
+  test('only automatic scores of finished attempts', () => {
+    const ours = norm(rescoreSql('a', 1).sql);
     expect(ours).toContain('s2.graded_by is null');
     expect(ours).toContain('s2.score is not null');
     expect(ours).toContain('s2.quiz_started_at is null');

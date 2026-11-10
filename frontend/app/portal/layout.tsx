@@ -33,8 +33,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   CheckSquare,
+  Clock,
   FileBadge,
   GraduationCap,
   LayoutDashboard,
@@ -57,6 +59,8 @@ const NAV: {
   { href: "/portal/grades", label: "Grades", icon: GraduationCap },
   { href: "/portal/work", label: "To-do", icon: CheckSquare },
   { href: "/portal/calendar", label: "Calendar", icon: CalendarDays, feature: "calendar" },
+  { href: "/portal/timetable", label: "Timetable", icon: Clock, feature: "timetable" },
+  { href: "/portal/attendance", label: "Attendance", icon: CalendarCheck, feature: "attendance" },
   {
     href: "/portal/announcements",
     label: "Announcements",

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Laptop, Loader2, LogOut, Smartphone } from "lucide-react";
@@ -34,37 +36,42 @@ import { userMessage } from "@/lib/errors";
  * sign-in" email links here (#devices).
  */
 export function SignedInDevices() {
+  useSignals();
   const router = useRouter();
-  const [sessions, setSessions] = useState<SignedInSession[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const sessions = useSignal<SignedInSession[] | null>(null);
+  const busy = useSignal<string | null>(null);
+  const confirmOpen = useSignal(false);
 
-  const [version, setVersion] = useState(0);
-  const load = useCallback(() => setVersion((v) => v + 1), []);
+  const version = useSignal(0);
+  const load = useCallback(() => {
+    version.value = version.value + 1;
+  }, [version]);
 
   useEffect(() => {
     let live = true;
     api<SignedInSession[]>("/auth/sessions")
-      .then((rows) => live && setSessions(rows))
+      .then((rows) => {
+        if (live) sessions.value = rows;
+      })
       .catch(() => {
         if (!live) return;
-        setSessions([]);
+        sessions.value = [];
         toast.error("Failed to load signed-in devices");
       });
     return () => {
       live = false;
     };
-  }, [version]);
+  }, [version.value, sessions]);
 
   // Arriving from the email's link: bring the card into view once it renders.
   useEffect(() => {
-    if (sessions && window.location.hash === `#${DEVICES_ANCHOR}`) {
+    if (sessions.value && window.location.hash === `#${DEVICES_ANCHOR}`) {
       document.getElementById(DEVICES_ANCHOR)?.scrollIntoView({ block: "start" });
     }
-  }, [sessions]);
+  }, [sessions.value]);
 
   async function signOut(session: SignedInSession) {
-    setBusy(session.id);
+    busy.value = session.id;
     try {
       await api(`/auth/sessions/${session.id}`, { method: "DELETE" });
       if (session.current) {
@@ -76,12 +83,12 @@ export function SignedInDevices() {
     } catch (err) {
       toast.error(userMessage(err, "Failed to sign out"));
     } finally {
-      setBusy(null);
+      busy.value = null;
     }
   }
 
   async function signOutOthers() {
-    setBusy("others");
+    busy.value = "others";
     try {
       const { revoked } = await api<{ revoked: number }>(
         "/auth/sessions/revoke-others",
@@ -90,16 +97,16 @@ export function SignedInDevices() {
       toast.success(
         revoked === 1 ? "Signed out 1 device" : `Signed out ${revoked} devices`,
       );
-      setConfirmOpen(false);
+      confirmOpen.value = false;
       load();
     } catch (err) {
       toast.error(userMessage(err, "Failed to sign out"));
     } finally {
-      setBusy(null);
+      busy.value = null;
     }
   }
 
-  const others = sessions?.filter((s) => !s.current).length ?? 0;
+  const others = sessions.value?.filter((s) => !s.current).length ?? 0;
 
   return (
     <Card id={DEVICES_ANCHOR} className="scroll-mt-20 p-6">
@@ -109,16 +116,16 @@ export function SignedInDevices() {
         recognise. Each sign-in lasts at most 90 days, then you sign in again.
       </p>
 
-      {sessions === null ? (
+      {sessions.value === null ? (
         <div className="space-y-3">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-12 w-full" />
         </div>
-      ) : sessions.length === 0 ? (
+      ) : sessions.value.length === 0 ? (
         <p className="text-sm text-muted-foreground">No devices to show.</p>
       ) : (
         <ul className="divide-y">
-          {sessions.map((s) => {
+          {sessions.value.map((s) => {
             const Icon = isMobileDevice(s.device) ? Smartphone : Laptop;
             return (
               <li key={s.id} className="flex items-center gap-3 py-3">
@@ -144,11 +151,11 @@ export function SignedInDevices() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={busy !== null}
+                    disabled={busy.value !== null}
                     onClick={() => void signOut(s)}
                     aria-label={`Sign out ${s.device}`}
                   >
-                    {busy === s.id && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    {busy.value === s.id && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
                     Sign out
                   </Button>
                 )}
@@ -159,10 +166,10 @@ export function SignedInDevices() {
       )}
 
       {others > 0 && (
-        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <Dialog open={confirmOpen.value} onOpenChange={(o) => (confirmOpen.value = o)}>
           <DialogTrigger
             render={
-              <Button variant="outline" className="mt-4" disabled={busy !== null}>
+              <Button variant="outline" className="mt-4" disabled={busy.value !== null}>
                 <LogOut className="mr-2 size-4" />
                 Sign out of all other devices
               </Button>
@@ -179,10 +186,10 @@ export function SignedInDevices() {
             <DialogFooter>
               <Button
                 variant="destructive"
-                disabled={busy !== null}
+                disabled={busy.value !== null}
                 onClick={() => void signOutOthers()}
               >
-                {busy === "others" && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {busy.value === "others" && <Loader2 className="mr-2 size-4 animate-spin" />}
                 Sign out
               </Button>
             </DialogFooter>

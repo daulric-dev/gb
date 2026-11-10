@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -70,14 +71,16 @@ export function SchoolFormDialog({
   editing: OrganisationSchool | null;
   onSaved: () => void;
 }) {
-  const [saving, setSaving] = useState(false);
+  useSignals();
+  const savingSignal = useSignal(false);
+  const saving = savingSignal.value;
   return (
     <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
       <DialogContent>
         <SchoolFormBody
           editing={editing}
           saving={saving}
-          setSaving={setSaving}
+          setSaving={(v) => (savingSignal.value = v)}
           onClose={() => onOpenChange(false)}
           onSaved={onSaved}
         />
@@ -99,9 +102,11 @@ function SchoolFormBody({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  useSignals();
   const { profile, refresh } = useAuth();
   const myEmail = profile.value?.email ?? "";
-  const [form, setForm] = useState<SchoolForm>(() => formFor(editing));
+  const formSignal = useSignal<SchoolForm>(formFor(editing));
+  const form = formSignal.value;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -165,7 +170,7 @@ function SchoolFormBody({
             <Input
               id="school-name"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => (formSignal.value = { ...form, name: e.target.value })}
               placeholder="Gradebook Academy"
               required
               autoFocus
@@ -177,7 +182,7 @@ function SchoolFormBody({
               <Input
                 id="school-code"
                 value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                onChange={(e) => (formSignal.value = { ...form, code: e.target.value })}
                 placeholder="Optional"
               />
             </div>
@@ -186,7 +191,7 @@ function SchoolFormBody({
               <NativeSelect
                 id="school-type"
                 value={form.schoolType}
-                onChange={(e) => setForm({ ...form, schoolType: e.target.value })}
+                onChange={(e) => (formSignal.value = { ...form, schoolType: e.target.value })}
                 className="w-full"
               >
                 <NativeSelectOption value="">Not set</NativeSelectOption>
@@ -208,7 +213,7 @@ function SchoolFormBody({
                     variant="link"
                     size="sm"
                     className="h-auto p-0"
-                    onClick={() => setForm({ ...form, adminEmail: myEmail })}
+                    onClick={() => (formSignal.value = { ...form, adminEmail: myEmail })}
                   >
                     Use my email
                   </Button>
@@ -218,7 +223,7 @@ function SchoolFormBody({
                 id="school-admin"
                 type="email"
                 value={form.adminEmail}
-                onChange={(e) => setForm({ ...form, adminEmail: e.target.value })}
+                onChange={(e) => (formSignal.value = { ...form, adminEmail: e.target.value })}
                 placeholder="Optional - you can appoint one later"
               />
             </div>
@@ -249,7 +254,9 @@ export function AppointAdminDialog({
   onClose: () => void;
   onAppointed: () => void;
 }) {
-  const [saving, setSaving] = useState(false);
+  useSignals();
+  const savingSignal = useSignal(false);
+  const saving = savingSignal.value;
   return (
     <Dialog open={school !== null} onOpenChange={(o) => !saving && !o && onClose()}>
       <DialogContent>
@@ -257,7 +264,7 @@ export function AppointAdminDialog({
           <AppointAdminForm
             school={school}
             saving={saving}
-            setSaving={setSaving}
+            setSaving={(v) => (savingSignal.value = v)}
             onClose={onClose}
             onAppointed={onAppointed}
           />
@@ -280,8 +287,10 @@ function AppointAdminForm({
   onClose: () => void;
   onAppointed: () => void;
 }) {
+  useSignals();
   // Fresh each time the dialog opens: its content unmounts when closed.
-  const [email, setEmail] = useState("");
+  const emailSignal = useSignal("");
+  const email = emailSignal.value;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -325,7 +334,7 @@ function AppointAdminForm({
           id="appoint-email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => (emailSignal.value = e.target.value)}
           placeholder="admin@example.com"
           required
           autoFocus

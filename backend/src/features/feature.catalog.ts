@@ -29,6 +29,10 @@ export const FEATURE_KEYS = [
   'report_cards',
   'parent_portal',
   'parent_notifications',
+  'timetable',
+  'attendance_alerts',
+  'rostering',
+  'lti',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -140,6 +144,38 @@ export const FEATURES: readonly FeatureDefinition[] = [
       'Parents can opt in to email and push notices about missing work, absences, new grades and announcements.',
     default: false,
     requires: ['parent_portal'],
+  },
+  {
+    key: 'timetable',
+    label: 'Timetable & automatic attendance',
+    description:
+      'Rooms, bell schedule and a weekly or rotating timetable per course. Check-in sessions open and close automatically at each period, using the room\'s saved location.',
+    default: false,
+    requires: ['attendance'],
+  },
+  {
+    key: 'attendance_alerts',
+    label: 'Attendance reports & alerts',
+    description:
+      'Attendance percentages per student, course and school with CSV export, and alerts to form tutors, admins and (when parent notifications are on) parents when attendance falls below the school\'s thresholds.',
+    default: false,
+    requires: ['attendance'],
+  },
+  {
+    key: 'rostering',
+    label: 'Rostering sync (OneRoster, CSV)',
+    description:
+      "Organisation admins import or sync students, staff, classes and enrolments from CSV uploads or a OneRoster 1.2 endpoint, with a dry run before anything changes. Organisation-level: a school's own switch does not affect it. Off by default.",
+    default: false,
+    requires: [],
+  },
+  {
+    key: 'lti',
+    label: 'External tools (LTI 1.3)',
+    description:
+      "The organisation registers external learning tools; teachers add them to course modules, students open them signed in as themselves, and tools can send grades back to the gradebook. Off by default: names, emails (if the tool is allowed them) and course details leave the platform.",
+    default: false,
+    requires: [],
   },
 ];
 

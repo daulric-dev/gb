@@ -117,6 +117,7 @@ CI runs the same checks on every push and pull request; the **CI Gate** status c
 
 - This is Next.js 16. Read `frontend/AGENTS.md`: APIs and conventions differ from older versions, so check `node_modules/next/dist/docs/` before relying on what you remember.
 - `NEXT_PUBLIC_*` values are inlined at build time; changing one needs a rebuild.
+- Component state uses `@preact/signals-react` (`useSignal`, `useComputed`, module-level `signal()`, with `useSignals()` from `@preact/signals-react/runtime` in components that read them), never React's `useState`. We chose signals for speed and are keeping it that way; `bun run lint` fails on any `useState`.
 
 **Mobile** (`mobile/`)
 

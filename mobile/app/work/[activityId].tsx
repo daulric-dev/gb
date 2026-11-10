@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
-import { CheckCircle2, Paperclip, Upload } from "lucide-react-native";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  CheckCircle2,
+  Paperclip,
+  Upload,
+} from "lucide-react-native";
 import { api } from "@/lib/api";
 import { Screen } from "@/components/layout/Screen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -23,7 +30,7 @@ import {
   studentDueAt,
   type PortalWorkDetail,
 } from "@/lib/work";
-import { uploadSubmissionFile } from "@/lib/upload";
+import { uploadQuizQuestionFile, uploadSubmissionFile } from "@/lib/upload";
 import { formatMb, uploadSizeError, useUploadLimit } from "@/lib/upload-limit";
 import { formatScore } from "@/lib/format-number";
 import { Markdown } from "@/components/ui/Markdown";
@@ -59,8 +66,19 @@ export default function WorkDetailScreen() {
   const uploadLimit = useUploadLimit();
   /** questionId -> chosen optionId */
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  /** questionId -> typed answer, for short-answer questions */
+  /** questionId -> typed answer, for short-answer and essay questions */
   const [written, setWritten] = useState<Record<string, string>>({});
+  /** questionId -> selected optionIds, for multiple-select */
+  const [multiAnswers, setMultiAnswers] = useState<Record<string, string[]>>({});
+  /** questionId -> entered numeric answer */
+  const [numericAnswers, setNumericAnswers] = useState<Record<string, string>>({});
+  /** questionId -> (optionId -> matched choice) */
+  const [matchingAnswers, setMatchingAnswers] = useState<Record<string, Record<string, string>>>({});
+  /** questionId -> optionIds in order */
+  const [orderingAnswers, setOrderingAnswers] = useState<Record<string, string[]>>({});
+  /** questionId -> { fileId, fileName } */
+  const [fileAnswers, setFileAnswers] = useState<Record<string, { fileId: string; fileName?: string }>>({});
+  const [questionUploading, setQuestionUploading] = useState<Record<string, boolean>>({});
   const [text, setText] = useState("");
   // Lockdown pinning: a failed pin offers the reported "without pinning"
   // fallback; waived reports not_pinned for the attempt; unpinHint shows how
@@ -87,17 +105,76 @@ export default function WorkDetailScreen() {
         ? Date.parse(data.quizAttempt.serverNow) - Date.now()
         : 0,
     );
+    const saved = data?.quizAttempt?.answers ?? [];
     setAnswers(
       Object.fromEntries(
-        (data?.quizAttempt?.answers ?? []).flatMap((answer) =>
+        saved.flatMap((answer) =>
           answer.optionId ? [[answer.questionId, answer.optionId]] : [],
         ),
       ),
     );
     setWritten(
       Object.fromEntries(
-        (data?.quizAttempt?.answers ?? []).flatMap((answer) =>
-          answer.text !== null ? [[answer.questionId, answer.text]] : [],
+        saved.flatMap((answer) =>
+          typeof answer.text === "string" ? [[answer.questionId, answer.text]] : [],
+        ),
+      ),
+    );
+    setMultiAnswers(
+      Object.fromEntries(
+        saved.flatMap((answer) =>
+          answer.optionIds ? [[answer.questionId, answer.optionIds]] : [],
+        ),
+      ),
+    );
+    setNumericAnswers(
+      Object.fromEntries(
+        saved.flatMap((answer) =>
+          answer.numeric !== null && answer.numeric !== undefined
+            ? [[answer.questionId, String(answer.numeric)]]
+            : [],
+        ),
+      ),
+    );
+    setMatchingAnswers(
+      Object.fromEntries(
+        saved.flatMap((answer) => {
+          if (!answer.matches) return [];
+          if (Array.isArray(answer.matches)) {
+            return [
+              [
+                answer.questionId,
+                Object.fromEntries(
+                  answer.matches.map((m: any) => [m.optionId, m.label]),
+                ),
+              ],
+            ];
+          }
+          if (typeof answer.matches === "object") {
+            return [[answer.questionId, answer.matches as Record<string, string>]];
+          }
+          return [];
+        }),
+      ),
+    );
+    setOrderingAnswers(
+      Object.fromEntries(
+        (data?.questions ?? [])
+          .filter((q) => q.kind === "ordering")
+          .map((q) => {
+            const savedAns = saved.find((a) => a.questionId === q.id);
+            const order =
+              savedAns?.optionIds && savedAns.optionIds.length > 0
+                ? savedAns.optionIds
+                : q.options.map((o) => o.id);
+            return [q.id, order];
+          }),
+      ),
+    );
+    setFileAnswers(
+      Object.fromEntries(
+        saved.flatMap((answer) =>
+          answer.fileId ? [[answer.questionId, { fileId: answer.fileId }]] : [],
         ),
       ),
     );
@@ -205,19 +282,83 @@ export default function WorkDetailScreen() {
   function quizAnswers(
     currentAnswers = answers,
     currentWritten = written,
+    currentMulti = multiAnswers,
+    currentNumeric = numericAnswers,
+    currentMatching = matchingAnswers,
+    currentOrdering = orderingAnswers,
+    currentFile = fileAnswers,
   ) {
     if (!work) return [];
     return work.questions.reduce<
-      { questionId: string; optionId?: string; text?: string }[]
+      {
+        questionId: string;
+        optionId?: string;
+        optionIds?: string[];
+        matches?: { optionId: string; label: string }[];
+        text?: string;
+        numeric?: number;
+        fileId?: string;
+      }[]
     >((collected, question) => {
-      if (question.kind === "short_answer") {
-        const answer = currentWritten[question.id]?.trim();
-        if (answer) collected.push({ questionId: question.id, text: answer });
-        return collected;
+      switch (question.kind) {
+        case "short_answer":
+        case "essay": {
+          const answer = currentWritten[question.id]?.trim();
+          if (answer) collected.push({ questionId: question.id, text: answer });
+          return collected;
+        }
+        case "multiple_choice":
+        case "true_false": {
+          const optionId = currentAnswers[question.id];
+          if (optionId) collected.push({ questionId: question.id, optionId });
+          return collected;
+        }
+        case "multiple_select": {
+          const selected = currentMulti[question.id];
+          if (selected && selected.length > 0) {
+            collected.push({ questionId: question.id, optionIds: selected });
+          }
+          return collected;
+        }
+        case "numeric": {
+          const raw = currentNumeric[question.id]?.trim();
+          if (raw) {
+            const num = Number(raw);
+            if (Number.isFinite(num)) {
+              collected.push({ questionId: question.id, numeric: num });
+            }
+          }
+          return collected;
+        }
+        case "matching": {
+          const m = currentMatching[question.id];
+          if (m) {
+            const matches = Object.entries(m)
+              .filter(([_, label]) => !!label?.trim())
+              .map(([optionId, label]) => ({ optionId, label: label.trim() }));
+            if (matches.length > 0) {
+              collected.push({ questionId: question.id, matches });
+            }
+          }
+          return collected;
+        }
+        case "ordering": {
+          const order = currentOrdering[question.id];
+          if (order && order.length > 0) {
+            collected.push({ questionId: question.id, optionIds: order });
+          }
+          return collected;
+        }
+        case "file_upload": {
+          const f = currentFile[question.id];
+          if (f?.fileId) {
+            collected.push({ questionId: question.id, fileId: f.fileId });
+          }
+          return collected;
+        }
+        default:
+          return collected;
       }
-      const optionId = currentAnswers[question.id];
-      if (optionId) collected.push({ questionId: question.id, optionId });
-      return collected;
     }, []);
   }
 
@@ -247,10 +388,23 @@ export default function WorkDetailScreen() {
   function scheduleQuizSave(
     nextAnswers = answers,
     nextWritten = written,
+    nextMulti = multiAnswers,
+    nextNumeric = numericAnswers,
+    nextMatching = matchingAnswers,
+    nextOrdering = orderingAnswers,
+    nextFile = fileAnswers,
   ) {
     if (!work?.quizAttempt?.startedAt) return;
     const revision = ++quizSaveRevision.current;
-    const snapshot = quizAnswers(nextAnswers, nextWritten);
+    const snapshot = quizAnswers(
+      nextAnswers,
+      nextWritten,
+      nextMulti,
+      nextNumeric,
+      nextMatching,
+      nextOrdering,
+      nextFile,
+    );
     setQuizSaveState("saving");
     if (quizSaveTimer.current) clearTimeout(quizSaveTimer.current);
     quizSaveTimer.current = setTimeout(() => {
@@ -360,13 +514,58 @@ export default function WorkDetailScreen() {
       // A retake starts blank rather than pre-filled with the last attempt.
       setAnswers({});
       setWritten({});
-      setSubmitConfirmation(false);
+      setMultiAnswers({});
+      setNumericAnswers({});
+      setMatchingAnswers({});
+      setOrderingAnswers({});
+      setFileAnswers({});
       setSubmitConfirmation(false);
       await load();
     } catch (err) {
       toast.error(userMessage(err, "Failed to submit"));
     } finally {
       setWorking(false);
+    }
+  }
+
+  async function attachQuestionFile(questionId: string) {
+    const q = work?.questions.find((item) => item.id === questionId);
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: q?.fileTypes?.length ? q.fileTypes : ["*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets || res.assets.length === 0) return;
+      const asset = res.assets[0];
+      if (q?.fileMaxMb && asset.size && asset.size > q.fileMaxMb * 1024 * 1024) {
+        toast.error(`File is too large (maximum ${q.fileMaxMb} MB)`);
+        return;
+      }
+      setQuestionUploading((prev) => ({ ...prev, [questionId]: true }));
+      const uploaded = await uploadQuizQuestionFile(activityId, questionId, {
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType ?? "application/octet-stream",
+      });
+      const nextFile = {
+        ...fileAnswers,
+        [questionId]: { fileId: uploaded.fileId, fileName: asset.name },
+      };
+      setFileAnswers(nextFile);
+      scheduleQuizSave(
+        answers,
+        written,
+        multiAnswers,
+        numericAnswers,
+        matchingAnswers,
+        orderingAnswers,
+        nextFile,
+      );
+      toast.success("File attached to question");
+    } catch (err) {
+      toast.error(userMessage(err, "Failed to upload file"));
+    } finally {
+      setQuestionUploading((prev) => ({ ...prev, [questionId]: false }));
     }
   }
 
@@ -477,14 +676,38 @@ export default function WorkDetailScreen() {
     work.kind === "assignment"
       ? lateDays(studentDueAt(work), work.submission?.submittedAt ?? null)
       : null;
+  const isQuestionAnswered = (question: (typeof work.questions)[0]) => {
+    switch (question.kind) {
+      case "short_answer":
+      case "essay":
+        return !!written[question.id]?.trim();
+      case "multiple_choice":
+      case "true_false":
+        return !!answers[question.id];
+      case "multiple_select":
+        return (multiAnswers[question.id]?.length ?? 0) > 0;
+      case "numeric": {
+        const val = numericAnswers[question.id]?.trim();
+        return !!val && Number.isFinite(Number(val));
+      }
+      case "matching": {
+        const m = matchingAnswers[question.id];
+        return !!m && question.options.every((o) => !!m[o.id]);
+      }
+      case "ordering":
+        return (orderingAnswers[question.id]?.length ?? 0) === question.options.length;
+      case "file_upload":
+        return !!fileAnswers[question.id]?.fileId;
+      default:
+        return false;
+    }
+  };
+
   const unansweredQuestions = work.questions
     .map((question, index) => ({
       question,
       number: index + 1,
-      answered:
-        question.kind === "short_answer"
-          ? !!written[question.id]?.trim()
-          : !!answers[question.id],
+      answered: isQuestionAnswered(question),
     }))
     .filter((item) => !item.answered);
   const unansweredQuestionIds = new Set(
@@ -514,6 +737,19 @@ export default function WorkDetailScreen() {
       onRefresh={onRefresh}
     >
       <View style={{ gap: 12 }}>
+        {!submitted && work.isLate && work.lateUntil && (
+          <Card>
+            <CardContent style={{ paddingVertical: 12, gap: 4 }}>
+              <Text size="sm" weight="500">
+                Late submission
+              </Text>
+              <Text size="xs" variant="muted">
+                Past due. Work is accepted until {dueLabel(work.lateUntil)}
+                {work.latePenaltyMode && work.latePenaltyMode !== "none" ? " (late penalty applies)" : ""}.
+              </Text>
+            </CardContent>
+          </Card>
+        )}
         {submitted && (
           <Card>
             <CardContent style={styles.result}>
@@ -523,8 +759,16 @@ export default function WorkDetailScreen() {
                   {work.submission?.excused
                     ? "Excused"
                     : work.submission?.status === "graded"
-                      ? `Marked: ${formatScore(work.submission.score)}/${formatScore(work.points)}`
-                      : "Handed in"}
+                      ? `Marked: ${formatScore(work.submission.score)}/${formatScore(work.points)}${
+                          (work.submission.latePenaltyPercent ?? 0) > 0
+                            ? work.submission.latePenaltyWaived
+                              ? " (late penalty waived)"
+                              : ` (${formatScore(work.submission.rawScore ?? work.submission.score)} − ${work.submission.latePenaltyPercent}% late)`
+                            : ""
+                        }`
+                      : work.submission?.needsMarking
+                        ? "Handed in · Waiting for teacher to mark"
+                        : "Handed in"}
                 </Text>
                 {submittedLateBy !== null && (
                   <Text
@@ -745,8 +989,127 @@ export default function WorkDetailScreen() {
                     <Badge variant="secondary">{`${formatScore(q.points)} pt`}</Badge>
                   </View>
                 </CardHeader>
-                <CardContent style={{ gap: 8 }}>
-                  {q.kind === "short_answer" ? (
+                <CardContent style={{ gap: 10 }}>
+                  {(q.kind === "multiple_choice" || q.kind === "true_false") && (
+                    <View style={{ gap: 8 }}>
+                      {q.options.map((o) => {
+                        const chosen = answers[q.id] === o.id;
+                        return (
+                          <Pressable
+                            key={o.id}
+                            disabled={!quizCanAnswer}
+                            onPress={() => {
+                              const nextAnswers = { ...answers, [q.id]: o.id };
+                              setAnswers(nextAnswers);
+                              scheduleQuizSave(
+                                nextAnswers,
+                                written,
+                                multiAnswers,
+                                numericAnswers,
+                                matchingAnswers,
+                                orderingAnswers,
+                                fileAnswers,
+                              );
+                            }}
+                            style={({ pressed }) => [
+                              styles.option,
+                              {
+                                borderColor: chosen ? colors.primary : colors.border,
+                                backgroundColor: chosen
+                                  ? colors.muted
+                                  : "transparent",
+                                opacity: pressed || !open ? 0.7 : 1,
+                              },
+                            ]}
+                          >
+                            <View
+                              style={[
+                                styles.radio,
+                                {
+                                  borderColor: chosen
+                                    ? colors.primary
+                                    : colors.border,
+                                  backgroundColor: chosen
+                                    ? colors.primary
+                                    : "transparent",
+                                },
+                              ]}
+                            />
+                            <Text size="sm" weight={chosen ? "500" : "400"}>
+                              {o.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {q.kind === "multiple_select" && (
+                    <View style={{ gap: 8 }}>
+                      {q.options.map((o) => {
+                        const selected = (multiAnswers[q.id] ?? []).includes(o.id);
+                        return (
+                          <Pressable
+                            key={o.id}
+                            disabled={!quizCanAnswer}
+                            onPress={() => {
+                              const current = multiAnswers[q.id] ?? [];
+                              const next = selected
+                                ? current.filter((id) => id !== o.id)
+                                : [...current, o.id];
+                              const nextMulti = { ...multiAnswers, [q.id]: next };
+                              setMultiAnswers(nextMulti);
+                              scheduleQuizSave(
+                                answers,
+                                written,
+                                nextMulti,
+                                numericAnswers,
+                                matchingAnswers,
+                                orderingAnswers,
+                                fileAnswers,
+                              );
+                            }}
+                            style={({ pressed }) => [
+                              styles.option,
+                              {
+                                borderColor: selected ? colors.primary : colors.border,
+                                backgroundColor: selected
+                                  ? colors.muted
+                                  : "transparent",
+                                opacity: pressed || !open ? 0.7 : 1,
+                              },
+                            ]}
+                          >
+                            <View
+                              style={[
+                                styles.checkbox,
+                                {
+                                  borderColor: selected
+                                    ? colors.primary
+                                    : colors.border,
+                                  backgroundColor: selected
+                                    ? colors.primary
+                                    : "transparent",
+                                },
+                              ]}
+                            >
+                              {selected && (
+                                <Check
+                                  size={12}
+                                  color={colors.primaryForeground ?? "#fff"}
+                                />
+                              )}
+                            </View>
+                            <Text size="sm" weight={selected ? "500" : "400"}>
+                              {o.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {q.kind === "short_answer" && (
                     <Input
                       placeholder="Type your answer"
                       value={written[q.id] ?? ""}
@@ -755,52 +1118,339 @@ export default function WorkDetailScreen() {
                       onChangeText={(value) => {
                         const nextWritten = { ...written, [q.id]: value };
                         setWritten(nextWritten);
-                        scheduleQuizSave(answers, nextWritten);
+                        scheduleQuizSave(
+                          answers,
+                          nextWritten,
+                          multiAnswers,
+                          numericAnswers,
+                          matchingAnswers,
+                          orderingAnswers,
+                          fileAnswers,
+                        );
                       }}
                     />
-                  ) : (
-                    q.options.map((o) => {
-                      const chosen = answers[q.id] === o.id;
-                      return (
-                        <Pressable
-                          key={o.id}
-                          disabled={!quizCanAnswer}
-                          onPress={() => {
-                            const nextAnswers = { ...answers, [q.id]: o.id };
-                            setAnswers(nextAnswers);
-                            scheduleQuizSave(nextAnswers, written);
-                          }}
-                          style={({ pressed }) => [
-                            styles.option,
-                            {
-                              borderColor: chosen ? colors.primary : colors.border,
-                              backgroundColor: chosen
-                                ? colors.muted
-                                : "transparent",
-                              opacity: pressed || !open ? 0.7 : 1,
-                            },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.radio,
-                              {
-                                borderColor: chosen
-                                  ? colors.primary
-                                  : colors.border,
-                                backgroundColor: chosen
-                                  ? colors.primary
-                                  : "transparent",
-                              },
-                            ]}
-                          />
-                          <Text size="sm" weight={chosen ? "500" : "400"}>
-                            {o.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })
                   )}
+
+                  {q.kind === "essay" && (
+                    <View style={{ gap: 4 }}>
+                      <TextArea
+                        placeholder="Type your essay response..."
+                        value={written[q.id] ?? ""}
+                        editable={quizCanAnswer}
+                        contextMenuHidden={lockdown.state.active}
+                        numberOfLines={6}
+                        maxLength={50000}
+                        onChangeText={(value) => {
+                          const nextWritten = { ...written, [q.id]: value };
+                          setWritten(nextWritten);
+                          scheduleQuizSave(
+                            answers,
+                            nextWritten,
+                            multiAnswers,
+                            numericAnswers,
+                            matchingAnswers,
+                            orderingAnswers,
+                            fileAnswers,
+                          );
+                        }}
+                      />
+                      <Text
+                        variant="muted"
+                        size="xs"
+                        style={{ textAlign: "right" }}
+                      >
+                        {(written[q.id] ?? "").length} / 50,000 characters
+                      </Text>
+                    </View>
+                  )}
+
+                  {q.kind === "numeric" && (
+                    <Input
+                      placeholder="Enter a numeric answer"
+                      keyboardType="numeric"
+                      value={numericAnswers[q.id] ?? ""}
+                      editable={quizCanAnswer}
+                      contextMenuHidden={lockdown.state.active}
+                      onChangeText={(value) => {
+                        const nextNumeric = { ...numericAnswers, [q.id]: value };
+                        setNumericAnswers(nextNumeric);
+                        scheduleQuizSave(
+                          answers,
+                          written,
+                          multiAnswers,
+                          nextNumeric,
+                          matchingAnswers,
+                          orderingAnswers,
+                          fileAnswers,
+                        );
+                      }}
+                    />
+                  )}
+
+                  {q.kind === "matching" && (
+                    <View style={{ gap: 8 }}>
+                      {q.options.map((o) => {
+                        const choices = ["None", ...(q.matchChoices ?? [])];
+                        const currentMatch =
+                          matchingAnswers[q.id]?.[o.id] || "None";
+                        return (
+                          <View
+                            key={o.id}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: 8,
+                              borderWidth: StyleSheet.hairlineWidth,
+                              borderColor: colors.border,
+                              borderRadius: 8,
+                              gap: 8,
+                            }}
+                          >
+                            <Text
+                              size="sm"
+                              weight="500"
+                              style={{ flex: 1 }}
+                            >
+                              {o.label}
+                            </Text>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!quizCanAnswer}
+                              accessibilityLabel={`Match for ${o.label}: ${currentMatch}. Tap for the next choice`}
+                              onPress={() => {
+                                const idx = choices.indexOf(currentMatch);
+                                const nextIdx = (idx + 1) % choices.length;
+                                const nextVal =
+                                  choices[nextIdx] === "None"
+                                    ? ""
+                                    : choices[nextIdx];
+                                const nextMatching = {
+                                  ...matchingAnswers,
+                                  [q.id]: {
+                                    ...(matchingAnswers[q.id] ?? {}),
+                                    [o.id]: nextVal,
+                                  },
+                                };
+                                setMatchingAnswers(nextMatching);
+                                scheduleQuizSave(
+                                  answers,
+                                  written,
+                                  multiAnswers,
+                                  numericAnswers,
+                                  nextMatching,
+                                  orderingAnswers,
+                                  fileAnswers,
+                                );
+                              }}
+                            >
+                              {currentMatch}
+                            </Button>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {q.kind === "ordering" && (() => {
+                    const order =
+                      orderingAnswers[q.id] ?? q.options.map((o) => o.id);
+                    const optionsById = new Map(q.options.map((o) => [o.id, o]));
+                    return (
+                      <View style={{ gap: 6 }}>
+                        <Text variant="muted" size="xs">
+                          Arrange items in the correct order:
+                        </Text>
+                        {order.map((optId, idx) => {
+                          const opt = optionsById.get(optId);
+                          if (!opt) return null;
+                          return (
+                            <View
+                              key={optId}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: 8,
+                                borderWidth: StyleSheet.hairlineWidth,
+                                borderColor: colors.border,
+                                borderRadius: 8,
+                                backgroundColor: colors.card,
+                              }}
+                            >
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  flex: 1,
+                                }}
+                              >
+                                <Badge variant="outline">{String(idx + 1)}</Badge>
+                                <Text size="sm" style={{ flex: 1 }}>
+                                  {opt.label}
+                                </Text>
+                              </View>
+                              {quizCanAnswer && (
+                                <View style={{ flexDirection: "row", gap: 4 }}>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={idx === 0}
+                                    accessibilityLabel={`Move ${opt.label} up, now ${idx + 1} of ${order.length}`}
+                                    onPress={() => {
+                                      const next = [...order];
+                                      [next[idx - 1], next[idx]] = [
+                                        next[idx],
+                                        next[idx - 1],
+                                      ];
+                                      const nextOrdering = {
+                                        ...orderingAnswers,
+                                        [q.id]: next,
+                                      };
+                                      setOrderingAnswers(nextOrdering);
+                                      scheduleQuizSave(
+                                        answers,
+                                        written,
+                                        multiAnswers,
+                                        numericAnswers,
+                                        matchingAnswers,
+                                        nextOrdering,
+                                        fileAnswers,
+                                      );
+                                    }}
+                                  >
+                                    <ArrowUp
+                                      size={16}
+                                      color={colors.foreground}
+                                    />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={idx === order.length - 1}
+                                    accessibilityLabel={`Move ${opt.label} down, now ${idx + 1} of ${order.length}`}
+                                    onPress={() => {
+                                      const next = [...order];
+                                      [next[idx + 1], next[idx]] = [
+                                        next[idx],
+                                        next[idx + 1],
+                                      ];
+                                      const nextOrdering = {
+                                        ...orderingAnswers,
+                                        [q.id]: next,
+                                      };
+                                      setOrderingAnswers(nextOrdering);
+                                      scheduleQuizSave(
+                                        answers,
+                                        written,
+                                        multiAnswers,
+                                        numericAnswers,
+                                        matchingAnswers,
+                                        nextOrdering,
+                                        fileAnswers,
+                                      );
+                                    }}
+                                  >
+                                    <ArrowDown
+                                      size={16}
+                                      color={colors.foreground}
+                                    />
+                                  </Button>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    );
+                  })()}
+
+                  {q.kind === "file_upload" && (
+                    <View style={{ gap: 8 }}>
+                      {fileAnswers[q.id]?.fileId && (
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: 8,
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: colors.border,
+                            borderRadius: 8,
+                            backgroundColor: colors.muted,
+                          }}
+                        >
+                          <Paperclip
+                            size={16}
+                            color={colors.mutedForeground}
+                          />
+                          <Text size="sm" style={{ flex: 1 }}>
+                            {fileAnswers[q.id]?.fileName ?? "Attached file"}
+                          </Text>
+                        </View>
+                      )}
+                      {quizCanAnswer && (
+                        <Button
+                          variant="outline"
+                          loading={questionUploading[q.id]}
+                          onPress={() => void attachQuestionFile(q.id)}
+                        >
+                          {fileAnswers[q.id]?.fileId
+                            ? "Replace file"
+                            : "Attach file"}
+                        </Button>
+                      )}
+                      <Text variant="muted" size="xs">
+                        {q.fileTypes?.length
+                          ? `Allowed: ${q.fileTypes.join(", ")}. `
+                          : ""}
+                        {q.fileMaxMb ? `Max size: ${q.fileMaxMb} MB.` : ""}
+                      </Text>
+                    </View>
+                  )}
+
+                  {work.markedQuestions && (() => {
+                    const mark = work.markedQuestions.find(
+                      (mq) => mq.questionId === q.id,
+                    );
+                    if (!mark) return null;
+                    return (
+                      <View
+                        style={{
+                          marginTop: 8,
+                          padding: 8,
+                          borderWidth: StyleSheet.hairlineWidth,
+                          borderColor: colors.border,
+                          borderRadius: 6,
+                          backgroundColor: colors.muted,
+                          gap: 4,
+                        }}
+                      >
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Text size="xs" weight="600">
+                            Teacher mark
+                          </Text>
+                          <Text size="xs" weight="600">
+                            {mark.points !== null
+                              ? `${formatScore(mark.points)}/${formatScore(q.points)} pt`
+                              : "Awaiting marking"}
+                          </Text>
+                        </View>
+                        {mark.feedback ? (
+                          <Text size="xs" variant="muted">
+                            {mark.feedback}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             ))}
@@ -1004,6 +1654,14 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
   },
   attached: {
     flexDirection: "row",

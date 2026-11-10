@@ -7,6 +7,7 @@ import {
   FolderClosed,
   UsersRound,
   CalendarDays,
+  CalendarClock,
   GraduationCap,
   ShieldCheck,
   ChevronRight,
@@ -39,6 +40,13 @@ const ITEMS: MenuItem[] = [
     label: "Courses",
     description: "Marking, modules, announcements, discussions",
     icon: BookOpen,
+  },
+  {
+    href: "/timetable/today",
+    label: "Today",
+    feature: "timetable",
+    description: "Your periods; check-in opens automatically",
+    icon: CalendarClock,
   },
   {
     href: "/announcements",
@@ -109,6 +117,8 @@ export default function MoreScreen() {
             <Pressable
               key={item.label}
               onPress={() => router.push(item.href as Href)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.label}: ${item.description}`}
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
               <Card>

@@ -1,0 +1,204 @@
+// LTI 1.3: GradeBook as the platform, external tools registered by the
+// organisation (src/lti). Behind the `lti` feature (off by default).
+// Migration 20261121100000_lti.
+
+/// GradeBook's RSA signing keys for LTI id_tokens (RS256). The public half is
+/// published at /api/lti/jwks by `kid`; the private key is sealed with
+/// secret-box (never stored in plain). One key is active; retired keys stay
+/// published for a while so tokens signed just before a rotation verify.
+model lti_platform_key {
+  kid                String    @id
+  public_jwk         Json
+  private_key_sealed String
+  active             Boolean   @default(false)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  retired_at         DateTime? @db.Timestamptz(6)
+
+  @@unique([active], map: "lti_platform_key_one_active_key", where: raw("(active = true)"))
+  @@schema("public")
+}
+
+/// An external tool registered by the organisation. `client_id` is issued by
+/// GradeBook. The tool's keys come from `jwks_url` (fetched through the
+/// SSRF-safe fetcher) or a pasted `public_key_pem`.
+model lti_tool {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  description     String?
+  client_id       String              @unique(map: "lti_tool_client_id_key")
+  login_url       String
+  target_link_uri String
+  redirect_uris   String[]
+  jwks_url        String?
+  public_key_pem  String?
+  ags_enabled     Boolean             @default(false)
+  send_name       Boolean             @default(false)
+  send_email      Boolean             @default(false)
+  custom_params   Json                @default("{}")
+  enabled         Boolean             @default(true)
+  created_by      String?             @db.Uuid
+  created_at      DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime            @default(now()) @db.Timestamptz(6)
+  deployments     lti_deployment[]
+  resource_links  lti_resource_link[]
+  line_items      lti_line_item[]
+  subjects        lti_subject[]
+  launches        lti_launch[]
+  access_tokens   lti_access_token[]
+
+  @@schema("public")
+}
+
+/// Where a tool may be used: every school (`school_id` null, at most one per
+/// tool) or one school. `deployment_id` is issued by GradeBook and sent in
+/// every launch.
+model lti_deployment {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tool_id        String              @db.Uuid
+  deployment_id  String
+  school_id      String?             @db.Uuid
+  created_at     DateTime            @default(now()) @db.Timestamptz(6)
+  tool           lti_tool            @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school         school?             @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  resource_links lti_resource_link[]
+
+  @@unique([tool_id, deployment_id], map: "lti_deployment_tool_deployment_key")
+  @@unique([tool_id, school_id], map: "lti_deployment_tool_school_key")
+  @@unique([tool_id], map: "lti_deployment_tool_all_schools_key", where: raw("(school_id IS NULL)"))
+  @@index([school_id])
+  @@schema("public")
+}
+
+/// An "external tool" module item: the LTI resource link (its `id` is the
+/// resource_link.id the tool sees).
+model lti_resource_link {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tool_id        String          @db.Uuid
+  deployment_id  String          @db.Uuid
+  course_id      String          @db.Uuid
+  module_item_id String          @unique(map: "lti_resource_link_module_item_key") @db.Uuid
+  custom_params  Json            @default("{}")
+  created_by     String?         @db.Uuid
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  tool           lti_tool        @relation(fields: [tool_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  deployment     lti_deployment  @relation(fields: [deployment_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  course         course          @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  module_item    module_item     @relation(fields: [module_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  line_items     lti_line_item[]
+  launches       lti_launch[]
+
+  @@index([tool_id])
+  @@index([deployment_id])
+  @@index([course_id])
+  @@schema("public")
+}
+
+/// An AGS line item: a gradebook activity a tool may post scores to.
+model lti_line_item {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tool_id          String             @db.Uuid
+  course_id        String             @db.Uuid
+  activity_id      String             @unique(map: "lti_line_item_activity_key") @db.Uuid
+  resource_link_id String?            @db.Uuid
+  tag              String?
+  resource_id      String?
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  tool             lti_tool           @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  course           course             @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  activity         activity           @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  resource_link    lti_resource_link? @relation(fields: [resource_link_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  scores           lti_score[]
+
+  @@index([tool_id, course_id])
+  @@index([course_id])
+  @@index([resource_link_id])
+  @@schema("public")
+}
+
+/// The opaque, per-tool user id (`sub`) a tool sees: the row id. Never the
+/// account id, so two tools cannot correlate a user.
+model lti_subject {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tool_id         String       @db.Uuid
+  user_profile_id String       @db.Uuid
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  scores          lti_score[]
+  tool            lti_tool     @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_profile    user_profile @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tool_id, user_profile_id], map: "lti_subject_tool_user_key")
+  @@index([user_profile_id])
+  @@schema("public")
+}
+
+/// A launch in progress: the single-use `lti_message_hint` (only its SHA-256
+/// is stored), bound to one user and resource link, valid for minutes.
+model lti_launch {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token_hash       String            @unique(map: "lti_launch_token_hash_key")
+  tool_id          String            @db.Uuid
+  resource_link_id String            @db.Uuid
+  user_profile_id  String            @db.Uuid
+  subject_id       String            @db.Uuid
+  roles            String[]
+  expires_at       DateTime          @db.Timestamptz(6)
+  used_at          DateTime?         @db.Timestamptz(6)
+  created_at       DateTime          @default(now()) @db.Timestamptz(6)
+  tool             lti_tool          @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  resource_link    lti_resource_link @relation(fields: [resource_link_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires_at])
+  @@index([tool_id])
+  @@index([resource_link_id])
+  @@schema("public")
+}
+
+/// Replay protection: every id_token nonce and client-assertion `jti` a tool
+/// used, kept until it could no longer be accepted anyway.
+model lti_replay {
+  tool_id    String   @db.Uuid
+  kind       String
+  value      String
+  expires_at DateTime @db.Timestamptz(6)
+
+  @@id([tool_id, kind, value])
+  @@index([expires_at])
+  @@schema("public")
+}
+
+/// AGS access tokens (OAuth 2 client credentials). Only the SHA-256 of the
+/// token is stored; they live for minutes.
+model lti_access_token {
+  token_hash String   @id
+  tool_id    String   @db.Uuid
+  scopes     String[]
+  expires_at DateTime @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  tool       lti_tool @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tool_id])
+  @@index([expires_at])
+  @@schema("public")
+}
+
+/// The last score a tool posted for one user on one line item. AGS says a
+/// score older than the last one received is ignored; `timestamp` is that
+/// ordering. `written` says whether it changed the gradebook (only
+/// FullyGraded scores do).
+model lti_score {
+  line_item_id      String        @db.Uuid
+  subject_id        String        @db.Uuid
+  timestamp         DateTime      @db.Timestamptz(6)
+  activity_progress String
+  grading_progress  String
+  score_given       Decimal?      @db.Decimal
+  score_maximum     Decimal?      @db.Decimal
+  written           Boolean       @default(false)
+  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  line_item         lti_line_item @relation(fields: [line_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  subject           lti_subject   @relation(fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([line_item_id, subject_id])
+  @@index([subject_id])
+  @@schema("public")
+}

@@ -7,6 +7,7 @@ import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import {
   ArrowLeft,
+  Boxes,
   Calculator,
   Loader2,
   Lock,
@@ -58,6 +59,7 @@ import { useCourse } from "../../_components/course-context";
 import { MarkdownEditor } from "../../_components/MarkdownEditor";
 import { QuestionCard } from "../_components/QuestionCard";
 import { QuestionForm, type QuestionPayload } from "../_components/QuestionForm";
+import { BankDrawsDialog } from "../_components/BankDrawsDialog";
 import { MarksTable } from "../_components/MarksTable";
 import { RubricPanel } from "../_components/RubricPanel";
 import {
@@ -85,15 +87,22 @@ export default function CourseActivityPage() {
   const loading = useSignal(true);
   const working = useSignal(false);
   const confirmDelete = useSignal(false);
+  const bankDrawsOpen = useSignal(false);
 
   const editing = useSignal(false);
   const draftTitle = useSignal("");
   const draftInstructions = useSignal("");
   const draftPoints = useSignal("");
   const draftDueAt = useSignal("");
+  const draftLateUntil = useSignal("");
+  const draftLatePenaltyMode = useSignal<"none" | "percent_per_day" | "percent_per_hour">("none");
+  const draftLatePenaltyValue = useSignal("");
+  const draftLatePenaltyCap = useSignal("");
   const draftAttempts = useSignal("");
   const draftTimeLimit = useSignal("");
   const draftLockdown = useSignal(false);
+  const draftShuffleQuestions = useSignal(false);
+  const draftShuffleOptions = useSignal(false);
   const draftGroup = useSignal("");
   const draftAllowMultipleFiles = useSignal(false);
 
@@ -161,9 +170,15 @@ export default function CourseActivityPage() {
     draftInstructions.value = a.instructions ?? "";
     draftPoints.value = String(a.points);
     draftDueAt.value = toLocalInput(a.dueAt);
+    draftLateUntil.value = toLocalInput(a.lateUntil ?? null);
+    draftLatePenaltyMode.value = a.latePenaltyMode ?? "none";
+    draftLatePenaltyValue.value = a.latePenaltyValue !== null && a.latePenaltyValue !== undefined ? String(a.latePenaltyValue) : "";
+    draftLatePenaltyCap.value = a.latePenaltyCap !== null && a.latePenaltyCap !== undefined ? String(a.latePenaltyCap) : "";
     draftAttempts.value = String(a.maxAttempts ?? 1);
     draftTimeLimit.value = a.timeLimitMinutes?.toString() ?? "";
     draftLockdown.value = !!a.lockdownBrowser;
+    draftShuffleQuestions.value = !!a.shuffleQuestions;
+    draftShuffleOptions.value = !!a.shuffleOptions;
     draftGroup.value = a.assignmentGroupId ?? "";
     draftAllowMultipleFiles.value = a.allowMultipleFiles;
     editing.value = true;
@@ -211,6 +226,19 @@ export default function CourseActivityPage() {
       return;
     }
 
+    const penaltyVal = draftLatePenaltyValue.value ? Number(draftLatePenaltyValue.value) : null;
+    const penaltyCap = draftLatePenaltyCap.value ? Number(draftLatePenaltyCap.value) : null;
+    if (draftLatePenaltyMode.value !== "none") {
+      if (penaltyVal === null || penaltyVal <= 0 || penaltyVal > 100) {
+        toast.error("Late penalty percent must be between 0.01 and 100");
+        return;
+      }
+      if (penaltyCap !== null && (penaltyCap <= 0 || penaltyCap > 100)) {
+        toast.error("Late penalty cap must be between 1 and 100");
+        return;
+      }
+    }
+
     const ok = await patch(
       {
         title: draftTitle.value.trim(),
@@ -219,6 +247,12 @@ export default function CourseActivityPage() {
         dueAt: draftDueAt.value
           ? new Date(draftDueAt.value).toISOString()
           : null,
+        lateUntil: draftLateUntil.value
+          ? new Date(draftLateUntil.value).toISOString()
+          : null,
+        latePenaltyMode: draftLatePenaltyMode.value,
+        latePenaltyValue: draftLatePenaltyMode.value !== "none" ? penaltyVal : null,
+        latePenaltyCap: draftLatePenaltyMode.value !== "none" ? penaltyCap : null,
         assignmentGroupId: draftGroup.value || null,
         ...(activity.value?.kind === "assignment"
           ? { allowMultipleFiles: draftAllowMultipleFiles.value }
@@ -228,6 +262,8 @@ export default function CourseActivityPage() {
               maxAttempts: attempts,
               timeLimitMinutes: timeLimit,
               lockdownBrowser: draftLockdown.value,
+              shuffleQuestions: draftShuffleQuestions.value,
+              shuffleOptions: draftShuffleOptions.value,
             }
           : {}),
       },
@@ -351,6 +387,11 @@ export default function CourseActivityPage() {
               {ACTIVITY_KIND_LABEL[a.kind]} · {a.points} points ·{" "}
               {formatDue(a.dueAt)}
               {group ? ` · ${group.name}` : ""}
+              {a.lateUntil ? ` · Late work accepted until ${formatDue(a.lateUntil)}` : ""}
+              {a.latePenaltyMode && a.latePenaltyMode !== "none" && a.latePenaltyValue
+                ? ` (−${a.latePenaltyValue}% per ${a.latePenaltyMode === "percent_per_hour" ? "hour" : "day"}${a.latePenaltyCap ? `, cap ${a.latePenaltyCap}%` : ""})`
+                : ""}
+              {a.kind === "quiz" && (a.shuffleQuestions || a.shuffleOptions) ? " · Shuffled" : ""}
             </p>
           </div>
         </div>
@@ -567,7 +608,110 @@ export default function CourseActivityPage() {
                     onCheckedChange={(value) => (draftLockdown.value = value)}
                   />
                 </div>
+                <div className="flex items-start justify-between gap-3 rounded-md border p-3 sm:col-span-2">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="quizShuffle">Shuffle questions</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Randomize the order of questions for each student attempt.
+                    </p>
+                  </div>
+                  <Switch
+                    id="quizShuffle"
+                    checked={draftShuffleQuestions.value}
+                    onCheckedChange={(value) => (draftShuffleQuestions.value = value)}
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-3 rounded-md border p-3 sm:col-span-2">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="quizShuffleOptions">Shuffle options</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Each student sees multiple choice, multiple select and matching options in
+                      their own order. Ordering items are always shuffled.
+                    </p>
+                  </div>
+                  <Switch
+                    id="quizShuffleOptions"
+                    checked={draftShuffleOptions.value}
+                    onCheckedChange={(value) => (draftShuffleOptions.value = value)}
+                  />
+                </div>
                 </>
+              )}
+            </div>
+
+            <div className="rounded-lg border p-3 space-y-3">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Late-work policy</p>
+                <p className="text-xs text-muted-foreground">
+                  Optionally accept work past the due date with an automatic penalty deducted from the mark.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="draftLateUntil" className="text-xs">Accept late work until</Label>
+                  <Input
+                    id="draftLateUntil"
+                    type="datetime-local"
+                    value={draftLateUntil.value}
+                    onChange={(e) => (draftLateUntil.value = e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="draftLatePenaltyMode" className="text-xs">Penalty mode</Label>
+                  <Select
+                    value={draftLatePenaltyMode.value}
+                    onValueChange={(v) =>
+                      (draftLatePenaltyMode.value = v as
+                        | "none"
+                        | "percent_per_day"
+                        | "percent_per_hour")
+                    }
+                    items={[
+                      { value: "none", label: "No penalty" },
+                      { value: "percent_per_day", label: "Percent per day late" },
+                      { value: "percent_per_hour", label: "Percent per hour late" },
+                    ]}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No penalty</SelectItem>
+                      <SelectItem value="percent_per_day">Percent per day late</SelectItem>
+                      <SelectItem value="percent_per_hour">Percent per hour late</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {draftLatePenaltyMode.value !== "none" && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="draftLatePenaltyValue" className="text-xs">Penalty (%)</Label>
+                    <Input
+                      id="draftLatePenaltyValue"
+                      type="number"
+                      min="0.01"
+                      max="100"
+                      step="0.1"
+                      placeholder="e.g. 10"
+                      value={draftLatePenaltyValue.value}
+                      onChange={(e) => (draftLatePenaltyValue.value = e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="draftLatePenaltyCap" className="text-xs">Maximum penalty cap (%, optional)</Label>
+                    <Input
+                      id="draftLatePenaltyCap"
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      placeholder="e.g. 50"
+                      value={draftLatePenaltyCap.value}
+                      onChange={(e) => (draftLatePenaltyCap.value = e.target.value)}
+                    />
+                  </div>
+                </div>
               )}
             </div>
             <div className="flex justify-end gap-2">
@@ -616,6 +760,53 @@ export default function CourseActivityPage() {
 
         {a.kind === "quiz" && (
           <TabsContent value="questions" className="mt-3 space-y-3">
+            <Card className="bg-muted/30">
+              <CardHeader className="py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Boxes className="size-4 text-primary" />
+                      Question bank draws
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {a.bankDraws && a.bankDraws.length > 0
+                        ? `${a.bankDraws.reduce((sum, d) => sum + d.count, 0)} question(s) drawn from ${a.bankDraws.length} bank(s) per student attempt`
+                        : "Draw random questions from question banks for each student attempt."}
+                    </p>
+                  </div>
+                  {canManage && isDraft && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => (bankDrawsOpen.value = true)}
+                    >
+                      Manage draws
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              {a.bankDraws && a.bankDraws.length > 0 && (
+                <CardContent className="pt-0 pb-3">
+                  <ul className="text-xs space-y-1.5 text-muted-foreground border-t pt-2">
+                    {a.bankDraws.map((d) => (
+                      <li
+                        key={d.bankId}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="font-medium text-foreground">
+                          {d.bankTitle || "Question bank"}
+                        </span>
+                        <span>
+                          Draw {d.count} question{d.count === 1 ? "" : "s"}
+                          {d.available !== undefined ? ` (${d.available} in bank)` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              )}
+            </Card>
+
             {(a.questions ?? []).map((q, i) => (
               <QuestionCard
                 key={q.id}
@@ -641,7 +832,7 @@ export default function CourseActivityPage() {
                 </CardContent>
               </Card>
             )}
-            {(a.questions?.length ?? 0) === 0 && !(canManage && isDraft) && (
+            {(a.questions?.length ?? 0) === 0 && (a.bankDraws?.length ?? 0) === 0 && !(canManage && isDraft) && (
               <Card>
                 <CardContent className="py-8 text-center text-sm text-muted-foreground">
                   No questions.
@@ -724,6 +915,15 @@ export default function CourseActivityPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BankDrawsDialog
+        open={bankDrawsOpen.value}
+        activityId={activityId}
+        courseId={course.id}
+        initialDraws={a.bankDraws ?? []}
+        onOpenChangeAction={(v) => (bankDrawsOpen.value = v)}
+        onSavedAction={load}
+      />
     </div>
   );
 }

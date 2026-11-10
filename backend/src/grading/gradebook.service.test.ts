@@ -163,6 +163,10 @@ describe('GradebookService.gradebook', () => {
       excused: true,
       submittedAt: null,
       dropped: false,
+      lateSeconds: 0,
+      latePenaltyPercent: 0,
+      latePenaltyWaived: false,
+      rawScore: null,
     });
     // a2 excused: 9/10.
     expect(ann.grade.percent).toBe(90);
@@ -401,5 +405,49 @@ describe('GradebookService drop rules', () => {
       ['a2', true],
       ['a3', false],
     ]);
+  });
+});
+
+describe('late penalties in the gradebook, CSV and totals', () => {
+  // 85 out of 100 handed in a day late at 10% per day: 76.5 is the mark.
+  const late = TABLES({
+    activities: [activity('a1', { points: 100 })],
+    submissions: [
+      {
+        activity_id: 'a1',
+        student_id: 'stu-1',
+        status: 'graded',
+        score: dec(76.5),
+        raw_score: dec(85),
+        late_seconds: 90_000,
+        late_penalty_percent: dec(10),
+        late_penalty_waived: false,
+        excused: false,
+        submitted_at: new Date('2026-09-03T00:00:00Z'),
+      },
+    ],
+  });
+
+  test('the cell shows the raw mark, the penalty and the penalised score', async () => {
+    const { service } = build(late);
+    const book = await service.gradebook('user-1', 'course-1');
+    const cell = book.students.find((s) => s.studentId === 'stu-1')!.cells.a1;
+    expect(cell).toMatchObject({
+      score: 76.5,
+      rawScore: 85,
+      latePenaltyPercent: 10,
+      lateSeconds: 90_000,
+      latePenaltyWaived: false,
+    });
+    // The total uses the penalised mark.
+    expect(book.students.find((s) => s.studentId === 'stu-1')!.grade.percent).toBe(76.5);
+  });
+
+  test('the CSV and the student summary use the same penalised mark', async () => {
+    const { service } = build(late);
+    const { csv } = await service.exportCsv('user-1', 'course-1');
+    expect(csv.split('\r\n')[1]).toBe('Adams,Ann,stu-1,completed,76.5,76.5,76.5,B');
+    const { service: summary } = build(late, null);
+    expect((await summary.studentSummary('course-1', 'stu-1')).percent).toBe(76.5);
   });
 });

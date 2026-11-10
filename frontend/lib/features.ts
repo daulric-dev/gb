@@ -20,6 +20,10 @@ export const FEATURE_KEYS = [
   "report_cards",
   "parent_portal",
   "parent_notifications",
+  "timetable",
+  "attendance_alerts",
+  "rostering",
+  "lti",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -47,6 +51,13 @@ export const FALLBACK_FEATURES: FeatureMap = {
   // Older servers have no parent portal.
   parent_portal: false,
   parent_notifications: false,
+  // Older servers have no timetable or attendance alerts.
+  timetable: false,
+  attendance_alerts: false,
+  // Older servers have no rostering sync.
+  rostering: false,
+  // Older servers have no external tools (LTI).
+  lti: false,
 };
 
 /** Features that only work while another one is on. */
@@ -54,6 +65,8 @@ export const FEATURE_REQUIRES: Partial<Record<FeatureKey, FeatureKey[]>> = {
   student_messaging: ["messaging"],
   chat_channels: ["messaging"],
   parent_notifications: ["parent_portal"],
+  timetable: ["attendance"],
+  attendance_alerts: ["attendance"],
 };
 
 /**
@@ -98,10 +111,14 @@ export function featureForPath(pathname: string): FeatureKey | null {
   if (under("/dashboard/files")) return "files";
   if (under("/dashboard/calendar")) return "calendar";
   if (under("/dashboard/reports")) return "report_cards";
+  if (under("/dashboard/timetable")) return "timetable";
+  if (under("/dashboard/settings/timetable")) return "timetable";
+  if (under("/dashboard/attendance")) return "attendance_alerts";
 
   if (under("/portal/messages")) return "student_messaging";
   if (under("/portal/announcements")) return "announcements";
   if (under("/portal/calendar")) return "calendar";
+  if (under("/portal/timetable")) return "timetable";
   if (under("/portal/attendance")) return "attendance";
   if (under("/portal/reports")) return "report_cards";
   if (under("/scan")) return "attendance";
@@ -111,6 +128,7 @@ export function featureForPath(pathname: string): FeatureKey | null {
   );
   if (course) return course[1] as FeatureKey;
   if (/^\/dashboard\/courses\/[^/]+\/reports(?:\/|$)/.test(path)) return "report_cards";
+  if (/^\/dashboard\/courses\/[^/]+\/timetable(?:\/|$)/.test(path)) return "timetable";
 
   return null;
 }
@@ -162,11 +180,18 @@ export const FEATURE_GROUPS: { title: string; keys: string[] }[] = [
   },
   {
     title: "Teaching",
-    keys: ["attendance", "calendar", "course_copy", "report_cards"],
+    keys: [
+      "attendance",
+      "timetable",
+      "attendance_alerts",
+      "calendar",
+      "course_copy",
+      "report_cards",
+    ],
   },
   { title: "Content", keys: ["files"] },
   { title: "Families", keys: ["parent_portal", "parent_notifications"] },
-  { title: "Integrations", keys: ["integrations"] },
+  { title: "Integrations", keys: ["integrations", "rostering", "lti"] },
 ];
 
 /** Splits a feature list into the display groups, dropping empty ones. */

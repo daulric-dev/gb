@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useSignal } from "@preact/signals-react"
+import { useSignals } from "@preact/signals-react/runtime"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -66,32 +68,42 @@ function SidebarProvider({
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
+  useSignals()
   const isMobile = useIsMobile()
-  const [openMobile, setOpenMobile] = React.useState(false)
+  const openMobileState = useSignal(false)
+  const openMobile = openMobileState.value
+  const setOpenMobile = React.useCallback(
+    (value: boolean) => {
+      openMobileState.value = value
+    },
+    [openMobileState]
+  )
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen)
-  const open = openProp ?? _open
+  const _open = useSignal(defaultOpen)
+  const open = openProp ?? _open.value
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value
       if (setOpenProp) {
         setOpenProp(openState)
       } else {
-        _setOpen(openState)
+        _open.value = openState
       }
 
       // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
     },
-    [setOpenProp, open]
+    [setOpenProp, open, _open]
   )
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
-  }, [isMobile, setOpen, setOpenMobile])
+    return isMobile
+      ? setOpenMobile(!openMobileState.value)
+      : setOpen((open) => !open)
+  }, [isMobile, setOpen, setOpenMobile, openMobileState])
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -597,6 +609,10 @@ function SidebarMenuBadge({
   )
 }
 
+function randomSkeletonWidth() {
+  return `${Math.floor(Math.random() * 40) + 50}%`
+}
+
 function SidebarMenuSkeleton({
   className,
   showIcon = false,
@@ -604,10 +620,8 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<"div"> & {
   showIcon?: boolean
 }) {
-  // Random width between 50 to 90%.
-  const [width] = React.useState(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  })
+  // Random width between 50 to 90%, picked once per mount.
+  const width = React.useMemo(() => randomSkeletonWidth(), [])
 
   return (
     <div

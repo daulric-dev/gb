@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -25,6 +26,8 @@ import {
   GradeSubmissionDto,
   UpdateActivityDto,
   UpdateQuestionDto,
+  MarkQuestionDto,
+  WaiveLatePenaltyDto,
 } from './dto/activity.dto';
 import { contentDisposition } from './content-disposition';
 
@@ -254,6 +257,50 @@ export class ActivityController {
   }
 
   /** Leave one student's mark out of the course total, or put it back. */
+  /** One student's quiz answers with the answer key, for marking (staff). */
+  @Get('activities/:activityId/submissions/:studentId/answers')
+  async quizAnswers(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+  ) {
+    return this.submissions.quizAnswers(req.user.id as string, activityId, studentId);
+  }
+
+  /** Mark one essay or file question (staff; audited). */
+  @Put('activities/:activityId/submissions/:studentId/questions/:questionId/mark')
+  async markQuestion(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Param('questionId', ParseUUIDPipe) questionId: string,
+    @Body() dto: MarkQuestionDto,
+  ) {
+    return this.submissions.markQuestion(
+      req.user.id as string,
+      activityId,
+      studentId,
+      questionId,
+      dto,
+    );
+  }
+
+  /** Waive or restore one student's late penalty (staff; audited). */
+  @Patch('activities/:activityId/submissions/:studentId/late-penalty')
+  async waiveLatePenalty(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Body() dto: WaiveLatePenaltyDto,
+  ) {
+    return this.submissions.waiveLatePenalty(
+      req.user.id as string,
+      activityId,
+      studentId,
+      dto.waived,
+    );
+  }
+
   @Patch('activities/:activityId/submissions/:studentId/excuse')
   async excuse(
     @Req() req: any,

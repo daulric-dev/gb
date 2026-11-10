@@ -15,6 +15,7 @@ import { UploadLimitSettings } from "./_components/upload-limit-settings";
 import { SchoolLogoSettings } from "./_components/school-logo-settings";
 import { SchoolFeatureSettings } from "./_components/school-feature-settings";
 import { SchoolParentSettings } from "./_components/school-parent-settings";
+import { SchoolTimetableLink } from "./_components/school-timetable-link";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { AccountSettings } from "@/components/account/account-settings";
@@ -59,6 +60,8 @@ export default function SettingsPage() {
       <SchoolFeatureSettings />
 
       <SchoolParentSettings />
+
+      <SchoolTimetableLink />
 
       <SchoolSsoSettings />
 

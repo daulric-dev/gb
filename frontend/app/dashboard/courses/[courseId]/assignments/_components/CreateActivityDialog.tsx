@@ -83,6 +83,10 @@ export function CreateActivityDialog({
   const instructions = useSignal("");
   const points = useSignal("100");
   const dueAt = useSignal("");
+  const lateUntil = useSignal("");
+  const latePenaltyMode = useSignal<"none" | "percent_per_day" | "percent_per_hour">("none");
+  const latePenaltyValue = useSignal("");
+  const latePenaltyCap = useSignal("");
   const timeLimitMinutes = useSignal("");
   const lockdownBrowser = useSignal(false);
   const groupId = useSignal(defaultGroupId ?? "");
@@ -117,6 +121,19 @@ export function CreateActivityDialog({
       return;
     }
 
+    const penaltyVal = latePenaltyValue.value ? Number(latePenaltyValue.value) : null;
+    const penaltyCap = latePenaltyCap.value ? Number(latePenaltyCap.value) : null;
+    if (latePenaltyMode.value !== "none") {
+      if (penaltyVal === null || penaltyVal <= 0 || penaltyVal > 100) {
+        toast.error("Late penalty percent must be between 0.01 and 100");
+        return;
+      }
+      if (penaltyCap !== null && (penaltyCap <= 0 || penaltyCap > 100)) {
+        toast.error("Late penalty cap must be between 1 and 100");
+        return;
+      }
+    }
+
     saving.value = true;
     try {
       const created = await api<Activity>(`/courses/${courseId}/activities`, {
@@ -127,6 +144,10 @@ export function CreateActivityDialog({
           instructions: instructions.value.trim() || undefined,
           points: pts,
           dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : undefined,
+          lateUntil: lateUntil.value ? new Date(lateUntil.value).toISOString() : undefined,
+          latePenaltyMode: latePenaltyMode.value !== "none" ? latePenaltyMode.value : undefined,
+          latePenaltyValue: latePenaltyMode.value !== "none" && penaltyVal !== null ? penaltyVal : undefined,
+          latePenaltyCap: latePenaltyMode.value !== "none" && penaltyCap !== null ? penaltyCap : undefined,
           timeLimitMinutes: kind.value === "quiz" ? timeLimit : undefined,
           lockdownBrowser:
             kind.value === "quiz" ? lockdownBrowser.value : undefined,
@@ -245,6 +266,82 @@ export function CreateActivityDialog({
                 onChange={(e) => (dueAt.value = e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Late-work policy</p>
+              <p className="text-xs text-muted-foreground">
+                Optionally accept work past the due date with an automatic penalty.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="lateUntil" className="text-xs">Accept late work until</Label>
+                <Input
+                  id="lateUntil"
+                  type="datetime-local"
+                  value={lateUntil.value}
+                  onChange={(e) => (lateUntil.value = e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="latePenaltyMode" className="text-xs">Penalty mode</Label>
+                <Select
+                  value={latePenaltyMode.value}
+                  onValueChange={(v) =>
+                    (latePenaltyMode.value = v as
+                      | "none"
+                      | "percent_per_day"
+                      | "percent_per_hour")
+                  }
+                  items={[
+                    { value: "none", label: "No penalty" },
+                    { value: "percent_per_day", label: "Percent per day late" },
+                    { value: "percent_per_hour", label: "Percent per hour late" },
+                  ]}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No penalty</SelectItem>
+                    <SelectItem value="percent_per_day">Percent per day late</SelectItem>
+                    <SelectItem value="percent_per_hour">Percent per hour late</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {latePenaltyMode.value !== "none" && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="latePenaltyValue" className="text-xs">Penalty (%)</Label>
+                  <Input
+                    id="latePenaltyValue"
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="0.1"
+                    placeholder="e.g. 10"
+                    value={latePenaltyValue.value}
+                    onChange={(e) => (latePenaltyValue.value = e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="latePenaltyCap" className="text-xs">Maximum penalty cap (%, optional)</Label>
+                  <Input
+                    id="latePenaltyCap"
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    placeholder="e.g. 50"
+                    value={latePenaltyCap.value}
+                    onChange={(e) => (latePenaltyCap.value = e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

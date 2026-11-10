@@ -20,5 +20,6 @@ import { AttendanceRealtime } from './attendance.realtime';
     ScanClaimController,
   ],
   providers: [AttendanceService, AttendanceRealtime],
+  exports: [AttendanceService],
 })
 export class AttendanceModule {}

@@ -64,7 +64,7 @@ The management routes use `AdminGuard` rather than `PermissionGuard`, because ga
 
 ## Permission catalog
 
-Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route); `audit-log` has `read`; `report-card` has `read` and `update`. That makes 34 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
+Keys are `<resource>:<action>`, and a key exists only when something enforces it. Every resource has `create`, `read`, `update` and `delete` except these, listed in `RESOURCE_ACTIONS`: `school` has `read` and `update`; `course` has `create` and `update` (reading and deleting a course are decided by the course role in `CourseAccessService`); `student` and `join-code` have `read` and `update` (students self-register and join via code; join codes are issued/revoked via update and inspected via read); `academic-year` has `create`, `read` and `update` (it has no delete route); `audit-log` has `read`; `report-card` has `read` and `update`; `attendance-report` has `read`. That makes 35 keys. Admins hold every key. The defaults for the other base roles come from `ROLE_DEFAULTS`:
 
 | Key | Description | teacher | member | Enforced by |
 | --- | --- | :---: | :---: | --- |
@@ -101,6 +101,7 @@ Keys are `<resource>:<action>`, and a key exists only when something enforces it
 | `chat:delete` | Delete chat messages | yes | yes | `chat.controller.ts` |
 | `report-card:read` | View report card progress, previews and published reports | | | `report-card/report-release.controller.ts` (release dashboard, previews, PDFs, zips, transcripts). Teachers write their own course comments through their course role, not this key. |
 | `report-card:update` | Write head comments and publish report cards | | | `report-card/report-release.controller.ts` (deadline, head comments, publish, unpublish, regenerate) |
+| `attendance-report:read` | View the school attendance report and any student's attendance | | | Not a route decorator: `attendance-alerts/attendance-report.service.ts` (`REPORT_PERMISSION`, via `loadEffectivePermissions`) for the school report, any student's report, their CSV exports and the school-wide alert list. Form tutors still see their own tutees and course staff their course report without it. Alert settings stay on `school:update`, form tutors on `student:update`. Added by `20261122110000_attendance_report_permission`, which granted it to every custom role holding `report-card:read` (previously the gate) so nobody lost access on upgrade. |
 
 A custom role can grant any of these keys on top of the base role's defaults. System roles (`school_role.is_system`) are read-only and report their code defaults.
 
@@ -112,6 +113,7 @@ A custom role can grant any of these keys on top of the base role's defaults. Sy
   - `course/course.service.ts`: sees all courses.
   - `course/course-copy.service.ts`: `course:create`.
   - `dashboard/dashboard.service.ts`: admin view.
+  - `attendance-alerts/attendance-report.service.ts`: `attendance-report:read` sees every student's attendance.
 - **`permCacheKey`**: `email-domain/email-domain.service.ts` clears a user's cached set after a domain auto-join.
 - **`PermissionModule`** is imported by `src/app.module.ts`. `src/organisation` uses `permCacheKey` to drop the cached permissions of users whose school role it changes.
 - **Front end**:

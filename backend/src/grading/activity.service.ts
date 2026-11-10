@@ -27,16 +27,23 @@ import {
 import { CourseNotificationService } from '@/course-notification/course-notification.service';
 import { syncUntimedQuizAttempts } from './extension.service';
 import { rescoreQuizFromAnswers } from './quiz-rescore';
+import { refreshLateness } from './lateness';
+import { latePolicyColumns, type LatePenaltyMode } from './late-policy';
+import {
+  createQuestion,
+  loadQuestions,
+  questionAudit,
+  QUESTION_SELECT,
+  updateQuestionRow,
+  type QuestionInput,
+  type QuestionPatch,
+} from './question-write';
 
-type QuestionKind = 'multiple_choice' | 'true_false' | 'short_answer';
-
-const QUESTION_SELECT = {
-  id: true,
-  prompt: true,
-  kind: true,
-  points: true,
-  sort_order: true,
-} satisfies Prisma.quiz_questionSelect;
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 /**
  * Quizzes, assignments and offline work inside a course.
@@ -118,7 +125,10 @@ export class ActivityService {
     return data.map((a) => toActivity(a));
   }
 
-  /** One activity, with its questions when it is a quiz. */
+  /**
+   * One activity, with its questions (and, on a quiz, the question banks it
+   * draws from) when it is a quiz.
+   */
   async get(userId: string, activityId: string, includeAnswers = true) {
     const activity = await this.requireActivity(
       userId,
@@ -127,47 +137,31 @@ export class ActivityService {
     );
 
     if (activity.kind !== 'quiz') {
-      return { ...toActivity(activity), questions: [] };
+      return { ...toActivity(activity), questions: [], bankDraws: [] };
     }
 
-    const questions = await this.prisma.quiz_question.findMany({
-      where: { activity_id: activityId },
-      select: QUESTION_SELECT,
-      orderBy: { sort_order: 'asc' },
-    });
-
-    const questionIds = questions.map((q) => q.id);
-
-    const options = questionIds.length
-      ? await this.prisma.quiz_option.findMany({
-          where: { question_id: { in: questionIds } },
-          select: {
-            id: true,
-            question_id: true,
-            label: true,
-            is_correct: true,
-            sort_order: true,
-          },
-          orderBy: { sort_order: 'asc' },
-        })
-      : [];
+    const [questions, draws] = await Promise.all([
+      loadQuestions(this.prisma, { activity_id: activityId }, includeAnswers),
+      this.prisma.quiz_bank_draw.findMany({
+        where: { activity_id: activityId },
+        select: {
+          id: true,
+          bank_id: true,
+          draw_count: true,
+          question_bank: { select: { title: true } },
+        },
+        orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+      }),
+    ]);
 
     return {
       ...toActivity(activity),
-      questions: questions.map((q) => ({
-        id: q.id,
-        prompt: q.prompt,
-        kind: q.kind,
-        points: Number(q.points),
-        sortOrder: q.sort_order,
-        options: options
-          .filter((o) => o.question_id === q.id)
-          .map((o) => ({
-            id: o.id,
-            label: o.label,
-            sortOrder: o.sort_order,
-            ...(includeAnswers ? { isCorrect: o.is_correct } : {}),
-          })),
+      questions,
+      bankDraws: (draws ?? []).map((d) => ({
+        id: d.id,
+        bankId: d.bank_id,
+        bankTitle: d.question_bank?.title ?? '',
+        count: d.draw_count,
       })),
     };
   }
@@ -188,6 +182,12 @@ export class ActivityService {
       maxAttempts?: number;
       timeLimitMinutes?: number | null;
       lockdownBrowser?: boolean;
+      shuffleQuestions?: boolean;
+      shuffleOptions?: boolean;
+      lateUntil?: string | null;
+      latePenaltyMode?: LatePenaltyMode;
+      latePenaltyValue?: number | null;
+      latePenaltyCap?: number | null;
     },
   ) {
     const { course } = await this.access.require(
@@ -212,6 +212,9 @@ export class ActivityService {
     if (input.kind !== 'quiz' && input.lockdownBrowser) {
       throw new BadRequestException('Only quizzes can require lockdown browser');
     }
+    if (input.kind !== 'quiz' && (input.shuffleQuestions || input.shuffleOptions)) {
+      throw new BadRequestException('Only quizzes can be shuffled');
+    }
     if (
       input.timeLimitMinutes != null &&
       (!Number.isInteger(input.timeLimitMinutes) ||
@@ -231,6 +234,13 @@ export class ActivityService {
     if (input.assignmentGroupId) {
       await this.requireGroupInCourse(courseId, input.assignmentGroupId);
     }
+    const late = latePolicyColumns(input.kind, {
+      dueAt: toTimestamp(input.dueAt ?? null),
+      lateUntil: toTimestamp(input.lateUntil ?? null),
+      mode: input.latePenaltyMode,
+      value: input.latePenaltyValue,
+      cap: input.latePenaltyCap,
+    });
 
     // Offline work is never handed in online, so it accepts nothing.
     const online = input.kind === 'assignment';
@@ -250,6 +260,10 @@ export class ActivityService {
                 : null,
             lockdown_browser:
               input.kind === 'quiz' ? (input.lockdownBrowser ?? false) : false,
+            shuffle_questions:
+              input.kind === 'quiz' ? (input.shuffleQuestions ?? false) : false,
+            shuffle_options:
+              input.kind === 'quiz' ? (input.shuffleOptions ?? false) : false,
             kind: input.kind,
             title,
             instructions: input.instructions ?? null,
@@ -261,6 +275,7 @@ export class ActivityService {
                 ? (input.allowMultipleFiles ?? false)
                 : false,
             allow_text: online ? (input.allowText ?? false) : false,
+            ...late,
             created_by: userId,
           },
           select: ACTIVITY_SELECT,
@@ -304,6 +319,12 @@ export class ActivityService {
       maxAttempts?: number | null;
       timeLimitMinutes?: number | null;
       lockdownBrowser?: boolean;
+      shuffleQuestions?: boolean;
+      shuffleOptions?: boolean;
+      lateUntil?: string | null;
+      latePenaltyMode?: LatePenaltyMode;
+      latePenaltyValue?: number | null;
+      latePenaltyCap?: number | null;
     },
   ) {
     const activity = await this.requireActivity(userId, activityId);
@@ -374,6 +395,53 @@ export class ActivityService {
       }
       changes.lockdown_browser = patch.lockdownBrowser;
     }
+    for (const [key, column] of [
+      ['shuffleQuestions', 'shuffle_questions'],
+      ['shuffleOptions', 'shuffle_options'],
+    ] as const) {
+      if (patch[key] === undefined) continue;
+      if (activity.kind !== 'quiz' && patch[key]) {
+        throw new BadRequestException('Only quizzes can be shuffled');
+      }
+      // Each attempt's order is fixed when it starts, so a change applies to
+      // attempts started afterwards.
+      changes[column] = patch[key];
+    }
+
+    // The late policy is checked as a whole against the dates it will have.
+    const lateTouched =
+      patch.lateUntil !== undefined ||
+      patch.latePenaltyMode !== undefined ||
+      patch.latePenaltyValue !== undefined ||
+      patch.latePenaltyCap !== undefined;
+    if (lateTouched || patch.dueAt !== undefined) {
+      const mode =
+        patch.latePenaltyMode ??
+        (activity.late_penalty_mode);
+      const keepNumbers = patch.latePenaltyMode === undefined;
+      Object.assign(
+        changes,
+        latePolicyColumns(activity.kind, {
+          dueAt:
+            patch.dueAt !== undefined
+              ? toTimestamp(patch.dueAt)
+              : activity.due_at,
+          lateUntil:
+            patch.lateUntil !== undefined
+              ? toTimestamp(patch.lateUntil)
+              : activity.late_until,
+          mode,
+          value:
+            patch.latePenaltyValue !== undefined || !keepNumbers
+              ? (patch.latePenaltyValue ?? null)
+              : numberOrNull(activity.late_penalty_value),
+          cap:
+            patch.latePenaltyCap !== undefined || !keepNumbers
+              ? (patch.latePenaltyCap ?? null)
+              : numberOrNull(activity.late_penalty_cap),
+        }),
+      );
+    }
 
     if (Object.keys(changes).length === 0) {
       throw new BadRequestException('Nothing to update');
@@ -391,9 +459,9 @@ export class ActivityService {
           data: changes,
           select: ACTIVITY_SELECT,
         });
-        if (patch.dueAt !== undefined) {
-          // Untimed attempts end at the due date; students with their own
-          // extension keep theirs.
+        if (patch.dueAt !== undefined || patch.lateUntil !== undefined) {
+          // Untimed attempts end at the due date (or, started late, when
+          // late work closes); students with their own extension keep theirs.
           await syncUntimedQuizAttempts(
             tx,
             updated,
@@ -403,7 +471,12 @@ export class ActivityService {
               },
             },
             updated.due_at,
+            updated.late_until ?? updated.due_at,
           );
+        }
+        if (lateTouched || patch.dueAt !== undefined || patch.points !== undefined) {
+          // Lateness and penalties follow the new dates and policy.
+          await refreshLateness(tx, activityId);
         }
         await this.auditLog?.record(
           tx,
@@ -447,8 +520,14 @@ export class ActivityService {
       maxAttempts: activity.max_attempts,
       timeLimitMinutes: activity.time_limit_minutes,
       lockdownBrowser: activity.lockdown_browser,
+      shuffleQuestions: activity.shuffle_questions,
+      shuffleOptions: activity.shuffle_options,
       omitFromFinalGrade: activity.omit_from_final_grade,
       rubricId: activity.rubric_id,
+      lateUntil: activity.late_until ?? null,
+      latePenaltyMode: activity.late_penalty_mode ?? 'none',
+      latePenaltyValue: numberOrNull(activity.late_penalty_value),
+      latePenaltyCap: numberOrNull(activity.late_penalty_cap),
     };
   }
 
@@ -505,6 +584,7 @@ export class ActivityService {
       await tx.$executeRaw`
         update grading.submission
         set score = score * ${points}::numeric / ${old}::numeric,
+            raw_score = raw_score * ${points}::numeric / ${old}::numeric,
             updated_at = now()
         where activity_id = ${activityId}::uuid
           and graded_by is null
@@ -527,12 +607,15 @@ export class ActivityService {
     }
 
     if (activity.kind === 'quiz') {
-      const count = await this.prisma.quiz_question.count({
-        where: { activity_id: activityId },
-      });
+      const [count, draws] = await Promise.all([
+        this.prisma.quiz_question.count({ where: { activity_id: activityId } }),
+        this.prisma.quiz_bank_draw.count({ where: { activity_id: activityId } }),
+      ]);
 
-      if ((count ?? 0) === 0) {
-        throw new BadRequestException('Add a question before publishing');
+      if ((count ?? 0) === 0 && (draws ?? 0) === 0) {
+        throw new BadRequestException(
+          'Add a question, or draw from a question bank, before publishing',
+        );
       }
     }
 
@@ -698,135 +781,43 @@ export class ActivityService {
     return activity;
   }
 
-  /**
-   * Shared by adding and editing. What counts as valid depends on the kind:
-   * the choice kinds need several options with exactly one right, while a
-   * short answer needs at least one accepted wording and every one of them
-   * counts as right.
-   */
-  private validateOptions(
-    kind: QuestionKind,
-    options: { label: string; isCorrect: boolean }[],
-  ) {
-    if (options.some((o) => !o.label.trim())) {
-      throw new BadRequestException('Give every option a label');
-    }
-
-    if (kind === 'short_answer') {
-      if (options.length < 1) {
-        throw new BadRequestException('Add at least one accepted answer');
-      }
-      return;
-    }
-
-    if (options.length < 2) {
-      throw new BadRequestException('A question needs at least two options');
-    }
-    if (!options.some((o) => o.isCorrect)) {
-      throw new BadRequestException('Mark one option as correct');
-    }
-    // Auto-grading picks a single option, so several correct ones would make
-    // the score ambiguous rather than generous.
-    if (options.filter((o) => o.isCorrect).length > 1) {
-      throw new BadRequestException('Only one option can be correct');
-    }
-  }
-
   async addQuestion(
     userId: string,
     activityId: string,
-    input: {
-      prompt: string;
-      kind: QuestionKind;
-      points?: number;
-      options: { label: string; isCorrect: boolean }[];
-    },
+    input: QuestionInput,
   ) {
     const activity = await this.requireDraftQuiz(userId, activityId);
 
-    const prompt = input.prompt.trim();
-    if (!prompt) throw new BadRequestException('Give the question a prompt');
-
-    // Every accepted wording of a short answer is a right answer, so the
-    // editor need not flag them one by one.
-    const options =
-      input.kind === 'short_answer'
-        ? input.options.map((o) => ({ ...o, isCorrect: true }))
-        : input.options;
-
-    this.validateOptions(input.kind, options);
-
-    const last = await this.prisma.quiz_question.findFirst({
-      where: { activity_id: activityId },
-      select: { sort_order: true },
-      orderBy: { sort_order: 'desc' },
-    });
-
     // One transaction: a question left with no options would make the quiz
     // unanswerable, so a failed option insert takes the question with it.
-    const question = await this.prisma.$transaction(async (tx) => {
-      let created;
-      try {
-        created = await tx.quiz_question.create({
-          data: {
-            activity_id: activityId,
-            prompt,
-            kind: input.kind,
-            points: input.points ?? 1,
-            sort_order: (last?.sort_order ?? -1) + 1,
-          },
-          select: QUESTION_SELECT,
-        });
-      } catch (error) {
-        this.logger.error(
-          `Failed to add question: ${(error as Error).message}`,
+    let question;
+    try {
+      question = await this.prisma.$transaction(async (tx) => {
+        const created = await createQuestion(
+          tx,
+          { activityId },
+          activity.course_id,
+          input,
         );
-        throw new BadRequestException('Failed to add question');
-      }
-
-      try {
-        await tx.quiz_option.createMany({
-          data: options.map((o, i) => ({
-            question_id: created.id,
-            label: o.label,
-            is_correct: o.isCorrect,
-            sort_order: i,
-          })),
-        });
-      } catch {
-        throw new BadRequestException('Failed to add question options');
-      }
-      await this.auditLog?.record(
-        tx,
-        activity.school_id,
-        { id: userId },
-        {
-          entity: 'quiz_question',
-          entityId: created.id,
-          action: 'create',
-          changes: auditChanges(null, {
-            prompt: created.prompt,
-            kind: created.kind,
-            points: Number(created.points),
-            options: options.map((option, i) => ({
-              label: option.label.trim(),
-              isCorrect: option.isCorrect,
-              sortOrder: i,
-            })),
-          }),
-        },
-      );
-
-      return created;
-    });
-
-    return {
-      id: question.id,
-      prompt: question.prompt,
-      kind: question.kind,
-      points: Number(question.points),
-      sortOrder: question.sort_order,
-    };
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'quiz_question',
+            entityId: created.id,
+            action: 'create',
+            changes: auditChanges(null, questionAudit(created)),
+          },
+        );
+        return created;
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Failed to add question: ${(error as Error).message}`);
+      throw new BadRequestException('Failed to add question');
+    }
+    return question;
   }
 
   /**
@@ -838,11 +829,7 @@ export class ActivityService {
     userId: string,
     activityId: string,
     questionId: string,
-    patch: {
-      prompt?: string;
-      points?: number;
-      options?: { label: string; isCorrect: boolean }[];
-    },
+    patch: QuestionPatch,
   ) {
     const activity = await this.requireDraftQuiz(userId, activityId);
 
@@ -850,150 +837,38 @@ export class ActivityService {
       where: { id: questionId, activity_id: activityId },
       select: QUESTION_SELECT,
     });
-
     if (!existing) {
       throw new NotFoundException('Question not found');
     }
 
-    const changes: Prisma.quiz_questionUncheckedUpdateInput = {};
-    if (patch.prompt !== undefined) {
-      const prompt = patch.prompt.trim();
-      if (!prompt) throw new BadRequestException('Give the question a prompt');
-      changes.prompt = prompt;
-    }
-    if (patch.points !== undefined) changes.points = patch.points;
-
-    const kind = existing.kind;
-    const options =
-      patch.options && kind === 'short_answer'
-        ? patch.options.map((o) => ({ ...o, isCorrect: true }))
-        : patch.options;
-
-    if (options) {
-      this.validateOptions(kind, options);
-    }
-
-    if (Object.keys(changes).length === 0 && !options) {
-      throw new BadRequestException('Nothing to update');
-    }
-
-    // One transaction, so a failed option insert cannot leave the question
-    // with no options (unanswerable) or half-edited.
-    await this.prisma.$transaction(async (tx) => {
-      const oldOptions = await tx.quiz_option.findMany({
-        where: { question_id: questionId },
-        select: { label: true, is_correct: true, sort_order: true },
-        orderBy: { sort_order: 'asc' },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const { before, after } = await updateQuestionRow(
+          tx,
+          existing,
+          activity.course_id,
+          patch,
+        );
+        await this.auditLog?.record(
+          tx,
+          activity.school_id,
+          { id: userId },
+          {
+            entity: 'quiz_question',
+            entityId: questionId,
+            action: 'update',
+            changes: auditChanges(questionAudit(before), questionAudit(after)),
+          },
+        );
+        return after;
       });
-      if (Object.keys(changes).length > 0) {
-        try {
-          await tx.quiz_question.update({
-            where: { id: questionId },
-            data: changes,
-          });
-        } catch (error) {
-          this.logger.error(
-            `Failed to update question: ${(error as Error).message}`,
-          );
-          throw new BadRequestException('Failed to save the question');
-        }
-      }
-
-      if (options) {
-        try {
-          await tx.quiz_option.deleteMany({
-            where: { question_id: questionId },
-          });
-        } catch (error) {
-          this.logger.error(
-            `Failed to clear options: ${(error as Error).message}`,
-          );
-          throw new BadRequestException('Failed to save the options');
-        }
-
-        try {
-          await tx.quiz_option.createMany({
-            data: options.map((o, i) => ({
-              question_id: questionId,
-              label: o.label.trim(),
-              is_correct: o.isCorrect,
-              sort_order: i,
-            })),
-          });
-        } catch (error) {
-          this.logger.error(
-            `Failed to save options for question ${questionId}: ${(error as Error).message}`,
-          );
-          throw new BadRequestException('Failed to save the options');
-        }
-      }
-      const nextOptions = options
-        ? options.map((option, i) => ({
-            label: option.label.trim(),
-            isCorrect: option.isCorrect,
-            sortOrder: i,
-          }))
-        : oldOptions.map((option) => ({
-            label: option.label,
-            isCorrect: option.is_correct,
-            sortOrder: option.sort_order,
-          }));
-      await this.auditLog?.record(
-        tx,
-        activity.school_id,
-        { id: userId },
-        {
-          entity: 'quiz_question',
-          entityId: questionId,
-          action: 'update',
-          changes: auditChanges(
-            {
-              prompt: existing.prompt,
-              points: Number(existing.points),
-              options: oldOptions.map((option) => ({
-                label: option.label,
-                isCorrect: option.is_correct,
-                sortOrder: option.sort_order,
-              })),
-            },
-            {
-              prompt: changes.prompt ?? existing.prompt,
-              points: changes.points ?? Number(existing.points),
-              options: nextOptions,
-            },
-          ),
-        },
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(
+        `Failed to update question: ${(error as Error).message}`,
       );
-    });
-
-    return this.getQuestion(activityId, questionId);
-  }
-
-  /** One question with its options, as the editor redraws it after a save. */
-  private async getQuestion(activityId: string, questionId: string) {
-    const question = await this.prisma.quiz_question.findFirst({
-      where: { id: questionId, activity_id: activityId },
-      select: QUESTION_SELECT,
-    });
-
-    const options = await this.prisma.quiz_option.findMany({
-      where: { question_id: questionId },
-      select: { id: true, label: true, is_correct: true, sort_order: true },
-      orderBy: { sort_order: 'asc' },
-    });
-
-    return {
-      id: question!.id,
-      prompt: question!.prompt,
-      kind: question!.kind,
-      points: Number(question!.points),
-      sortOrder: question!.sort_order,
-      options: options.map((o) => ({
-        id: o.id,
-        label: o.label,
-        isCorrect: o.is_correct,
-      })),
-    };
+      throw new BadRequestException('Failed to save the question');
+    }
   }
 
   async removeQuestion(userId: string, activityId: string, questionId: string) {

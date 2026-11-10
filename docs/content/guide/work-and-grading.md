@@ -36,13 +36,37 @@ Each group can **drop lowest** and **drop highest** marks - for example "drop ea
 
 Give it a title, instructions (Markdown), a points total, a due date and its group. New work is a **draft**: students cannot see it.
 
+### Late work
+
+By default work closes at its due date. To accept late work, set **Accept late work until** (a date after the due date) and, if you want, a **late penalty**:
+
+- **None**, **% per day** or **% per hour** late, and an optional **cap** (the most the penalty can take, for example 50%).
+- Every started day or hour counts in full: one minute late on 10% per day loses 10%; 25 hours late loses 20%.
+- The penalty is a percentage of the mark, not of the points: 85 handed in a day late at 10% per day is 85 − 10% = 76.5.
+- A quiz is late by when the student **started** it, not when they submitted: an attempt started before the due date runs its full time without a penalty. An untimed attempt started on time still ends at the due date; one started late runs until late work closes.
+- **Extensions win.** A student with an extension is due at, and closes at, their extension, with no late window and no penalty if they hand in before it.
+
+Late hand-ins show **Late (2 days)** on the marks table with the breakdown "85 − 10% late = 76.5"; **Waive penalty** (and **Apply penalty**) on the row restores the student's full mark and is recorded in the audit log. Students see the due date, until when late work is accepted, and the penalty that applies. The gradebook, CSV export, report cards and the student's grades all use the mark after the penalty (a cell with a penalty shows a small **L**; hover it for the breakdown). A mark you import from a CSV is taken as the final mark, as typed.
+
 ### Quiz questions
 
 - **Multiple choice** - several options, one correct.
 - **True or false**.
 - **Short answer** - checked against the answers you accept, ignoring capitals and extra spaces. List every reasonable wording; students never see them.
+- **Multiple select** - several correct options. **All or nothing** (exactly the right ones) or **partial credit**: (right picks − wrong picks) ÷ correct options, never below zero.
+- **Numeric** - a number, right when it is within the **tolerance** of your answer (3.14 with tolerance 0.01 accepts 3.13 to 3.15).
+- **Matching** - pairs of items; students choose the match for each from a list. All or nothing, or partial credit per pair.
+- **Ordering** - items in the right order (the order you type them); students see them shuffled and move them up and down. All or nothing, or partial credit per item in place.
+- **Essay** - a written answer you mark by hand, optionally with a course rubric as a guide.
+- **File upload** - a file you mark by hand. You can limit the file types (`.pdf`, `image/*`) and size.
+
+Auto-marked questions are scored the moment the student submits. A quiz with an answered essay or file question shows **Needs marking** until you mark them: open the student's **Answers** on the marks table, give each essay and file question its points and a comment, and the quiz is marked once every one has a mark (auto parts + your marks). Students see "Waiting for teacher to mark" until then, and never see the right answers.
 
 **Attempts** sets how many tries a student gets (`0` is unlimited).
+
+### Question banks and shuffling
+
+**Question banks** are pools of questions that belong to the course. Build them from **Question banks** on a quiz, then use **Question bank draws** on a draft quiz: each student gets that many questions picked at random from the bank, as well as the quiz's own questions. **Shuffle questions** and **Shuffle options** give each student their own order. A student's questions and order are fixed when they start an attempt, so leaving and coming back shows the same quiz, and a retake draws again. A bank question becomes locked once a student has been given it.
 
 ### Lockdown quizzes in the mobile app
 
@@ -91,7 +115,7 @@ Good to know:
 
 Open the work to see every student in the course, whether they handed in or not.
 
-- **Quizzes** mark themselves.
+- **Quizzes** mark themselves, except essay and file questions, which you mark question by question from **Answers**.
 - **Assignments and offline work**: type the score (up to two decimal places) and optional feedback. Students see the mark and feedback once it is marked.
 
 ### Rubrics

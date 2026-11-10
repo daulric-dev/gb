@@ -344,7 +344,7 @@ describe('quizzes and the due date', () => {
     const res = await service.submitQuiz('stu-1', 'act-1', [
       { questionId: 'q-1', optionId: 'opt-1' },
     ]);
-    expect(res).toEqual({ score: 5, points: 20 });
+    expect(res).toEqual({ score: 5, points: 20, needsMarking: false });
     expect(prisma.quiz_answer.createMany).toHaveBeenCalled();
   });
 
@@ -355,7 +355,7 @@ describe('quizzes and the due date', () => {
     const res = await service.submitQuiz('stu-1', 'act-1', [
       { questionId: 'q-1', optionId: 'opt-1' },
     ]);
-    expect(res).toEqual({ score: 5, points: 20 });
+    expect(res).toEqual({ score: 5, points: 20, needsMarking: false });
     expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
     expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();
   });
@@ -543,5 +543,139 @@ describe('teacher roster', () => {
     await expect(
       service.submitAssignment('stu-1', 'act-1', { textBody: 'x' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('the late window', () => {
+  const LATE_OPEN = {
+    ...ASSIGNMENT,
+    late_until: FUTURE,
+    late_penalty_mode: 'percent_per_day',
+    late_penalty_value: 10,
+    late_penalty_cap: null,
+  };
+
+  test('after the due date but before late-until, a hand-in is accepted and stamped late', async () => {
+    const { service, prisma } = build((p) => {
+      student({ activity: LATE_OPEN })(p);
+      p.submission.updateManyAndReturn.mockResolvedValue([
+        { id: 'sub-1', status: 'submitted', submitted_at: new Date() },
+      ]);
+      p.submission.findMany.mockResolvedValue([
+        {
+          id: 'sub-1',
+          student_id: 'stu-1',
+          submitted_at: new Date(),
+          attempt_started_at: null,
+          score: null,
+          raw_score: null,
+          late_seconds: 0,
+          late_penalty_percent: 0,
+          late_penalty_waived: false,
+        },
+      ]);
+    });
+    const res = await service.submitAssignment('stu-1', 'act-1', { textBody: 'Late' });
+    expect(res.status).toBe('submitted');
+    const data = prisma.submission.update.mock.calls[0][0].data;
+    // A day and a few milliseconds late: two started days at 10%.
+    expect(data.late_seconds).toBeGreaterThan(86_400);
+    expect(data.late_penalty_percent).toBe(20);
+  });
+
+  test('after late-until the hand-in is a 409 that says late work closed', async () => {
+    const { service } = build(
+      student({ activity: { ...LATE_OPEN, due_at: new Date(PAST.getTime() - 86_400_000), late_until: PAST } }),
+    );
+    const error = await service
+      .submitAssignment('stu-1', 'act-1', { textBody: 'Too late' })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.message).toMatch(/^Late work closed on/);
+  });
+
+  test('an extension wins over late-until: closed at the extension', async () => {
+    const soon = new Date(Date.now() - 1000);
+    const { service } = build(student({ activity: LATE_OPEN, extension: soon }));
+    const error = await service
+      .submitAssignment('stu-1', 'act-1', { textBody: 'After my extension' })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.message).toMatch(PAST_MESSAGE);
+  });
+
+  test('a quiz can be started late, and the untimed attempt runs to late-until', async () => {
+    const { service, prisma } = build((p) => {
+      student({ activity: { ...QUIZ, late_until: FUTURE } })(p);
+      p.$queryRaw.mockResolvedValue([
+        { attempt_count: 0, graded_by: null, quiz_started_at: null, quiz_expires_at: null },
+      ]);
+    });
+    const res = await service.startQuizAttempt('stu-1', 'act-1');
+    expect(res.expiresAt).toBe(FUTURE.toISOString());
+    expect(prisma.submission.update.mock.calls[0][0].data.quiz_expires_at).toEqual(FUTURE);
+  });
+});
+
+describe('waiving a late penalty', () => {
+  test('restores the raw mark and is audited', async () => {
+    const records: any[] = [];
+    const prisma = createMockPrisma();
+    prisma.activity.findUnique.mockResolvedValue({
+      ...ASSIGNMENT,
+      late_until: FUTURE,
+      late_penalty_mode: 'percent_per_day',
+      late_penalty_value: 10,
+      late_penalty_cap: null,
+    });
+    prisma.course_student.findFirst.mockResolvedValue({ student_id: 'stu-1' });
+    let waived = false;
+    prisma.submission.update.mockImplementation(async ({ data }: any) => {
+      if ('late_penalty_waived' in data) waived = data.late_penalty_waived;
+      return {};
+    });
+    const row = () => ({
+      id: 'sub-1',
+      student_id: 'stu-1',
+      status: 'graded',
+      submitted_at: new Date(PAST.getTime() + 3_600_000),
+      attempt_started_at: null,
+      score: 76.5,
+      raw_score: 85,
+      late_seconds: 3600,
+      late_penalty_percent: 10,
+      late_penalty_waived: waived,
+      feedback: null,
+      excused: false,
+      excused_reason: null,
+      graded_at: new Date(),
+    });
+    prisma.submission.findUnique.mockImplementation(async () => row());
+    prisma.submission.findMany.mockImplementation(async () => [row()]);
+    const service = new SubmissionService(
+      prisma as any,
+      {} as any,
+      access as any,
+      undefined,
+      { record: async (...args: any[]) => void records.push(args) } as any,
+    );
+    await service.waiveLatePenalty('teacher-1', 'act-1', 'stu-1', true);
+    // The penalty is recomputed without the waived percent: score back to 85.
+    const scoreWrite = prisma.submission.update.mock.calls.find(
+      ([args]: any) => 'score' in args.data,
+    );
+    expect(scoreWrite?.[0].data.score).toBe(85);
+    expect(records[0][3].changes).toBeDefined();
+    expect(records[0][3].entity).toBe('submission');
+  });
+
+  test('nothing handed in is a 404', async () => {
+    const prisma = createMockPrisma();
+    prisma.activity.findUnique.mockResolvedValue(ASSIGNMENT);
+    prisma.course_student.findFirst.mockResolvedValue({ student_id: 'stu-1' });
+    const service = new SubmissionService(prisma as any, {} as any, access as any);
+    await expect(service.waiveLatePenalty('t', 'act-1', 'stu-1', true)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

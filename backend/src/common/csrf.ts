@@ -5,6 +5,8 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { allowedOrigins, isDevelopmentOrigin } from '@/config/origins';
 import { NATIVE_CLIENT_HEADER, sessionTokenVia } from '@/account/session.service';
 import { QUERY_METHOD } from './http-query';
+import { LTI_AGS_PREFIX, LTI_AUTH_PATH, LTI_TOKEN_PATH, MEDIA as LTI_MEDIA } from '@/lti/lti.constants';
+import { trimTrailingSlashes } from './trim-slashes';
 
 /**
  * Cross-site request forgery protection for the session cookie.
@@ -24,16 +26,28 @@ import { QUERY_METHOD } from './http-query';
  *   origins pass;
  * - the SAML assertion consumer service, which an identity provider on
  *   another site posts to by design. It does not act on the session cookie:
- *   it verifies the signed assertion and starts a new session from it.
+ *   it verifies the signed assertion and starts a new session from it;
+ * - the LTI 1.3 OIDC authentication endpoint (`/api/lti/auth`), which an
+ *   external tool's page may form-post to by design. It does not act on the
+ *   session cookie: it is authorised by a single-use launch ticket, and a
+ *   cookie (when sent) can only make it refuse (a different user's ticket).
  *
  * There are no inbound webhooks; integrations only send them.
  */
 
-/** The SAML ACS route: the only cross-site form post the API accepts. */
+/** The SAML ACS route: a cross-site form post the API accepts. */
 export const SAML_ACS_PATH = '/api/auth/sso/saml/acs';
 
 /** Routes exempt from the origin check (see above). */
-export const CSRF_EXEMPT_PATHS: ReadonlySet<string> = new Set([SAML_ACS_PATH]);
+export const CSRF_EXEMPT_PATHS: ReadonlySet<string> = new Set([SAML_ACS_PATH, LTI_AUTH_PATH]);
+
+/**
+ * Routes that take an `application/x-www-form-urlencoded` body: the SAML ACS,
+ * the LTI auth endpoint (OIDC form_post from a tool) and the LTI token
+ * endpoint (OAuth 2 requires form bodies; tools call it server to server,
+ * without a session cookie, so the origin check above still applies to it).
+ */
+export const FORM_BODY_PATHS: ReadonlySet<string> = new Set([SAML_ACS_PATH, LTI_AUTH_PATH, LTI_TOKEN_PATH]);
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', QUERY_METHOD]);
 
@@ -49,7 +63,7 @@ type CsrfRequest = {
 /** The path of a request URL: no query string, no trailing slash. */
 export function requestPath(url: string): string {
   const path = url.split('?')[0].split('#')[0];
-  return path.length > 1 ? path.replace(/\/+$/, '') : path;
+  return path.length > 1 ? trimTrailingSlashes(path) : path;
 }
 
 function header(req: CsrfRequest, name: string): string | undefined {
@@ -131,7 +145,7 @@ export function formBodyParser(
   body: Buffer,
   done: (err: Error | null, body?: unknown) => void,
 ): void {
-  if (requestPath(request.url) !== SAML_ACS_PATH) {
+  if (!FORM_BODY_PATHS.has(requestPath(request.url))) {
     done(
       new UnsupportedMediaTypeException(
         'Form bodies are not accepted here; send JSON',
@@ -167,5 +181,19 @@ export function useBodyParsers(app: NestFastifyApplication): void {
     'application/x-www-form-urlencoded',
     { bodyLimit },
     formBodyParser,
+  );
+  // LTI Assignment and Grade Services send JSON under their own media types,
+  // and only to /api/lti/ags/... (none of them is a CORS-simple type, so no
+  // cross-site form can send one).
+  app.useBodyParser(
+    [LTI_MEDIA.score, LTI_MEDIA.lineItem],
+    { bodyLimit: 64 * 1024 },
+    (req, body, done) => {
+      if (!requestPath((req as { url: string }).url).startsWith(LTI_AGS_PREFIX)) {
+        done(new UnsupportedMediaTypeException('Send JSON'));
+        return;
+      }
+      void jsonParser(req as Parameters<typeof jsonParser>[0], body as unknown as string, done);
+    },
   );
 }

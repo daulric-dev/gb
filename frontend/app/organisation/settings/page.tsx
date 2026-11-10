@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -21,19 +23,23 @@ import { OrgHeader } from "../_components/org-header";
 import { userMessage } from "@/lib/errors";
 
 export default function OrganisationSettingsPage() {
+  useSignals();
   const { refresh } = useAuth();
-  const [org, setOrg] = useState<Organisation | null>(null);
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
+  const orgSignal = useSignal<Organisation | null>(null);
+  const org = orgSignal.value;
+  const nameSignal = useSignal("");
+  const name = nameSignal.value;
+  const savingSignal = useSignal(false);
+  const saving = savingSignal.value;
 
   useEffect(() => {
     api<Organisation>("/organisation")
       .then((data) => {
-        setOrg(data);
-        setName(data?.name ?? "");
+        orgSignal.value = data;
+        nameSignal.value = data?.name ?? "";
       })
       .catch((err) => toast.error(userMessage(err, "Failed to load the organisation")));
-  }, []);
+  }, [nameSignal, orgSignal]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -42,20 +48,20 @@ export default function OrganisationSettingsPage() {
       toast.error("The organisation needs a name");
       return;
     }
-    setSaving(true);
+    savingSignal.value = true;
     try {
       const updated = await api<Organisation>("/organisation", {
         method: "PATCH",
         body: { name: value },
       });
-      setOrg(updated && typeof updated === "object" ? updated : { ...org!, name: value });
+      orgSignal.value = updated && typeof updated === "object" ? updated : { ...org!, name: value };
       toast.success("Organisation renamed");
       // The name shows in the app chrome, which reads it from the profile.
       void refresh();
     } catch (err) {
       toast.error(userMessage(err, "Failed to rename the organisation"));
     } finally {
-      setSaving(false);
+      savingSignal.value = false;
     }
   }
 
@@ -80,7 +86,7 @@ export default function OrganisationSettingsPage() {
                 <Input
                   id="org-name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => (nameSignal.value = e.target.value)}
                   required
                 />
               </div>

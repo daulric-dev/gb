@@ -42,6 +42,12 @@ export class PortalAttendanceController {
     private readonly realtime: AttendanceRealtime,
   ) {}
 
+  /** The student's own attendance percentage, overall and per course. */
+  @Get('attendance/summary')
+  async summary(@Req() req: StudentRequest) {
+    return this.attendance.summaryForStudent(req.student!.studentId);
+  }
+
   @Get('attendance/open')
   async open(@Req() req: StudentRequest) {
     return this.attendance.openForStudent(req.student!.studentId);

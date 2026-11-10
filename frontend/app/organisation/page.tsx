@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import { toast } from "sonner";
 import {
   GraduationCap,
@@ -34,13 +36,14 @@ const TILES: Tile[] = [
 ];
 
 export default function OrganisationOverviewPage() {
-  const [overview, setOverview] = useState<OrganisationOverview | null>(null);
+  useSignals();
+  const overview = useSignal<OrganisationOverview | null>(null);
 
   useEffect(() => {
     api<OrganisationOverview>("/organisation/overview")
-      .then(setOverview)
+      .then((o) => (overview.value = o))
       .catch((err) => toast.error(userMessage(err, "Failed to load overview")));
-  }, []);
+  }, [overview]);
 
   return (
     <div className="space-y-6">
@@ -54,8 +57,8 @@ export default function OrganisationOverviewPage() {
             <StatCard
               icon={t.icon}
               label={t.label}
-              value={overview ? t.value(overview) : ""}
-              loading={!overview}
+              value={overview.value ? t.value(overview.value) : ""}
+              loading={!overview.value}
             />
           );
           return t.href ? (

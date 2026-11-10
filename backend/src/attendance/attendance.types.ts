@@ -108,6 +108,18 @@ export interface PortalAttendanceRecord {
   checkedInAt: string | null;
 }
 
+/** GET /portal/me/attendance/summary: the student's own percentages. */
+export interface PortalAttendanceSummary {
+  overall: AttendanceTally;
+  courses: {
+    courseId: string;
+    courseName: string;
+    courseCode: string | null;
+    archived: boolean;
+    summary: AttendanceTally;
+  }[];
+}
+
 export interface PortalCourseAttendance {
   summary: AttendanceTally;
   records: PortalAttendanceRecord[];

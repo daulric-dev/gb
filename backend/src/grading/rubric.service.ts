@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { refreshLateness } from './lateness';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
@@ -657,6 +658,8 @@ export class RubricService {
           : [];
         const fields = {
           status: 'graded' as const,
+          // The rubric's mark; score is it less any late penalty.
+          raw_score: score,
           score,
           feedback: input.feedback ?? null,
           graded_at: now,
@@ -683,6 +686,12 @@ export class RubricService {
             graded_at: true,
           },
         });
+        await refreshLateness(tx, activityId, [studentId]);
+        const penalised = await tx.submission.findUnique({
+          where: { id: submission.id },
+          select: { score: true },
+        });
+        if (penalised) submission.score = penalised.score;
         await tx.rubric_assessment.deleteMany({
           where: {
             submission_id: submission.id,

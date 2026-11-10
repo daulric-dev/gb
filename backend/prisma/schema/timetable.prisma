@@ -1,0 +1,153 @@
+// Timetable and automatic attendance sessions (src/timetable).
+// Migration 20261118100000_timetable.
+
+/// A school's timetable settings: weekly (cycle_length null) or an N-day rotating cycle counted in school days from cycle_start_date, skipping non-school weekdays and closures; plus how automatic check-in sessions open.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model timetable_setting {
+  school_id          String    @id @db.Uuid
+  cycle_length       Int?      @db.SmallInt
+  cycle_start_date   DateTime? @db.Date
+  /// ISO weekdays (1 = Monday .. 7 = Sunday) the school is open.
+  school_days        Int[]     @default([1, 2, 3, 4, 5]) @db.SmallInt
+  auto_sessions      Boolean   @default(true)
+  /// Minutes before the period starts that the session opens (0-30).
+  lead_minutes       Int       @default(0) @db.SmallInt
+  /// Minutes after the period starts that a check-in counts as late; null never late.
+  late_after_minutes Int?      @db.SmallInt
+  require_code       Boolean   @default(true)
+  updated_by         String?   @db.Uuid
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+  school             school    @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+/// A room. A saved location (all three or none) is the geofence point of sessions opened automatically for periods in the room.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model room {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id          String               @db.Uuid
+  name               String
+  latitude           Float?
+  longitude          Float?
+  radius_m           Int?
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  school             school               @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  timetable_entry    timetable_entry[]
+  timetable_override timetable_override[]
+
+  @@unique([school_id, name], map: "room_school_name_key")
+  @@schema("public")
+}
+
+/// A named period of the school's bell schedule; its times per weekday are in bell_period_time.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model bell_period {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id        String             @db.Uuid
+  name             String
+  position         Int                @default(0) @db.SmallInt
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  school           school             @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  bell_period_time bell_period_time[]
+  timetable_entry  timetable_entry[]
+
+  @@unique([school_id, name], map: "bell_period_school_name_key")
+  @@schema("public")
+}
+
+/// A period's local start and end (minutes after midnight) on one ISO weekday. No row: the period does not run that day.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model bell_period_time {
+  period_id    String      @db.Uuid
+  weekday      Int         @db.SmallInt
+  start_minute Int         @db.SmallInt
+  end_minute   Int         @db.SmallInt
+  bell_period  bell_period @relation(fields: [period_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([period_id, weekday])
+  @@schema("public")
+}
+
+/// A non-school day range (holiday, closure), inclusive.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model school_closure {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  school_id  String   @db.Uuid
+  name       String
+  start_date DateTime @db.Date
+  end_date   DateTime @db.Date
+  created_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  school     school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([school_id, start_date], map: "idx_school_closure_school_start")
+  @@schema("public")
+}
+
+/// A course's slot: a period on a weekday (weekly) or a cycle day (rotating), in a room, between optional dates (inside the course's term).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model timetable_entry {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  course_id            String                 @db.Uuid
+  period_id            String                 @db.Uuid
+  room_id              String?                @db.Uuid
+  weekday              Int?                   @db.SmallInt
+  cycle_day            Int?                   @db.SmallInt
+  valid_from           DateTime?              @db.Date
+  valid_to             DateTime?              @db.Date
+  created_by           String?                @db.Uuid
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  course               course                 @relation(fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  bell_period          bell_period            @relation(fields: [period_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  room                 room?                  @relation(fields: [room_id], references: [id], onUpdate: NoAction)
+  timetable_override   timetable_override[]
+  timetable_occurrence timetable_occurrence[]
+
+  @@index([course_id], map: "idx_timetable_entry_course")
+  @@index([period_id], map: "idx_timetable_entry_period")
+  @@index([room_id], map: "idx_timetable_entry_room")
+  @@schema("course")
+}
+
+/// One occurrence cancelled or moved (to another date, time and/or room).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model timetable_override {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entry_id           String          @db.Uuid
+  occurs_on          DateTime        @db.Date
+  kind               String
+  moved_date         DateTime?       @db.Date
+  moved_start_minute Int?            @db.SmallInt
+  moved_end_minute   Int?            @db.SmallInt
+  moved_room_id      String?         @db.Uuid
+  note               String?
+  created_by         String?         @db.Uuid
+  created_at         DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
+  timetable_entry    timetable_entry @relation(fields: [entry_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  room               room?           @relation(fields: [moved_room_id], references: [id], onUpdate: NoAction)
+
+  @@unique([entry_id, occurs_on], map: "timetable_override_entry_date_key")
+  @@index([moved_room_id], map: "idx_timetable_override_moved_room")
+  @@schema("course")
+}
+
+/// The scheduler's claim on an occurrence (entry + original date), so each is handled once across replicas.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model timetable_occurrence {
+  entry_id           String              @db.Uuid
+  occurs_on          DateTime            @db.Date
+  session_id         String?             @db.Uuid
+  status             String
+  reason             String?
+  created_at         DateTime            @default(now()) @db.Timestamptz(6)
+  timetable_entry    timetable_entry     @relation(fields: [entry_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attendance_session attendance_session? @relation(fields: [session_id], references: [id], onUpdate: NoAction)
+
+  @@id([entry_id, occurs_on])
+  @@index([session_id], map: "idx_timetable_occurrence_session")
+  @@schema("course")
+}

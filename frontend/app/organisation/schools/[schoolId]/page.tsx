@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useSignal } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -45,14 +47,22 @@ const SCHOOLS_PATH = `${ORGANISATION_PATH}/schools`;
  * Everything else is in the school's own dashboard, one click away.
  */
 export default function OrganisationSchoolPage() {
+  useSignals();
   const params = useParams<{ schoolId: string }>();
   const schoolId = params?.schoolId ?? "";
-  const [school, setSchool] = useState<OrganisationSchoolDetail | null>(null);
-  const [missing, setMissing] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
-  const [editOpen, setEditOpen] = useState(false);
-  const [appointing, setAppointing] = useState(false);
+  const schoolSignal = useSignal<OrganisationSchoolDetail | null>(null);
+  const school = schoolSignal.value;
+  const missingSignal = useSignal(false);
+  const missing = missingSignal.value;
+  const reloadKeySignal = useSignal(0);
+  const reloadKey = reloadKeySignal.value;
+  const reload = useCallback(() => {
+    reloadKeySignal.value = reloadKeySignal.value + 1;
+  }, [reloadKeySignal]);
+  const editOpenSignal = useSignal(false);
+  const editOpen = editOpenSignal.value;
+  const appointingSignal = useSignal(false);
+  const appointing = appointingSignal.value;
   const { open: openDashboard, switching } = useOpenSchoolDashboard();
 
   useEffect(() => {
@@ -60,12 +70,12 @@ export default function OrganisationSchoolPage() {
     let cancelled = false;
     api<OrganisationSchoolDetail>(organisationSchoolApi(schoolId))
       .then((data) => {
-        if (!cancelled) setSchool(data);
+        if (!cancelled) schoolSignal.value = data;
       })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
-          setMissing(true);
+          missingSignal.value = true;
         } else {
           toast.error(userMessage(err, "Failed to load the school"));
         }
@@ -73,7 +83,7 @@ export default function OrganisationSchoolPage() {
     return () => {
       cancelled = true;
     };
-  }, [schoolId, reloadKey]);
+  }, [schoolId, reloadKey, missingSignal, schoolSignal]);
 
   const back = (
     <Link
@@ -148,11 +158,11 @@ export default function OrganisationSchoolPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
+          <Button variant="outline" onClick={() => (editOpenSignal.value = true)}>
             <Pencil className="mr-1.5 size-4" />
             Edit details
           </Button>
-          <Button variant="outline" onClick={() => setAppointing(true)}>
+          <Button variant="outline" onClick={() => (appointingSignal.value = true)}>
             <UserCog className="mr-1.5 size-4" />
             Appoint admin
           </Button>
@@ -245,13 +255,13 @@ export default function OrganisationSchoolPage() {
 
       <SchoolFormDialog
         open={editOpen}
-        onOpenChange={setEditOpen}
+        onOpenChange={(o) => (editOpenSignal.value = o)}
         editing={school}
         onSaved={reload}
       />
       <AppointAdminDialog
         school={appointing ? school : null}
-        onClose={() => setAppointing(false)}
+        onClose={() => (appointingSignal.value = false)}
         onAppointed={reload}
       />
     </div>

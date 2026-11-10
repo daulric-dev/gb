@@ -14,6 +14,7 @@ import {
   STAFF_ROLES,
 } from '@/course/access/course-access.service';
 import { toTimestamp, ts } from './activity.mapper';
+import { refreshLateness } from './lateness';
 
 const EXTENSION_SELECT = {
   id: true,
@@ -48,9 +49,10 @@ export type ExtensionDto = ReturnType<typeof toExtension>;
 
 /**
  * A quiz with no time limit ends when it is due: the attempt's expiry is the
- * student's due date, so the expiry sweep submits it then. When that due
- * date moves (an extension set or removed, the activity's own date changed),
- * attempts still running follow it. Attempts already over are left alone so
+ * student's due date (or, for an attempt started in the late window, the
+ * date late work closes), so the expiry sweep submits it then. When those
+ * dates move (an extension set or removed, the activity's dates changed),
+ * attempts still running follow them. Attempts already over are left alone so
  * a later date cannot reopen one that has ended.
  */
 export async function syncUntimedQuizAttempts(
@@ -58,17 +60,31 @@ export async function syncUntimedQuizAttempts(
   activity: { id: string; kind: string; time_limit_minutes: number | null },
   where: Prisma.submissionWhereInput,
   dueAt: Date | null,
+  closeAt: Date | null = dueAt,
 ) {
   if (activity.kind !== 'quiz' || activity.time_limit_minutes) return;
   const now = new Date();
+  const running = {
+    ...where,
+    activity_id: activity.id,
+    quiz_started_at: { not: null },
+    OR: [{ quiz_expires_at: null }, { quiz_expires_at: { gt: now } }],
+  } satisfies Prisma.submissionWhereInput;
+  if (!dueAt || !closeAt || closeAt.getTime() === dueAt.getTime()) {
+    await tx.submission.updateMany({
+      where: running,
+      data: { quiz_expires_at: dueAt, updated_at: now },
+    });
+    return;
+  }
+  // Started on time: ends at the due date. Started late: at the close.
   await tx.submission.updateMany({
-    where: {
-      ...where,
-      activity_id: activity.id,
-      quiz_started_at: { not: null },
-      OR: [{ quiz_expires_at: null }, { quiz_expires_at: { gt: now } }],
-    },
+    where: { AND: [running, { quiz_started_at: { lt: dueAt } }] },
     data: { quiz_expires_at: dueAt, updated_at: now },
+  });
+  await tx.submission.updateMany({
+    where: { AND: [running, { quiz_started_at: { gte: dueAt } }] },
+    data: { quiz_expires_at: closeAt, updated_at: now },
   });
 }
 
@@ -96,6 +112,7 @@ export class ExtensionService {
         course_id: true,
         kind: true,
         due_at: true,
+        late_until: true,
         time_limit_minutes: true,
       },
     });
@@ -187,6 +204,8 @@ export class ExtensionService {
           { student_id: studentId },
           dueAt,
         );
+        // Handed in before the new date: no longer late.
+        await refreshLateness(tx, activityId, [studentId]);
         await this.auditLog?.record(
           tx,
           activity.school_id,
@@ -236,7 +255,9 @@ export class ExtensionService {
         activity,
         { student_id: studentId },
         activity.due_at,
+        activity.late_until ?? activity.due_at,
       );
+      await refreshLateness(tx, activityId, [studentId]);
       await this.auditLog?.record(
         tx,
         activity.school_id,

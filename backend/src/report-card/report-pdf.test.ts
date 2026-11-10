@@ -6,6 +6,7 @@ import { pdfFontNames, pdfText } from '@/test/pdf-text';
 import { FontFace, resetFontCache } from './report-fonts';
 import { isWebp, logoForPdf, sharpToPng } from './report-logo';
 import {
+  formatDate,
   type ReportCardDocument,
   formatPercent,
   logoType,
@@ -43,6 +44,15 @@ function report(over: Partial<ReportCardDocument> = {}): ReportCardDocument {
     ...over,
   };
 }
+
+describe('formatDate', () => {
+  test('uses fixed month abbreviations, not the runtime locale data', () => {
+    expect(formatDate('2026-09-01T00:00:00Z')).toBe('1 Sep 2026');
+    expect(formatDate('2026-12-15T23:59:00Z')).toBe('15 Dec 2026');
+    expect(formatDate(null)).toBeNull();
+    expect(formatDate('not a date')).toBeNull();
+  });
+});
 
 describe('renderReportCard', () => {
   test('is a valid PDF that pdf-lib can load again', async () => {

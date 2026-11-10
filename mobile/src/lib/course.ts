@@ -17,7 +17,19 @@ export type ModuleItemType =
   | "activity"
   | "file"
   | "link"
-  | "discussion";
+  | "discussion"
+  | "external_tool";
+
+/** An external tool (LTI) item's link. Students only get items whose tool is on. */
+export interface ModuleItemExternalTool {
+  toolId: string;
+  toolName: string;
+  toolEnabled?: boolean;
+  resourceLinkId: string;
+  /** The gradebook column the tool sends scores to, if any. */
+  activityId: string | null;
+  points: number | null;
+}
 
 export interface ModuleItem {
   id: string;
@@ -40,6 +52,8 @@ export interface ModuleItem {
     status: "draft" | "published" | "closed";
   } | null;
   file?: { name?: string | null; contentType?: string | null } | null;
+  /** Set on `external_tool` items. */
+  externalTool?: ModuleItemExternalTool | null;
 }
 
 export interface CourseModule {
@@ -299,6 +313,13 @@ export interface TeacherSubmissionRow {
     awayReason?: string | null;
     tabSwitchCount?: number;
     lastAwayAt?: string | null;
+    /** Late work (absent on older servers): score is after the penalty. */
+    lateSeconds?: number;
+    latePenaltyPercent?: number;
+    latePenaltyWaived?: boolean;
+    rawScore?: number | null;
+    /** A quiz waiting for its essay or file questions to be marked. */
+    needsMarking?: boolean;
   } | null;
 }
 
@@ -372,3 +393,17 @@ export function timeAgo(value: string | null | undefined): string {
   });
 }
 
+
+/**
+ * "Late (2 days)" from a submission's lateSeconds: a started day counts as a
+ * day, as the late penalty counts it; under a day shows hours.
+ */
+export function lateLabel(lateSeconds: number | undefined): string | null {
+  if (!lateSeconds || lateSeconds <= 0) return null;
+  if (lateSeconds < 86_400) {
+    const hours = Math.ceil(lateSeconds / 3_600);
+    return `Late (${hours} ${hours === 1 ? "hour" : "hours"})`;
+  }
+  const days = Math.ceil(lateSeconds / 86_400);
+  return `Late (${days} ${days === 1 ? "day" : "days"})`;
+}

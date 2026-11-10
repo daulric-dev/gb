@@ -47,7 +47,7 @@ model parent_notification_pref {
   user_profile_id String       @id @db.Uuid
   email_enabled   Boolean      @default(false)
   push_enabled    Boolean      @default(false)
-  kinds           String[]     @default(["missing_work", "absence", "new_grade", "announcement"])
+  kinds           String[]     @default(["missing_work", "absence", "new_grade", "announcement", "attendance_alert"])
   updated_at      DateTime     @default(now()) @db.Timestamptz(6)
   user_profile    user_profile @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -94,6 +94,11 @@ model student {
   enrollment_date     DateTime?                  @db.Date
   is_active           Boolean?                   @default(true)
   user_profile_id     String?                    @unique(map: "idx_student_user_profile_unique", where: raw("(user_profile_id IS NOT NULL)")) @db.Uuid
+  /// The school's own student number (SIS identifier), set by rostering (src/rostering); unique per school when present.
+  student_number      String?
+  /// The student's form tutor (a staff user_profile of the school; no foreign key, membership is checked when used). Receives attendance alerts (src/attendance-alerts).
+  form_tutor_id       String?                    @db.Uuid
+  attendance_alert    attendance_alert[]
   attendance_record   course_attendance_record[]
   course_student      course_student[]
   submission          submission[]
@@ -110,6 +115,8 @@ model student {
 
   @@index([first_name(ops: raw("gin_trgm_ops"))], map: "idx_student_first_name_trgm", type: Gin)
   @@index([last_name(ops: raw("gin_trgm_ops"))], map: "idx_student_last_name_trgm", type: Gin)
+  @@unique([school_id, student_number], map: "student_school_number_key", where: raw("(student_number IS NOT NULL)"))
   @@index([school_id], map: "idx_student_school")
+  @@index([form_tutor_id], map: "idx_student_form_tutor")
   @@schema("student")
 }

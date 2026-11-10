@@ -20,10 +20,12 @@ import { CacheService } from '@/cache/cache.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { plan } from '@/erasure/erasure-plan';
 import {
+  COURSE_SELECT,
   CourseAccessService,
   CourseRow,
   MANAGE_ROLES,
   STAFF_ROLES,
+  toCourseRow,
 } from '@/course/access/course-access.service';
 import { csvCell } from '@/grading/gradebook.service';
 import { PushService } from '@/notifications/push.service';
@@ -56,6 +58,7 @@ import type {
   AttendanceSessionDetail,
   AttendanceStatus,
   AttendanceTally,
+  PortalAttendanceSummary,
   PortalCourseAttendance,
   PortalOpenAttendance,
 } from './attendance.types';
@@ -696,6 +699,46 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     const duration = input.durationMinutes ?? DEFAULT_DURATION_MINUTES;
     const openedAt = new Date();
     const closesAt = new Date(openedAt.getTime() + duration * 60_000);
+    const session = await this.createSession(course, userId, input, openedAt, closesAt);
+    return this.detailOf(session);
+  }
+
+  /**
+   * Open a session with no member of staff behind it: the timetable's
+   * scheduler, for a period that is starting. The course must be
+   * published; `closesAt` is the period's end, so the sweep closes it (and
+   * marks the absentees) then. Gives 409 while another session is open.
+   */
+  async openScheduled(
+    courseId: string,
+    input: OpenAttendanceInput & { closesAt: Date; openedAt?: Date },
+  ): Promise<{ id: string; opened_at: string; closes_at: string }> {
+    const data = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: COURSE_SELECT,
+    });
+    if (!data) throw new NotFoundException('Course not found');
+    const course = toCourseRow(data);
+    if (course.status !== 'published' || course.is_template) {
+      throw new ConflictException('Publish the course before taking attendance');
+    }
+    await this.finalizeExpired(courseId);
+    const openedAt = input.openedAt ?? new Date();
+    if (input.closesAt.getTime() <= openedAt.getTime()) {
+      throw new ConflictException('The period has already ended');
+    }
+    const s = await this.createSession(course, null, input, openedAt, input.closesAt);
+    return { id: s.id, opened_at: s.opened_at, closes_at: s.closes_at };
+  }
+
+  private async createSession(
+    course: CourseRow,
+    userId: string | null,
+    input: OpenAttendanceInput,
+    openedAt: Date,
+    closesAt: Date,
+  ): Promise<SessionRow> {
+    const courseId = course.id;
     const code =
       input.requireCode === false
         ? null
@@ -745,9 +788,9 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         lateAfterMinutes: session.late_after_minutes,
       },
       course: ref,
-      openedBy: await this.webhooks!.staffOrNull(userId),
+      openedBy: userId ? await this.webhooks!.staffOrNull(userId) : null,
     }));
-    return this.detailOf(session);
+    return session;
   }
 
   private async announceOpened(course: CourseRow, session: SessionRow) {
@@ -1641,6 +1684,48 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
             checkedInAt: r?.checked_in_at ?? null,
           };
         }),
+    };
+  }
+
+  /**
+   * The student's own attendance across every course they are (or were)
+   * enrolled in and can still see: overall and per course, counting only
+   * the sessions they have a record in. For the portal's attendance page.
+   */
+  async summaryForStudent(studentId: string): Promise<PortalAttendanceSummary> {
+    const enrolments = await this.prisma.course_student.findMany({
+      where: {
+        student_id: studentId,
+        status: { not: 'dropped' },
+        course: { status: { in: ['published', 'archived'] }, is_template: false },
+      },
+      select: { course: { select: { id: true, name: true, code: true, status: true } } },
+    });
+    const courseIds = enrolments.map((e) => e.course.id);
+    const records =
+      courseIds.length === 0
+        ? []
+        : await this.prisma.course_attendance_record.findMany({
+            where: { student_id: studentId, course_id: { in: courseIds } },
+            select: { course_id: true, status: true },
+          });
+    const byCourse = new Map<string, { status: AttendanceStatus }[]>();
+    for (const r of records) {
+      const list = byCourse.get(r.course_id) ?? [];
+      list.push(r);
+      byCourse.set(r.course_id, list);
+    }
+    return {
+      overall: tally(records),
+      courses: enrolments
+        .map((e) => ({
+          courseId: e.course.id,
+          courseName: e.course.name,
+          courseCode: e.course.code,
+          archived: e.course.status === 'archived',
+          summary: tally(byCourse.get(e.course.id) ?? []),
+        }))
+        .sort((a, b) => a.courseName.localeCompare(b.courseName)),
     };
   }
 }
