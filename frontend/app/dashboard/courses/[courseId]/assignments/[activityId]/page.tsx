@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   Boxes,
   Calculator,
+  Languages,
   Loader2,
   Lock,
   MoreHorizontal,
@@ -43,6 +44,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -75,6 +79,8 @@ import { userMessage } from "@/lib/errors";
 import { useFeatures } from "@/hooks/use-features";
 import { flagsByStudent, similarityApi, type SimilarityFlag } from "@/lib/similarity";
 import { PeerReviewPanel } from "../_components/PeerReviewPanel";
+import { TARGET_LANGUAGES, translationApi, type Language } from "@/lib/translation";
+import { useTranslationEnabled } from "@/components/translation/translation-state";
 
 const UNGROUPED = "none";
 
@@ -97,6 +103,8 @@ export default function CourseActivityPage() {
   const peerReviewOn = hasFeature("peer_review");
   const similarityOn = hasFeature("similarity_check");
   const aiOn = hasFeature("ai_assistance");
+  const translationOn = useTranslationEnabled();
+  const translatingTo = useSignal<string | null>(null);
   // "?aiDraft=1" (from the AI course builder's report): open "Draft questions with AI" at once.
   const aiDraftOpen = useSignal(false);
   useEffect(() => {
@@ -190,6 +198,27 @@ export default function CourseActivityPage() {
   }, [similarityOn, activityId, activityKind, similarity]);
 
   const backToList = () => router.push(`${base}/assignments`);
+
+  /** A machine-translated copy, saved as a draft for the teacher to review. */
+  async function translateInto(language: Language) {
+    if (!activity.value || translatingTo.value) return;
+    translatingTo.value = language.code;
+    try {
+      const draft = await translationApi.translateActivity<ActivityDetail>(
+        course.id,
+        activity.value.id,
+        language.code,
+      );
+      toast.success(`Draft created in ${language.english}`, {
+        description: "Review the translation before publishing it.",
+      });
+      router.push(`${base}/assignments/${draft.id}`);
+    } catch (err) {
+      toast.error(userMessage(err, "Failed to translate"));
+    } finally {
+      translatingTo.value = null;
+    }
+  }
 
   function openEditor() {
     const a = activity.value;
@@ -482,6 +511,32 @@ export default function CourseActivityPage() {
                     ? "Count toward final grade"
                     : "Omit from final grade"}
                 </DropdownMenuItem>
+                {translationOn && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger disabled={!!translatingTo.value}>
+                      {translatingTo.value ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Languages className="mr-2 size-4" />
+                      )}
+                      Translate into…
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {TARGET_LANGUAGES.map((l) => (
+                        <DropdownMenuItem
+                          key={l.code}
+                          disabled={!!translatingTo.value}
+                          onClick={() => void translateInto(l)}
+                        >
+                          <span translate="no" lang={l.code}>
+                            {l.label}
+                          </span>
+                          <span className="ml-auto pl-3 text-xs text-muted-foreground">{l.english}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"

@@ -89,7 +89,7 @@ export function SsoPanel({
       <Section>
         <p className="text-sm text-muted-foreground">
           No sign-in provider is set up for this school yet. Add your
-          Google or Microsoft app under Sign-in apps above.
+          Google, Microsoft or OpenID Connect app under Sign-in apps above.
           {domain.ssoProvider && (
             <>
               {" "}

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
-import { SsoRegistry } from './sso.registry';
+import { SsoRegistry, labelOf } from './sso.registry';
 import {
   SsoSettingsService,
   type SsoSettingBefore,
@@ -26,7 +26,10 @@ import type { SsoAdapter, SsoSettingField } from './sso.types';
 /** One sign-in provider as a school's admins see it. Never a secret. */
 export interface SchoolSsoProviderItem {
   key: string;
+  /** The name admins see ("Custom OpenID Connect", "SAML 2.0"). */
   label: string;
+  /** What the login button says for this school: "Continue with <buttonLabel>". */
+  buttonLabel: string;
   kind: 'oauth' | 'saml';
   /** Switched on for this school (its own row, else the env). */
   enabled: boolean;
@@ -67,7 +70,8 @@ const MAX_SETTING = 512;
 
 /**
  * The audit entries for one save of a school's sign-in app: on/off, client ID
- * and settings, and the secret - as "set" / "cleared", never its value.
+ * and each setting by its key (`issuer`, `displayName`, ...), and the secret
+ * - as "set" / "cleared", never its value.
  */
 export function appSaveEntries(
   key: string,
@@ -83,11 +87,12 @@ export function appSaveEntries(
       changes: { ...app, enabled: { before: wasEnabled, after: write.enabled } },
     });
   }
+  const settingsAfter = write.settings !== undefined ? write.settings : (before?.settings ?? {});
   const fields = diff(
-    { clientId: before?.clientId ?? null, settings: before?.settings ?? null },
+    { ...(before?.settings ?? {}), clientId: before?.clientId ?? null },
     {
+      ...settingsAfter,
       clientId: write.clientId !== undefined ? write.clientId : (before?.clientId ?? null),
-      settings: write.settings !== undefined ? write.settings : (before?.settings ?? null),
     },
   );
   if (fields) entries.push({ action: 'app_changed', changes: { ...app, ...fields } });
@@ -110,8 +115,8 @@ export function appSaveEntries(
 }
 
 /**
- * A school's own sign-in apps (Google, Microsoft): on/off, OAuth client ID
- * and write-only secret. Shared by the school admin's routes
+ * A school's own sign-in apps (Google, Microsoft, custom OpenID Connect):
+ * on/off, OAuth client ID, write-only secret and the provider's settings. Shared by the school admin's routes
  * (`/schools/current/sso/providers`) and the organisation console's
  * (`/organisation/schools/:id/sso/providers`); callers check who may touch
  * which school. SAML is listed for its service provider details but has
@@ -145,6 +150,7 @@ export class SchoolSsoService {
     return {
       key: adapter.id,
       label: adapter.adminLabel ?? adapter.label,
+      buttonLabel: labelOf(adapter, config),
       kind: adapter.kind,
       enabled: config.enabled,
       available: adapter.available(config),
@@ -211,6 +217,11 @@ export class SchoolSsoService {
     }
     if (dto.settings !== undefined) {
       write.settings = this.settingsFor(adapter, label, row?.settings ?? {}, dto.settings);
+    }
+    // Settings that depend on each other (and network checks, for an
+    // admin-entered address) whenever they change or it is turned on.
+    if (adapter.checkSettings && (write.settings !== undefined || (write.enabled && !row?.enabled))) {
+      await adapter.checkSettings(write.settings ?? row?.settings ?? {}, write.enabled);
     }
 
     // Switching a provider on without working credentials would offer a

@@ -322,7 +322,7 @@ describe('grading', () => {
     title: 'Essay',
     instructions: null,
     points: 20,
-    due_at: new Date('2026-11-11T00:00:00Z'),
+    due_at: new Date('2099-11-11T00:00:00Z'),
     status: 'draft',
     published_at: null,
     allow_file: true,

@@ -3,6 +3,7 @@ import type { SsoAdapter, SsoProviderConfig, SsoProviderInfo } from './sso.types
 import { GoogleAdapter } from './adapters/google.adapter';
 import { AzureAdapter } from './adapters/azure.adapter';
 import { SamlAdapter } from './adapters/saml.adapter';
+import { CustomOidcAdapter } from './adapters/custom-oidc.adapter';
 import { SsoSettingsService, type ResolvedSsoConfig } from './sso-settings.service';
 
 /**
@@ -11,7 +12,12 @@ import { SsoSettingsService, type ResolvedSsoConfig } from './sso-settings.servi
  * install-wide env vars) decide which of them a school offers.
  */
 function createAdapters(): SsoAdapter[] {
-  return [new GoogleAdapter(), new AzureAdapter(), new SamlAdapter()];
+  return [
+    new GoogleAdapter(),
+    new AzureAdapter(),
+    new CustomOidcAdapter(),
+    new SamlAdapter(),
+  ];
 }
 
 /** An adapter usable for a sign-in, with the configuration it runs under. */
@@ -81,7 +87,8 @@ export class SsoRegistry {
   async availableFor(schoolId: string): Promise<SsoProviderInfo[]> {
     const out: SsoProviderInfo[] = [];
     for (const adapter of this.adapters) {
-      if (await this.resolve(adapter.id, schoolId)) out.push(info(adapter));
+      const resolved = await this.resolve(adapter.id, schoolId);
+      if (resolved) out.push(info(adapter, resolved.config));
     }
     return out;
   }
@@ -94,10 +101,19 @@ export class SsoRegistry {
   unscoped(): SsoProviderInfo[] {
     return this.adapters
       .filter((a) => a.needsClient && a.available(a.envConfig()))
-      .map(info);
+      .map((a) => info(a));
   }
 }
 
-export function info(a: SsoAdapter): SsoProviderInfo {
-  return { id: a.id, label: a.label, kind: a.kind };
+/**
+ * The public view of an adapter. With a school's `config`, the label is that
+ * school's own (custom OpenID Connect's button name).
+ */
+export function info(a: SsoAdapter, config?: SsoProviderConfig): SsoProviderInfo {
+  return { id: a.id, label: labelOf(a, config), kind: a.kind };
+}
+
+/** "Continue with <label>" under a school's configuration, when there is one. */
+export function labelOf(a: SsoAdapter, config?: SsoProviderConfig): string {
+  return (config && a.labelFor?.(config)) || a.label;
 }

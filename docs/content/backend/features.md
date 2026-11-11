@@ -36,6 +36,7 @@ Defined once in `backend/src/features/feature.catalog.ts`.
 | `pastoral_notes` | Behaviour & pastoral notes | off | Private staff notes about students; each school turns it on when ready. |
 | `ai_assistance` | AI assistance | off | Teacher-approved AI drafts through the organisation's own AI provider; the organisation turns it on, a school can switch it off. |
 | `analytics` | Analytics | on | Course analytics for teachers; the school page needs the `analytics:read` permission. |
+| `translation` | Machine translation | off | The organisation turns it on and chooses the engine; a school can switch it off. |
 | `mastery` | Mastery & learning outcomes | off | |
 
 **Effective for a school** = the organisation's value AND the school has not switched it off AND every feature it requires is effective. Without a school (an organisation admin with none), the organisation's values and requirements decide.
@@ -111,5 +112,6 @@ Added by migration `20261102120000_features`. Lookups are cached for 30 seconds 
 | `pastoral_notes` | Every `/api/pastoral/...` route. Nothing else reads the notes. See [pastoral notes](../guide/pastoral-notes.md). |
 | `ai_assistance` | `/api/organisation/ai/...` (organisation value), `/api/schools/current/ai` and the teacher draft routes `/api/courses/:courseId/ai...`, `/api/courses/:courseId/pages/:pageId/ai/summary`, `/api/activities/:activityId/ai/rubric-feedback` (the course's / active school). Nothing is sent to a provider for a school with it off. See [AI assistance](../guide/ai-assistance.md). |
 | `analytics` | `/api/analytics/...` and `/api/courses/:courseId/analytics...`; the hourly summary refresh skips a school with it off. See [analytics](../guide/analytics.md). |
+| `translation` | `/api/organisation/translation...` (organisation value), `/api/translation` and `/api/courses/:courseId/activities/:activityId/translate` (the active / course's school, and the organisation's engine switched on). Nothing is sent to the translation engine for a school with it off. |
 | `mastery` | `/api/mastery/...` (school scale and outcome sets), `/api/courses/:courseId/outcomes`, `/outcome-alignments` and `/mastery...`, `/api/portal/me/outcomes`, and with `parent_portal` `/api/parent/children/:studentId/outcomes`; report cards add no outcomes section while it is off. See [the mastery guide](../guide/mastery.md). |
 | `push_notifications` | `PushService` sends nothing to users whose school has it off. Device registration still works, and in-app course notifications are still created. |

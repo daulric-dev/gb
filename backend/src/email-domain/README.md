@@ -29,7 +29,7 @@ Signed-in user side, `EmailDomainJoinController`, `AuthGuard` only. The address 
 
 Update validation (`PATCH`):
 
-- `ssoProvider` must be a provider available to the domain's own school right now (`SsoRegistry.resolve(id, schoolId)`: the school's own app, else the install-wide env app, or SAML), or `null` (which also turns off `ssoRequired`). Another school's app never counts. `ssoRequirement()` resolves the same way, so a required provider the school has since switched off lets email codes work again.
+- `ssoProvider` must be a provider available to the domain's own school right now (`SsoRegistry.resolve(id, schoolId)`: the school's own app - Google, Microsoft or its custom OpenID Connect provider `oidc` once it has a client, secret and issuer - else the install-wide env app, or SAML), or `null` (which also turns off `ssoRequired`). Another school's app never counts. `ssoRequirement()` resolves the same way (its label is the school's own, e.g. custom OpenID Connect's button name), so a required provider the school has since switched off lets email codes work again.
 - `azureTenantId` must be a GUID (stored lower-case).
 - `samlEntryPoint` must be an `https://` URL; `samlCertificate` must be a valid X.509 certificate (PEM or bare base64, stored as PEM via `normalizeCertificate`).
 - Choosing or editing a `saml` connection requires entry point, issuer and certificate together.

@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft,
   ClipboardClock,
+  Languages,
   LayoutDashboard,
   LogOut,
   Puzzle,
@@ -85,6 +86,12 @@ const NAV: {
     label: "AI providers",
     icon: Sparkles,
     feature: "ai_assistance",
+  },
+  {
+    // Always listed: the page reminds admins to switch the feature on too.
+    href: `${ORGANISATION_PATH}/translation`,
+    label: "Translation",
+    icon: Languages,
   },
   { href: `${ORGANISATION_PATH}/settings`, label: "Settings", icon: Settings },
 ];

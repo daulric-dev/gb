@@ -1,7 +1,8 @@
 /// A school's own sign-in app for one OAuth provider, set by the school's
 /// admin (`/api/schools/current/sso/providers`) or an organisation admin
 /// (`/api/organisation/schools/:id/sso/providers`). Provider = adapter id
-/// in src/sso/sso.registry.ts that needs a client (`google`, `azure`); SAML
+/// in src/sso/sso.registry.ts that needs a client (`google`, `azure`, `oidc` -
+/// the school's own OpenID Connect provider, which has no env fallback); SAML
 /// lives on school_email_domain. No row = the school uses the install-wide
 /// env credentials (SSO_PROVIDERS, GOOGLE_CLIENT_ID, ...), if any; a row,
 /// even a switched-off one, replaces them for that school. `client_secret_enc`
@@ -11,12 +12,14 @@
 /// rotating AUTH_SECRET, or the `v1:` secrets must be entered again.
 model school_sso_provider {
   school_id         String   @db.Uuid
-  /// google | azure
+  /// google | azure | oidc
   provider          String
   enabled           Boolean  @default(false)
   client_id         String?
   client_secret_enc String?
-  /// Non-secret per-provider settings (none yet for Google or Microsoft).
+  /// Non-secret per-provider settings, all strings (none for Google or
+  /// Microsoft; `oidc`: issuer, displayName, emailClaim, scope,
+  /// allowPrivateNetwork = "true").
   settings          Json     @default("{}")
   updated_at        DateTime @default(now()) @db.Timestamptz(6)
   /// Who last saved it (no foreign key: the setting outlives the account).

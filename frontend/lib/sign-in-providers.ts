@@ -1,5 +1,6 @@
 /**
- * Wire types and helpers for a school's own sign-in apps (Google, Microsoft):
+ * Wire types and helpers for a school's own sign-in apps (Google, Microsoft,
+ * a custom OpenID Connect provider; SAML is listed but set per domain):
  * the school admin's `/schools/current/sso/providers` and the organisation
  * console's `/organisation/schools/<id>/sso/providers` (backend
  * `src/sso/school-sso.service.ts`). Secrets never come back from the API:
@@ -17,12 +18,21 @@ export interface SignInSettingField {
   label: string;
   description: string;
   placeholder?: string;
+  /** Free text (default), a URL, a choice from `options`, or an on/off switch ("true" when on). */
+  type?: "text" | "url" | "select" | "switch";
+  /** `select`: the values it may take; the first is the default (saved as empty). */
+  options?: { value: string; label: string }[];
+  /** A caution shown with the field (for a switch: while it is on). */
+  warning?: string;
 }
 
 export interface SchoolSsoProvider {
-  /** Adapter id: `google`, `azure` (Microsoft), `saml`. */
+  /** Adapter id: `google`, `azure` (Microsoft), `oidc` (custom OpenID Connect), `saml`. */
   key: string;
+  /** The admin name ("Custom OpenID Connect", "SAML 2.0"). */
   label: string;
+  /** What this school's login button says: "Continue with <buttonLabel>". */
+  buttonLabel?: string;
   kind: "oauth" | "saml";
   /** Switched on for this school. */
   enabled: boolean;
@@ -152,16 +162,46 @@ export function providerStatus(p: SchoolSsoProvider): {
   return { label: "Not set up", tone: "off" };
 }
 
-/** The OAuth apps a school can set up itself (Google, Microsoft). */
+/** The OAuth apps a school can set up itself (Google, Microsoft, OpenID Connect). */
 export function signInApps(list: SchoolSsoProvider[]): SchoolSsoProvider[] {
   return list.filter((p) => p.needsClient);
+}
+
+/** The SAML entry: nothing to save here, each email domain holds its IdP. */
+export function samlApp(list: SchoolSsoProvider[]): SchoolSsoProvider | null {
+  return list.find((p) => p.kind === "saml") ?? null;
+}
+
+/**
+ * How the domain picker names a provider: a school-named one (custom OpenID
+ * Connect's button name) as "Riverside ID (OpenID Connect)", others by label.
+ */
+export function pickLabel(p: SchoolSsoProvider): string {
+  const named = p.settings.displayName?.trim();
+  return p.kind === "oauth" && named ? `${named} (OpenID Connect)` : p.label;
 }
 
 /** What a domain may pick: the providers available to this school. */
 export function pickableProviders(list: SchoolSsoProvider[]): SsoProvider[] {
   return list
     .filter((p) => p.available)
-    .map((p) => ({ id: p.key, label: p.label, kind: p.kind }));
+    .map((p) => ({ id: p.key, label: pickLabel(p), kind: p.kind }));
+}
+
+/** A select field's shown value: the draft's, or the default (first) option. */
+export function selectValue(field: SignInSettingField, value: string | undefined): string {
+  const options = field.options ?? [];
+  return value && options.some((o) => o.value === value) ? value : (options[0]?.value ?? "");
+}
+
+/** What a select field keeps in the draft: the default is stored as empty. */
+export function selectDraft(field: SignInSettingField, value: string): string {
+  return value === field.options?.[0]?.value ? "" : value;
+}
+
+/** A switch field is on when its setting is "true". */
+export function switchOn(value: string | undefined): boolean {
+  return value === "true";
 }
 
 /** Not set up for this school, for the hint under a domain's picker. */

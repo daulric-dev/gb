@@ -15,7 +15,7 @@ import { userSchoolId } from '@/common/user-school';
 import { isoDate, isUniqueViolation, raisedMessage } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import { permCacheKey } from '@/permission/permission.effective';
-import { SsoRegistry } from '@/sso/sso.registry';
+import { SsoRegistry, labelOf } from '@/sso/sso.registry';
 import { normalizeCertificate } from '@/sso/adapters/saml.adapter';
 import {
   certificateFingerprint,
@@ -852,8 +852,9 @@ export class EmailDomainService {
     const domain = await this.verifiedDomainFor(email);
     if (!domain?.ssoRequired) return null;
     const resolved = await this.sso.resolve(domain.ssoProvider, domain.schoolId);
-    const adapter = resolved?.adapter;
     // Nor does one the school has not finished setting up.
-    return adapter && adapter.readyFor(domain) ? { providerId: adapter.id, label: adapter.label } : null;
+    return resolved && resolved.adapter.readyFor(domain)
+      ? { providerId: resolved.adapter.id, label: labelOf(resolved.adapter, resolved.config) }
+      : null;
   }
 }

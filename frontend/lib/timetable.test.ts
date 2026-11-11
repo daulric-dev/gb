@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  timeZoneLabel,
+  utcOffsetLabel,
   addDays,
   daysIn,
   entryDayLabel,
@@ -70,5 +72,26 @@ describe("school time zone picker", () => {
     expect(isKnownTimeZone("UTC")).toBe(true);
     expect(isKnownTimeZone("Mars/Base")).toBe(false);
     expect(isKnownTimeZone("")).toBe(false);
+  });
+});
+
+describe("UTC offset labels", () => {
+  test("whole and half hours, both signs, UTC", () => {
+    const winter = new Date("2026-01-15T12:00:00Z");
+    expect(utcOffsetLabel("America/New_York", winter)).toBe("UTC-5");
+    expect(utcOffsetLabel("America/Port_of_Spain", winter)).toBe("UTC-4");
+    expect(utcOffsetLabel("Asia/Kolkata", winter)).toBe("UTC+5:30");
+    expect(utcOffsetLabel("UTC", winter)).toBe("UTC");
+    expect(utcOffsetLabel("Not/AZone", winter)).toBe("");
+  });
+
+  test("follows daylight saving time", () => {
+    expect(utcOffsetLabel("America/New_York", new Date("2026-07-15T12:00:00Z"))).toBe("UTC-4");
+  });
+
+  test("label for the picker", () => {
+    const at = new Date("2026-01-15T12:00:00Z");
+    expect(timeZoneLabel("America/Sao_Paulo", at)).toBe("America/Sao_Paulo (UTC-3)");
+    expect(timeZoneLabel("UTC", at)).toBe("UTC");
   });
 });

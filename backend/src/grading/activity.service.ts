@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { toActivityRef, WebhookEvents } from '@/integrations/events';
@@ -33,12 +34,22 @@ import { latePolicyColumns, type LatePenaltyMode } from './late-policy';
 import {
   createQuestion,
   loadQuestions,
+  OPTION_SELECT,
   questionAudit,
   QUESTION_SELECT,
   updateQuestionRow,
   type QuestionInput,
   type QuestionPatch,
 } from './question-write';
+
+/** The text of an activity copy, replacing the source's in the same order (see `sourceForCopy`). */
+export interface ActivityCopyText {
+  title: string;
+  instructions: string | null;
+  questions: { prompt: string; options: { label: string; matchLabel: string | null }[] }[];
+}
+
+export type ActivityCopySource = Awaited<ReturnType<ActivityService['sourceForCopy']>>;
 
 function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -302,6 +313,152 @@ export class ActivityService {
     }
 
     return toActivity(data);
+  }
+
+  /**
+   * An activity of this course with its own quiz questions (and options)
+   * and bank draws, for making a copy. Course teachers and admins only
+   * (MANAGE_ROLES); an activity of another course is reported as missing.
+   */
+  async sourceForCopy(userId: string, courseId: string, activityId: string) {
+    const activity = await this.requireActivity(userId, activityId);
+    if (activity.course_id !== courseId) {
+      throw new NotFoundException('Activity not found');
+    }
+    const quiz = activity.kind === 'quiz';
+    const [questions, draws] = await Promise.all([
+      quiz
+        ? this.prisma.quiz_question.findMany({
+            where: { activity_id: activityId },
+            select: {
+              ...QUESTION_SELECT,
+              quiz_option: { select: OPTION_SELECT, orderBy: { sort_order: 'asc' } },
+            },
+            orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+          })
+        : Promise.resolve([]),
+      quiz
+        ? this.prisma.quiz_bank_draw.findMany({
+            where: { activity_id: activityId },
+            select: { bank_id: true, draw_count: true, sort_order: true },
+            orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+          })
+        : Promise.resolve([]),
+    ]);
+    return { activity, questions: questions ?? [], draws: draws ?? [] };
+  }
+
+  /**
+   * A new draft copy of `source` in the same course with `text` in place of
+   * its title, instructions, question prompts and option labels. Settings,
+   * points, dates, assignment group, rubric, answer keys and bank draws are
+   * copied as they are. Never submissions, marks, extensions,
+   * accommodations, peer review, outcome alignments or module placement.
+   * Returns the copy as `get` does.
+   */
+  async createCopy(userId: string, source: ActivityCopySource, text: ActivityCopyText) {
+    const a = source.activity;
+    if (text.questions.length !== source.questions.length) {
+      throw new BadRequestException('The copy does not match its source');
+    }
+    const title = text.title.trim().slice(0, 200) || a.title;
+    const id = randomUUID();
+    const questions: Prisma.quiz_questionCreateManyInput[] = [];
+    const options: Prisma.quiz_optionCreateManyInput[] = [];
+    source.questions.forEach((q, qi) => {
+      const questionId = randomUUID();
+      const t = text.questions[qi];
+      questions.push({
+        id: questionId,
+        activity_id: id,
+        prompt: t.prompt.trim() || q.prompt,
+        kind: q.kind,
+        points: q.points,
+        sort_order: q.sort_order,
+        numeric_answer: q.numeric_answer,
+        numeric_tolerance: q.numeric_tolerance,
+        partial_credit: q.partial_credit,
+        rubric_id: q.rubric_id,
+        file_types: q.file_types,
+        file_max_mb: q.file_max_mb,
+      });
+      q.quiz_option.forEach((o, oi) => {
+        const ot = t.options[oi];
+        options.push({
+          question_id: questionId,
+          label: ot?.label.trim() ? ot.label : o.label,
+          is_correct: o.is_correct,
+          sort_order: o.sort_order,
+          match_label: o.match_label === null ? null : ot?.matchLabel?.trim() ? ot.matchLabel : o.match_label,
+        });
+      });
+    });
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const created = await tx.activity.create({
+          data: {
+            id,
+            course_id: a.course_id,
+            assignment_group_id: a.assignment_group_id,
+            kind: a.kind,
+            title,
+            instructions: text.instructions ?? a.instructions,
+            points: a.points,
+            due_at: a.due_at,
+            status: 'draft',
+            allow_file: a.allow_file,
+            allow_multiple_files: a.allow_multiple_files,
+            allow_text: a.allow_text,
+            max_attempts: a.max_attempts,
+            time_limit_minutes: a.time_limit_minutes,
+            lockdown_browser: a.lockdown_browser,
+            shuffle_questions: a.shuffle_questions,
+            shuffle_options: a.shuffle_options,
+            omit_from_final_grade: a.omit_from_final_grade,
+            rubric_id: a.rubric_id,
+            late_until: a.late_until,
+            late_penalty_mode: a.late_penalty_mode,
+            late_penalty_value: a.late_penalty_value,
+            late_penalty_cap: a.late_penalty_cap,
+            created_by: userId,
+          },
+          select: ACTIVITY_SELECT,
+        });
+        if (questions.length) await tx.quiz_question.createMany({ data: questions });
+        if (options.length) await tx.quiz_option.createMany({ data: options });
+        if (source.draws.length) {
+          await tx.quiz_bank_draw.createMany({
+            data: source.draws.map((d) => ({
+              activity_id: id,
+              bank_id: d.bank_id,
+              draw_count: d.draw_count,
+              sort_order: d.sort_order,
+            })),
+          });
+        }
+        await this.auditLog?.record(
+          tx,
+          a.school_id,
+          { id: userId },
+          {
+            entity: 'activity',
+            entityId: id,
+            action: 'create',
+            changes: auditChanges(null, {
+              ...this.activityAuditFields(created),
+              copiedFrom: a.id,
+            }),
+          },
+        );
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Failed to copy activity: ${(error as Error).message}`);
+      throw new BadRequestException('Failed to copy activity');
+    }
+
+    return this.get(userId, id);
   }
 
   async update(

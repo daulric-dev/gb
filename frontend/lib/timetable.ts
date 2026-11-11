@@ -263,6 +263,45 @@ export function timeZoneOptions(...extra: (string | null | undefined)[]): string
   return [...all].sort((a, b) => a.localeCompare(b));
 }
 
+const offsetCache = new Map<string, string>();
+
+/**
+ * The zone's offset from UTC right now, e.g. "UTC-4", "UTC+5:30" or "UTC"
+ * (it changes with daylight saving time, so `at` defaults to now). ASCII
+ * signs, so typing "-4" in the picker finds it. Empty for an unknown zone.
+ */
+export function utcOffsetLabel(zone: string, at: Date = new Date()): string {
+  const key = `${zone}|${at.toISOString().slice(0, 13)}`;
+  const cached = offsetCache.get(key);
+  if (cached !== undefined) return cached;
+  let label = "";
+  try {
+    const name =
+      new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "shortOffset" })
+        .formatToParts(at)
+        .find((p) => p.type === "timeZoneName")?.value ?? "";
+    // "GMT-4", "GMT+5:30", "GMT" (some runtimes use the U+2212 minus sign).
+    const m = /^GMT(?:([+\-\u2212])(\d{1,2})(?::(\d{2}))?)?$/.exec(name);
+    if (m) {
+      const hours = Number(m[2] ?? 0);
+      const minutes = m[3] && m[3] !== "00" ? `:${m[3]}` : "";
+      // "GMT" and "GMT+0" (runtimes differ) are both plain UTC.
+      label = !m[1] || (hours === 0 && !minutes) ? "UTC" : `UTC${m[1] === "+" ? "+" : "-"}${hours}${minutes}`;
+    }
+  } catch {
+    // Unknown zone: no offset.
+  }
+  if (offsetCache.size > 2000) offsetCache.clear();
+  offsetCache.set(key, label);
+  return label;
+}
+
+/** "America/New_York (UTC-4)" for the picker and its search. */
+export function timeZoneLabel(zone: string, at?: Date): string {
+  const offset = utcOffsetLabel(zone, at);
+  return offset && offset !== zone ? `${zone} (${offset})` : zone;
+}
+
 /** Whether `tz` is a zone this browser can format in (the API checks too). */
 export function isKnownTimeZone(tz: string): boolean {
   if (!tz) return false;
