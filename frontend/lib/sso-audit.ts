@@ -85,9 +85,20 @@ const FIELD_LABEL: Record<string, string> = {
   enabled: "On",
   settings: "Settings",
   verified: "Verified",
+  // Custom OpenID Connect settings.
+  displayName: "Button name",
+  issuer: "Issuer",
+  emailClaim: "Email claim",
+  scope: "Extra scopes",
+  allowPrivateNetwork: "Private network",
 };
 
-const APP_LABEL: Record<string, string> = { google: "Google", azure: "Microsoft", saml: "SAML" };
+const APP_LABEL: Record<string, string> = {
+  google: "Google",
+  azure: "Microsoft",
+  oidc: "OpenID Connect",
+  saml: "SAML",
+};
 
 function show(value: unknown): string {
   if (value === null || value === undefined || value === "") return "none";

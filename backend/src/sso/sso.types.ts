@@ -25,8 +25,15 @@ export interface SsoAdapter {
    * may register its own; SAML: no - the IdP details live on the domain).
    */
   readonly needsClient: boolean;
-  /** Non-secret settings a school may set for it (none yet). */
+  /** Non-secret settings a school may set for it (custom OpenID Connect's issuer, button text, ...). */
   readonly settingFields: readonly SsoSettingField[];
+
+  /**
+   * The button label under one school's configuration ("Riverside ID");
+   * defaults to `label`. Used for `discover`, the school's provider list and
+   * "Your school signs in with ..." messages.
+   */
+  labelFor?(config: SsoProviderConfig): string;
 
   /** What the env vars say - the install-wide fallback for schools without their own app. */
   envConfig(): SsoProviderConfig;
@@ -39,6 +46,14 @@ export interface SsoAdapter {
    * BadRequestException with a message for the admin.
    */
   normalizeSetting?(key: string, value: string): string;
+
+  /**
+   * Check a school's settings as a whole before they are saved (after
+   * `normalizeSetting`), when they change or the provider is turned on:
+   * settings that depend on each other, network checks. Throws a
+   * BadRequestException with a message for the admin.
+   */
+  checkSettings?(settings: Record<string, string>, enabled: boolean): Promise<void>;
 
   /**
    * Whether a school domain has what this adapter needs (a Microsoft tenant,
@@ -94,6 +109,15 @@ export interface SsoSettingField {
   description: string;
   /** Shown as the placeholder: what applies when it is left empty. */
   placeholder?: string;
+  /**
+   * How the admin form shows it: free text (default), a URL, a choice from
+   * `options`, or an on/off switch (stored as "true"; off removes it).
+   */
+  type?: 'text' | 'url' | 'select' | 'switch';
+  /** `select`: the values it may take; the first is the default. */
+  options?: readonly { value: string; label: string }[];
+  /** Shown next to the field as a caution (e.g. what turning a switch on allows). */
+  warning?: string;
 }
 
 /** A school email domain, as an adapter sees it. */
@@ -164,6 +188,14 @@ export interface SsoIdentity {
    * never from anything the provider sent.
    */
   verifiedFor?: string;
+  /**
+   * The school whose own configuration (custom OpenID Connect: its issuer
+   * and client) checked this sign-in. Set by the adapter from the sign-in's
+   * client, never from anything the provider sent.
+   */
+  verifiedForSchool?: string;
+  /** Custom OpenID Connect: the claim the address was read from (`email`, `preferred_username`, `upn`). */
+  emailClaim?: string;
 }
 
 export interface SsoProfile {
@@ -176,6 +208,10 @@ export interface SsoProfile {
 export interface SsoDomainContext {
   domain: string;
   azureTenantId: string | null;
+  /** The school that owns the domain. */
+  schoolId?: string | null;
+  /** The provider the domain is set to (`school_email_domain.sso_provider`). */
+  ssoProvider?: string | null;
 }
 
 /** The public view of an adapter, for login buttons and the admin picker. */

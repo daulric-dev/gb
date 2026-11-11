@@ -26,8 +26,17 @@ export interface OidcAdapterOptions {
   clientIdEnv: string;
   clientSecretEnv: string;
   scope?: string;
+  /** The name school admins see, when it differs from `label`. */
+  adminLabel?: string;
   /** Setup hints for school admins. */
   adminNotes?: string;
+}
+
+/** How discovery (and every later request of that configuration) is made. */
+export interface OidcDiscoverySetup {
+  /** Distinguishes cached configurations made with different options. */
+  key: string;
+  options?: oidc.DiscoveryRequestOptions;
 }
 
 /**
@@ -44,6 +53,7 @@ export abstract class OidcAdapter implements SsoAdapter {
   readonly kind = 'oauth' as const;
   readonly id: string;
   readonly label: string;
+  readonly adminLabel?: string;
   readonly adminNotes?: string;
   readonly needsClient = true;
   readonly settingFields: readonly SsoSettingField[] = [];
@@ -62,6 +72,7 @@ export abstract class OidcAdapter implements SsoAdapter {
   constructor(protected readonly options: OidcAdapterOptions) {
     this.id = options.id;
     this.label = options.label;
+    this.adminLabel = options.adminLabel;
     this.adminNotes = options.adminNotes;
   }
 
@@ -95,6 +106,21 @@ export abstract class OidcAdapter implements SsoAdapter {
     return {};
   }
 
+  /**
+   * Options for discovery under one sign-in's client (a custom fetch, http
+   * allowed). The `key` is part of the cache key.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  protected discoverySetup(ctx: SsoClientContext): OidcDiscoverySetup {
+    return { key: '' };
+  }
+
+  /** The scope requested at the authorization endpoint. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  protected scopeFor(ctx: SsoStartContext): string {
+    return this.options.scope ?? 'openid email profile';
+  }
+
   /** Discovery for `issuer` under the sign-in's own client. */
   protected configuration(
     issuer: string,
@@ -104,14 +130,21 @@ export abstract class OidcAdapter implements SsoAdapter {
     if (!clientId || !clientSecret) {
       return Promise.reject(new Error(`${this.label} has no client credentials`));
     }
+    const setup = this.discoverySetup(ctx);
     const client = createHash('sha256')
-      .update(`${clientId}\n${clientSecret}`)
+      .update(`${clientId}\n${clientSecret}\n${setup.key}`)
       .digest('hex');
     const key = `${ctx.clientKey}\n${issuer}`;
     const cached = this.configs.get(key);
     if (cached && cached.client === client) return cached.config;
 
-    const config = oidc.discovery(new URL(issuer), clientId, clientSecret);
+    const config = oidc.discovery(
+      new URL(issuer),
+      clientId,
+      clientSecret,
+      undefined,
+      setup.options,
+    );
     // A failed lookup is retried next time rather than cached.
     config.catch(() => {
       if (this.configs.get(key)?.config === config) this.configs.delete(key);
@@ -134,7 +167,7 @@ export abstract class OidcAdapter implements SsoAdapter {
       ...this.authorizationParams(ctx),
       redirect_uri: ctx.redirectUri,
       response_type: 'code',
-      scope: this.options.scope ?? 'openid email profile',
+      scope: this.scopeFor(ctx),
       code_challenge: await oidc.calculatePKCECodeChallenge(codeVerifier),
       code_challenge_method: 'S256',
       state: ctx.state,
@@ -144,6 +177,15 @@ export abstract class OidcAdapter implements SsoAdapter {
   }
 
   async complete(ctx: SsoCompleteContext): Promise<SsoIdentity> {
+    return this.identityFrom(await this.verifiedClaims(ctx));
+  }
+
+  /**
+   * Exchange the code and return the ID token's claims, checked by
+   * openid-client: signature (the issuer's JWKS), issuer, audience, expiry,
+   * nonce, state and PKCE.
+   */
+  protected async verifiedClaims(ctx: SsoCompleteContext): Promise<Record<string, unknown>> {
     if (!ctx.callbackUrl) throw new Error('No authorization response');
     const { issuer, codeVerifier, nonce } = ctx.secrets;
     const config = await this.configuration(issuer, ctx);
@@ -155,7 +197,7 @@ export abstract class OidcAdapter implements SsoAdapter {
     });
     const claims = tokens.claims();
     if (!claims) throw new Error('No ID token');
-    return this.identityFrom({ ...claims });
+    return { ...claims };
   }
 
   /** Our identity from verified ID token claims. */

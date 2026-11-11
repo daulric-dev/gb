@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   draftOf,
+  pickLabel,
   pickableProviders,
   providerStatus,
   providerUpdate,
+  samlApp,
   secretStatus,
+  selectDraft,
+  selectValue,
   signInApps,
+  switchOn,
   ssoProvidersApi,
   unavailableApps,
   usesEmailCodesOnly,
@@ -13,6 +18,7 @@ import {
 } from "@/lib/sign-in-providers";
 import { emailDomainsApi } from "@/lib/email-domains";
 import { ssoProviderName } from "@/lib/sso";
+import { auditChanges, auditSubject } from "@/lib/sso-audit";
 
 /** Google through the server's app: the school has not saved its own. */
 const google: SchoolSsoProvider = {
@@ -139,5 +145,94 @@ describe("routes", () => {
     expect(emailDomainsApi("/organisation/schools/abc")).toBe("/organisation/schools/abc/email-domains");
     expect(ssoProvidersApi()).toBe("/schools/current/sso/providers");
     expect(ssoProvidersApi("/organisation/schools/abc")).toBe("/organisation/schools/abc/sso/providers");
+  });
+});
+
+/** A school's own OpenID Connect provider, set up and on. */
+const oidc: SchoolSsoProvider = {
+  ...own,
+  key: "oidc",
+  label: "Custom OpenID Connect",
+  buttonLabel: "Riverside ID",
+  settings: { displayName: "Riverside ID", issuer: "https://id.riverside.edu" },
+  settingFields: [
+    { key: "displayName", label: "Button name", description: "" },
+    { key: "issuer", label: "Issuer URL", description: "", type: "url" },
+    {
+      key: "emailClaim",
+      label: "Email claim",
+      description: "",
+      type: "select",
+      options: [
+        { value: "email", label: "email (verified)" },
+        { value: "upn", label: "upn" },
+      ],
+    },
+    { key: "allowPrivateNetwork", label: "Private network", description: "", type: "switch" },
+  ],
+};
+
+describe("custom OpenID Connect and SAML rows", () => {
+  test("OpenID Connect is a sign-in app; SAML is its own read-only row", () => {
+    const list = [google, microsoft, oidc, saml];
+    expect(signInApps(list).map((p) => p.key)).toEqual(["google", "azure", "oidc"]);
+    expect(samlApp(list)?.key).toBe("saml");
+    expect(samlApp([google])).toBeNull();
+  });
+
+  test("the domain picker offers it once set up, under the school's button name", () => {
+    expect(pickableProviders([oidc, saml])).toEqual([
+      { id: "oidc", label: "Riverside ID (OpenID Connect)", kind: "oauth" },
+      { id: "saml", label: "SAML 2.0", kind: "saml" },
+    ]);
+    expect(pickableProviders([{ ...oidc, available: false }]).map((p) => p.id)).toEqual([]);
+    expect(pickLabel({ ...oidc, settings: {} })).toBe("Custom OpenID Connect");
+    expect(pickLabel(google)).toBe("Google");
+    expect(ssoProviderName(undefined, "oidc")).toBe("OpenID Connect");
+  });
+
+  test("select: the default is shown but saved as empty", () => {
+    const field = oidc.settingFields[2];
+    expect(selectValue(field, "")).toBe("email");
+    expect(selectValue(field, "upn")).toBe("upn");
+    expect(selectValue(field, "bogus")).toBe("email");
+    expect(selectDraft(field, "email")).toBe("");
+    expect(selectDraft(field, "upn")).toBe("upn");
+  });
+
+  test("settings changes are sent; a switch turned off clears its setting", () => {
+    const draft = draftOf(oidc);
+    expect(draft.settings).toEqual({
+      displayName: "Riverside ID",
+      issuer: "https://id.riverside.edu",
+      emailClaim: "",
+      allowPrivateNetwork: "",
+    });
+    expect(providerUpdate(oidc, draft)).toBeNull();
+    expect(
+      providerUpdate(oidc, {
+        ...draft,
+        settings: { ...draft.settings, issuer: " https://kc.riverside.edu/realms/s ", emailClaim: "upn" },
+      }),
+    ).toEqual({ settings: { issuer: "https://kc.riverside.edu/realms/s", emailClaim: "upn" } });
+    const on = { ...oidc, settings: { ...oidc.settings, allowPrivateNetwork: "true" } };
+    expect(switchOn(draftOf(on).settings.allowPrivateNetwork)).toBe(true);
+    expect(
+      providerUpdate(on, { ...draftOf(on), settings: { ...draftOf(on).settings, allowPrivateNetwork: "" } }),
+    ).toEqual({ settings: { allowPrivateNetwork: null } });
+  });
+
+  test("audit entries name the app and its settings", () => {
+    const entry = {
+      id: "1",
+      createdAt: "2026-11-11T00:00:00Z",
+      action: "app_changed" as const,
+      domain: null,
+      actor: null,
+      actorVia: "school_admin" as const,
+      changes: { app: "oidc", issuer: { before: "https://a.edu", after: "https://b.edu" } },
+    };
+    expect(auditSubject(entry)).toBe("OpenID Connect app");
+    expect(auditChanges(entry)).toEqual(["Issuer: https://a.edu → https://b.edu"]);
   });
 });

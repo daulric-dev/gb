@@ -36,19 +36,22 @@ import { userMessage } from "@/lib/errors";
 /**
  * One school's email domains (add, verify with the DNS record, edit audience
  * / auto-join / staff role, remove) and each domain's sign-in: a provider
- * the school has available (its own Google or Microsoft app, the server's,
- * or SAML), the Microsoft tenant ID or SAML identity provider, "Require SSO"
+ * the school has available (its own Google, Microsoft or OpenID Connect
+ * app, the server's, or SAML), the Microsoft tenant ID or SAML identity provider, "Require SSO"
  * and a test sign-in link. Part of `SchoolSingleSignOn`, which loads the
  * school's providers. By default the active school's (school admins); the
  * organisation console passes one school's `apiBase`
  * (`/organisation/schools/<id>`).
  */
 export function EmailDomainsManager({
+  id,
   apiBase,
   schoolName,
   providers,
   onDomainsChangeAction,
 }: {
+  /** The section's element id (the Sign-in apps' SAML row links to it). */
+  id?: string;
   /** See `emailDomainsApi`; default: the active school. */
   apiBase?: string;
   schoolName: string;
@@ -119,7 +122,7 @@ export function EmailDomainsManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div id={id} className="scroll-mt-28 space-y-6">
       <div className="flex flex-wrap gap-3 rounded-lg border bg-muted/30 p-4 text-sm">
         <AtSign className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="space-y-1">

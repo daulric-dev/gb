@@ -242,7 +242,9 @@ describe('SchoolSsoService', () => {
   test("lists each provider as the school has it: env until it saves its own", async () => {
     const { service } = setup();
     const items = byKey(await service.list(S));
-    expect(Object.keys(items)).toEqual(['google', 'azure', 'saml']);
+    expect(Object.keys(items)).toEqual(['google', 'azure', 'oidc', 'saml']);
+    // A school's own OpenID Connect provider has no env fallback.
+    expect(items.oidc).toMatchObject({ label: 'Custom OpenID Connect', configSource: 'env', available: false, clientId: null });
     expect(items.google).toMatchObject({
       enabled: true,
       available: true,
