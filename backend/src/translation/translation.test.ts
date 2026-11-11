@@ -576,3 +576,14 @@ describe('translated activity copy', () => {
     expect(activities.createCopy).not.toHaveBeenCalled();
   });
 });
+
+describe('splitWhitespace is linear', () => {
+  test('long runs of spaces split quickly and exactly', () => {
+    const spaces = ' '.repeat(100_000);
+    const started = performance.now();
+    expect(splitWhitespace(`${spaces}x${spaces}`)).toEqual({ lead: spaces, core: 'x', trail: spaces });
+    expect(splitWhitespace(`a${spaces}b`)).toEqual({ lead: '', core: `a${spaces}b`, trail: '' });
+    expect(splitWhitespace(spaces)).toEqual({ lead: spaces, core: '', trail: '' });
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

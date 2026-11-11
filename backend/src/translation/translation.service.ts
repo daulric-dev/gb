@@ -36,8 +36,13 @@ import type { TranslateTextsDto } from './translation.dto';
 
 /** Leading whitespace, the text, trailing whitespace. */
 export function splitWhitespace(text: string): { lead: string; core: string; trail: string } {
-  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!;
-  return { lead: m[1], core: m[2], trail: m[3] };
+  // Index scan, not a regular expression: linear on any input (CodeQL
+  // js/polynomial-redos flagged /^(\s*)([\s\S]*?)(\s*)$/ on request text).
+  let start = 0;
+  let end = text.length;
+  while (start < end && /\s/.test(text[start])) start++;
+  while (end > start && /\s/.test(text[end - 1])) end--;
+  return { lead: text.slice(0, start), core: text.slice(start, end), trail: text.slice(end) };
 }
 
 /** Worth sending: has at least one letter (numbers, symbols and blanks pass through). */
