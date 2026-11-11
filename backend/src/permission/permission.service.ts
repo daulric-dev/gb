@@ -13,8 +13,10 @@ import {
 } from './permission.effective';
 import {
   defaultsForRole,
+  EXPLICIT_ONLY_KEYS,
   isPermissionKey,
   PERMISSION_CATALOG,
+  type PermissionKey,
 } from './permission.catalog';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -279,6 +281,38 @@ export class PermissionService {
             ),
           },
         );
+        // Granting or removing a key that is never implied (safeguarding)
+        // gets an entry of its own, so it stands out in the log. The route
+        // needs step-up (PermissionController).
+        const explicitBefore = beforeKeys.filter((k) =>
+          EXPLICIT_ONLY_KEYS.has(k as PermissionKey),
+        );
+        const explicitAfter = uniqueKeys.filter((k) =>
+          EXPLICIT_ONLY_KEYS.has(k as PermissionKey),
+        );
+        const granted = explicitAfter.filter((k) => !explicitBefore.includes(k));
+        const revoked = explicitBefore.filter((k) => !explicitAfter.includes(k));
+        if (granted.length > 0 || revoked.length > 0) {
+          await this.auditLog?.record(
+            tx,
+            role.school_id,
+            { id: adminUserId },
+            {
+              entity: 'school_role_restricted_permission',
+              entityId: role.id,
+              action: 'update',
+              changes: {
+                role: { before: null, after: role.name },
+                ...(granted.length > 0
+                  ? { granted: { before: null, after: granted } }
+                  : {}),
+                ...(revoked.length > 0
+                  ? { revoked: { before: revoked, after: null } }
+                  : {}),
+              },
+            },
+          );
+        }
       });
     } catch (err) {
       this.logger.error(

@@ -135,8 +135,8 @@ export default function PortalReportsPage() {
                   {t.courses.map((c) => (
                     <tr key={c.name + (c.code ?? "")} className="border-t">
                       <th scope="row" className="px-3 py-1.5 text-left font-normal">{c.name}</th>
-                      <td className="px-3 py-1.5 text-right tabular-nums">{formatPercent(c.percent)}</td>
-                      <td className="px-3 py-1.5 text-right font-semibold">{c.letter ?? "-"}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" translate="no">{formatPercent(c.percent)}</td>
+                      <td className="px-3 py-1.5 text-right font-semibold" translate="no">{c.letter ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>

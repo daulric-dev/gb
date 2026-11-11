@@ -30,6 +30,7 @@ import { usePermissions } from "@/providers/PermissionsProvider";
 import { CsvButton, RangePicker, Rate, TallyLine } from "./_components/report-ui";
 import { AlertSettingsCard } from "./_components/alert-settings";
 import { FormTutorsCard } from "./_components/form-tutors";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 const forbidden = (err: unknown) => err instanceof ApiError && err.status === 403;
 
@@ -143,6 +144,7 @@ export default function AttendanceReportsPage() {
                     <Link
                       href={`/dashboard/attendance/students/${a.studentId}`}
                       className="text-sm font-medium underline-offset-2 hover:underline"
+                      translate="no"
                     >
                       {personName(a)}
                     </Link>
@@ -270,7 +272,7 @@ export default function AttendanceReportsPage() {
                             <TableRow key={s.studentId}>
                               <TableCell className="font-medium">
                                 <span className="flex flex-wrap items-center gap-2">
-                                  {personName(s)}
+                                  <NoTranslate>{personName(s)}</NoTranslate>
                                   {s.openAlerts.map((k) => (
                                     <Badge key={k} variant="destructive">
                                       {ALERT_KIND_LABEL[k as keyof typeof ALERT_KIND_LABEL] ?? k}
@@ -290,6 +292,7 @@ export default function AttendanceReportsPage() {
                                   size="icon"
                                   variant="ghost"
                                   aria-label={`Open ${personName(s)}'s report`}
+                                  data-private-label
                                   nativeButton={false}
                                   render={<Link href={`/dashboard/attendance/students/${s.studentId}?${q}`} />}
                                 >

@@ -41,13 +41,13 @@ export function StudentsRosterTable({
               className="cursor-pointer"
             >
               <TableCell className="font-medium">
-                <span className="inline-flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1.5" translate="no">
                   {student.first_name} {student.last_name}
                   <ChevronRight className="size-3.5 text-muted-foreground" />
                 </span>
               </TableCell>
               <TableCell>
-                <Badge variant="outline" className="capitalize">
+                <Badge variant="outline" className="capitalize" translate="no">
                   {student.gender}
                 </Badge>
               </TableCell>

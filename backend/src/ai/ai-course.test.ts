@@ -184,8 +184,11 @@ describe('course outline drafting', () => {
     for (const svc of [b.modules.create, b.modules.createItem, b.pages.create, b.activities.create, b.groups.create, b.outcomes.createCourseOutcome, b.outcomes.align]) {
       expect(svc).not.toHaveBeenCalled();
     }
-    // No student tables are read for course building.
-    expect(b.prisma.course_student.findMany).not.toHaveBeenCalled();
+    // No student work is read for course building; the roster is read for names only, to strip them.
+    for (const [call] of b.prisma.course_student.findMany.mock.calls) {
+      expect(Object.keys(call.select)).toEqual(['student_id', 'student']);
+      expect(call.select.student.select).toEqual({ first_name: true, last_name: true });
+    }
     expect(b.prisma.submission.findUnique).not.toHaveBeenCalled();
     expect(b.prisma.student.findMany).not.toHaveBeenCalled();
     const sent = JSON.stringify(b.calls[0].body);
@@ -455,7 +458,28 @@ describe('item helpers return drafts only', () => {
     expect(out.outcomes).toEqual([{ code: 'C2', title: 'Explain cells', description: 'Uses terms.' }]);
     expect(JSON.stringify(b.calls[0].body)).toContain('Cells');
     expect(b.outcomes.createCourseOutcome).not.toHaveBeenCalled();
-    expect(b.prisma.course_student.findMany).not.toHaveBeenCalled();
+    expect(b.prisma.submission.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("the roster's, staff's and guardians' full names are stripped from what a draft sends", async () => {
+    const b = await build(OUTLINE_OUT, { mastery: true });
+    b.prisma.course_student.findMany.mockResolvedValue([
+      { student_id: 's1', student: { first_name: 'Amelia', last_name: 'Okafor' } },
+      // A first name that is also a word: only the full name is matched here.
+      { student_id: 's2', student: { first_name: 'Mark', last_name: 'Bell' } },
+    ]);
+    b.prisma.course_staff.findMany.mockResolvedValue([{ user_profile: { first_name: 'Priya', last_name: 'Shah' } }]);
+    b.prisma.parent_student_link.findMany.mockResolvedValue([{ user_profile: { first_name: 'Carla', last_name: 'Diaz' } }]);
+    await b.builder.outline('teacher', COURSE, {
+      subject: 'Biology',
+      level: 'Year 9',
+      weeks: 6,
+      syllabus: 'Groups: Amelia Okafor and Mark Bell; ask Priya Shah. Carla Diaz volunteers. Mark scheme attached.',
+    });
+    const sent = JSON.stringify(b.calls[0].body);
+    for (const name of ['Amelia Okafor', 'Mark Bell', 'Priya Shah', 'Carla Diaz']) expect(sent).not.toContain(name);
+    expect(sent).toContain('[Classmate]');
+    expect(sent).toContain('Mark scheme');
   });
 });
 

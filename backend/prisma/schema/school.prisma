@@ -121,6 +121,8 @@ model school {
   parent_settings                             Json                  @default("{}")
   /// IANA time zone (e.g. Europe/London) for the timetable and attendance reports. Null until an admin sets it deliberately: the scheduler skips the school and reports count UTC days meanwhile (src/timetable).
   time_zone                                   String?
+  /// What pushes show for this school: 'full' or 'generic'; null follows the organisation (src/notifications/push-content.ts).
+  push_content                                String?
   conversation                                conversation[]
   message                                     message[]
   course                                      course[]

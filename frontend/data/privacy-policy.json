@@ -1,138 +1,197 @@
 {
-  "title": "Privacy Policy",
-  "lastUpdated": "October 2026",
+  "title": "Privacy notice",
+  "lastUpdated": "November 2026",
   "crossLink": { "href": "/terms", "label": "Terms of Service" },
   "sections": [
     {
-      "heading": "Introduction",
+      "id": "about",
+      "heading": "About this notice",
       "paragraphs": [
-        "GradeBook (\"we\", \"our\", or \"the Service\") is a learning platform that schools use to run courses, set and mark work, take attendance, and communicate with staff and students. This Privacy Policy explains what personal data the hosted GradeBook service processes, why, how long we keep it, who we share it with, and the rights you have.",
-        "It is written to meet the EU and UK General Data Protection Regulation (GDPR) and the data protection laws that apply to schools in the Caribbean and elsewhere. Where local law gives you more protection, that law applies.",
-        "This policy covers the GradeBook service we host. A school that runs its own copy of GradeBook on its own servers is responsible for that installation and its own privacy notice."
+        "GradeBook is a learning platform. This installation of GradeBook is run by {{controller}} for its schools: staff use it to run courses, set and mark work, take attendance and keep pastoral records, students use it to see their work and grades, and parents and guardians use it to follow their child's progress.",
+        "This notice explains what personal data this GradeBook processes, why, on what lawful basis, who receives it, how long it is kept and what rights you have. It covers students, parents and guardians, staff and anyone else whose information is in it, and is written to meet Articles 12 to 14 of the EU and UK General Data Protection Regulation (GDPR). Where local law gives you more protection, that law applies.",
+        "The details of the organisation, the services it uses and how long data is kept are filled in from this installation's live settings, so they show what this GradeBook actually does. The people who make the GradeBook software do not receive any data from this installation."
       ]
     },
     {
-      "heading": "Who Is Responsible for Your Data",
+      "id": "controller",
+      "heading": "Who is responsible for your data",
+      "dynamic": "controller",
       "paragraphs": [
-        "GradeBook processes data in two different roles:"
+        "{{controller}} decides how and why this GradeBook processes personal data, so it is the controller. Where a school in the organisation is a separate legal body, that school is also a controller for its own records; your school can tell you which applies."
+      ]
+    },
+    {
+      "id": "data",
+      "heading": "What data we process",
+      "paragraphs": ["Depending on your role and the features your school uses, this GradeBook processes:"],
+      "list": [
+        { "bold": "Account information", "text": "your name, email address, optional profile picture and account type. If you sign in with Google, Microsoft or your school's own sign-in, we also receive an identifier for that account and the name and email address it shares." },
+        { "bold": "Student records", "text": "name, student number, gender, date of birth, enrolment dates, year group, the courses a student takes, and links to parents or guardians with their contact details." },
+        { "bold": "Assessment accommodations", "text": "extra time, a quiz exemption from Lockdown and similar adjustments, with the reason. A reason can reveal health or disability information, which is special category data. Only staff with permission to see sensitive details can read it, and it is stored encrypted." },
+        { "bold": "Course and academic data", "text": "course content, assignments, quiz answers, submitted files and text, marks, rubric assessments, feedback, grades, report comments, report cards, discussion posts and announcements." },
+        { "bold": "Attendance", "text": "check-in times and attendance status, and absence alerts. If a teacher turns on the location check, see \"Location check-ins\" below." },
+        { "bold": "Pastoral and safeguarding notes", "text": "notes staff write about behaviour, wellbeing and safeguarding concerns, with follow-ups and attachments. They can contain special category data (for example about health) and are stored encrypted. Safeguarding notes are visible only to staff the school has given that permission." },
+        { "bold": "Messages and files", "text": "chat messages (encrypted in the database) and the files you upload or share." },
+        { "bold": "Lockdown quizzes", "text": "for a quiz the teacher set to Lockdown, whether the student left the quiz screen and how many times. Students with a Lockdown exemption are not monitored." },
+        { "bold": "Device and security information", "text": "for each signed-in session: a device label (such as \"Chrome on macOS\"), the IP address, browser or app details, and when it was created and last used, which you can see and end under Signed-in devices. Also one-time sign-in codes, the devices you have signed in on (without IP addresses) for new sign-in alerts, an authenticator app secret if you set one up (encrypted), and, in the mobile app, a push notification token." },
+        { "bold": "Audit and activity logs", "text": "who changed which school record and when, who read safeguarding notes, single sign-on and integration changes, and a log of AI requests (who, when, which feature; not the text, unless the organisation turned on keeping prompts for troubleshooting)." }
+      ]
+    },
+    {
+      "id": "sources",
+      "heading": "Where the data comes from",
+      "paragraphs": [
+        "Most data is entered by you or by your school: staff create student records, mark work and write notes; students hand in work; parents accept an invitation to link to their child. Some data comes from elsewhere:"
       ],
       "list": [
-        { "bold": "Your school is the controller of school data", "text": "the school decides what student, staff, course, grade and attendance records are kept and why. We process that data on the school's behalf and only on its instructions, as its processor. Requests about school records (for example a student asking to see or correct their grades) should go to the school first; we will help the school answer them." },
-        { "bold": "GradeBook is the controller of account and service data", "text": "your sign-in account, sessions, security records and, for schools on a paid plan, billing records. We decide how this data is used, as described in this policy." }
-      ],
-      "footer": "For any privacy question or request, contact privacy@daulric.dev."
+        { "bold": "Your school's management information system", "text": "if the school uses rostering, student, staff, class and enrolment records are copied in from it (a OneRoster connection or a CSV file)." },
+        { "bold": "Sign-in providers", "text": "Google, Microsoft or your school's own identity provider confirm who you are and share your name and email address." },
+        { "bold": "External tools", "text": "a learning tool the school connected (LTI) can send back a grade for work done in it." }
+      ]
     },
     {
-      "heading": "Information We Collect",
+      "id": "purposes",
+      "heading": "Why we use it and on what lawful basis",
+      "dynamic": "lawfulBases",
       "paragraphs": [
-        "Depending on how you use GradeBook, we process:"
+        "We use personal data only to run the school's teaching, assessment, communication and safeguarding, and to keep GradeBook secure. The table shows each purpose and the lawful basis {{controller}} relies on. Special category data (health or similar information in accommodations and pastoral notes) is processed only under an Article 9 condition, shown next to those purposes."
+      ],
+      "footer": "We do not sell personal data, use it for advertising, or build marketing profiles. Data is not used to train artificial intelligence models."
+    },
+    {
+      "id": "activities",
+      "heading": "How each feature uses data",
+      "paragraphs": ["Some features are switched on or off by the organisation or the school; the ones currently in use are marked."],
+      "dynamic": "activities",
+      "list": [
+        { "key": "ai_assistance", "bold": "AI assistance", "text": "staff can ask the AI provider listed below to draft course plans, questions and feedback suggestions. Names, email addresses and other contact details are removed before anything is sent. A student's work is sent for feedback suggestions only if the school has allowed it, and never for a student whose school has switched AI off for them. A teacher reviews every suggestion; nothing is published or graded automatically." },
+        { "key": "translation", "bold": "Translation", "text": "nothing is translated until you choose a language. Then interface text and course content are sent to the translation service listed below. Names, grades, marks, feedback, messages, pastoral notes, attendance and at-risk lists are never sent. Translations are cached on the server for a short time (see retention) and in your browser tab until you sign out. Choosing English again stops it." },
+        { "key": "integrations", "bold": "Webhooks", "text": "a school can send chosen events (for example a grade or attendance change) to its own systems. Accommodation reasons and pastoral notes are never sent. Each school's webhooks must use encrypted connections." },
+        { "key": "lti", "bold": "External tools (LTI)", "text": "when you open a tool the school connected, it receives a pseudonymous id, your role and the course, and your name or email address only if the organisation allowed that tool to receive them." },
+        { "key": "rostering", "bold": "Rostering", "text": "the school's management information system sends GradeBook its students, staff, classes and enrolments, so records stay in step. GradeBook does not send student data back to it." },
+        { "key": "parent_portal", "bold": "Parent portal", "text": "parents and guardians the school links to a student can see that student's courses, grades, attendance, reports and announcements, and receive email notices the parent can switch off." },
+        { "key": "attendance_alerts", "bold": "Attendance alerts", "text": "when a student's absences meet a rule the school set, the staff responsible (and parents, if the school chose) are notified. The alert is a prompt; a person decides what to do." },
+        { "key": "analytics", "bold": "Analytics and at-risk lists", "text": "staff see course summaries and a list of students who meet the school's rule-based criteria (for example missing work or low attendance). These are prompts for staff to look more closely, not automated decisions about you. A school can exclude a student from analytics." },
+        { "key": "similarity_check", "bold": "Similarity checks", "text": "submitted text is compared with other submissions in the school to point out possible copying. A teacher reviews any match; the score alone decides nothing. A school can switch it off for a student." },
+        { "key": "pastoral_notes", "bold": "Pastoral and safeguarding notes", "text": "staff record concerns so the school can support and protect students. Notes are encrypted, every read of a note is logged, and safeguarding notes are limited to designated staff. Some notes may be withheld from an access request where the law allows it to protect a child." },
+        { "key": "lockdown", "bold": "Lockdown quizzes", "text": "the quiz notices when a student leaves the quiz screen and shows the teacher; it does not record the screen, camera or microphone." },
+        { "key": "push_notifications", "bold": "Push notifications", "text": "the mobile app receives notifications through Expo and Apple's or Google's push services, which see the device token and the notification text. A school can choose generic notifications that do not include names, grades or attendance details." },
+        { "key": "attendance", "bold": "Location check-ins", "text": "only when a teacher turns on the location check: your device's location is read at the moment you check in, used to work out your distance from the room, and the coordinates are cleared within {{locationRetention}}. Only the distance is kept. Your device asks your permission first." }
+      ]
+    },
+    {
+      "id": "automated",
+      "heading": "Automated decisions",
+      "paragraphs": [
+        "GradeBook does not make decisions about you that are based solely on automated processing and have legal or similarly significant effects (Article 22). Quiz questions with fixed answers are marked automatically, and teachers can review and change those marks. At-risk lists, attendance alerts, similarity scores and AI suggestions are prompts for staff, and a person decides what happens next."
+      ]
+    },
+    {
+      "id": "recipients",
+      "heading": "Who receives your data",
+      "dynamic": "recipients",
+      "paragraphs": [
+        "Inside a school, staff, students and parents see only what their role allows. Outside it, data goes only to the service providers (processors) below, which process it for {{controller}} under written agreements, and to providers a school or you chose (sign-in providers, external tools, webhooks). This list is generated from this installation's current configuration."
+      ],
+      "footer": "Data may also be disclosed when the law requires it, for example to a court, the police or a child protection agency, or to protect someone's life."
+    },
+    {
+      "id": "transfers",
+      "heading": "International transfers",
+      "dynamic": "location",
+      "paragraphs": [
+        "If a provider above processes data outside the UK or the European Economic Area in a country without an adequacy decision, {{controller}} uses the safeguards the GDPR requires, such as the European Commission's Standard Contractual Clauses or the UK International Data Transfer Agreement. You can ask {{contact}} for a copy."
+      ]
+    },
+    {
+      "id": "retention",
+      "heading": "How long data is kept",
+      "dynamic": "retention",
+      "paragraphs": ["Data is kept only as long as it is needed. These periods are this installation's settings:"]
+    },
+    {
+      "id": "security",
+      "heading": "How data is protected",
+      "paragraphs": [
+        "Connections to GradeBook are encrypted (HTTPS). Every request is checked on the server against the person's role and permissions. Chat messages, pastoral notes, accommodation reasons, stored secrets and authenticator app secrets are encrypted in the database, backups are encrypted before they leave the server, and staff can protect their account with an authenticator app. Changes to school records and reads of safeguarding notes are recorded in an audit log that cannot be edited.",
+        "{{controller}} is responsible for the servers this runs on. If a personal data breach happens, it will tell the supervisory authority within 72 hours where the law requires, and tell you without undue delay if the breach is likely to put you at high risk."
+      ]
+    },
+    {
+      "id": "rights",
+      "heading": "Your rights and how to use them",
+      "paragraphs": ["You have these rights. Many of them you can use yourself, in the app:"],
+      "list": [
+        { "bold": "Access and a copy of your data", "text": "download a copy of your data from your account settings. Parents can download their child's data from the parent portal, and the school can produce a copy for a student." },
+        { "bold": "Portability", "text": "the download is a machine-readable file (JSON plus your files) that you can take to another service." },
+        { "bold": "Correction (rectification)", "text": "change your name and profile picture in your account settings. To change your email address, enter the new one and confirm it with a code sent to it. Ask your school to correct school records such as grades or attendance." },
+        { "bold": "Erasure", "text": "delete your account from your account settings. School records about you (such as grades and attendance) are kept or erased by the school under its own retention rules; ask the school if you think they should be erased." },
+        { "bold": "Restriction and objection", "text": "ask your school to restrict or stop processing. It can switch off AI assistance, similarity checks and analytics for an individual student, and turn off email notices." },
+        { "bold": "Withdraw consent", "text": "where processing is based on consent (translation), choose English again at any time. This does not affect what happened before." },
+        { "bold": "Not be subject to automated decisions", "text": "see \"Automated decisions\" above." }
+      ],
+      "footer": "For anything you cannot do in the app, contact {{contact}}. We reply within one month (longer only for complex requests, and we will tell you why). Requests about school records are handled together with your school."
+    },
+    {
+      "id": "complaints",
+      "heading": "Complaints",
+      "dynamic": "authority",
+      "paragraphs": [
+        "If you are unhappy with how your data is handled, please tell {{contact}} first so it can be put right. You also have the right to complain to a data protection supervisory authority, in particular in the country where you live or work or where the problem happened."
+      ]
+    },
+    {
+      "id": "cookies",
+      "heading": "Cookies and storage on your device",
+      "dynamic": "cookies",
+      "paragraphs": [
+        "GradeBook stores only what it needs to work or to remember a choice you made. There are no advertising, analytics or tracking cookies, and nothing is shared with third parties for those purposes, so there is no cookie banner."
+      ]
+    },
+    {
+      "id": "children",
+      "heading": "If you are a student",
+      "paragraphs": [
+        "This part is for you, in plain words.",
+        "Your school uses GradeBook to give you your work, mark it, take attendance and keep you safe. Your teachers can see your work, your grades and your attendance. Your parents or guardians can see them too if the school has linked them to you. Some staff can write notes about how you are doing and if they are worried about you, so they can help."
       ],
       "list": [
-        { "bold": "Account information", "text": "your email address, first and last name and optional profile picture. If you sign in with Google, Microsoft or your school's single sign-on, we also receive an identifier for that account, the email address and the basic profile details the provider shares." },
-        { "bold": "School information", "text": "school name, contact details, school type, the email domains a school has verified, and staff roles and permissions." },
-        { "bold": "Student records", "text": "student names, gender, date of birth, enrolment dates and the courses a student takes, entered by the school or created when a student joins with a school code." },
-        { "bold": "Course and academic data", "text": "course content, assignments, quiz answers, submitted files and text, marks, rubric assessments, feedback, grades, discussion posts and announcements." },
-        { "bold": "Attendance", "text": "check-in times and attendance status. If a teacher turns on the location check, your device's location is used at the moment you check in to work out your distance from the room; we store only that distance, not your coordinates." },
-        { "bold": "Messages and files", "text": "chat messages and files you upload or share. Chat messages are encrypted in our database." },
-        { "bold": "Device and security information", "text": "a session cookie that keeps you signed in; for each signed-in session, for security, a device label (such as \"Chrome on macOS\" or \"GradeBook app on iPhone\"), the IP address and browser or app details, and when it was created and last used, which you can see and end under Signed-in devices in your settings; a record of the devices you have signed in on (without IP addresses) so we can email you about sign-ins from a new device; one-time sign-in codes; and, if you allow notifications in the mobile app, a push notification token for your device." },
-        { "bold": "Billing information", "text": "for schools on a paid plan: the plan, number of billable users, invoices and payment status. Card and bank details are entered directly with the payment provider and never reach our servers." }
+        "We do not sell your information or use it for adverts.",
+        "A computer never makes big decisions about you on its own. A teacher always checks.",
+        "If your teacher turns on the location check for attendance, your phone shows where you are only for that moment, and we only keep how far away you were.",
+        "You can download a copy of your information from your account settings.",
+        "If something about you is wrong, tell your teacher or the school office and they will fix it.",
+        "If you are worried about how your information is used, talk to a teacher or a parent, or contact {{contact}}. You can also complain to the data protection authority shown above."
       ]
     },
     {
-      "heading": "How and Why We Use Your Information",
+      "id": "changes",
+      "heading": "Changes to this notice",
       "paragraphs": [
-        "We use personal data only for the following purposes, each with a lawful basis under the GDPR:"
-      ],
-      "list": [
-        { "bold": "Providing the Service to your school", "text": "running courses, marking, attendance, messaging and notifications. For school data we act on the school's instructions; the school relies on its own lawful basis, usually its public task or legitimate interests in educating students." },
-        { "bold": "Your account and sign-in", "text": "creating your account, emailing sign-in codes, single sign-on and keeping you signed in (performance of a contract with you)." },
-        { "bold": "Security and abuse prevention", "text": "rate limiting, session records, emailing you about sign-ins from a new device and about sessions we end because their sign-in was copied, protecting accounts and investigating misuse (our legitimate interest in keeping the Service and its users safe)." },
-        { "bold": "Billing", "text": "charging schools for paid plans and keeping invoices (performance of a contract, and legal obligations such as tax record keeping)." },
-        { "bold": "Backups and recovery", "text": "keeping encrypted backups so data can be restored after a failure (our legitimate interest, and the GDPR duty to keep data available and secure)." },
-        { "bold": "Improving the Service", "text": "aggregated statistics that do not identify any person, such as how many courses are active (our legitimate interest)." }
-      ],
-      "footer": "We do not sell personal data, use it for advertising, or build marketing profiles of students or staff. We do not use your data to train artificial intelligence models."
-    },
-    {
-      "heading": "Cookies",
-      "paragraphs": [
-        "GradeBook uses only cookies that are strictly necessary for the Service to work: a session cookie that keeps you signed in, and a short-lived cookie that protects the single sign-on process. We do not use advertising, analytics or tracking cookies."
+        "This notice changes when the software or this installation's settings change. The date at the top shows when the text was last revised; the lists filled in from the live settings are always current. Important changes are announced in GradeBook before they take effect."
       ]
     },
     {
-      "heading": "Who We Share Data With",
-      "paragraphs": [
-        "We do not share personal data with third parties for their own purposes. Data is shared only:"
-      ],
-      "list": [
-        { "bold": "Within your school", "text": "with the staff and students who have access to the same courses, conversations or files, according to their role." },
-        { "bold": "With our service providers (processors)", "text": "who run parts of the Service for us under written data processing agreements: cloud hosting, database and file storage, encrypted backup storage, email delivery for sign-in codes, and the mobile push notification service. They may use the data only to provide their service to us." },
-        { "bold": "With providers you choose", "text": "if you sign in with Google, Microsoft or your school's single sign-on, that provider confirms who you are; if your school pays for a plan, our payment provider, Stripe, processes the payment under its own privacy policy." },
-        { "bold": "When the law requires it", "text": "to comply with a legal obligation, court order or lawful request from a public authority, or to protect the safety of a person." }
-      ],
-      "footer": "We do not use third-party analytics services."
-    },
-    {
-      "heading": "International Transfers",
-      "paragraphs": [
-        "Our providers may process data outside your country. When personal data from the EU or UK is transferred to a country without an adequacy decision, we use the safeguards the GDPR requires, such as the European Commission's Standard Contractual Clauses. Contact us for a copy of the relevant safeguards."
-      ]
-    },
-    {
-      "heading": "How Long We Keep Data",
-      "paragraphs": [
-        "We keep personal data only as long as it is needed:"
-      ],
-      "list": [
-        { "bold": "School and course data", "text": "for as long as the school keeps it on GradeBook. Schools decide when records are deleted." },
-        { "bold": "Your account", "text": "until you delete it or your school removes you. Deleting your account immediately removes your profile, sign-in details, the files you own and your chat messages. Discussion posts you wrote stay in the course without your name." },
-        { "bold": "Deleted files, folders, chat messages and discussion posts", "text": "hidden immediately and permanently erased 30 days later. A file that was handed in as coursework is kept while the submission exists, as part of the school's record. A deleted discussion post that others have replied to stays as a \"This post was deleted\" placeholder without its content or author, so the conversation still makes sense." },
-        { "bold": "Sessions and sign-in codes", "text": "sign-in codes expire after 5 minutes; sessions end after 30 days without use, after 90 days at the most, or when you sign out; both are removed about a day after they expire, end or are used. The record of devices you have signed in on is removed after 90 days without use." },
-        { "bold": "Backups", "text": "we keep encrypted backups of the database for up to 37 days, and then delete them automatically. Erased information can remain inside a backup until it expires: at most 37 days after it was permanently erased, so up to 67 days after you delete a file, folder, message or post. Backups are used only to restore the Service after a failure." },
-        { "bold": "Deletion records", "text": "if we ever restore from a backup, we re-apply every deletion made since that backup was taken, so deleted information does not come back. To do this we keep a record of each deletion (the kind of item, when and why, and the internal identifiers needed to delete it again) for up to 400 days. It never contains the deleted content itself, such as names, email addresses, messages or file names." },
-        { "bold": "Billing records", "text": "invoices are kept for as long as tax and accounting law requires." }
-      ]
-    },
-    {
-      "heading": "How We Protect Data",
-      "paragraphs": [
-        "All connections to GradeBook are encrypted (HTTPS). Access inside a school is limited by role, and every request is checked on our servers. You sign in with one-time codes or single sign-on, so we never store passwords. Chat messages and backups are encrypted, backup encryption keys are kept separately from the servers, and backups are stored separately from the live system. Payment details are handled only by the payment providers.",
-        "If a personal data breach affects you, we will inform your school and, where required, the supervisory authority within 72 hours, and you without undue delay."
-      ]
-    },
-    {
-      "heading": "Your Rights",
-      "paragraphs": [
-        "Under the GDPR and similar laws you have the right to:"
-      ],
-      "list": [
-        "Access the personal data we hold about you and get a copy of it",
-        "Have inaccurate data corrected",
-        "Have your data erased",
-        "Restrict how your data is processed",
-        "Receive your data in a portable, machine-readable format",
-        "Object to processing based on our legitimate interests",
-        "Lodge a complaint with your data protection supervisory authority"
-      ],
-      "footer": "You can delete your account yourself at any time from the Settings page. For any other request, including a copy of your data, email privacy@daulric.dev; we will reply within one month. Requests about school records (grades, attendance, coursework) are handled together with your school, which decides on them as the controller."
-    },
-    {
-      "heading": "Children and Students",
-      "paragraphs": [
-        "Students, including children, use GradeBook through their school: they may have their own account to see their courses, hand in work, check their grades and take attendance. Schools are responsible for having a lawful basis and, where needed, parental consent for the student data they put on GradeBook. We use student data only to provide the Service to the school, never for advertising or profiling."
-      ]
-    },
-    {
-      "heading": "Changes to This Policy",
-      "paragraphs": [
-        "We may update this Privacy Policy as the Service changes. We will show the date of the latest version at the top of this page and tell users through the Service before any significant change takes effect."
-      ]
-    },
-    {
+      "id": "contact",
       "heading": "Contact",
-      "paragraphs": [
-        "For questions about this Privacy Policy, how your data is handled, or to exercise your rights, email privacy@daulric.dev."
-      ]
+      "dynamic": "contact",
+      "paragraphs": ["For questions about this notice or to use your rights, contact {{contact}}."]
     }
+  ],
+  "cookies": [
+    { "name": "gb_session", "where": "Cookie (web)", "purpose": "Keeps you signed in. Secure and not readable by page scripts.", "duration": "Until you sign out or the session ends (see \"Signed-in sessions\" in the retention table)", "kind": "Strictly necessary" },
+    { "name": "gb_sso_flow", "where": "Cookie (web)", "purpose": "Protects a single sign-on attempt against tampering while you are at the sign-in provider.", "duration": "10 minutes", "kind": "Strictly necessary" },
+    { "name": "gb_scan_device", "where": "Cookie (web)", "purpose": "A random id for the browser that scanned an attendance QR code, so the check-in cannot be forwarded to another phone.", "duration": "90 days, renewed on each scan", "kind": "Strictly necessary" },
+    { "name": "sidebar_state", "where": "Cookie (web)", "purpose": "Remembers whether you collapsed the side menu.", "duration": "7 days", "kind": "Preference" },
+    { "name": "gb_language", "where": "Local storage (web)", "purpose": "Remembers the language you chose, including \"no thanks\", so you are asked only once.", "duration": "Until you clear it", "kind": "Preference" },
+    { "name": "theme", "where": "Local storage (web)", "purpose": "Remembers light or dark mode.", "duration": "Until you clear it", "kind": "Preference" },
+    { "name": "gb_translation_cache:*", "where": "Session storage (web)", "purpose": "Translations of the pages you viewed, so they are not requested again.", "duration": "Until you close the tab or sign out", "kind": "Strictly necessary for translation you asked for" },
+    { "name": "attendance-claim:*", "where": "Session storage (web)", "purpose": "Carries an attendance QR check-in across sign-in.", "duration": "Until the check-in is done or the tab is closed", "kind": "Strictly necessary" },
+    { "name": "gb_session_token", "where": "Secure storage (mobile app)", "purpose": "Keeps you signed in to the app.", "duration": "Until you sign out or the session ends", "kind": "Strictly necessary" },
+    { "name": "gb_server_url", "where": "Secure storage (mobile app)", "purpose": "The school server the app connects to.", "duration": "Until you change server", "kind": "Strictly necessary" },
+    { "name": "gb_sso_pending", "where": "Secure storage (mobile app)", "purpose": "A single sign-on attempt in progress.", "duration": "Until sign-in finishes", "kind": "Strictly necessary" },
+    { "name": "gb.theme.mode", "where": "Secure storage (mobile app)", "purpose": "Remembers light or dark mode.", "duration": "Until you change it", "kind": "Preference" },
+    { "name": "gb_update_dismissed", "where": "Secure storage (mobile app)", "purpose": "Remembers that you dismissed an app update notice.", "duration": "Until the next update", "kind": "Preference" },
+    { "name": "Offline copies and drafts", "where": "App files (mobile app, students)", "purpose": "Unsent quiz answers and saved copies of your work so the app works offline.", "duration": "Removed when you sign out or change server", "kind": "Strictly necessary" }
   ]
 }

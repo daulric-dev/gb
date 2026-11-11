@@ -374,6 +374,34 @@ describe('rubric feedback suggestions', () => {
     expect(((await rejected(drafts.rubricFeedback('t', ACTIVITY, { studentId: STUDENT }))) as HttpException).getStatus()).toBe(403);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  test("a student restricted from AI (no_ai): 403 AI_STUDENT_RESTRICTED, their work never read or sent", async () => {
+    const { drafts, fetch, prisma } = await rubricSetup(OUT, { allowWork: true });
+    prisma.student_restriction.findMany.mockResolvedValue([{ student_id: STUDENT }]);
+    const err = (await rejected(drafts.rubricFeedback('t', ACTIVITY, { studentId: STUDENT }))) as HttpException;
+    expect(err.getStatus()).toBe(403);
+    expect((err.getResponse() as { code: string }).code).toBe('AI_STUDENT_RESTRICTED');
+    expect(prisma.student_restriction.findMany.mock.calls[0][0].where).toMatchObject({
+      student_id: { in: [STUDENT] },
+      no_ai: true,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(prisma.submission.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("staff and guardians' names are redacted too", async () => {
+    const { drafts, calls, prisma } = await rubricSetup(OUT, { allowWork: true });
+    prisma.submission.findUnique.mockResolvedValue({
+      text_body: 'Mrs Priya Shah helped me, and my mum Carla Diaz read it.',
+      status: 'submitted',
+      student: { first_name: 'Amelia', last_name: 'Okafor' },
+    });
+    prisma.course_staff.findMany.mockResolvedValue([{ user_profile: { first_name: 'Priya', last_name: 'Shah' } }]);
+    prisma.parent_student_link.findMany.mockResolvedValue([{ user_profile: { first_name: 'Carla', last_name: 'Diaz' } }]);
+    await drafts.rubricFeedback('t', ACTIVITY, { studentId: STUDENT });
+    const sent = JSON.stringify(calls[0].body);
+    for (const s of ['Priya', 'Shah', 'Carla', 'Diaz']) expect(sent).not.toContain(s);
+  });
 });
 
 describe('page summary', () => {

@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/empty";
 import { TopicEditorDialog } from "./TopicEditorDialog";
 import { userMessage } from "@/lib/errors";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 export function formatWhen(iso: string | null) {
   if (!iso) return "";
@@ -155,6 +156,7 @@ export function TopicList({
                           "truncate",
                           t.isRead ? "font-medium" : "font-semibold",
                         )}
+                        translate={t.author?.isStaff ? undefined : "no"}
                       >
                         {t.title}
                       </span>
@@ -167,7 +169,7 @@ export function TopicList({
                       {!t.isRead && <Badge>New</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {authorName(t.author)} · {formatWhen(t.createdAt)}
+                      <NoTranslate>{authorName(t.author)}</NoTranslate> · {formatWhen(t.createdAt)}
                       {t.lastReplyAt && ` · last reply ${formatWhen(t.lastReplyAt)}`}
                     </p>
                   </div>

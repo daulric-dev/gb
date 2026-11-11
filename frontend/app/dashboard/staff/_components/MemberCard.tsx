@@ -47,7 +47,7 @@ export function MemberCard({
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <p className="font-medium leading-tight truncate">
+        <p className="font-medium leading-tight truncate" translate="no">
           {getName(member.user)}
         </p>
         {member.is_owner && (

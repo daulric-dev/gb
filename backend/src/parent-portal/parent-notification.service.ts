@@ -370,11 +370,16 @@ export class ParentNotificationService {
       if (pref.push_enabled) {
         for (const n of mine) {
           if (!pushAllowed.has(n.studentId)) continue;
+          // A child's name and news: generic on the lock screen unless the
+          // child's school (or the organisation) chose full push content.
           await this.push.sendToUsers([parentId], {
             title: n.title,
             body: n.body,
             data: { type: `parent.${n.kind}`, studentId: n.studentId },
             channelId: PARENT_PUSH_CHANNEL,
+            category: 'parent',
+            sensitive: true,
+            schoolId: pushAllowed.get(n.studentId) ?? null,
           });
         }
       }
@@ -398,14 +403,14 @@ export class ParentNotificationService {
     }
   }
 
-  /** Children whose school has push_notifications on. */
-  private async pushAllowedBySchool(notices: Notice[]): Promise<Set<string>> {
+  /** Children whose school has push_notifications on, with that school. */
+  private async pushAllowedBySchool(notices: Notice[]): Promise<Map<string, string>> {
     const students = [...new Set(notices.map((n) => n.studentId))];
     const rows = await this.prisma.student.findMany({
       where: { id: { in: students } },
       select: { id: true, school_id: true },
     });
-    const allowed = new Set<string>();
+    const allowed = new Map<string, string>();
     const cache = new Map<string, boolean>();
     for (const r of rows) {
       if (!r.school_id) continue;
@@ -414,7 +419,7 @@ export class ParentNotificationService {
         on = await this.features.isEnabled(r.school_id, 'push_notifications');
         cache.set(r.school_id, on);
       }
-      if (on) allowed.add(r.id);
+      if (on) allowed.set(r.id, r.school_id);
     }
     return allowed;
   }

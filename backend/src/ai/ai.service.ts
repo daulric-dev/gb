@@ -90,8 +90,8 @@ export function dataNotice(provider: { name: string; kind: string; base_url: str
       : `an OpenAI-compatible service at ${providerHost(provider.kind, provider.base_url) || 'the configured address'}`;
   return (
     `AI requests are sent to "${provider.name}", ${where}, set up by your organisation. ` +
-    'Only the text needed for the request is sent. Student names and email addresses are replaced with placeholders first. ' +
-    "Students' work is sent only for rubric feedback suggestions, and only if your school allows it. " +
+    "Only the text needed for the request is sent. The names of the course's students, staff and parents, email addresses and phone numbers are replaced with placeholders first. " +
+    "Students' work is sent only for rubric feedback suggestions, only if your school allows it, and never for a student whose record restricts AI. " +
     'Everything the AI returns is a draft for a teacher to review; it never marks work or changes anything on its own.'
   );
 }

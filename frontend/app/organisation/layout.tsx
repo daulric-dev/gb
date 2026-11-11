@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   ClipboardClock,
   Languages,
+  Lock,
   LayoutDashboard,
   LogOut,
   Puzzle,
@@ -93,6 +94,7 @@ const NAV: {
     label: "Translation",
     icon: Languages,
   },
+  { href: `${ORGANISATION_PATH}/privacy`, label: "Privacy", icon: Lock },
   { href: `${ORGANISATION_PATH}/settings`, label: "Settings", icon: Settings },
 ];
 

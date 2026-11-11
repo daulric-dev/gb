@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { X509Certificate } from 'node:crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
@@ -77,7 +77,14 @@ function setup() {
 }
 
 describe('URLs', () => {
-  test('any http(s) URL is accepted, internal addresses included; other schemes and junk are not', () => {
+  const prevAllow = process.env.WEBHOOK_ALLOW_PRIVATE;
+  afterEach(() => {
+    if (prevAllow === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    else process.env.WEBHOOK_ALLOW_PRIVATE = prevAllow;
+  });
+
+  test('with WEBHOOK_ALLOW_PRIVATE=true any http(s) URL is accepted, internal addresses included; other schemes and junk are not', () => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
     expect(normaliseWebhookUrl('http://10.0.0.5:8080/hook')).toBe('http://10.0.0.5:8080/hook');
     expect(normaliseWebhookUrl(' https://localhost/x#frag ')).toBe('https://localhost/x');
     expect(normaliseWebhookUrl('http://sis.internal/')).toBe('http://sis.internal/');
@@ -85,9 +92,27 @@ describe('URLs', () => {
       expect(() => normaliseWebhookUrl(bad)).toThrow(BadRequestException);
     }
   });
+
+  test('without it plain http is refused and https is required', () => {
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    expect(() => normaliseWebhookUrl('http://sis.example.com/hook')).toThrow(/https:\/\//);
+    expect(normaliseWebhookUrl('https://sis.example.com/hook')).toBe('https://sis.example.com/hook');
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'false';
+    expect(() => normaliseWebhookUrl('http://sis.example.com/hook')).toThrow(BadRequestException);
+  });
 });
 
 describe('WebhookService', () => {
+  // Several cases use internal http URLs, as a trusted self-hosted install may.
+  const prevAllow = process.env.WEBHOOK_ALLOW_PRIVATE;
+  beforeEach(() => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+  });
+  afterEach(() => {
+    if (prevAllow === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    else process.env.WEBHOOK_ALLOW_PRIVATE = prevAllow;
+  });
+
   test('create stores the secret encrypted, returns it once, expands "*" and audits without the secret', async () => {
     const { service, tx, audit } = setup();
     const { webhook, secret: shown, secretGenerated } = await service.create(

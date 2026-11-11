@@ -1,8 +1,10 @@
 /**
  * Move the secrets stored in the database (webhook signing secrets and
- * header values, school SSO client secrets) and the erasure-log copies in
- * object storage off AUTH_SECRET onto DATA_ENCRYPTION_KEY, so AUTH_SECRET
- * can then be rotated without losing them.
+ * header values, school SSO client secrets), the encrypted student text
+ * (pastoral note text, accommodation reasons: src/account/sensitive-text.ts,
+ * still-plain rows are encrypted too) and the erasure-log copies in object
+ * storage off AUTH_SECRET onto DATA_ENCRYPTION_KEY, so AUTH_SECRET can then
+ * be rotated without losing them.
  *
  *   bun run secrets:reencrypt [--dry-run] [--skip-erasure-log] [--json]
  *
@@ -18,6 +20,7 @@
 import { PrismaService } from '../src/prisma/prisma.service';
 import { StorageService } from '../src/storage/storage.service';
 import { dataEncryptionKey } from '../src/account/secret';
+import { encryptSensitiveText } from '../src/account/sensitive-text';
 import {
   reencryptStoredSecrets,
   resignErasureLog,
@@ -48,7 +51,10 @@ async function main(): Promise<number> {
 
   const prisma = new PrismaService();
   try {
-    const report: Record<string, RotationCount> = { ...(await reencryptStoredSecrets(prisma, args)) };
+    const report: Record<string, RotationCount> = {
+      ...(await reencryptStoredSecrets(prisma, args)),
+      ...(await encryptSensitiveText(prisma, { dryRun: args.dryRun, rotate: true })),
+    };
     if (!args.skipErasureLog) report.erasureLog = await resignErasureLog(new StorageService(), args);
 
     console.log(`Re-encrypting stored secrets under DATA_ENCRYPTION_KEY${args.dryRun ? ' (dry run, nothing is changed)' : ''}`);

@@ -28,6 +28,9 @@ export function AccommodationCard({ studentId }: { studentId: string }) {
   useSignals();
   const { can } = usePermissions();
   const canEdit = can("student", "update");
+  // Reasons (health, SEN) need student:sensitive: the API leaves them out
+  // without it, and keeps a reason this caller cannot see when they save.
+  const sensitive = can("student", "sensitive");
   const saved = useSignal<Accommodation | null>(null);
   const loaded = useSignal(false);
   const editing = useSignal(false);
@@ -102,7 +105,7 @@ export function AccommodationCard({ studentId }: { studentId: string }) {
           Quiz accommodations
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3" data-private>
         <p className="text-sm text-muted-foreground">
           Applied to every timed or Lockdown quiz, unless a teacher sets a
           different accommodation on that quiz. Students never see each
@@ -116,6 +119,13 @@ export function AccommodationCard({ studentId }: { studentId: string }) {
               onChangeAction={(v) => (form.value = v)}
               disabled={working.value}
             />
+            {!sensitive && (
+              <p className="text-xs text-muted-foreground">
+                Reasons are only shown to staff with access to sensitive
+                details. A reason you add is saved only when there is none
+                yet; an existing one is kept.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void save()} disabled={working.value}>
                 {working.value && <Loader2 className="mr-2 size-4 animate-spin" />}

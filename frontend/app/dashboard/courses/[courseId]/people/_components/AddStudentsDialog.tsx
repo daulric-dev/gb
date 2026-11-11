@@ -155,7 +155,7 @@ export function AddStudentsDialog({
                     checked={selected.value.has(s.id)}
                     onCheckedChange={() => toggle(s.id)}
                   />
-                  <span className="flex-1 truncate">{studentName(s)}</span>
+                  <span className="flex-1 truncate" translate="no">{studentName(s)}</span>
                   {!s.user_profile_id && (
                     <span className="text-xs text-muted-foreground">
                       No account

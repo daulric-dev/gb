@@ -592,7 +592,7 @@ export default function AttendanceSessionPage() {
                 rows.map((r) => (
                   <TableRow key={r.studentId}>
                     <TableCell>
-                      <span className="font-medium">{personName(r)}</span>
+                      <span className="font-medium" translate="no">{personName(r)}</span>
                       <LocationFlagBadge entry={r} />
                       {!r.hasAccount && (
                         <span className="ml-1.5 text-xs text-muted-foreground">
@@ -600,7 +600,7 @@ export default function AttendanceSessionPage() {
                         </span>
                       )}
                       {r.note && (
-                        <p className="max-w-56 truncate text-xs text-muted-foreground">
+                        <p className="max-w-56 truncate text-xs text-muted-foreground" translate="no">
                           {r.note}
                         </p>
                       )}

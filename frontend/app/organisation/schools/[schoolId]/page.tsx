@@ -32,6 +32,7 @@ import { SchoolFeatureSettings } from "@/app/dashboard/settings/_components/scho
 import { SchoolSingleSignOn } from "@/app/dashboard/email-domains/_components/SchoolSingleSignOn";
 import { SchoolIntegrations } from "@/components/integrations/school-integrations";
 import { SignOutSessionsButton } from "../../_components/sign-out-sessions";
+import { ResetMfaButton } from "@/components/account/mfa/reset-mfa-button";
 import { AppointAdminDialog, SchoolFormDialog } from "../_components/school-dialogs";
 import { toggleSchoolActive, useOpenSchoolDashboard } from "../_components/school-actions";
 import { PendingAdminInvite } from "../_components/pending-invite";
@@ -150,6 +151,10 @@ export default function OrganisationSchoolPage() {
                   <Badge variant="secondary">Owner</Badge>
                 )}
                 <SignOutSessionsButton
+                  userId={school.admin.userId}
+                  who={school.admin.name || school.admin.email}
+                />
+                <ResetMfaButton
                   userId={school.admin.userId}
                   who={school.admin.name || school.admin.email}
                 />

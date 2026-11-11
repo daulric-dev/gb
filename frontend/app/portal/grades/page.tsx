@@ -109,6 +109,7 @@ export default function PortalGradesPage() {
                   "text-2xl font-bold tabular-nums",
                   gradeTone(average).text,
                 )}
+                translate="no"
               >
                 {average === null ? "—" : formatPercent(average)}
               </p>
@@ -234,7 +235,7 @@ function CourseGradeRow({
               >
                 {course.name}
               </Link>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-xs text-muted-foreground" translate={course.code ? "no" : undefined}>
                 {[course.code, past ? "Final grade" : null]
                   .filter(Boolean)
                   .join(" · ") || " "}
@@ -247,11 +248,12 @@ function CourseGradeRow({
             <div className="flex items-center justify-end gap-2">
               <span
                 className={cn("text-2xl font-bold tabular-nums", tone.text)}
+                translate="no"
               >
                 {percent === null ? "—" : formatPercent(percent)}
               </span>
               {percent !== null && grade?.letter && (
-                <Badge className={cn("text-sm", tone.badge)}>
+                <Badge className={cn("text-sm", tone.badge)} translate="no">
                   {grade.letter}
                 </Badge>
               )}
@@ -397,6 +399,7 @@ function GradedItemRow({ item }: { item: GradedItem }) {
               item.dropped && "text-muted-foreground line-through",
             )}
             title={item.dropped ? "Dropped by the group's rule" : undefined}
+            translate="no"
           >
             {formatScore(s?.score)}
             <span className="text-muted-foreground">/{formatScore(item.points)}</span>
@@ -406,7 +409,7 @@ function GradedItemRow({ item }: { item: GradedItem }) {
       {s?.feedback && (
         <p className="flex gap-1.5 text-xs text-muted-foreground">
           <MessageSquareText className="mt-0.5 size-3 shrink-0" />
-          <span className="line-clamp-1">{s.feedback}</span>
+          <span className="line-clamp-1" translate="no">{s.feedback}</span>
         </p>
       )}
     </li>

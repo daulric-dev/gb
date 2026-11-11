@@ -167,7 +167,7 @@ export function PendingRequestsTab({
           return (
             <Card key={request.id} className="p-4">
               <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 space-y-1">
+                <div className="min-w-0 space-y-1" translate="no">
                   <p className="font-medium leading-tight">{name}</p>
                   {request.user?.email && (
                     <p className="text-sm text-muted-foreground truncate">
@@ -215,7 +215,7 @@ export function PendingRequestsTab({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Approve Join Request</DialogTitle>
-            <DialogDescription>
+            <DialogDescription translate="no">
               Assign a role to{" "}
               {selectedRequest.value
                 ? getRequestName(selectedRequest.value)

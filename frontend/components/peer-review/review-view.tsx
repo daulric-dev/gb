@@ -24,7 +24,7 @@ export function ReviewView({
             return (
               <div key={c.id} className="rounded-md border p-2">
                 <dt className="font-medium">{c.title}</dt>
-                <dd className="text-muted-foreground">
+                <dd className="text-muted-foreground" translate={m ? "no" : undefined}>
                   {m ? `${level ? `${level.label} · ` : ""}${m.points} / ${c.points}` : "Not marked"}
                   {m?.comment && <span className="mt-1 block whitespace-pre-wrap text-foreground">{m.comment}</span>}
                 </dd>
@@ -32,14 +32,14 @@ export function ReviewView({
             );
           })}
           {total !== null && (
-            <p className="text-right font-medium">
+            <p className="text-right font-medium" translate="no">
               Total {total} / {rubric.pointsPossible}
             </p>
           )}
         </dl>
       )}
       {comment ? (
-        <p className="whitespace-pre-wrap">{comment}</p>
+        <p className="whitespace-pre-wrap" translate="no">{comment}</p>
       ) : (
         !marks.length && <p className="text-muted-foreground">No comment.</p>
       )}

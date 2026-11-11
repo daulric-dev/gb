@@ -21,6 +21,7 @@ import {
   sharedCount,
   type Segment,
 } from './fingerprint';
+import { isRestricted } from '@/student-restriction/restriction';
 
 export type SimilarityPool = 'activity' | 'school';
 
@@ -152,7 +153,10 @@ export class SimilarityService {
       return { parts: 0, computed: 0 };
     }
     const handedIn = submission.status !== 'draft' && !!submission.submitted_at;
-    const parts = handedIn ? await this.partsOf(submission) : [];
+    // A student restricted from the check (no_similarity): nothing is
+    // fingerprinted, and any earlier fingerprints go below with their matches.
+    const restricted = await isRestricted(this.prisma, 'no_similarity', submission.student_id);
+    const parts = handedIn && !restricted ? await this.partsOf(submission) : [];
     const settings = await this.settingsFor(schoolId);
 
     let computed = 0;

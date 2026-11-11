@@ -52,6 +52,7 @@ import {
   TranslationController,
 } from './translation.controller';
 import { TranslateTextsDto, TranslationSettingsDto } from './translation.dto';
+import { UNCONTRACTED_ENGINES, engineAllowed, engineDisplayName, uncontractedEnginesAllowed } from './engine-policy';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const SCHOOL = '22222222-2222-4222-8222-222222222222';
@@ -76,8 +77,18 @@ function mockGoogle(transform: (q: string) => string = (q) => q.toUpperCase()) {
   }) as unknown as typeof fetch;
 }
 
+// Most tests use the Google engine (keyless, easy to mock), which this
+// server only allows with the flag; `uncontracted engines` tests without it.
+const FLAG = 'TRANSLATION_ALLOW_UNCONTRACTED_ENGINES';
+const savedFlag = process.env[FLAG];
+beforeEach(() => {
+  process.env[FLAG] = 'true';
+});
+
 afterEach(() => {
   globalThis.fetch = realFetch;
+  if (savedFlag === undefined) delete process.env[FLAG];
+  else process.env[FLAG] = savedFlag;
 });
 
 const GOOGLE: EngineConfig = { engine: 'google', url: null, key: null, allowPrivateNetwork: false };
@@ -361,7 +372,7 @@ describe('feature switch', () => {
     mockGoogle();
     prisma.organisation.findFirst.mockResolvedValue({ features: {} });
     const { service } = makeService(prisma);
-    expect(await service.status(USER)).toEqual({ enabled: false });
+    expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
     const err = await rejected(service.translateForUser(USER, { texts: ['Hello'], to: 'es' }));
     expect(err).toBeInstanceOf(FeatureDisabledException);
     expect(((err as HttpException).getResponse() as { code: string }).code).toBe('FEATURE_DISABLED');
@@ -372,24 +383,24 @@ describe('feature switch', () => {
     prisma.organisation.findFirst.mockResolvedValue({ features: { translation: true } });
     prisma.school.findUnique.mockResolvedValue({ disabled_features: ['translation'] });
     const { service } = makeService(prisma);
-    expect(await service.status(USER)).toEqual({ enabled: false });
+    expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
   });
 
   test('feature on but the organisation settings disabled (or missing) => off', async () => {
     prisma.organisation.findFirst.mockResolvedValue({ features: { translation: true } });
     prisma.translation_setting.findUnique.mockResolvedValue(settingsRow({ enabled: false }));
     const { service } = makeService(prisma);
-    expect(await service.status(USER)).toEqual({ enabled: false });
+    expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
     await expect(service.translateForUser(USER, { texts: ['Hello'], to: 'es' })).rejects.toBeInstanceOf(FeatureDisabledException);
     prisma.translation_setting.findUnique.mockResolvedValue(null);
-    expect(await service.status(USER)).toEqual({ enabled: false });
+    expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
   });
 
   test('both on => translations in order, zh-CN accepted as zh', async () => {
     mockGoogle();
     prisma.organisation.findFirst.mockResolvedValue({ features: { translation: true } });
     const { service } = makeService(prisma);
-    expect(await service.status(USER)).toEqual({ enabled: true });
+    expect(await service.status(USER)).toEqual({ enabled: true, engine: 'Google Translate' });
     const out = await service.translateForUser(USER, { texts: ['Hello', '', 'Bye'], to: 'zh-CN' });
     expect(out).toEqual({ translations: ['HELLO', '', 'BYE'] });
     expect(new URL(calls[0].url).searchParams.get('tl')).toBe('zh');
@@ -425,7 +436,8 @@ describe('organisation settings', () => {
   test('defaults without a row; never the key', async () => {
     const settings = new TranslationSettingsService(prisma as any);
     expect(await settings.get()).toEqual({
-      engine: 'google', url: null, hasKey: false, allowPrivateNetwork: false, enabled: false, updatedAt: null,
+      engine: 'libre', url: null, hasKey: false, allowPrivateNetwork: false, enabled: false, updatedAt: null,
+      uncontractedEnginesAllowed: true, engineBlocked: false,
     });
     const view = await put(settings, { engine: 'deepl', key: 'my-deepl-key' });
     expect(view).toMatchObject({ engine: 'deepl', hasKey: true, enabled: true });
@@ -473,6 +485,95 @@ describe('organisation settings', () => {
     const refused = await service.test();
     expect(refused.ok).toBe(false);
     expect(refused.message).toMatch(/private or reserved/);
+  });
+});
+
+describe('uncontracted engines (Google, Yandex)', () => {
+  let prisma: MockPrisma;
+  let saved: any;
+  beforeEach(() => {
+    delete process.env[FLAG];
+    prisma = createMockPrisma();
+    saved = settingsRow();
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL, account_type: 'staff' });
+    prisma.school.findUnique.mockResolvedValue({ disabled_features: [] });
+    prisma.organisation.findFirst.mockResolvedValue({ features: { translation: true } });
+    prisma.translation_setting.findUnique.mockImplementation(async () => saved);
+    prisma.translation_setting.upsert.mockImplementation(async ({ create, update }: any) => {
+      saved = { ...(saved ? { ...saved, ...update } : create), updated_at: new Date() };
+      return saved;
+    });
+  });
+
+  test('the flag must be exactly true', () => {
+    expect([...UNCONTRACTED_ENGINES].sort()).toEqual(['google', 'yandex']);
+    expect(uncontractedEnginesAllowed()).toBe(false);
+    for (const v of ['1', 'yes', 'false', '']) {
+      process.env[FLAG] = v;
+      expect(uncontractedEnginesAllowed()).toBe(false);
+    }
+    process.env[FLAG] = ' TRUE ';
+    expect(uncontractedEnginesAllowed()).toBe(true);
+    delete process.env[FLAG];
+    expect(engineAllowed('libre')).toBe(true);
+    expect(engineAllowed('deepl')).toBe(true);
+    expect(engineAllowed('google')).toBe(false);
+    expect(engineAllowed('yandex')).toBe(false);
+  });
+
+  test('a saved Google or Yandex engine is off without the flag: status, translate, copy config and test send nothing', async () => {
+    mockGoogle();
+    const { service, settings } = makeService(prisma);
+    expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
+    await expect(service.translateForUser(USER, { texts: ['Hello'], to: 'es' })).rejects.toBeInstanceOf(FeatureDisabledException);
+    expect(await service.activeConfig(SCHOOL)).toBeNull();
+    const t = await service.test();
+    expect(t.ok).toBe(false);
+    expect(t.message).toMatch(/TRANSLATION_ALLOW_UNCONTRACTED_ENGINES/);
+    expect(calls.length).toBe(0);
+    expect(await settings.get()).toMatchObject({
+      engine: 'google',
+      enabled: true,
+      engineBlocked: true,
+      uncontractedEnginesAllowed: false,
+    });
+
+    saved = settingsRow({ engine: 'yandex' });
+    expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
+
+    // With the flag, the saved engine keeps working.
+    process.env[FLAG] = 'true';
+    saved = settingsRow();
+    expect(await service.status(USER)).toEqual({ enabled: true, engine: 'Google Translate' });
+    expect((await settings.get()).engineBlocked).toBe(false);
+  });
+
+  test('saving Google or Yandex switched on is refused without the flag; switched off is allowed', async () => {
+    const settings = new TranslationSettingsService(prisma as any);
+    saved = null;
+    await expect(settings.update({ engine: 'google', enabled: true } as TranslationSettingsDto, USER)).rejects.toThrow(
+      /not allowed on this server/,
+    );
+    await expect(
+      settings.update({ engine: 'yandex', key: 'k', enabled: true } as TranslationSettingsDto, USER),
+    ).rejects.toThrow(/not allowed on this server/);
+    expect(saved).toBeNull();
+    // An admin can still turn a saved one off.
+    expect((await settings.update({ engine: 'google', enabled: false } as TranslationSettingsDto, USER)).enabled).toBe(false);
+    expect((await settings.update({ engine: 'deepl', key: 'k', enabled: true } as TranslationSettingsDto, USER)).enabled).toBe(
+      true,
+    );
+  });
+
+  test('status names the service people are told about', async () => {
+    const { service } = makeService(prisma);
+    saved = settingsRow({ engine: 'libre', url: 'https://translate.example.org/translate' });
+    expect(await service.status(USER)).toEqual({ enabled: true, engine: 'LibreTranslate (translate.example.org)' });
+    saved = settingsRow({ engine: 'libre', url: 'http://10.0.0.5:5000/translate', allow_private_network: true });
+    expect(await service.status(USER)).toEqual({ enabled: true, engine: "LibreTranslate (your school's server)" });
+    expect(engineDisplayName('deepl', null, false)).toBe('DeepL');
+    expect(engineDisplayName('yandex', null, false)).toBe('Yandex Translate');
+    expect(engineDisplayName('libre', 'not a url', false)).toBe('LibreTranslate');
   });
 });
 

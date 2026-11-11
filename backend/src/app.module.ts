@@ -62,6 +62,10 @@ import { ParentPortalModule } from '@/parent-portal/parent-portal.module';
 import { LtiModule } from '@/lti/lti.module';
 import { RosteringModule } from '@/rostering/rostering.module';
 import { MasteryModule } from '@/mastery/mastery.module';
+import { DataExportModule } from '@/data-export/data-export.module';
+import { StudentRestrictionModule } from '@/student-restriction/student-restriction.module';
+import { PrivacyModule } from '@/privacy/privacy.module';
+import { MfaModule } from '@/mfa/mfa.module';
 import { HealthService } from '@/health/health.service';
 
 @Module({
@@ -140,6 +144,7 @@ import { HealthService } from '@/health/health.service';
     StorageModule,
     MailModule,
     AccountModule,
+    MfaModule,
     AuthModule,
     StudentAccountModule,
     StudentPortalModule,
@@ -188,8 +193,11 @@ import { HealthService } from '@/health/health.service';
     AuditLogModule,
     LtiModule,
     ReportCardModule.forRoot(),
+    DataExportModule.forRoot(),
     RosteringModule.forRoot(),
     MasteryModule,
+    StudentRestrictionModule,
+    PrivacyModule,
   ],
   controllers: [AppController],
   providers: [

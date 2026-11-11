@@ -61,7 +61,7 @@ export function SearchableSelect({
           />
         }
       >
-        <span className={cn("truncate", !selected && "text-muted-foreground")}>
+        <span className={cn("truncate", !selected && "text-muted-foreground")} translate={selected ? "no" : undefined}>
           {selected ? selected.label : placeholder}
         </span>
         <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
@@ -87,7 +87,7 @@ export function SearchableSelect({
                       value === o.value ? "opacity-100" : "opacity-0",
                     )}
                   />
-                  <span className="truncate">{o.label}</span>
+                  <span className="truncate" translate="no">{o.label}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

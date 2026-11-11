@@ -52,7 +52,10 @@ walg_load_config() {
   if [[ -n "${AWS_ACCESS_KEY_ID:-}" || -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
     [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]] || die "set both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for WAL-G"
   fi
-  export AWS_REGION="${AWS_REGION:-us-east-1}"
+  # No default region: where the WAL archive lives is a data-location
+  # decision, so it must be chosen (WALG_S3_REGION in infrastructure/.env).
+  [[ -n "${AWS_REGION:-}" ]] || die "WALG_S3_REGION (AWS_REGION) is not set. Set the WAL bucket's region (e.g. eu-central-1 for EU schools, auto for Cloudflare R2), or WALG_ENABLED=false; see infrastructure/BACKUPS.md"
+  export AWS_REGION
   if [[ -n "${AWS_ENDPOINT:-}" ]]; then
     export AWS_S3_FORCE_PATH_STYLE="${AWS_S3_FORCE_PATH_STYLE:-true}"
   else

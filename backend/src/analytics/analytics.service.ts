@@ -9,6 +9,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CacheService } from '@/cache/cache.service';
 import { FeatureService } from '@/features/feature.service';
 import { userSchoolId } from '@/common/user-school';
+import { restrictedStudents } from '@/student-restriction/restriction';
 import { safeTimeZone } from '@/common/time-zone';
 import { loadEffectivePermissions } from '@/permission/permission.effective';
 import { CourseAccessService, STAFF_ROLES } from '@/course/access/course-access.service';
@@ -433,8 +434,16 @@ export class AnalyticsService {
       for (const [sid, v] of sums) masteryMean.set(sid, Math.round((v.sum / v.n) * 100) / 100);
     }
 
+    // Students restricted from profiling (exclude_from_analytics) are never
+    // listed at risk; counts and averages still include them.
+    const excluded = await restrictedStudents(
+      this.prisma,
+      'exclude_from_analytics',
+      students.map((s) => s.id),
+    );
     const atRisk: AtRiskStudent[] = [];
     for (const s of students) {
+      if (excluded.has(s.id)) continue;
       const a = att.get(s.id);
       const signals = {
         grade: grades.get(s.id)?.percent ?? null,

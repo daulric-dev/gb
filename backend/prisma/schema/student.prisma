@@ -98,6 +98,8 @@ model student {
   student_number      String?
   /// The student's form tutor (a staff user_profile of the school; no foreign key, membership is checked when used). Receives attendance alerts (src/attendance-alerts).
   form_tutor_id       String?                    @db.Uuid
+  /// When is_active last became false (set by the trigger student_set_left_at; null while active). Starts the school's leaver retention period (src/retention).
+  left_at             DateTime?                  @db.Timestamptz(6)
   attendance_alert    attendance_alert[]
   attendance_record   course_attendance_record[]
   course_student      course_student[]

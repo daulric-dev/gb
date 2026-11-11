@@ -60,6 +60,11 @@ export default function SsoReturnScreen() {
         const profile = await refresh();
         router.replace(homeRouteFor(profile));
       } catch (err) {
+        const mfaToken = mfaTokenFrom(err);
+        if (mfaToken) {
+          router.replace({ pathname: "/(auth)/two-step", params: { token: mfaToken } });
+          return;
+        }
         fail(err instanceof ApiError && err.status < 500 ? "expired" : "failed");
       }
     })();

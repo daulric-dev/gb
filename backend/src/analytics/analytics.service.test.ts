@@ -154,6 +154,18 @@ describe('AnalyticsService', () => {
     expect(v.overview.atRisk).toBe(2);
   });
 
+  test('a student excluded from analytics (exclude_from_analytics) is never listed at risk; still counted', async () => {
+    prisma.student_restriction.findMany.mockResolvedValue([{ student_id: 's3' }]);
+    const v = await service.course('teacher', 'c1', NOW);
+    expect(prisma.student_restriction.findMany.mock.calls[0][0].where).toMatchObject({
+      student_id: { in: ['s1', 's2', 's3'] },
+      exclude_from_analytics: true,
+    });
+    expect(v.atRisk.map((s) => s.lastName)).toEqual(['Abe']);
+    expect(v.overview.atRisk).toBe(1);
+    expect(v.students).toBe(3);
+  });
+
   test('configured rules apply; missing counts only work due in the window', async () => {
     prisma.analytics_setting.findUnique.mockResolvedValue({
       min_grade: null,

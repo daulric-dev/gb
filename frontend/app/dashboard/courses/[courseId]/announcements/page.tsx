@@ -178,7 +178,7 @@ export default function CourseAnnouncementsPage() {
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{a.title}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground" translate="no">
                       {announcementAuthor(a)} · {formatWhen(a.created_at)}
                     </p>
                   </div>

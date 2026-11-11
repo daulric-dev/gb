@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { isoDate } from '@/common/db-values';
 import { PushService } from '@/notifications/push.service';
+import type { NotificationCategory } from '@/notifications/notification-preferences';
 
 export type CourseNotificationKind =
   | 'activity_published'
@@ -54,6 +55,16 @@ function preview(text: string | null | undefined): string | null {
 
 /** Android channel the mobile app creates for course news. */
 export const COURSE_CHANNEL = 'coursework';
+
+/** The preference category (account settings) each notice kind belongs to. */
+export const CATEGORY_OF: Record<CourseNotificationKind, NotificationCategory> = {
+  activity_published: 'coursework',
+  announcement: 'announcements',
+  discussion_topic: 'discussions',
+  discussion_reply: 'discussions',
+  peer_review_assigned: 'coursework',
+  peer_review_ready: 'coursework',
+};
 
 /**
  * Tells a course's students about new work, announcements and discussions.
@@ -141,6 +152,8 @@ export class CourseNotificationService {
         body: preview(announcement.body) ?? 'Tap to open',
         data: { type: 'school.announcement', announcementId: announcement.id },
         channelId: COURSE_CHANNEL,
+        category: 'announcements',
+        schoolId,
       });
     } catch (err) {
       this.logger.error(
@@ -266,11 +279,14 @@ export class CourseNotificationService {
         }
       }
 
+      // Names the replier and quotes them: generic unless the school chose full.
       await this.push.sendToUsers([...studentIds, ...staffIds], {
         title: `${course.name}: ${title}`,
         body: body ?? 'Tap to open',
         data: { type: 'course.discussion', courseId, topicId: topic.id },
         channelId: COURSE_CHANNEL,
+        category: 'discussions',
+        sensitive: true,
       });
     } catch (err) {
       this.logger.error(
@@ -389,6 +405,7 @@ export class CourseNotificationService {
         body: notice.body ?? 'Tap to open',
         data: notice.data,
         channelId: COURSE_CHANNEL,
+        category: CATEGORY_OF[notice.kind],
       });
     } catch (err) {
       this.logger.error(
@@ -470,6 +487,7 @@ export class CourseNotificationService {
         body: notice.body ?? 'Tap to open',
         data: notice.data,
         channelId: COURSE_CHANNEL,
+        category: CATEGORY_OF[notice.kind],
       });
     } catch (err) {
       this.logger.error(

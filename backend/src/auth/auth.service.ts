@@ -5,10 +5,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { EmailCodeService } from '@/account/email-code.service';
+import { redactEmail } from '@/mail/mail.service';
 import { SessionService, SESSION_TTL_MS } from '@/account/session.service';
 import { AccountService } from '@/account/account.service';
 import { CacheService } from '@/cache/cache.service';
@@ -16,8 +18,11 @@ import { EmailDomainService } from '@/email-domain/email-domain.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
-import { plan, userStoragePrefixes } from '@/erasure/erasure-plan';
-import { objectKey } from '@/storage/keys';
+import {
+  eraseAccountRows,
+  finishAccountErasure,
+  prepareAccountErasure,
+} from '@/erasure/account-erasure';
 import { OnboardDto } from './dto/onboard.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { optionalImageUrl } from '@/images/public-url';
@@ -27,6 +32,7 @@ import {
   accountDeletionCheck,
 } from './account-deletion';
 import { FeatureService } from '@/features/feature.service';
+import { MfaService } from '@/mfa/mfa.service';
 
 const PROFILE_TTL = 60 * 60 * 24 * 30;
 
@@ -69,6 +75,8 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly erasure: ErasureLogService,
     private readonly features: FeatureService,
+    // Global (src/mfa); optional only so unit tests can leave it out.
+    @Optional() private readonly mfa?: MfaService,
   ) {}
 
   /**
@@ -95,7 +103,7 @@ export class AuthService {
       // A rate limit (429) keeps its own message; any other failure reads as
       // it always has.
       if (err instanceof HttpException && !(err instanceof BadRequestException)) throw err;
-      this.logger.error(`Failed to send OTP to ${email}: ${String(err)}`);
+      this.logger.error(`Failed to send OTP to ${redactEmail(email)}: ${String(err)}`);
       throw new BadRequestException('Failed to send OTP');
     }
   }
@@ -122,13 +130,15 @@ export class AuthService {
       try {
         verifiedEmail = await this.emailCodes.verify(email, token, req.ip);
       } catch (err) {
-        this.logger.warn(`OTP verification failed for ${email}: ${(err as Error).message}`);
+        this.logger.warn(`OTP verification failed for ${redactEmail(email)}: ${(err as Error).message}`);
         throw new UnauthorizedException('Invalid or expired OTP');
       }
 
       const user = await this.accounts.userForVerifiedEmail(verifiedEmail);
       const { id: userId, email: userEmail } = user;
-      await this.sessions.create(reply, req, userId, 'email-code');
+      // An authenticator code may be due first: then this throws 403 MFA_REQUIRED.
+      if (this.mfa) await this.mfa.startSession(reply, req, userId, 'email-code');
+      else await this.sessions.create(reply, req, userId, 'email-code');
       const expiresIn = Math.floor(SESSION_TTL_MS / 1000);
 
       // The session lives in the HttpOnly cookie; the token is never handed
@@ -452,21 +462,9 @@ export class AuthService {
     const { blockers } = await accountDeletionCheck(this.prisma, userId);
     if (blockers.length > 0) throw new AccountDeletionBlockedException(blockers);
 
-    const [files, profile] = await Promise.all([
-      this.prisma.file
-        .findMany({
-          where: { owner_id: userId },
-          select: { school_id: true, bucket: true, storage_path: true },
-        })
-        .catch(() => []),
-      this.prisma.user_profile
-        .findUnique({ where: { id: userId }, select: { school_id: true } })
-        .catch(() => null),
-    ]);
-    const prefixes = userStoragePrefixes(
-      userId,
-      files.map((f) => f.school_id),
-    );
+    // The deletion itself is shared with the organisation-admin and student
+    // erasure paths (src/erasure/account-erasure.ts).
+    const prep = await prepareAccountErasure(this.prisma, userId);
 
     try {
       await this.sessions.revokeAll(userId, 'account_deleted');
@@ -478,25 +476,12 @@ export class AuthService {
     }
 
     try {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.user_profile.deleteMany({ where: { id: userId } });
-        // Cascades to sessions and linked sign-in identities.
-        await tx.app_user.deleteMany({ where: { id: userId } });
-        await this.erasure.record(tx, {
-          kind: 'account',
-          subjectTable: 'account.app_user',
-          subjectIds: [userId],
-          schoolId: profile?.school_id ?? null,
+      await this.prisma.$transaction((tx) =>
+        eraseAccountRows(tx, this.erasure, prep, {
           actor: userId,
           reason: 'user_request',
-          replay: plan.of(
-            plan.prefixes(prefixes),
-            plan.del('file_manager.file', { owner_id: [userId] }, true),
-            plan.del('public.user_profile', { id: [userId] }),
-            plan.del('account.app_user', { id: [userId] }),
-          ),
-        });
-      });
+        }),
+      );
     } catch (err) {
       this.logger.error(
         `Failed to delete account ${userId}: ${(err as Error).message}`,
@@ -504,11 +489,7 @@ export class AuthService {
       throw new BadRequestException('Failed to delete account');
     }
 
-    await this.erasure.removeObjects(
-      files.map((f) => objectKey(f.bucket as string, f.storage_path as string)),
-      prefixes,
-    );
-    await this.cache.delete(`profile:${userId}`);
+    await finishAccountErasure({ erasure: this.erasure, cache: this.cache }, prep);
     this.logger.log(`Account deleted for user ${userId}`);
     return 'Account deleted successfully';
   }

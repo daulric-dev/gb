@@ -1,0 +1,29 @@
+/// The organisation's privacy notice details (src/privacy), one row at most
+/// (id is always true). The organisation that runs the install is the
+/// controller: these fill the placeholders of the public notice
+/// (`GET /api/privacy/notice`, web `/privacy`). Every column is optional;
+/// the notice lists what is still missing until they are filled in.
+/// `lawful_bases` maps a purpose key (src/privacy/privacy.catalog.ts) to a
+/// basis key and overrides the school defaults. `additional_recipients` is
+/// `[{ name, purpose, location }]`: processors the API cannot detect from
+/// its own configuration (hosting, managed database, CDN...).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model privacy_setting {
+  id                         Boolean  @id @default(true)
+  controller_name            String?
+  controller_address         String?
+  privacy_email              String?
+  dpo_name                   String?
+  dpo_email                  String?
+  supervisory_authority_name String?
+  supervisory_authority_url  String?
+  /// Where the data is hosted, in words ("EU (Frankfurt, Germany)").
+  data_location              String?
+  lawful_bases               Json     @default("{}")
+  additional_recipients      Json     @default("[]")
+  updated_at                 DateTime @default(now()) @db.Timestamptz(6)
+  /// Who last saved it (no foreign key: the setting outlives the account).
+  updated_by                 String?  @db.Uuid
+
+  @@schema("public")
+}

@@ -52,8 +52,10 @@ function actionLabel(action: string) {
   if (action === "create") return "created";
   if (action === "update") return "updated";
   if (action === "delete") return "deleted";
-  // Safeguarding pastoral notes record every read.
+  // Pastoral notes record every read.
   if (action === "read") return "viewed";
+  // CSV and other downloads of personal data (scope and row count below).
+  if (action === "export") return "exported";
   return action;
 }
 
@@ -158,6 +160,7 @@ export function AuditLogView({
     try {
       await api(`/organisation/audit-log/${pendingRevert.value.id}/revert`, {
         method: "POST",
+        stepUp: true,
       });
       toast.success("Revert completed and recorded in the audit log");
       pendingRevert.value = null;

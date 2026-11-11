@@ -1,0 +1,38 @@
+/// A subject access / data portability export (src/data-export). `kind`:
+/// `self` (a person's own account), `student` (staff with student:export),
+/// `child` (a parent for a linked child). The ZIP lives in object storage at
+/// `storage_key` until `expires_at`, then the purge sweep deletes it and marks
+/// the row `expired`. Ids, counts and status only, never the exported data.
+/// The foreign keys (requested_by, subject_user_id -> user_profile; student_id
+/// -> student; school_id -> school; all ON DELETE CASCADE) and the partial
+/// unique expression index `data_export_one_active_key` are in migration
+/// 20261205100000_data_export; they are not declared here so the person
+/// models need no back-relations.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model data_export {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requested_by    String    @db.Uuid
+  kind            String
+  subject_user_id String?   @db.Uuid
+  student_id      String?   @db.Uuid
+  school_id       String?   @db.Uuid
+  status          String    @default("pending")
+  storage_key     String?
+  byte_size       BigInt?
+  manifest        Json      @default("{}")
+  error           String?
+  attempts        Int       @default(0)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  started_at      DateTime? @db.Timestamptz(6)
+  completed_at    DateTime? @db.Timestamptz(6)
+  expires_at      DateTime? @db.Timestamptz(6)
+  downloaded_at   DateTime? @db.Timestamptz(6)
+
+  @@index([requested_by, created_at(sort: Desc)], map: "data_export_requested_by_idx")
+  @@index([student_id], map: "data_export_student_id_idx")
+  @@index([subject_user_id], map: "data_export_subject_user_id_idx")
+  @@index([expires_at], map: "data_export_expires_idx", where: raw("(status = 'ready'::text)"))
+  @@index([status, updated_at], map: "data_export_status_idx")
+  @@schema("compliance")
+}

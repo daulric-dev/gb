@@ -61,10 +61,10 @@ export function RoleFormDialog({
         description: description.value.trim() || undefined,
       };
       if (role) {
-        await api(`/permissions/roles/${role.id}`, { method: "PATCH", body });
+        await api(`/permissions/roles/${role.id}`, { method: "PATCH", body, stepUp: true });
         toast.success("Role updated");
       } else {
-        await api("/permissions/roles", { method: "POST", body });
+        await api("/permissions/roles", { method: "POST", body, stepUp: true });
         toast.success("Role created");
       }
       onOpenChange(false);

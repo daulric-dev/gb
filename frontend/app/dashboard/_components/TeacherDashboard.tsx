@@ -40,6 +40,7 @@ import {
 import { CourseCard } from "@/app/dashboard/courses/_components/CourseCard";
 import { StatCard } from "./StatCard";
 import type { DashboardCourse } from "./types";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 /** How many courses to scan for upcoming work; enough for a teacher's load. */
 const SCAN_LIMIT = 12;
@@ -200,7 +201,7 @@ export function TeacherDashboard({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{a.title}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {a.course.code || a.course.name} ·{" "}
+                      <NoTranslate>{a.course.code || a.course.name}</NoTranslate> ·{" "}
                       {ACTIVITY_KIND_LABEL[a.kind]} · {formatDue(a.dueAt)}
                     </p>
                   </div>

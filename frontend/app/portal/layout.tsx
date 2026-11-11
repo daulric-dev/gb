@@ -181,7 +181,7 @@ export default function PortalLayout({
                 className="size-6 shrink-0"
               />
             )}
-            <span className="truncate text-sm font-semibold">
+            <span className="truncate text-sm font-semibold" translate="no">
               {student.school.name}
             </span>
           </Link>
@@ -202,7 +202,7 @@ export default function PortalLayout({
                 </Avatar>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem disabled>{name}</DropdownMenuItem>
+                <DropdownMenuItem disabled translate="no">{name}</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push("/portal/settings")}>
                   <Settings className="mr-2 size-4" />
                   Settings

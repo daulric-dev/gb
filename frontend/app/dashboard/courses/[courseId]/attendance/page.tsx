@@ -289,7 +289,7 @@ export default function CourseAttendancePage() {
                 <TableBody>
                   {students.map((r) => (
                     <TableRow key={r.studentId}>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium" translate="no">
                         {personName(r)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">

@@ -118,7 +118,10 @@ load_s3_config() {
 
   export RCLONE_CONFIG=/dev/null
   export RCLONE_CONFIG_BACKUP_TYPE=s3
-  export RCLONE_CONFIG_BACKUP_REGION="${BACKUP_S3_REGION:-us-east-1}"
+  # No default region: where the backups are stored is a data-location
+  # decision (GDPR transfers), so it must be chosen. "auto" for R2.
+  [[ -n "${BACKUP_S3_REGION:-}" ]] || die "BACKUP_S3_REGION is not set. Set the backup bucket's region (e.g. eu-central-1 for EU schools, auto for Cloudflare R2); see infrastructure/BACKUPS.md"
+  export RCLONE_CONFIG_BACKUP_REGION="$BACKUP_S3_REGION"
   # Least privilege: never list or create buckets; the bucket must exist.
   # (BACKUP_S3_NO_CHECK_BUCKET=false lets `backup-rclone mkdir` create one.)
   export RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET="${BACKUP_S3_NO_CHECK_BUCKET:-true}"

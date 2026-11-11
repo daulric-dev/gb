@@ -3,7 +3,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { insecureCookieWarning, isOriginAllowed } from './config/origins';
+import { insecureCookieWarning, isOriginAllowed, primaryOrigin } from './config/origins';
 import cookie from '@fastify/cookie';
 import { acceptEmptyQueryBodies, CORS_METHODS } from './common/http-query';
 import { AppExceptionFilter } from './common/exception.filter';
@@ -60,6 +60,14 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   raw_instance.get('/', (_, res) => {
     res.send('gb');
+  });
+
+  // The mobile app opens `<server>/privacy`, and the server it knows is this
+  // API: send it on to the web app's privacy notice.
+  raw_instance.get('/privacy', (_, res) => {
+    const origin = primaryOrigin();
+    if (!origin) return res.status(404).send('Not found');
+    return res.redirect(`${origin}/privacy`, 302);
   });
 
   raw_instance.get('/health', async (_, res) => {

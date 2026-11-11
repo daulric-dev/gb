@@ -152,6 +152,7 @@ export function AccommodationActions({
               variant="ghost"
               title="Accommodations"
               aria-label={`Accommodations for ${row.name}`}
+              data-private-label
               disabled={working.value}
             />
           }
@@ -176,7 +177,7 @@ export function AccommodationActions({
           if (!v) open.value = false;
         }}
       >
-        <DialogContent>
+        <DialogContent translate="no">
           <DialogHeader>
             <DialogTitle>Accommodations for {row.name}</DialogTitle>
             <DialogDescription>

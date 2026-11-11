@@ -382,7 +382,7 @@ export default function CourseGradesPage() {
               )}
             </tr>
           </thead>
-          <tbody>
+          <tbody translate="no">
             {rows.map((r) => (
               <tr key={r.studentId} className="group">
                 <td

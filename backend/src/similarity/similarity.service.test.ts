@@ -107,6 +107,23 @@ describe('the check job', () => {
     });
   });
 
+  test('a student restricted from the check (no_similarity) is not fingerprinted, and loses old fingerprints', async () => {
+    const { service, prisma } = build((p) => {
+      p.submission.findUnique.mockResolvedValue(SUBMISSION);
+      p.student_restriction.findMany.mockResolvedValue([{ student_id: 'stu-1' }]);
+    });
+    expect(await service.process('sub-1')).toEqual({ parts: 0, computed: 0 });
+    expect(prisma.student_restriction.findMany.mock.calls[0][0].where).toMatchObject({
+      student_id: { in: ['stu-1'] },
+      no_similarity: true,
+    });
+    expect(prisma.similarity_fingerprint.upsert).not.toHaveBeenCalled();
+    expect(prisma.similarity_fingerprint.deleteMany.mock.calls[0][0].where).toEqual({
+      submission_id: 'sub-1',
+      part: { notIn: [] },
+    });
+  });
+
   test('does nothing while the feature is off for the school', async () => {
     const { service, prisma } = build((p) => p.submission.findUnique.mockResolvedValue(SUBMISSION), {
       feature: false,

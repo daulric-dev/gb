@@ -189,9 +189,10 @@ type DeliveryRow = Prisma.webhook_deliveryGetPayload<{ select: typeof DELIVERY_S
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * A webhook URL's syntax is checked here. Its resolved address is checked and
- * pinned at send time, with private destinations opt-in for trusted installs.
- * Returns the normalised URL.
+ * A webhook URL's syntax is checked here: https, or http only with
+ * WEBHOOK_ALLOW_PRIVATE=true. Its resolved address is checked and pinned at
+ * send time, with private destinations opt-in for trusted installs. Returns
+ * the normalised URL.
  */
 export function normaliseWebhookUrl(raw: string): string {
   const value = raw.trim();
@@ -207,6 +208,13 @@ export function normaliseWebhookUrl(raw: string): string {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new BadRequestException('The URL must start with https:// or http://');
+  }
+  // Payloads carry personal data (names, grades, attendance): plain http only
+  // where the install opted into private destinations (a trusted network).
+  if (url.protocol === 'http:' && process.env.WEBHOOK_ALLOW_PRIVATE !== 'true') {
+    throw new BadRequestException(
+      'The URL must start with https://. Plain http:// is only allowed when the server sets WEBHOOK_ALLOW_PRIVATE=true.',
+    );
   }
   if (!url.hostname) throw new BadRequestException('The URL needs a host name');
   url.hash = '';

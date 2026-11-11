@@ -117,6 +117,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
 
             {kids.value.length > 1 && selected && (
               <NativeSelect
+                translate="no"
                 aria-label="Child"
                 value={selected.id}
                 onChange={(e) => router.push(switchChildPath(pathname, e.target.value))}
@@ -130,7 +131,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               </NativeSelect>
             )}
             {kids.value.length === 1 && selected && (
-              <span className="truncate text-sm">{personName(selected, "Child")}</span>
+              <span className="truncate text-sm" translate="no">{personName(selected, "Child")}</span>
             )}
 
             <div className="ml-auto flex items-center gap-1">
@@ -152,7 +153,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
           </div>
 
           {tabs.length > 0 && !pathname.startsWith("/parent/settings") && (
-            <nav className="mx-auto max-w-5xl px-2" aria-label={`${personName(selected, "Child")}'s pages`}>
+            <nav className="mx-auto max-w-5xl px-2" aria-label={`${personName(selected, "Child")}'s pages`} data-private-label>
               <div className="flex gap-1 overflow-x-auto">
                 {tabs.map((t) => {
                   const active = pathname === t.href;

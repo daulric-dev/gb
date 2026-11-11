@@ -5,7 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@/generated/prisma/client';
+import { openText, sealText } from '@/account/sensitive-text';
 import { CacheService } from '@/cache/cache.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
@@ -29,6 +31,7 @@ import type {
   CreatePastoralCategoryDto,
   CreatePastoralNoteDto,
   PastoralNoteQueryDto,
+  SetSarWithheldDto,
   UpdatePastoralCategoryDto,
   UpdatePastoralNoteDto,
   UpdatePastoralSettingsDto,
@@ -53,6 +56,9 @@ const NOTE_SELECT = {
   author_id: true,
   created_at: true,
   updated_at: true,
+  sar_withheld: true,
+  sar_withheld_reason: true,
+  sar_withheld_at: true,
   category: { select: { label: true, kind: true } },
   student: { select: { first_name: true, last_name: true, student_number: true } },
   author: { select: { first_name: true, last_name: true } },
@@ -76,9 +82,16 @@ const fullName = (p: { first_name: string | null; last_name: string | null } | n
  * Every rule lives here, from `pastoral-access.ts`: `pastoral-note:read` sees
  * the school's notes, `:create` writes them, `:update` edits, resolves and
  * deletes them, and `:safeguarding` is needed on top for anything in a
- * safeguarding category. Authors always see their own notes. Every read of a
- * safeguarding note (opening it, a timeline or list that includes it, an
- * export) writes an audit entry with action `read`.
+ * safeguarding category (never implied, not even for admins). Authors always
+ * see their own notes. Reads are audit-logged with action `read`, for every
+ * category: opening a note or an attachment writes one entry per note; a
+ * list, timeline or follow-up view writes one entry naming the notes shown,
+ * plus one per safeguarding note in it; the CSV export writes an `export`
+ * entry (and the safeguarding reads).
+ *
+ * The note text is encrypted at rest (`src/account/sensitive-text.ts`,
+ * sealed against the note id): sealed here on write, opened in `toNote` and
+ * the export. Nothing filters or sorts on it.
  *
  * Nothing else in the API reads these tables: there is no student, parent,
  * report card, webhook or LTI path to them. Audit entries carry ids and
@@ -309,7 +322,7 @@ export class PastoralService {
       orderBy: [{ occurred_on: 'desc' }, { created_at: 'desc' }],
       take: MAX_NOTES,
     });
-    await this.auditSafeguardingReads(c, rows);
+    await this.auditReads(c, rows, q.studentId ? 'timeline' : 'list', q.studentId ?? null);
     return rows.map((r) => this.toNote(r, c));
   }
 
@@ -329,14 +342,14 @@ export class PastoralService {
       orderBy: [{ follow_up_on: { sort: 'asc', nulls: 'last' } }, { occurred_on: 'desc' }],
       take: MAX_NOTES,
     });
-    await this.auditSafeguardingReads(c, rows);
+    await this.auditReads(c, rows, 'follow_ups');
     return rows.map((r) => this.toNote(r, c));
   }
 
   async get(userId: string, noteId: string) {
     const c = await this.caller(userId);
     const row = await this.requireVisible(c, noteId);
-    await this.auditSafeguardingReads(c, [row]);
+    await this.auditReads(c, [row], 'note');
     return this.toNote(row, c);
   }
 
@@ -347,17 +360,21 @@ export class PastoralService {
     const category = await this.requireCategory(c, dto.categoryId, true);
     if (dto.assignedTo) await this.requireAssignee(c, dto.assignedTo, category.is_safeguarding);
     const fileIds = await this.ownFiles(c, dto.fileIds ?? []);
+    const body = this.requireBody(dto.body);
+    // The id is chosen here: the text is encrypted against it.
+    const noteId = randomUUID();
 
     const id = await this.prisma.$transaction(async (tx) => {
       const note = await tx.pastoral_note.create({
         data: {
+          id: noteId,
           school_id: c.schoolId,
           student_id: studentId,
           category_id: category.id,
           is_safeguarding: category.is_safeguarding,
           severity: dto.severity ?? 'low',
           occurred_on: asDate(dto.occurredOn),
-          body: dto.body.trim(),
+          body: sealText('pastoral_note.body', noteId, body),
           follow_up_on: dto.followUpOn ? asDate(dto.followUpOn) : null,
           assigned_to: dto.assignedTo ?? null,
           author_id: c.userId,
@@ -404,7 +421,11 @@ export class PastoralService {
     }
     if (dto.severity !== undefined) data.severity = dto.severity;
     if (dto.occurredOn !== undefined) data.occurred_on = asDate(dto.occurredOn);
-    if (dto.body !== undefined) data.body = dto.body.trim();
+    const currentBody = openText('pastoral_note.body', note.id, note.body);
+    const nextBody = dto.body !== undefined ? this.requireBody(dto.body) : undefined;
+    if (nextBody !== undefined && nextBody !== currentBody) {
+      data.body = sealText('pastoral_note.body', note.id, nextBody);
+    }
     if (dto.followUpOn !== undefined) data.follow_up_on = dto.followUpOn ? asDate(dto.followUpOn) : null;
     const assignee = dto.assignedTo !== undefined ? dto.assignedTo : note.assigned_to;
     if (assignee && (dto.assignedTo !== undefined || isSafeguarding !== note.is_safeguarding)) {
@@ -462,9 +483,51 @@ export class PastoralService {
             assigned_to: dto.assignedTo !== undefined ? dto.assignedTo : note.assigned_to,
             status: dto.status ?? note.status,
             // Never the text itself: only that it changed.
-            text_edited: dto.body !== undefined && dto.body.trim() !== note.body,
+            text_edited: nextBody !== undefined && nextBody !== currentBody,
             attachments: fileIds ? fileIds.length : note.files.length,
           },
+        ),
+      });
+    });
+    return this.get(userId, note.id);
+  }
+
+  /**
+   * Withhold a note from subject access exports (src/data-export) under an
+   * exemption, with the reason, or release it again. Someone who may change
+   * the note and holds `pastoral-note:safeguarding` or `student:export` (the
+   * people who answer subject access requests). Audited with the reason.
+   */
+  async setSarWithheld(userId: string, noteId: string, dto: SetSarWithheldDto) {
+    const c = await this.caller(userId);
+    const note = await this.requireVisible(c, noteId);
+    const effective = await loadEffectivePermissions(this.prisma, this.cache, userId, c.schoolId);
+    if (!canChangeNote(c, note) || !(c.safeguarding || effective.keys.includes('student:export'))) {
+      throw new ForbiddenException('You cannot change whether this note is withheld');
+    }
+    const reason = dto.withheld ? (dto.reason ?? '').trim() : null;
+    if (dto.withheld && !reason) throw new BadRequestException('Give the reason the note is withheld');
+    const before = await this.prisma.pastoral_note.findUnique({
+      where: { id: note.id },
+      select: { sar_withheld: true, sar_withheld_reason: true },
+    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pastoral_note.update({
+        where: { id: note.id },
+        data: {
+          sar_withheld: dto.withheld,
+          sar_withheld_reason: reason,
+          sar_withheld_by: dto.withheld ? c.userId : null,
+          sar_withheld_at: dto.withheld ? new Date() : null,
+        },
+      });
+      await this.audit.record(tx, c.schoolId, { id: c.userId }, {
+        entity: 'pastoral_note',
+        entityId: note.id,
+        action: 'update',
+        changes: auditChanges(
+          { sar_withheld: before?.sar_withheld ?? false, sar_withheld_reason: before?.sar_withheld_reason ?? null },
+          { sar_withheld: dto.withheld, sar_withheld_reason: reason },
         ),
       });
     });
@@ -512,7 +575,7 @@ export class PastoralService {
     if (!note.files.some((f) => f.file.id === fileId && !f.file.deleted_at)) {
       throw new NotFoundException('File not found');
     }
-    await this.auditSafeguardingReads(c, [note]);
+    await this.auditReads(c, [note], 'attachment');
     return this.files.readContentForAuthorisedCaller(fileId);
   }
 
@@ -531,7 +594,18 @@ export class PastoralService {
       orderBy: [{ occurred_on: 'desc' }, { created_at: 'desc' }],
       take: 10_000,
     });
-    await this.auditSafeguardingReads(c, rows);
+    await this.auditReads(c, rows, 'export');
+    await this.audit.recordExport(c.userId, {
+      schoolId: c.schoolId,
+      entity: 'pastoral_note',
+      entityId: q.studentId ?? null,
+      scope: q.studentId ? 'student' : 'school',
+      rows: rows.length,
+      details: {
+        safeguarding_notes: rows.filter((r) => r.is_safeguarding).length,
+        filters: this.auditFilters(q),
+      },
+    });
     const header = [
       'Date', 'Student', 'Student number', 'Category', 'Safeguarding', 'Severity', 'Status',
       'Author', 'Assigned to', 'Follow up by', 'Resolved at', 'Note',
@@ -548,7 +622,7 @@ export class PastoralService {
       fullName(r.assignee) ?? '',
       day(r.follow_up_on) ?? '',
       r.resolved_at?.toISOString() ?? '',
-      r.body,
+      openText('pastoral_note.body', r.id, r.body),
     ]);
     const csv = [header, ...lines].map((l) => l.map(csvCell).join(',')).join('\r\n') + '\r\n';
     const stamp = new Date().toISOString().slice(0, 10);
@@ -644,20 +718,65 @@ export class PastoralService {
     return unique;
   }
 
-  /** One `read` audit entry per safeguarding note the caller is shown. */
-  private async auditSafeguardingReads(c: PastoralCaller, rows: NoteRow[]) {
-    const safeguarding = rows.filter((r) => r.is_safeguarding);
-    if (safeguarding.length === 0) return;
+  /** The filters of a list or export, for its audit entry (ids and dates only). */
+  private auditFilters(q: PastoralNoteQueryDto) {
+    const out: Record<string, string> = {};
+    for (const key of ['studentId', 'categoryId', 'status', 'severity', 'assignedTo', 'from', 'to'] as const) {
+      const value = q[key];
+      if (value) out[key] = String(value);
+    }
+    return out;
+  }
+
+  /**
+   * Audit what the caller was shown, for every category:
+   * - one `read` entry per note opened (`note`, `attachment`);
+   * - one `read` entry per safeguarding note in a list, timeline, follow-up
+   *   view or export (as before);
+   * - for a list, timeline or follow-up view, one `read` entry for the view
+   *   naming the notes shown (entity id: the student for a timeline), even
+   *   when it shows none.
+   * Never the note text.
+   */
+  private async auditReads(
+    c: PastoralCaller,
+    rows: NoteRow[],
+    view: 'note' | 'attachment' | 'list' | 'timeline' | 'follow_ups' | 'export',
+    studentId: string | null = null,
+  ) {
+    const single = view === 'note' || view === 'attachment';
+    const perNote = single ? rows : rows.filter((r) => r.is_safeguarding);
     await this.prisma.$transaction(async (tx: Tx) => {
-      for (const r of safeguarding) {
+      for (const r of perNote) {
         await this.audit.record(tx, c.schoolId, { id: c.userId }, {
           entity: 'pastoral_note',
           entityId: r.id,
           action: 'read',
-          changes: { student_id: { before: null, after: r.student_id } },
+          changes: {
+            student_id: { before: null, after: r.student_id },
+            view: { before: null, after: view },
+          },
         });
       }
+      if (single || view === 'export') return;
+      await this.audit.record(tx, c.schoolId, { id: c.userId }, {
+        entity: 'pastoral_note',
+        entityId: studentId,
+        action: 'read',
+        changes: {
+          view: { before: null, after: view },
+          notes: { before: null, after: rows.length },
+          note_ids: { before: null, after: rows.map((r) => r.id) },
+        },
+      });
     });
+  }
+
+  /** The trimmed note text; blank is a 400 (the column holds ciphertext). */
+  private requireBody(raw: string): string {
+    const body = raw.trim();
+    if (!body) throw new BadRequestException('The note cannot be empty');
+    return body;
   }
 
   private toNote(r: NoteRow, c: PastoralCaller) {
@@ -671,7 +790,7 @@ export class PastoralService {
       isSafeguarding: r.is_safeguarding,
       severity: r.severity,
       occurredOn: day(r.occurred_on),
-      body: r.body,
+      body: openText('pastoral_note.body', r.id, r.body),
       followUpOn: day(r.follow_up_on),
       assignedTo: r.assigned_to,
       assignedToName: fullName(r.assignee),
@@ -689,6 +808,10 @@ export class PastoralService {
         })),
       canEdit: canChangeNote(c, r),
       canDelete: c.update && (!r.is_safeguarding || c.safeguarding),
+      // Withheld from subject access exports (src/data-export).
+      sarWithheld: r.sar_withheld,
+      sarWithheldReason: r.sar_withheld_reason,
+      sarWithheldAt: r.sar_withheld_at?.toISOString() ?? null,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
     };

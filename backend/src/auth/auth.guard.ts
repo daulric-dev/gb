@@ -1,13 +1,16 @@
 import {
   CanActivate,
+  ForbiddenException,
   ExecutionContext,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { SessionService } from '@/account/session.service';
 import { PrismaService } from '@/prisma/prisma.service';
+import { MfaService } from '@/mfa/mfa.service';
 import { FastifyReply, FastifyRequest } from 'fastify';
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -28,6 +31,8 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly sessions: SessionService,
     private readonly prisma: PrismaService,
+    // Global (src/mfa); optional only so unit tests can leave it out.
+    @Optional() private readonly mfa?: MfaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -74,9 +79,13 @@ export class AuthGuard implements CanActivate {
         elevatedUntil: session.elevatedUntil,
       };
 
+      // A session limited to setting up an authenticator app: 403
+      // MFA_ENROLMENT_REQUIRED outside those routes (src/mfa).
+      if (this.mfa) await this.mfa.assertSessionAllowed(request);
+
       return true;
     } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
+      if (err instanceof UnauthorizedException || err instanceof ForbiddenException) throw err;
       // Not a verdict on the session: the database or cache couldn't be
       // reached. A 401 here made clients drop a perfectly good session (the
       // app cleared its token and signed out) whenever Postgres was down, so

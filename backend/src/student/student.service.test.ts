@@ -39,6 +39,8 @@ describe('StudentService', () => {
     prisma = createMockPrisma();
     auditCalls = [];
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL_ID });
+    // A school admin: every student, sensitive details (see student.scope.test.ts).
+    prisma.school_management.findFirst.mockResolvedValue({ role: 'admin', school_management_role: [] });
     service = new StudentService(
       prisma as any,
       mockCache as any,

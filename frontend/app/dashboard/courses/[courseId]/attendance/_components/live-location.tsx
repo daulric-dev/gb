@@ -194,6 +194,7 @@ export function LocationFlagBadge({ entry }: { entry: AttendanceRosterEntry }) {
           <span
             className="ml-1.5 inline-flex align-middle text-amber-600 dark:text-amber-400"
             aria-label={`Location looks unusual: ${lines.join("; ")}`}
+            data-private-label
           />
         }
       >
@@ -201,7 +202,7 @@ export function LocationFlagBadge({ entry }: { entry: AttendanceRosterEntry }) {
       </TooltipTrigger>
       <TooltipContent>
         <p className="font-medium">Location looks unusual</p>
-        <ul className="mt-1 list-disc pl-4">
+        <ul className="mt-1 list-disc pl-4" translate="no">
           {lines.map((l) => (
             <li key={l}>{l}</li>
           ))}

@@ -142,3 +142,13 @@ export class UpdatePastoralSettingsDto {
   @ValidateIf((_o, v) => v !== null) @IsInt() @Min(30) @Max(36500)
   retentionDays!: number | null;
 }
+
+/** Withhold a note from subject access exports (src/data-export), or release it. */
+export class SetSarWithheldDto {
+  @ApiProperty() @IsBoolean()
+  withheld!: boolean;
+
+  @ApiPropertyOptional({ description: 'Why (the exemption relied on); required when withholding' })
+  @ValidateIf((o: SetSarWithheldDto) => o.withheld === true) @IsString() @IsNotEmpty() @MaxLength(2000)
+  reason?: string;
+}

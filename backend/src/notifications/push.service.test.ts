@@ -32,7 +32,9 @@ function setup(tokens: string[], respond?: (messages: any[]) => any) {
 describe('PushService.sendToUsers', () => {
   test('chunks into requests of 100 and skips non-Expo tokens', async () => {
     const tokens = [...Array.from({ length: 230 }, (_, i) => token(i)), 'not-a-token', 'ExpoPushToken[]'];
-    const { service, requests } = setup(tokens);
+    const { service, requests, prisma } = setup(tokens);
+    // The organisation chose full push content (attendance is generic by default).
+    prisma.organisation.findFirst.mockResolvedValue({ push_content: 'full' });
 
     await service.sendToUsers(['u-1', 'u-2'], {
       title: 'Attendance is open',
@@ -298,5 +300,95 @@ describe('PushService and the push_notifications feature', () => {
     await service.sendToUsers(['u-1'], { title: 't', body: 'b' });
     expect(prisma.push_device.findMany).not.toHaveBeenCalled();
     expect(calls).toBe(0);
+  });
+});
+
+describe('push content and notification preferences', () => {
+  const ATTENDANCE = {
+    title: 'Attendance is open',
+    body: 'Biology 101: tap to check in',
+    data: { type: 'attendance.opened', sessionId: 'sess-1', courseName: 'Biology 101' },
+    channelId: 'attendance',
+  };
+
+  function withUsers(users: { id: string; school_id: string | null }[]) {
+    const s = setup([]);
+    s.prisma.user_profile.findMany.mockResolvedValue(users);
+    s.prisma.push_device.findMany.mockImplementation(async ({ where }: any) =>
+      (where.user_id.in as string[]).map((id, i) => ({ token: token(i), user_id: id })),
+    );
+    return s;
+  }
+
+  test('by default a push about children (attendance) is generic: no title, text or names; ids kept', async () => {
+    const { service, requests } = withUsers([{ id: 'u-1', school_id: 's-1' }]);
+    await service.sendToUsers(['u-1'], ATTENDANCE);
+    const [m] = requests[0].messages;
+    expect(m.title).toBe('GradeBook');
+    expect(m.body).toBe('You have a new update');
+    expect(m.data).toEqual({ type: 'attendance.opened', sessionId: 'sess-1', generic: true });
+    expect(JSON.stringify(m)).not.toContain('Biology');
+  });
+
+  test('by default course news (not sensitive) is sent in full', async () => {
+    const { service, requests } = withUsers([{ id: 'u-1', school_id: 's-1' }]);
+    await service.sendToUsers(['u-1'], { title: 'Maths: New work: Fractions', body: 'Tap to open', category: 'coursework' });
+    expect(requests[0].messages[0].title).toBe('Maths: New work: Fractions');
+  });
+
+  test("a school's 'generic' makes everything generic; its 'full' overrides the organisation's generic", async () => {
+    const { service, requests, prisma } = withUsers([
+      { id: 'u-gen', school_id: 's-gen' },
+      { id: 'u-full', school_id: 's-full' },
+    ]);
+    prisma.organisation.findFirst.mockResolvedValue({ push_content: 'generic' });
+    prisma.school.findMany.mockResolvedValue([
+      { id: 's-gen', push_content: null },
+      { id: 's-full', push_content: 'full' },
+    ]);
+    await service.sendToUsers(['u-gen', 'u-full'], { title: 'Maths: New work', body: 'b', category: 'coursework' });
+    const sent = requests.flatMap((r) => r.messages);
+    const byTo = new Map(sent.map((m: any) => [m.to, m.title]));
+    expect(byTo.get(token(0))).toBe('GradeBook');
+    expect(byTo.get(token(1))).toBe('Maths: New work');
+  });
+
+  test("an explicit schoolId decides (a parent's push follows the child's school)", async () => {
+    const { service, requests, prisma } = withUsers([{ id: 'parent', school_id: null }]);
+    prisma.school.findMany.mockResolvedValue([{ id: 's-child', push_content: 'full' }]);
+    await service.sendToUsers(['parent'], {
+      title: 'Ann was absent',
+      body: 'b',
+      category: 'parent',
+      sensitive: true,
+      schoolId: 's-child',
+    });
+    expect(requests[0].messages[0].title).toBe('Ann was absent');
+    expect(prisma.school.findMany.mock.calls[0][0].where.id.in).toEqual(['s-child']);
+  });
+
+  test('recipients who turned the category off for push get nothing; parent notices skip the check', async () => {
+    const { service, requests, prisma } = withUsers([
+      { id: 'u-on', school_id: 's-1' },
+      { id: 'u-off', school_id: 's-1' },
+    ]);
+    prisma.notification_preference.findMany.mockResolvedValue([{ user_profile_id: 'u-off' }]);
+    await service.sendToUsers(['u-on', 'u-off'], { title: 't', body: 'b', category: 'discussions' });
+    const where = prisma.notification_preference.findMany.mock.calls[0][0].where;
+    expect(where).toEqual({ user_profile_id: { in: ['u-on', 'u-off'] }, push_off: { has: 'discussions' } });
+    expect(prisma.push_device.findMany.mock.calls[0][0].where.user_id.in).toEqual(['u-on']);
+    expect(requests.flatMap((r) => r.messages)).toHaveLength(1);
+
+    prisma.notification_preference.findMany.mockClear();
+    await service.sendToUsers(['u-off'], { title: 't', body: 'b', category: 'parent' });
+    expect(prisma.notification_preference.findMany).not.toHaveBeenCalled();
+  });
+
+  test('the attendance channel counts as the attendance category', async () => {
+    const { service, prisma } = withUsers([{ id: 'u-1', school_id: 's-1' }]);
+    prisma.notification_preference.findMany.mockResolvedValue([{ user_profile_id: 'u-1' }]);
+    await service.sendToUsers(['u-1'], ATTENDANCE);
+    expect(prisma.notification_preference.findMany.mock.calls[0][0].where.push_off).toEqual({ has: 'attendance' });
+    expect(prisma.push_device.findMany).not.toHaveBeenCalled();
   });
 });

@@ -52,7 +52,7 @@ export function PastoralTimelineCard({ studentId, studentName }: { studentId: st
   if (!on || !allowed) return null;
 
   return (
-    <Card>
+    <Card translate="no">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <HeartHandshake className="size-4" aria-hidden="true" />

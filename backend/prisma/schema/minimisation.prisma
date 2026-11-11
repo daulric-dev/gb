@@ -1,0 +1,49 @@
+// Data minimisation and user controls (migration 20261205140000_minimisation).
+// Kept in one file so the models can be found together; each sits in its own
+// database schema. No Prisma relation fields: the foreign keys (all ON DELETE
+// CASCADE) are in the migration, so deleting the student, profile or account
+// removes these rows.
+
+/// Per-student restriction / objection flags (student page, student:update). No row = no restriction.
+model student_restriction {
+  student_id             String   @id @db.Uuid
+  /// The student's work is never sent to an AI provider (rubric feedback drafts refuse).
+  no_ai                  Boolean  @default(false)
+  /// Submissions are not fingerprinted or compared by the similarity check.
+  no_similarity          Boolean  @default(false)
+  /// Left out of the analytics at-risk lists.
+  exclude_from_analytics Boolean  @default(false)
+  /// Staff user_profile id of the last change; no foreign key.
+  set_by                 String?  @db.Uuid
+  set_at                 DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("student")
+}
+
+/// Notification categories an account turned off, per channel. No row = everything on.
+model notification_preference {
+  user_profile_id String   @id @db.Uuid
+  push_off        String[] @default([])
+  email_off       String[] @default([])
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+/// A pending, code-confirmed change of an account's email address (one per account).
+model email_change {
+  user_id           String   @id @db.Uuid
+  /// Lower-cased address the code was sent to.
+  new_email         String
+  /// HMAC of the code with the server secret; never the code.
+  code_hash         String
+  expires_at        DateTime @db.Timestamptz(6)
+  attempts          Int      @default(0)
+  /// Codes sent in the current window (window_started_at), for the send cap.
+  sends             Int      @default(1)
+  window_started_at DateTime @default(now()) @db.Timestamptz(6)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([expires_at], map: "idx_email_change_expires")
+  @@schema("account")
+}

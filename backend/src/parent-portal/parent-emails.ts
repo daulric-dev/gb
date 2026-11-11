@@ -1,7 +1,8 @@
 import { accountEmailHtml } from '@/account/templates/layout';
 import { formatDueDate } from '@/grading/due-date';
 
-type Email = { subject: string; text: string; html: string };
+/** `kind` is what MailService logs instead of the subject (which names the child). */
+type Email = { kind: string; subject: string; text: string; html: string };
 
 /** "<School> invited you to follow <child> on GradeBook". */
 export function parentInviteEmail(d: {
@@ -16,6 +17,7 @@ export function parentInviteEmail(d: {
     'Open the link below and sign in with this email address. You will get a sign-in code by email; there is no password.',
   ];
   return {
+    kind: 'parent_invite',
     subject,
     text: [
       ...lines,
@@ -48,6 +50,7 @@ export function parentNoticeEmail(d: {
   url: string;
 }): Email {
   return {
+    kind: 'parent_notice',
     subject: d.title,
     text: [
       d.body,

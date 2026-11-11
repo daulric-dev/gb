@@ -44,6 +44,8 @@ function build(
   prisma.course_student.findUnique.mockResolvedValue({ status: 'active' });
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
   prisma.student.findFirst.mockResolvedValue({ id: 'stu-1' });
+  // A school admin (every student, sensitive details); tests override.
+  prisma.school_management.findFirst.mockResolvedValue({ role: 'admin', school_management_role: [] });
   setup(prisma);
   const records: any[][] = [];
   const access = {

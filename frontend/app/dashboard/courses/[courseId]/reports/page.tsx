@@ -228,8 +228,8 @@ export default function CourseReportCommentsPage() {
                 const name = personName(s);
                 return (
                   <tr key={s.studentId} className="border-t align-top">
-                    <th scope="row" className="px-3 py-2 text-left font-medium">{name}</th>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    <th scope="row" className="px-3 py-2 text-left font-medium" translate="no">{name}</th>
+                    <td className="px-3 py-2 text-right tabular-nums" translate="no">
                       {formatPercent(s.percent)}
                       {s.letter && (
                         <span className="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary">
@@ -240,6 +240,7 @@ export default function CourseReportCommentsPage() {
                     <td className="px-3 py-2">
                       <Textarea
                         aria-label={`Comment for ${name}`}
+                        data-private-label
                         aria-invalid={!!err || undefined}
                         value={draft?.body ?? ""}
                         maxLength={REPORT_COMMENT_MAX}
@@ -253,6 +254,7 @@ export default function CourseReportCommentsPage() {
                     <td className="px-3 py-2 text-center">
                       <Checkbox
                         aria-label={`${name}'s comment is ready`}
+                        data-private-label
                         checked={draft?.status === "ready"}
                         disabled={!d.canEdit}
                         onCheckedChange={(v) => edit(s.studentId, { status: v ? "ready" : "draft" })}

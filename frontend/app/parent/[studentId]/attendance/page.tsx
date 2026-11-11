@@ -24,7 +24,7 @@ export default function ParentAttendancePage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Attendance</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground" translate="no">
           {attendanceRate(a.summary)} attended · {a.summary.absent} absent · {a.summary.late} late
         </p>
       </div>
@@ -34,7 +34,7 @@ export default function ParentAttendancePage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center justify-between text-base">
               <span className="truncate">{c.courseName}</span>
-              <span className="text-sm font-normal text-muted-foreground">{attendanceRate(c.summary)}</span>
+              <span className="text-sm font-normal text-muted-foreground" translate="no">{attendanceRate(c.summary)}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>

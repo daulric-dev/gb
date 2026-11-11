@@ -9,7 +9,16 @@ export interface SchoolRole {
 
 export interface CatalogEntry {
   resource: string;
-  action: "create" | "read" | "update" | "delete" | "safeguarding";
+  action:
+    | "create"
+    | "read"
+    | "update"
+    | "delete"
+    | "safeguarding"
+    | "read-all"
+    | "sensitive"
+    | "export"
+    | "erase";
   key: string;
   description: string;
 }

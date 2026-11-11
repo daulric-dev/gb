@@ -53,8 +53,11 @@ export function setStepUpHandler(handler: (() => Promise<boolean>) | null) {
   stepUpHandler = handler;
 }
 
-/** Ask the user to confirm, once for any number of requests waiting at the same time. */
-function confirmStepUp(): Promise<boolean> {
+/**
+ * Ask the user to confirm, once for any number of requests waiting at the
+ * same time. Exported for raw `fetch` callers (`downloadFromUrl`).
+ */
+export function confirmStepUp(): Promise<boolean> {
   if (!stepUpHandler) return Promise.resolve(false);
   if (!pendingStepUp) {
     pendingStepUp = stepUpHandler()

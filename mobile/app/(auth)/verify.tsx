@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { OtpInput } from "@/components/ui/OtpInput";
 import { Text } from "@/components/ui/Text";
 import { userMessage } from "@/lib/errors";
+import { enrolmentRequired, mfaTokenFrom } from "@/lib/mfa";
 
 const CODE_LENGTH = 8;
 const RESEND_COOLDOWN = 60;
@@ -96,6 +97,11 @@ export default function VerifyScreen() {
         skipAuthRedirect: true,
       });
       await refresh();
+      // The organisation requires an authenticator app and there is none yet.
+      if (await enrolmentRequired()) {
+        router.replace("/(auth)/two-step-required");
+        return;
+      }
       const isStudent = data.user.account_type === "student";
 
       if (data.user.account_type === "parent") {
@@ -110,6 +116,12 @@ export default function VerifyScreen() {
         router.replace("/(auth)/onboard");
       }
     } catch (err) {
+      // An authenticator code is due next (two-step verification).
+      const mfaToken = mfaTokenFrom(err);
+      if (mfaToken) {
+        router.replace({ pathname: "/(auth)/two-step", params: { token: mfaToken } });
+        return;
+      }
       // Shown against the boxes rather than only as a toast: a toast slides
       // away, and the next thing they do is retype the code right here.
       setError(userMessage(err, "Verification failed"));

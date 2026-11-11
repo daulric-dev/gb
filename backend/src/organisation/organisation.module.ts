@@ -11,6 +11,7 @@ import { InviteService } from './invite.service';
 import { SignInController } from './sign-in.controller';
 import { OwnershipService } from './ownership.service';
 import { SchoolOwnershipController } from './ownership.controller';
+import { OrganisationUsersController } from './organisation-users.controller';
 
 /**
  * The organisation that self-hosts this install: first-run setup, its
@@ -27,6 +28,7 @@ import { SchoolOwnershipController } from './ownership.controller';
     InviteController,
     SignInController,
     SchoolOwnershipController,
+    OrganisationUsersController,
   ],
   providers: [OrganisationService, OrganisationAdminGuard, InviteService, OwnershipService],
   exports: [OrganisationService, InviteService, OwnershipService],

@@ -10,7 +10,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      // notranslate: toasts often name a person ("Ada excused"); never sent for translation.
+      className="toaster group notranslate"
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />

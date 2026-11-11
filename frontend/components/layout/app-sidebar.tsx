@@ -301,7 +301,7 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
         {!collapsed && profile?.organisation?.name && (
           <div className="flex items-center gap-1.5 mt-1">
             <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground truncate flex-1">
+            <span className="text-xs text-muted-foreground truncate flex-1" translate="no">
               {profile.organisation.name}
             </span>
           </div>
@@ -456,7 +456,7 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0 text-left">
-                  <p className="font-medium truncate text-sm leading-tight">
+                  <p className="font-medium truncate text-sm leading-tight" translate="no">
                     {displayName}
                   </p>
                   {profile?.role && (
@@ -474,7 +474,7 @@ export function AppSidebar({ profile }: { profile: UserProfile | null }) {
             side={collapsed ? "right" : "top"}
             className="w-56"
           >
-            <div className="px-2 py-1.5">
+            <div className="px-2 py-1.5" translate="no">
               <p className="text-sm font-medium">{displayName}</p>
               {profile?.email && (
                 <p className="text-xs text-muted-foreground truncate">

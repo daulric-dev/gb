@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Camera, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { SignedInDevices } from "@/components/account/signed-in-devices";
+import { TwoStepCard } from "@/components/account/mfa/two-step-card";
 import { userMessage } from "@/lib/errors";
 
 interface AccountProfile {
@@ -330,6 +331,8 @@ export function AccountSettings({
           </div>
         </form>
       </Card>
+
+      <TwoStepCard />
 
       <SignedInDevices />
 

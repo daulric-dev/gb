@@ -15,6 +15,7 @@ import {
   type PortalAnnouncement,
 } from "../../../_components/types";
 import { usePortalCourse } from "../_components/course-context";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 export default function PortalCourseAnnouncementsPage() {
   useSignals();
@@ -70,7 +71,7 @@ export default function PortalCourseAnnouncementsPage() {
               <div className="min-w-0">
                 <p className="font-semibold leading-snug">{a.title}</p>
                 <p className="text-xs text-muted-foreground">
-                  {name} · {formatDateTime(a.created_at)}
+                  <NoTranslate>{name}</NoTranslate> · {formatDateTime(a.created_at)}
                 </p>
               </div>
             </CardHeader>

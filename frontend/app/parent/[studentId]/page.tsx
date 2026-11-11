@@ -24,8 +24,8 @@ export default function ParentChildOverviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">{personName(o.child, "Your child")}</h1>
-        <p className="text-sm text-muted-foreground">{o.school?.name}</p>
+        <h1 className="text-xl font-semibold" translate="no">{personName(o.child, "Your child")}</h1>
+        <p className="text-sm text-muted-foreground" translate="no">{o.school?.name}</p>
       </div>
 
       {showWork && (
@@ -58,11 +58,11 @@ export default function ParentChildOverviewPage() {
                 <li key={c.id} className="flex items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{c.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground" translate="no">
                       {c.teachers.map((t) => personName(t)).filter(Boolean).join(", ") || "No teacher listed"}
                     </p>
                   </div>
-                  {o.visibility.grades && <span className="text-sm">{gradeText(c.grade)}</span>}
+                  {o.visibility.grades && <span className="text-sm" translate="no">{gradeText(c.grade)}</span>}
                 </li>
               ))}
             </ul>

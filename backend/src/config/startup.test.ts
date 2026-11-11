@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { validateStartupConfig } from './startup';
+import { startupWarnings, validateStartupConfig } from './startup';
 
 describe('validateStartupConfig', () => {
   const valid = {
@@ -44,6 +44,7 @@ describe('validateStartupConfig', () => {
       ...valid,
       NODE_ENV: 'production',
       AUTH_SECRET: 'x'.repeat(32),
+      DATA_ENCRYPTION_KEY: 'k'.repeat(32),
       FRONTEND_URL: 'https://app.example.com',
     };
 
@@ -105,6 +106,7 @@ describe('validateStartupConfig', () => {
       ...valid,
       NODE_ENV: 'production',
       AUTH_SECRET: 'x'.repeat(32),
+      DATA_ENCRYPTION_KEY: 'k'.repeat(32),
       API_URL: 'https://api.example.com',
     };
 
@@ -167,5 +169,59 @@ describe('validateStartupConfig', () => {
         validateStartupConfig({ ...valid, FRONTEND_URL: 'http://localhost:3000' }),
       ).not.toThrow();
     });
+  });
+});
+
+describe('DATA_ENCRYPTION_KEY in production', () => {
+  const prod = {
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/gradebook',
+    AUTH_SECRET: 'x'.repeat(32),
+    API_URL: 'https://api.example.com',
+    FRONTEND_URL: 'https://app.example.com',
+  };
+
+  test('is required', () => {
+    expect(() => validateStartupConfig(prod)).toThrow('DATA_ENCRYPTION_KEY must be set');
+    expect(() => validateStartupConfig({ ...prod, DATA_ENCRYPTION_KEY: '  ' })).toThrow(
+      'DATA_ENCRYPTION_KEY must be set',
+    );
+    expect(() => validateStartupConfig({ ...prod, DATA_ENCRYPTION_KEY: 'k'.repeat(32) })).not.toThrow();
+  });
+
+  test('is optional outside production', () => {
+    expect(() =>
+      validateStartupConfig({ NODE_ENV: 'development', DATABASE_URL: prod.DATABASE_URL }),
+    ).not.toThrow();
+  });
+});
+
+describe('startupWarnings: database TLS', () => {
+  const warn = (DATABASE_URL: string) => startupWarnings({ DATABASE_URL });
+
+  test('warns for a remote database without sslmode', () => {
+    expect(warn('postgresql://u:p@db.example.com:5432/gb')[0]).toContain('without TLS');
+    expect(warn('postgresql://u:p@10.0.0.5:5432/gb?sslmode=prefer')[0]).toContain('without TLS');
+    expect(warn('postgresql://u:p@db.example.com/gb?sslmode=disable')).toHaveLength(1);
+  });
+
+  test('accepts TLS modes', () => {
+    for (const mode of ['require', 'verify-ca', 'verify-full', 'VERIFY-FULL']) {
+      expect(warn(`postgresql://u:p@db.example.com/gb?sslmode=${mode}`)).toEqual([]);
+    }
+    expect(warn('postgresql://u:p@db.example.com/gb?ssl=true')).toEqual([]);
+  });
+
+  test('does not warn for local hosts, compose services or sockets', () => {
+    for (const url of [
+      'postgresql://u:p@localhost:5432/gb',
+      'postgresql://u:p@127.0.0.1/gb',
+      'postgresql://u:p@[::1]/gb',
+      'postgresql://u:p@db:5432/gb',
+      'postgresql://u:p@host.docker.internal/gb',
+      'postgresql://u:p@x/gb?host=/var/run/postgresql',
+    ]) {
+      expect(warn(url)).toEqual([]);
+    }
   });
 });

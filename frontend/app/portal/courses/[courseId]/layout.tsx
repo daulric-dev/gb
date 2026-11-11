@@ -123,7 +123,7 @@ export default function PortalCourseLayout({
             </Link>
             <div className="flex flex-wrap items-center gap-2">
               {c.code && (
-                <span className="rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium">
+                <span className="rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium" translate="no">
                   {c.code}
                 </span>
               )}
@@ -133,7 +133,7 @@ export default function PortalCourseLayout({
             </div>
             <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{c.name}</h1>
             {teachers && (
-              <p className="mt-1 text-sm text-white/85">{teachers}</p>
+              <p className="mt-1 text-sm text-white/85" translate="no">{teachers}</p>
             )}
           </div>
         </div>

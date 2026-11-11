@@ -22,6 +22,7 @@ export const ERASURE_KINDS = [
   'course',
   'attendance_session',
   'pastoral_note',
+  'student_record',
 ] as const;
 export type ErasureKind = (typeof ERASURE_KINDS)[number];
 
@@ -84,6 +85,11 @@ export const REGISTRY: Readonly<Record<string, TableSpec>> = {
   'course.course': { where: ['id'], set: {} },
   'course.attendance_session': { where: ['id'], set: {} },
   'student.pastoral_note': { where: ['id'], set: {} },
+  // Account deletion: AI request log rows lose their user, push devices go
+  // (they also cascade with the profile), roster links naming the account go.
+  'public.ai_request': { where: ['user_id'], set: { user_id: 'uuid' } },
+  'public.push_device': { where: ['user_id'], set: {} },
+  'public.roster_link': { where: ['id', 'target_id'], set: { email: 'text', data: 'jsonb' } },
 };
 
 /** Column filter: `col = ANY(uuids)`, or `col IS NULL` for null. */
@@ -110,12 +116,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /**
  * Storage prefixes a plan may name: a user's file-manager folder, an avatar,
- * a course's cover images.
+ * a course's cover images, one student's term report PDF (a full key, which
+ * lists as itself).
  */
 const PREFIX_RES = [
   new RegExp(`^file-manager/${UUID}/${UUID}/$`, 'i'),
   new RegExp(`^images/avatars/${UUID}\\.$`, 'i'),
   new RegExp(`^images/course-banners/${UUID}-$`, 'i'),
+  new RegExp(`^report-cards/schools/${UUID}/terms/${UUID}/${UUID}\\.pdf$`, 'i'),
 ];
 
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);

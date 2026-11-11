@@ -96,8 +96,16 @@ export function validateStartupConfig(
     throw new Error('AUTH_SECRET must be set (32+ characters) in production');
   }
 
-  // Optional, but a short key would only fail later, on the first secret
+  // Required in production: it encrypts stored secrets and sensitive fields
+  // (webhook and SSO secrets, pastoral notes, MFA secrets). Without it they
+  // would be keyed from AUTH_SECRET, so rotating AUTH_SECRET would make
+  // them unreadable. A short key would only fail later, on the first secret
   // read or written; refuse it at boot instead.
+  if (env.NODE_ENV === 'production' && !env.DATA_ENCRYPTION_KEY?.trim()) {
+    throw new Error(
+      'DATA_ENCRYPTION_KEY must be set (32+ characters) in production. Generate one with `openssl rand -base64 32`; if this install ran without it, run `bun run secrets:reencrypt` after setting it.',
+    );
+  }
   if (
     env.DATA_ENCRYPTION_KEY !== undefined &&
     env.DATA_ENCRYPTION_KEY !== '' &&
@@ -133,4 +141,47 @@ export function validateStartupConfig(
   ) {
     throw new Error('WEBHOOK_ALLOW_PRIVATE must be "true" or "false"');
   }
+}
+
+/** Hosts that never leave this machine or the compose network. */
+function isLocalDatabaseHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === '' || h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
+  if (h === 'host.docker.internal') return true;
+  // A single-label name is a service on the same compose / cluster network
+  // (`db`, `postgres`), not a database across the internet.
+  return !h.includes('.') && !h.includes(':');
+}
+
+const TLS_SSLMODES = new Set(['require', 'verify-ca', 'verify-full']);
+
+/**
+ * Settings that are allowed but unsafe: logged as warnings at boot. Today:
+ * a database on another host reached without TLS, so personal data would
+ * cross the network in clear text.
+ */
+export function startupWarnings(env: StartupEnvironment = process.env): string[] {
+  const warnings: string[] = [];
+  const raw = env.DATABASE_URL?.trim();
+  if (raw) {
+    let url: URL | null = null;
+    try {
+      url = new URL(raw);
+    } catch {
+      url = null;
+    }
+    if (url) {
+      // A Unix socket path (`?host=/var/run/postgresql`) is local too.
+      const socketHost = url.searchParams.get('host');
+      const sslmode = url.searchParams.get('sslmode')?.toLowerCase();
+      const ssl = url.searchParams.get('ssl')?.toLowerCase();
+      const tls = (sslmode !== undefined && TLS_SSLMODES.has(sslmode)) || ssl === 'true' || ssl === '1';
+      if (!tls && !socketHost?.startsWith('/') && !isLocalDatabaseHost(url.hostname)) {
+        warnings.push(
+          `DATABASE_URL points at ${url.hostname} without TLS: add ?sslmode=verify-full (or sslmode=require) so personal data is encrypted on its way to the database. See docs/content/hosting-requirements.md.`,
+        );
+      }
+    }
+  }
+  return warnings;
 }

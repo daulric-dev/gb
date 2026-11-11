@@ -9,6 +9,7 @@ import { api, ApiError, buildUrl } from "@/lib/api";
 import { downloadFromUrl } from "@/lib/download";
 import { userMessage } from "@/lib/errors";
 import { personName } from "@/lib/courses/format";
+import { NoTranslate } from "@/components/translation/no-translate";
 import {
   completionPercent,
   deadlineState,
@@ -334,10 +335,10 @@ export default function ReportReleasePage() {
                       <tr key={c.courseId} className="border-t">
                         <th scope="row" className="px-3 py-2 text-left font-medium">
                           {c.name}
-                          {c.code && <span className="ml-1 font-mono text-xs text-muted-foreground">{c.code}</span>}
+                          {c.code && <span className="ml-1 font-mono text-xs text-muted-foreground" translate="no">{c.code}</span>}
                           {c.yearLong && <Badge variant="outline" className="ml-2">Year-long</Badge>}
                         </th>
-                        <td className="px-3 py-2 text-muted-foreground">{c.teachers.join(", ") || "-"}</td>
+                        <td className="px-3 py-2 text-muted-foreground" translate="no">{c.teachers.join(", ") || "-"}</td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <Progress value={completionPercent(c)} className="w-24" aria-label={`${c.name} comments ready`} />
@@ -399,7 +400,7 @@ export default function ReportReleasePage() {
                       return (
                         <tr key={s.studentId} className="border-t align-top">
                           <th scope="row" className="px-3 py-2 text-left font-medium">
-                            {name}
+                            <NoTranslate>{name}</NoTranslate>
                             <span className="block text-xs font-normal text-muted-foreground">
                               {s.courses} course{s.courses === 1 ? "" : "s"}
                             </span>
@@ -407,6 +408,7 @@ export default function ReportReleasePage() {
                           <td className="px-3 py-2">
                             <Textarea
                               aria-label={`Head comment for ${name}`}
+                              data-private-label
                               rows={2}
                               maxLength={REPORT_COMMENT_MAX}
                               disabled={!canUpdate || !!o.publishedAt}
@@ -431,6 +433,7 @@ export default function ReportReleasePage() {
                               size="sm"
                               variant="ghost"
                               aria-label={`Preview ${name}'s report`}
+                              data-private-label
                               onClick={() =>
                                 run("preview", () => openPdf(`/report-cards/terms/${id}/students/${s.studentId}/preview`))
                               }
@@ -442,6 +445,7 @@ export default function ReportReleasePage() {
                                 size="sm"
                                 variant="ghost"
                                 aria-label={`Download ${name}'s report`}
+                                data-private-label
                                 onClick={() =>
                                   run("download", () =>
                                     downloadFromUrl(

@@ -207,7 +207,12 @@ describe('ParentNotificationService', () => {
     expect(prisma.parent_notification_sent.createManyAndReturn.mock.calls[0][0].skipDuplicates).toBe(true);
     expect(push.sendToUsers).toHaveBeenCalledTimes(1);
     expect((push.sendToUsers.mock.calls[0] as any)[1].data.type).toBe('parent.new_grade');
+    // A child's news: the parent category (own settings), sensitive, the child's school decides the content.
+    expect((push.sendToUsers.mock.calls[0] as any)[1]).toMatchObject({ category: 'parent', sensitive: true });
+    expect((push.sendToUsers.mock.calls[0] as any)[1].schoolId).toBeTruthy();
     expect(mail.send).toHaveBeenCalledTimes(1);
+    // The mail log gets a kind, never the subject (which names the child).
+    expect((mail.send.mock.calls[0] as any)[0].kind).toBe('parent_notice');
   });
 
   test('email and push follow the parent switches', async () => {

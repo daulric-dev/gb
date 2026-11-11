@@ -36,6 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TopicEditorDialog } from "./TopicEditorDialog";
 import { formatWhen } from "./TopicList";
 import { userMessage } from "@/lib/errors";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 function Byline({
   author,
@@ -56,7 +57,7 @@ function Byline({
       </Avatar>
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-          {authorName(author)}
+          <NoTranslate>{authorName(author)}</NoTranslate>
           {author?.isStaff && <Badge variant="secondary">Staff</Badge>}
           {isNew && <Badge>New</Badge>}
         </p>
@@ -290,7 +291,9 @@ export function TopicView({
                 onCancelAction={() => (editingId.value = null)}
               />
             ) : (
-              <Markdown className="pl-10">{r.body}</Markdown>
+              <NoTranslate as="div">
+                <Markdown className="pl-10">{r.body}</Markdown>
+              </NoTranslate>
             )}
           </>
         )}
@@ -319,7 +322,8 @@ export function TopicView({
             <div className="min-w-0 space-y-2">
               <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
                 {t.isPinned && <Pin className="size-4 text-primary" aria-label="Pinned" />}
-                {t.title}
+                {/* A student's topic is student-written: not sent for translation. */}
+                <span translate={t.author?.isStaff ? undefined : "no"}>{t.title}</span>
               </h2>
               <div className="flex flex-wrap gap-1.5">
                 {t.isLocked && (
@@ -357,7 +361,11 @@ export function TopicView({
             )}
           </div>
           <Byline author={t.author} createdAt={t.createdAt} editedAt={t.editedAt} />
-          {t.body.trim() && <Markdown>{t.body}</Markdown>}
+          {t.body.trim() && (
+            <div translate={t.author?.isStaff ? undefined : "no"}>
+              <Markdown>{t.body}</Markdown>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -12,6 +12,9 @@ model app_user {
   session           session[]
   known_device      known_device[]
   user_profile      user_profile?
+  mfa_totp           mfa_totp?
+  mfa_recovery_code  mfa_recovery_code[]
+  mfa_enrolment_gate mfa_enrolment_gate[]
 
   @@schema("account")
 }
@@ -89,6 +92,7 @@ model session {
   elevated_until      DateTime? @db.Timestamptz(6)
   app_user            app_user  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   push_device         push_device[]
+  mfa_enrolment_gate  mfa_enrolment_gate?
 
   @@index([expires_at])
   @@index([user_id])

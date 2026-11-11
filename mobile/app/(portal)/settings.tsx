@@ -12,6 +12,7 @@ import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
 import { OfflineDataCard } from "@/features/offline/OfflineDataCard";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { offlineUsage } from "@/lib/offline-store";
+import { openPrivacyNotice } from "@/lib/privacy-link";
 
 /**
  * Student settings: identity, appearance, signed-in devices and sign-out. Deliberately narrower
@@ -84,6 +85,10 @@ export default function PortalSettingsScreen() {
       <OfflineDataCard refreshKey={refreshKey} />
 
       <CheckForUpdates />
+
+      <Button variant="ghost" onPress={openPrivacyNotice}>
+        Privacy notice
+      </Button>
 
       <Button variant="outline" onPress={onLogout}>
         Log out

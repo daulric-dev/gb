@@ -21,6 +21,13 @@ import { UpdateStudentDto } from './dto/update-student.dto';
 import { serializeStudent, type StudentRow } from './student.rows';
 import { optionalImageUrl } from '@/images/public-url';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
+import { loadEffectivePermissions } from '@/permission/permission.effective';
+import {
+  canSeeSensitive,
+  scopedStudentWhere,
+  studentScope,
+  type StudentScope,
+} from '@/permission/student-access';
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 const DEFAULT_PAGE_SIZE = 20;
@@ -66,9 +73,12 @@ export class StudentService {
 
   async findAll(userId: string, search?: string) {
     const schoolId = await this.schoolForUser(userId);
+    const scope = await this.scopeFor(userId, schoolId);
 
+    // The cached roster is the whole school: only for student:read-all.
     const cacheKey = `students:${schoolId}`;
-    if (!search) {
+    const cacheable = !search && scope.all;
+    if (cacheable) {
       const cached = await this.cache.get(cacheKey);
       if (cached) return cached;
     }
@@ -76,7 +86,7 @@ export class StudentService {
     let result: StudentRow[];
     try {
       const rows = await this.prisma.student.findMany({
-        where: this.listWhere(schoolId, search),
+        where: scopedStudentWhere(scope, this.listWhere(schoolId, search)),
         orderBy: STUDENT_ORDER,
       });
       result = rows.map(serializeStudent);
@@ -85,7 +95,7 @@ export class StudentService {
       throw new BadRequestException('Failed to fetch students');
     }
 
-    if (!search) {
+    if (cacheable) {
       await this.cache.set(cacheKey, result, STUDENT_TTL);
     }
     return result;
@@ -101,7 +111,10 @@ export class StudentService {
     search?: string,
   ): Promise<PaginatedResult<any>> {
     const schoolId = await this.schoolForUser(userId);
-    const where = this.listWhere(schoolId, search);
+    const where = scopedStudentWhere(
+      await this.scopeFor(userId, schoolId),
+      this.listWhere(schoolId, search),
+    );
     const pageSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
 
     if (pagination.cursor === undefined) {
@@ -189,9 +202,13 @@ export class StudentService {
 
   async findOne(userId: string, studentId: string) {
     const schoolId = await this.requireSchoolId(userId);
+    const scope = await this.scopeFor(userId, schoolId);
 
+    // Outside the caller's scope reads as not found (student-access.ts).
     const data = await this.prisma.student
-      .findFirst({ where: { id: studentId, school_id: schoolId } })
+      .findFirst({
+        where: scopedStudentWhere(scope, { id: studentId, school_id: schoolId }),
+      })
       .catch(() => null);
 
     if (!data) {
@@ -211,6 +228,30 @@ export class StudentService {
    */
   async profile(userId: string, studentId: string) {
     const student = await this.findOne(userId, studentId);
+    // Guardian contact details need student:sensitive; without it the
+    // guardians list is left out (null), not emptied, so the apps can tell.
+    const sensitive = canSeeSensitive(
+      await loadEffectivePermissions(
+        this.prisma,
+        this.cache,
+        userId,
+        student.school_id as string,
+      ),
+    );
+
+    const loadLinks = () =>
+      this.prisma.parent_student_link.findMany({
+        where: { student_id: studentId },
+        select: {
+          user_profile_id: true,
+          relationship: true,
+          user_profile: {
+            select: { id: true, first_name: true, last_name: true, email: true },
+          },
+        },
+      });
+    const guardianLinks: Promise<Awaited<ReturnType<typeof loadLinks>>> =
+      sensitive ? loadLinks() : Promise.resolve([]);
 
     const [enrolments, account, links] = await Promise.all([
       this.prisma.course_student.findMany({
@@ -245,16 +286,7 @@ export class StudentService {
             },
           })
         : null,
-      this.prisma.parent_student_link.findMany({
-        where: { student_id: studentId },
-        select: {
-          user_profile_id: true,
-          relationship: true,
-          user_profile: {
-            select: { id: true, first_name: true, last_name: true, email: true },
-          },
-        },
-      }),
+      guardianLinks,
     ]);
 
     const statusRank = { active: 0, completed: 1, dropped: 2 } as const;
@@ -301,12 +333,14 @@ export class StudentService {
             accountType: account.account_type,
           }
         : null,
-      guardians: [...guardians.values()].map((g) => ({
-        id: g.id,
-        name: `${g.first_name ?? ''} ${g.last_name ?? ''}`.trim(),
-        email: g.email,
-        relationship: relationshipById.get(g.id) ?? null,
-      })),
+      guardians: sensitive
+        ? [...guardians.values()].map((g) => ({
+            id: g.id,
+            name: `${g.first_name ?? ''} ${g.last_name ?? ''}`.trim(),
+            email: g.email,
+            relationship: relationshipById.get(g.id) ?? null,
+          }))
+        : null,
     };
   }
 
@@ -394,6 +428,17 @@ export class StudentService {
   }
 
   // --- helpers -------------------------------------------------------------
+
+  /** Which students the caller may see (student-access.ts). */
+  private async scopeFor(userId: string, schoolId: string): Promise<StudentScope> {
+    const effective = await loadEffectivePermissions(
+      this.prisma,
+      this.cache,
+      userId,
+      schoolId,
+    );
+    return studentScope(effective, userId, schoolId);
+  }
 
   /** Roster filter: the school, optionally narrowed by a name search. */
   private listWhere(

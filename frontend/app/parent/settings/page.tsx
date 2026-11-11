@@ -70,8 +70,8 @@ export default function ParentSettingsPage() {
             <ul className="divide-y">
               {children.map((c) => (
                 <li key={c.id} className="py-2">
-                  <p className="text-sm font-medium">{personName(c, "Child")}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm font-medium" translate="no">{personName(c, "Child")}</p>
+                  <p className="text-xs text-muted-foreground" translate="no">
                     {[c.school.name, relationshipText(c.relationship, c.relationshipLabel)]
                       .filter(Boolean)
                       .join(" · ")}

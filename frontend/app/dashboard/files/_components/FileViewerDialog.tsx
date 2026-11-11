@@ -95,7 +95,7 @@ export function FileViewerDialog({
     >
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle className="truncate pr-8">{file?.name}</DialogTitle>
+          <DialogTitle className="truncate pr-8" translate="no">{file?.name}</DialogTitle>
         </DialogHeader>
 
         <div className="flex h-[70vh] items-center justify-center overflow-hidden rounded-md border bg-muted/30">

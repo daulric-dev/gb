@@ -86,6 +86,24 @@ describe('DELETE /api/auth/account', () => {
     expect(storage.objects.size).toBe(0);
   });
 
+  test('AI request rows lose the user; push devices and roster links go; all in the replay plan', async () => {
+    const { prisma, tx, svc } = build();
+    await svc.deleteAccount(USER);
+    expect(tx.ai_request.updateMany.mock.calls[0][0]).toEqual({ where: { user_id: USER }, data: { user_id: null } });
+    expect(tx.push_device.deleteMany.mock.calls[0][0]).toEqual({ where: { user_id: USER } });
+    expect(tx.roster_link.deleteMany.mock.calls[0][0]).toEqual({ where: { target_id: USER } });
+    const tables = loggedEntry(prisma, tx).replay.steps.map((s: any) => s.table ?? s.op);
+    expect(tables).toEqual([
+      'delete_storage_prefix',
+      'file_manager.file',
+      'public.ai_request',
+      'public.push_device',
+      'public.roster_link',
+      'public.user_profile',
+      'account.app_user',
+    ]);
+  });
+
   test('a failed log write fails the deletion and leaves storage alone', async () => {
     const { tx, storage, svc, cache } = build();
     await cache.set(`profile:${USER}`, { id: USER }, 1);

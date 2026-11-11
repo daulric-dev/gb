@@ -11,6 +11,12 @@ import {
 } from './ai.constants';
 import { AiService } from './ai.service';
 import { plainText, redact, STUDENT_PLACEHOLDER, type PersonNames } from './redact';
+import { coursePeople } from './course-people';
+import {
+  AI_STUDENT_RESTRICTED,
+  AI_STUDENT_RESTRICTED_MESSAGE,
+  isRestricted,
+} from '@/student-restriction/restriction';
 import { QUIZ_SYSTEM, RUBRIC_SYSTEM, SUMMARY_SCHEMA, SUMMARY_SYSTEM, quizSchema, rubricSchema } from './prompts';
 import type { PageSummaryDto, QuizDraftDto, RubricFeedbackDto } from './ai.dto';
 
@@ -59,13 +65,9 @@ export class AiDraftsService {
     private readonly ai: AiService,
   ) {}
 
-  /** Names of the course's students (redacted from anything sent). */
+  /** Names of the course's students, staff and guardians (redacted from anything sent). */
   private async courseStudents(courseId: string): Promise<PersonNames[]> {
-    const rows = await this.prisma.course_student.findMany({
-      where: { course_id: courseId },
-      select: { student: { select: { first_name: true, last_name: true } } },
-    });
-    return rows.flatMap((r) => (r.student ? [r.student as PersonNames] : []));
+    return coursePeople(this.prisma, courseId);
   }
 
   private async course(userId: string, courseId: string, roles: typeof STAFF_ROLES) {
@@ -148,6 +150,14 @@ export class AiDraftsService {
         statusCode: 403,
         code: 'AI_STUDENT_WORK_NOT_ALLOWED',
         message: "Your school does not allow sending students' work to the AI provider. A school admin can change this in Settings.",
+      });
+    }
+    // So may the student (or their parent): an objection recorded on the student's page.
+    if (await isRestricted(this.prisma, 'no_ai', dto.studentId)) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: AI_STUDENT_RESTRICTED,
+        message: AI_STUDENT_RESTRICTED_MESSAGE,
       });
     }
     const [rubric, submission] = await Promise.all([

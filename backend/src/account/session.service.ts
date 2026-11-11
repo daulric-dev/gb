@@ -8,12 +8,23 @@ import type { Prisma } from '@/generated/prisma/client';
 import { authSecret } from './secret';
 import { DEVICE_HEADER, deviceLabel } from './device-label';
 import { SessionAlertService } from './session-alert.service';
-import { KNOWN_DEVICE_WINDOW_MS, rotationGraceMs, sessionAlertsEnabled, sessionMaxAgeMs } from './session.config';
+import {
+  KNOWN_DEVICE_WINDOW_MS,
+  renewAfterMs,
+  rotationGraceMs,
+  sessionAlertsEnabled,
+  sessionPolicy,
+  type SessionPolicy,
+} from './session.config';
 
 export const SESSION_COOKIE = 'gb_session';
-/** The sliding expiry: a session unused for this long ends. */
+/**
+ * The default sliding expiry: a session unused for this long ends. The one
+ * applied comes from session.config.ts (SESSION_IDLE_DAYS, and shorter
+ * STAFF_SESSION_IDLE_HOURS for staff accounts).
+ */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
-/** Renew (and rotate the token of) a session used this long after the last renewal. */
+/** Renew (and rotate the token of) a session used this long after the last renewal (default; see renewAfterMs). */
 export const RENEW_AFTER_MS = 24 * 60 * 60_000;
 /**
  * How long a replaced token can still recover a session whose client never
@@ -38,7 +49,8 @@ export type RevokeReason =
   | 'token_reuse'
   | 'account_deleted'
   | 'deactivated'
-  | 'email_verified';
+  | 'email_verified'
+  | 'email_changed';
 
 /** One row of Signed-in devices. Never carries a token or its hash. */
 export interface SessionSummary {
@@ -178,6 +190,7 @@ const SESSION_SELECT = {
   rotation_confirmed_at: true,
   expires_at: true,
   absolute_expires_at: true,
+  created_at: true,
   revoked_at: true,
   last_seen_at: true,
   user_agent: true,
@@ -196,8 +209,11 @@ const SESSION_SELECT = {
  * an admin signing a member out) and a database leak does not hand any out.
  *
  * - **Lifetime.** A session slides: each day it is used it is extended by
- *   another 30 days, but never past `absolute_expires_at`
- *   (SESSION_MAX_AGE_DAYS after sign-in, default 90).
+ *   another SESSION_IDLE_DAYS (default 30), but never past
+ *   `absolute_expires_at` (SESSION_MAX_AGE_DAYS after sign-in, default 90).
+ *   Staff accounts get shorter lifetimes (STAFF_SESSION_IDLE_HOURS, default
+ *   7 days; STAFF_SESSION_MAX_DAYS, default 30), checked at sign-in and at
+ *   each renewal, so an account that becomes staff gets them from then on.
  * - **Rotation.** At that daily renewal the token itself is replaced. The new
  *   one goes out as the cookie (web) or an `X-Session-Token` header (the app).
  *   The replaced token keeps working for SESSION_ROTATION_GRACE_SECONDS, for
@@ -228,6 +244,25 @@ export class SessionService {
     private readonly alerts: SessionAlertService,
   ) {}
 
+  /**
+   * The lifetimes for an account: staff (and school admins) get the shorter
+   * staff ones. No profile yet (a first sign-in before onboarding), or a
+   * failed lookup, gets the standard ones; renewal checks again.
+   */
+  async policyFor(userId: string): Promise<SessionPolicy> {
+    try {
+      const profile = await this.prisma.user_profile.findUnique({
+        where: { id: userId },
+        select: { account_type: true, role: true },
+      });
+      const staff = !!profile && (profile.account_type === 'staff' || profile.role === 'admin');
+      return sessionPolicy(staff ? 'staff' : 'standard');
+    } catch (err) {
+      this.logger.warn(`Session policy lookup failed for ${userId}: ${(err as Error).message}`);
+      return sessionPolicy('standard');
+    }
+  }
+
   /** Start a session and set the cookie on the response. */
   async create(
     reply: FastifyReply,
@@ -237,8 +272,9 @@ export class SessionService {
   ): Promise<string> {
     const token = newToken();
     const now = new Date();
-    const absoluteExpiresAt = new Date(now.getTime() + sessionMaxAgeMs());
-    const expiresAt = cappedExpiry(now.getTime(), absoluteExpiresAt);
+    const policy = await this.policyFor(userId);
+    const absoluteExpiresAt = new Date(now.getTime() + policy.maxAgeMs);
+    const expiresAt = cappedExpiry(now.getTime(), absoluteExpiresAt, policy.idleMs);
     const userAgent = userAgentOf(req);
     const device = deviceLabel(userAgent, headerOf(req, DEVICE_HEADER), isNative(req));
     const ip = req.ip ?? null;
@@ -348,7 +384,7 @@ export class SessionService {
       });
     }
 
-    if (now - row.last_seen_at.getTime() > RENEW_AFTER_MS) {
+    if (now - row.last_seen_at.getTime() > renewAfterMs()) {
       const renewed = await this.rotate(row, source.token, now);
       if (!renewed) {
         if (reply) this.clearCookie(reply);
@@ -372,14 +408,29 @@ export class SessionService {
    * so this one hands that out too.
    */
   private async rotate(
-    row: { id: string; absolute_expires_at: Date },
+    row: { id: string; user_id: string; absolute_expires_at: Date; created_at?: Date | null },
     token: string,
     now: number,
   ): Promise<{ token: string; expiresAt: Date } | null> {
     const hash = hashToken(token);
     const next = rotatedToken(token);
     const nextHash = hashToken(next);
-    const expiresAt = cappedExpiry(now, row.absolute_expires_at);
+    // The account may have become staff since sign-in: its lifetimes apply now.
+    const policy = await this.policyFor(row.user_id);
+    const absolute = new Date(
+      row.created_at
+        ? Math.min(row.absolute_expires_at.getTime(), row.created_at.getTime() + policy.maxAgeMs)
+        : row.absolute_expires_at.getTime(),
+    );
+    if (absolute.getTime() <= now) {
+      await this.prisma.session.updateMany({
+        where: { id: row.id, token_hash: hash, revoked_at: null },
+        data: { absolute_expires_at: absolute, expires_at: absolute },
+      });
+      await this.cache.delete(`session:${hash}`);
+      return null;
+    }
+    const expiresAt = cappedExpiry(now, absolute, policy.idleMs);
 
     const { count } = await this.prisma.session.updateMany({
       where: { id: row.id, token_hash: hash, revoked_at: null },
@@ -390,6 +441,7 @@ export class SessionService {
         rotation_confirmed_at: null,
         last_seen_at: new Date(now),
         expires_at: expiresAt,
+        absolute_expires_at: absolute,
       },
     });
     if (count === 0) {
@@ -496,11 +548,12 @@ export class SessionService {
   }
 
   /** Sign the user out everywhere except this session. */
-  async revokeOthers(userId: string, currentSessionId: string): Promise<number> {
-    return this.revokeWhere(
-      { user_id: userId, id: { not: currentSessionId } },
-      'signed_out_others',
-    );
+  async revokeOthers(
+    userId: string,
+    currentSessionId: string,
+    reason: RevokeReason = 'signed_out_others',
+  ): Promise<number> {
+    return this.revokeWhere({ user_id: userId, id: { not: currentSessionId } }, reason);
   }
 
   /** Sign this device out. */
@@ -698,7 +751,7 @@ export function deviceFingerprint(method: string, device: string): string {
   return hashToken(`${method}\n${device}`);
 }
 
-/** 30 days from `now`, but never past the absolute lifetime. */
-function cappedExpiry(now: number, absolute: Date): Date {
-  return new Date(Math.min(now + SESSION_TTL_MS, absolute.getTime()));
+/** The idle time from `now`, but never past the absolute lifetime. */
+function cappedExpiry(now: number, absolute: Date, idleMs: number): Date {
+  return new Date(Math.min(now + idleMs, absolute.getTime()));
 }

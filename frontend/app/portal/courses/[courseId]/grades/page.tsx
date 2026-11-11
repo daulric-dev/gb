@@ -78,13 +78,13 @@ export default function PortalCourseGradesPage() {
         <Card>
           <CardHeader>
             <CardDescription>Current grade</CardDescription>
-            <CardTitle className="text-4xl font-bold">
+            <CardTitle className="text-4xl font-bold" translate="no">
               {grade.percent === null ? "-" : formatPercent(grade.percent)}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {grade.letter ? (
-              <Badge className="text-sm">{grade.letter}</Badge>
+              <Badge className="text-sm" translate="no">{grade.letter}</Badge>
             ) : (
               <p className="text-xs text-muted-foreground">
                 {grade.percent === null
@@ -180,7 +180,7 @@ function GradeTableRow({ row }: { row: GradeRow }) {
             {status}
           </Badge>
         </TableCell>
-        <TableCell className="pr-4 text-right tabular-nums">
+        <TableCell className="pr-4 text-right tabular-nums" translate="no">
           {s?.excused ? (
             <span className="text-muted-foreground">EX</span>
           ) : s?.status === "graded" && s.score !== null ? (
@@ -204,7 +204,7 @@ function GradeTableRow({ row }: { row: GradeRow }) {
           <TableCell colSpan={4} className="max-w-0 pt-0 pl-4 whitespace-normal">
             <div className="flex gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
               <MessageSquareText className="mt-0.5 size-3.5 shrink-0" />
-              <span className="whitespace-pre-wrap">{s.feedback}</span>
+              <span className="whitespace-pre-wrap" translate="no">{s.feedback}</span>
             </div>
           </TableCell>
         </TableRow>

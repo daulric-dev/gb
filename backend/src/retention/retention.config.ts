@@ -31,3 +31,30 @@ export const runHourUtc = () => Math.min(23, envInt('RETENTION_PURGE_HOUR_UTC', 
  * wide margin for a slow finalise.
  */
 export const ABANDONED_UPLOAD_MS = 60 * 60 * 1000;
+
+/**
+ * Personal data kept for a fixed time (not soft-deleted first): in-app
+ * notifications (course notices, file-share notices) and the parent-notice
+ * dedupe rows, after NOTIFICATION_RETENTION_DAYS (default 180; 0 = never).
+ */
+export const notificationRetentionDays = () => envInt('NOTIFICATION_RETENTION_DAYS', 180);
+
+/**
+ * Rostering history: dry-run change sets (roster_change: names, emails,
+ * diffs) of finished runs, and the roster email and source record kept on a
+ * link that was disabled, after ROSTER_HISTORY_RETENTION_DAYS (default 90;
+ * 0 = never).
+ */
+export const rosterHistoryRetentionDays = () => envInt('ROSTER_HISTORY_RETENTION_DAYS', 90);
+
+/**
+ * Raw check-in coordinates (attendance_record.latitude / longitude) and the
+ * teacher's session point are cleared this many hours after the session
+ * closed (default 24; 0 = at the next run after closing). Distance,
+ * accuracy and location flags stay.
+ */
+export const attendanceLocationRetentionHours = () =>
+  envInt('ATTENDANCE_LOCATION_RETENTION_HOURS', 24);
+
+/** A school's retention list shows records due within this many days. */
+export const RETENTION_NOTICE_DAYS = 30;

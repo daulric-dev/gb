@@ -117,7 +117,7 @@ export function ParentLinksCard({ studentId }: { studentId: string }) {
             {links.map((l) => (
               <li key={l.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
                 <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1" translate="no">
                   <p className="truncate text-sm font-medium">{personName(l.parent, "Parent")}</p>
                   <p className="truncate text-xs text-muted-foreground">{l.parent.email ?? "No email"}</p>
                 </div>
@@ -129,6 +129,7 @@ export function ParentLinksCard({ studentId }: { studentId: string }) {
                     variant="ghost"
                     size="icon"
                     aria-label={`Remove ${personName(l.parent, "this parent")}`}
+                    data-private-label
                     onClick={() => void remove(`${base}/${l.id}`, "Parent removed")}
                   >
                     <X className="size-4" />
@@ -150,7 +151,7 @@ export function ParentLinksCard({ studentId }: { studentId: string }) {
                     <KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{i.kind === "email" ? i.email : "Link code"}</p>
+                    <p className="truncate text-sm" translate={i.kind === "email" ? "no" : undefined}>{i.kind === "email" ? i.email : "Link code"}</p>
                     <p className="text-xs text-muted-foreground">
                       Expires {new Date(i.expiresAt).toLocaleDateString()}
                     </p>

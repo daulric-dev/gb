@@ -1,0 +1,22 @@
+/// A school's own retention periods for student records (src/retention),
+/// off unless set. leaver_retention_days: erase a record this many days
+/// after the student became inactive (student.left_at; 30 - 3650).
+/// closed_year_retention_years: erase a record once the last academic year
+/// the student was enrolled in ended this many years ago (1 - 25). Nothing
+/// is purged until an admin has reviewed the due list and confirmed
+/// (confirmed_at); changing a period clears the confirmation. school_id has
+/// a foreign key to public.school (ON DELETE CASCADE) that is not declared
+/// here, so the school model needs no back relation.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model school_retention_setting {
+  school_id                   String    @id @db.Uuid
+  leaver_retention_days       Int?
+  closed_year_retention_years Int?
+  confirmed_at                DateTime? @db.Timestamptz(6)
+  /// Who confirmed (no foreign key: the setting outlives the account).
+  confirmed_by                String?   @db.Uuid
+  updated_by                  String?   @db.Uuid
+  updated_at                  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}

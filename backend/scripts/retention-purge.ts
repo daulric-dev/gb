@@ -10,6 +10,9 @@
  *                   discussion reply ids and skip the global clean-ups (sign-in
  *                   leftovers, erasure-log pruning); for tests.
  *
+ * Schools' own student-record retention (src/retention/school-retention.service.ts)
+ * runs only in the API's scheduled purge, not here.
+ *
  * Holds the same advisory lock as the scheduler, so it never runs at the same
  * time as an API instance's purge. Ignores RETENTION_PURGE_ENABLED (running
  * it by hand is the explicit request). Exits 1 if any part failed.
@@ -82,6 +85,13 @@ async function main(): Promise<number> {
       ['leftover account objects', r.leftoverObjects],
       ['abandoned uploads', r.abandonedUploads],
       ['stray staged upload objects', r.stagedObjects],
+      ['webhook deliveries', r.webhookDeliveries],
+      ['pastoral notes', r.pastoralNotes],
+      ['old notifications', r.notifications],
+      ['roster change rows', r.rosterChanges],
+      ['disabled roster links cleared', r.rosterLinksCleared],
+      ['check-in coordinates cleared', r.attendanceCoordinates],
+      ['session locations cleared', r.sessionCoordinates],
       ['erasure log entries exported', r.exported],
     ];
     for (const [label, n] of rows) console.log(`  ${label.padEnd(30)} ${n}`);

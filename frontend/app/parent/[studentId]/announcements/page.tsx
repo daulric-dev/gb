@@ -6,6 +6,7 @@ import { announcementSource, personName, type ParentAnnouncement } from "@/lib/p
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Markdown } from "@/components/markdown";
+import { NoTranslate } from "@/components/translation/no-translate";
 import { useChildData } from "../../_components/use-child-data";
 import { formatWhen, Loading, Notice } from "../../_components/ui";
 
@@ -34,8 +35,8 @@ export default function ParentAnnouncementsPage() {
               {a.scope === "school" && <Badge variant="secondary">School</Badge>}
             </div>
             <p className="text-xs text-muted-foreground">
-              {announcementSource(a)} ·{" "}
-              {personName(a.author, a.scope === "school" ? "School" : "Teacher")} ·{" "}
+              <NoTranslate>{announcementSource(a)}</NoTranslate> ·{" "}
+              <NoTranslate>{personName(a.author, a.scope === "school" ? "School" : "Teacher")}</NoTranslate> ·{" "}
               {formatWhen(a.createdAt)}
             </p>
           </CardHeader>

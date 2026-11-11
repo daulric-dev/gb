@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { KNOWN_DEVICE_WINDOW_MS } from '@/account/session.config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
@@ -12,11 +12,15 @@ import { ErasureReplayService } from '@/erasure/erasure-replay.service';
 import { plan } from '@/erasure/erasure-plan';
 import {
   ABANDONED_UPLOAD_MS,
+  attendanceLocationRetentionHours,
   batchSize,
   maxRunMs,
+  notificationRetentionDays,
+  rosterHistoryRetentionDays,
   softDeleteRetentionDays,
   type PurgeKind,
 } from './retention.config';
+import { SchoolRetentionService } from './school-retention.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Expired or revoked sessions and used or expired sign-in codes kept this long. */
@@ -57,6 +61,18 @@ export interface PurgeReport {
   webhookDeliveries: number;
   /** Resolved pastoral notes past their school's retention period. */
   pastoralNotes: number;
+  /** Course and file-share notifications and parent-notice records past NOTIFICATION_RETENTION_DAYS. */
+  notifications: number;
+  /** Rostering change rows of finished runs past ROSTER_HISTORY_RETENTION_DAYS. */
+  rosterChanges: number;
+  /** Disabled roster links whose email and source record were cleared. */
+  rosterLinksCleared: number;
+  /** Attendance records whose raw coordinates were cleared. */
+  attendanceCoordinates: number;
+  /** Attendance sessions whose teacher location was cleared. */
+  sessionCoordinates: number;
+  /** Student records erased under their school's retention periods. */
+  studentRecords: number;
   exported: number;
   errors: string[];
 }
@@ -96,6 +112,7 @@ export class RetentionService {
     private readonly storage: StorageService,
     private readonly erasure: ErasureLogService,
     private readonly replay: ErasureReplayService,
+    @Optional() private readonly schools?: SchoolRetentionService,
   ) {}
 
   async purge(opts: PurgeOptions = {}): Promise<PurgeReport> {
@@ -120,6 +137,12 @@ export class RetentionService {
       stagedObjects: 0,
       webhookDeliveries: 0,
       pastoralNotes: 0,
+      notifications: 0,
+      rosterChanges: 0,
+      rosterLinksCleared: 0,
+      attendanceCoordinates: 0,
+      sessionCoordinates: 0,
+      studentRecords: 0,
       exported: 0,
       errors: [],
     };
@@ -141,6 +164,18 @@ export class RetentionService {
         ['staged upload objects', () => this.purgeStagedObjects(ctx)],
         ['staged image uploads', () => this.purgeStagedImages(ctx)],
         ['webhook deliveries', () => this.purgeWebhookDeliveries(now, ctx)],
+        ['notifications', () => this.purgeNotifications(now, ctx)],
+        ['roster history', () => this.purgeRosterHistory(now, ctx)],
+        ['attendance coordinates', () => this.purgeAttendanceCoordinates(now, ctx)],
+        ['school student-record retention', async () => {
+          if (!this.schools) return;
+          const r = await this.schools.purge(now, {
+            dryRun: opts.dryRun,
+            checkTime: () => this.checkTime(deadline),
+          });
+          report.studentRecords = r.erased;
+          report.errors.push(...r.errors.map((e) => `student-record retention: ${e}`));
+        }],
         ['erasure log', async () => {
           const pruned = await this.erasure.prune(now, opts.dryRun);
           report.erasureLogRows = pruned.rows;
@@ -148,10 +183,11 @@ export class RetentionService {
         }],
         ['account storage', async () => {
           if (opts.dryRun) return;
-          report.leftoverObjects = await this.replay.retryStorage(
-            'account',
-            new Date(now.getTime() - STORAGE_RETRY_MS),
-          );
+          const since = new Date(now.getTime() - STORAGE_RETRY_MS);
+          report.leftoverObjects =
+            (await this.replay.retryStorage('account', since)) +
+            // Report PDFs of erased student records.
+            (await this.replay.retryStorage('student_record', since));
         }],
       );
     }
@@ -553,6 +589,150 @@ export class RetentionService {
         if (deleted === 0) break;
       }
     }
+  }
+
+  /**
+   * In-app notifications (course notices, file-share notices) and the
+   * parent-notice dedupe rows, NOTIFICATION_RETENTION_DAYS (default 180)
+   * after they were made, read or not. Not written to the erasure log: a
+   * fixed-period purge (like webhook deliveries), and a restore only brings
+   * back rows the next run removes again. A parent-notice row that old is
+   * well past every notice's lookback, so it cannot cause a repeat notice.
+   */
+  private async purgeNotifications(now: Date, { opts, deadline, report }: Ctx) {
+    const days = notificationRetentionDays();
+    if (days === 0) return;
+    const before = new Date(now.getTime() - days * DAY_MS);
+    const course = { created_at: { lt: before } };
+    const file = { created_at: { lt: before } };
+    const parent = { sent_at: { lt: before } };
+    if (opts.dryRun) {
+      report.notifications =
+        (await this.prisma.course_notification.count({ where: course })) +
+        (await this.prisma.notification.count({ where: file })) +
+        (await this.prisma.parent_notification_sent.count({ where: parent }));
+      return;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.course_notification.findMany({ where: course, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.course_notification.deleteMany({ where: { id: { in: ids } } });
+      report.notifications += count;
+      if (count === 0) break;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.notification.findMany({ where: file, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.notification.deleteMany({ where: { id: { in: ids } } });
+      report.notifications += count;
+      if (count === 0) break;
+    }
+    // Composite key and its own sent_at index: one statement per run.
+    this.checkTime(deadline);
+    report.notifications += (await this.prisma.parent_notification_sent.deleteMany({ where: parent })).count;
+  }
+
+  /**
+   * Rostering history, ROSTER_HISTORY_RETENTION_DAYS (default 90) on: the
+   * change rows (names, emails, field diffs) of runs that finished or were
+   * left planned - the run row with its counts stays - and the roster email
+   * and last-applied source record of links that were disabled that long
+   * ago (an active link needs both to sync and to claim accounts).
+   */
+  private async purgeRosterHistory(now: Date, { opts, deadline, report }: Ctx) {
+    const days = rosterHistoryRetentionDays();
+    if (days === 0) return;
+    const before = new Date(now.getTime() - days * DAY_MS);
+    const changes = {
+      run: {
+        created_at: { lt: before },
+        status: { in: ['planned', 'applied', 'failed', 'cancelled'] },
+      },
+    };
+    const links = {
+      disabled_at: { lt: before },
+      OR: [{ email: { not: null } }, { NOT: { data: { equals: {} } } }],
+    };
+    if (opts.dryRun) {
+      report.rosterChanges = await this.prisma.roster_change.count({ where: changes });
+      report.rosterLinksCleared = await this.prisma.roster_link.count({ where: links });
+      return;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.roster_change.findMany({ where: changes, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.roster_change.deleteMany({ where: { id: { in: ids } } });
+      report.rosterChanges += count;
+      if (count === 0) break;
+    }
+    // A planned run whose changes are gone can no longer be applied.
+    await this.prisma.roster_run.updateMany({
+      where: { created_at: { lt: before }, status: 'planned' },
+      data: { status: 'cancelled', finished_at: now },
+    });
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.roster_link.findMany({ where: links, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.roster_link.updateMany({
+        where: { id: { in: ids } },
+        data: { email: null, data: {} },
+      });
+      report.rosterLinksCleared += count;
+      if (count === 0) break;
+    }
+  }
+
+  /**
+   * Raw check-in coordinates: ATTENDANCE_LOCATION_RETENTION_HOURS (default
+   * 24) after a session closed, attendance_record.latitude / longitude and
+   * the session's own point (the teacher's location) are cleared. The
+   * distance, accuracy and location flags worked out at check-in stay. The
+   * service also clears records' coordinates when it closes a session; this
+   * catches the rest.
+   */
+  private async purgeAttendanceCoordinates(now: Date, { opts, deadline, report }: Ctx) {
+    const before = new Date(now.getTime() - attendanceLocationRetentionHours() * 60 * 60 * 1000);
+    const hasCoords = { OR: [{ latitude: { not: null } }, { longitude: { not: null } }] };
+    const sessions = { closed_at: { not: null, lt: before } };
+    const records = { ...hasCoords, attendance_session: sessions };
+    const sessionWhere = { ...sessions, ...hasCoords };
+    if (opts.dryRun) {
+      report.attendanceCoordinates = await this.prisma.course_attendance_record.count({ where: records });
+      report.sessionCoordinates = await this.prisma.attendance_session.count({ where: sessionWhere });
+      return;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.course_attendance_record.findMany({ where: records, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.course_attendance_record.updateMany({
+        where: { id: { in: ids } },
+        data: { latitude: null, longitude: null },
+      });
+      report.attendanceCoordinates += count;
+      if (count === 0) break;
+    }
+    this.checkTime(deadline);
+    report.sessionCoordinates = (
+      await this.prisma.attendance_session.updateMany({
+        where: sessionWhere,
+        data: { latitude: null, longitude: null },
+      })
+    ).count;
   }
 
   /**

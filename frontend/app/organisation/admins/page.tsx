@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { OrgHeader } from "../_components/org-header";
 import { SignOutSessionsButton } from "../_components/sign-out-sessions";
+import { ResetMfaButton } from "@/components/account/mfa/reset-mfa-button";
 import { InviteActions } from "../schools/_components/pending-invite";
 import { userMessage } from "@/lib/errors";
 
@@ -194,6 +195,9 @@ export default function OrganisationAdminsPage() {
                               userId={a.userId}
                               who={a.name || a.email}
                             />
+                          )}
+                          {!isMe && (
+                            <ResetMfaButton userId={a.userId} who={a.name || a.email} />
                           )}
                           {!a.fromEnv && !a.isOwner && (
                             <Button

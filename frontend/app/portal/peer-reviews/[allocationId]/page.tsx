@@ -133,7 +133,7 @@ export default function PeerReviewPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
+            <CardTitle className="text-base" translate={d.author ? "no" : undefined}>
               {d.author ? `${d.author}'s work` : "A classmate's work"}
             </CardTitle>
           </CardHeader>
@@ -145,7 +145,7 @@ export default function PeerReviewPage() {
               </details>
             )}
             {d.submission.textBody ? (
-              <p className="text-sm whitespace-pre-wrap">{d.submission.textBody}</p>
+              <p className="text-sm whitespace-pre-wrap" translate="no">{d.submission.textBody}</p>
             ) : (
               <p className="text-sm text-muted-foreground">No text was handed in.</p>
             )}
@@ -153,7 +153,7 @@ export default function PeerReviewPage() {
               <ul className="space-y-1">
                 {d.submission.files.map((f) => (
                   <li key={f.id}>
-                    <Button variant="outline" size="sm" onClick={() => void openFile(f)}>
+                    <Button variant="outline" size="sm" onClick={() => void openFile(f)} translate="no">
                       <FileText className="mr-1.5 size-4" aria-hidden />
                       {f.name}
                     </Button>
@@ -162,7 +162,7 @@ export default function PeerReviewPage() {
               </ul>
             )}
             {preview.value && (
-              <div className="h-[60vh] rounded-md border">
+              <div className="h-[60vh] rounded-md border" translate="no">
                 {preview.value.type === "application/pdf" ? (
                   <iframe src={preview.value.url} title={preview.value.name} className="h-full w-full" />
                 ) : (

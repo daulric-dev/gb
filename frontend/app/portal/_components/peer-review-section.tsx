@@ -9,6 +9,7 @@ import { formatDue } from "@/lib/courses/format";
 import { peerReviewApi, windowLabel, type StudentPeerReview } from "@/lib/peer-review";
 import { useFeatures } from "@/hooks/use-features";
 import { ReviewView } from "@/components/peer-review/review-view";
+import { NoTranslate } from "@/components/translation/no-translate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +59,7 @@ export function PeerReviewSection({ activityId }: { activityId: string }) {
                 <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
                   <span className="text-sm">
                     Review {a.number}
-                    {a.author ? `: ${a.author}` : ""}
+                    {a.author ? <NoTranslate>{`: ${a.author}`}</NoTranslate> : ""}
                   </span>
                   <span className="flex items-center gap-2">
                     {a.submittedAt ? (
@@ -98,7 +99,7 @@ export function PeerReviewSection({ activityId }: { activityId: string }) {
               <div key={r.id} className="space-y-2 rounded-md border p-3">
                 <p className="text-sm font-medium">
                   Review {r.number}
-                  {r.reviewer ? ` by ${r.reviewer}` : ""}
+                  {r.reviewer ? <> by <NoTranslate>{r.reviewer}</NoTranslate></> : ""}
                 </p>
                 <ReviewView rubric={d.rubric} marks={r.marks} comment={r.comment} />
               </div>

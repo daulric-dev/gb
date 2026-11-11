@@ -7,6 +7,14 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import { FeatureService } from '@/features/feature.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { optedOut, type NotificationCategory } from './notification-preferences';
+import {
+  GENERIC_BODY,
+  GENERIC_TITLE,
+  genericData,
+  isGeneric,
+  pushContentFor,
+} from './push-content';
 
 export const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 export const EXPO_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts';
@@ -29,12 +37,54 @@ const EXPO_TOKEN = /^Expo(nent)?PushToken\[.+\]$/;
 
 export type PushPlatform = 'ios' | 'android' | 'web';
 
+/**
+ * What a push is about. A notification category is checked against each
+ * recipient's preferences; `parent` notices follow the parent portal's own
+ * settings, which the sender has already applied.
+ */
+export type PushCategory = NotificationCategory | 'parent';
+
+/** Categories whose pushes carry children's data: generic unless set to full. */
+const SENSITIVE_CATEGORIES: ReadonlySet<PushCategory> = new Set(['parent', 'attendance', 'grades']);
+
 export interface PushMessage {
   title: string;
   body: string;
   data?: Record<string, unknown>;
   /** Android notification channel the app created (e.g. `attendance`). */
   channelId?: string;
+  /**
+   * What it is about. Unset: `attendance` for the attendance channel or an
+   * `attendance.*` type, else none (sent to everyone, no preference check).
+   */
+  category?: PushCategory;
+  /**
+   * Whether it carries a child's data (names, grades, attendance). Unset:
+   * true for parent, attendance and grades pushes. Sensitive pushes are sent
+   * generic unless the school or organisation chose `full` (push-content.ts).
+   */
+  sensitive?: boolean;
+  /** The school whose push-content setting applies; unset = each recipient's school. */
+  schoolId?: string | null;
+}
+
+/** The category a message is about, inferred for senders that do not say. */
+export function pushCategoryOf(message: PushMessage): PushCategory | undefined {
+  if (message.category) return message.category;
+  const type = typeof message.data?.type === 'string' ? message.data.type : '';
+  if (message.channelId === 'attendance' || type.startsWith('attendance.')) return 'attendance';
+  return undefined;
+}
+
+/** The lock-screen form of a message: as given, or generic. */
+export function presentPush(message: PushMessage, generic: boolean): PushMessage {
+  if (!generic) return message;
+  return {
+    ...message,
+    title: GENERIC_TITLE,
+    body: GENERIC_BODY,
+    data: genericData(message.data),
+  };
 }
 
 interface ExpoTicket {
@@ -187,23 +237,28 @@ export class PushService implements OnModuleDestroy {
     }
   }
 
-  /** Push to every device of these users. Never throws. */
+  /**
+   * Push to every device of these users. Never throws. Recipients whose
+   * school has push off, or who turned the message's category off, get
+   * nothing; the rest get it full or generic as their school decides.
+   */
   async sendToUsers(userIds: string[], message: PushMessage): Promise<void> {
     try {
-      const unique = await this.withPushOn([
-        ...new Set(userIds.filter(Boolean)),
-      ]);
-      if (unique.length === 0) return;
+      const recipients = await this.recipients(
+        [...new Set(userIds.filter(Boolean))],
+        message,
+      );
+      if (recipients.size === 0) return;
 
-      let data: { token: string }[];
+      let data: { token: string; user_id?: string }[];
       try {
         data = await this.prisma.push_device.findMany({
           where: {
-            user_id: { in: unique },
+            user_id: { in: [...recipients.keys()] },
             // Not a device whose sign-in was revoked or has expired.
             OR: [{ session_id: null }, { session: liveSession(new Date()) }],
           },
-          select: { token: true },
+          select: { token: true, user_id: true },
         });
       } catch (err) {
         this.logger.error(
@@ -212,19 +267,29 @@ export class PushService implements OnModuleDestroy {
         return;
       }
 
-      const tokens = [
-        ...new Set(
-          data
-            .map((d) => d.token)
-            .filter((t) => EXPO_TOKEN.test(t)),
-        ),
-      ];
-      if (tokens.length === 0) return;
+      // A device whose owner is unknown gets the more private form.
+      const anyGeneric = [...recipients.values()].some(Boolean);
+      const byForm = new Map<boolean, Set<string>>([
+        [false, new Set()],
+        [true, new Set()],
+      ]);
+      for (const d of data) {
+        if (!EXPO_TOKEN.test(d.token)) continue;
+        const known = d.user_id ? recipients.get(d.user_id) : undefined;
+        const generic = known ?? anyGeneric;
+        byForm.get(generic)!.add(d.token);
+      }
+      // A token listed under both (cannot normally happen) goes generic only.
+      for (const t of byForm.get(true)!) byForm.get(false)!.delete(t);
 
       const gone: string[] = [];
-      for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
-        const chunk = tokens.slice(i, i + CHUNK_SIZE);
-        gone.push(...(await this.sendChunk(chunk, message)));
+      for (const [generic, set] of byForm) {
+        const tokens = [...set];
+        const shown = presentPush(message, generic);
+        for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
+          const chunk = tokens.slice(i, i + CHUNK_SIZE);
+          gone.push(...(await this.sendChunk(chunk, shown)));
+        }
       }
 
       if (gone.length > 0) await this.forget(gone);
@@ -234,20 +299,25 @@ export class PushService implements OnModuleDestroy {
   }
 
   /**
-   * The recipients whose school has push notifications on (the
-   * organisation's setting for users without a school). Checked once per
-   * school. Registration is unaffected, so devices are ready when it is
-   * switched back on.
+   * Who gets the message, and whether in its generic form (user id ->
+   * generic). Drops recipients whose school has push notifications off (the
+   * organisation's setting for users without a school; checked once per
+   * school) and those who turned the message's category off. Registration is
+   * unaffected, so devices are ready when push is switched back on.
    */
-  private async withPushOn(userIds: string[]): Promise<string[]> {
-    if (userIds.length === 0) return [];
+  private async recipients(
+    userIds: string[],
+    message: PushMessage,
+  ): Promise<Map<string, boolean>> {
+    const out = new Map<string, boolean>();
+    if (userIds.length === 0) return out;
     const profiles = await this.prisma.user_profile.findMany({
       where: { id: { in: userIds } },
       select: { id: true, school_id: true },
     });
     const schoolOf = new Map(profiles.map((p) => [p.id, p.school_id ?? null]));
     const decided = new Map<string | null, boolean>();
-    const out: string[] = [];
+    const on: string[] = [];
     for (const id of userIds) {
       const school = schoolOf.get(id) ?? null;
       if (!decided.has(school)) {
@@ -256,7 +326,24 @@ export class PushService implements OnModuleDestroy {
           await this.features.isEnabled(school, 'push_notifications'),
         );
       }
-      if (decided.get(school)) out.push(id);
+      if (decided.get(school)) on.push(id);
+    }
+    if (on.length === 0) return out;
+
+    const category = pushCategoryOf(message);
+    const off =
+      category && category !== 'parent'
+        ? await optedOut(this.prisma, on, category, 'push')
+        : new Set<string>();
+    const wanted = on.filter((id) => !off.has(id));
+    if (wanted.length === 0) return out;
+
+    const sensitive = message.sensitive ?? (!!category && SENSITIVE_CATEGORIES.has(category));
+    const schoolFor = (id: string) =>
+      message.schoolId !== undefined ? message.schoolId : (schoolOf.get(id) ?? null);
+    const settings = await pushContentFor(this.prisma, wanted.map(schoolFor));
+    for (const id of wanted) {
+      out.set(id, isGeneric(settings.get(schoolFor(id)) ?? null, sensitive));
     }
     return out;
   }

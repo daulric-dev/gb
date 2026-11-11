@@ -44,7 +44,8 @@ x-walg-env: &walg-env
   WALG_S3_PREFIX: "${WALG_S3_PREFIX:-}"
   AWS_ACCESS_KEY_ID: "${WALG_S3_ACCESS_KEY_ID:-}"
   AWS_SECRET_ACCESS_KEY: "${WALG_S3_SECRET_ACCESS_KEY:-}"
-  AWS_REGION: "${WALG_S3_REGION:-us-east-1}"
+  # No default: the bucket region is a data-location decision (BACKUPS.md).
+  AWS_REGION: "${WALG_S3_REGION:-}"
   AWS_ENDPOINT: "${WALG_S3_ENDPOINT:-}"
   AWS_S3_FORCE_PATH_STYLE: "${WALG_S3_FORCE_PATH_STYLE:-}"
   WALG_LIBSODIUM_KEY: "${WALG_LIBSODIUM_KEY:-}"
@@ -138,7 +139,9 @@ services:
       BACKUP_S3_BUCKET: "${BACKUP_S3_BUCKET:-}"
       BACKUP_S3_PREFIX: "${BACKUP_S3_PREFIX:-postgres}"
       BACKUP_S3_ENDPOINT: "${BACKUP_S3_ENDPOINT:-}"
-      BACKUP_S3_REGION: "${BACKUP_S3_REGION:-us-east-1}"
+      # Required, no default: where backups live is a data-location decision
+      # (EU region for EU schools). The service exits with the reason until set.
+      BACKUP_S3_REGION: "${BACKUP_S3_REGION:-}"
       BACKUP_S3_ACCESS_KEY_ID: "${BACKUP_S3_ACCESS_KEY_ID:-}"
       BACKUP_S3_SECRET_ACCESS_KEY: "${BACKUP_S3_SECRET_ACCESS_KEY:-}"
       BACKUP_S3_FORCE_PATH_STYLE: "${BACKUP_S3_FORCE_PATH_STYLE:-}"

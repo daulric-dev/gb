@@ -29,11 +29,11 @@ export default function PortalSettingsPage() {
         <h2 className="mb-4 text-lg font-semibold">Account</h2>
         <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
           <dt className="text-muted-foreground">Name</dt>
-          <dd className="font-medium">{name}</dd>
+          <dd className="font-medium" translate="no">{name}</dd>
           <dt className="text-muted-foreground">Email</dt>
-          <dd className="font-medium break-all">{student?.email ?? "-"}</dd>
+          <dd className="font-medium break-all" translate="no">{student?.email ?? "-"}</dd>
           <dt className="text-muted-foreground">School</dt>
-          <dd className="font-medium">{student?.school?.name ?? "-"}</dd>
+          <dd className="font-medium" translate="no">{student?.school?.name ?? "-"}</dd>
         </dl>
       </Card>
 

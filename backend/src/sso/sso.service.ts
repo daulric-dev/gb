@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -13,6 +14,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { authCookieSecure, primaryOrigin } from '@/config/origins';
 import { AccountService } from '@/account/account.service';
 import { SessionService } from '@/account/session.service';
+import { MfaService } from '@/mfa/mfa.service';
 import {
   EmailDomainService,
   type VerifiedDomain,
@@ -162,6 +164,8 @@ export class SsoService {
     private readonly prisma: PrismaService,
     private readonly accounts: AccountService,
     private readonly sessions: SessionService,
+    // Global (src/mfa); optional only so unit tests can leave it out.
+    @Optional() private readonly mfa?: MfaService,
   ) {}
 
   /**
@@ -428,6 +432,8 @@ export class SsoService {
       return `${MOBILE_RETURN}?code=${code}`;
     }
 
+    // To the login page's authenticator-code step instead, when one is due.
+    if (this.mfa) return this.mfa.finishWebSignIn(reply, req, user.id, adapter.id, destination);
     await this.sessions.create(reply, req, user.id, adapter.id);
     return `${primaryOrigin()}${destination}`;
   }
@@ -464,7 +470,9 @@ export class SsoService {
     const actual = sha256(codeVerifier);
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual))
       throw expired;
-    await this.sessions.create(reply, req, handoff.userId, handoff.provider);
+    // 403 MFA_REQUIRED (with a challenge token) when an authenticator code is due.
+    if (this.mfa) await this.mfa.startSession(reply, req, handoff.userId, handoff.provider);
+    else await this.sessions.create(reply, req, handoff.userId, handoff.provider);
   }
 
   // ── accounts ──────────────────────────────────────────────────────────────

@@ -56,7 +56,7 @@ export function ReaderAvatars({ readers }: { readers: AnnouncementReader[] }) {
                   </Avatar>
                 }
               />
-              <TooltipContent>{fullName(r)}</TooltipContent>
+              <TooltipContent translate="no">{fullName(r)}</TooltipContent>
             </Tooltip>
           ))}
           {extra > 0 && (

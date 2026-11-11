@@ -166,7 +166,7 @@ export function AddStaffDialog({
                           (m.user?.last_name?.[0] ?? "") || "?"}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="flex-1 truncate">{memberName(m)}</span>
+                    <span className="flex-1 truncate" translate="no">{memberName(m)}</span>
                     {m.role && (
                       <span className="text-xs capitalize text-muted-foreground">
                         {m.role}

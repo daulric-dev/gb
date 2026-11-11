@@ -1,4 +1,4 @@
-import { ApiError, buildUrl } from "@/lib/api";
+import { ApiError, buildUrl, confirmStepUp, STEP_UP_REQUIRED } from "@/lib/api";
 
 /** Trigger a browser "save as" download for an in-memory blob. */
 export function downloadBlob(blob: Blob, filename: string) {
@@ -32,7 +32,11 @@ function filenameFromDisposition(header: string | null): string | null {
  * filename comes from the response's Content-Disposition when available,
  * otherwise `fallbackName`.
  */
-export async function downloadFromUrl(path: string, fallbackName: string) {
+export async function downloadFromUrl(
+  path: string,
+  fallbackName: string,
+  retried = false,
+) {
   const res = await fetch(buildUrl(path), {
     headers: { "X-API-Version": "1" },
     credentials: "include",
@@ -42,7 +46,13 @@ export async function downloadFromUrl(path: string, fallbackName: string) {
     const error = await res
       .json()
       .catch(() => ({ message: res.statusText }));
-    throw new ApiError(res.status, error.message || res.statusText, error);
+    const apiError = new ApiError(res.status, error.message || res.statusText, error);
+    // Bulk exports of personal data need "Confirm it's you" (step-up):
+    // confirm once and try again; a second refusal is thrown.
+    if (!retried && apiError.code === STEP_UP_REQUIRED && (await confirmStepUp())) {
+      return downloadFromUrl(path, fallbackName, true);
+    }
+    throw apiError;
   }
 
   const blob = await res.blob();

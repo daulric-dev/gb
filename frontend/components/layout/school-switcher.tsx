@@ -38,7 +38,7 @@ export function SchoolSwitcher({
     return (
       <div className="flex items-center gap-1.5 mt-0.5">
         <GraduationCap className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground truncate flex-1">
+        <span className="text-xs text-muted-foreground truncate flex-1" translate="no">
           {schoolName}
         </span>
       </div>
@@ -52,12 +52,13 @@ export function SchoolSwitcher({
           <button
             type="button"
             aria-label={`Switch school (current: ${schoolName})`}
+            translate="no"
             className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-1 -mx-1 py-0.5 text-left hover:bg-accent transition-colors"
           />
         }
       >
         <GraduationCap className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground truncate flex-1">
+        <span className="text-xs text-muted-foreground truncate flex-1" translate="no">
           {schoolName}
         </span>
         {switching ? (
@@ -77,7 +78,7 @@ export function SchoolSwitcher({
                 if (!s.isActive) void switchTo(s.id);
               }}
             >
-              <span className="min-w-0 flex-1 truncate">{schoolLabel(s)}</span>
+              <span className="min-w-0 flex-1 truncate" translate="no">{schoolLabel(s)}</span>
               {s.viaOrganisation && (
                 <Badge variant="outline" className="shrink-0 text-[10px]">
                   via organisation

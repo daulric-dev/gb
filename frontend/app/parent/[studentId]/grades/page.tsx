@@ -64,7 +64,7 @@ export default function ParentGradesPage() {
                   <p className="truncate font-medium">{c.name}</p>
                   {c.status === "archived" && <p className="text-xs text-muted-foreground">Finished</p>}
                 </div>
-                <span className="text-sm">{gradeText(c.grade)}</span>
+                <span className="text-sm" translate="no">{gradeText(c.grade)}</span>
                 <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
               </CollapsibleTrigger>
               <CollapsibleContent>
@@ -87,7 +87,7 @@ export default function ParentGradesPage() {
                             </p>
                           </div>
                           {a.score !== null && (
-                            <span className="text-sm tabular-nums">
+                            <span className="text-sm tabular-nums" translate="no">
                               {a.score} / {a.points}
                             </span>
                           )}

@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/Label";
 import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { userMessage } from "@/lib/errors";
+import { openPrivacyNotice } from "@/lib/privacy-link";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -98,6 +99,8 @@ export default function LoginScreen() {
       );
       if (result.type === "error") {
         setError(result.message);
+      } else if (result.type === "mfa") {
+        router.push({ pathname: "/(auth)/two-step", params: { token: result.token } });
       } else if (result.type === "success") {
         const profile = await refresh();
         if (!profile) {
@@ -322,7 +325,15 @@ export default function LoginScreen() {
             variant="muted"
             style={{ fontSize: 12, textAlign: "center", marginTop: 4 }}
           >
-            By continuing, you agree to our Terms of Service and Privacy Policy.
+            By continuing, you agree to the Terms of Service.{" "}
+            <Text
+              size="xs"
+              accessibilityRole="link"
+              onPress={openPrivacyNotice}
+              style={{ fontSize: 12, textDecorationLine: "underline" }}
+            >
+              How your data is used (privacy notice)
+            </Text>
           </Text>
           {serverUrl ? (
             <Button

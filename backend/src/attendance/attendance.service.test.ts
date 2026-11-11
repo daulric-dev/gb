@@ -722,6 +722,24 @@ describe('AttendanceService.setRecord', () => {
     ).toBeInstanceOf(NotFoundException);
   });
 
+  test('a teacher setting or overriding a mark is audited, without the note text', async () => {
+    const { service } = setup();
+    const entries: any[] = [];
+    (service as any).auditLog = {
+      record: async (_tx: unknown, schoolId: string, actor: unknown, entry: any) =>
+        void entries.push({ schoolId, actor, ...entry }),
+    };
+    const s = await service.open(TEACHER, COURSE, { requireCode: false });
+    await service.close(TEACHER, COURSE, s.id);
+    await service.setRecord(TEACHER, COURSE, s.id, 'st-2', { status: 'excused', note: 'Doctor' });
+    const entry = entries.at(-1);
+    expect(entry).toMatchObject({ schoolId: 'school-1', actor: { id: TEACHER }, entity: 'attendance_record', entityId: s.id });
+    expect(entry.changes.student_id.after).toBe('st-2');
+    expect(entry.changes.status.after).toBe('excused');
+    expect(entry.changes.note_changed).toEqual({ before: false, after: true });
+    expect(JSON.stringify(entries)).not.toContain('Doctor');
+  });
+
   test('a TA may mark but not delete', async () => {
     const { service } = setup({ role: 'ta' });
     const s = await service.open(TEACHER, COURSE, { requireCode: false });

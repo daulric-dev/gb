@@ -88,7 +88,7 @@ function FileTableRow({
             </button>
           )}
           <FileText className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{file.name}</span>
+          <span className="truncate" translate="no">{file.name}</span>
           {!ready && <StatusBadge status={file.status} />}
         </div>
       </TableCell>

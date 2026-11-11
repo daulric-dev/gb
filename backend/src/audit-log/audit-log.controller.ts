@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { userSchoolId } from '@/common/user-school';
@@ -57,7 +58,9 @@ export class OrganisationAuditLogController {
     return this.auditLog.list({ limit: dto.limit, before: dto.before });
   }
 
+  /** Changes data on the strength of an old entry: confirm it's you first. */
   @Post('audit-log/:id/revert')
+  @RequireStepUp()
   revert(@Req() req: Req, @Param('id', new ParseUUIDPipe()) id: string) {
     return this.auditLog.revert(id, { id: req.user.id });
   }

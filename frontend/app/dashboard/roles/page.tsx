@@ -84,7 +84,7 @@ export default function RolesPage() {
       return;
     deletingId.value = role.id;
     try {
-      await api(`/permissions/roles/${role.id}`, { method: "DELETE" });
+      await api(`/permissions/roles/${role.id}`, { method: "DELETE", stepUp: true });
       roles.value = roles.value.filter((r) => r.id !== role.id);
       toast.success(`"${role.name}" deleted`);
     } catch (err) {

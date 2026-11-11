@@ -24,9 +24,13 @@ import { userMessage } from "@/lib/errors";
 
 const ACTION_ORDER: CatalogEntry["action"][] = [
   "read",
+  "read-all",
+  "sensitive",
   "create",
   "update",
   "delete",
+  "export",
+  "erase",
   "safeguarding",
 ];
 const ACTION_LABEL: Record<CatalogEntry["action"], string> = {
@@ -35,7 +39,14 @@ const ACTION_LABEL: Record<CatalogEntry["action"], string> = {
   update: "Edit",
   delete: "Delete",
   safeguarding: "Safeguarding",
+  "read-all": "View all",
+  sensitive: "Sensitive details",
+  export: "Export data",
+  erase: "Erase",
 };
+
+/** Keys never implied by a base role, not even admin: worth a warning. */
+const EXPLICIT_ONLY = new Set(["pastoral-note:safeguarding"]);
 
 const RESOURCE_PRETTY: Record<string, string> = {
   "join-code": "School Join Code",
@@ -109,6 +120,7 @@ export function PermissionsEditor({
       await api(`/permissions/roles/${role.id}/permissions`, {
         method: "PUT",
         body: { keys: [...selected.value] },
+        stepUp: true,
       });
       toast.success(`Permissions updated for ${role.name}`);
       // The edited role may be one the current user holds, so their own
@@ -131,7 +143,7 @@ export function PermissionsEditor({
           <DialogDescription>
             {readOnly
               ? "These are the system defaults. They cannot be changed."
-              : "Choose what this role can do. Changes apply to every member with this role."}
+              : "Choose what this role can do. Changes apply to every member with this role. Saving asks you to confirm it's you."}
           </DialogDescription>
         </DialogHeader>
 
@@ -163,6 +175,7 @@ export function PermissionsEditor({
                           type="button"
                           aria-pressed={on}
                           disabled={readOnly}
+                          title={entry.description}
                           onClick={() => toggle(entry.key, !on)}
                           className={cn(
                             "rounded-full border px-1 py-1 text-xs font-medium transition-colors",
@@ -171,7 +184,8 @@ export function PermissionsEditor({
                               : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         >
-                          {ACTION_LABEL[action]}
+                          {ACTION_LABEL[action] ?? action}
+                          {EXPLICIT_ONLY.has(entry.key) ? " *" : ""}
                         </button>
                       );
                     })}
@@ -179,6 +193,15 @@ export function PermissionsEditor({
                 </div>
               ))}
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              * Safeguarding is never included automatically, not even for
+              school or organisation admins: only roles that list it here
+              can see safeguarding notes. Granting it is recorded in the
+              audit log. Students: View alone covers the students in the
+              holder&apos;s own courses and tutor group; View all covers the
+              whole school; Sensitive details shows guardian contacts and
+              accommodation reasons.
+            </p>
           </ScrollArea>
         )}
 

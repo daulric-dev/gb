@@ -15,6 +15,8 @@ import {
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
@@ -50,7 +52,10 @@ function sendCsv(reply: FastifyReply, out: { csv: string; filename: string }) {
 @UseGuards(AuthGuard, PermissionGuard, FeatureGuard)
 @RequireFeature('attendance', 'attendance_alerts')
 export class AttendanceReportController {
-  constructor(private readonly reports: AttendanceReportService) {}
+  constructor(
+    private readonly reports: AttendanceReportService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   @Get('school')
   async school(@Req() req: any, @Query() q: ReportRangeDto) {
@@ -59,8 +64,16 @@ export class AttendanceReportController {
 
   @Get('school/export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async schoolCsv(@Req() req: any, @Query() q: ReportRangeDto, @Res() reply: FastifyReply) {
-    sendCsv(reply, await this.reports.schoolCsv(req.user.id as string, q.from, q.to));
+    const out = await this.reports.schoolCsv(req.user.id as string, q.from, q.to);
+    await this.audit.recordExport(req.user.id as string, {
+      entity: 'attendance_report',
+      scope: 'school',
+      csv: out.csv,
+      details: { from: q.from, to: q.to },
+    });
+    sendCsv(reply, out);
   }
 
   @Get('students/:studentId')
@@ -74,13 +87,22 @@ export class AttendanceReportController {
 
   @Get('students/:studentId/export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async studentCsv(
     @Req() req: any,
     @Param('studentId', ParseUUIDPipe) studentId: string,
     @Query() q: ReportRangeDto,
     @Res() reply: FastifyReply,
   ) {
-    sendCsv(reply, await this.reports.studentCsv(req.user.id as string, studentId, q.from, q.to));
+    const out = await this.reports.studentCsv(req.user.id as string, studentId, q.from, q.to);
+    await this.audit.recordExport(req.user.id as string, {
+      entity: 'attendance_report',
+      entityId: studentId,
+      scope: 'student',
+      csv: out.csv,
+      details: { from: q.from, to: q.to },
+    });
+    sendCsv(reply, out);
   }
 }
 
@@ -91,7 +113,10 @@ export class AttendanceReportController {
 @UseGuards(AuthGuard, FeatureGuard)
 @RequireFeature('attendance', 'attendance_alerts')
 export class CourseAttendanceReportController {
-  constructor(private readonly reports: AttendanceReportService) {}
+  constructor(
+    private readonly reports: AttendanceReportService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   @Get()
   async get(
@@ -104,13 +129,22 @@ export class CourseAttendanceReportController {
 
   @Get('export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async csv(
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Query() q: ReportRangeDto,
     @Res() reply: FastifyReply,
   ) {
-    sendCsv(reply, await this.reports.courseCsv(req.user.id as string, courseId, q.from, q.to));
+    const out = await this.reports.courseCsv(req.user.id as string, courseId, q.from, q.to);
+    await this.audit.recordExport(req.user.id as string, {
+      courseId,
+      entity: 'attendance_report',
+      scope: 'course',
+      csv: out.csv,
+      details: { from: q.from, to: q.to },
+    });
+    sendCsv(reply, out);
   }
 }
 

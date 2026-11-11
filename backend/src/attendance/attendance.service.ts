@@ -18,6 +18,7 @@ import { WebhookEvents } from '@/integrations/events';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
+import { AuditLogService } from '@/audit-log/audit-log.service';
 import { plan } from '@/erasure/erasure-plan';
 import {
   COURSE_SELECT,
@@ -284,6 +285,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     private readonly realtime: AttendanceRealtime,
     private readonly erasure: ErasureLogService,
     @Optional() private readonly webhooks?: WebhookEvents,
+    @Optional() private readonly auditLog?: AuditLogService,
   ) {}
 
   /** attendance.recorded after a check-in or a teacher's change; fire and forget. */
@@ -544,6 +546,21 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     }
 
     const closed = toSessionRow(updated[0]);
+    // Raw check-in coordinates have done their job once the session closes
+    // (distance and location flags were worked out at check-in and stay).
+    // The retention purge clears any left, and the session's own point
+    // ATTENDANCE_LOCATION_RETENTION_HOURS after closing (src/retention).
+    await this.prisma.course_attendance_record
+      .updateMany({
+        where: {
+          session_id: closed.id,
+          OR: [{ latitude: { not: null } }, { longitude: { not: null } }],
+        },
+        data: { latitude: null, longitude: null },
+      })
+      .catch((err: Error) =>
+        this.logger.warn(`Failed to clear check-in coordinates: ${err.message}`),
+      );
     void this.announceClosed(closed, active);
     void this.webhooks?.emitForCourse(closed.course_id, 'attendance.session_closed', async (course) => {
       const records = await this.recordsFor([closed.id]);
@@ -999,7 +1016,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     studentId: string,
     input: { status: AttendanceStatus; note?: string | null },
   ): Promise<AttendanceRosterEntry> {
-    await this.access.require(userId, courseId, STAFF_ROLES);
+    const { course } = await this.access.require(userId, courseId, STAFF_ROLES);
     const session = await this.current(
       await this.loadSession(courseId, sessionId),
     );
@@ -1023,24 +1040,48 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
     let data: RecordRow;
     try {
-      data = toRecordRow(
-        await this.prisma.course_attendance_record.upsert({
-          where: {
-            session_id_student_id: {
-              session_id: session.id,
-              student_id: studentId,
-            },
-          },
-          create: {
+      data = await this.prisma.$transaction(async (tx) => {
+        const key = {
+          session_id_student_id: {
             session_id: session.id,
-            course_id: courseId,
             student_id: studentId,
-            ...changes,
           },
-          update: { course_id: courseId, ...changes },
-          select: RECORD_SELECT,
-        }),
-      );
+        };
+        const before = await tx.course_attendance_record.findUnique({
+          where: key,
+          select: { status: true, method: true, note: true },
+        });
+        const row = toRecordRow(
+          await tx.course_attendance_record.upsert({
+            where: key,
+            create: {
+              session_id: session.id,
+              course_id: courseId,
+              student_id: studentId,
+              ...changes,
+            },
+            update: { course_id: courseId, ...changes },
+            select: RECORD_SELECT,
+          }),
+        );
+        // A teacher setting or overriding a mark is audited: the status
+        // and method before and after, and whether the note changed (never
+        // the note itself).
+        await this.auditLog?.record(tx, course.school_id, { id: userId }, {
+          entity: 'attendance_record',
+          entityId: session.id,
+          action: before ? 'update' : 'create',
+          changes: {
+            student_id: { before: null, after: studentId },
+            status: { before: before?.status ?? null, after: row.status },
+            method: { before: before?.method ?? null, after: 'teacher' },
+            ...((before?.note ?? null) !== (row.note ?? null)
+              ? { note_changed: { before: false, after: true } }
+              : {}),
+          },
+        });
+        return row;
+      });
     } catch (err) {
       this.logger.error(`Failed to set attendance: ${(err as Error).message}`);
       throw new BadRequestException('Failed to update attendance');

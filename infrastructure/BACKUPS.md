@@ -335,7 +335,12 @@ base backup is taken automatically), keep the old key until the old prefix's
   the EU jurisdiction, Backblaze B2 `eu-central-003`, Scaleway `fr-par`, OVHcloud
   `gra`/`sbg`). A transfer outside the EEA needs a legal basis (adequacy decision
   or SCCs plus a transfer impact assessment). Record the provider and region in
-  your record of processing activities (Art. 30) and sub-processor list.
+  your record of processing activities (Art. 30) and sub-processor list
+  ([docs/content/gdpr](../docs/content/gdpr/index.md)). There is deliberately
+  **no default region**: `BACKUP_S3_REGION` (and `WALG_S3_REGION` when WAL-G is
+  on) must be set, and the services exit with the reason until they are. The
+  API reads the backup bucket's region from the same `.env` and lists it in the
+  public privacy notice's recipients.
 - **Separation.** Backups go to their own bucket (or provider account) with
   their own credentials, so a leaked app S3 key cannot read or delete backups,
   and a leaked backup key cannot touch app files.
@@ -637,7 +642,7 @@ WALG_LIBSODIUM_KEY=$(openssl rand -hex 32) docker compose -f docker-compose.dev.
 | `BACKUP_S3_BUCKET` | - (required) | Backup bucket (not the app bucket). |
 | `BACKUP_S3_PREFIX` | `postgres` | Folder inside the bucket. Objects go to `<prefix>/daily/YYYY/MM/`. |
 | `BACKUP_S3_ENDPOINT` | AWS | Endpoint for R2, B2, MinIO, SeaweedFS... |
-| `BACKUP_S3_REGION` | `us-east-1` | Bucket region (`auto` for R2). |
+| `BACKUP_S3_REGION` | **required, no default** | Bucket region (`auto` for R2). The service exits with the reason until it is set: choose it deliberately, it is where your backups live (an EU region for EU schools). |
 | `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | - | Credentials (`_FILE` variants supported). Leave both empty to use an instance role / `AWS_*` environment. |
 | `BACKUP_S3_FORCE_PATH_STYLE` | `true` with an endpoint, else `false` | Path-style addressing. |
 | `BACKUP_S3_STORAGE_CLASS` | provider default | e.g. `STANDARD_IA`. |
@@ -671,7 +676,7 @@ In `infrastructure/.env` (compose maps them to WAL-G's own names):
 | --- | --- | --- |
 | `WALG_S3_PREFIX` | - (required) | `s3://<bucket>/<path>` for WAL and base backups. |
 | `WALG_S3_ENDPOINT` → `AWS_ENDPOINT` | AWS | Non-AWS endpoint. |
-| `WALG_S3_REGION` → `AWS_REGION` | `us-east-1` | Bucket region. |
+| `WALG_S3_REGION` → `AWS_REGION` | **required, no default** | Bucket region (`auto` for R2); WAL-G refuses to start until it is set. |
 | `WALG_S3_ACCESS_KEY_ID`, `WALG_S3_SECRET_ACCESS_KEY` → `AWS_*` | - | Credentials. |
 | `WALG_S3_FORCE_PATH_STYLE` → `AWS_S3_FORCE_PATH_STYLE` | `true` with an endpoint | Path-style addressing. |
 | `WALG_LIBSODIUM_KEY` | - (required) | 64 hex chars (`openssl rand -hex 32`). Or `WALG_LIBSODIUM_KEY_PATH`. |

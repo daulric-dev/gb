@@ -7,6 +7,18 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  /**
+   * What kind of email this is (`sign_in_code`, `parent_notice`, ...), for
+   * the log. Subjects can name students, so they are never logged; this is.
+   * Defaults to 'unknown'. Never sent.
+   */
+  kind?: string;
+}
+
+/** A kind that is safe to log: letters, digits, `_`, `.`, `-`; at most 40. */
+function logKind(kind: string | undefined): string {
+  const clean = (kind ?? '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40);
+  return clean || 'unknown';
 }
 
 @Injectable()
@@ -55,13 +67,17 @@ export class MailService implements OnModuleInit {
   }
 
   async send(message: MailMessage): Promise<void> {
-    await this.transport().sendMail({ from: this.from, ...message });
-    this.logger.log(`Sent "${message.subject}" to ${redact(message.to)}`);
+    const { kind, ...mail } = message;
+    await this.transport().sendMail({ from: this.from, ...mail });
+    this.logger.log(`Sent ${logKind(kind)} email to ${redactEmail(message.to)}`);
   }
 }
 
-/** j***@school.edu - enough to debug delivery, not enough to harvest. */
-function redact(address: string): string {
-  const [name, domain] = address.split('@');
+/**
+ * j***@school.edu - enough to debug delivery, not enough to harvest. For
+ * every log line that would otherwise hold an address.
+ */
+export function redactEmail(address: string | null | undefined): string {
+  const [name, domain] = String(address ?? '').split('@');
   return `${name?.[0] ?? ''}***@${domain ?? ''}`;
 }
