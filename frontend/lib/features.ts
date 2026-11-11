@@ -30,6 +30,7 @@ export const FEATURE_KEYS = [
   "pastoral_notes",
   "ai_assistance",
   "analytics",
+  "translation",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -75,6 +76,8 @@ export const FALLBACK_FEATURES: FeatureMap = {
   ai_assistance: false,
   // Older servers have no analytics.
   analytics: false,
+  // Older servers have no machine translation.
+  translation: false,
 };
 
 /** Features that only work while another one is on. */
@@ -220,7 +223,7 @@ export const FEATURE_GROUPS: { title: string; keys: string[] }[] = [
       "analytics",
     ],
   },
-  { title: "Content", keys: ["files"] },
+  { title: "Content", keys: ["files", "translation"] },
   { title: "Families", keys: ["parent_portal", "parent_notifications"] },
   { title: "Integrations", keys: ["integrations", "rostering", "lti"] },
 ];

@@ -17,7 +17,7 @@ import {
   EmailDomainService,
   type VerifiedDomain,
 } from '@/email-domain/email-domain.service';
-import { SsoRegistry, info, type ResolvedProvider } from './sso.registry';
+import { SsoRegistry, info, labelOf, type ResolvedProvider } from './sso.registry';
 import { apiBase, oidcRedirectUri } from './sso.config';
 import { SamlAdapter } from './adapters/saml.adapter';
 import type {
@@ -115,6 +115,18 @@ export function safeNext(next: unknown): string | null {
   }
 }
 
+/**
+ * An error's message with its cause's (openid-client wraps a refused or
+ * failed request - a private issuer address, say - as "something went wrong").
+ */
+function errorText(err: unknown): string {
+  const message = (err as Error)?.message ?? String(err);
+  const cause = (err as { cause?: unknown })?.cause;
+  return cause instanceof Error && cause.message !== message
+    ? `${message} (${cause.message})`
+    : message;
+}
+
 function domainConfig(d: VerifiedDomain | null): SsoDomainConfig | null {
   return d
     ? {
@@ -173,7 +185,7 @@ export class SsoService {
       : undefined;
     const ready = !!resolved && !!domain && resolved.adapter.readyFor(domain);
     return {
-      provider: ready && resolved ? info(resolved.adapter) : null,
+      provider: ready && resolved ? info(resolved.adapter, resolved.config) : null,
       required: !!(ready && domain?.ssoRequired),
     };
   }
@@ -242,11 +254,9 @@ export class SsoService {
       });
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      this.logger.warn(
-        `SSO start via ${adapter.id} failed: ${(err as Error).message}`,
-      );
+      this.logger.warn(`SSO start via ${adapter.id} failed: ${errorText(err)}`);
       throw new BadRequestException(
-        `Could not start sign-in with ${adapter.label}`,
+        `Could not start sign-in with ${labelOf(adapter, resolved.config)}`,
       );
     }
 
@@ -386,9 +396,7 @@ export class SsoService {
           clientKey: resolved.clientKey,
         }));
     } catch (err) {
-      this.logger.warn(
-        `SSO response from ${adapter.id} rejected: ${(err as Error).message}`,
-      );
+      this.logger.warn(`SSO response from ${adapter.id} rejected: ${errorText(err)}`);
       return fail('expired');
     }
 
@@ -479,9 +487,12 @@ export class SsoService {
       domain.ssoProvider &&
       domain.ssoProvider !== adapter.id
     ) {
-      const required = this.registry.adapter(domain.ssoProvider);
+      const required = await this.registry.resolve(domain.ssoProvider, domain.schoolId);
+      const label = required
+        ? labelOf(required.adapter, required.config)
+        : this.registry.adapter(domain.ssoProvider)?.label;
       throw new ForbiddenException(
-        `Your school signs in with ${required?.label ?? 'its own provider'}`,
+        `Your school signs in with ${label ?? 'its own provider'}`,
       );
     }
 
@@ -490,6 +501,8 @@ export class SsoService {
       adapter.vouchesForDomain(identity, {
         domain: domain.domain,
         azureTenantId: domain.azureTenantId,
+        schoolId: domain.schoolId,
+        ssoProvider: domain.ssoProvider,
       });
     const emailTrusted = vouched || !!adapter.verifiesEmail?.(identity);
 

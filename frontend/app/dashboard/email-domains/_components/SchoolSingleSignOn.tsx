@@ -43,6 +43,10 @@ export function SchoolSingleSignOn({ apiBase, schoolName }: { apiBase?: string; 
     domainsLoaded.current = true;
   }, [activityKey, domains]);
 
+  // The email domains section, for the SAML row's link (unique per school
+  // console on the page).
+  const domainsId = `email-domains${apiBase ? `-${apiBase.replace(/\W+/g, "-")}` : ""}`;
+
   const emailCodesOnly =
     providers.value !== null && domains.value !== null && usesEmailCodesOnly(providers.value, domains.value);
 
@@ -53,12 +57,18 @@ export function SchoolSingleSignOn({ apiBase, schoolName }: { apiBase?: string; 
           <KeyRound className="mt-0.5 size-4 shrink-0" />
           <p>
             This school signs in with email codes. Set up SSO if it has Google
-            Workspace, Microsoft or a SAML provider.
+            Workspace, Microsoft, an OpenID Connect or a SAML identity provider.
           </p>
         </div>
       )}
-      <SignInApps providers={providers.value} apiBase={apiBase} onSavedAction={onSaved} />
+      <SignInApps
+        providers={providers.value}
+        apiBase={apiBase}
+        domainsId={domainsId}
+        onSavedAction={onSaved}
+      />
       <EmailDomainsManager
+        id={domainsId}
         apiBase={apiBase}
         schoolName={schoolName}
         providers={providers.value}

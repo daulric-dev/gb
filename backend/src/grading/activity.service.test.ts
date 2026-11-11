@@ -611,3 +611,57 @@ describe('ActivityService roles', () => {
     );
   });
 });
+
+describe('ActivityService copies (translated drafts)', () => {
+  const QUIZ = { ...ACTIVITY, kind: 'quiz', status: 'published', published_at: '2026-09-02T00:00:00Z', rubric_id: 'rub-1' };
+  const QUESTION = {
+    id: 'q-1', activity_id: 'act-1', bank_id: null, prompt: 'Two plus two?', kind: 'multiple_choice', points: 2,
+    sort_order: 0, numeric_answer: null, numeric_tolerance: 0, partial_credit: false, rubric_id: null,
+    file_types: [], file_max_mb: null,
+    quiz_option: [
+      { id: 'o-1', question_id: 'q-1', label: 'Four', is_correct: true, match_label: null, sort_order: 0 },
+      { id: 'o-2', question_id: 'q-1', label: 'Five', is_correct: false, match_label: null, sort_order: 1 },
+    ],
+  };
+
+  test('teachers only, and the activity must be in the route course', async () => {
+    const { service, access } = build((p) => p.activity.findUnique.mockResolvedValue({ ...QUIZ }), 'ta');
+    await expect(service.sourceForCopy('user-1', 'course-1', 'act-1')).rejects.toThrow(ForbiddenException);
+    expect(access.asked[0].roles).not.toContain('ta');
+    const other = build((p) => p.activity.findUnique.mockResolvedValue({ ...QUIZ }));
+    await expect(other.service.sourceForCopy('user-1', 'course-2', 'act-1')).rejects.toThrow(NotFoundException);
+  });
+
+  test('a new draft with the new text, answer keys and draws kept, nothing else copied', async () => {
+    const { service, prisma } = build((p) => {
+      p.activity.findUnique.mockImplementation(async ({ where }: any) =>
+        where.id === 'act-1' ? { ...QUIZ } : { ...QUIZ, id: where.id, status: 'draft', published_at: null },
+      );
+      p.quiz_question.findMany.mockResolvedValue([QUESTION]);
+      p.quiz_bank_draw.findMany.mockResolvedValue([{ bank_id: 'bank-1', draw_count: 3, sort_order: 0 }]);
+    });
+    const source = await service.sourceForCopy('user-1', 'course-1', 'act-1');
+    await service.createCopy('user-1', source, {
+      title: 'Cuestionario [Spanish]',
+      instructions: null,
+      questions: [{ prompt: '¿Dos más dos?', options: [{ label: 'Cuatro', matchLabel: null }, { label: 'Cinco', matchLabel: null }] }],
+    });
+    const created = prisma.activity.create.mock.calls[0][0].data;
+    expect(created).toMatchObject({ title: 'Cuestionario [Spanish]', status: 'draft', kind: 'quiz', rubric_id: 'rub-1', course_id: 'course-1' });
+    expect(created.id).not.toBe('act-1');
+    expect(created.published_at).toBeUndefined();
+    const questions = prisma.quiz_question.createMany.mock.calls[0][0].data;
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({ activity_id: created.id, prompt: '¿Dos más dos?', points: 2, kind: 'multiple_choice' });
+    const options = prisma.quiz_option.createMany.mock.calls[0][0].data;
+    expect(options.map((o: any) => [o.label, o.is_correct])).toEqual([['Cuatro', true], ['Cinco', false]]);
+    expect(options[0].question_id).toBe(questions[0].id);
+    expect(prisma.quiz_bank_draw.createMany.mock.calls[0][0].data).toEqual([
+      { activity_id: created.id, bank_id: 'bank-1', draw_count: 3, sort_order: 0 },
+    ]);
+    for (const model of ['submission', 'quiz_answer', 'quiz_attempt', 'activity_extension', 'activity_accommodation', 'outcome_alignment']) {
+      expect(prisma[model].createMany).not.toHaveBeenCalled();
+      expect(prisma[model].create).not.toHaveBeenCalled();
+    }
+  });
+});

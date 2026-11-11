@@ -24,6 +24,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { LanguagePicker } from "@/components/translation/language-picker";
+import { PageTranslator } from "@/components/translation/page-translator";
 import { FeatureDisabled } from "@/components/feature-disabled";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ParentContext } from "./_components/parent-context";
@@ -100,6 +102,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   return (
     <ParentContext.Provider value={{ children: kids.value, selected, reload }}>
       <div className="min-h-dvh bg-background">
+        <PageTranslator />
         <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm">
           <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
             <Link href="/parent" className="flex shrink-0 items-center gap-2">
@@ -131,6 +134,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             )}
 
             <div className="ml-auto flex items-center gap-1">
+              <LanguagePicker />
               <ModeToggle />
               <Button
                 variant="ghost"

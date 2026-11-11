@@ -87,6 +87,7 @@ export function ssoErrorMessage(raw: string | null | undefined): string | null {
 const PROVIDER_NAMES: Record<string, string> = {
   google: "Google",
   azure: "Microsoft",
+  oidc: "OpenID Connect",
   saml: "SAML",
 };
 
