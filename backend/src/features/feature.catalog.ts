@@ -39,6 +39,7 @@ export const FEATURE_KEYS = [
   'pastoral_notes',
   'ai_assistance',
   'analytics',
+  'translation',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -229,6 +230,14 @@ export const FEATURES: readonly FeatureDefinition[] = [
     description:
       'Course analytics for teachers (submission rates, grade distributions, group averages, weekly trend and students at risk) and school roll-ups per course and teacher for staff holding analytics:read. Counts and averages only; never shown to students or parents.',
     default: true,
+    requires: [],
+  },
+  {
+    key: 'translation',
+    label: 'Machine translation',
+    description:
+      "Users can read the interface and course content in another language through the organisation's translation engine (Google, DeepL, LibreTranslate or Yandex), and teachers can make a translated draft copy of an assignment or quiz. Text the user views is sent to the engine; never form inputs. Off by default; the organisation chooses the engine and a school can switch it off.",
+    default: false,
     requires: [],
   },
 ];

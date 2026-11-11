@@ -14,6 +14,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useFeatures } from "@/hooks/use-features";
 import { featureForPath } from "@/lib/features";
 import { FeatureDisabled } from "@/components/feature-disabled";
+import { PageTranslator } from "@/components/translation/page-translator";
 import { useEffect } from "react";
 
 export default function DashboardLayout({children}: { children: React.ReactNode }) {
@@ -65,6 +66,7 @@ export default function DashboardLayout({children}: { children: React.ReactNode 
     <PermissionsProvider>
       {/* No realtime chat stream at all while messaging is off. */}
       {hasFeature("messaging") && <ChatProvider key={schoolId} />}
+      <PageTranslator />
       <SidebarProvider>
         <AppSidebar profile={profile.value} />
         <SidebarInset>

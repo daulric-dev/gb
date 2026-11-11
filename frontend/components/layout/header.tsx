@@ -1,6 +1,7 @@
 "use client";
 
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { LanguagePicker } from "@/components/translation/language-picker";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 
@@ -13,6 +14,7 @@ export function Header({ title }: { title?: string }) {
         <span className="text-sm font-medium text-muted-foreground truncate">{title}</span>
       )}
       <div className="ml-auto flex items-center gap-1">
+        <LanguagePicker />
         <ModeToggle />
       </div>
     </header>

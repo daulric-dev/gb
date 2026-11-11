@@ -38,7 +38,16 @@ describe('feature catalog', () => {
       pastoral_notes: false,
       ai_assistance: false,
       analytics: true,
+      translation: false,
     });
+  });
+
+  test('translation is off by default, needs nothing else, and a school can switch it off', () => {
+    expect(featureDefinition('translation').requires).toEqual([]);
+    expect(effectiveForOrganisation(organisationSettings({})).translation).toBe(false);
+    const org = organisationSettings({ translation: true });
+    expect(effectiveForSchool(org, []).translation).toBe(true);
+    expect(effectiveForSchool(org, ['translation']).translation).toBe(false);
   });
 
   test('lti is off by default, needs nothing else, and a school can switch it off', () => {

@@ -67,6 +67,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "sharp": "0.35.5",
+    "translate": "3.1.1",
     "write-excel-file": "^4.1.1"
   },
   "devDependencies": {

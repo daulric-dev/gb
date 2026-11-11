@@ -12,6 +12,8 @@ import {
   browserTimeZone,
   formatDay,
   isKnownTimeZone,
+  timeZoneLabel,
+  utcOffsetLabel,
   timeZoneOptions,
   minutesToTime,
   timeRange,
@@ -143,7 +145,7 @@ function TimeZoneCard({
     err.value = null;
     try {
       await api(`${PATH}/settings`, { method: "PATCH", body: { timeZone: picked } });
-      toast.success(`Time zone set to ${picked}`);
+      toast.success(`Time zone set to ${timeZoneLabel(picked)}`);
       await onSaved();
     } catch (e) {
       err.value = userMessage(e, "Could not save the time zone");
@@ -172,6 +174,8 @@ function TimeZoneCard({
           <Combobox
             items={zones}
             value={picked}
+            // Shown in the box and searched: the name and its UTC offset ("-4" finds UTC-4 zones).
+            itemToStringLabel={(zone: string) => timeZoneLabel(zone)}
             onValueChange={(v) => {
               choice.value = (v as string | null) ?? null;
               err.value = null;
@@ -181,7 +185,7 @@ function TimeZoneCard({
             <ComboboxInput
               id="tz"
               className="w-full sm:max-w-sm"
-              placeholder="Search, e.g. London or America/New_York"
+              placeholder="Search, e.g. London, America/New_York or -4"
               aria-describedby="tz-hint"
               aria-required
               disabled={!canEdit}
@@ -191,7 +195,10 @@ function TimeZoneCard({
               <ComboboxList>
                 {(zone: string) => (
                   <ComboboxItem key={zone} value={zone}>
-                    {zone}
+                    <span className="truncate">{zone}</span>
+                    <span className="ml-auto shrink-0 ps-3 text-xs text-muted-foreground tabular-nums">
+                      {utcOffsetLabel(zone)}
+                    </span>
                   </ComboboxItem>
                 )}
               </ComboboxList>

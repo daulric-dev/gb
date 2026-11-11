@@ -1,0 +1,23 @@
+/// Machine translation (src/translation, feature `translation`). The
+/// organisation's translation engine, one row at most (id is always true).
+/// engine: google | deepl | libre | yandex. url: LibreTranslate only.
+/// `key_enc` is the engine's API key, AES-256-GCM through
+/// src/account/secret-box.ts (info `gradebook:translation-key:v1`, AAD
+/// `translation-setting`); never returned (only `hasKey`). Translations are
+/// cached, never stored here.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model translation_setting {
+  id                    Boolean  @id @default(true)
+  engine                String   @default("google")
+  url                   String?
+  key_enc               String?
+  /// The LibreTranslate server runs on the organisation's private network:
+  /// http and private / loopback addresses are allowed for it.
+  allow_private_network Boolean  @default(false)
+  enabled               Boolean  @default(false)
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_by            String?  @db.Uuid
+
+  @@schema("public")
+}

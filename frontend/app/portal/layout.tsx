@@ -13,6 +13,8 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { LanguagePicker } from "@/components/translation/language-picker";
+import { PageTranslator } from "@/components/translation/page-translator";
 import { AttendanceBanner } from "./_components/attendance-banner";
 import { NotificationBell } from "./_components/notification-bell";
 import { useFeatures } from "@/hooks/use-features";
@@ -159,6 +161,7 @@ export default function PortalLayout({
     <div className="min-h-dvh bg-background">
       {/* The chat stream only runs while students may message. */}
       {messagingOn && <ChatProvider />}
+      <PageTranslator />
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
           <Link href="/portal" className="flex items-center gap-2 overflow-hidden">
@@ -184,6 +187,7 @@ export default function PortalLayout({
           </Link>
 
           <div className="ml-auto flex items-center gap-1">
+            <LanguagePicker />
             <NotificationBell />
             <ModeToggle />
             <DropdownMenu>
