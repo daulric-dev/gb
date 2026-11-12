@@ -1,5 +1,5 @@
 import type { Collector } from '../data-export.types';
-import { courseNames, day, fullName, inSchool, schoolNames, studentIn } from './helpers';
+import { courseNames, day, fullName, inSchool, schoolNames, studentIn, stringId } from './helpers';
 
 export const membershipsCollector: Collector = {
   id: 'memberships',
@@ -35,34 +35,34 @@ export const membershipsCollector: Collector = {
                 school_management_role: { select: { school_role: { select: { name: true } } } },
               },
             })
-          : [],
+          : Promise.resolve([] as never[]),
         userId
           ? prisma.school_join_request.findMany({
               where: { user_id: userId, ...school },
               select: { school_id: true, status: true, message: true, requested_at: true, reviewed_at: true },
             })
-          : [],
+          : Promise.resolve([] as never[]),
         userId && !subject.schoolId
           ? prisma.organisation_admin.findUnique({ where: { user_id: userId }, select: { created_at: true } })
           : null,
         userId && !subject.schoolId
           ? prisma.organisation.findMany({ where: { owner_id: userId }, select: { name: true } })
-          : [],
+          : Promise.resolve([] as never[]),
         userId
           ? prisma.school.findMany({ where: { owner_id: userId, ...(subject.schoolId ? { id: subject.schoolId } : {}) }, select: { name: true } })
-          : [],
+          : Promise.resolve([] as never[]),
         userId
           ? prisma.course_staff.findMany({
               where: { user_profile_id: userId, ...(subject.schoolId ? { course: { school_id: subject.schoolId } } : {}) },
               select: { course_id: true, role: true, created_at: true },
             })
-          : [],
+          : Promise.resolve([] as never[]),
         subject.studentIds.length
           ? prisma.course_student.findMany({
               where: { student_id: studentIn(ctx) },
               select: { course_id: true, status: true, enrolled_at: true },
             })
-          : [],
+          : Promise.resolve([] as never[]),
         userId
           ? prisma.parent_student_link.findMany({
               where: { user_profile_id: userId },
@@ -73,7 +73,7 @@ export const membershipsCollector: Collector = {
                 student: { select: { first_name: true, last_name: true, school_id: true } },
               },
             })
-          : [],
+          : Promise.resolve([] as never[]),
         subject.studentIds.length && subject.scope !== 'parent'
           ? prisma.parent_student_link.findMany({
               where: { student_id: studentIn(ctx) },
@@ -84,7 +84,7 @@ export const membershipsCollector: Collector = {
                 user_profile: { select: { first_name: true, last_name: true } },
               },
             })
-          : [],
+          : Promise.resolve([] as never[]),
       ]);
 
     const courses = await courseNames(ctx, [...courseStaff, ...courseStudents].map((c) => c.course_id));
@@ -96,13 +96,13 @@ export const membershipsCollector: Collector = {
 
     const data = {
       schools: memberships.map((m) => ({
-        school: schools.get(m.school_id) ?? null,
+        school: schools.get(stringId(m.school_id)) ?? null,
         role: m.role,
         customRoles: m.school_management_role.map((r) => r.school_role.name),
         since: m.created_at,
       })),
       joinRequests: joinRequests.map((j) => ({
-        school: schools.get(j.school_id) ?? null,
+        school: schools.get(stringId(j.school_id)) ?? null,
         status: j.status,
         message: j.message,
         requestedAt: j.requested_at,
@@ -113,15 +113,15 @@ export const membershipsCollector: Collector = {
         organisations: ownedOrgs.map((o) => o.name),
         schools: ownedSchools.map((s) => s.name),
       },
-      coursesTaught: courseStaff.map((c) => ({ course: courses.get(c.course_id) ?? null, role: c.role, since: c.created_at })),
+      coursesTaught: courseStaff.map((c) => ({ course: courses.get(stringId(c.course_id)) ?? null, role: c.role, since: c.created_at })),
       coursesStudied: courseStudents.map((c) => ({
-        course: courses.get(c.course_id) ?? null,
+        course: courses.get(stringId(c.course_id)) ?? null,
         status: c.status,
         enrolledAt: c.enrolled_at,
       })),
       childrenLinked: linksAsParent.map((l) => ({
         child: fullName(l.student),
-        school: schools.get(l.student?.school_id ?? '') ?? null,
+        school: schools.get(stringId(l.student?.school_id)) ?? null,
         relationship: l.relationship_label ?? l.relationship,
         linkedAt: l.created_at,
       })),

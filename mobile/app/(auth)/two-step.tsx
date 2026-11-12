@@ -67,7 +67,7 @@ export default function TwoStepScreen() {
         }
         const profile = await refresh();
         if (await enrolmentRequired()) {
-          router.replace("/(auth)/two-step-required");
+          router.replace("/(auth)/two-step-required" as never);
           return;
         }
         router.replace(homeRouteFor(profile));
@@ -88,7 +88,7 @@ export default function TwoStepScreen() {
       <Card>
         <CardHeader style={{ alignItems: "center" }}>
           <CardTitle>Two-step verification</CardTitle>
-          <CardDescription style={{ textAlign: "center" }}>
+          <CardDescription>
             {useRecovery
               ? "Enter one of your recovery codes. Each works once."
               : "Enter the 6-digit code from your authenticator app."}

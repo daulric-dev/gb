@@ -90,6 +90,10 @@ export const REGISTRY: Readonly<Record<string, TableSpec>> = {
   'public.ai_request': { where: ['user_id'], set: { user_id: 'uuid' } },
   'public.push_device': { where: ['user_id'], set: {} },
   'public.roster_link': { where: ['id', 'target_id'], set: { email: 'text', data: 'jsonb' } },
+  'public.audit_log': {
+    where: ['actor_id'],
+    set: { actor_name: 'text', actor_email: 'text' },
+  },
 };
 
 /** Column filter: `col = ANY(uuids)`, or `col IS NULL` for null. */

@@ -8,7 +8,7 @@ model organisation {
   /// What pushes show (src/notifications/push-content.ts): 'full' or 'generic'; null = generic for notices about children, full for course news.
   push_content String?
   /// Require an authenticator app (src/mfa) for administrators and safeguarding holders.
-  require_mfa_for_admins Boolean @default(false)
+  require_mfa_for_admins Boolean @default(true)
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @db.Timestamptz(6)
   owner_id   String?       @db.Uuid

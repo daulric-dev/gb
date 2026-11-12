@@ -1,7 +1,7 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { PRIVATE_AUDIT_ENTITIES } from '@/audit-log/audit-log.service';
 import type { Collector } from '../data-export.types';
-import { schoolNames } from './helpers';
+import { schoolNames, stringId } from './helpers';
 
 /** Audit entries per export, newest first. */
 export const AUDIT_LIMIT = 10_000;
@@ -121,14 +121,14 @@ export const integrationsCollector: Collector = {
             where: { user_profile_id: subject.userId },
             select: { id: true, created_at: true, tool_id: true },
           })
-        : [],
+        : Promise.resolve([] as never[]),
       subject.userId
         ? prisma.lti_launch.findMany({
             where: { user_profile_id: subject.userId },
             select: { tool_id: true, created_at: true, used_at: true },
             orderBy: { created_at: 'asc' },
           })
-        : [],
+        : Promise.resolve([] as never[]),
       ids.length
         ? prisma.roster_link.findMany({
             where: {
@@ -138,7 +138,7 @@ export const integrationsCollector: Collector = {
             },
             select: { entity: true, sourced_id: true, email: true, data: true, disabled_at: true, created_at: true, updated_at: true, school_id: true },
           })
-        : [],
+        : Promise.resolve([] as never[]),
     ]);
     const toolIds = [...new Set([...subjects, ...launches].map((s) => s.tool_id))];
     const tools = toolIds.length
@@ -147,10 +147,10 @@ export const integrationsCollector: Collector = {
     const toolName = new Map(tools.map((t) => [t.id, t.name]));
     const schools = await schoolNames(ctx, links.map((l) => l.school_id));
     const data = {
-      ltiIds: subjects.map((s) => ({ tool: toolName.get(s.tool_id) ?? null, id: s.id, since: s.created_at })),
-      ltiLaunches: launches.map((l) => ({ tool: toolName.get(l.tool_id) ?? null, at: l.created_at, openedAt: l.used_at })),
+      ltiIds: subjects.map((s) => ({ tool: toolName.get(stringId(s.tool_id)) ?? null, id: s.id, since: s.created_at })),
+      ltiLaunches: launches.map((l) => ({ tool: toolName.get(stringId(l.tool_id)) ?? null, at: l.created_at, openedAt: l.used_at })),
       rosterRecords: links.map((l) => ({
-        school: l.school_id ? (schools.get(l.school_id) ?? null) : null,
+        school: l.school_id ? (schools.get(stringId(l.school_id)) ?? null) : null,
         kind: l.entity,
         sourcedId: l.sourced_id,
         email: l.email,

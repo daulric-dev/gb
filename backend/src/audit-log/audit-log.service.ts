@@ -53,6 +53,7 @@ export const PRIVATE_AUDIT_ENTITIES: ReadonlySet<string> = new Set([
   'pastoral_setting',
   'activity_accommodation',
   'student_accommodation',
+  'school_retention_setting',
 ]);
 
 /**
@@ -89,6 +90,16 @@ export type AuditExport = {
   csv?: string;
   rows?: number;
   /** Filters or table choice that shaped the export (no personal data). */
+  details?: Record<string, unknown>;
+};
+
+/** A staff or administrator opened personal data; details must describe the access, never the data. */
+export type AuditRead = {
+  entity: string;
+  entityId?: string | null;
+  /** The course's school is resolved when only courseId is supplied. */
+  courseId?: string;
+  schoolId?: string | null;
   details?: Record<string, unknown>;
 };
 
@@ -334,6 +345,34 @@ export class AuditLogService {
         entity: entry.entity,
         entityId: entry.entityId ?? entry.courseId ?? null,
         action: 'export',
+        changes,
+      });
+    });
+  }
+
+  /**
+   * Record a read of personal data. Read events are deliberately excluded
+   * from audit.changed webhooks; details should contain scope/count metadata,
+   * never names, grades, note text or other personal data values.
+   */
+  async recordRead(actorId: string, entry: AuditRead): Promise<void> {
+    let schoolId = entry.schoolId ?? null;
+    if (!schoolId && entry.courseId) {
+      const course = await this.prisma.course.findUnique({
+        where: { id: entry.courseId },
+        select: { school_id: true },
+      });
+      schoolId = course?.school_id ?? null;
+    }
+    if (!schoolId) schoolId = await userSchoolId(this.prisma, actorId);
+    const changes: AuditChanges = Object.fromEntries(
+      Object.entries(entry.details ?? {}).map(([key, value]) => [key, { before: null, after: value }]),
+    );
+    await this.prisma.$transaction(async (tx) => {
+      await this.record(tx, schoolId, { id: actorId }, {
+        entity: entry.entity,
+        entityId: entry.entityId ?? entry.courseId ?? null,
+        action: 'read',
         changes,
       });
     });

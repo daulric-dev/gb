@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { userSchoolId } from '@/common/user-school';
+import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { StudentErasureService } from '@/erasure/student-erasure.service';
 import { RETENTION_NOTICE_DAYS } from './retention.config';
 
@@ -89,6 +90,7 @@ export class SchoolRetentionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly students: StudentErasureService,
+    @Optional() private readonly audit?: AuditLogService,
   ) {}
 
   private async school(userId: string): Promise<string> {
@@ -121,22 +123,38 @@ export class SchoolRetentionService {
     const changed =
       before.leaverRetentionDays !== input.leaverRetentionDays ||
       before.closedYearRetentionYears !== input.closedYearRetentionYears;
-    await this.prisma.school_retention_setting.upsert({
-      where: { school_id: schoolId },
-      create: {
-        school_id: schoolId,
-        leaver_retention_days: input.leaverRetentionDays,
-        closed_year_retention_years: input.closedYearRetentionYears,
-        updated_by: userId,
-      },
-      update: {
-        leaver_retention_days: input.leaverRetentionDays,
-        closed_year_retention_years: input.closedYearRetentionYears,
-        updated_by: userId,
-        updated_at: new Date(),
-        // A new period means a new list: confirm again before it runs.
-        ...(changed ? { confirmed_at: null, confirmed_by: null } : {}),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.school_retention_setting.findUnique({
+        where: { school_id: schoolId },
+        select: { leaver_retention_days: true, closed_year_retention_years: true, confirmed_at: true },
+      });
+      const after = await tx.school_retention_setting.upsert({
+        where: { school_id: schoolId },
+        create: {
+          school_id: schoolId,
+          leaver_retention_days: input.leaverRetentionDays,
+          closed_year_retention_years: input.closedYearRetentionYears,
+          updated_by: userId,
+        },
+        update: {
+          leaver_retention_days: input.leaverRetentionDays,
+          closed_year_retention_years: input.closedYearRetentionYears,
+          updated_by: userId,
+          updated_at: new Date(),
+          // A new period means a new list: confirm again before it runs.
+          ...(changed ? { confirmed_at: null, confirmed_by: null } : {}),
+        },
+        select: { leaver_retention_days: true, closed_year_retention_years: true, confirmed_at: true },
+      });
+      await this.audit?.record(tx, schoolId, { id: userId }, {
+        entity: 'school_retention_setting',
+        entityId: schoolId,
+        action: existing ? 'update' : 'create',
+        changes: auditChanges(
+          existing,
+          after,
+        ),
+      });
     });
     return this.view(userId);
   }
@@ -148,9 +166,18 @@ export class SchoolRetentionService {
     if (settings.leaverRetentionDays === null && settings.closedYearRetentionYears === null) {
       throw new BadRequestException('Set a retention period first');
     }
-    await this.prisma.school_retention_setting.update({
-      where: { school_id: schoolId },
-      data: { confirmed_at: new Date(), confirmed_by: userId },
+    await this.prisma.$transaction(async (tx) => {
+      const confirmedAt = new Date();
+      await tx.school_retention_setting.update({
+        where: { school_id: schoolId },
+        data: { confirmed_at: confirmedAt, confirmed_by: userId },
+      });
+      await this.audit?.record(tx, schoolId, { id: userId }, {
+        entity: 'school_retention_setting',
+        entityId: schoolId,
+        action: 'update',
+        changes: auditChanges({ confirmed_at: settings.confirmedAt }, { confirmed_at: confirmedAt }),
+      });
     });
     return this.view(userId);
   }

@@ -249,6 +249,11 @@ export default function OrganisationPrivacyPage() {
                 return (
                   <fieldset key={p.purpose} className="rounded-lg border p-3">
                     <legend className="px-1 text-sm font-medium">{p.label}</legend>
+                    {p.isDefault && (
+                      <p className="mb-2 text-xs text-amber-700 dark:text-amber-400">
+                        Suggested starting point. Confirm or change this purpose&apos;s basis before publishing the notice.
+                      </p>
+                    )}
                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
                       {BASES.map((b) => {
                         const id = `basis-${p.purpose}-${b.key}`;

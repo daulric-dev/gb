@@ -47,18 +47,18 @@ export default function TwoStepRequiredScreen() {
       <Card>
         <CardHeader style={{ alignItems: "center" }}>
           <CardTitle>Set up two-step verification</CardTitle>
-          <CardDescription style={{ textAlign: "center" }}>
+          <CardDescription>
             Your organisation requires an authenticator app for your role.
           </CardDescription>
         </CardHeader>
         <CardContent style={{ gap: 16 }}>
-          <Text size="sm" style={{ textAlign: "center" }}>
-            Sign in on the web at {where} and set one up there, then come back.
-          </Text>
+          <View style={{ alignItems: "center" }}>
+            <Text size="sm">Sign in on the web at {where} and set one up there, then come back.</Text>
+          </View>
           {stillRequired ? (
-            <Text tone="destructive" size="sm" style={{ textAlign: "center" }}>
-              It is not set up yet.
-            </Text>
+            <View style={{ alignItems: "center" }}>
+              <Text tone="destructive" size="sm">It is not set up yet.</Text>
+            </View>
           ) : null}
           <View style={{ gap: 8 }}>
             {url ? (

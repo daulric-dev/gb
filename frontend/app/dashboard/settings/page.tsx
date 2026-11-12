@@ -21,6 +21,7 @@ import { SchoolSimilaritySettings } from "./_components/school-similarity-settin
 import { SchoolAiSettings } from "./_components/school-ai-settings";
 import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
+import { SchoolRecordRetentionSettings } from "./_components/school-record-retention-settings";
 import { AccountSettings } from "@/components/account/account-settings";
 import { SchoolOwnership } from "@/components/account/school-ownership";
 import { useMySchools } from "@/hooks/use-my-schools";
@@ -77,6 +78,8 @@ export default function SettingsPage() {
       <SchoolSsoSettings />
 
       <SchoolIntegrationSettings />
+
+      <SchoolRecordRetentionSettings />
 
       <SchoolOwnership
         schoolId={profile.value?.school?.id}

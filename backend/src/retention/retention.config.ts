@@ -39,6 +39,9 @@ export const ABANDONED_UPLOAD_MS = 60 * 60 * 1000;
  */
 export const notificationRetentionDays = () => envInt('NOTIFICATION_RETENTION_DAYS', 180);
 
+/** Audit history (including actor and changed-field metadata) is retained for two years by default. */
+export const auditLogRetentionDays = () => Math.max(1, envInt('AUDIT_LOG_RETENTION_DAYS', 730));
+
 /**
  * Rostering history: dry-run change sets (roster_change: names, emails,
  * diffs) of finished runs, and the roster email and source record kept on a

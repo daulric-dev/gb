@@ -109,6 +109,7 @@ GDPR housekeeping in the API (see `backend/src/retention/README.md`, `backend/sr
 | `RETENTION_PURGE_MAX_MINUTES` | No | `10` | Time budget per run; the next run continues where it stopped. |
 | `ERASURE_LOG_S3_PREFIX` | No | `erasure-log` | Prefix in `S3_BUCKET` for the off-database copy of the erasure log (one signed JSON object per entry). `off` disables the copy - then a restore can only replay entries still in the restored database. |
 | `ERASURE_LOG_RETENTION_DAYS` | No | `400` | How long erasure-log entries (rows and storage copies) are kept. Must be longer than any backup you could restore (30-day dumps + 7 days of old versions by default). |
+| `AUDIT_LOG_RETENTION_DAYS` | No | `730` | Days school-record, SSO and integration audit entries are retained before the daily retention job permanently deletes them. Minimum is 1 day. |
 
 ### Parent portal
 

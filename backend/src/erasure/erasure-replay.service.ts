@@ -4,7 +4,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
 import { objectKey } from '@/storage/keys';
-import { compileObjectKeys, compileStep, isUuid, validatePlan, type ReplayStep } from './erasure-plan';
+import { compileObjectKeys, compileStep, isUuid, plan, validatePlan, type ReplayStep } from './erasure-plan';
 import { dayPath, toEntry, verifyEntry, type ErasureEntry } from './erasure-log.service';
 import { erasureLogPrefix } from './erasure.config';
 
@@ -63,6 +63,8 @@ export function isEntry(v: unknown): v is ErasureEntry {
     typeof e.kind === 'string' &&
     typeof e.subject_table === 'string' &&
     Array.isArray(e.subject_ids) &&
+    e.subject_ids.length > 0 &&
+    e.subject_ids.every(isUuid) &&
     typeof e.actor === 'string' &&
     typeof e.reason === 'string'
   );
@@ -180,7 +182,21 @@ export class ErasureReplayService {
   async applyEntry(entry: ErasureEntry, opts: ReplayOptions = {}): Promise<EntryResult> {
     validatePlan(entry.replay);
     const occurredAt = new Date(entry.occurred_at);
-    const steps = entry.replay.steps;
+    const steps = [...entry.replay.steps];
+    // Older signed account-erasure entries predate the explicit scrub step.
+    // Add it during replay too, so restoring an old backup cannot restore a
+    // deleted account's copied name or email in the audit log.
+    if (
+      entry.kind === 'account' &&
+      !steps.some((step) => step.op === 'update' && step.table === 'public.audit_log')
+    ) {
+      if (entry.subject_ids.length === 0 || !entry.subject_ids.every(isUuid)) {
+        throw new Error('account erasure entry has invalid subject ids');
+      }
+      steps.push(
+        plan.update('public.audit_log', { actor_id: entry.subject_ids }, { actor_name: null, actor_email: null }),
+      );
+    }
     const result: EntryResult = {
       id: entry.id,
       occurredAt: entry.occurred_at,
@@ -211,6 +227,9 @@ export class ErasureReplayService {
     await this.prisma.$transaction(async (tx) => {
       for (const step of steps) {
         if (step.op === 'delete_storage_prefix') continue;
+        if (step.op === 'update' && step.table === 'public.audit_log') {
+          await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
+        }
         const { sql, params } = compileStep(step, occurredAt);
         result.rows += await tx.$executeRawUnsafe(sql, ...params);
       }

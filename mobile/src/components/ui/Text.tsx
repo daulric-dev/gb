@@ -1,4 +1,4 @@
-import { Text as RNText, type TextProps as RNTextProps } from "react-native";
+import { Text as RNText, type StyleProp, type TextProps as RNTextProps, type TextStyle } from "react-native";
 import { useTheme } from "@/theme/ThemeProvider";
 import { fontSize } from "@/theme/colors";
 
@@ -11,6 +11,7 @@ type Variant =
   | "label";
 
 export interface TextProps extends RNTextProps {
+  style?: StyleProp<TextStyle>;
   variant?: Variant;
   /** Use a token colour by key, e.g. "primary", "destructive". */
   tone?:

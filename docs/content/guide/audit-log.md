@@ -33,12 +33,21 @@ Credentials, passwords, tokens, verification codes, join codes, and private
 keys are redacted before storage. Authentication and session data, read
 receipts, notifications, and ephemeral system activity are not audit-log
 targets. Other changed values can include personal information; access should
-be granted only to roles that need it.
+be granted only to roles that need it. When an account is erased, its copied
+actor name and email are cleared from the audit history. The event remains
+until the two-year audit retention period expires.
 
-**Pastoral notes** are the one place where *reading* is recorded: every time
-a safeguarding note is opened, listed, exported or has an attachment opened,
-an entry with action **viewed** (`read`) is written. Pastoral entries hold ids
-and settings only, never the text of a note, and are never sent to webhooks.
+**Read access to personal records is recorded for selected high-impact
+screens.** Opening the student roster, a student record or profile, a
+gradebook, attendance sessions or summary, school/course at-risk analytics,
+or a report release/individual report produces an action **viewed** (`read`)
+entry. These entries store the actor, school, record or scope, and limited
+access metadata (such as row count or whether guardian contacts were included);
+they do not copy the viewed names, grades, attendance values, or note text.
+Pastoral notes have their own more detailed access auditing: opening, listing,
+exporting or opening an attachment writes an entry with action **viewed**
+(`read`). Pastoral entries contain ids and settings only and are never sent to
+webhooks. Student self-service reads are not logged as staff access events.
 
 ## Current coverage
 
@@ -46,7 +55,8 @@ The current write services record changes to:
 
 - Organisation and school settings, feature toggles, school roles and
   permissions, staff memberships and invitations, academic years and terms,
-  upload limits, and school logos.
+  upload limits, school logos, and student-record retention periods and
+  confirmations.
 - Courses, course modules and items, pages, banners, discussion topics and
   replies, grading activities and groups, rubrics, submissions, and grade
   scales.
@@ -58,24 +68,28 @@ The current write services record changes to:
   from marks automatically, is not recorded; the marks and alignments that
   produce it are.
 
-Coverage is explicit in the backend write services, not a database-wide
-trigger. Private chat message content, authentication-provider and webhook
-events, attendance, and other operational or ephemeral activity are not
-included in these views. Existing SSO and webhook logs remain in their
+Coverage is explicit in the backend services, not a database-wide trigger.
+Read coverage is deliberately selected, not a record of every API read.
+Private chat message content, authentication-provider and webhook events,
+student and parent self-service reads, and other operational or ephemeral activity are
+not included in these views. Existing SSO and webhook logs remain in their
 specialized views. When adding a write path for user-managed data, use
 `AuditLogService.record` inside the same Prisma transaction as the write and
 include only the meaningful before/after fields. Do not log secrets or
-high-volume operational state.
+high-volume operational state. For an audited read, use
+`AuditLogService.recordRead`; include only the scope and minimum metadata
+needed to explain the access, never the personal data returned to the caller.
 
-School-scoped entries are retained if a school is deleted; the log keeps the
-school name snapshot and the entry remains visible in the organisation-wide
-feed. School-scoped entries can also be sent to a school's webhook when the
+School-scoped entries are retained if a school is deleted; the general log
+keeps the school name snapshot, and the SSO and integration logs retain the
+school UUID snapshot. Entries are purged after `AUDIT_LOG_RETENTION_DAYS`
+(730 days by default) by the daily retention job. School-scoped entries can
+also be sent to a school's webhook when the
 webhook explicitly subscribes to **Audit log change**; organisation-wide
 entries are not sent to school webhooks. This sends the redacted before/after
 values and actor details outside the platform, so subscribe only trusted
-receivers. Webhook delivery payloads follow the webhook delivery retention
-policy; audit entries themselves are not currently subject to an automatic
-time-based purge.
+receivers. Webhook delivery payloads follow the separate webhook delivery
+retention policy.
 
 ## Reverting changes
 

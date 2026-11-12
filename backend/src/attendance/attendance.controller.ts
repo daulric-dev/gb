@@ -50,7 +50,10 @@ export class AttendanceController {
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.attendance.list(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.attendance.list(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'attendance_sessions', courseId });
+    return result;
   }
 
   @Post('sessions')
@@ -68,7 +71,14 @@ export class AttendanceController {
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
-    return this.attendance.detail(req.user.id as string, courseId, sessionId);
+    const userId = req.user.id as string;
+    const result = await this.attendance.detail(userId, courseId, sessionId);
+    await this.audit.recordRead(userId, {
+      entity: 'attendance_session',
+      entityId: sessionId,
+      courseId,
+    });
+    return result;
   }
 
   /** The QR frame the live screen shows now; it rotates every 15 s. */
@@ -169,7 +179,10 @@ export class AttendanceController {
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.attendance.summary(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.attendance.summary(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'attendance_summary', courseId });
+    return result;
   }
 
   /** Bulk export of personal data: step-up, and audited with its row count. */

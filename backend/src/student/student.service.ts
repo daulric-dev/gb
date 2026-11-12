@@ -80,7 +80,10 @@ export class StudentService {
     const cacheable = !search && scope.all;
     if (cacheable) {
       const cached = await this.cache.get(cacheKey);
-      if (cached) return cached;
+      if (cached) {
+        await this.auditRosterRead(userId, schoolId, Array.isArray(cached) ? cached.length : 0, search);
+        return cached;
+      }
     }
 
     let result: StudentRow[];
@@ -94,6 +97,8 @@ export class StudentService {
       this.logger.error(`Failed to fetch students: ${(err as Error).message}`);
       throw new BadRequestException('Failed to fetch students');
     }
+
+    await this.auditRosterRead(userId, schoolId, result.length, search);
 
     if (cacheable) {
       await this.cache.set(cacheKey, result, STUDENT_TTL);
@@ -128,6 +133,11 @@ export class StudentService {
         }),
         this.prisma.student.count({ where }),
       ]);
+      await this.auditRosterRead(userId, schoolId, rows.length, search, {
+        page,
+        pageSize,
+        total,
+      });
       const pageCount = Math.ceil(total / pageSize);
       return {
         data: rows.map(serializeStudent),
@@ -187,6 +197,12 @@ export class StudentService {
       | undefined;
     const nextCursor = hasMore && lastItem ? String(lastItem[column]) : null;
 
+    await this.auditRosterRead(userId, schoolId, pageData.length, search, {
+      pageSize,
+      cursorMode: true,
+      hasMore,
+    });
+
     return {
       data: pageData,
       meta: {
@@ -215,6 +231,8 @@ export class StudentService {
       throw new NotFoundException('Student not found');
     }
 
+    await this.auditRead(userId, schoolId, studentId, 'student');
+
     return serializeStudent(data);
   }
 
@@ -238,6 +256,9 @@ export class StudentService {
         student.school_id as string,
       ),
     );
+    await this.auditRead(userId, student.school_id as string, studentId, 'student_profile', {
+      guardianContactsIncluded: sensitive,
+    });
 
     const loadLinks = () =>
       this.prisma.parent_student_link.findMany({
@@ -342,6 +363,52 @@ export class StudentService {
           }))
         : null,
     };
+  }
+
+  private async auditRosterRead(
+    userId: string,
+    schoolId: string,
+    rows: number,
+    search?: string,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.auditRead(userId, schoolId, null, 'student_roster', {
+      rows,
+      searched: !!search,
+      ...details,
+    });
+  }
+
+  private async auditRead(
+    userId: string,
+    schoolId: string,
+    studentId: string | null,
+    entity: string,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    if (!this.auditLog) return;
+    const recordRead = (this.auditLog as AuditLogService & {
+      recordRead?: AuditLogService['recordRead'];
+    }).recordRead?.bind(this.auditLog);
+    if (recordRead) {
+      await recordRead(userId, {
+        entity,
+        entityId: studentId,
+        schoolId,
+        details,
+      });
+      return;
+    }
+    // Keep the service usable by lightweight adapters that implement only
+    // `record`; the application uses AuditLogService.recordRead above.
+    await this.auditLog.record(this.prisma, schoolId, { id: userId }, {
+      entity,
+      entityId: studentId,
+      action: 'read',
+      changes: Object.fromEntries(
+        Object.entries(details).map(([key, value]) => [key, { before: null, after: value }]),
+      ),
+    });
   }
 
   async update(userId: string, studentId: string, dto: UpdateStudentDto) {

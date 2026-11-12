@@ -41,7 +41,7 @@ The uuids themselves are pseudonymous personal data: after a restore they point 
 | Step | Effect |
 | --- | --- |
 | `{ "op": "delete", "table", "where", "objects"? }` | `DELETE FROM <table> WHERE <col> = ANY(uuids) AND ...`. With `objects: true` (file rows only) the rows' storage objects are deleted first. |
-| `{ "op": "update", "table", "where", "set" }` | Blank columns: `null`, `''`, `{}` (jsonb), a uuid, or `"$occurred_at"` = `COALESCE(col, occurred_at)`. Only rows that would change are touched, so a re-run updates 0 rows. |
+| `{ "op": "update", "table", "where", "set" }` | Blank columns: `null`, `''`, `{}` (jsonb), a uuid, or `"$occurred_at"` = `COALESCE(col, occurred_at)`. Only rows that would change are touched, so a re-run updates 0 rows. Account erasure clears the deleted account's copied actor name and email from audit history; replay does this for older account-erasure entries too. |
 | `{ "op": "delete_storage_prefix", "prefixes" }` | Delete every object under `file-manager/<school uuid>/<user uuid>/`, `images/avatars/<user uuid>.` or `images/course-banners/<course uuid>-` - the only prefixes allowed. |
 
 `where` maps a column to a uuid list (`= ANY`) or `null` (`IS NULL`); at least one list is required, so a step can never match a whole table. Tables and columns must be in `REGISTRY` in `erasure-plan.ts`; identifiers in the SQL come from there, values are always bound parameters. Plans read back from storage are untrusted and validated again.
@@ -50,7 +50,7 @@ What each path writes:
 
 | Path | Kind / reason | Replay |
 | --- | --- | --- |
-| `DELETE /api/auth/account` (`AuthService.deleteAccount`) | `account` / `user_request` | delete storage prefixes of the user's files and avatar, file rows (with objects), `user_profile`, `app_user` (cascades sessions, identities, memberships, messages, ...) |
+| `DELETE /api/auth/account` (`AuthService.deleteAccount`) | `account` / `user_request` | delete storage prefixes of the user's files and avatar, file rows (with objects), `user_profile`, `app_user` (cascades sessions, identities, memberships, messages, ...); clear the user's copied name and email from audit actor snapshots while keeping the events for their two-year retention period |
 | Merge duplicate student (removed by `20261027140000_drop_student_merge`; older entries only) | `student` / `merge` | clear the join-time record's login, move it to the roster record (only if that one has none), delete the join-time record |
 | Remove a member / leave a school (`SchoolService`) | `school_membership` / `admin`, `user_request` | delete the `school_management` row(s), detach the profile from that school |
 | Delete a file (`FileManagerService.softDelete`) | `file` / `user_request` | set `deleted_at` |

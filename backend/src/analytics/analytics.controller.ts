@@ -60,13 +60,25 @@ export class AnalyticsController {
   @Get('school')
   @RequirePermission('analytics', 'read')
   async school(@Req() req: any, @Query() q: SchoolFilterDto) {
-    return this.analytics.school(req.user.id as string, filterOf(q));
+    const userId = req.user.id as string;
+    const result = await this.analytics.school(userId, filterOf(q));
+    await this.audit.recordRead(userId, {
+      entity: 'school_analytics',
+      details: { hasTermFilter: !!q.termId, hasAcademicYearFilter: !!q.academicYearId },
+    });
+    return result;
   }
 
   @Get('school/at-risk')
   @RequirePermission('analytics', 'read')
   async atRisk(@Req() req: any, @Query() q: SchoolFilterDto) {
-    return this.analytics.schoolAtRisk(req.user.id as string, filterOf(q));
+    const userId = req.user.id as string;
+    const result = await this.analytics.schoolAtRisk(userId, filterOf(q));
+    await this.audit.recordRead(userId, {
+      entity: 'school_at_risk',
+      details: { hasTermFilter: !!q.termId, hasAcademicYearFilter: !!q.academicYearId },
+    });
+    return result;
   }
 
   @Get('school/export')
@@ -119,7 +131,10 @@ export class CourseAnalyticsController {
 
   @Get()
   async get(@Req() req: any, @Param('courseId', ParseUUIDPipe) courseId: string) {
-    return this.analytics.course(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.analytics.course(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'course_analytics', courseId });
+    return result;
   }
 
   @Get('export')

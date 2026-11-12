@@ -9,8 +9,13 @@ export const profileCollector: Collector = {
   id: 'profile',
   title: 'Profile',
   description:
-    'The account (email address, name, role, picture, when it was created and last signed in) and the student record (name, date of birth, gender, school, student number, enrolment date, form tutor).',
-  covers: ['public.user_profile.id', 'student.student.user_profile_id', 'student.student.form_tutor_id'],
+    'The account (email address, name, role, picture, when it was created and last signed in), the student record and its processing restrictions (name, date of birth, gender, school, student number, enrolment date, form tutor, and opt-outs).',
+  covers: [
+    'public.user_profile.id',
+    'student.student.user_profile_id',
+    'student.student.form_tutor_id',
+    'student.student_restriction.student_id',
+  ],
   scopes: ['self', 'staff', 'parent'],
   async collect(ctx) {
     const { prisma, subject } = ctx;
@@ -60,29 +65,53 @@ export const profileCollector: Collector = {
           },
         })
       : [];
+    const restrictions = subject.studentIds.length
+      ? await prisma.student_restriction.findMany({
+            where: { student_id: { in: subject.studentIds } },
+            select: {
+              student_id: true,
+              no_ai: true,
+              no_similarity: true,
+              exclude_from_analytics: true,
+              set_at: true,
+            },
+          })
+      : [];
     const schools = await schoolNames(ctx, [account?.school_id ?? null, ...students.map((s) => s.school_id)]);
     const tutors = subject.scope === 'parent' ? new Map() : await personNames(ctx, students.map((s) => s.form_tutor_id));
 
+    const restrictionByStudent = new Map(restrictions.map((r) => [r.student_id, r]));
     const studentRecords = students.map((s) =>
       subject.scope === 'parent'
         ? {
             firstName: s.first_name,
             lastName: s.last_name,
-            dateOfBirth: day(s.date_of_birth),
-            school: schools.get(s.school_id ?? '') ?? null,
+            dateOfBirth: day(s.date_of_birth as Date),
+            school: schools.get((s.school_id ?? '')) ?? null,
           }
         : {
             id: s.id,
             firstName: s.first_name,
             lastName: s.last_name,
-            dateOfBirth: day(s.date_of_birth),
+            dateOfBirth: day(s.date_of_birth as Date),
             gender: s.gender,
-            school: schools.get(s.school_id ?? '') ?? null,
+            school: schools.get((s.school_id ?? '')) ?? null,
             studentNumber: s.student_number,
-            enrollmentDate: day(s.enrollment_date),
+            enrollmentDate: day(s.enrollment_date as Date),
             active: s.is_active,
             formTutor: s.form_tutor_id ? (tutors.get(s.form_tutor_id) ?? null) : null,
             hasAccount: !!s.user_profile_id,
+            processingRestrictions: (() => {
+              const r = restrictionByStudent.get(s.id);
+              return r
+                ? {
+                    noAi: r.no_ai,
+                    noSimilarity: r.no_similarity,
+                    excludeFromAnalytics: r.exclude_from_analytics,
+                    lastChangedAt: r.set_at,
+                  }
+                : null;
+            })(),
           },
     );
     const data = {
@@ -204,5 +233,54 @@ export const devicesCollector: Collector = {
       pushDevices: push.map((p) => ({ platform: p.platform, registeredAt: p.created_at, lastSeenAt: p.last_seen_at })),
     };
     return { data, count: known.length + push.length };
+  },
+};
+
+/** Safe account-security metadata; authentication secrets and hashes never leave the server. */
+export const securityCollector: Collector = {
+  id: 'account-security',
+  title: 'Account security',
+  description: 'Pending email-change details and authenticator setup status. Verification codes, authenticator secrets and recovery-code hashes are never included.',
+  covers: [
+    'account.email_change.user_id',
+    'account.mfa_totp.user_id',
+    'account.mfa_recovery_code.user_id',
+    'account.mfa_enrolment_gate.user_id',
+  ],
+  scopes: ['self', 'staff'],
+  async collect(ctx) {
+    if (!hasAccount(ctx)) return { data: null, count: 0 };
+    const userId = ctx.subject.userId!;
+    const [emailChange, totp, recoveryCodes, gates] = await Promise.all([
+      ctx.prisma.email_change.findUnique({
+        where: { user_id: userId },
+        select: { new_email: true, expires_at: true, attempts: true, sends: true, created_at: true },
+      }),
+      ctx.prisma.mfa_totp.findUnique({
+        where: { user_id: userId },
+        select: { enabled_at: true, pending_created_at: true, created_at: true, updated_at: true },
+      }),
+      ctx.prisma.mfa_recovery_code.findMany({
+        where: { user_id: userId },
+        select: { used_at: true, created_at: true },
+        orderBy: { created_at: 'asc' },
+      }),
+      ctx.prisma.mfa_enrolment_gate.findMany({
+        where: { user_id: userId },
+        select: { created_at: true },
+        orderBy: { created_at: 'asc' },
+      }),
+    ]);
+    const data = {
+      pendingEmailChange: emailChange
+        ? { newEmail: emailChange.new_email, expiresAt: emailChange.expires_at, attempts: emailChange.attempts, sends: emailChange.sends, createdAt: emailChange.created_at }
+        : null,
+      authenticator: totp
+        ? { enabledAt: totp.enabled_at, setupStartedAt: totp.pending_created_at, createdAt: totp.created_at, updatedAt: totp.updated_at }
+        : null,
+      recoveryCodes: recoveryCodes.map((code) => ({ createdAt: code.created_at, usedAt: code.used_at })),
+      authenticatorEnrolmentRequiredSince: gates.map((gate) => gate.created_at),
+    };
+    return { data, count: (emailChange ? 1 : 0) + (totp ? 1 : 0) + recoveryCodes.length + gates.length };
   },
 };

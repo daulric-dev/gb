@@ -108,6 +108,15 @@ export async function eraseAccountRows(
   // Rostering links whose target is this account (rostered staff): they
   // hold the roster email and the source record.
   await tx.roster_link.deleteMany({ where: { target_id: userId } });
+  // Keep the audit events for the two-year retention window, but remove the
+  // copied name and email of the account being erased. The trigger only
+  // permits this update through its transaction-local purge path. Erasure
+  // replay repeats the scrub after restoring a backup.
+  await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
+  await tx.audit_log.updateMany({
+    where: { actor_id: userId },
+    data: { actor_name: null, actor_email: null },
+  });
   await tx.user_profile.deleteMany({ where: { id: userId } });
   // Cascades to sessions and linked sign-in identities.
   await tx.app_user.deleteMany({ where: { id: userId } });
@@ -124,6 +133,7 @@ export async function eraseAccountRows(
       plan.update('public.ai_request', { user_id: [userId] }, { user_id: null }),
       plan.del('public.push_device', { user_id: [userId] }),
       plan.del('public.roster_link', { target_id: [userId] }),
+      plan.update('public.audit_log', { actor_id: [userId] }, { actor_name: null, actor_email: null }),
       plan.del('public.user_profile', { id: [userId] }),
       plan.del('account.app_user', { id: [userId] }),
     ),

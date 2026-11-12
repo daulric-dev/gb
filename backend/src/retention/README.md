@@ -4,7 +4,7 @@ The daily purge of personal data that has been deleted but not yet erased. Files
 
 ## What it provides
 
-- **HTTP routes** - none.
+- **HTTP routes** - `GET /api/schools/current/retention`, `PUT` to set leaver/closed-year periods and preview the due list, `POST /confirm` to approve the displayed schedule. Write and confirm require `student:erase` and step-up; the web screen is **Dashboard → Settings → Student-record retention**.
 - **Services / exports**
   - `RetentionService.purge({ dryRun?, now?, retentionDays?, only? })` - one run; returns a `PurgeReport` with counts and errors. Never throws.
   - `RetentionScheduler` - the timer (not exported).
@@ -12,7 +12,7 @@ The daily purge of personal data that has been deleted but not yet erased. Files
 
 ## What a run does
 
-Each kind works in batches (`RETENTION_PURGE_BATCH_SIZE`, default 500), one transaction and one erasure-log entry per school per batch, and fails on its own (logged in `errors`) without stopping the others. The run stops when `RETENTION_PURGE_MAX_MINUTES` (default 10) is used up; the next run continues.
+Each kind works in batches (`RETENTION_PURGE_BATCH_SIZE`, default 500) and fails on its own (logged in `errors`) without stopping the others. User-requested and school-record erasures write erasure-log entries in their data transaction. Fixed-period housekeeping, including audit-log expiry, is not an erasure request and does not add another log entry. The run stops when `RETENTION_PURGE_MAX_MINUTES` (default 10) is used up; the next run continues.
 
 | Kind | Selected | Done |
 | --- | --- | --- |
@@ -26,6 +26,7 @@ Each kind works in batches (`RETENTION_PURGE_BATCH_SIZE`, default 500), one tran
 | Pastoral notes (`student.pastoral_note`, [src/pastoral](../pastoral/README.md)) | `status = 'resolved'` and `resolved_at` older than the school's `pastoral_setting.retention_days` (schools without one keep notes until the student is removed; open notes are never purged) | Rows deleted, one erasure-log entry (`pastoral_note`, `retention_purge`) per school and batch. Honours `--only`. Counted as `pastoralNotes`. |
 | Sessions, sign-in codes, remembered devices (`account`) | Sessions expired (sliding or absolute lifetime) or revoked, codes created, more than a day ago; `account.known_device` rows unused for 90 days | Deleted. **Not** written to the erasure log: nobody asked for these to be erased, and a restore signs everyone out anyway. SSO state and handoff codes live in the cache with a TTL. |
 | Webhook deliveries (`public.webhook_delivery`) | `created_at` older than `WEBHOOK_DELIVERY_RETENTION_DAYS` (30); their payloads hold personal data | Deleted in batches (`webhookDeliveries` in the report). **Not** written to the erasure log: an operational record, like sessions. Deleting a webhook or school cascades anyway. See `src/integrations`. |
+| Audit logs (`public.audit_log`, `public.sso_audit_log`, `public.integration_audit_log`) | `created_at` older than `AUDIT_LOG_RETENTION_DAYS` (730, two years) | Deleted in batches using the append-only trigger's transaction-local purge path. SSO and integration rows keep a school UUID snapshot so school deletion does not cascade the history. |
 | Erasure log | Entries older than `ERASURE_LOG_RETENTION_DAYS` (400) | Rows and their storage copies deleted. |
 | Account storage | `account` erasures of the last 7 days | Their `delete_storage_prefix` steps re-run, finishing object deletions that failed when the account was deleted. |
 | Export | Erasure-log rows not yet copied to storage | Exported (see the erasure README). |
@@ -68,6 +69,7 @@ A dry run counts what each kind would purge and changes nothing (no storage call
 | `RETENTION_PURGE_BATCH_SIZE` | `500` | Rows per batch. |
 | `RETENTION_PURGE_MAX_MINUTES` | `10` | Time budget per run. |
 | `WEBHOOK_DELIVERY_RETENTION_DAYS` | `30` | Days a webhook delivery is kept (read from `src/integrations/config/webhook.config.ts`). |
+| `AUDIT_LOG_RETENTION_DAYS` | `730` | Days school-record, SSO and integration audit entries are retained before permanent deletion. Minimum 1 day. |
 
 ## Files
 

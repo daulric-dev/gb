@@ -30,15 +30,13 @@ import {
   maxObjectBytes,
   maxTotalObjectBytes,
 } from './data-export.constants';
-import { KIND_OF_SCOPE, type Collector, type ExportObject, type ExportScope, type ExportSubject } from './data-export.types';
+import { KIND_OF_SCOPE, type Collector, type ExportObject, type ExportSubject } from './data-export.types';
 
 type Row = Prisma.data_exportGetPayload<object>;
 type Kind = 'self' | 'student' | 'child';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const SCOPE_OF_KIND: Record<Kind, ExportScope> = { self: 'self', student: 'staff', child: 'parent' };
-
 /** The parent_settings switch -> what README.txt calls the hidden category. */
 const PARENT_HIDDEN_LABEL: Record<string, string> = {
   showGrades: 'grades and marks',

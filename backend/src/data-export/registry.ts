@@ -1,5 +1,5 @@
 import type { Collector, ExportScope } from './data-export.types';
-import { devicesCollector, identitiesCollector, profileCollector, sessionsCollector } from './collectors/account';
+import { devicesCollector, identitiesCollector, profileCollector, securityCollector, sessionsCollector } from './collectors/account';
 import { membershipsCollector } from './collectors/memberships';
 import { chatCollector, discussionsCollector, notificationsCollector } from './collectors/communication';
 import { filesCollector } from './collectors/files';
@@ -19,6 +19,7 @@ export const COLLECTORS: readonly Collector[] = [
   identitiesCollector,
   sessionsCollector,
   devicesCollector,
+  securityCollector,
   membershipsCollector,
   courseworkCollector,
   masteryCollector,
@@ -60,6 +61,7 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   'student.pastoral_note.assigned_to': STAFF_ACTION,
   'student.pastoral_note.resolved_by': STAFF_ACTION,
   'student.pastoral_note.sar_withheld_by': STAFF_ACTION,
+  'student.student_restriction.set_by': STAFF_ACTION,
   'student.attendance_alert.acknowledged_by': STAFF_ACTION,
   'student.parent_invite.created_by': STAFF_ACTION,
   'student.parent_student_link.created_by': STAFF_ACTION,
@@ -95,6 +97,9 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   'public.ai_org_setting.updated_by': SCHOOL_CONFIG,
   'public.ai_school_setting.updated_by': SCHOOL_CONFIG,
   'public.analytics_setting.updated_by': SCHOOL_CONFIG,
+  'public.privacy_setting.updated_by': SCHOOL_CONFIG,
+  'public.school_retention_setting.confirmed_by': SCHOOL_CONFIG,
+  'public.school_retention_setting.updated_by': SCHOOL_CONFIG,
   'public.attendance_alert_setting.updated_by': SCHOOL_CONFIG,
   'public.timetable_setting.updated_by': SCHOOL_CONFIG,
   'public.school_closure.created_by': SCHOOL_CONFIG,

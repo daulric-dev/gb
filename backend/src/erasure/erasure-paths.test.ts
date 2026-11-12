@@ -99,6 +99,7 @@ describe('DELETE /api/auth/account', () => {
       'public.ai_request',
       'public.push_device',
       'public.roster_link',
+      'public.audit_log',
       'public.user_profile',
       'account.app_user',
     ]);

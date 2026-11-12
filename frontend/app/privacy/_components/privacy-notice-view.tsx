@@ -152,7 +152,14 @@ function LawfulBasesTable({ notice }: { notice: PrivacyNotice | null }) {
         <TableBody>
           {notice.lawfulBases.map((p) => (
             <TableRow key={p.purpose}>
-              <TableCell className="align-top whitespace-normal">{p.label}</TableCell>
+              <TableCell className="align-top whitespace-normal">
+                {p.label}
+                {p.isDefault && (
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    Suggested starting point; this organisation has not confirmed it.
+                  </p>
+                )}
+              </TableCell>
               <TableCell className="align-top whitespace-normal text-muted-foreground">
                 <ul className="space-y-1">
                   {p.bases.map((b) => (

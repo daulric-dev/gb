@@ -458,13 +458,17 @@ describe('never exposed outside staff pastoral routes', () => {
     }
   });
 
-  test('only src/pastoral and the retention purge query the notes table', () => {
+  test('pastoral, retention purge and staff-only exports query the notes table', () => {
     const touching = files(SRC)
       .filter((f) => !f.includes('/generated/'))
       .filter((f) => /\b(?:prisma|tx|db)\.pastoral_note\b/.test(readFileSync(f, 'utf8')))
       .map((f) => f.slice(SRC.length + 1))
       .sort();
-    expect(touching).toEqual(['pastoral/pastoral.service.ts', 'retention/retention.service.ts']);
+    expect(touching).toEqual([
+      'data-export/collectors/staff-only.ts',
+      'pastoral/pastoral.service.ts',
+      'retention/retention.service.ts',
+    ]);
   });
 
   test('the module exports nothing for other modules to use', () => {

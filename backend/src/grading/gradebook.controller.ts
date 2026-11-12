@@ -36,7 +36,10 @@ export class GradebookController {
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.gradebook.gradebook(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.gradebook.gradebook(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'gradebook', courseId });
+    return result;
   }
 
   /** Bulk export of personal data: step-up, and audited with its row count. */

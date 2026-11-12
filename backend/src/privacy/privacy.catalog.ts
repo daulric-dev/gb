@@ -123,7 +123,7 @@ const RETENTION: readonly RetentionDefinition[] = [
   },
   {
     key: 'audit_log',
-    label: 'Audit log of changes to school records',
+    label: 'Audit logs (school records, sign-in and integrations)',
     env: 'AUDIT_LOG_RETENTION_DAYS',
     unit: 'days',
     default: 730,

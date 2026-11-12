@@ -12,6 +12,7 @@ import { ErasureReplayService } from '@/erasure/erasure-replay.service';
 import { plan } from '@/erasure/erasure-plan';
 import {
   ABANDONED_UPLOAD_MS,
+  auditLogRetentionDays,
   attendanceLocationRetentionHours,
   batchSize,
   maxRunMs,
@@ -59,6 +60,9 @@ export interface PurgeReport {
   stagedObjects: number;
   /** Webhook deliveries (with their payloads) older than WEBHOOK_DELIVERY_RETENTION_DAYS. */
   webhookDeliveries: number;
+  auditLogRows: number;
+  ssoAuditLogRows: number;
+  integrationAuditLogRows: number;
   /** Resolved pastoral notes past their school's retention period. */
   pastoralNotes: number;
   /** Course and file-share notifications and parent-notice records past NOTIFICATION_RETENTION_DAYS. */
@@ -136,6 +140,9 @@ export class RetentionService {
       abandonedUploads: 0,
       stagedObjects: 0,
       webhookDeliveries: 0,
+      auditLogRows: 0,
+      ssoAuditLogRows: 0,
+      integrationAuditLogRows: 0,
       pastoralNotes: 0,
       notifications: 0,
       rosterChanges: 0,
@@ -164,6 +171,7 @@ export class RetentionService {
         ['staged upload objects', () => this.purgeStagedObjects(ctx)],
         ['staged image uploads', () => this.purgeStagedImages(ctx)],
         ['webhook deliveries', () => this.purgeWebhookDeliveries(now, ctx)],
+        ['audit logs', () => this.purgeAuditLogs(now, ctx)],
         ['notifications', () => this.purgeNotifications(now, ctx)],
         ['roster history', () => this.purgeRosterHistory(now, ctx)],
         ['attendance coordinates', () => this.purgeAttendanceCoordinates(now, ctx)],
@@ -760,6 +768,76 @@ export class RetentionService {
       report.webhookDeliveries += count;
       if (count === 0) break;
     }
+  }
+
+  /**
+   * Audit rows (including the changed-field values) are retained for two
+   * years by default, then permanently removed. These tables are protected by
+   * append-only triggers; only this bounded purge opts into the reserved
+   * transaction-local purge path. They are not added to the erasure log: a
+   * restore brings them back only until the next daily purge.
+   */
+  private async purgeAuditLogs(now: Date, { opts, deadline, report }: Ctx) {
+    const before = new Date(now.getTime() - auditLogRetentionDays() * DAY_MS);
+    const where = { created_at: { lt: before } };
+
+    const purgeTable = async (
+      label: string,
+      count: () => Promise<number>,
+      findIds: () => Promise<string[]>,
+      remove: (ids: string[]) => Promise<number>,
+      increment: (count: number) => void,
+    ) => {
+      try {
+        if (opts.dryRun) {
+          increment(await count());
+          return;
+        }
+        for (;;) {
+          this.checkTime(deadline);
+          const ids = await findIds();
+          if (ids.length === 0) return;
+          const removed = await remove(ids);
+          increment(removed);
+          if (removed === 0) return;
+        }
+      } catch (err) {
+        if (err instanceof Deadline) throw err;
+        report.errors.push(`${label}: ${(err as Error).message}`);
+        this.logger.error(`Retention purge of ${label} failed: ${(err as Error).message}`);
+      }
+    };
+
+    await purgeTable(
+      'audit log',
+      () => this.prisma.audit_log.count({ where }),
+      async () => (await this.prisma.audit_log.findMany({ where, select: { id: true }, take: batchSize() })).map((r) => r.id),
+      async (ids) => this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
+        return (await tx.audit_log.deleteMany({ where: { id: { in: ids }, ...where } })).count;
+      }),
+      (count) => { report.auditLogRows += count; },
+    );
+    await purgeTable(
+      'SSO audit log',
+      () => this.prisma.sso_audit_log.count({ where }),
+      async () => (await this.prisma.sso_audit_log.findMany({ where, select: { id: true }, take: batchSize() })).map((r) => r.id),
+      async (ids) => this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
+        return (await tx.sso_audit_log.deleteMany({ where: { id: { in: ids }, ...where } })).count;
+      }),
+      (count) => { report.ssoAuditLogRows += count; },
+    );
+    await purgeTable(
+      'integration audit log',
+      () => this.prisma.integration_audit_log.count({ where }),
+      async () => (await this.prisma.integration_audit_log.findMany({ where, select: { id: true }, take: batchSize() })).map((r) => r.id),
+      async (ids) => this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
+        return (await tx.integration_audit_log.deleteMany({ where: { id: { in: ids }, ...where } })).count;
+      }),
+      (count) => { report.integrationAuditLogRows += count; },
+    );
   }
 
   /**

@@ -164,12 +164,7 @@ export function startupWarnings(env: StartupEnvironment = process.env): string[]
   const warnings: string[] = [];
   const raw = env.DATABASE_URL?.trim();
   if (raw) {
-    let url: URL | null = null;
-    try {
-      url = new URL(raw);
-    } catch {
-      url = null;
-    }
+    const url = URL.canParse(raw) ? new URL(raw) : null;
     if (url) {
       // A Unix socket path (`?host=/var/run/postgresql`) is local too.
       const socketHost = url.searchParams.get('host');

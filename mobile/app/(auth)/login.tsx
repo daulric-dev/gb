@@ -100,7 +100,7 @@ export default function LoginScreen() {
       if (result.type === "error") {
         setError(result.message);
       } else if (result.type === "mfa") {
-        router.push({ pathname: "/(auth)/two-step", params: { token: result.token } });
+        router.push({ pathname: "/(auth)/two-step", params: { token: result.token } } as never);
       } else if (result.type === "success") {
         const profile = await refresh();
         if (!profile) {

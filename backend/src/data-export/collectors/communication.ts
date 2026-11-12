@@ -160,13 +160,14 @@ export const notificationsCollector: Collector = {
     'file_manager.notification.user_id',
     'student.parent_notification_pref.user_profile_id',
     'student.parent_notification_sent.user_profile_id',
+    'public.notification_preference.user_profile_id',
   ],
   scopes: ['self', 'staff'],
   async collect(ctx) {
     const userId = ctx.subject.userId;
     if (!userId) return { data: { course: [], files: [], parentPreferences: null, parentNoticesSent: [] }, count: 0 };
     const school = inSchool(ctx);
-    const [course, files, pref, sent] = await Promise.all([
+    const [course, files, pref, sent, notificationPreference] = await Promise.all([
       ctx.prisma.course_notification.findMany({
         where: { user_profile_id: userId, ...(ctx.subject.schoolId ? { course: school } : {}) },
         select: { course_id: true, kind: true, title: true, body: true, read_at: true, created_at: true },
@@ -190,6 +191,12 @@ export const notificationsCollector: Collector = {
             select: { kind: true, sent_at: true },
             orderBy: { sent_at: 'asc' },
           }),
+      ctx.subject.schoolId
+        ? null
+        : ctx.prisma.notification_preference.findUnique({
+            where: { user_profile_id: userId },
+            select: { push_off: true, email_off: true, updated_at: true },
+          }),
     ]);
     const courses = await courseNames(ctx, course.map((c) => c.course_id));
     const data = {
@@ -206,7 +213,10 @@ export const notificationsCollector: Collector = {
         ? { email: pref.email_enabled, push: pref.push_enabled, kinds: pref.kinds, updatedAt: pref.updated_at }
         : null,
       parentNoticesSent: sent.map((s) => ({ kind: s.kind, sentAt: s.sent_at })),
+      preferences: notificationPreference
+        ? { pushOff: notificationPreference.push_off, emailOff: notificationPreference.email_off, updatedAt: notificationPreference.updated_at }
+        : null,
     };
-    return { data, count: data.course.length + data.files.length + (pref ? 1 : 0) + data.parentNoticesSent.length };
+    return { data, count: data.course.length + data.files.length + (pref ? 1 : 0) + data.parentNoticesSent.length + (notificationPreference ? 1 : 0) };
   },
 };

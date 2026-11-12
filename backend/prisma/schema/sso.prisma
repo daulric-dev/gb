@@ -32,11 +32,12 @@ model school_sso_provider {
 
 /// One change to a school's single sign-on settings (email domains, their
 /// provider / SAML / Microsoft tenant / Require SSO, the school's own sign-in
-/// apps), written in the same transaction as the change. `domain_id` and
-/// `actor_id` have no foreign key: the entry outlives the domain and the
-/// account. `changes` is `{ field: { before, after } }` plus context and never
-/// holds a secret (certificate SHA-256 fingerprints; client secrets only
-/// "set" / "cleared"). See src/sso/sso-audit.service.ts.
+/// apps), written in the same transaction as the change. School, domain and
+/// actor ids have no foreign keys so the entry survives deletion of the school,
+/// domain or account, and is purged after the audit retention period. `changes`
+/// is `{ field: { before, after } }` plus context and never holds a secret
+/// (certificate SHA-256 fingerprints; client secrets only "set" / "cleared").
+/// See src/sso/sso-audit.service.ts.
 model sso_audit_log {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id  String   @db.Uuid
@@ -49,7 +50,6 @@ model sso_audit_log {
   action     String
   changes    Json     @default("{}")
   created_at DateTime @default(now()) @db.Timestamptz(6)
-  school     school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([school_id, created_at(sort: Desc), id(sort: Desc)], map: "sso_audit_log_school_created_idx")
   @@schema("public")

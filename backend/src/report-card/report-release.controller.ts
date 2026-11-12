@@ -20,6 +20,7 @@ import { RequirePermission } from '@/permission/require-permission.decorator';
 import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { contentDisposition } from '@/grading/content-disposition';
+import { AuditLogService } from '@/audit-log/audit-log.service';
 import { ReportReleaseService } from './report-release.service';
 import { RegenerateReportsDto, SaveHeadCommentsDto, UpdateReportReleaseDto } from './dto/report-card.dto';
 import { sendPdf, sendPdfBytes } from './report-file';
@@ -35,18 +36,27 @@ import { sendPdf, sendPdfBytes } from './report-file';
 @UseGuards(AuthGuard, PermissionGuard, FeatureGuard)
 @RequireFeature('report_cards')
 export class ReportReleaseController {
-  constructor(private readonly releases: ReportReleaseService) {}
+  constructor(
+    private readonly releases: ReportReleaseService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   @RequirePermission('report-card', 'read')
   @Get('terms')
   async terms(@Req() req: any) {
-    return this.releases.terms(req.user.id as string);
+    const userId = req.user.id as string;
+    const result = await this.releases.terms(userId);
+    await this.audit.recordRead(userId, { entity: 'report_release_terms' });
+    return result;
   }
 
   @RequirePermission('report-card', 'read')
   @Get('terms/:termId')
   async overview(@Req() req: any, @Param('termId', ParseUUIDPipe) termId: string) {
-    return this.releases.overview(req.user.id as string, termId);
+    const userId = req.user.id as string;
+    const result = await this.releases.overview(userId, termId);
+    await this.audit.recordRead(userId, { entity: 'report_release_overview', entityId: termId });
+    return result;
   }
 
   @RequirePermission('report-card', 'update')
@@ -62,7 +72,10 @@ export class ReportReleaseController {
   @RequirePermission('report-card', 'read')
   @Get('terms/:termId/students')
   async students(@Req() req: any, @Param('termId', ParseUUIDPipe) termId: string) {
-    return this.releases.students(req.user.id as string, termId);
+    const userId = req.user.id as string;
+    const result = await this.releases.students(userId, termId);
+    await this.audit.recordRead(userId, { entity: 'report_release_students', entityId: termId });
+    return result;
   }
 
   @RequirePermission('report-card', 'update')
@@ -84,7 +97,14 @@ export class ReportReleaseController {
     @Param('studentId', ParseUUIDPipe) studentId: string,
     @Res() res: FastifyReply,
   ) {
-    return sendPdfBytes(res, await this.releases.preview(req.user.id as string, termId, studentId), 'inline');
+    const userId = req.user.id as string;
+    const pdf = await this.releases.preview(userId, termId, studentId);
+    await this.audit.recordRead(userId, {
+      entity: 'report_card_preview',
+      entityId: studentId,
+      details: { termId },
+    });
+    return sendPdfBytes(res, pdf, 'inline');
   }
 
   @RequirePermission('report-card', 'read')
@@ -96,7 +116,14 @@ export class ReportReleaseController {
     @Param('studentId', ParseUUIDPipe) studentId: string,
     @Res() res: FastifyReply,
   ) {
-    return sendPdf(res, await this.releases.file(req.user.id as string, termId, studentId));
+    const userId = req.user.id as string;
+    const file = await this.releases.file(userId, termId, studentId);
+    await this.audit.recordRead(userId, {
+      entity: 'report_card_file',
+      entityId: studentId,
+      details: { termId },
+    });
+    return sendPdf(res, file);
   }
 
   @RequirePermission('report-card', 'update')
