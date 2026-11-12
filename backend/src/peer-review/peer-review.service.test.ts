@@ -388,7 +388,13 @@ describe('allocation in the service', () => {
     const owner: Record<string, string> = { 'sub-1': 'stu-1', 'sub-2': 'stu-2', 'sub-3': 'stu-3' };
     for (const r of rows) expect(owner[r.submission_id]).not.toBe(r.reviewer_id);
     expect(prisma.peer_review_setting.update.mock.calls[0][0].data.started_at).toEqual(NOW);
-    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(prisma.job_lease.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ key: 'peer-review:activity:act-1' }),
+    });
+    expect(prisma.job_lease.updateMany).toHaveBeenCalledWith({
+      where: { key: 'peer-review:activity:act-1', owner_token: expect.any(String) },
+      data: { owner_token: null, expires_at: null, updated_at: NOW },
+    });
     expect(notices[0][0]).toBe('assigned');
   });
 

@@ -24,7 +24,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
-import { isUniqueViolation, pgCode } from '@/common/db-values';
+import { isNotNullViolation, isUniqueViolation } from '@/common/db-values';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 
 /** The role columns every role endpoint returns. */
@@ -428,7 +428,7 @@ export class PermissionService {
         `Failed to change member role ${membershipId}: ${message}`,
       );
       const notNull =
-        pgCode(err) === '23502' ||
+        isNotNullViolation(err) ||
         (err as { code?: string } | null)?.code === 'P2011';
       throw new BadRequestException(
         role === null && notNull

@@ -12,13 +12,15 @@ function build() {
 describe('NotificationSettingsService', () => {
   test('preferences: merges a patch into the stored off lists', async () => {
     const { prisma, service } = build();
-    prisma.notification_preference.findUnique.mockResolvedValue({ push_off: ['chat'], email_off: [] });
-    prisma.notification_preference.upsert.mockImplementation(async ({ update }: any) => update);
+    prisma.notification_preference_opt_out.findMany.mockResolvedValue([
+      { channel: 'push', category: 'chat' },
+    ]);
     const out = await service.updatePreferences('u1', { push: { chat: true, grades: false }, email: { attendance: false } });
-    const args = prisma.notification_preference.upsert.mock.calls[0][0];
-    expect(args.where).toEqual({ user_profile_id: 'u1' });
-    expect(args.update.push_off).toEqual(['grades']);
-    expect(args.update.email_off).toEqual(['attendance']);
+    expect(prisma.notification_preference_opt_out.deleteMany.mock.calls[0][0]).toEqual({ where: { user_profile_id: 'u1' } });
+    expect(prisma.notification_preference_opt_out.createMany.mock.calls[0][0].data).toEqual([
+      { user_profile_id: 'u1', channel: 'push', category: 'grades' },
+      { user_profile_id: 'u1', channel: 'email', category: 'attendance' },
+    ]);
     expect(out.push.grades).toBe(false);
     expect(out.push.chat).toBe(true);
     expect(out.email.attendance).toBe(false);

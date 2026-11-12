@@ -29,7 +29,7 @@ const TOOL_SELECT = {
   client_id: true,
   login_url: true,
   target_link_uri: true,
-  redirect_uris: true,
+  redirect_uri_entries: { select: { redirect_uri: true }, orderBy: { redirect_uri: 'asc' } },
   jwks_url: true,
   public_key_pem: true,
   ags_enabled: true,
@@ -48,6 +48,10 @@ const TOOL_SELECT = {
 
 type ToolRow = Prisma.lti_toolGetPayload<{ select: typeof TOOL_SELECT }>;
 
+function redirectUris(t: Pick<ToolRow, 'redirect_uri_entries'>): string[] {
+  return t.redirect_uri_entries.map(({ redirect_uri }) => redirect_uri);
+}
+
 /** What the audit log keeps of a tool: no key material, a fingerprint at most. */
 function auditTool(t: Omit<ToolRow, 'deployments' | '_count'>) {
   return {
@@ -55,7 +59,7 @@ function auditTool(t: Omit<ToolRow, 'deployments' | '_count'>) {
     description: t.description,
     login_url: t.login_url,
     target_link_uri: t.target_link_uri,
-    redirect_uris: t.redirect_uris,
+    redirect_uris: redirectUris(t),
     jwks_url: t.jwks_url,
     public_key_fingerprint: pemFingerprint(t.public_key_pem),
     ags_enabled: t.ags_enabled,
@@ -88,7 +92,7 @@ export class LtiToolService {
       clientId: t.client_id,
       loginUrl: t.login_url,
       targetLinkUri: t.target_link_uri,
-      redirectUris: t.redirect_uris,
+      redirectUris: redirectUris(t),
       jwksUrl: t.jwks_url,
       publicKeyPem: t.public_key_pem,
       agsEnabled: t.ags_enabled,
@@ -145,7 +149,9 @@ export class LtiToolService {
       client_id: newClientId(),
       login_url: assertToolUrl(dto.loginUrl, 'Login URL'),
       target_link_uri: assertToolUrl(dto.targetLinkUri, 'Launch URL'),
-      redirect_uris: [...new Set(dto.redirectUris.map((u) => assertToolUrl(u, 'Redirect URL')))],
+      redirect_uri_entries: {
+        create: [...new Set(dto.redirectUris.map((u) => assertToolUrl(u, 'Redirect URL')))].map((redirect_uri) => ({ redirect_uri })),
+      },
       jwks_url: jwksUrl,
       public_key_pem: pem,
       ags_enabled: dto.agsEnabled ?? false,
@@ -185,6 +191,9 @@ export class LtiToolService {
 
   async update(actorId: string, id: string, dto: UpdateLtiToolDto) {
     const patch: Prisma.lti_toolUpdateInput = {};
+    const redirectUriValues = dto.redirectUris === undefined
+      ? undefined
+      : [...new Set(dto.redirectUris.map((u) => assertToolUrl(u, 'Redirect URL')))];
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('Give the tool a name');
@@ -193,9 +202,6 @@ export class LtiToolService {
     if (dto.description !== undefined) patch.description = dto.description?.trim() || null;
     if (dto.loginUrl !== undefined) patch.login_url = assertToolUrl(dto.loginUrl, 'Login URL');
     if (dto.targetLinkUri !== undefined) patch.target_link_uri = assertToolUrl(dto.targetLinkUri, 'Launch URL');
-    if (dto.redirectUris !== undefined) {
-      patch.redirect_uris = [...new Set(dto.redirectUris.map((u) => assertToolUrl(u, 'Redirect URL')))];
-    }
     if (dto.jwksUrl !== undefined) patch.jwks_url = dto.jwksUrl ? assertToolUrl(dto.jwksUrl, 'JWKS URL') : null;
     if (dto.publicKeyPem !== undefined) {
       patch.public_key_pem = dto.publicKeyPem?.trim() ? assertPublicKeyPem(dto.publicKeyPem) : null;
@@ -205,7 +211,7 @@ export class LtiToolService {
     if (dto.sendEmail !== undefined) patch.send_email = dto.sendEmail;
     if (dto.enabled !== undefined) patch.enabled = dto.enabled;
     if (dto.customParams !== undefined) patch.custom_params = normaliseCustomParams(dto.customParams);
-    if (Object.keys(patch).length === 0) throw new BadRequestException('Nothing to update');
+    if (Object.keys(patch).length === 0 && redirectUriValues === undefined) throw new BadRequestException('Nothing to update');
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const before = await tx.lti_tool.findUnique({ where: { id }, select: TOOL_SELECT });
@@ -215,18 +221,24 @@ export class LtiToolService {
       if (!jwks && !pem) {
         throw new BadRequestException("Give the tool's JWKS URL or paste its public key");
       }
-      const after = await tx.lti_tool.update({
+      await tx.lti_tool.update({
         where: { id },
         data: { ...patch, updated_at: new Date() },
-        select: TOOL_SELECT,
       });
+      if (redirectUriValues !== undefined) {
+        await tx.lti_tool_redirect_uri.deleteMany({ where: { tool_id: id } });
+        await tx.lti_tool_redirect_uri.createMany({
+          data: redirectUriValues.map((redirect_uri) => ({ tool_id: id, redirect_uri })),
+        });
+      }
+      const updated = await tx.lti_tool.findUniqueOrThrow({ where: { id }, select: TOOL_SELECT });
       await this.auditLog?.record(tx, null, { id: actorId }, {
         entity: 'lti_tool',
         entityId: id,
         action: 'update',
-        changes: auditChanges(auditTool(before), auditTool(after)),
+        changes: auditChanges(auditTool(before), auditTool(updated)),
       });
-      return after;
+      return updated;
     });
     // New keys or a new JWKS URL take effect now.
     this.toolKeys.forget(id);

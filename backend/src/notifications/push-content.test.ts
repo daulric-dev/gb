@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createMockPrisma } from '@/test/prisma-mock';
 import { genericData, isGeneric, pushContentFor } from './push-content';
-import { mergeOff, optedOut, prefsFromRow } from './notification-preferences';
+import { mergeOff, offListsFromRows, optedOut, prefsFromRow } from './notification-preferences';
 import { presentPush, pushCategoryOf } from './push.service';
 
 describe('push content', () => {
@@ -59,14 +59,23 @@ describe('notification preferences', () => {
     expect(mergeOff(undefined, { chat: false, announcements: false })).toEqual(['announcements', 'chat']);
   });
 
+  test('opt-out rows reconstruct the channel preference lists', () => {
+    expect(offListsFromRows([
+      { channel: 'push', category: 'chat' },
+      { channel: 'email', category: 'attendance' },
+      { channel: 'other', category: 'grades' },
+    ])).toEqual({ push_off: ['chat'], email_off: ['attendance'] });
+  });
+
   test('optedOut queries the right column', async () => {
     const prisma = createMockPrisma();
-    prisma.notification_preference.findMany.mockResolvedValue([{ user_profile_id: 'u2' }]);
+    prisma.notification_preference_opt_out.findMany.mockResolvedValue([{ user_profile_id: 'u2', channel: 'email', category: 'attendance' }]);
     const out = await optedOut(prisma as any, ['u1', 'u2'], 'attendance', 'email');
     expect([...out]).toEqual(['u2']);
-    expect(prisma.notification_preference.findMany.mock.calls[0][0].where).toEqual({
+    expect(prisma.notification_preference_opt_out.findMany.mock.calls[0][0].where).toEqual({
       user_profile_id: { in: ['u1', 'u2'] },
-      email_off: { has: 'attendance' },
+      channel: 'email',
+      category: 'attendance',
     });
     expect(await optedOut(prisma as any, [], 'attendance', 'push')).toEqual(new Set());
   });

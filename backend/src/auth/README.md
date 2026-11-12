@@ -105,7 +105,7 @@ Responses go through `VersioningService.resolve()` with the `auth.*` transformer
 - `public.user_profile`: read, created, upserted, updated and deleted. It is read together with its active school (`school_user_profile_school_idToschool`) and its `school_management` rows.
 - `public.school_management`: read (`AdminGuard`, `getProfile`).
 - `public.organisation`, `public.organisation_admin`: read for the profile's `organisation` and `is_org_admin` (through `src/organisation/org-admin.ts`).
-- `public.organisation.features`, `public.school.disabled_features`: read through `FeatureService` (`src/features`) for the profile's `features`.
+- `public.organisation.features`, `public.school_feature_disabled`: read through `FeatureService` (`src/features`) for the profile's `features`.
 - `public.school_join_request`: created.
 - `account.app_user`: read (email backfill) and deleted. The session and identity tables are written through `src/account`.
 

@@ -2,8 +2,8 @@
 /// school chose (`/api/schools/current/webhooks`, or an organisation admin's
 /// `/api/organisation/schools/:schoolId/webhooks`). Any http(s) URL is
 /// allowed, internal addresses included: self-hosted schools call systems on
-/// their own network. `events` holds explicit event type keys from
-/// src/integrations/webhook-event-types.ts (never a wildcard). `secret_enc`
+/// their own network. `event_subscriptions` holds explicit event type keys
+/// from src/integrations/webhook-event-types.ts (never a wildcard). `secret_enc`
 /// is the signing secret, AES-256-GCM under a key derived from
 /// DATA_ENCRYPTION_KEY (`v2:`) or, for `v1:` values, AUTH_SECRET
 /// and bound to the school and webhook id (src/integrations/webhook-secret.ts);
@@ -16,7 +16,6 @@ model school_webhook {
   name                 String
   url                  String
   secret_enc           String
-  events               String[]           @default([])
   enabled              Boolean            @default(true)
   consecutive_failures Int                @default(0)
   disabled_reason      String?
@@ -35,8 +34,20 @@ model school_webhook {
   school               school             @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   webhook_delivery     webhook_delivery[]
   headers              school_webhook_header[]
+  event_subscriptions  school_webhook_event[]
 
   @@index([school_id, enabled], map: "school_webhook_school_enabled_idx")
+  @@schema("public")
+}
+
+/// One platform event type subscribed to by a webhook.
+model school_webhook_event {
+  webhook_id String         @db.Uuid
+  event_type String
+  webhook    school_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([webhook_id, event_type])
+  @@index([event_type, webhook_id], map: "school_webhook_event_type_idx")
   @@schema("public")
 }
 

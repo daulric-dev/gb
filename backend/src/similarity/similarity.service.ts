@@ -167,8 +167,13 @@ export class SimilarityService {
       kept.push(part.part);
       const changed = await this.prisma.$transaction(
         async (tx) => {
-          // One school at a time, so two hand-ins cannot miss each other.
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`similarity:${schoolId}`}))`;
+          // Incrementing a school-scoped row serializes fingerprint jobs for
+          // that school across relational providers without advisory locks.
+          await tx.similarity_school_lock.upsert({
+            where: { school_id: schoolId },
+            create: { school_id: schoolId },
+            update: { revision: { increment: 1 } },
+          });
           const existing = await tx.similarity_fingerprint.findUnique({
             where: { submission_id_part: { submission_id: submission.id, part: part.part } },
             select: { id: true, text_hash: true },
@@ -183,17 +188,21 @@ export class SimilarityService {
               course_id: submission.activity.course_id,
               school_id: schoolId,
               word_count: fp.wordCount,
-              hashes: fp.hashes,
               text_hash: fp.textHash,
             },
             update: {
               word_count: fp.wordCount,
-              hashes: fp.hashes,
               text_hash: fp.textHash,
               computed_at: new Date(),
             },
             select: { id: true },
           });
+          await tx.similarity_fingerprint_hash.deleteMany({ where: { fingerprint_id: row.id } });
+          if (fp.hashes.length) {
+            await tx.similarity_fingerprint_hash.createMany({
+              data: fp.hashes.map((hash) => ({ fingerprint_id: row.id, hash })),
+            });
+          }
           await tx.similarity_match.deleteMany({
             where: { OR: [{ fingerprint_id: row.id }, { other_id: row.id }] },
           });
@@ -292,7 +301,7 @@ export class SimilarityService {
   }
 
   /**
-   * Fingerprints sharing at least one hash (the GIN index on `hashes`), in
+   * Fingerprints sharing at least one hash (the indexed hash child rows), in
    * the same school only, never the same student's own work. The same
    * activity and part, or (school pool) any part in the pool's courses.
    */
@@ -308,19 +317,26 @@ export class SimilarityService {
       courseIds: string[] | null;
     },
   ): Promise<{ id: string; hashes: number[] }[]> {
-    const scope = q.courseIds
-      ? Prisma.sql`(f.activity_id = ${q.activityId}::uuid AND f.part = ${q.part}) OR f.course_id = ANY(${q.courseIds}::uuid[])`
-      : Prisma.sql`f.activity_id = ${q.activityId}::uuid AND f.part = ${q.part}`;
-    return tx.$queryRaw<{ id: string; hashes: number[] }[]>`
-      SELECT f.id, f.hashes
-      FROM grading.similarity_fingerprint f
-      JOIN grading.submission s ON s.id = f.submission_id
-      WHERE f.school_id = ${q.schoolId}::uuid
-        AND f.id <> ${q.id}::uuid
-        AND s.student_id <> ${q.studentId}::uuid
-        AND f.hashes && ${q.hashes}::integer[]
-        AND (${scope})
-      LIMIT 2000`;
+    const rows = await tx.similarity_fingerprint.findMany({
+      where: {
+        school_id: q.schoolId,
+        id: { not: q.id },
+        submission: { student_id: { not: q.studentId } },
+        hashes: { some: { hash: { in: q.hashes } } },
+        OR: q.courseIds
+          ? [
+              { activity_id: q.activityId, part: q.part },
+              { course_id: { in: q.courseIds } },
+            ]
+          : [{ activity_id: q.activityId, part: q.part }],
+      },
+      select: {
+        id: true,
+        hashes: { select: { hash: true } },
+      },
+      take: 2000,
+    });
+    return rows.map((row) => ({ id: row.id, hashes: row.hashes.map((entry) => entry.hash) }));
   }
 
   // ── teachers ───────────────────────────────────────────────────────────

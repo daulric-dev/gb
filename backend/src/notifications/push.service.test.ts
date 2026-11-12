@@ -372,23 +372,31 @@ describe('push content and notification preferences', () => {
       { id: 'u-on', school_id: 's-1' },
       { id: 'u-off', school_id: 's-1' },
     ]);
-    prisma.notification_preference.findMany.mockResolvedValue([{ user_profile_id: 'u-off' }]);
+    prisma.notification_preference_opt_out.findMany.mockResolvedValue([
+      { user_profile_id: 'u-off', channel: 'push', category: 'discussions' },
+    ]);
     await service.sendToUsers(['u-on', 'u-off'], { title: 't', body: 'b', category: 'discussions' });
-    const where = prisma.notification_preference.findMany.mock.calls[0][0].where;
-    expect(where).toEqual({ user_profile_id: { in: ['u-on', 'u-off'] }, push_off: { has: 'discussions' } });
+    const where = prisma.notification_preference_opt_out.findMany.mock.calls[0][0].where;
+    expect(where).toEqual({ user_profile_id: { in: ['u-on', 'u-off'] }, channel: 'push', category: 'discussions' });
     expect(prisma.push_device.findMany.mock.calls[0][0].where.user_id.in).toEqual(['u-on']);
     expect(requests.flatMap((r) => r.messages)).toHaveLength(1);
 
-    prisma.notification_preference.findMany.mockClear();
+    prisma.notification_preference_opt_out.findMany.mockClear();
     await service.sendToUsers(['u-off'], { title: 't', body: 'b', category: 'parent' });
-    expect(prisma.notification_preference.findMany).not.toHaveBeenCalled();
+    expect(prisma.notification_preference_opt_out.findMany).not.toHaveBeenCalled();
   });
 
   test('the attendance channel counts as the attendance category', async () => {
     const { service, prisma } = withUsers([{ id: 'u-1', school_id: 's-1' }]);
-    prisma.notification_preference.findMany.mockResolvedValue([{ user_profile_id: 'u-1' }]);
+    prisma.notification_preference_opt_out.findMany.mockResolvedValue([
+      { user_profile_id: 'u-1', channel: 'push', category: 'attendance' },
+    ]);
     await service.sendToUsers(['u-1'], ATTENDANCE);
-    expect(prisma.notification_preference.findMany.mock.calls[0][0].where.push_off).toEqual({ has: 'attendance' });
+    expect(prisma.notification_preference_opt_out.findMany.mock.calls[0][0].where).toEqual({
+      user_profile_id: { in: ['u-1'] },
+      channel: 'push',
+      category: 'attendance',
+    });
     expect(prisma.push_device.findMany).not.toHaveBeenCalled();
   });
 });

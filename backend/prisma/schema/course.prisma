@@ -1,5 +1,4 @@
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 /// Expression index (SQL only, Prisma cannot declare it): UNIQUE
 /// assignment_group_course_name_key ON (course_id, lower(name)) - one group
@@ -21,7 +20,6 @@ model assignment_group {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model course_attendance_record {
   id                 String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   session_id         String                   @db.Uuid
@@ -34,7 +32,7 @@ model course_attendance_record {
   latitude           Float?
   longitude          Float?
   accuracy_m         Float?
-  location_flags     String[]                 @default([])
+  location_flags     Json                     @default("[]")
   note               String?
   updated_by         String?                  @db.Uuid
   created_at         DateTime                 @default(now()) @db.Timestamptz(6)
@@ -53,7 +51,6 @@ model course_attendance_record {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model attendance_session {
   id                 String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   course_id          String                     @unique(map: "attendance_session_one_open_per_course", where: raw("(closed_at IS NULL)")) @db.Uuid
@@ -82,7 +79,6 @@ model attendance_session {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model course {
   id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -142,7 +138,6 @@ model course {
   @@schema("course")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model course_staff {
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   course_id       String            @db.Uuid
@@ -157,7 +152,6 @@ model course_staff {
   @@schema("course")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model course_student {
   id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   course_id   String                @db.Uuid
@@ -173,7 +167,6 @@ model course_student {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model module {
   id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   course_id    String        @db.Uuid
@@ -189,7 +182,6 @@ model module {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model module_item {
   id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   module_id           String            @db.Uuid
@@ -223,7 +215,6 @@ model module_item {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model page {
   id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   course_id    String        @db.Uuid

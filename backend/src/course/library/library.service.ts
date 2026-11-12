@@ -51,7 +51,7 @@ const ITEM_SELECT = {
   description: true,
   subject: true,
   grade_level: true,
-  tags: true,
+  tags: { select: { tag: true }, orderBy: { tag: 'asc' } },
   visibility: true,
   latest_version: true,
   created_by: true,
@@ -125,7 +125,7 @@ export class LibraryService {
           { title: { contains: text, mode: 'insensitive' } },
           { description: { contains: text, mode: 'insensitive' } },
           { subject: { contains: text, mode: 'insensitive' } },
-          { tags: { has: text.toLowerCase() } },
+          { tags: { some: { tag: text.toLowerCase() } } },
         ],
       });
     }
@@ -135,7 +135,7 @@ export class LibraryService {
     if (q.gradeLevel?.trim()) {
       and.push({ grade_level: { equals: q.gradeLevel.trim(), mode: 'insensitive' } });
     }
-    if (q.tag?.trim()) and.push({ tags: { has: q.tag.trim().toLowerCase() } });
+    if (q.tag?.trim()) and.push({ tags: { some: { tag: q.tag.trim().toLowerCase() } } });
 
     const rows = await this.prisma.library_item.findMany({
       where: { AND: and },
@@ -241,7 +241,7 @@ export class LibraryService {
           description: clean(dto.description),
           subject: clean(dto.subject),
           grade_level: clean(dto.gradeLevel),
-          tags: cleanTags(dto.tags) ?? [],
+          tags: { create: (cleanTags(dto.tags) ?? []).map((tag) => ({ tag })) },
           visibility,
           latest_version: 1,
           created_by: caller.userId,
@@ -305,9 +305,15 @@ export class LibraryService {
     if (dto.description !== undefined) data.description = clean(dto.description);
     if (dto.subject !== undefined) data.subject = clean(dto.subject);
     if (dto.gradeLevel !== undefined) data.grade_level = clean(dto.gradeLevel);
-    if (dto.tags !== undefined) data.tags = cleanTags(dto.tags);
+    const tags = dto.tags !== undefined ? cleanTags(dto.tags) : undefined;
     if (dto.visibility !== undefined) data.visibility = dto.visibility;
-    await this.prisma.library_item.update({ where: { id: item.id }, data });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.library_item.update({ where: { id: item.id }, data });
+      if (tags !== undefined) {
+        await tx.library_item_tag.deleteMany({ where: { item_id: item.id } });
+        await tx.library_item_tag.createMany({ data: tags.map((tag) => ({ item_id: item.id, tag })) });
+      }
+    });
     return this.get(userId, item.id);
   }
 
@@ -429,7 +435,7 @@ export class LibraryService {
       description: r.description,
       subject: r.subject,
       gradeLevel: r.grade_level,
-      tags: r.tags,
+      tags: r.tags.map(({ tag }) => tag),
       visibility: r.visibility as LibraryVisibility,
       latestVersion: r.latest_version,
       published: !r.unpublished_at,

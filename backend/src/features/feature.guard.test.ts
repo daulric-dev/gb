@@ -33,7 +33,7 @@ function setup(disabled: string[] = [], orgFeatures: Record<string, boolean> = {
   const prisma = createMockPrisma();
   prisma.organisation.findFirst.mockResolvedValue({ features: orgFeatures });
   prisma.school.findUnique.mockImplementation(async ({ where }) =>
-    where.id === 'school-1' ? { disabled_features: disabled } : null,
+    where.id === 'school-1' ? { disabled_feature_rows: disabled.map((feature) => ({ feature })) } : null,
   );
   prisma.course.findUnique.mockResolvedValue({ school_id: 'school-1' });
   prisma.user_profile.findUnique.mockResolvedValue({

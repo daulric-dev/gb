@@ -34,7 +34,7 @@ function build(opts: { queue?: Record<string, unknown> } = {}) {
   const prisma = createMockPrisma();
   prisma.organisation.findFirst.mockResolvedValue({ features: {} });
   prisma.school.findUnique.mockImplementation(async ({ where }: any) => ({
-    disabled_features: where.id === OFF_SCHOOL ? ['report_cards'] : [],
+    disabled_feature_rows: (where.id === OFF_SCHOOL ? ['report_cards'] : []).map((feature) => ({ feature })),
   }));
   const features = new FeatureService(prisma as any, createMockCacheService() as any);
   const generation = new ReportGenerationService(

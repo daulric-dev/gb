@@ -30,7 +30,7 @@ function guards(opts: { org?: Record<string, boolean>; disabled?: string[] } = {
   const prisma: MockPrisma = createMockPrisma();
   prisma.organisation.findFirst.mockResolvedValue({ features: opts.org ?? { parent_portal: true, mastery: true } });
   prisma.school.findUnique.mockImplementation(async ({ where }: any) =>
-    where.id === SCHOOL ? { disabled_features: opts.disabled ?? [] } : null,
+    where.id === SCHOOL ? { disabled_feature_rows: (opts.disabled ?? []).map((feature) => ({ feature })) } : null,
   );
   prisma.user_profile.findUnique.mockResolvedValue({ account_type: 'parent', is_active: true });
   prisma.parent_student_link.findFirst.mockImplementation(async ({ where }: any) =>

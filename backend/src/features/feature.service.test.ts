@@ -27,10 +27,19 @@ describe('FeatureService', () => {
       return {};
     });
     prisma.school.findUnique.mockImplementation(async ({ where }) =>
-      where.id in disabled ? { disabled_features: disabled[where.id] } : null,
+      where.id in disabled
+        ? { disabled_feature_rows: disabled[where.id].map((feature) => ({ feature })) }
+        : null,
     );
-    prisma.school.update.mockImplementation(async ({ where, data }) => {
-      disabled[where.id] = data.disabled_features;
+    prisma.school_feature_disabled.deleteMany.mockImplementation(async ({ where }) => {
+      disabled[where.school_id] = [];
+      return { count: 0 };
+    });
+    prisma.school_feature_disabled.createMany.mockImplementation(async ({ data }) => {
+      disabled[data[0].school_id] = data.map((row: any) => row.feature);
+      return { count: data.length };
+    });
+    prisma.school.update.mockImplementation(async () => {
       return {};
     });
     service = new FeatureService(prisma as any, cache as any);

@@ -2,6 +2,8 @@
 
 School webhooks: GradeBook POSTs platform events (grades and submissions, attendance, people and enrolment, courses and content, and optionally audit-log changes) as signed JSON to URLs a school chooses, so its own systems can act on them. A school may have several webhooks, each with its own URL and event types. Behind the `integrations` feature (off by default: data leaves the platform). Full guide for receivers: [docs/content/backend/webhooks.md](../../../docs/content/backend/webhooks.md).
 
+Webhook event subscriptions are stored one per row in `public.school_webhook_event`; the API still accepts and returns its `events` string list.
+
 ## What it provides
 
 ### HTTP routes

@@ -13,6 +13,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
+import type { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { WebhookEvents } from '@/integrations/events';
 import { isoDate, isUniqueViolation } from '@/common/db-values';
@@ -172,16 +173,21 @@ const toSessionRow = (r: SessionDbRow): SessionRow => ({
   location_updated_at: isoDate(r.location_updated_at ?? null),
 });
 
-type RecordDbRow = Omit<RecordRow, 'checked_in_at'> & {
+type RecordDbRow = Omit<RecordRow, 'checked_in_at' | 'location_flags'> & {
   checked_in_at: Date | null;
+  location_flags: Prisma.JsonValue;
 };
 
 const toRecordRow = (r: RecordDbRow): RecordRow => ({
   ...r,
   accuracy_m: r.accuracy_m ?? null,
-  location_flags: r.location_flags ?? [],
+  location_flags: flagsOf(r.location_flags),
   checked_in_at: isoDate(r.checked_in_at),
 });
+
+function flagsOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((flag): flag is string => typeof flag === 'string') : [];
+}
 
 interface StudentRow {
   id: string;
@@ -1541,10 +1547,9 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       );
       if (others.length === 0) return record;
 
-      const withFlag = (flags: string[]) =>
-        normaliseFlags([...flags, 'duplicate_coords']);
+      const withFlag = (flags: unknown) => normaliseFlags([...flagsOf(flags), 'duplicate_coords']);
       const earlier = others.filter(
-        (r) => !(r.location_flags ?? []).includes('duplicate_coords'),
+        (r) => !flagsOf(r.location_flags).includes('duplicate_coords'),
       );
       const changed = await Promise.all(
         earlier.map((r) =>
@@ -1555,7 +1560,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
                 student_id: r.student_id,
               },
             },
-            data: { location_flags: withFlag(r.location_flags ?? []) },
+            data: { location_flags: withFlag(r.location_flags) },
             select: RECORD_SELECT,
           }),
         ),

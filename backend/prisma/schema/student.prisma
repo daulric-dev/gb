@@ -41,16 +41,25 @@ model parent_invite {
   @@schema("student")
 }
 
-/// A parent's notification choices: email and push are each opt-in (off until the parent turns them on); `kinds` limits which notices they get.
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// A parent's notification choices: email and push are each opt-in (off until the parent turns them on).
 model parent_notification_pref {
   user_profile_id String       @id @db.Uuid
   email_enabled   Boolean      @default(false)
   push_enabled    Boolean      @default(false)
-  kinds           String[]     @default(["missing_work", "absence", "new_grade", "announcement", "attendance_alert"])
   updated_at      DateTime     @default(now()) @db.Timestamptz(6)
   user_profile    user_profile @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kind_preferences parent_notification_kind[]
 
+  @@schema("student")
+}
+
+/// A notice category a parent has chosen to receive.
+model parent_notification_kind {
+  user_profile_id String                   @db.Uuid
+  kind            String
+  preference      parent_notification_pref @relation(fields: [user_profile_id], references: [user_profile_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_profile_id, kind])
   @@schema("student")
 }
 
@@ -67,7 +76,6 @@ model parent_notification_sent {
   @@schema("student")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_join_code {
   id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id    String        @unique(map: "idx_school_join_code_one_active", where: raw("(revoked_at IS NULL)")) @db.Uuid
@@ -83,7 +91,6 @@ model school_join_code {
   @@schema("student")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model student {
   id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id           String?                    @db.Uuid

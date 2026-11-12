@@ -147,7 +147,7 @@ function launchWorld(opts: { role?: CourseRole | null; student?: boolean; featur
     enabled: true,
     login_url: 'https://tool.example.org/lti/login',
     target_link_uri: 'https://tool.example.org/lti/launch',
-    redirect_uris: [REDIRECT],
+    redirect_uri_entries: [{ redirect_uri: REDIRECT }],
     ags_enabled: true,
     send_name: false,
     send_email: false,

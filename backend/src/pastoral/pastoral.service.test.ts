@@ -223,7 +223,7 @@ describe('PastoralService', () => {
 
   test('every read of a safeguarding note is audit-logged, and never sent to webhooks', async () => {
     const prisma = db();
-    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_feature_rows: [] });
     prisma.organisation.findFirst.mockResolvedValue({ features: { integrations: true } });
     prisma.school_webhook.findMany.mockResolvedValue([{ id: 'hook' }]);
     prisma.pastoral_note.findMany.mockResolvedValue([note(), sgNote()]);
@@ -269,7 +269,7 @@ describe('PastoralService', () => {
 
   test('writes are audited without the note text and without webhooks', async () => {
     const prisma = db();
-    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_feature_rows: [] });
     prisma.organisation.findFirst.mockResolvedValue({ features: { integrations: true } });
     prisma.school_webhook.findMany.mockResolvedValue([{ id: 'hook' }]);
     await service(prisma).svc.create('lead', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: 'Secret text' });

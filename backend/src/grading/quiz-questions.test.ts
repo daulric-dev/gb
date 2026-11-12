@@ -99,7 +99,7 @@ describe('fileTypeAllowed', () => {
   });
 });
 
-describe('questionCredit (the submit_quiz rules)', () => {
+describe('questionCredit (the shared quiz scoring rules)', () => {
   test('numeric: inside the tolerance, inclusive at its edge', () => {
     const q = question({ kind: 'numeric', numericAnswer: 3.14, numericTolerance: 0.01 });
     expect(questionCredit(q, { numeric: 3.15 }).credit).toBe(1);

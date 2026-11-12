@@ -184,7 +184,7 @@ export class LtiLaunchService {
         id: true,
         client_id: true,
         enabled: true,
-        redirect_uris: true,
+        redirect_uri_entries: { select: { redirect_uri: true } },
         target_link_uri: true,
         ags_enabled: true,
         send_name: true,
@@ -194,7 +194,9 @@ export class LtiLaunchService {
     });
     if (!tool) throw new LaunchRefused('Unknown tool.');
     // Never post a token anywhere the organisation did not register.
-    if (!tool.redirect_uris.includes(redirectUri)) throw new LaunchRefused('The redirect URI is not registered for this tool.');
+    if (!tool.redirect_uri_entries.some(({ redirect_uri }) => redirect_uri === redirectUri)) {
+      throw new LaunchRefused('The redirect URI is not registered for this tool.');
+    }
 
     if (param(params, 'scope') !== 'openid') throw new LaunchRefused('scope must be openid.');
     if (param(params, 'response_type') !== 'id_token') throw new LaunchRefused('response_type must be id_token.');
@@ -269,7 +271,7 @@ export class LtiLaunchService {
       throw error;
     }
 
-    const claims = await this.claims({ tool, launch, nonce });
+    const claims = await this.claims({ tool, launch: { ...launch, roles: stringList(launch.roles) }, nonce });
     const idToken = await this.keys.sign(claims);
     return autoPostPage(redirectUri, state === undefined ? { id_token: idToken } : { id_token: idToken, state });
   }
@@ -361,4 +363,8 @@ export class LtiLaunchService {
     }
     return claims;
   }
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

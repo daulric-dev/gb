@@ -1,4 +1,3 @@
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model academic_year {
   school_id  String?   @db.Uuid
   name       String?
@@ -14,7 +13,6 @@ model academic_year {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model announcement {
   id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id              String              @db.Uuid
@@ -48,7 +46,6 @@ enum announcement_audience {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model announcement_read {
   announcement_id String       @db.Uuid
   user_profile_id String       @db.Uuid
@@ -62,7 +59,6 @@ model announcement_read {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model permission_catalog {
   id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   resource               String
@@ -77,7 +73,6 @@ model permission_catalog {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model push_device {
   id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id      String       @db.Uuid
@@ -98,7 +93,6 @@ model push_device {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school {
   id                                          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                                        String?
@@ -115,8 +109,6 @@ model school {
   max_upload_mb                               Int?
   /// Storage key of the school's logo under images/school-logos/; null shows the app mark.
   logo_path                                   String?
-  /// Feature keys the school's admin switched off (see src/features). A school can only switch off what the organisation allows.
-  disabled_features                           String[]              @default([])
   /// What parents see (src/parent-portal): { showGrades, showWork, showAttendance, showAnnouncements, maxStudentAge }. Missing keys use the defaults in parent-settings.ts.
   parent_settings                             Json                  @default("{}")
   /// IANA time zone (e.g. Europe/London) for the timetable and attendance reports. Null until an admin sets it deliberately: the scheduler skips the school and reports count UTC days meanwhile (src/timetable).
@@ -139,6 +131,7 @@ model school {
   school_management                           school_management?
   school_role                                 school_role[]
   user_profile_user_profile_school_idToschool user_profile[]        @relation("user_profile_school_idToschool")
+  disabled_feature_rows                       school_feature_disabled[]
   school_join_code                            school_join_code?
   student                                     student[]
   organisation_invite                         organisation_invite[]
@@ -164,6 +157,7 @@ model school {
   pastoral_note                               pastoral_note[]
   pastoral_setting                            pastoral_setting?
   similarity_setting                          similarity_setting?
+  similarity_school_lock                      similarity_school_lock?
   ai_school_setting                           ai_school_setting?
 
   mastery_setting                             mastery_setting?
@@ -173,8 +167,17 @@ model school {
   @@schema("public")
 }
 
+/// A feature key a school administrator has switched off.
+model school_feature_disabled {
+  school_id String @db.Uuid
+  feature   String
+  school    school @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([school_id, feature])
+  @@schema("public")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_email_domain {
   id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id          String                @db.Uuid
@@ -200,7 +203,6 @@ model school_email_domain {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_join_request {
   id                                                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id                                                    String              @db.Uuid
@@ -219,7 +221,6 @@ model school_join_request {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_management {
   id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id                String                   @db.Uuid
@@ -236,7 +237,6 @@ model school_management {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_management_role {
   id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_management_id String            @db.Uuid
@@ -251,7 +251,6 @@ model school_management_role {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_role {
   id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id              String                   @db.Uuid
@@ -269,7 +268,6 @@ model school_role {
   @@schema("public")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model school_role_permission {
   id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_role_id     String             @db.Uuid
@@ -285,7 +283,6 @@ model school_role_permission {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model term {
   id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name             String?
@@ -306,7 +303,6 @@ model term {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model user_profile {
   id                                                                String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id                                                         String?                    @db.Uuid

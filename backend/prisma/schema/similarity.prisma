@@ -10,8 +10,8 @@ model similarity_fingerprint {
   course_id     String             @db.Uuid
   school_id     String             @db.Uuid
   word_count    Int
-  /// Winnowed 5-word shingle hashes, the activity's own text subtracted.
-  hashes        Int[]
+  /// Winnowed shingle hashes are stored as portable child rows.
+  hashes        similarity_fingerprint_hash[]
   /// sha256 of the normalised text and settings: an unchanged text is not recomputed.
   text_hash     String
   computed_at   DateTime           @default(now()) @db.Timestamptz(6)
@@ -22,7 +22,17 @@ model similarity_fingerprint {
   @@unique([submission_id, part], map: "similarity_fingerprint_submission_part_key")
   @@index([activity_id, part], map: "idx_similarity_fingerprint_activity")
   @@index([school_id], map: "idx_similarity_fingerprint_school")
-  @@index([hashes], map: "idx_similarity_fingerprint_hashes", type: Gin)
+  @@schema("grading")
+}
+
+/// Portable replacement for PostgreSQL's integer[] plus GIN overlap index.
+model similarity_fingerprint_hash {
+  fingerprint_id String                 @db.Uuid
+  hash           Int
+  fingerprint    similarity_fingerprint @relation(fields: [fingerprint_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([fingerprint_id, hash])
+  @@index([hash, fingerprint_id], map: "idx_similarity_fingerprint_hash_value")
   @@schema("grading")
 }
 
@@ -55,6 +65,15 @@ model similarity_setting {
   updated_by String?  @db.Uuid
   updated_at DateTime @default(now()) @db.Timestamptz(6)
   school     school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("grading")
+}
+
+/// A write lock shared by fingerprint jobs from the same school.
+model similarity_school_lock {
+  school_id String @id @db.Uuid
+  revision  Int    @default(0)
+  school    school @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("grading")
 }

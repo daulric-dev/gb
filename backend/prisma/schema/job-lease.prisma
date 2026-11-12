@@ -1,0 +1,9 @@
+/// Cross-provider expiring leases for background jobs and serialized work.
+model job_lease {
+  key         String    @id
+  owner_token String?
+  expires_at  DateTime? @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}

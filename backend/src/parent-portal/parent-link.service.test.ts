@@ -48,7 +48,7 @@ describe('ParentLinkService', () => {
     mail = { send: mock(async () => undefined) };
     org = { parent_portal: true };
     prisma.organisation.findFirst.mockImplementation(async () => ({ features: org }));
-    prisma.school.findUnique.mockResolvedValue({ disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [] });
     const features = new FeatureService(prisma as any, createMockCacheService() as any);
     service = new ParentLinkService(prisma as any, cache as any, mail as any, features);
   });

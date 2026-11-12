@@ -1,4 +1,3 @@
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model file {
   id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id    String         @db.Uuid
@@ -35,7 +34,6 @@ model file {
   @@schema("file_manager")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model file_share {
   id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   file_id        String          @db.Uuid
@@ -55,7 +53,6 @@ model file_share {
   @@schema("file_manager")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model folder {
   id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id    String       @db.Uuid
@@ -79,7 +76,6 @@ model folder {
   @@schema("file_manager")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model notification {
   id           String       @id(map: "file_notification_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id    String       @db.Uuid

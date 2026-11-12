@@ -47,7 +47,7 @@ function setup(
     features: opts.org ?? { parent_portal: true, parent_notifications: true },
   });
   prisma.school.findUnique.mockImplementation(async ({ where }: any) =>
-    where.id === 'school-1' ? { disabled_features: opts.disabled ?? [] } : null,
+    where.id === 'school-1' ? { disabled_feature_rows: (opts.disabled ?? []).map((feature) => ({ feature })) } : null,
   );
   prisma.user_profile.findUnique.mockResolvedValue({
     account_type: opts.accountType ?? 'parent',
@@ -216,7 +216,7 @@ describe('ParentGuard', () => {
       { student: { school_id: 'school-1' } },
     ]);
     s.prisma.school.findUnique.mockImplementation(async ({ where }: any) => ({
-      disabled_features: where.id === 'school-off' ? ['parent_portal'] : [],
+      disabled_feature_rows: (where.id === 'school-off' ? ['parent_portal'] : []).map((feature) => ({ feature })),
     }));
     const req = await run(s, ParentPortalController, 'children');
     expect(req.parent.schoolId).toBe('school-1');

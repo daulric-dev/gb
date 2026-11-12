@@ -68,7 +68,7 @@ describe('AuditLogService', () => {
     const actorId = '00000000-0000-4000-8000-000000000003';
     prisma.school.findUnique.mockResolvedValue({
       name: 'Example School',
-      disabled_features: [],
+      disabled_feature_rows: [],
     } as never);
     prisma.organisation.findFirst.mockResolvedValue({
       features: { integrations: true },
@@ -113,7 +113,7 @@ describe('AuditLogService', () => {
       where: {
         school_id: schoolId,
         enabled: true,
-        events: { has: 'audit.changed' },
+        event_subscriptions: { some: { event_type: 'audit.changed' } },
       },
       select: { id: true },
     });
@@ -160,7 +160,7 @@ describe('AuditLogService', () => {
     const prisma = createMockPrisma();
     prisma.school.findUnique.mockResolvedValue({
       name: 'Example School',
-      disabled_features: [],
+      disabled_feature_rows: [],
     } as never);
     prisma.organisation.findFirst.mockResolvedValue({
       features: { integrations: false },

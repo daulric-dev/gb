@@ -7,8 +7,6 @@ model timetable_setting {
   school_id          String    @id @db.Uuid
   cycle_length       Int?      @db.SmallInt
   cycle_start_date   DateTime? @db.Date
-  /// ISO weekdays (1 = Monday .. 7 = Sunday) the school is open.
-  school_days        Int[]     @default([1, 2, 3, 4, 5]) @db.SmallInt
   auto_sessions      Boolean   @default(true)
   /// Minutes before the period starts that the session opens (0-30).
   lead_minutes       Int       @default(0) @db.SmallInt
@@ -18,7 +16,18 @@ model timetable_setting {
   updated_by         String?   @db.Uuid
   updated_at         DateTime  @default(now()) @db.Timestamptz(6)
   school             school    @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school_days        timetable_school_day[]
 
+  @@schema("public")
+}
+
+/// One ISO weekday (1 = Monday .. 7 = Sunday) when a school is open.
+model timetable_school_day {
+  school_id          String            @db.Uuid
+  weekday            Int               @db.SmallInt
+  timetable_setting  timetable_setting @relation(fields: [school_id], references: [school_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([school_id, weekday])
   @@schema("public")
 }
 

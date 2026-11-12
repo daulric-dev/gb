@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@/generated/prisma/client';
 import { SubmissionService } from './submission.service';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 
@@ -79,6 +78,13 @@ function student(
     p.activity_extension.findUnique.mockResolvedValue(
       over.extension ? { due_at: over.extension } : null,
     );
+    if ((over.activity ?? ASSIGNMENT).kind === 'quiz') {
+      p.submission.findUnique.mockResolvedValue({
+        ...(over.submission ?? { id: 'sub-1', attempt_count: 0 }),
+        activity: { points: (over.activity ?? QUIZ).points },
+      });
+      p.submission.updateMany.mockResolvedValue({ count: 1 });
+    }
   };
 }
 
@@ -313,22 +319,20 @@ describe('quizzes and the due date', () => {
         },
       })(p);
       p.quiz_question.findMany.mockResolvedValue([
-        { id: 'q-1', kind: 'multiple_choice' },
+        { id: 'q-1', kind: 'multiple_choice', points: 20, numeric_answer: null, numeric_tolerance: 0, partial_credit: false },
       ]);
       p.quiz_option.findMany.mockResolvedValue([
-        { id: 'opt-1', question_id: 'q-1' },
+        { id: 'opt-1', question_id: 'q-1', label: 'A', is_correct: true, match_label: null },
       ]);
-      p.$queryRaw.mockImplementation(async (strings: string[]) => {
-        if (strings.join('?').includes('submit_quiz')) {
-          return [
-            {
-              score: new Prisma.Decimal(5),
-              points: new Prisma.Decimal(20),
-              attempts_used: 1,
-            },
-          ];
-        }
-        return [lockRow(attempt)];
+      p.quiz_answer.findMany.mockResolvedValue([
+        { question_id: 'q-1', option_id: 'opt-1', option_ids: [], matches: null,
+          text_answer: null, numeric_answer: null, file_id: null, manual_points: null },
+      ]);
+      p.submission.findUnique.mockResolvedValue({
+        id: 'sub-1', attempt_count: 0, graded_by: null,
+        quiz_started_at: attempt.quiz_started_at,
+        quiz_expires_at: attempt.quiz_expires_at ?? null,
+        activity: { points: 20 },
       });
     });
   }
@@ -344,7 +348,7 @@ describe('quizzes and the due date', () => {
     const res = await service.submitQuiz('stu-1', 'act-1', [
       { questionId: 'q-1', optionId: 'opt-1' },
     ]);
-    expect(res).toEqual({ score: 5, points: 20, needsMarking: false });
+    expect(res).toEqual({ score: 20, points: 20, needsMarking: false });
     expect(prisma.quiz_answer.createMany).toHaveBeenCalled();
   });
 
@@ -355,7 +359,7 @@ describe('quizzes and the due date', () => {
     const res = await service.submitQuiz('stu-1', 'act-1', [
       { questionId: 'q-1', optionId: 'opt-1' },
     ]);
-    expect(res).toEqual({ score: 5, points: 20, needsMarking: false });
+    expect(res).toEqual({ score: 20, points: 20, needsMarking: false });
     expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
     expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();
   });
@@ -383,30 +387,15 @@ describe('quizzes and the due date', () => {
           attempt_count: 0,
         },
       })(p);
-      p.$queryRaw.mockImplementation(async (strings: string[]) => {
-        if (strings.join('?').includes('submit_quiz')) {
-          return [
-            {
-              score: new Prisma.Decimal(0),
-              points: new Prisma.Decimal(20),
-              attempts_used: 1,
-            },
-          ];
-        }
-        return [
-          {
-            quiz_started_at: new Date(PAST.getTime() - 60_000),
-            quiz_expires_at: null,
-            expired: false,
-          },
-        ];
+      p.submission.findUnique.mockResolvedValue({
+        id: 'sub-1', attempt_count: 0, graded_by: null,
+        quiz_started_at: new Date(PAST.getTime() - 60_000),
+        quiz_expires_at: null, activity: { points: 20 },
       });
     });
     await service.getForStudent('stu-1', 'act-1');
-    const calls = prisma.$queryRaw.mock.calls.map((c: any[]) =>
-      (c[0] as string[]).join('?'),
-    );
-    expect(calls.some((sql: string) => sql.includes('submit_quiz'))).toBe(true);
+    expect(prisma.submission.updateMany).toHaveBeenCalled();
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 });
 

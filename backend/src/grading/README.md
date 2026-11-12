@@ -49,7 +49,7 @@ Questions are frozen once a quiz is published, because changing the answer key w
 | `essay` | Optional course `rubricId` (a guide for the marker) | By the teacher (`manual_points / points`) |
 | `file_upload` | Optional `fileTypes` (`.pdf`, `image/*`) and `fileMaxMb` | By the teacher |
 
-An answered essay or file question with no mark leaves the submission `submitted` ("needs marking", `needsMarking` on the roster and the student's view); auto-scored parts are scored at once, and the score is final (`graded`) once every one is marked. The rules live in `grading.submit_quiz`, its TypeScript copy `QUIZ_CREDIT` / `rescoreSql` in `quiz-rescore.ts` (checked word for word against the latest migration by `quiz-rescore.test.ts`), and `questionCredit()` in `quiz-questions.ts` (the teacher's per-question view and unit tests).
+An answered essay or file question with no mark leaves the submission `submitted` ("needs marking", `needsMarking` on the roster and the student's view); auto-scored parts are scored at once, and the score is final (`graded`) once every one is marked. The shared scoring rules live in `questionCredit()` in `quiz-questions.ts` and are used by `scoreQuizSubmission()` in `quiz-rescore.ts` for submit, expiry and rescore paths.
 
 **Exposure.** A student never receives the answer key: no `isCorrect`, no numeric answer, no short-answer wordings, and matching right-hand items as a separate alphabetical `matchChoices` list. Ordering items are never sent in the right order. Staff routes include the key.
 
@@ -101,7 +101,7 @@ An activity can accept work after its due date until `late_until`, with a penalt
 - **Dates.** A student's due date is their extension, else the activity's. Work closes to them (`effectiveCloseAt`) at their extension when they have one (it wins entirely: no late window, no penalty before it), else at `late_until`, else at the due date. Every enforcement point above uses the close date; past it the 409 reads "Late work closed on … UTC" when there was a late window. Portal responses add `lateUntil` (null with an extension), `isLate` and the policy fields. An untimed quiz attempt started on time still ends at the due date; started late, at the close.
 - **Lateness** is stored on the submission (`late_seconds`): whole seconds from the effective due date to the hand-in (`submitted_at`), or for a quiz to when its attempt started (`attempt_started_at`), so a timed attempt begun in time is never late.
 - **Penalty** (`latePenaltyPercent`): every started day or hour counts in full (one minute late = one day), times the value, capped, never above 100. It is a percentage of the mark: `score = raw_score × (100 − percent) / 100` (85 with 10% is 76.5).
-- **Where it is applied.** `refreshLateness(tx, activityId, studentIds?)` recomputes lateness, the percent and `score` from `raw_score` in the caller's transaction after every hand-in, teacher mark, rubric mark, quiz submit (`submit_quiz` writes `raw_score` = `score`, then the API applies the penalty), question mark, waiver, extension change, and change of the activity's dates, policy or points. `score` is therefore always the final mark, and the gradebook, CSV export, report cards (`report-data.service.ts` reads `score`), portals and webhooks agree. An imported mark is taken as final (`raw_score` null), as are marks from before this.
+- **Where it is applied.** `refreshLateness(tx, activityId, studentIds?)` recomputes lateness, the percent and `score` from `raw_score` in the caller's transaction after every hand-in, teacher mark, rubric mark, quiz submit (the shared scorer writes `raw_score` before the API applies the penalty), question mark, waiver, extension change, and change of the activity's dates, policy or points. `score` is therefore always the final mark, and the gradebook, CSV export, report cards (`report-data.service.ts` reads `score`), portals and webhooks agree. An imported mark is taken as final (`raw_score` null), as are marks from before this.
 
 #### Quiz accommodations (`accommodation.controller.ts`, served by `AccommodationService`)
 
@@ -184,9 +184,9 @@ Both hear about hand-ins through **`SubmissionEvents`** (`submission-events.ts`,
 - `getForStudent()`: questions without the answers.
 - `createUploadTicket()`, `finaliseUploadedFile()`: the student PUTs the file straight to storage with a presigned ticket (no route takes file bytes through the API); it is uploaded as the student's own login through `FileManagerService`, because students hold no `file:*` permissions. The size limit is the course's school's upload limit (`UploadLimitService`).
 - `submitAssignment()`: a client-supplied `fileId` must be the student's own `ready` file.
-- `submitQuiz()`: stores answers (only answers to this quiz's questions, and only options belonging to each question), then calls the database function `grading.submit_quiz`.
+- `submitQuiz()`: stores answers (only answers to this quiz's questions, and only options belonging to each question), claims the attempt with a conditional Prisma update, and scores it through `scoreQuizSubmission()` in the same transaction.
   - The function locks the row, enforces `max_attempts`, scores the quiz, scales the score to the activity's points and marks it `graded`.
-  - Changing a quiz's points (`PATCH /api/activities/:id`) keeps automatic scores (`graded_by` null) in step in the same transaction: rescaled by new/old points, or - from 0 points, where every score was 0 - scored again from the stored answers by the same rules (`rescoreQuizFromAnswers` in `quiz-rescore.ts`, whose test checks it against the latest `submit_quiz`). A submission with a retake in progress is skipped (starting a retake clears its answers); teacher marks are never changed and must fit the new points.
+  - Changing a quiz's points (`PATCH /api/activities/:id`) keeps automatic scores (`graded_by` null) in step in the same transaction: rescaled by new/old points, or - from 0 points, where every score was 0 - scored again from the stored answers by the same rules (`rescoreQuizFromAnswers` in `quiz-rescore.ts`). A submission with a retake in progress is skipped; teacher marks are never changed and must fit the new points.
   - A retake clears the previous answers first.
 
 **`SubmissionService`**, staff side: `listForTeacher()`, `grade()`, `gradeSubmission()`, `excuse()`, `readSubmissionFile()`.
@@ -306,7 +306,7 @@ Rows are CRLF-terminated. `csvCell()` prefixes cells that start with `= + - @ ta
 - `FileManagerService` (`src/file-manager`): hand-in uploads and reading submission files.
 - `CourseNotificationService` (`src/course-notification`), injected as optional: the "activity published" notice and push.
 - `pgCode()`, `raisedMessage()` and `isUniqueViolation()` from `src/common/db-values.ts`.
-- The Postgres function `grading.submit_quiz(submission_id, student_id)`, last defined in `prisma/migrations/20261117100000_quiz_question_types/migration.sql`.
+- Historical PostgreSQL migrations defined `grading.submit_quiz`; migration `20261206180000_portable_quiz_answer_option_ids` drops it after the application moved scoring to Prisma transactions.
 
 ## Data
 
@@ -356,7 +356,7 @@ None.
 | `late-policy.ts` | Late policy: lateness, penalty percent, validation, wire fields (pure) |
 | `lateness.ts` | `refreshLateness()`: lateness and penalised scores in a transaction |
 | `quiz-questions.ts` | Question kinds: validation, scoring mirror, attempt plan, student shape, answers (pure) |
-| `quiz-rescore.ts` | `QUIZ_CREDIT` and `rescoreQuizFromAnswers()`: the TypeScript copy of `submit_quiz`'s scoring |
+| `quiz-rescore.ts` | `scoreQuizSubmission()` and `rescoreQuizFromAnswers()`: portable TypeScript scoring and persistence |
 | `question-write.ts` | Creating, editing and reading questions (quiz and bank) |
 | `question-bank.controller.ts`, `question-bank.service.ts` | Question banks and quiz draws |
 | `due-date.ts` | Effective due dates, past-due checks and the quiz attempt grace (pure) |
@@ -384,7 +384,7 @@ None.
 - **`accommodation.test.ts`**, **`accommodation.service.test.ts`**, **`submission.accommodation.test.ts`**: effective time (multiplier, extra minutes, override vs default, none), validation, permissions and audit, quiz start expiry, untimed attempts and the due date, Lockdown exemption in presence, the roster and the student's view.
 - **`rubric.service.test.ts`**: create and update rules, attach, assess and `forActivity()`.
 - **`late-policy.test.ts`**: lateness, day vs hour rounding, the cap, validation, close dates and extension precedence, untimed attempts in the late window, `refreshLateness()` (penalty, extension removes it, waiver, quiz measured from the start, imported marks). **`submission.due-date.test.ts`** adds hand-ins in and after the late window and the audited waiver; **`gradebook.service.test.ts`** checks the grid, CSV and student summary use the same penalised mark.
-- **`quiz-questions.test.ts`**: validation and scoring per kind (tolerance edges, partial credit, all or nothing), attempt plans (deterministic per seed, distinct draws, ordering never in order), what a student is sent, answer shapes. **`quiz-rescore.test.ts`**: the TypeScript copy matches the latest `submit_quiz`. **`submission.quiz-types.test.ts`**: attempts stored at start and kept on resume, the student's view, needs-marking and question marking, banks (permissions, frozen questions, draws).
+- **`quiz-questions.test.ts`**: validation and scoring per kind (tolerance edges, partial credit, all or nothing), attempt plans (deterministic per seed, distinct draws, ordering never in order), what a student is sent, answer shapes. **`quiz-rescore.test.ts`**: portable score calculation, attempt question sets and needs-marking status. **`submission.quiz-types.test.ts`**: attempts stored at start and kept on resume, the student's view, needs-marking and question marking, banks (permissions, frozen questions, draws).
 
 ## See also
 

@@ -5,6 +5,8 @@ import {
   mergeOff,
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_CATEGORY_LABELS,
+  offListsFromRows,
+  optOutRowsFromLists,
   prefsFromRow,
   type NotificationPreferences,
 } from './notification-preferences';
@@ -31,30 +33,39 @@ export class NotificationSettingsService {
   // ── per-account preferences ───────────────────────────────────────────────
 
   async preferences(userId: string) {
-    const row = await this.prisma.notification_preference.findUnique({
+    const rows = await this.prisma.notification_preference_opt_out.findMany({
       where: { user_profile_id: userId },
-      select: { push_off: true, email_off: true },
+      select: { channel: true, category: true },
     });
-    return this.view(prefsFromRow(row));
+    return this.view(prefsFromRow(offListsFromRows(rows)));
   }
 
   async updatePreferences(
     userId: string,
     patch: { push?: Record<string, boolean>; email?: Record<string, boolean> },
   ) {
-    const current = await this.prisma.notification_preference.findUnique({
+    const currentRows = await this.prisma.notification_preference_opt_out.findMany({
       where: { user_profile_id: userId },
-      select: { push_off: true, email_off: true },
+      select: { channel: true, category: true },
     });
-    const push_off = mergeOff(current?.push_off, patch.push);
-    const email_off = mergeOff(current?.email_off, patch.email);
-    const row = await this.prisma.notification_preference.upsert({
-      where: { user_profile_id: userId },
-      create: { user_profile_id: userId, push_off, email_off },
-      update: { push_off, email_off, updated_at: new Date() },
-      select: { push_off: true, email_off: true },
+    const current = offListsFromRows(currentRows);
+    const push_off = mergeOff(current.push_off, patch.push);
+    const email_off = mergeOff(current.email_off, patch.email);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.notification_preference.upsert({
+        where: { user_profile_id: userId },
+        create: { user_profile_id: userId },
+        update: { updated_at: new Date() },
+      });
+      await tx.notification_preference_opt_out.deleteMany({ where: { user_profile_id: userId } });
+      const choices = optOutRowsFromLists(push_off, email_off);
+      if (choices.length > 0) {
+        await tx.notification_preference_opt_out.createMany({
+          data: choices.map((choice) => ({ user_profile_id: userId, ...choice })),
+        });
+      }
     });
-    return this.view(prefsFromRow(row));
+    return this.view(prefsFromRow({ push_off, email_off }));
   }
 
   private view(prefs: NotificationPreferences) {

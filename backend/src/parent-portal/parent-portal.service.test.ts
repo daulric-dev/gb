@@ -103,7 +103,7 @@ describe('ParentPortalService', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     prisma.organisation.findFirst.mockResolvedValue({ features: { parent_portal: true } });
-    prisma.school.findUnique.mockResolvedValue({ parent_settings: {}, disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ parent_settings: {}, disabled_feature_rows: [] });
     prisma.course_student.findMany.mockResolvedValue([{ course_id: 'c1' }]);
     prisma.course.findMany.mockResolvedValue([{ id: 'c1', name: 'Maths', code: 'M1', status: 'published' }]);
     gradebook = {
@@ -142,7 +142,7 @@ describe('ParentPortalService', () => {
   test('the school hiding grades makes the grades route 403 and drops grades from courses', async () => {
     prisma.school.findUnique.mockResolvedValue({
       parent_settings: { showGrades: false },
-      disabled_features: [],
+      disabled_feature_rows: [],
     });
     const err: any = await expectRejection(service.courseGrades(ctx, 'c1'));
     expect(err).toBeInstanceOf(ForbiddenException);
@@ -155,7 +155,7 @@ describe('ParentPortalService', () => {
   });
 
   test('hiding grades also hides scores in the work list', async () => {
-    prisma.school.findUnique.mockResolvedValue({ parent_settings: { showGrades: false }, disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ parent_settings: { showGrades: false }, disabled_feature_rows: [] });
     submissions.listForStudent.mockResolvedValue([
       {
         id: 'a1', courseId: 'c1', courseName: 'Maths', kind: 'quiz', title: 'Q', points: 10,
@@ -213,7 +213,7 @@ describe('ParentPortalService', () => {
   test('the school hiding attendance or announcements is a 403', async () => {
     prisma.school.findUnique.mockResolvedValue({
       parent_settings: { showAttendance: false, showAnnouncements: false, showWork: false },
-      disabled_features: [],
+      disabled_feature_rows: [],
     });
     for (const p of [service.attendance(ctx), service.announcementsFor(ctx), service.work(ctx)]) {
       const err: any = await expectRejection(p);
@@ -242,7 +242,7 @@ describe('ParentPortalService', () => {
     prisma.school.findUnique.mockResolvedValue({
       name: 'Hill School',
       parent_settings: {},
-      disabled_features: [],
+      disabled_feature_rows: [],
     });
     announcements.findEveryoneForSchool.mockResolvedValue([
       {
@@ -278,7 +278,7 @@ describe('ParentPortalService', () => {
   test('announcements hidden by the school: no school posts are read either', async () => {
     prisma.school.findUnique.mockResolvedValue({
       parent_settings: { showAnnouncements: false },
-      disabled_features: [],
+      disabled_feature_rows: [],
     });
     await expectRejection(service.announcementsFor(ctx));
     expect(announcements.findEveryoneForSchool).not.toHaveBeenCalled();
@@ -307,7 +307,7 @@ describe('ParentPortalService', () => {
       old,
     ]);
     prisma.school.findUnique.mockImplementation(async ({ where }: any) => ({
-      disabled_features: where.id === 'school-off' ? ['parent_portal'] : [],
+      disabled_feature_rows: (where.id === 'school-off' ? ['parent_portal'] : []).map((feature) => ({ feature })),
       parent_settings: {},
     }));
     const res = await service.children('parent-1');

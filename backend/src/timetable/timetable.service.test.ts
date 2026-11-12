@@ -117,6 +117,21 @@ describe('TimetableService', () => {
     expect(prisma.timetable_setting.upsert.mock.calls[0][0].create.cycle_length).toBe(6);
   });
 
+  test('school open weekdays are read and replaced as relational rows', async () => {
+    prisma.timetable_school_day.findMany.mockResolvedValue([{ weekday: 1 }, { weekday: 3 }, { weekday: 5 }]);
+    expect((await service.context('s1')).settings.schoolDays).toEqual([1, 3, 5]);
+
+    await service.updateSettings('u1', 's1', { schoolDays: [2, 4] });
+
+    expect(prisma.timetable_school_day.deleteMany).toHaveBeenCalledWith({ where: { school_id: 's1' } });
+    expect(prisma.timetable_school_day.createMany).toHaveBeenCalledWith({
+      data: [
+        { school_id: 's1', weekday: 2 },
+        { school_id: 's1', weekday: 4 },
+      ],
+    });
+  });
+
   test('time zone names are validated (IANA only)', async () => {
     for (const tz of ['Mars/Base', '', 'Europe/Londonn', 'GMT+25', 'x'.repeat(65)]) {
       expect(await expectRejection(service.updateSettings('u1', 's1', { timeZone: tz }))).toBeInstanceOf(

@@ -23,10 +23,19 @@ model student_restriction {
 /// Notification categories an account turned off, per channel. No row = everything on.
 model notification_preference {
   user_profile_id String   @id @db.Uuid
-  push_off        String[] @default([])
-  email_off       String[] @default([])
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
 
+  @@schema("public")
+}
+
+/// A notification category turned off for one channel. One row per choice.
+model notification_preference_opt_out {
+  user_profile_id String   @db.Uuid
+  channel         String
+  category        String
+
+  @@id([user_profile_id, channel, category])
+  @@index([channel, category, user_profile_id])
   @@schema("public")
 }
 

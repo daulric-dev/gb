@@ -224,7 +224,7 @@ export class AuditLogService {
       schoolId
         ? tx.school.findUnique({
             where: { id: schoolId },
-            select: { name: true, disabled_features: true },
+            select: { name: true, disabled_feature_rows: { select: { feature: true } } },
           })
         : Promise.resolve(null),
     ]);
@@ -260,14 +260,14 @@ export class AuditLogService {
       if (
         effectiveForSchool(
           organisationSettings(organisation?.features),
-          school.disabled_features,
+          school.disabled_feature_rows.map(({ feature }) => feature),
         ).integrations
       ) {
         const hooks = await tx.school_webhook.findMany({
           where: {
             school_id: schoolId,
             enabled: true,
-            events: { has: 'audit.changed' },
+            event_subscriptions: { some: { event_type: 'audit.changed' } },
           },
           select: { id: true },
         });

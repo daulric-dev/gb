@@ -10,7 +10,7 @@ import {
 
 function withHooks() {
   const prisma = createMockPrisma();
-  prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_features: [] });
+  prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_feature_rows: [] });
   prisma.organisation.findFirst.mockResolvedValue({ features: { integrations: true } });
   prisma.school_webhook.findMany.mockResolvedValue([{ id: 'hook' }]);
   prisma.audit_log.create.mockImplementation(async ({ data }: any) => ({ id: 'a1', created_at: new Date(), ...data }));

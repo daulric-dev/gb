@@ -410,10 +410,14 @@ export class LibraryImportService {
       filesTotal: r.files_total,
       filesDone: r.files_done,
       result: r.result,
-      notes: r.notes,
+      notes: stringList(r.notes),
       error: r.error,
       createdAt: r.created_at.toISOString(),
       finishedAt: r.finished_at?.toISOString() ?? null,
     };
   }
+}
+
+function stringList(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

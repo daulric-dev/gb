@@ -150,7 +150,10 @@ const WEBHOOK_SELECT = {
   name: true,
   url: true,
   secret_enc: true,
-  events: true,
+  event_subscriptions: {
+    select: { event_type: true },
+    orderBy: { event_type: 'asc' },
+  },
   enabled: true,
   consecutive_failures: true,
   disabled_reason: true,
@@ -166,6 +169,10 @@ const WEBHOOK_SELECT = {
 } satisfies Prisma.school_webhookSelect;
 
 type WebhookRow = Prisma.school_webhookGetPayload<{ select: typeof WEBHOOK_SELECT }>;
+
+function eventTypes(row: WebhookRow): string[] {
+  return expandEvents(row.event_subscriptions.map(({ event_type }) => event_type));
+}
 
 const DELIVERY_SELECT = {
   id: true,
@@ -326,7 +333,7 @@ export class WebhookService {
             name,
             url,
             secret_enc: secretEnc,
-            events,
+            event_subscriptions: { create: events.map((event_type) => ({ event_type })) },
             enabled,
             verify_tls: verifyTls,
             tls_ca_cert: ca?.pem ?? null,
@@ -419,9 +426,9 @@ export class WebhookService {
     }
     if (patch.events !== undefined) {
       const events = normaliseEvents(patch.events);
-      if (JSON.stringify(events) !== JSON.stringify(before.events)) {
-        data.events = events;
-        changes.events = { before: before.events, after: events };
+      const beforeEvents = eventTypes(before);
+      if (JSON.stringify(events) !== JSON.stringify(beforeEvents)) {
+        changes.events = { before: beforeEvents, after: events };
       }
     }
     // Validated before anything is written; values never reach the audit log.
@@ -485,6 +492,12 @@ export class WebhookService {
           where: { id },
           data: { ...data, updated_at: new Date() },
         });
+        if (patch.events !== undefined && changes.events) {
+          await tx.school_webhook_event.deleteMany({ where: { webhook_id: id } });
+          await tx.school_webhook_event.createMany({
+            data: normaliseEvents(patch.events).map((event_type) => ({ webhook_id: id, event_type })),
+          });
+        }
         if (headers) await this.writeHeaders(tx, schoolId, id, headers);
         await this.audit.record(tx, schoolId, actor, entries);
       });
@@ -507,7 +520,7 @@ export class WebhookService {
             action: 'webhook_deleted',
             webhookId: id,
             webhook: before.name,
-            changes: { url: before.url, events: before.events },
+            changes: { url: before.url, events: eventTypes(before) },
           },
         ]);
       });
@@ -794,7 +807,7 @@ export class WebhookService {
       name: r.name,
       url: r.url,
       insecure: r.url.toLowerCase().startsWith('http:'),
-      events: r.events,
+      events: eventTypes(r),
       enabled: r.enabled,
       disabledReason: r.disabled_reason,
       consecutiveFailures: r.consecutive_failures,

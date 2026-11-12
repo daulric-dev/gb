@@ -1,5 +1,4 @@
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model app_user {
   id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email             String        @unique
@@ -20,7 +19,6 @@ model app_user {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model email_code {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email       String
@@ -50,7 +48,6 @@ model email_code_attempt {
   @@schema("account")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model identity {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id      String   @db.Uuid
@@ -67,7 +64,6 @@ model identity {
   @@schema("account")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model session {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id      String    @db.Uuid

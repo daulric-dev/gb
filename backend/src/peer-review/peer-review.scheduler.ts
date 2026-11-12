@@ -5,15 +5,17 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { acquireJobLease, releaseJobLease } from '@/common/job-lease';
 import { PeerReviewService } from './peer-review.service';
 
 export const PEER_REVIEW_TICK_MS = 60_000;
-export const PEER_REVIEW_LOCK = 'gradebook:peer-review-sweep';
+export const PEER_REVIEW_LEASE = 'gradebook:peer-review-sweep';
+const PEER_REVIEW_LEASE_MS = 10 * 60_000;
 
 /**
  * Opens peer review windows whose due date has passed and tells authors
  * when their reviews are ready, once a minute (reads also open a due window
- * on the spot). A Postgres advisory lock lets one instance sweep at a time.
+ * on the spot). A persisted lease lets one instance sweep at a time.
  * Nothing runs under NODE_ENV=test or with PEER_REVIEW_SWEEP=false.
  */
 @Injectable()
@@ -44,13 +46,16 @@ export class PeerReviewScheduler implements OnApplicationBootstrap, OnModuleDest
     if (this.running) return;
     this.running = true;
     try {
-      const rows = await this.prisma.$queryRaw<Array<{ locked: boolean }>>`
-        SELECT pg_try_advisory_lock(hashtext(${PEER_REVIEW_LOCK})) AS locked`;
-      if (!rows?.[0]?.locked) return;
+      const ownerToken = await acquireJobLease(
+        this.prisma,
+        PEER_REVIEW_LEASE,
+        PEER_REVIEW_LEASE_MS,
+      );
+      if (!ownerToken) return;
       try {
         await this.peerReview.sweep(now);
       } finally {
-        await this.prisma.$queryRaw`SELECT pg_advisory_unlock(hashtext(${PEER_REVIEW_LOCK}))`;
+        await releaseJobLease(this.prisma, PEER_REVIEW_LEASE, ownerToken);
       }
     } catch (err) {
       this.logger.error(`Peer review sweep failed: ${(err as Error).message}`);

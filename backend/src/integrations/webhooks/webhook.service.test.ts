@@ -32,7 +32,7 @@ function hookRow(over: Record<string, unknown> = {}) {
     name: 'SIS',
     url: 'https://sis.riverside.edu/hooks',
     secret_enc: encryptWebhookSecret({ schoolId: SCHOOL, webhookId: HOOK }, 'whsec_old'),
-    events: ['grade.recorded'],
+    event_subscriptions: [{ event_type: 'grade.recorded' }],
     enabled: true,
     consecutive_failures: 0,
     disabled_reason: null,
@@ -62,7 +62,11 @@ function setup() {
     where.id === HOOK && where.school_id === SCHOOL ? hookRow() : null,
   );
   tx.school_webhook.create.mockImplementation(async ({ data }: any) =>
-    hookRow({ ...data, headers: data.headers?.create ?? [] }),
+    hookRow({
+      ...data,
+      event_subscriptions: data.event_subscriptions?.create ?? [],
+      headers: data.headers?.create ?? [],
+    }),
   );
   const deliveries = { sendNow: mock(async () => ({ ok: true })) };
   const alerts = { tlsVerificationDisabled: mock(async () => {}) };
@@ -126,7 +130,7 @@ describe('WebhookService', () => {
     const data = tx.school_webhook.create.mock.calls[0][0].data;
     expect(data.secret_enc).not.toContain(secret);
     expect(decryptWebhookSecret({ schoolId: SCHOOL, webhookId: data.id }, data.secret_enc)).toBe(secret);
-    expect(data.events).toEqual(WEBHOOK_EVENT_KEYS.filter((k) => k !== 'ping'));
+    expect(data.event_subscriptions.create.map((row: any) => row.event_type)).toEqual(WEBHOOK_EVENT_KEYS.filter((k) => k !== 'ping'));
     expect(data.name).toBe('SIS');
     expect(webhook).toMatchObject({ hasSecret: true, insecure: true, enabled: true });
     expect(JSON.stringify(webhook)).not.toContain(secret);
@@ -185,6 +189,20 @@ describe('WebhookService', () => {
     });
     expect(audit().map((e: any) => e.action)).toEqual(['webhook_updated', 'webhook_enabled']);
     expect(audit()[0].changes.url).toEqual({ before: 'https://sis.riverside.edu/hooks', after: 'https://new.example/x' });
+  });
+
+  test('event subscriptions are replaced as rows and audit keeps the public list', async () => {
+    const { service, prisma, tx, audit } = setup();
+    prisma.school_webhook.findFirst.mockResolvedValue(hookRow());
+    await service.update(SCHOOL, HOOK, { events: ['course.created'] }, ADMIN);
+    expect(tx.school_webhook_event.deleteMany).toHaveBeenCalledWith({ where: { webhook_id: HOOK } });
+    expect(tx.school_webhook_event.createMany).toHaveBeenCalledWith({
+      data: [{ webhook_id: HOOK, event_type: 'course.created' }],
+    });
+    expect(audit()[0].changes.events).toEqual({
+      before: ['grade.recorded'],
+      after: ['course.created'],
+    });
   });
 
   test('delete is audited with the name kept', async () => {

@@ -2,7 +2,7 @@
  * The platform features an organisation can switch on or off, and a school
  * admin can additionally switch off. Defined once here; the organisation's
  * overrides live in `public.organisation.features`, a school's opt-outs in
- * `public.school.disabled_features`.
+ * `public.school_feature_disabled`.
  */
 export interface FeatureDefinition {
   key: FeatureKey;

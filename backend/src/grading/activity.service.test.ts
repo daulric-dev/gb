@@ -424,11 +424,10 @@ describe('ActivityService.update', () => {
       graded_by: { not: null },
     });
 
-    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
-    const call = prisma.$executeRaw.mock.calls[0];
-    expect(sql(call)).toContain('graded_by is null');
-    expect(sql(call)).toContain('set score = score *');
-    expect(call.slice(1)).toEqual([20, 10, 20, 10, 'act-1']);
+    expect(prisma.submission.updateMany).toHaveBeenCalledWith({
+      where: { activity_id: 'act-1', graded_by: null, score: { not: null } },
+      data: { score: { multiply: 2 }, raw_score: { multiply: 2 } },
+    });
     expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(20);
   });
 
@@ -445,17 +444,13 @@ describe('ActivityService.update', () => {
       score: { gt: 25 },
       graded_by: { not: null },
     });
-    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
-    // One statement (a composed Prisma.Sql), from the stored answers.
-    const query = prisma.$executeRaw.mock.calls[0][0] as { sql: string; values: unknown[] };
-    const text = query.sql;
-    // No division by the old (zero) points.
-    expect(text).not.toContain('score = score *');
-    expect(text).toContain('t.earned / t.possible');
-    expect(text).toContain('lower(btrim(ans.text_answer)) = lower(btrim(o.label))');
-    expect(text).toContain('s2.graded_by is null');
-    expect(text).toContain('s2.quiz_started_at is null');
-    expect(query.values).toEqual([25, 25, 'act-1', null, null]);
+    expect(prisma.submission.findMany).toHaveBeenCalledWith({
+      where: {
+        activity_id: 'act-1', graded_by: null,
+        score: { not: null }, quiz_started_at: null,
+      },
+      select: { id: true },
+    });
     // In the same transaction as the points themselves.
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.activity.update.mock.calls[0][0].data.points).toBe(25);

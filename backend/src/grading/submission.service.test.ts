@@ -101,6 +101,15 @@ function studentTables(
       over.submission ?? { id: 'sub-1', status: 'draft', file_id: null },
     );
     p.file.findMany.mockResolvedValue([]);
+    if (over.activity?.kind === 'quiz') {
+      p.submission.findUnique.mockResolvedValue({
+        ...(over.submission ?? { id: 'sub-1', attempt_count: 0, graded_by: null }),
+        quiz_started_at: over.submission?.quiz_started_at ?? new Date('2026-11-05T10:00:00Z'),
+        quiz_expires_at: null,
+        activity: { points: over.activity.points ?? 20 },
+      });
+      p.submission.updateMany.mockResolvedValue({ count: 1 });
+    }
   };
 }
 
@@ -528,73 +537,13 @@ describe('SubmissionService student access', () => {
         },
       })(p);
       p.quiz_question.findMany.mockResolvedValue([]);
-      p.$queryRaw.mockImplementation(async (strings: string[]) => {
-        if (strings.join('?').includes('submit_quiz')) {
-          return [
-            { score: new Prisma.Decimal(5), points: new Prisma.Decimal(20) },
-          ];
-        }
-        return [
-          {
-            attempt_count: 0,
-            graded_by: null,
-            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-            expired: false,
-          },
-        ];
-      });
     });
 
     const result = await service.submitQuiz('stu-1', 'act-1', []);
-    expect(result).toEqual({ score: 5, points: 20, needsMarking: false });
-    // The row lock, then submit_quiz.
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ score: 0, points: 20, needsMarking: false });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.grade.create).not.toHaveBeenCalled();
     expect(prisma.grade.upsert).not.toHaveBeenCalled();
-  });
-
-  test('submit_quiz refusals map to 409s', async () => {
-    const raised = (message: string) =>
-      new Prisma.PrismaClientKnownRequestError(`Raw query failed: ${message}`, {
-        code: 'P2010',
-        clientVersion: 'test',
-        meta: { code: 'P0001', message },
-      });
-    for (const [message, expected] of [
-      ['no_attempts_left', 'You have no attempts left'],
-      ['activity_not_open', 'This quiz is closed'],
-      ['quiz_attempt_not_started', 'Start the quiz before submitting'],
-    ]) {
-      const { service } = build((p) => {
-        studentTables({
-          activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
-          submission: {
-            id: 'sub-1',
-            status: 'draft',
-            attempt_count: 0,
-            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-          },
-        })(p);
-        p.$queryRaw.mockImplementation(async (strings: string[]) => {
-          if (strings.join('?').includes('submit_quiz')) {
-            throw raised(message);
-          }
-          return [
-            {
-              attempt_count: 0,
-              graded_by: null,
-              quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-              expired: false,
-            },
-          ];
-        });
-      });
-      const err = await service
-        .submitQuiz('stu-1', 'act-1', [])
-        .catch((e) => e);
-      expect(err).toBeInstanceOf(ConflictException);
-      expect(err.message).toBe(expected);
-    }
   });
 
   test('a quiz a teacher has marked cannot be retaken', async () => {
@@ -616,47 +565,9 @@ describe('SubmissionService student access', () => {
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
-  test('submit_quiz already_marked (marked mid-retake) maps to a 400', async () => {
-    const { service } = build((p) => {
-      studentTables({
-        activity: { ...ACTIVITY, kind: 'quiz', max_attempts: null },
-        submission: {
-          id: 'sub-1',
-          status: 'draft',
-          attempt_count: 0,
-          quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-        },
-      })(p);
-      p.quiz_question.findMany.mockResolvedValue([]);
-      p.$queryRaw.mockImplementation(async (strings: string[]) => {
-        if (strings.join('?').includes('submit_quiz')) {
-          throw new Prisma.PrismaClientKnownRequestError(
-            'Raw query failed: already_marked',
-            {
-              code: 'P2010',
-              clientVersion: 'test',
-              meta: { code: 'P0025', message: 'already_marked' },
-            },
-          );
-        }
-        return [
-          {
-            attempt_count: 0,
-            graded_by: null,
-            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-            expired: false,
-          },
-        ];
-      });
-    });
-    const err = await service.submitQuiz('stu-1', 'act-1', []).catch((e) => e);
-    expect(err).toBeInstanceOf(BadRequestException);
-  });
-
   /**
-   * A quiz with two choice questions and one short answer, whose raw calls
-   * are the submission row lock and then submit_quiz. `order` records every
-   * write and raw call as it happens.
+   * A quiz with two choice questions and one short answer. `order` records
+   * the conditional attempt claim and answer writes.
    */
   function quizTables(
     over: {
@@ -683,16 +594,25 @@ describe('SubmissionService student access', () => {
           quiz_started_at: new Date('2026-11-05T10:00:00Z'),
         },
       })(p);
+      p.submission.findUnique.mockResolvedValue({
+        id: 'sub-1', attempt_count: 0, graded_by: null,
+        quiz_started_at: new Date('2026-11-05T10:00:00Z'), quiz_expires_at: null,
+        activity: { points: 20 },
+      });
       p.quiz_question.findMany.mockResolvedValue([
-        { id: 'q-1', kind: 'multiple_choice' },
-        { id: 'q-2', kind: 'true_false' },
-        { id: 'q-3', kind: 'short_answer' },
+        { id: 'q-1', kind: 'multiple_choice', points: 10, numeric_answer: null, numeric_tolerance: 0, partial_credit: false },
+        { id: 'q-2', kind: 'true_false', points: 10, numeric_answer: null, numeric_tolerance: 0, partial_credit: false },
+        { id: 'q-3', kind: 'short_answer', points: 10, numeric_answer: null, numeric_tolerance: 0, partial_credit: false },
       ]);
       p.quiz_option.findMany.mockResolvedValue([
-        { id: 'o-1a', question_id: 'q-1' },
-        { id: 'o-1b', question_id: 'q-1' },
-        { id: 'o-2a', question_id: 'q-2' },
+        { id: 'o-1a', question_id: 'q-1', label: 'A', is_correct: true, match_label: null },
+        { id: 'o-1b', question_id: 'q-1', label: 'B', is_correct: false, match_label: null },
+        { id: 'o-2a', question_id: 'q-2', label: 'True', is_correct: true, match_label: null },
       ]);
+      p.submission.updateMany.mockImplementation(async () => {
+        order.push('claim');
+        return { count: 1 };
+      });
       p.quiz_answer.deleteMany.mockImplementation(async () => {
         order.push('delete answers');
         return { count: 0 };
@@ -701,27 +621,21 @@ describe('SubmissionService student access', () => {
         order.push('write answers');
         return { count: 0 };
       });
-      p.$queryRaw.mockImplementation(async (strings: string[]) => {
-        if (strings.join('?').includes('submit_quiz')) {
-          order.push('submit_quiz');
-          if (over.submit) return over.submit();
-          return [{ score: 10, points: 20, attempts_used: 1 }];
-        }
-        order.push('lock');
-        return [
-          over.locked ?? {
-            attempt_count: 0,
-            graded_by: null,
-            quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-            expired: false,
-          },
-        ];
+      p.submission.findUnique.mockResolvedValue({
+        id: 'sub-1',
+        ...(over.locked ?? {
+          attempt_count: 0,
+          graded_by: null,
+          quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+          quiz_expires_at: null,
+        }),
+        activity: { points: 20 },
       });
     };
     return { order, setup };
   }
 
-  test('quiz answers are written and scored in one transaction, after the row lock', async () => {
+  test('quiz answers are written and scored in one transaction after claiming the attempt', async () => {
     const { order, setup } = quizTables();
     const { service, prisma } = build(setup);
 
@@ -731,15 +645,11 @@ describe('SubmissionService student access', () => {
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(typeof prisma.$transaction.mock.calls[0][0]).toBe('function');
-    expect(order).toEqual([
-      'lock',
-      'delete answers',
-      'write answers',
-      'submit_quiz',
-    ]);
-    const lockSql = (prisma.$queryRaw.mock.calls[0][0] as string[]).join('?');
-    expect(lockSql).toContain('grading.submission');
-    expect(lockSql).toContain('for update');
+    expect(order).toEqual(['claim', 'delete answers', 'write answers']);
+    expect(prisma.submission.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: 'sub-1', attempt_count: 0, graded_by: null },
+      data: { attempt_count: { increment: 1 }, quiz_started_at: null },
+    });
     // Every earlier answer goes, not just those to questions sent this time.
     expect(prisma.quiz_answer.deleteMany.mock.calls[0][0].where).toEqual({
       submission_id: 'sub-1',
@@ -794,7 +704,7 @@ describe('SubmissionService student access', () => {
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.message).toBe('You have no attempts left');
-    expect(order).toEqual(['lock']);
+    expect(order).toEqual([]);
     expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
     expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();
   });
@@ -814,26 +724,15 @@ describe('SubmissionService student access', () => {
       .submitQuiz('stu-1', 'act-1', [{ questionId: 'q-1', optionId: 'o-1a' }])
       .catch((e) => e);
     expect(err).toBeInstanceOf(BadRequestException);
-    expect(order).toEqual(['lock']);
+    expect(order).toEqual([]);
   });
 
-  test('a refusal inside submit_quiz fails the transaction holding the answers', async () => {
-    const { setup } = quizTables({
-      submit: () =>
-        Promise.reject(
-          new Prisma.PrismaClientKnownRequestError(
-            'Raw query failed: activity_not_open',
-            {
-              code: 'P2010',
-              clientVersion: 'test',
-              meta: { code: 'P0024', message: 'activity_not_open' },
-            },
-          ),
-        ),
-    });
+  test('a failed answer write rolls back the claimed attempt', async () => {
+    const { setup } = quizTables();
     let rolledBack = false;
     const { service } = build((p) => {
       setup(p);
+      p.quiz_answer.createMany.mockRejectedValue(new Error('write failed'));
       const run = p.$transaction.getMockImplementation()!;
       p.$transaction.mockImplementation((arg: any) =>
         Promise.resolve(run(arg)).catch((e) => {
@@ -846,8 +745,8 @@ describe('SubmissionService student access', () => {
     const err = await service
       .submitQuiz('stu-1', 'act-1', [{ questionId: 'q-1', optionId: 'o-1a' }])
       .catch((e) => e);
-    expect(err).toBeInstanceOf(ConflictException);
-    expect(err.message).toBe('This quiz is closed');
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err.message).toBe('Failed to submit quiz');
     expect(rolledBack).toBe(true);
   });
 
@@ -870,18 +769,14 @@ describe('SubmissionService student access', () => {
           clientVersion: 'test',
         }),
       );
-      p.$queryRaw.mockImplementation(async (strings: string[]) =>
-        strings.join('?').includes('submit_quiz')
-          ? [{ score: 0, points: 20, attempts_used: 1 }]
-          : [
-              {
-                attempt_count: 0,
-                graded_by: null,
-                quiz_started_at: new Date('2026-11-05T10:00:00Z'),
-                expired: false,
-              },
-            ],
-      );
+      p.submission.findUnique.mockResolvedValue({
+        id: 'sub-other',
+        attempt_count: 0,
+        graded_by: null,
+        quiz_started_at: new Date('2026-11-05T10:00:00Z'),
+        quiz_expires_at: null,
+        activity: { points: 20 },
+      });
     });
 
     await service.submitQuiz('stu-1', 'act-1', []);
@@ -1391,31 +1286,19 @@ describe('SubmissionService marking', () => {
             quiz_started_at: new Date('2026-11-05T09:00:00Z'),
           },
         })(p);
-        p.$queryRaw.mockImplementation(async (strings: string[]) => {
-          if (strings.join('?').includes('submit_quiz')) {
-            return [
-              {
-                score: new Prisma.Decimal(10),
-                points: new Prisma.Decimal(10),
-                attempts_used: 1,
-              },
-            ];
-          }
-          return [
-            {
-              attempt_count: 0,
-              graded_by: null,
-              quiz_started_at: new Date('2026-11-05T09:00:00Z'),
-              expired: true,
-            },
-          ];
+        p.submission.findUnique.mockResolvedValue({
+          id: 'sub-1', attempt_count: 0, graded_by: null,
+          quiz_started_at: new Date('2026-11-05T09:00:00Z'),
+          quiz_expires_at: new Date('2026-11-05T09:30:00Z'),
+          activity: { points: 20 },
         });
+        p.quiz_question.findMany.mockResolvedValue([]);
       });
 
       const res = await service.submitQuiz('stu-1', 'act-1', [
         { questionId: 'q-1', optionId: 'opt-1' },
       ]);
-      expect(res).toEqual({ score: 10, points: 10, needsMarking: false });
+      expect(res).toEqual({ score: 0, points: 20, needsMarking: false });
       // When expired, client answers are not written.
       expect(prisma.quiz_answer.deleteMany).not.toHaveBeenCalled();
       expect(prisma.quiz_answer.createMany).not.toHaveBeenCalled();

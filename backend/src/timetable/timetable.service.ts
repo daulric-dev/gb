@@ -179,9 +179,14 @@ export class TimetableService {
   }
 
   async context(schoolId: string): Promise<SchoolContext> {
-    const [school, setting, closures, periods, rooms] = await Promise.all([
+    const [school, setting, schoolDays, closures, periods, rooms] = await Promise.all([
       this.prisma.school.findUnique({ where: { id: schoolId }, select: { time_zone: true } }),
       this.prisma.timetable_setting.findUnique({ where: { school_id: schoolId } }),
+      this.prisma.timetable_school_day.findMany({
+        where: { school_id: schoolId },
+        orderBy: { weekday: 'asc' },
+        select: { weekday: true },
+      }),
       this.prisma.school_closure.findMany({
         where: { school_id: schoolId },
         orderBy: { start_date: 'asc' },
@@ -206,7 +211,7 @@ export class TimetableService {
         timeZoneSet: isValidTimeZone(school.time_zone),
         cycleLength: setting?.cycle_length ?? DEFAULT_SETTINGS.cycleLength,
         cycleStartDate: dateOnly(setting?.cycle_start_date) ?? DEFAULT_SETTINGS.cycleStartDate,
-        schoolDays: setting?.school_days ?? DEFAULT_SETTINGS.schoolDays,
+        schoolDays: schoolDays.length > 0 ? schoolDays.map((day) => day.weekday) : DEFAULT_SETTINGS.schoolDays,
         autoSessions: setting?.auto_sessions ?? DEFAULT_SETTINGS.autoSessions,
         leadMinutes: setting?.lead_minutes ?? DEFAULT_SETTINGS.leadMinutes,
         lateAfterMinutes: setting ? setting.late_after_minutes : DEFAULT_SETTINGS.lateAfterMinutes,
@@ -323,7 +328,6 @@ export class TimetableService {
     const data = {
       cycle_length: cycleLength,
       cycle_start_date: cycleLength !== null && cycleStart ? toDbDate(cycleStart) : null,
-      ...(dto.schoolDays ? { school_days: [...dto.schoolDays].sort() } : {}),
       ...(dto.autoSessions !== undefined ? { auto_sessions: dto.autoSessions } : {}),
       ...(dto.leadMinutes !== undefined ? { lead_minutes: dto.leadMinutes } : {}),
       ...(dto.lateAfterMinutes !== undefined ? { late_after_minutes: dto.lateAfterMinutes } : {}),
@@ -331,10 +335,18 @@ export class TimetableService {
       updated_by: userId,
       updated_at: new Date(),
     };
-    await this.prisma.timetable_setting.upsert({
-      where: { school_id: schoolId },
-      create: { school_id: schoolId, ...data },
-      update: data,
+    await this.prisma.$transaction(async (tx) => {
+      await tx.timetable_setting.upsert({
+        where: { school_id: schoolId },
+        create: { school_id: schoolId, ...data },
+        update: data,
+      });
+      if (dto.schoolDays !== undefined) {
+        await tx.timetable_school_day.deleteMany({ where: { school_id: schoolId } });
+        await tx.timetable_school_day.createMany({
+          data: [...dto.schoolDays].sort().map((weekday) => ({ school_id: schoolId, weekday })),
+        });
+      }
     });
     return (await this.context(schoolId)).settings;
   }

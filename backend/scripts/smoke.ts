@@ -31,6 +31,10 @@ function check(label: string, ok: boolean, detail?: unknown) {
   }
 }
 
+function hasIdListValue(value: unknown, id: string): boolean {
+  return Array.isArray(value) && value.includes(id);
+}
+
 type Call = (method: string, path: string, body?: unknown) => Promise<{ status: number; data: any; headers: Headers }>;
 
 async function login(email: string): Promise<Call> {
@@ -650,9 +654,10 @@ async function erasureChecks(teacher: Call, ta: Call) {
 
   check('erasure: delete the file', (await teacher('DELETE', `/files/${fileId}`)).status === 200);
   check('erasure: delete the chat message', (await teacher('DELETE', `/chat/messages/${msgId}`)).status === 200);
-  const logged = await db.erasure_log.findMany({ where: { occurred_at: { gte: since }, subject_ids: { hasSome: [fileId, msgId] } }, orderBy: { occurred_at: 'asc' } });
-  const fileEntry = logged.find((e) => e.kind === 'file' && e.subject_ids.includes(fileId));
-  const msgEntry = logged.find((e) => e.kind === 'chat_message' && e.subject_ids.includes(msgId));
+  const loggedRows = await db.erasure_log.findMany({ where: { occurred_at: { gte: since } }, orderBy: { occurred_at: 'asc' } });
+  const logged = loggedRows.filter((e) => hasIdListValue(e.subject_ids, fileId) || hasIdListValue(e.subject_ids, msgId));
+  const fileEntry = logged.find((e) => e.kind === 'file' && hasIdListValue(e.subject_ids, fileId));
+  const msgEntry = logged.find((e) => e.kind === 'chat_message' && hasIdListValue(e.subject_ids, msgId));
   check('erasure: file delete logged (user_request, by the teacher)', fileEntry?.reason === 'user_request' && fileEntry.actor === teacherId && fileEntry.school_id === fileBefore.school_id, fileEntry);
   check('erasure: chat delete logged', msgEntry?.reason === 'user_request' && msgEntry.actor === teacherId, msgEntry);
   check('erasure: log holds no personal data', !JSON.stringify(logged).includes('smoke-erasure') && !JSON.stringify(logged).includes('smoke erasure message'), logged);
@@ -665,7 +670,8 @@ async function erasureChecks(teacher: Call, ta: Call) {
   const storage = new StorageService();
   const key = `${fileBefore.bucket}/${fileBefore.storage_path}`;
   check('purge removed the stored object', (await storage.exists(key)) === null, key);
-  const purgeEntries = await db.erasure_log.findMany({ where: { reason: 'retention_purge', occurred_at: { gte: since }, subject_ids: { hasSome: [fileId, msgId] } } });
+  const purgeRows = await db.erasure_log.findMany({ where: { reason: 'retention_purge', occurred_at: { gte: since } } });
+  const purgeEntries = purgeRows.filter((e) => hasIdListValue(e.subject_ids, fileId) || hasIdListValue(e.subject_ids, msgId));
   check('purge logged as retention_purge', purgeEntries.length === 2 && purgeEntries.every((e) => e.actor === 'system'), purgeEntries);
 
   // Simulated restore of a backup taken before the deletes: the rows come

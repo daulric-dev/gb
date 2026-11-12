@@ -498,7 +498,7 @@ export class RosterRunService {
         schoolId: r.school_id,
         label: r.label,
         diff: r.diff,
-        errors: r.errors,
+        errors: jsonStringList(r.errors),
         status: r.status,
         applyError: r.apply_error,
         appliedAt: r.applied_at?.toISOString() ?? null,
@@ -517,11 +517,15 @@ export class RosterRunService {
     const lines = [['entity', 'action', 'source_id', 'record', 'status', 'error'].join(',')];
     for (const r of rows) {
       lines.push(
-        [r.entity, r.action, r.sourced_id, r.label, r.status, [...r.errors, r.apply_error].filter(Boolean).join('; ')]
+        [r.entity, r.action, r.sourced_id, r.label, r.status, [...jsonStringList(r.errors), r.apply_error].filter(Boolean).join('; ')]
           .map(csvCell)
           .join(','),
       );
     }
     return `${lines.join('\r\n')}\r\n`;
   }
+}
+
+function jsonStringList(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

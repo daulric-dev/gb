@@ -131,7 +131,7 @@ function itemRow(over: Record<string, any> = {}) {
     description: null,
     subject: 'Biology',
     grade_level: '9',
-    tags: ['cells'],
+    tags: [{ tag: 'cells' }],
     visibility: 'school',
     latest_version: 1,
     created_by: AUTHOR,
@@ -157,7 +157,13 @@ describe('publishing', () => {
     await library.publish(AUTHOR, { sourceCourseId: SOURCE, title: ' Cells unit ', tags: ['Cells', 'cells'] });
 
     const item = prisma.library_item.create.mock.calls[0][0].data;
-    expect(item).toMatchObject({ school_id: SCHOOL_A, title: 'Cells unit', tags: ['cells'], visibility: 'school', latest_version: 1 });
+    expect(item).toMatchObject({
+      school_id: SCHOOL_A,
+      title: 'Cells unit',
+      tags: { create: [{ tag: 'cells' }] },
+      visibility: 'school',
+      latest_version: 1,
+    });
     const version = prisma.library_item_version.create.mock.calls[0][0].data;
     expect(version.version).toBe(1);
     const [file] = version.content.files;

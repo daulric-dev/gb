@@ -14,7 +14,7 @@ import { basename } from 'node:path';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
-import { isUniqueViolation, pgCode, raisedMessage } from '@/common/db-values';
+import { isUniqueViolation } from '@/common/db-values';
 import { roundScore, scoreOrNull } from './round';
 import { FileManagerService } from '@/file-manager/file-manager.service';
 import {
@@ -49,12 +49,13 @@ import {
   fileTypeAllowed,
   isManualKind,
   questionCredit,
+  stringList,
   toSavedAnswer,
   toStudentQuestion,
   type AnswerInput,
   type AnswerRow,
 } from './quiz-questions';
-import { rescoreQuizFromAnswers } from './quiz-rescore';
+import { rescoreQuizFromAnswers, scoreQuizSubmission } from './quiz-rescore';
 import { CacheService } from '@/cache/cache.service';
 import {
   accommodatedTimeLimit,
@@ -151,10 +152,10 @@ const STUDENT_OPTION_SELECT = {
   sort_order: true,
 } satisfies Prisma.quiz_optionSelect;
 
-/** grading.submit_quiz's row, with the final score and status after it. */
+/** The scored quiz row, with its final late-adjusted score and status. */
 type QuizScoredRow = {
-  score: Prisma.Decimal | null;
-  points: Prisma.Decimal | null;
+  score: Prisma.Decimal | number | null;
+  points: Prisma.Decimal | number | null;
   attempts_used: number | null;
   status: 'draft' | 'submitted' | 'graded';
 };
@@ -859,7 +860,9 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       select: { question_id: true, position: true, option_order: true },
       orderBy: { position: 'asc' },
     });
-    return rows?.length ? rows : null;
+    return rows.length
+      ? rows.map((row) => ({ ...row, option_order: stringList(row.option_order) }))
+      : null;
   }
 
   /**
@@ -1370,7 +1373,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * After grading.submit_quiz scored an attempt (score = raw_score, before
+   * After the shared TypeScript scorer scored an attempt (score = raw_score, before
    * any late penalty): apply the late policy, and return the row with the
    * final score and whether it waits for the teacher.
    */
@@ -1380,8 +1383,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     studentId: string,
     submissionId: string,
     scored: {
-      score: Prisma.Decimal | null;
-      points: Prisma.Decimal | null;
+      score: Prisma.Decimal | number | null;
+      points: Prisma.Decimal | number | null;
       attempts_used: number | null;
     }[],
   ): Promise<QuizScoredRow[]> {
@@ -1450,37 +1453,34 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     dueAt: Date | null = null,
   ) {
     const completed = await this.prisma.$transaction(async (tx) => {
-      const [locked] = await tx.$queryRaw<
-        {
-          quiz_started_at: Date | null;
-          quiz_expires_at: Date | null;
-          expired: boolean;
-        }[]
-      >`
-        select quiz_started_at, quiz_expires_at,
-               quiz_expires_at is not null and quiz_expires_at <= now() as expired
-        from grading.submission
-        where id = ${submissionId}::uuid
-        for update
-      `;
+      const locked = await tx.submission.findUnique({
+        where: { id: submissionId },
+        select: { quiz_started_at: true, quiz_expires_at: true, attempt_count: true },
+      });
       if (!locked?.quiz_started_at) return null;
       // Ended by its time limit, or (no expiry) by the due date.
-      const ended =
-        locked.expired ||
-        (!locked.quiz_expires_at && isPastDue(dueAt));
+      const ended = locked.quiz_expires_at
+        ? locked.quiz_expires_at <= new Date()
+        : isPastDue(dueAt);
       if (!ended) return null;
-      const scored = await tx.$queryRaw<
-        {
-          score: Prisma.Decimal | null;
-          points: Prisma.Decimal | null;
-          attempts_used: number | null;
-        }[]
-      >`
-        select * from grading.submit_quiz(
-          ${submissionId}::uuid,
-          ${studentId}::uuid
-        )
-      `;
+      const claimed = await tx.submission.updateMany({
+        where: {
+          id: submissionId,
+          quiz_started_at: locked.quiz_started_at,
+          attempt_count: locked.attempt_count,
+        },
+        data: {
+          quiz_started_at: null,
+          quiz_expires_at: null,
+          attempt_count: { increment: 1 },
+        },
+      });
+      if (claimed.count !== 1) return null;
+      const scoredRow = await scoreQuizSubmission(tx, submissionId, undefined, {
+        startedAt: locked.quiz_started_at,
+        attemptsUsed: locked.attempt_count + 1,
+      });
+      const scored = scoredRow ? [scoredRow] : [];
       const [row] = await this.afterQuizScored(
         tx,
         activityId,
@@ -1505,26 +1505,22 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     this.sweepingQuizAttempts = true;
     try {
       const completed = await this.prisma.$transaction(async (tx) => {
-        const expired = await tx.$queryRaw<
-          {
-            id: string;
-            student_id: string;
-            activity_id: string;
-            course_id: string;
-            title: string;
-            kind: string;
-            points: Prisma.Decimal;
-          }[]
-        >`
-          select s.id, s.student_id, a.id as activity_id, a.course_id,
-                 a.title, a.kind, a.points
-          from grading.submission s
-          join grading.activity a on a.id = s.activity_id
-          where s.quiz_expires_at <= now()
-          order by s.quiz_expires_at
-          limit 50
-          for update of s skip locked
-        `;
+        const expired = await tx.submission.findMany({
+          where: { quiz_expires_at: { lte: new Date() }, quiz_started_at: { not: null } },
+          orderBy: { quiz_expires_at: 'asc' },
+          take: 50,
+          select: {
+            id: true,
+            student_id: true,
+            activity_id: true,
+            attempt_count: true,
+            quiz_started_at: true,
+            quiz_expires_at: true,
+            activity: {
+              select: { id: true, course_id: true, title: true, kind: true, points: true },
+            },
+          },
+        });
         const rows: {
           submissionId: string;
           studentId: string;
@@ -1538,18 +1534,26 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
           result: QuizScoredRow;
         }[] = [];
         for (const attempt of expired) {
-          const scored = await tx.$queryRaw<
-            {
-              score: Prisma.Decimal | null;
-              points: Prisma.Decimal | null;
-              attempts_used: number | null;
-            }[]
-          >`
-            select * from grading.submit_quiz(
-              ${attempt.id}::uuid,
-              ${attempt.student_id}::uuid
-            )
-          `;
+          if (!attempt.quiz_started_at || !attempt.quiz_expires_at) continue;
+          const claimed = await tx.submission.updateMany({
+            where: {
+              id: attempt.id,
+              quiz_started_at: attempt.quiz_started_at,
+              quiz_expires_at: attempt.quiz_expires_at,
+              attempt_count: attempt.attempt_count,
+            },
+            data: {
+              quiz_started_at: null,
+              quiz_expires_at: null,
+              attempt_count: { increment: 1 },
+            },
+          });
+          if (claimed.count !== 1) continue;
+          const scoredRow = await scoreQuizSubmission(tx, attempt.id, undefined, {
+            startedAt: attempt.quiz_started_at,
+            attemptsUsed: attempt.attempt_count + 1,
+          });
+          const scored = scoredRow ? [scoredRow] : [];
           const [result] = await this.afterQuizScored(
             tx,
             attempt.activity_id,
@@ -1562,11 +1566,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
               submissionId: attempt.id,
               studentId: attempt.student_id,
               activity: {
-                id: attempt.activity_id,
-                course_id: attempt.course_id,
-                title: attempt.title,
-                kind: attempt.kind,
-                points: attempt.points,
+                id: attempt.activity.id,
+                course_id: attempt.activity.course_id,
+                title: attempt.activity.title,
+                kind: attempt.activity.kind,
+                points: attempt.activity.points,
               },
               result,
             });
@@ -1718,9 +1722,10 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       activityId,
       questionId,
     );
-    if (!fileTypeAllowed(question.file_types ?? [], input)) {
+    const acceptedTypes = stringList(question.file_types);
+    if (!fileTypeAllowed(acceptedTypes, input)) {
       throw new BadRequestException(
-        `This question accepts ${question.file_types.join(', ')}`,
+        `This question accepts ${acceptedTypes.join(', ')}`,
       );
     }
     if (question.file_max_mb && input.sizeBytes > question.file_max_mb * 1024 * 1024) {
@@ -1750,13 +1755,13 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     const owner = await this.userIdForStudent(studentId);
     const file = await this.files.finaliseSubmissionUpload(owner, fileId);
     if (
-      !fileTypeAllowed(question.file_types ?? [], {
+      !fileTypeAllowed(stringList(question.file_types), {
         name: file.name,
         contentType: (file as { contentType?: string }).contentType ?? '',
       })
     ) {
       throw new BadRequestException(
-        `This question accepts ${question.file_types.join(', ')}`,
+        `This question accepts ${stringList(question.file_types).join(', ')}`,
       );
     }
     return { fileId: file.id, name: file.name };
@@ -2102,8 +2107,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Answer and submit a quiz. Scoring and marking happen inside submit_quiz,
-   * which writes the score onto the submission - the one place a mark lives.
+   * Answer and submit a quiz. The answers and shared TypeScript score commit
+   * together, with a conditional update claiming the attempt exactly once.
    */
   async submitQuiz(
     studentId: string,
@@ -2131,26 +2136,18 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     }
     let rows: QuizScoredRow[];
     try {
-      // The answers and the score that is worked out from them commit
-      // together or not at all. The row lock is taken first, so a second
-      // submit waits here and then sees the attempt this one used, and any
-      // refusal inside submit_quiz rolls the new answers back with it.
+      // The conditional write claims this attempt. A competing submit or
+      // expiry worker can claim only if the saved attempt state still matches.
       rows = await this.prisma.$transaction(async (tx) => {
-        const [locked] = await tx.$queryRaw<
-          {
-            attempt_count: number | null;
-            graded_by: string | null;
-            quiz_started_at: Date | null;
-            quiz_expires_at: Date | null;
-            expired: boolean;
-          }[]
-        >`
-          select attempt_count, graded_by, quiz_started_at, quiz_expires_at,
-                 quiz_expires_at is not null and quiz_expires_at <= now() as expired
-          from grading.submission
-          where id = ${draft.id}::uuid
-          for update
-        `;
+        const locked = await tx.submission.findUnique({
+          where: { id: draft.id },
+          select: {
+            attempt_count: true,
+            graded_by: true,
+            quiz_started_at: true,
+            quiz_expires_at: true,
+          },
+        });
         if (!locked) throw new NotFoundException('Activity not found');
         if (locked.graded_by) {
           throw new BadRequestException(
@@ -2159,7 +2156,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         }
         if (
           activity.max_attempts !== null &&
-          (locked.attempt_count ?? 0) >= activity.max_attempts
+          locked.attempt_count >= activity.max_attempts
         ) {
           throw new ConflictException('You have no attempts left');
         }
@@ -2177,11 +2174,35 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         // from the client after the deadline must not extend the attempt.
         // The due date is checked here, under the row lock, so it cannot
         // race a save: an attempt with no expiry (one from before due dates
-        // were enforced) ends at the due date. submit_quiz itself stays
-        // date-blind, because the expiry sweep calls it after the deadline.
-        const ended =
-          locked.expired ||
-          (!locked.quiz_expires_at && isPastDue(activity.effective_close_at));
+        // were enforced) ends at the due date.
+        const ended = locked.quiz_expires_at
+          ? locked.quiz_expires_at <= new Date()
+          : isPastDue(activity.effective_close_at);
+        const claimed = await tx.submission.updateMany({
+          where: {
+            id: draft.id,
+            attempt_count: locked.attempt_count,
+            quiz_started_at: locked.quiz_started_at,
+            graded_by: null,
+          },
+          data: {
+            attempt_count: { increment: 1 },
+            quiz_started_at: null,
+            quiz_expires_at: null,
+          },
+        });
+        if (claimed.count !== 1) {
+          const latest = await tx.submission.findUnique({
+            where: { id: draft.id },
+            select: { graded_by: true },
+          });
+          if (latest?.graded_by) {
+            throw new BadRequestException(
+              'Your teacher has marked this quiz, so it cannot be retaken',
+            );
+          }
+          throw new ConflictException('This quiz attempt has already ended');
+        }
         if (!ended) {
           const accepted = await this.validQuizAnswers(
             tx,
@@ -2202,34 +2223,15 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
           }
         }
 
-        const scored = await tx.$queryRaw<
-          {
-            score: Prisma.Decimal | null;
-            points: Prisma.Decimal | null;
-            attempts_used: number | null;
-          }[]
-        >`
-          select * from grading.submit_quiz(${draft.id}::uuid, ${studentId}::uuid)
-        `;
+        const scoredRow = await scoreQuizSubmission(tx, draft.id, undefined, {
+          startedAt: locked.quiz_started_at,
+          attemptsUsed: locked.attempt_count + 1,
+        });
+        const scored = scoredRow ? [scoredRow] : [];
         return this.afterQuizScored(tx, activityId, studentId, draft.id, scored);
       });
     } catch (error) {
       if (error instanceof HttpException) throw error;
-      const detail = `${pgCode(error) ?? ''} ${raisedMessage(error)}`;
-      if (detail.includes('no_attempts_left')) {
-        throw new ConflictException('You have no attempts left');
-      }
-      if (detail.includes('already_marked')) {
-        throw new BadRequestException(
-          'Your teacher has marked this quiz, so it cannot be retaken',
-        );
-      }
-      if (detail.includes('activity_not_open')) {
-        throw new ConflictException('This quiz is closed');
-      }
-      if (detail.includes('quiz_attempt_not_started')) {
-        throw new ConflictException('Start the quiz before submitting');
-      }
       this.logger.error(`Quiz submission failed: ${(error as Error).message}`);
       throw new BadRequestException('Failed to submit quiz');
     }
@@ -2980,7 +2982,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         const stored = a
           ? {
               optionId: a.option_id,
-              optionIds: a.option_ids,
+              optionIds: stringList(a.option_ids),
               matches: (a.matches as Record<string, string> | null) ?? null,
               text: a.text_answer,
               numeric: a.numeric_answer === null ? null : Number(a.numeric_answer),
@@ -3121,11 +3123,10 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         create: { submission_id: submission.id, question_id: questionId, ...fields },
         update: fields,
       });
-      const [locked] = await tx.$queryRaw<{ points: Prisma.Decimal }[]>`
-        select points from grading.activity
-        where id = ${activityId}::uuid
-        for share
-      `;
+      const locked = await tx.activity.findUnique({
+        where: { id: activityId },
+        select: { points: true },
+      });
       await rescoreQuizFromAnswers(
         tx,
         activityId,

@@ -47,6 +47,31 @@ export function prefsFromRow(
   return { push: map(row?.push_off), email: map(row?.email_off) };
 }
 
+export interface NotificationOptOutRow {
+  channel: string;
+  category: string;
+}
+
+/** Reconstruct the API's channel lists from portable opt-out rows. */
+export function offListsFromRows(rows: readonly NotificationOptOutRow[]): {
+  push_off: string[];
+  email_off: string[];
+} {
+  const push = new Set(rows.filter((row) => row.channel === 'push' && isNotificationCategory(row.category)).map((row) => row.category));
+  const email = new Set(rows.filter((row) => row.channel === 'email' && isNotificationCategory(row.category)).map((row) => row.category));
+  return {
+    push_off: NOTIFICATION_CATEGORIES.filter((category) => push.has(category)),
+    email_off: NOTIFICATION_CATEGORIES.filter((category) => email.has(category)),
+  };
+}
+
+export function optOutRowsFromLists(push: readonly string[], email: readonly string[]) {
+  return [
+    ...push.filter(isNotificationCategory).map((category) => ({ channel: 'push', category })),
+    ...email.filter(isNotificationCategory).map((category) => ({ channel: 'email', category })),
+  ];
+}
+
 /** Apply a partial on/off change to stored "off" lists. */
 export function mergeOff(
   current: string[] | undefined,
@@ -72,9 +97,8 @@ export async function optedOut(
   channel: NotificationChannel,
 ): Promise<Set<string>> {
   if (userIds.length === 0) return new Set();
-  const column = channel === 'push' ? 'push_off' : 'email_off';
-  const rows = await prisma.notification_preference.findMany({
-    where: { user_profile_id: { in: userIds }, [column]: { has: category } },
+  const rows = await prisma.notification_preference_opt_out.findMany({
+    where: { user_profile_id: { in: userIds }, channel, category },
     select: { user_profile_id: true },
   });
   return new Set(rows.map((r) => r.user_profile_id));

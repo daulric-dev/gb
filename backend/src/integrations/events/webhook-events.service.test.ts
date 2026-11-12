@@ -30,7 +30,7 @@ describe('WebhookEvents.emit', () => {
     expect(prisma.school_webhook.findMany.mock.calls[0][0].where).toEqual({
       school_id: SCHOOL,
       enabled: true,
-      events: { has: 'course.created' },
+      event_subscriptions: { some: { event_type: 'course.created' } },
     });
     const rows = prisma.webhook_delivery.createManyAndReturn.mock.calls[0][0].data;
     expect(rows.map((r: any) => r.webhook_id)).toEqual(['h-1', 'h-2']);

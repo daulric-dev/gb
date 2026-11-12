@@ -108,7 +108,7 @@ model roster_change {
   label      String
   diff       Json       @default("{}")
   data       Json       @default("{}")
-  errors     String[]   @default([])
+  errors     Json       @default("[]")
   status     String     @default("pending")
   apply_error String?
   applied_at DateTime?  @db.Timestamptz(6)

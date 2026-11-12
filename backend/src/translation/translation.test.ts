@@ -364,7 +364,7 @@ describe('feature switch', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL, account_type: 'staff' });
-    prisma.school.findUnique.mockResolvedValue({ disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [] });
     prisma.translation_setting.findUnique.mockResolvedValue(settingsRow());
   });
 
@@ -381,7 +381,7 @@ describe('feature switch', () => {
 
   test('switched off by the school => off', async () => {
     prisma.organisation.findFirst.mockResolvedValue({ features: { translation: true } });
-    prisma.school.findUnique.mockResolvedValue({ disabled_features: ['translation'] });
+    prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [{ feature: 'translation' }] } as any);
     const { service } = makeService(prisma);
     expect(await service.status(USER)).toEqual({ enabled: false, engine: null });
   });
@@ -496,7 +496,7 @@ describe('uncontracted engines (Google, Yandex)', () => {
     prisma = createMockPrisma();
     saved = settingsRow();
     prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL, account_type: 'staff' });
-    prisma.school.findUnique.mockResolvedValue({ disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [] });
     prisma.organisation.findFirst.mockResolvedValue({ features: { translation: true } });
     prisma.translation_setting.findUnique.mockImplementation(async () => saved);
     prisma.translation_setting.upsert.mockImplementation(async ({ create, update }: any) => {

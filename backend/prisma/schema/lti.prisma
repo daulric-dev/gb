@@ -28,7 +28,6 @@ model lti_tool {
   client_id       String              @unique(map: "lti_tool_client_id_key")
   login_url       String
   target_link_uri String
-  redirect_uris   String[]
   jwks_url        String?
   public_key_pem  String?
   ags_enabled     Boolean             @default(false)
@@ -45,7 +44,18 @@ model lti_tool {
   subjects        lti_subject[]
   launches        lti_launch[]
   access_tokens   lti_access_token[]
+  redirect_uri_entries lti_tool_redirect_uri[]
 
+  @@schema("public")
+}
+
+/// A registered OIDC redirect URL for an external tool.
+model lti_tool_redirect_uri {
+  tool_id     String   @db.Uuid
+  redirect_uri String
+  tool        lti_tool @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tool_id, redirect_uri])
   @@schema("public")
 }
 
@@ -140,7 +150,7 @@ model lti_launch {
   resource_link_id String            @db.Uuid
   user_profile_id  String            @db.Uuid
   subject_id       String            @db.Uuid
-  roles            String[]
+  roles            Json
   expires_at       DateTime          @db.Timestamptz(6)
   used_at          DateTime?         @db.Timestamptz(6)
   created_at       DateTime          @default(now()) @db.Timestamptz(6)
@@ -171,7 +181,7 @@ model lti_replay {
 model lti_access_token {
   token_hash String   @id
   tool_id    String   @db.Uuid
-  scopes     String[]
+  scopes     Json
   expires_at DateTime @db.Timestamptz(6)
   created_at DateTime @default(now()) @db.Timestamptz(6)
   tool       lti_tool @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)

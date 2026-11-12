@@ -22,7 +22,7 @@ Mastery / standards-based grading: learning outcomes, a school proficiency scale
 | --- | --- |
 | Teacher mark (`grade()`, `gradeSubmission()`), late-penalty waiver, essay/file question marking | `SubmissionService.withLateness()` |
 | **LTI score passback** | `LtiAgsService` calls `SubmissionService.grade()`, so it is covered above |
-| Quiz submit and expiry (`grading.submit_quiz`) | `SubmissionService.afterQuizScored()` |
+| Quiz submit and expiry (shared TypeScript scoring) | `SubmissionService.afterQuizScored()` |
 | Excuse / un-excuse | `SubmissionService.excuse()` |
 | Rubric marking | `RubricService.assess()`, **after** the criterion marks are rewritten |
 | Gradebook CSV import | `GradebookImportService.apply()`: right after the batch transaction (a failure is logged, never undoes the import) |
@@ -34,7 +34,7 @@ Rules:
 - Only `graded`, **not excused** submissions are evidence; anything else has its evidence removed.
 - **Whole activity:** the mark before any late penalty (`raw_score`, else `score` for imported or old marks) over the activity's points.
 - **Rubric row:** the assessment of that criterion: the chosen rating's rank among the criterion's ratings (lowest points first, ties by position) and its points over the criterion's points. Bare points (no rating) use the ratio.
-- **Quiz question:** the question's credit 0..1 (`questionCredit()` from `src/grading/quiz-questions.ts`, the same rules as `submit_quiz`), only for questions the student's attempt was given (`quiz_attempt_question`; older attempts: the quiz's own questions). An essay or file question still waiting for its mark is skipped.
+- **Quiz question:** the question's credit 0..1 (`questionCredit()` from `src/grading/quiz-questions.ts`), only for questions the student's attempt was given (`quiz_attempt_question`; older attempts: the quiz's own questions). An essay or file question still waiting for its mark is skipped.
 - `assessed_at` is `graded_at`, else `submitted_at`, else `updated_at`, so a re-mark moves the evidence to "now".
 - **Late penalties never affect evidence**: mastery measures learning, not punctuality. The points gradebook still applies them.
 - Removing an alignment removes the evidence it produced (cascade). Deleting a rubric removes its criteria, their alignments and evidence; scores stay on submissions as before.

@@ -29,11 +29,19 @@ export function num(
 
 /** Error code helpers for the Prisma equivalents of the old Postgres codes. */
 export function isUniqueViolation(err: unknown): boolean {
-  return prismaCode(err) === 'P2002' || pgCode(err) === '23505';
+  const code = providerCode(err);
+  return prismaCode(err) === 'P2002' || ['23505', 'ER_DUP_ENTRY', '1062', '2601', '2627', 'SQLITE_CONSTRAINT_UNIQUE', 'SQLITE_CONSTRAINT_PRIMARYKEY', '2067', '1555'].includes(code ?? '');
 }
 
 export function isForeignKeyViolation(err: unknown): boolean {
-  return prismaCode(err) === 'P2003' || pgCode(err) === '23503';
+  const code = providerCode(err);
+  return prismaCode(err) === 'P2003' || ['23503', 'ER_NO_REFERENCED_ROW_2', '1452', '547', 'SQLITE_CONSTRAINT_FOREIGNKEY', '787'].includes(code ?? '');
+}
+
+/** A NOT NULL constraint rejected an insert or update. */
+export function isNotNullViolation(err: unknown): boolean {
+  const code = providerCode(err);
+  return prismaCode(err) === 'P2011' || ['23502', 'ER_BAD_NULL_ERROR', '1048', '515', 'SQLITE_CONSTRAINT_NOTNULL', '1299'].includes(code ?? '');
 }
 
 /** Update/delete of a row that does not exist. */
@@ -43,6 +51,22 @@ export function isNotFound(err: unknown): boolean {
 
 function prismaCode(err: unknown): string | undefined {
   return err instanceof Prisma.PrismaClientKnownRequestError ? err.code : undefined;
+}
+
+/** Database codes exposed by Prisma's adapters; kept separate from PG SQLSTATEs. */
+function providerCode(err: unknown): string | undefined {
+  if (!isRecord(err)) return undefined;
+  const meta = isRecord(err.meta) ? err.meta : undefined;
+  const adapter = meta && isRecord(meta.driverAdapterError) ? meta.driverAdapterError : undefined;
+  const adapterCause = adapter && isRecord(adapter.cause) ? adapter.cause : undefined;
+  const cause = isRecord(err.cause) ? err.cause : undefined;
+  const candidates = [meta?.code, adapter?.code, adapterCause?.originalCode, adapterCause?.code, cause?.code, err.code];
+  const code = candidates.find((candidate) => typeof candidate === 'string' || typeof candidate === 'number');
+  return code?.toString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
 }
 
 /**

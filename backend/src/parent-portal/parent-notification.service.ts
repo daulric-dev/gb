@@ -81,11 +81,12 @@ export class ParentNotificationService {
   async getPrefs(userId: string) {
     const row = await this.prisma.parent_notification_pref.findUnique({
       where: { user_profile_id: userId },
+      include: { kind_preferences: { select: { kind: true }, orderBy: { kind: 'asc' } } },
     });
     return {
       emailEnabled: row?.email_enabled ?? false,
       pushEnabled: row?.push_enabled ?? false,
-      kinds: (row?.kinds ?? [...NOTICE_KINDS]).filter((k): k is NoticeKind =>
+      kinds: (row?.kind_preferences.map(({ kind }) => kind) ?? [...NOTICE_KINDS]).filter((k): k is NoticeKind =>
         (NOTICE_KINDS as readonly string[]).includes(k),
       ),
     };
@@ -95,13 +96,26 @@ export class ParentNotificationService {
     const data = {
       ...(dto.emailEnabled !== undefined ? { email_enabled: dto.emailEnabled } : {}),
       ...(dto.pushEnabled !== undefined ? { push_enabled: dto.pushEnabled } : {}),
-      ...(dto.kinds !== undefined ? { kinds: [...new Set(dto.kinds)] } : {}),
       updated_at: new Date(),
     };
-    await this.prisma.parent_notification_pref.upsert({
-      where: { user_profile_id: userId },
-      create: { user_profile_id: userId, ...data },
-      update: data,
+    await this.prisma.$transaction(async (tx) => {
+      await tx.parent_notification_pref.upsert({
+        where: { user_profile_id: userId },
+        create: {
+          user_profile_id: userId,
+          ...data,
+          kind_preferences: {
+            create: (dto.kinds === undefined ? NOTICE_KINDS : [...new Set(dto.kinds)]).map((kind) => ({ kind })),
+          },
+        },
+        update: data,
+      });
+      if (dto.kinds !== undefined) {
+        await tx.parent_notification_kind.deleteMany({ where: { user_profile_id: userId } });
+        await tx.parent_notification_kind.createMany({
+          data: [...new Set(dto.kinds)].map((kind) => ({ user_profile_id: userId, kind })),
+        });
+      }
     });
     return this.getPrefs(userId);
   }
@@ -129,12 +143,23 @@ export class ParentNotificationService {
 
   /** The notices due now, before deduplication. Reads only. */
   async collect(now: Date): Promise<Notice[]> {
-    const prefs: Pref[] = await this.prisma.parent_notification_pref.findMany({
+    const prefs = await this.prisma.parent_notification_pref.findMany({
       where: { OR: [{ email_enabled: true }, { push_enabled: true }] },
-      select: { user_profile_id: true, email_enabled: true, push_enabled: true, kinds: true },
+      select: {
+        user_profile_id: true,
+        email_enabled: true,
+        push_enabled: true,
+        kind_preferences: { select: { kind: true } },
+      },
     });
-    if (prefs.length === 0) return [];
-    const prefOf = new Map(prefs.map((p) => [p.user_profile_id, p]));
+    const parents: Pref[] = prefs.map((row) => ({
+      user_profile_id: row.user_profile_id,
+      email_enabled: row.email_enabled,
+      push_enabled: row.push_enabled,
+      kinds: row.kind_preferences.map(({ kind }) => kind),
+    }));
+    if (parents.length === 0) return [];
+    const prefOf = new Map(parents.map((p) => [p.user_profile_id, p]));
 
     const children = await this.childrenOf([...prefOf.keys()]);
     if (children.length === 0) return [];
@@ -347,17 +372,25 @@ export class ParentNotificationService {
   private async deliver(notices: Notice[]) {
     if (notices.length === 0) return;
     const parentIds = [...new Set(notices.map((n) => n.parentId))];
-    const [prefs, profiles] = await Promise.all([
+    const [prefRows, profiles] = await Promise.all([
       this.prisma.parent_notification_pref.findMany({
         where: { user_profile_id: { in: parentIds } },
-        select: { user_profile_id: true, email_enabled: true, push_enabled: true, kinds: true },
+        select: {
+          user_profile_id: true,
+          email_enabled: true,
+          push_enabled: true,
+          kind_preferences: { select: { kind: true } },
+        },
       }),
       this.prisma.user_profile.findMany({
         where: { id: { in: parentIds }, account_type: 'parent', is_active: { not: false } },
         select: { id: true, email: true },
       }),
     ]);
-    const prefOf = new Map(prefs.map((p) => [p.user_profile_id, p]));
+    const prefOf = new Map(prefRows.map((p) => [p.user_profile_id, {
+      ...p,
+      kinds: p.kind_preferences.map(({ kind }) => kind),
+    }]));
     const emailOf = new Map(profiles.map((p) => [p.id, p.email]));
     const pushAllowed = await this.pushAllowedBySchool(notices);
     const url = `${primaryOrigin()}/parent`;

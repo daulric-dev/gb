@@ -21,6 +21,10 @@ export interface ErasureInput {
   replay: ReplayPlan;
 }
 
+function stringList(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 /** An entry as exported and as read back for replay. */
 export interface ErasureEntry {
   v: 1;
@@ -41,7 +45,7 @@ type Row = {
   occurred_at: Date;
   kind: string;
   subject_table: string;
-  subject_ids: string[];
+  subject_ids: Prisma.JsonValue;
   school_id: string | null;
   actor: string;
   reason: string;
@@ -95,7 +99,7 @@ export function toEntry(row: Row): ErasureEntry {
     occurred_at: row.occurred_at.toISOString(),
     kind: row.kind,
     subject_table: row.subject_table,
-    subject_ids: row.subject_ids,
+    subject_ids: stringList(row.subject_ids),
     school_id: row.school_id,
     actor: row.actor,
     reason: row.reason,
