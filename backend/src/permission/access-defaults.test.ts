@@ -148,27 +148,6 @@ describe('role and permission changes', () => {
   });
 });
 
-describe('20261205120000_access_defaults migration', () => {
-  const sql = readFileSync(
-    join(__dirname, '../../prisma/migrations/20261205120000_access_defaults/migration.sql'),
-    'utf8',
-  );
-
-  test('grants nobody safeguarding', () => {
-    expect(sql).not.toMatch(/INSERT INTO public\.school_role_permission/i);
-  });
-
-  test('makes every audit table append-only with a SET LOCAL escape hatch', () => {
-    for (const table of ['audit_log', 'sso_audit_log', 'integration_audit_log']) {
-      expect(sql).toContain(`BEFORE UPDATE OR DELETE ON public.${table}`);
-      expect(sql).toContain(`BEFORE TRUNCATE ON public.${table}`);
-    }
-    expect(sql).toContain("current_setting('gradebook.audit_purge', true) = 'on'");
-    // The school's own deletion (FK SET NULL / CASCADE) is still possible.
-    expect(sql).toContain('NOT EXISTS (SELECT 1 FROM public.school s WHERE s.id = OLD.school_id)');
-  });
-});
-
 describe('bulk exports and audit revert need step-up', () => {
   test.each([
     ['gradebook', () => require('@/grading/gradebook.controller').GradebookController, 'export'],

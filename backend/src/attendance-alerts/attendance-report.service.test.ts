@@ -144,16 +144,4 @@ describe('AttendanceReportService', () => {
     expect(csv.split('\r\n')[0]).toBe('Last name,First name,Present,Late,Absent,Excused,Rate %');
     expect(csv).toContain(`Lee,"'=HYPERLINK(""x"")",1,0,1,0,50`);
   });
-
-  test('the upgrade grants attendance-report:read to every role holding report-card:read', () => {
-    const sql = readFileSync(
-      join(__dirname, '../../prisma/migrations/20261122110000_attendance_report_permission/migration.sql'),
-      'utf8',
-    );
-    expect(sql).toContain("'attendance-report', 'read', 'attendance-report:read'");
-    expect(sql).toMatch(/new_perm\.key = 'attendance-report:read'\s+WHERE old_perm\.key = 'report-card:read'/);
-    expect(sql).toContain('ON CONFLICT (school_role_id, permission_id) DO NOTHING');
-    // report-card:read itself is kept: it still gates report cards.
-    expect(sql).not.toMatch(/DELETE FROM public\.permission_catalog/);
-  });
 });

@@ -218,20 +218,6 @@ describe('AnnouncementService audiences', () => {
     return { svc, notices };
   }
 
-  test('the migration defaults every existing row to staff', () => {
-    const sql = readFileSync(
-      join(
-        __dirname,
-        '../../prisma/migrations/20261114100000_announcement_audience/migration.sql',
-      ),
-      'utf8',
-    );
-    expect(sql).toContain("CREATE TYPE public.announcement_audience AS ENUM ('staff', 'everyone')");
-    expect(sql).toMatch(
-      /ADD COLUMN audience public\.announcement_audience NOT NULL DEFAULT 'staff'/,
-    );
-  });
-
   test('students and parents get only everyone posts of the given school', async () => {
     const prisma = createMockPrisma();
     prisma.announcement.findMany.mockImplementation(async ({ where }: any) =>

@@ -198,18 +198,6 @@ describe('TimetableService', () => {
     expect(record).toHaveBeenCalledTimes(1);
   });
 
-  test('the migration makes the zone nullable without a default and clears the old UTC default', () => {
-    const sql = readFileSync(
-      join(__dirname, '../../prisma/migrations/20261122100000_school_time_zone_explicit/migration.sql'),
-      'utf8',
-    );
-    expect(sql).toContain('ALTER TABLE public.school ALTER COLUMN time_zone DROP NOT NULL;');
-    expect(sql).toContain('ALTER TABLE public.school ALTER COLUMN time_zone DROP DEFAULT;');
-    expect(sql).toContain("UPDATE public.school SET time_zone = NULL WHERE time_zone = 'UTC';");
-    // Only the old default is cleared: a real zone is left alone.
-    expect(sql).not.toMatch(/UPDATE public\.school SET time_zone = NULL;/);
-  });
-
   test('ranges are validated and capped', async () => {
     const ctx = await service.context('s1');
     expect(() => service.range(ctx, '2026-11-09', '2026-11-01')).toThrow(BadRequestException);

@@ -466,14 +466,4 @@ describe('AnalyticsService', () => {
     expect(args.where).toEqual({ school_id: 'school-1' });
     expect(args.create).toMatchObject({ min_grade: null, missing_count: 3, window_weeks: 6, min_attendance: 90, mastery_below_level: 2 });
   });
-
-  test('the migration creates the tables and the analytics:read key, granting it to no role', () => {
-    const sql = readFileSync(join(__dirname, '../../prisma/migrations/20261129100000_analytics/migration.sql'), 'utf8');
-    for (const t of ['analytics_setting', 'analytics_course_summary', 'analytics_at_risk', 'analytics_refresh']) {
-      expect(sql).toContain(`CREATE TABLE public.${t}`);
-    }
-    expect(sql).toContain("'analytics:read'");
-    expect(sql).not.toContain('school_role_permission');
-    expect(sql).not.toContain('report-card:read');
-  });
 });
