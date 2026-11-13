@@ -28,6 +28,8 @@ import { FeatureDisabledException } from '@/features/feature-disabled.exception'
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { OrganisationAdminGuard } from '@/organisation/organisation-admin.guard';
 import { SessionService, sessionTokenVia } from '@/account/session.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { MfaService } from '@/mfa/mfa.service';
 import { LtiToolService } from './lti-tool.service';
 import { LtiLinkService } from './lti-link.service';
 import { LtiLaunchService } from './lti-launch.service';
@@ -205,6 +207,8 @@ export class LtiPublicController {
     private readonly launches: LtiLaunchService,
     private readonly tokens: LtiTokenService,
     private readonly sessions: SessionService,
+    private readonly prisma: PrismaService,
+    private readonly mfa: MfaService,
   ) {}
 
   @Get('jwks')
@@ -213,26 +217,47 @@ export class LtiPublicController {
     return this.keys.jwks();
   }
 
-  private async sessionUser(req: FastifyRequest): Promise<string | null> {
-    if (sessionTokenVia(req) !== 'cookie') return null;
+  /**
+   * The signed-in user behind this launch, held to the same checks as
+   * AuthGuard: a session of a deactivated account, or one limited to setting
+   * up an authenticator app (src/mfa), is `blocked` and the launch refused.
+   */
+  async sessionUser(req: FastifyRequest): Promise<{ userId: string | null; blocked: boolean }> {
+    if (sessionTokenVia(req) !== 'cookie') return { userId: null, blocked: false };
+    let session;
     try {
-      return (await this.sessions.resolve(req))?.userId ?? null;
+      session = await this.sessions.resolve(req);
     } catch {
-      return null;
+      return { userId: null, blocked: false };
+    }
+    if (!session) return { userId: null, blocked: false };
+    try {
+      const profile = await this.prisma.user_profile.findUnique({
+        where: { id: session.userId },
+        select: { is_active: true },
+      });
+      const blocked =
+        !profile || profile.is_active === false || !(await this.mfa.sessionUsable(session.userId, session.sessionId));
+      return { userId: session.userId, blocked };
+    } catch {
+      // Fail closed: the checks could not be made.
+      return { userId: session.userId, blocked: true };
     }
   }
 
   @Throttle({ 'auth-ip': { limit: 300, ttl: 60 * 60 * 1000 } })
   @Get('auth')
   async authGet(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Query() query: Record<string, unknown>) {
-    const page = await this.launches.authorize(query ?? {}, await this.sessionUser(req));
+    const { userId, blocked } = await this.sessionUser(req);
+    const page = await this.launches.authorize(query ?? {}, userId, blocked);
     return reply.code(page.status).headers(page.headers).send(page.body);
   }
 
   @Throttle({ 'auth-ip': { limit: 300, ttl: 60 * 60 * 1000 } })
   @Post('auth')
   async authPost(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: Record<string, unknown>) {
-    const page = await this.launches.authorize(body ?? {}, await this.sessionUser(req));
+    const { userId, blocked } = await this.sessionUser(req);
+    const page = await this.launches.authorize(body ?? {}, userId, blocked);
     return reply.code(page.status).headers(page.headers).send(page.body);
   }
 

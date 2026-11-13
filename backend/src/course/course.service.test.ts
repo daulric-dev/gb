@@ -432,6 +432,18 @@ describe('enrolment', () => {
     });
   });
 
+  test('a teacher can only enrol students already in their scope', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.student.findMany.mockResolvedValue([{ id: 's1' }]);
+    await service(prisma).enrollStudents(USER, COURSE, ['s1']);
+    const where = prisma.student.findMany.mock.calls[0][0].where;
+    expect(where.AND[0]).toMatchObject({ id: { in: ['s1'] } });
+    expect(where.AND[1].OR).toEqual([
+      { course_student: { some: { course: { school_id: expect.any(String), course_staff: { some: { user_profile_id: USER } } } } } },
+      { form_tutor_id: USER },
+    ]);
+  });
+
   test('a TA cannot enrol students', async () => {
     const prisma = db({ courseRole: 'ta' });
     expect(

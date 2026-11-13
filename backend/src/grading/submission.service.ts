@@ -2172,9 +2172,11 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
         // Once time expires only server-saved answers count. A last request
         // from the client after the deadline must not extend the attempt.
-        // The due date is checked here, under the row lock, so it cannot
-        // race a save: an attempt with no expiry (one from before due dates
-        // were enforced) ends at the due date.
+        // The due date is checked inside this transaction, and the attempt
+        // is claimed below by a conditional update on the state read here, so
+        // a competing save or expiry cannot slip in between: an attempt with
+        // no expiry (one from before due dates were enforced) ends at the
+        // due date.
         const ended = locked.quiz_expires_at
           ? locked.quiz_expires_at <= new Date()
           : isPastDue(activity.effective_close_at);

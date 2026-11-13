@@ -3,14 +3,15 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { RetentionService } from './retention.service';
 import { intervalHours, maxRunMs, retentionEnabled, runHourUtc } from './retention.config';
+import { withJobLease } from '@/common/job-lease';
 
 const TICK_MS = 15 * 60 * 1000;
 const FIRST_TICK_MS = 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Runs the retention purge on a timer in every API instance. A Postgres
- * advisory lock makes sure only one instance purges at a time. Every tick (15 min) also retries the erasure-log export,
+ * Runs the retention purge on a timer in every API instance. A `job_lease`
+ * claim makes sure only one instance purges at a time. Every tick (15 min) also retries the erasure-log export,
  * so an entry whose copy to object storage failed is not left behind.
  *
  * The purge is due once `RETENTION_PURGE_INTERVAL_HOURS` (default 24) have
@@ -58,18 +59,9 @@ export class RetentionScheduler implements OnModuleInit, OnModuleDestroy {
     return new Date(now).getUTCHours() === runHourUtc();
   }
 
-  /** A transaction-scoped advisory lock: one instance runs `work` at a time. */
+  /** A `job_lease` claim: one instance runs `work` at a time. */
   async withLock(name: string, work: () => Promise<void>): Promise<boolean> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-          SELECT pg_try_advisory_xact_lock(hashtext(${name})) AS locked`;
-        if (!rows?.[0]?.locked) return false;
-        await work();
-        return true;
-      },
-      { maxWait: 10_000, timeout: maxRunMs() + 5 * 60_000 },
-    );
+    return withJobLease(this.prisma, name, maxRunMs() + 5 * 60_000, work);
   }
 
   async tick(now = Date.now()): Promise<void> {

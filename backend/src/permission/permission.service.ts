@@ -26,6 +26,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
 import { isNotNullViolation, isUniqueViolation } from '@/common/db-values';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
+import { forgetMfaRequirement } from '@/mfa/mfa.policy';
 
 /** The role columns every role endpoint returns. */
 const ROLE_SELECT = {
@@ -331,8 +332,21 @@ export class PermissionService {
     roleId: string,
   ) {
     const schoolId = await this.requireAdminSchool(adminUserId);
-    await this.requireMembershipInSchool(membershipId, schoolId);
+    const membership = await this.requireMembershipInSchool(membershipId, schoolId);
     const role = await this.requireRoleInSchool(adminUserId, roleId);
+    // Keys never implied (safeguarding) this role grants: logged on their own.
+    const explicitKeys = (
+      (await this.prisma.school_role_permission.findMany({
+        where: {
+          school_role_id: role.id,
+          permission_catalog: { key: { in: [...EXPLICIT_ONLY_KEYS] } },
+        },
+        select: { permission_catalog: { select: { key: true } } },
+      })) ?? []
+    )
+      .map((g) => g.permission_catalog?.key)
+      .filter((k): k is string => !!k && EXPLICIT_ONLY_KEYS.has(k as PermissionKey))
+      .sort();
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -372,6 +386,23 @@ export class PermissionService {
               ),
             },
           );
+          if (explicitKeys.length > 0) {
+            await this.auditLog?.record(
+              tx,
+              schoolId,
+              { id: adminUserId },
+              {
+                entity: 'school_membership_restricted_permission',
+                entityId: membershipId,
+                action: 'update',
+                changes: {
+                  user_id: { before: null, after: membership.user_id },
+                  roles: { before: null, after: [role.name] },
+                  granted: { before: null, after: explicitKeys },
+                },
+              },
+            );
+          }
         }
       });
     } catch (err) {
@@ -380,6 +411,8 @@ export class PermissionService {
     }
 
     await this.invalidate();
+    // A role the organisation may require an authenticator app for (src/mfa).
+    await forgetMfaRequirement(this.cache, membership.user_id);
     return { assigned: true };
   }
 
@@ -442,6 +475,7 @@ export class PermissionService {
     // that school, or an admin of any school could grant admin elsewhere.
     await this.cache.delete(`profile:${membership.user_id}`);
     await this.invalidate();
+    await forgetMfaRequirement(this.cache, membership.user_id);
     const before = membership.role ?? null;
     if (before !== role) {
       void this.webhooks?.emit(schoolId, 'staff.role_changed', async () => ({

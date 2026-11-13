@@ -38,25 +38,25 @@ specific authorization system.
   generated UUIDs, partial indexes, and PostgreSQL-specific defaults.
 - `PrismaService` directly constructs `PrismaPg`; the dependency list includes
   only the PostgreSQL adapter.
-- Application code uses PostgreSQL raw SQL and locking in account setup,
-  student code redemption, chat unread counts, similarity, data export,
-  rostering, attendance alerts, and other schedulers. Peer-review scheduling
-  and allocation now use persisted Prisma leases.
-- The current raw SQL inventory includes `account/sensitive-text`, analytics,
-  attendance alerts, course-library imports, data export, discussion,
-  email-domain settings, erasure/replay, grading/rescore, integrations,
-  organisation setup, parent notifications, report generation,
-  retention, rostering, similarity, student join-code redemption, and timetable
-  scheduling. Tests that assert SQL strings also need replacement with
-  behavior-focused persistence tests.
+- Application code still uses PostgreSQL raw SQL and row locks in grading
+  (quiz attempt/answer locks, mark/points and rubric lock pairs), the
+  school retention closed-year query, erasure replay, and the audit purge
+  session setting. Schedulers, sensitive-text re-encryption, organisation
+  setup, chat, discussion, analytics, report resume, webhook claims, library
+  import, join-code redemption and email-domain joining no longer do (see
+  "Phase 4 progress" below for the per-item record).
+- Tests that assert SQL strings remain only for the items above (grading,
+  erasure replay, retention); converted areas have behaviour tests on the
+  Prisma mock.
 - The migration history is PostgreSQL SQL, including functions, triggers,
   extensions, JSONB-specific checks, and partial indexes. It cannot be replayed
   unchanged on another provider.
-- Database objects include quiz submission, chat unread counts, email-domain
-  school joining, student merge/join-code redemption and duplicate matching;
-  role seeding and student-leaver triggers; audit append-only triggers; and a
-  `pg_trgm` extension. Each must become shared application logic or a
-  documented provider implementation.
+- Database objects still in the PostgreSQL schema: the student `left_at`
+  trigger, the peer-review not-self trigger, the audit append-only triggers
+  and the `pg_trgm` extension/indexes. Quiz submission, chat unread counts,
+  email-domain joining, join-code redemption and school role seeding are
+  now TypeScript (functions dropped by migrations); student merge and
+  duplicate matching were dropped earlier.
 - Some database guarantees currently live only in SQL triggers/functions.
   Those guarantees need portable application implementations or explicitly
   equivalent per-provider database implementations.
@@ -66,37 +66,203 @@ specific authorization system.
 
 ### Runtime SQL inventory
 
-The first source scan found the following implementation areas. This list is
-deliberately by subsystem: the files in each area include production code and,
-in several cases, tests that currently encode PostgreSQL SQL rather than the
-behavior the SQL provides.
+Status after the phase 4 round of 2026-11-13. "Converted" means the code
+now uses Prisma queries/transactions only and has behaviour tests on the
+Prisma mock (`src/test/prisma-mock.ts`); it does **not** mean another
+provider has been tested.
 
-| Area | Current PostgreSQL dependency | Portability work |
+| Area | Former PostgreSQL dependency | Status |
 | --- | --- | --- |
-| Account sensitive text | `src/account/sensitive-text.ts` raw SQL batches and locks | Use Prisma updates/transactions; preserve bounded migration and encryption behavior. |
-| Analytics | `src/analytics/analytics.service.ts` SQL joins, casts, filtered counts | Use Prisma relation queries and aggregate in application code, or provider implementations behind a repository. |
-| Schedulers | analytics, attendance alerts, course library, data export, parent notices, reports, rostering, timetable | Replace advisory locks with a portable claim/lease abstraction and test multi-instance behavior. Peer review now uses `job_lease`. |
-| Chat and discussions | unread-count and topic-stat SQL | Replace with Prisma aggregates and relation queries; compare result semantics. |
-| Email-domain and organisation | raw SQL, provider-specific unique/error handling, setup advisory lock | Move invariants to Prisma transactions and portable constraints. |
-| Erasure and retention | dynamic SQL replay, PostgreSQL casts/array predicates, `set_config` trigger bypass | Replace with typed Prisma handlers; implement narrow audited purge operations without session variables. |
-| Grading | activity/rubric/submission raw queries and some explicit row locks | Move remaining transaction logic into Prisma; preserve race handling, deadlines, and atomicity. Quiz submit/rescore now use shared TypeScript scoring. |
-| Integrations | webhook delivery claim SQL and raw event lookups | Use conditional Prisma updates and stable ordering; test concurrent delivery workers. |
-| Peer review and similarity | peer review now uses persisted leases; similarity uses Prisma hash relations; other raw comparisons remain | Use portable serialization and query batches; verify database-size/performance limits. |
-| Student account | Postgres join-code redemption function and SQLSTATE-specific errors | Implement atomic Prisma transaction with conditional code consumption and normalized errors. |
-| Error handling | `src/common/db-values.ts` Postgres SQLSTATE extraction | Normalize Prisma known request errors and adapter errors for all target providers. |
+| Schedulers | `pg_try_advisory_xact_lock` in analytics, attendance alerts, course-library import resume, data export, parent notices, report-card resume, retention purge, rostering, timetable | **Converted** to `withJobLease` (`src/common/job-lease.ts`), keyed by the old lock names. Peer review already used `job_lease`. |
+| Account sensitive text | `$queryRawUnsafe`/`$executeRawUnsafe` batches, `!~` regex filter, advisory lock per batch | **Converted**: per-model Prisma pages by id, sealed values skipped in TypeScript, compare-and-set `updateMany`, a `job_lease` per batch. |
+| Organisation setup | `pg_advisory_xact_lock` around first-run setup | **Converted**: lock removed; the in-transaction re-check plus the `organisation_singleton` unique index (P2002 -> 409) settle a race. The index is an expression index (see "Remaining", schema). |
+| Chat | `chat.unread_counts()` and a `LATERAL ... LIMIT 1` preview query with `::uuid[]`/`::text` casts | **Converted**: one grouped `message.groupBy` count; previews as a grouped max plus one row lookup. Per-conversation fallbacks kept. |
+| Discussions | topic-stat SQL with `FILTER`, `IS DISTINCT FROM`, casts | **Converted**: two grouped counts over the listed topics. |
+| Analytics | joined cell query and filtered attendance counts with casts | **Converted**: submissions, extensions and a grouped attendance count; cells assembled in `courseCells`, rates in `attendanceRows`. |
+| Report cards | stale-row join of `report_document` and `report_release` | **Converted**: three plain queries (`stalePending`). |
+| Integrations | webhook delivery claim `UPDATE ... FOR UPDATE SKIP LOCKED` | **Converted**: candidates read oldest first, each claimed by a compare-and-set `updateMany` that still requires pending and due. |
+| Course library | `SELECT ... FOR UPDATE` of the import row | **Converted**: compare-and-set `updateMany` on `status = 'copying'` as the first statement of the import transaction (holds the row lock like `FOR UPDATE`). |
+| Student account | `public.redeem_school_join_code()` and SQLSTATE handling | **Converted**: Prisma transaction, profile bound by compare-and-set; errors mapped from exceptions, not SQLSTATEs. |
+| Email-domain | `public.join_school_by_email_domain()` | **Converted**: Prisma transaction (`seat`), compare-and-set bind. |
+| Search | `mode: 'insensitive'` (ILIKE) backed by `pg_trgm` GIN indexes | **Interface**: `TextSearch` (`src/common/text-search.ts`), PostgreSQL implementation only; see "Search interface". Auth/rostering email and name equality lookups (`email-change`, `parent-link`, `roster-apply`) still use `mode: 'insensitive'` directly. |
+| Grading | `FOR UPDATE` on `submission` (quiz start/save), `FOR SHARE`/`FOR UPDATE` pairs on `activity` (manual mark vs points change) and `rubric` (assess vs edit) | **Remaining** (item 1 below). |
+| Retention | closed-year due query (`GROUP BY`/`HAVING bool_and`, `::date`) | **Remaining** (item 2 below). |
+| Erasure and audit | dynamic SQL replay (`$queryRawUnsafe`/`$executeRawUnsafe`), `set_config('gradebook.audit_purge', …)` in retention purges, account erasure and replay | **Kept as provider-specific** (audit store, below) / **remaining** (replay handlers, item 3). |
+| Health | `SELECT 1` liveness probe | **Portable SQL**, kept; classify as provider-neutral. |
+| Error handling | `pgCode`/`raisedMessage` in `src/common/db-values.ts` | No production caller left (tests only); remove with item 6. `isUniqueViolation` etc. already recognise several providers' codes. |
 
 ### Database object inventory
 
-| Existing object | Current location | Planned replacement |
-| --- | --- | --- |
-| Quiz submission function | Historical `0_baseline` and grading migrations; dropped by `20261206180000_portable_quiz_answer_option_ids` | Shared transaction service and TypeScript scorer; test concurrent submissions. |
-| Chat unread-count function | `0_baseline` | Prisma count/group queries with equivalent unread high-water semantics. |
-| Email-domain join, student merge, join-code redemption, duplicate-candidate functions | `0_baseline` | Application services using Prisma transactions and conditional writes. |
-| School role seeding and student `left_at` triggers | `0_baseline`, retention migration | Explicit school creation and student update service operations; backfill existing rows. |
-| Peer-review allocation trigger | peer-review migration | Validate in the service transaction plus a uniqueness constraint where representable. |
-| Audit append-only triggers and purge session setting | access-defaults and audit actor scrub migrations | Narrow audit repository operations and separate credentials/operations for retention where supported. |
-| `pg_trgm` and partial/expression indexes | baseline and later migrations | Portable indexes or optional provider-specific performance indexes; never correctness dependencies. |
-| JSONB checks and array columns | many migrations | Schema validation plus portable relational representation; preserve validation at the write boundary. |
+| Existing object | Status |
+| --- | --- |
+| `grading.submit_quiz` | Dropped by `20261206180000_portable_quiz_answer_option_ids`; shared TypeScript scorer. |
+| `chat.unread_counts` | Dropped by `20261207100000_portable_database_functions`; `ChatService.unreadCountsFor`. |
+| `public.join_school_by_email_domain` | Dropped by `20261207100000_portable_database_functions`; `EmailDomainService.seat`. |
+| `public.redeem_school_join_code` | Dropped by `20261207100000_portable_database_functions`; `StudentMembershipService.redeem`. |
+| `public.student_duplicate_candidates`, `public.merge_student_records` | Dropped by `20261027140000_drop_student_merge`. |
+| `public.seed_school_system_roles` + trigger on `public.school` | Dropped by `20261207100000_portable_database_functions`; `seedSchoolSystemRoles` (`src/permission/system-roles.ts`) in every school-creating path: `OrganisationService.createSchool`, `scripts/seed-demo.ts`, `scripts/student-flow-check.ts`. Existing schools already have their roles. A school inserted by hand-written SQL no longer gets roles automatically. |
+| `student.set_student_left_at` trigger | **Kept.** It starts the leaver-retention clock, so it is privacy-critical. Before dropping it, every write of `student.is_active` must set `left_at` the same way (null while active; first deactivation sets it; staying inactive keeps the original). Paths that write `is_active` or create students today: `StudentService` create/update (`src/student/student.service.ts`), rostering apply (create, reactivate, disable: `src/rostering/roster-apply.service.ts`), student creation in join-code redemption and email-domain joining, and the seed/check scripts (re-check with a search for `student.create`/`student.update` before dropping). Plan: one `studentActiveChange(before, next, now)` helper used by all of them, a test per path, then a migration that drops the trigger. |
+| `grading.peer_review_allocation_not_self` trigger | **Kept as a backstop.** The service enforces it on every write path: `addAllocation` and `reassign` (`requireReviewer` refuses reviewer = author) and `allocateNow` (the allocation algorithm excludes self-review; the transaction now also refuses any self pair before inserting). Drop once a provider without triggers is targeted and a conformance test proves it. |
+| Audit append-only triggers (`audit_log_append_only`, `audit_log_no_truncate` on `audit_log`, `sso_audit_log`, `integration_audit_log`) and the `gradebook.audit_purge` session setting | **Kept, provider-specific by design** (see "Audit store interface"). |
+| `pg_trgm` extension and GIN trigram indexes on student names | **Kept as an optional PostgreSQL performance feature** behind `TextSearch`. |
+| Expression/partial indexes, `dbgenerated` defaults | Schema work, phase 3 (see "Remaining"). |
+
+### Audit store interface (design; behaviour unchanged)
+
+The audit tables are append-only for the application. Today PostgreSQL
+enforces that with row triggers, and the three privileged operations open a
+transaction-local bypass with `set_config('gradebook.audit_purge', 'on',
+true)`. That is the PostgreSQL implementation of this interface, which a
+later round should extract (no behaviour change) so other providers can
+supply their own:
+
+```ts
+interface AuditStore {
+  /** Append one entry (the only write ordinary code may do). */
+  append(tx: Tx, table: AuditTable, row: AuditRow): Promise<void>;
+  /** Retention: delete expired entries by id, inside `tx`. */
+  purgeExpired(tx: Tx, table: AuditTable, ids: string[], olderThan: Date): Promise<number>;
+  /** Erasure: clear actor_name/actor_email of one account's entries. */
+  scrubActor(tx: Tx, actorId: string): Promise<number>;
+}
+```
+
+- PostgreSQL (current): `purgeExpired` and `scrubActor` run
+  `set_config('gradebook.audit_purge','on', true)` and then the Prisma
+  `deleteMany`/`updateMany`, in the caller's transaction; the triggers
+  refuse every other update, delete and truncate. Callers today:
+  `RetentionService` (three purges), `account-erasure.ts` (actor scrub),
+  `ErasureReplayService` (replayed scrub).
+- Other providers: no session variables. Options, per provider: a separate
+  database role/credential that alone has UPDATE/DELETE on the audit tables
+  (used only by `purgeExpired`/`scrubActor`), or triggers keyed on that role
+  where the provider has triggers (MySQL, SQL Server, SQLite), and the
+  application-level rule that nothing else writes these tables. A provider
+  without any enforcement must be documented as weaker, not silently
+  accepted.
+- The interface must keep both privileged operations narrow (by id / by
+  actor), transaction-scoped, and covered by the retention and erasure tests.
+
+### Search interface
+
+`TextSearch` (`src/common/text-search.ts`) returns Prisma string filters for
+case-insensitive `contains` and `equals`. `postgresTextSearch` (Prisma
+`mode: 'insensitive'`, i.e. ILIKE) is the only implementation and is used by
+the student roster search, the course library, organisation school search
+and rostering change search. The `pg_trgm` GIN indexes on
+`student.first_name`/`last_name` only speed up the student search: results
+are the same without them. Per provider: MySQL/MariaDB match
+case-insensitively through a `_ci` collation (filters without `mode`);
+SQLite and SQL Server need a collation or a lowered shadow column. Optional
+indexes are provider-specific migrations, never correctness dependencies.
+
+### Phase 4 progress (2026-11-13)
+
+Converted this round (PostgreSQL behaviour intended to be unchanged):
+
+- **Schedulers / advisory locks.** Every `pg_try_advisory_xact_lock` sweep
+  now uses `withJobLease(db, key, leaseMs, work)`: acquire with the root
+  client (never inside an interactive transaction), run, release in
+  `finally`. Lease lengths equal the old transaction timeouts: analytics
+  30 min, attendance alerts and parent notices 10 min, rostering 1 min,
+  report resume, library resume, data export and timetable 5 min, retention
+  `maxRunMs() + 5 min`, sensitive-text 5 min per batch. Difference: an
+  advisory lock was released when a crashed instance's connection closed; a
+  lease is held until it expires, so after a crash the next sweep can be
+  delayed by up to the lease length. Work that runs past its lease could
+  overlap with another instance, as it could when the old transaction timed
+  out.
+- **Database functions.** Join-code redemption, email-domain joining, chat
+  unread counts and school role seeding moved to services; migration
+  `20261207100000_portable_database_functions` drops the functions and the
+  role-seeding trigger.
+- **Aggregates.** Chat previews and unread counts, discussion topic stats,
+  analytics cells and attendance, report resume selection.
+- **Row locks.** Webhook claims and the library import claim are
+  compare-and-set `updateMany` calls checked by `count`.
+- **Search.** `TextSearch` interface (above).
+
+Behaviour notes to verify against a real PostgreSQL database:
+
+- Time now comes from the application clock where SQL used `now()`
+  (join-code expiry, webhook due time). Clock skew between app and database
+  shifts these by the skew.
+- Chat previews read `_max(created_at)` at JavaScript millisecond precision
+  and match `created_at >= max - 1 ms`, letting the database order those
+  rows at microsecond precision; exact ties go to the lowest id (the old
+  query's choice was unspecified).
+- Join-code redemption and email-domain joining did not lock the profile
+  (redemption) or used `FOR UPDATE` (domain join); both now bind with
+  `updateMany ... WHERE school_id IS NULL` and roll back on count 0, so a
+  concurrent bind yields 409 instead of a duplicate student record (the
+  partial unique index on `student.user_profile_id` was the old backstop).
+- `skipDuplicates`, `createManyAndReturn`, `mode: 'insensitive'` and
+  `nulls: 'first'` are Prisma features with provider limits; they remain in
+  code and are listed under "Remaining".
+
+### Remaining, in order
+
+1. **Grading row locks** (`src/grading/submission.service.ts`
+   `startQuizAttempt`/`saveQuizAnswers` `FOR UPDATE` on `submission`;
+   manual mark `FOR SHARE` on `activity` paired with
+   `ActivityService.changePoints` `FOR UPDATE`; `RubricService` update
+   `FOR UPDATE` paired with assess `FOR SHARE`). These are lock *pairs*
+   that order two different writers. Portable design: an integer
+   `lock_version` on `activity`, `rubric` (and `submission` for the quiz
+   timer) bumped by the writer that changes the guarded state, with the
+   other writer's final update conditioned on the version it read
+   (`updateMany` + count check, retry or 409). Needs a schema migration and
+   concurrency tests against PostgreSQL before the locks go.
+2. **School retention closed-year query** (`SchoolRetentionService.dueStudents`):
+   `GROUP BY ... HAVING bool_and(ay.end_date IS NOT NULL) AND
+   max(ay.end_date) <= $1::date`. Replace with a Prisma relation read of
+   each enrolled student's courses' academic-year end dates and a pure,
+   tested TypeScript filter (every course in a year with an end date;
+   latest end on or before the UTC calendar date). Deferred this round: it
+   selects students for erasure, so it should land with, and be reviewed
+   alongside, the GDPR retention fixes; confirm the database session time
+   zone used by the current `::date` cast first.
+3. **Erasure replay** (`src/erasure/erasure-replay.service.ts`,
+   `compileStep`): replace dynamic SQL with typed per-table handlers
+   (Prisma `count`/`deleteMany`/`updateMany` per allow-listed table) and
+   keep replay idempotent; the audit-table step goes through
+   `AuditStore.scrubActor`.
+4. **Audit store extraction**: move the three retention purges, the account
+   erasure scrub and the replay scrub behind `AuditStore` (PostgreSQL
+   implementation unchanged), then design per-provider enforcement.
+5. **Student `left_at` trigger** and **peer-review not-self trigger**: the
+   service work described in the object inventory, then drop migrations.
+6. **Shared error handling**: delete the unused `pgCode`/`raisedMessage`
+   helpers and their tests; keep provider codes in `isUniqueViolation` and
+   friends, adding adapter codes as providers are pinned.
+7. **Prisma features with provider limits** found in code:
+   `createMany({ skipDuplicates })` (peer-review allocation, library file
+   reservation, others: 37 uses of `skipDuplicates`/`createManyAndReturn`/
+   `updateManyAndReturn` in `src`), `mode: 'insensitive'` outside
+   `TextSearch`, and `orderBy ... nulls`. Each needs a portable form (read
+   then insert inside the transaction, unique-violation tolerant inserts,
+   or the `TextSearch` interface) or a provider implementation.
+
+## Next steps after phase 4
+
+- **Phase 3, canonical schema:** single-namespace logical schema and a
+  deterministic generator for provider variants. Known schema items: the
+  `organisation_singleton` expression index (`((true))`) and the two
+  `lower(name)` unique expression indexes, partial unique indexes,
+  `dbgenerated` defaults (`gen_random_uuid()`, `now() AT TIME ZONE 'utc'`),
+  native types, `pg_trgm` GIN indexes (optional per provider), and the
+  remaining triggers above.
+- **Phase 5, per-provider migrations:** keep this history as the
+  PostgreSQL path; new providers start from a generated baseline plus their
+  own reviewed migrations for triggers, optional indexes and the audit
+  store.
+- **Phase 6, conformance CI:** run the persistence and concurrency
+  scenarios (job leases across instances, compare-and-set claims, join
+  races, audit append-only and purge, erasure replay) against a real
+  database per provider. Until then the mock-based tests above prove only
+  the queries issued, not provider behaviour.
+
+PostgreSQL remains the only supported provider.
 
 ## Provider contract
 
@@ -233,8 +399,10 @@ consecutive release candidates, including migration upgrade tests.
 1. Design the canonical single-namespace logical schema and deterministic
    provider-generation pipeline. The MySQL proof demonstrated that schema
    generation must preserve correctness invariants, not simply validate.
-2. Remove the remaining raw PostgreSQL operations behind shared application
-   services, then generate and validate MySQL against that schema.
+2. Finish phase 4: work through "Remaining, in order" above (grading lock
+   pairs, retention closed-year query, erasure replay, audit store, the two
+   invariant triggers, error helpers, provider-limited Prisma features),
+   then generate and validate MySQL against the canonical schema.
 3. Pin adapter packages and provider versions from the Prisma 7.10.1 docs and
    establish clean-install and upgrade migration paths before claiming a
    provider supported.

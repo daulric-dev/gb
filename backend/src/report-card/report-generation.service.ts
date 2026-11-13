@@ -215,25 +215,57 @@ export class ReportGenerationService {
   }
 
   /**
+   * Up to REPORT_RESUME_BATCH pending rows not touched since `cutoff` whose
+   * term's reports are published, oldest first. Three plain queries in
+   * place of a join (report_document has no relation to report_release):
+   * the (school, term) pairs with stale rows, which of them are published,
+   * then the rows of those.
+   */
+  async stalePending(cutoff: Date): Promise<StaleReportRow[]> {
+    const stale = { status: 'pending' as const, updated_at: { lt: cutoff } };
+    const pairs = await this.prisma.report_document.groupBy({
+      by: ['school_id', 'term_id'],
+      where: stale,
+    });
+    if (pairs.length === 0) return [];
+    const releases = await this.prisma.report_release.findMany({
+      where: {
+        published_at: { not: null },
+        OR: pairs.map((p) => ({ school_id: p.school_id, term_id: p.term_id })),
+      },
+      select: { school_id: true, term_id: true, published_at: true },
+    });
+    if (releases.length === 0) return [];
+    const published = new Map(
+      releases.map((r) => [`${r.school_id}|${r.term_id}`, r.published_at as Date]),
+    );
+    const docs = await this.prisma.report_document.findMany({
+      where: {
+        ...stale,
+        OR: releases.map((r) => ({ school_id: r.school_id, term_id: r.term_id })),
+      },
+      orderBy: [{ updated_at: 'asc' }, { id: 'asc' }],
+      take: REPORT_RESUME_BATCH,
+      select: { id: true, school_id: true, term_id: true, student_id: true, attempts: true },
+    });
+    return docs.map((d) => ({
+      ...d,
+      published_at: published.get(`${d.school_id}|${d.term_id}`)!,
+    }));
+  }
+
+  /**
    * Pending rows of published terms nobody has touched for
    * REPORT_RESUME_STALE_MS: a restart mid-batch (inline), or a crash between
    * publish and enqueue, or a job lost from Redis (queue; only once the
-   * queue has no live jobs). Run under the scheduler's advisory lock. Each
+   * queue has no live jobs). Run under the scheduler's `job_lease` claim. Each
    * row is resumed with the attempts it has left; a row that used them all
    * is marked failed. Re-running is safe: the PDF key is fixed and
    * overwritten.
    */
   async resumeStale(now = new Date()): Promise<ResumeOutcome> {
     const cutoff = new Date(now.getTime() - REPORT_RESUME_STALE_MS);
-    const rows = await this.prisma.$queryRaw<StaleReportRow[]>`
-      SELECT d.id, d.school_id, d.term_id, d.student_id, d.attempts, r.published_at
-      FROM grading.report_document d
-      JOIN grading.report_release r ON r.school_id = d.school_id AND r.term_id = d.term_id
-      WHERE d.status = 'pending'
-        AND d.updated_at < ${cutoff}
-        AND r.published_at IS NOT NULL
-      ORDER BY d.updated_at ASC
-      LIMIT ${REPORT_RESUME_BATCH}`;
+    const rows = await this.stalePending(cutoff);
     const out: ResumeOutcome = { resumed: 0, failed: 0, skipped: 0 };
     if (!rows?.length) return out;
 

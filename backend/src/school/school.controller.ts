@@ -37,7 +37,7 @@ import { SchoolSsoService } from '@/sso/school-sso.service';
 import { UpdateSchoolSsoProviderDto } from '@/sso/school-sso.dto';
 import { SsoAuditService } from '@/sso/sso-audit.service';
 import { ListSsoAuditQueryDto } from '@/sso/sso-audit.dto';
-import { RequireStepUp } from '@/auth/step-up.guard';
+import { assertSteppedUp, RequireStepUp } from '@/auth/step-up.guard';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
@@ -239,6 +239,7 @@ export class SchoolController {
     return this.schoolService.getPendingRequests(userId);
   }
 
+  /** Assigning a role (base or custom) with the approval needs step-up. */
   @Patch('join-requests/:requestId/approve')
   @UseGuards(AdminGuard)
   async approveRequest(
@@ -246,6 +247,7 @@ export class SchoolController {
     @Param('requestId') requestId: string,
     @Body() dto: ApproveJoinRequestDto,
   ) {
+    if (dto.role || (dto.customRoleIds?.length ?? 0) > 0) assertSteppedUp(req.user);
     const userId: string = req.user.id;
     return this.schoolService.approveRequest(
       userId,

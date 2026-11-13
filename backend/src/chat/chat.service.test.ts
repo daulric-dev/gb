@@ -133,8 +133,7 @@ describe('ChatService', () => {
         : null,
     );
     prisma.conversation.findUnique.mockResolvedValue(convRow());
-    // Last-message previews: no batched rows unless a test sets them.
-    prisma.$queryRaw.mockImplementation(async () => []);
+    // Last-message previews and unread counts: none unless a test sets them.
     prisma.message.create.mockImplementation(async ({ data }) =>
       msgRow({
         id: MSG,
@@ -710,32 +709,48 @@ describe('ChatService', () => {
   });
 
   describe('unread counts', () => {
-    test('totalUnread is 0 with no memberships, without calling the RPC', async () => {
+    test('totalUnread is 0 with no memberships, without counting', async () => {
       expect(await service.totalUnread(ME)).toEqual({ count: 0 });
-      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.message.groupBy).not.toHaveBeenCalled();
     });
 
-    test('totalUnread sums the RPC rows (bigint safe)', async () => {
+    test('totalUnread counts others\' undeleted messages after each read marker, in one grouped query', async () => {
+      const read = new Date('2026-10-01T08:00:00.000Z');
       prisma.conversation_member.findMany.mockResolvedValue([
-        { conversation_id: CONV, last_read_at: null },
+        { conversation_id: CONV, last_read_at: read },
         { conversation_id: 'c2', last_read_at: null },
+        { conversation_id: 'c3', last_read_at: null },
       ]);
-      prisma.$queryRaw.mockResolvedValue([
-        { conversation_id: CONV, unread: BigInt(3) },
-        { conversation_id: 'c2', unread: 2 },
+      prisma.message.groupBy.mockResolvedValue([
+        { conversation_id: CONV, _count: { _all: 3 } },
+        { conversation_id: 'c2', _count: { _all: 2 } },
+        // Not one of the caller's memberships in this school: ignored.
+        { conversation_id: 'elsewhere', _count: { _all: 9 } },
       ]);
       expect(await service.totalUnread(ME)).toEqual({ count: 5 });
-      // The user id is a bound value, not spliced into the SQL.
-      expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual([ME]);
+      expect(prisma.message.groupBy).toHaveBeenCalledTimes(1);
+      expect(prisma.message.groupBy.mock.calls[0][0]).toEqual({
+        by: ['conversation_id'],
+        where: {
+          sender_id: { not: ME },
+          deleted_at: null,
+          OR: [
+            { conversation_id: { in: ['c2', 'c3'] } },
+            { conversation_id: CONV, created_at: { gt: read } },
+          ],
+        },
+        _count: { _all: true },
+      });
+      expect(prisma.message.count).not.toHaveBeenCalled();
     });
 
-    test('falls back to per-conversation counts when the RPC fails', async () => {
+    test('falls back to per-conversation counts when the grouped count fails', async () => {
       const read = new Date('2026-10-01T08:00:00.000Z');
       prisma.conversation_member.findMany.mockResolvedValue([
         { conversation_id: CONV, last_read_at: read },
         { conversation_id: 'c2', last_read_at: null },
       ]);
-      prisma.$queryRaw.mockRejectedValue(new Error('no function'));
+      prisma.message.groupBy.mockRejectedValue(new Error('db'));
       prisma.message.count.mockImplementation(async ({ where }) =>
         where.conversation_id === CONV ? 4 : 1,
       );
@@ -758,7 +773,7 @@ describe('ChatService', () => {
       prisma.conversation_member.findMany.mockResolvedValue([
         { conversation_id: CONV, last_read_at: null },
       ]);
-      prisma.$queryRaw.mockRejectedValue(new Error('no function'));
+      prisma.message.groupBy.mockRejectedValue(new Error('db'));
       prisma.message.count.mockRejectedValue(new Error('db'));
       expect(await service.totalUnread(ME)).toEqual({ count: 0 });
     });
@@ -793,20 +808,29 @@ describe('ChatService', () => {
         { id: ME, first_name: 'Me', last_name: null, avatar_url: null },
         { id: YOU, first_name: 'You', last_name: null, avatar_url: 'a.png' },
       ]);
-      prisma.$queryRaw.mockImplementation(async (sql: TemplateStringsArray) =>
-        sql.join('?').includes('unread_counts')
-          ? [{ conversation_id: CONV, unread: 2 }]
-          : [msgRow()],
+      prisma.message.groupBy.mockImplementation(async (args: any) =>
+        args._count
+          ? [{ conversation_id: CONV, _count: { _all: 2 } }]
+          : [{ conversation_id: CONV, _max: { created_at: T0 } }],
+      );
+      const older = msgRow({ id: 'older', body: 'enc(older)', created_at: new Date(T0.getTime() - 0.5) });
+      prisma.message.findMany.mockImplementation(async ({ where }: any) =>
+        where.created_at === null ? [] : [msgRow(), older],
       );
 
       const res = await service.listConversations(ME);
-      // Previews come from one batched query for the visible ids, not one
-      // findFirst per conversation.
+      // Previews come from a fixed number of batched queries for the
+      // visible ids, not one findFirst per conversation.
       expect(prisma.message.findFirst).not.toHaveBeenCalled();
-      const previewCall = prisma.$queryRaw.mock.calls.find(
-        (c) => !(c[0] as string[]).join('?').includes('unread_counts'),
-      )!;
-      expect(previewCall.slice(1)).toEqual([[C2, CONV]]);
+      const maxCall = prisma.message.groupBy.mock.calls.find((c: any[]) => c[0]._max)!;
+      expect(maxCall[0].where).toEqual({ conversation_id: { in: [C2, CONV] } });
+      const rowsCall = prisma.message.findMany.mock.calls.find((c: any[]) => c[0].where.OR)!;
+      // Matches the newest millisecond (and the one before, for rounding),
+      // newest first at full database precision.
+      expect(rowsCall[0].where.OR).toEqual([
+        { conversation_id: CONV, created_at: { gte: new Date(T0.getTime() - 1) } },
+      ]);
+      expect(rowsCall[0].orderBy).toEqual([{ created_at: 'desc' }, { id: 'asc' }]);
       // Memberships are scoped to the caller's active school.
       expect(
         prisma.conversation_member.findMany.mock.calls[0][0].where,
@@ -833,14 +857,31 @@ describe('ChatService', () => {
         where.user_id ? [{ conversation_id: CONV, last_read_at: null }] : [],
       );
       prisma.conversation.findMany.mockResolvedValue([convRow()]);
-      prisma.$queryRaw.mockImplementation(async (sql: TemplateStringsArray) => {
-        if (sql.join('?').includes('unread_counts')) return [];
-        throw new Error('no lateral');
+      prisma.message.groupBy.mockImplementation(async (args: any) => {
+        if (args._count) return [];
+        throw new Error('db');
       });
       prisma.message.findFirst.mockResolvedValue(msgRow());
       const [c] = await service.listConversations(ME);
       expect(c.lastMessage?.body).toBe('hello');
       expect(prisma.message.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    test('a message without a timestamp is the preview (created_at DESC NULLS FIRST)', async () => {
+      prisma.conversation_member.findMany.mockImplementation(async ({ where }) =>
+        where.user_id ? [{ conversation_id: CONV, last_read_at: null }] : [],
+      );
+      prisma.conversation.findMany.mockResolvedValue([convRow()]);
+      prisma.message.groupBy.mockImplementation(async (args: any) =>
+        args._count ? [] : [{ conversation_id: CONV, _max: { created_at: T0 } }],
+      );
+      prisma.message.findMany.mockImplementation(async ({ where }: any) =>
+        where.created_at === null ? [msgRow({ created_at: null, body: 'enc(undated)' })] : [msgRow()],
+      );
+      const [c] = await service.listConversations(ME);
+      expect(c.lastMessage?.body).toBe('undated');
+      // No dated lookup is needed for a conversation already settled.
+      expect(prisma.message.findMany).toHaveBeenCalledTimes(1);
     });
 
     test('a caller without an active school has no conversations', async () => {

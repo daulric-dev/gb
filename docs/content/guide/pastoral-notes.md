@@ -11,8 +11,11 @@ needs, with follow-ups and a timeline. **Off by default**: the organisation
 makes it available (Features) and each school can switch it off.
 
 Pastoral notes are **never shown to students or parents**, never sent to
-webhooks or external tools, never on report cards, and never in any export
-except the staff CSV described below.
+webhooks or external tools, and never on report cards. They are not in the
+data downloads students and parents make themselves. They **are** included
+when the school answers a subject access request with a staff data download
+for the student (see [Answering data requests](data-requests.md)), unless a
+note is withheld, and in the staff CSV export described below.
 
 ## Who can see what
 
@@ -25,12 +28,17 @@ Your school decides with roles (**Roles**), using four permissions:
 | Edit pastoral notes | Edit, resolve, reopen and delete notes. |
 | Safeguarding | Needed **as well** to see, write or change notes in a safeguarding category. |
 
-Administrators have all four. **You always see the notes you wrote.** A
+Administrators have the first three. **Safeguarding is never given
+automatically, not even to administrators**: add it to a role (for example a
+designated safeguarding lead role) and assign that role. Giving it needs
+"Confirm it's you" and is recorded in the audit log. **You always see the
+notes you wrote.** A
 teacher with only *Write* can record what happened and see their own notes,
 but not colleagues'.
 
-Every time a safeguarding note is opened, listed or exported it is recorded in
-the [audit log](audit-log.md) as *viewed*.
+Every time a note is opened, and every time a safeguarding note is listed or
+exported, it is recorded in the [audit log](audit-log.md) as *viewed*; a list,
+timeline or follow-up view is also recorded with the notes it showed.
 
 ## Writing a note
 
@@ -65,6 +73,24 @@ safeguarding notes without the safeguarding permission).
 - **Retention.** Resolved notes are erased automatically this many days after
   they were resolved (at least 30). Leave it empty to keep notes until the
   student is removed from the school.
+
+## Data requests and withholding a note
+
+A staff data download for a student (subject access request) contains the
+notes **the person making it can see**: their own notes, every
+non-safeguarding note with *View pastoral notes*, and safeguarding notes only
+with *Safeguarding* as well. The download says whether it covered every note,
+so whoever answers the request should hold both permissions.
+
+Where the law allows information to be held back (for example where
+disclosure would put a child or someone else at risk, or reveal another
+person), find the note in **Pastoral → All notes** or on the student's
+**Pastoral notes** card and choose **Withhold from data requests**, giving the reason (the exemption relied on). Withheld notes
+are left out of staff data downloads, which show how many were withheld. The
+change and its reason are recorded in the audit log; **Include in data
+requests** reverses it. This needs permission to change the note and either
+*Safeguarding* or the student export permission (*Export everything held
+about a student*).
 
 ## Privacy and erasure
 

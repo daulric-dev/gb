@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { createMockPrisma } from '@/test/prisma-mock';
+import { createMockPrisma, holdJobLeaseElsewhere } from '@/test/prisma-mock';
 import { RetentionScheduler } from './retention.scheduler';
 
 const ENV = ['RETENTION_PURGE_ENABLED', 'RETENTION_PURGE_INTERVAL_HOURS', 'RETENTION_PURGE_HOUR_UTC'];
@@ -17,7 +17,7 @@ afterEach(() => {
 
 function setup(locked: boolean) {
   const prisma = createMockPrisma();
-  prisma.$queryRaw.mockResolvedValue([{ locked }]);
+  if (!locked) holdJobLeaseElsewhere(prisma);
   const retention = { purge: mock(async () => ({})) };
   const erasure = { exportPending: mock(async () => 0) };
   const scheduler = new RetentionScheduler(prisma as never, retention as never, erasure as never);
@@ -27,13 +27,13 @@ function setup(locked: boolean) {
 const at = (iso: string) => new Date(iso).getTime();
 
 describe('RetentionScheduler', () => {
-  test('purges at the configured UTC hour, once a day, under the advisory lock', async () => {
+  test('purges at the configured UTC hour, once a day, under the job lease', async () => {
     const { prisma, scheduler, retention } = setup(true);
     await scheduler.tick(at('2026-10-25T02:50:00Z'));
     expect(retention.purge).not.toHaveBeenCalled();
     await scheduler.tick(at('2026-10-25T03:05:00Z'));
     expect(retention.purge).toHaveBeenCalledTimes(1);
-    expect(prisma.$queryRaw.mock.calls[0][1]).toBe('gradebook:retention:purge');
+    expect(prisma.job_lease.create.mock.calls[0][0].data.key).toBe('gradebook:retention:purge');
     await scheduler.tick(at('2026-10-25T03:20:00Z'));
     expect(retention.purge).toHaveBeenCalledTimes(1);
     await scheduler.tick(at('2026-10-26T03:01:00Z'));
@@ -72,7 +72,7 @@ describe('RetentionScheduler', () => {
   test('failures are logged, never thrown', async () => {
     const { prisma, scheduler, erasure } = setup(true);
     erasure.exportPending.mockRejectedValue(new Error('storage down'));
-    prisma.$transaction.mockRejectedValue(new Error('db down'));
+    prisma.job_lease.create.mockRejectedValue(new Error('db down'));
     await scheduler.tick(at('2026-10-25T03:00:00Z'));
   });
 

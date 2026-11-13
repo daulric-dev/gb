@@ -4,11 +4,12 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { CalendarClock, Paperclip, ShieldAlert } from "lucide-react";
+import { CalendarClock, EyeOff, Paperclip, ShieldAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { downloadFromUrl } from "@/lib/download";
 import { userMessage } from "@/lib/errors";
 import {
+  canWithholdNote,
   followUpState,
   formatDay,
   SEVERITY_LABELS,
@@ -23,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { NoteDialog } from "./NoteDialog";
+import { WithholdDialog } from "./WithholdDialog";
+import { useOptionalCan } from "@/providers/PermissionsProvider";
 
 const FOLLOW_UP_TEXT = { overdue: "Overdue", today: "Due today", upcoming: "Follow up" } as const;
 
@@ -96,7 +99,9 @@ export function NoteList({
 }) {
   useSignals();
   const editing = useSignal<PastoralNote | null>(null);
+  const withholding = useSignal<PastoralNote | null>(null);
   const busy = useSignal<string | null>(null);
+  const can = useOptionalCan();
 
   async function setStatus(n: PastoralNote, status: "open" | "resolved") {
     busy.value = n.id;
@@ -165,6 +170,16 @@ export function NoteList({
                     ) : (
                       <Badge>Open</Badge>
                     )}
+                    {n.sarWithheld && (
+                      <Badge
+                        variant="outline"
+                        className="gap-1"
+                        title={n.sarWithheldReason ? `Reason: ${n.sarWithheldReason}` : undefined}
+                      >
+                        <EyeOff className="size-3" aria-hidden="true" />
+                        Withheld from data requests
+                      </Badge>
+                    )}
                     {due && (
                       <span className={`inline-flex items-center gap-1 text-xs ${due === "overdue" ? "text-destructive" : "text-muted-foreground"}`}>
                         <CalendarClock className="size-3" aria-hidden="true" />
@@ -198,6 +213,11 @@ export function NoteList({
                         </Button>
                       </>
                     )}
+                    {canWithholdNote(n, can) && (
+                      <Button size="xs" variant="ghost" disabled={busy.value === n.id} onClick={() => (withholding.value = n)}>
+                        {n.sarWithheld ? "Include in data requests" : "Withhold from data requests"}
+                      </Button>
+                    )}
                     {n.canDelete && (
                       <Button size="xs" variant="ghost" className="text-destructive" disabled={busy.value === n.id} onClick={() => void remove(n)}>
                         Delete
@@ -210,6 +230,15 @@ export function NoteList({
           );
         })}
       </ol>
+      {withholding.value && (
+        <WithholdDialog
+          note={withholding.value}
+          onOpenChangeAction={(v) => {
+            if (!v) withholding.value = null;
+          }}
+          onSavedAction={() => onChangedAction()}
+        />
+      )}
       {editing.value && (
         <NoteDialog
           open={!!editing.value}

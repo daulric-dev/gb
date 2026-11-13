@@ -2,12 +2,13 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@ne
 import { PrismaService } from '@/prisma/prisma.service';
 import { DataExportService } from './data-export.service';
 import { SWEEP_LOCK, SWEEP_TICK_MS } from './data-export.constants';
+import { withJobLease } from '@/common/job-lease';
 
 /**
  * The data export sweep: deletes expired export ZIPs (the purge), removes
  * orphaned ones and resumes exports a restart left behind. Once when the app
- * has booted and then every SWEEP_TICK_MS, in every API instance; a Postgres
- * advisory lock lets one instance sweep at a time. Nothing runs under
+ * has booted and then every SWEEP_TICK_MS, in every API instance; a `job_lease`
+ * claim lets one instance sweep at a time. Nothing runs under
  * NODE_ENV=test or with DATA_EXPORT_SWEEP=false.
  */
 @Injectable()
@@ -39,20 +40,14 @@ export class DataExportScheduler implements OnApplicationBootstrap, OnModuleDest
     if (this.running) return;
     this.running = true;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-            SELECT pg_try_advisory_xact_lock(hashtext(${SWEEP_LOCK})) AS locked`;
-          if (!rows?.[0]?.locked) return;
-          const out = await this.exports.sweep(now);
-          if (out.expired || out.orphans || out.resumed || out.failed) {
-            this.logger.log(
-              `Data exports: ${out.expired} expired and deleted, ${out.orphans} orphaned file(s) removed, ${out.resumed} resumed, ${out.failed} given up`,
-            );
-          }
-        },
-        { maxWait: 10_000, timeout: 5 * 60_000 },
-      );
+      await withJobLease(this.prisma, SWEEP_LOCK, 5 * 60_000, async () => {
+        const out = await this.exports.sweep(now);
+        if (out.expired || out.orphans || out.resumed || out.failed) {
+          this.logger.log(
+            `Data exports: ${out.expired} expired and deleted, ${out.orphans} orphaned file(s) removed, ${out.resumed} resumed, ${out.failed} given up`,
+          );
+        }
+      });
     } catch (err) {
       this.logger.error(`Data export sweep failed: ${(err as Error).message}`);
     } finally {

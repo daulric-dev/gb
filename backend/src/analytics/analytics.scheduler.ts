@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AnalyticsService } from './analytics.service';
+import { withJobLease } from '@/common/job-lease';
 
 const TICK_MS = 60 * 60 * 1000;
 const FIRST_TICK_MS = 3 * 60 * 1000;
@@ -10,7 +11,7 @@ export const ANALYTICS_LOCK = 'gradebook:analytics';
 
 /**
  * Refreshes every school's analytics summaries hourly in every API
- * instance; a Postgres advisory lock lets one instance work at a time (as
+ * instance; a `job_lease` claim lets one instance work at a time (as
  * the attendance alert and parent notice sweeps do), so it works without
  * Redis. Nothing runs under NODE_ENV=test or with ANALYTICS_SWEEP=false;
  * "refresh now" still works there.
@@ -45,16 +46,10 @@ export class AnalyticsScheduler implements OnModuleInit, OnModuleDestroy {
     this.running = true;
     let ran = false;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-            SELECT pg_try_advisory_xact_lock(hashtext(${ANALYTICS_LOCK})) AS locked`;
-          if (!rows?.[0]?.locked) return;
-          ran = true;
-          await work();
-        },
-        { maxWait: 10_000, timeout: 30 * 60_000 },
-      );
+      await withJobLease(this.prisma, ANALYTICS_LOCK, 30 * 60_000, async () => {
+        ran = true;
+        await work();
+      });
     } catch (err) {
       this.logger.error(`Analytics refresh failed: ${(err as Error).message}`);
     } finally {

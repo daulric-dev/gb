@@ -227,6 +227,9 @@ export class SchoolRetentionService {
         JOIN course.course c ON c.id = cs.course_id
         LEFT JOIN public.academic_year ay ON ay.id = c.academic_year_id
         WHERE s.school_id = ${schoolId}::uuid
+          -- Only students who have left: a returning student with no
+          -- enrolment in the new year yet (e.g. over the summer) is kept.
+          AND s.is_active = false
         GROUP BY s.id, s.first_name, s.last_name
         HAVING bool_and(ay.end_date IS NOT NULL) AND max(ay.end_date) <= ${lastEndBy}::date`;
       for (const r of rows ?? []) {

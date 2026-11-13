@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { ConflictException } from '@nestjs/common';
-import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { createMockPrisma, holdJobLeaseElsewhere, type MockPrisma } from '@/test/prisma-mock';
 import { TimetableScheduler } from './timetable.scheduler';
 import type { SchoolContext, TimetableOccurrence } from './timetable.service';
 
@@ -40,7 +40,6 @@ describe('TimetableScheduler', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     claimed = new Set();
-    prisma.$queryRaw.mockResolvedValue([{ locked: true }]);
     prisma.course.findMany.mockResolvedValue([{ id: 'c1', school_id: 's1' }]);
     // The unique (entry, date) claim: only the first insert returns a row.
     prisma.timetable_occurrence.createManyAndReturn.mockImplementation(async ({ data }: any) => {
@@ -137,7 +136,7 @@ describe('TimetableScheduler', () => {
     ctx.settings.autoSessions = false;
     await scheduler.tick(NOW);
     ctx.settings.autoSessions = true;
-    prisma.$queryRaw.mockResolvedValue([{ locked: false }]);
+    holdJobLeaseElsewhere(prisma);
     await scheduler.tick(NOW);
     expect(attendance.openScheduled).not.toHaveBeenCalled();
     expect(features.isEnabled.mock.calls[0]).toEqual(['s1', 'timetable']);

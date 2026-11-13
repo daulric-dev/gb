@@ -33,6 +33,7 @@ import {
 import { OrgHeader } from "../_components/org-header";
 import { SignOutSessionsButton } from "../_components/sign-out-sessions";
 import { ResetMfaButton } from "@/components/account/mfa/reset-mfa-button";
+import { DeleteUserAccountButton } from "@/components/account/delete-user-account-button";
 import { InviteActions } from "../schools/_components/pending-invite";
 import { userMessage } from "@/lib/errors";
 
@@ -198,6 +199,13 @@ export default function OrganisationAdminsPage() {
                           )}
                           {!isMe && (
                             <ResetMfaButton userId={a.userId} who={a.name || a.email} />
+                          )}
+                          {!isMe && !a.fromEnv && (
+                            <DeleteUserAccountButton
+                              userId={a.userId}
+                              who={a.name || a.email}
+                              onDeletedAction={load}
+                            />
                           )}
                           {!a.fromEnv && !a.isOwner && (
                             <Button

@@ -21,6 +21,20 @@ export function stepUpRequired(): ForbiddenException {
   });
 }
 
+/** Whether the request's session confirmed it's them within the step-up window. */
+export function isSteppedUp(user?: { sessionId?: string; elevatedUntil?: number | null }): boolean {
+  const until = user?.elevatedUntil;
+  return !!user?.sessionId && typeof until === 'number' && until > Date.now();
+}
+
+/**
+ * For routes where only some requests need step-up (decided from the body):
+ * throws the same 403 as StepUpGuard unless the session is confirmed.
+ */
+export function assertSteppedUp(user?: { sessionId?: string; elevatedUntil?: number | null }): void {
+  if (!isSteppedUp(user)) throw stepUpRequired();
+}
+
 /**
  * Step-up: the session making the request must have confirmed an emailed code
  * (`POST /auth/step-up/send`, then `/auth/step-up/verify`) within the last
@@ -35,10 +49,7 @@ export class StepUpGuard implements CanActivate {
     const request = context
       .switchToHttp()
       .getRequest<{ user?: { sessionId?: string; elevatedUntil?: number | null } }>();
-    const until = request.user?.elevatedUntil;
-    if (request.user?.sessionId && typeof until === 'number' && until > Date.now()) {
-      return true;
-    }
+    if (isSteppedUp(request.user)) return true;
     throw stepUpRequired();
   }
 }

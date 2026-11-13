@@ -28,6 +28,7 @@ import {
   studentScope,
   type StudentScope,
 } from '@/permission/student-access';
+import { textSearch } from '@/common/text-search';
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 const DEFAULT_PAGE_SIZE = 20;
@@ -517,8 +518,8 @@ export class StudentService {
     return {
       school_id: schoolId,
       OR: [
-        { first_name: { contains: safe, mode: 'insensitive' } },
-        { last_name: { contains: safe, mode: 'insensitive' } },
+        { first_name: textSearch.contains(safe) },
+        { last_name: textSearch.contains(safe) },
       ],
     };
   }

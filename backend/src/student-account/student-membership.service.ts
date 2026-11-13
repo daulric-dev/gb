@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   Optional,
@@ -8,7 +9,7 @@ import {
 import { createHmac, randomInt } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { WebhookEvents } from '@/integrations/events';
-import { isoDate, pgCode, raisedMessage } from '@/common/db-values';
+import { isoDate } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 
 /**
@@ -24,9 +25,6 @@ const MAX_TTL_DAYS = 90;
 
 /** Dev-only fallback so local setups work without extra configuration. */
 const DEV_PEPPER = 'dev-insecure-student-claim-pepper';
-
-/** Postgres `undefined_function`: a migration that adds the function is missing. */
-const MISSING_FUNCTION = '42883';
 
 /**
  * Everything that binds a login to a school as a student.
@@ -233,45 +231,15 @@ export class StudentMembershipService {
       throw new BadRequestException('Invalid or expired join code');
     }
 
-    let rows: { student_id: string | null; school_id: string | null }[];
+    let row: { student_id: string; school_id: string };
     try {
-      rows = await this.prisma.$queryRaw`
-        SELECT student_id, school_id
-        FROM public.redeem_school_join_code(
-          ${userId}::uuid,
-          ${this.hash(normalized)}::text
-        )`;
+      row = await this.redeem(userId, this.hash(normalized));
     } catch (error) {
-      const detail = raisedMessage(error);
-
-      if (detail.includes('already_in_a_school')) {
-        throw new ConflictException('This account already belongs to a school');
-      }
-      if (detail.includes('profile_not_found')) {
-        throw new BadRequestException('Complete your profile first');
-      }
-      if (detail.includes('invalid_join_code')) {
-        throw new BadRequestException('Invalid or expired join code');
-      }
-      if (pgCode(error) === MISSING_FUNCTION) {
-        this.logger.error(
-          `redeem_school_join_code is missing from the database. Apply the pending migrations. Detail: ${(error as Error).message}`,
-        );
-        throw new BadRequestException(
-          'Joining by code is unavailable right now. Please try again later.',
-        );
-      }
-
+      if (error instanceof HttpException) throw error;
       this.logger.error(
         `Join failed for user ${userId}: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to redeem join code');
-    }
-
-    const row = rows[0];
-
-    if (!row?.student_id || !row?.school_id) {
-      throw new BadRequestException('Invalid or expired join code');
     }
 
     await this.finalise(userId, row.school_id);
@@ -286,5 +254,67 @@ export class StudentMembershipService {
     );
 
     return { studentId: row.student_id, schoolId: row.school_id };
+  }
+
+  /**
+   * The redemption itself, in one transaction (formerly the SQL function
+   * `public.redeem_school_join_code`): find a live code by its hash, create
+   * the student record from the profile's name and bind the profile to the
+   * school. The bind is a compare-and-set on `school_id IS NULL`, so a
+   * concurrent join or staff assignment that settled the profile first rolls
+   * this one back instead of leaving a second record; the partial unique
+   * index on `student.user_profile_id` backs that up. The code is not
+   * consumed. No school_management row: students are not staff members.
+   */
+  private async redeem(
+    userId: string,
+    codeHash: string,
+  ): Promise<{ student_id: string; school_id: string }> {
+    return this.prisma.$transaction(async (tx) => {
+      const code = await tx.school_join_code.findFirst({
+        where: {
+          code_hash: codeHash,
+          revoked_at: null,
+          expires_at: { gt: new Date() },
+        },
+        select: { school_id: true },
+      });
+      if (!code) throw new BadRequestException('Invalid or expired join code');
+
+      const profile = await tx.user_profile.findUnique({
+        where: { id: userId },
+        select: { first_name: true, last_name: true, school_id: true },
+      });
+      if (!profile) throw new BadRequestException('Complete your profile first');
+      // Already settled somewhere; joining again would orphan the first record.
+      if (profile.school_id) {
+        throw new ConflictException('This account already belongs to a school');
+      }
+
+      const student = await tx.student.create({
+        data: {
+          school_id: code.school_id,
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          user_profile_id: userId,
+          is_active: true,
+        },
+        select: { id: true },
+      });
+
+      const bound = await tx.user_profile.updateMany({
+        where: { id: userId, school_id: null },
+        data: {
+          school_id: code.school_id,
+          account_type: 'student',
+          role: null,
+          is_active: true,
+        },
+      });
+      if (bound.count !== 1) {
+        throw new ConflictException('This account already belongs to a school');
+      }
+      return { student_id: student.id, school_id: code.school_id };
+    });
   }
 }

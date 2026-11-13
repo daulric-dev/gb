@@ -393,7 +393,8 @@ describe('allocation in the service', () => {
     });
     expect(prisma.job_lease.updateMany).toHaveBeenCalledWith({
       where: { key: 'peer-review:activity:act-1', owner_token: expect.any(String) },
-      data: { owner_token: null, expires_at: null, updated_at: NOW },
+      // Taken and released outside the allocation transaction, on the real clock.
+      data: { owner_token: null, expires_at: null, updated_at: expect.any(Date) },
     });
     expect(notices[0][0]).toBe('assigned');
   });

@@ -4,7 +4,7 @@ Everything that binds a login to a school **as a student**. A school has at most
 
 `StudentMembershipService` is deliberately the only code that writes student membership. Every write ends in `finalise()`, which drops the three cache entries that would otherwise keep showing stale state for up to 30 days: `profile:<userId>`, `student-context:<userId>` and `students:<schoolId>`.
 
-Codes are stored only as an HMAC-SHA256 keyed with `STUDENT_CLAIM_CODE_PEPPER`, never in plain text; the plaintext is returned once, when issued. Redemption is a Postgres function, `public.redeem_school_join_code` (in [`prisma/migrations/0_baseline`](../../prisma/migrations/0_baseline/migration.sql)), called with `$queryRaw`.
+Codes are stored only as an HMAC-SHA256 keyed with `STUDENT_CLAIM_CODE_PEPPER`, never in plain text; the plaintext is returned once, when issued. Redemption is one Prisma transaction in `StudentMembershipService` (it replaced the SQL function `public.redeem_school_join_code`, dropped by `20261207100000_portable_database_functions`).
 
 ## What it provides
 
@@ -24,7 +24,7 @@ Redeeming the code is **not** a route here: it is `POST /api/auth/join-school` i
 
 - `StudentMembershipService` (exported):
   - `issueCode(actorUserId, ttlDays?)`, `revokeCode(actorUserId)`, `getCodeStatus(actorUserId)` - scoped to the actor's active school.
-  - `joinByCode(userId, rawCode)` - normalises case and dashes, rejects a wrong length without a database call, calls `public.redeem_school_join_code(user, hash)`, and maps its errors: `already_in_a_school` -> 409, `profile_not_found` -> 400 "Complete your profile first", `invalid_join_code` -> 400 (the same message as a wrong-length code). The code is **not** consumed; it stays valid for other students until it expires or is revoked. Returns `{ studentId, schoolId }`.
+  - `joinByCode(userId, rawCode)` - normalises case and dashes, rejects a wrong length without a database call, then, in one transaction, finds a live unrevoked code by its hash, creates the student record from the profile's name and binds the profile (a compare-and-set on `school_id IS NULL`, so a profile settled concurrently rolls back). Errors: already in a school -> 409, no profile -> 400 "Complete your profile first", unknown/expired/revoked code -> 400 (the same message as a wrong-length code), anything else -> 400 "Failed to redeem join code". The code is **not** consumed; it stays valid for other students until it expires or is revoked. Returns `{ studentId, schoolId }`.
   - A missing database function (Postgres `42883`) is logged with a note to apply the pending migrations; the user gets a plain 400 "Joining by code is unavailable right now. Please try again later."
 
 ## Used by
@@ -45,8 +45,8 @@ Redeeming the code is **not** a route here: it is `POST /api/auth/join-school` i
 
 - `student.school_join_code` - created, deleted, read ([`student.prisma`](../../prisma/schema/student.prisma)). One live code per school is a database constraint.
 - `public.user_profile` - read for the actor's school.
-- `student.student` - created inside `public.redeem_school_join_code`.
-- SQL function: `public.redeem_school_join_code`. The duplicate-merge functions were dropped by `20261027140000_drop_student_merge`.
+- `student.student` - created in the redemption transaction.
+- No SQL functions. `public.redeem_school_join_code` was dropped by `20261207100000_portable_database_functions`; the duplicate-merge functions by `20261027140000_drop_student_merge`.
 
 ## Configuration
 

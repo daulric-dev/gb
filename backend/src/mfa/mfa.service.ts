@@ -29,7 +29,15 @@ import {
   normalizeRecoveryCode,
   otpauthUri,
 } from './totp';
-import { holdsPrivilegedRole, mfaRequiredFor, mfaRequiredForAdmins } from './mfa.policy';
+import {
+  forgetMfaRequirement,
+  holdsPrivilegedRole,
+  mfaRequiredFor,
+  mfaRequiredForAdmins,
+  needKey,
+} from './mfa.policy';
+
+export { forgetMfaRequirement } from './mfa.policy';
 import { mfaChangedEmail, mfaResetEmail, recoveryCodeUsedEmail } from './mfa.emails';
 
 /** secret-box purpose for authenticator secrets; the user id is the AAD. */
@@ -215,14 +223,16 @@ export class MfaService {
   }
 
   /**
-   * Start the session; an email-code session for someone the organisation
-   * requires an authenticator app of, who has none, is limited to setting
-   * one up (account.mfa_enrolment_gate).
+   * Start the session; a session (by any sign-in method, single sign-on
+   * included) for someone the organisation requires an authenticator app of,
+   * who has none, is limited to setting one up (account.mfa_enrolment_gate).
+   * Worked out before the session exists, so a failed lookup never leaves an
+   * ungated session behind.
    */
   private async openSession(reply: FastifyReply, req: FastifyRequest, userId: string, method: string) {
+    const gate = await this.enrolmentNeeded(userId);
     const token = await this.sessions.create(reply, req, userId, method);
-    if (method !== 'email-code') return;
-    if (!(await this.enrolmentNeeded(userId))) return;
+    if (!gate) return;
     const session = await this.prisma.session.findUnique({
       where: { token_hash: sha256(token) },
       select: { id: true },
@@ -385,14 +395,38 @@ export class MfaService {
 
   /**
    * From AuthGuard: 403 MFA_ENROLMENT_REQUIRED when this session is limited
-   * to setting up an authenticator app and the route is not one of those.
+   * to setting up an authenticator app and the route is not one of those -
+   * because it has a gate row, or because (a session from before the policy
+   * was switched on, the user was promoted or their app was reset) the
+   * organisation now requires one for the user's role and they have none.
+   * The second answer is cached per user for a minute.
    */
-  async assertSessionAllowed(request: { url?: string; user?: { sessionId?: string } }): Promise<void> {
+  async assertSessionAllowed(request: { url?: string; user?: { id?: string; sessionId?: string } }): Promise<void> {
     const sessionId = request.user?.sessionId;
     if (!sessionId) return;
-    if (await this.isGated(sessionId)) {
-      if (!GATE_ALLOWED.test(request.url ?? '')) throw enrolmentRequiredError();
-    }
+    if (GATE_ALLOWED.test(request.url ?? '')) return;
+    if (await this.isGated(sessionId)) throw enrolmentRequiredError();
+    const userId = request.user?.id;
+    if (userId && (await this.enrolmentNeededCached(userId))) throw enrolmentRequiredError();
+  }
+
+  /** Whether this session may be used beyond setting up an app (LTI launches and the like). */
+  async sessionUsable(userId: string, sessionId: string): Promise<boolean> {
+    if (await this.isGated(sessionId)) return false;
+    return !(await this.enrolmentNeededCached(userId));
+  }
+
+  /** The organisation requires an authenticator app of this user and they have none (cached). */
+  enrolmentRequired(userId: string): Promise<boolean> {
+    return this.enrolmentNeededCached(userId);
+  }
+
+  private async enrolmentNeededCached(userId: string): Promise<boolean> {
+    const cached = await this.cache.get(needKey(userId));
+    if (typeof cached === 'boolean') return cached;
+    const needed = await this.enrolmentNeeded(userId);
+    await this.cache.set(needKey(userId), needed, GATE_CACHE_TTL_S);
+    return needed;
   }
 
   private async isGated(sessionId: string): Promise<boolean> {
@@ -430,7 +464,7 @@ export class MfaService {
       enabledAt: row?.enabled_at?.toISOString() ?? null,
       recoveryCodesRemaining: row ? remaining : 0,
       required,
-      enrolmentRequired: gated,
+      enrolmentRequired: gated || (required && !row),
     };
   }
 
@@ -492,6 +526,7 @@ export class MfaService {
       });
       await this.replaceRecoveryCodes(tx, user.id, recoveryCodes);
     });
+    await this.cache.set(needKey(user.id), false, GATE_CACHE_TTL_S);
     await this.clearGates(user.id);
     await this.record(user.id, user.id, replacing ? 'update' : 'create', replacing ? 'replaced' : 'enabled');
     void this.notify(user.id, (settingsUrl) => mfaChangedEmail({ at: new Date(now), settingsUrl, enabled: true }));
@@ -574,6 +609,9 @@ export class MfaService {
           },
         });
       });
+      // Existing sessions of people the policy now covers are caught on
+      // their next request (assertSessionAllowed), not after the cache ages.
+      await forgetMfaRequirement(this.cache);
       this.logger.log(`Organisation admin ${actorId} set require_mfa_for_admins=${requireMfaForAdmins}`);
     }
     return { requireMfaForAdmins };
@@ -581,17 +619,24 @@ export class MfaService {
 
   /**
    * An organisation admin removes someone's authenticator app and recovery
-   * codes (a lost phone). They sign in with an emailed code again, and are
-   * asked to set one up again if their role requires it. The user is emailed.
+   * codes (a lost phone). Their sessions end: they sign in with an emailed
+   * code again, and are asked to set one up again if their role requires it.
+   * Never your own (another organisation admin must do it). The user is
+   * emailed and the reset audited.
    */
   async adminReset(actorId: string, userId: string) {
+    if (actorId === userId) {
+      throw new ForbiddenException('You cannot reset your own two-step verification. Ask another organisation admin.');
+    }
     const row = await this.prisma.mfa_totp.findUnique({
       where: { user_id: userId },
       select: { enabled_at: true },
     });
     if (!row?.enabled_at) throw new NotFoundException('This person has no authenticator app set up');
     await this.remove(userId);
-    await this.record(actorId, userId, 'delete', 'reset_by_admin');
+    await forgetMfaRequirement(this.cache, userId);
+    const sessionsRevoked = await this.sessions.revokeAll(userId, 'mfa_reset');
+    await this.record(actorId, userId, 'delete', 'reset_by_admin', { sessions_revoked: String(sessionsRevoked) });
     const actor = await this.prisma.user_profile
       .findUnique({ where: { id: actorId }, select: { first_name: true, last_name: true } })
       .catch(() => null);

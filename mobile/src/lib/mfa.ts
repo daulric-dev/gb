@@ -43,3 +43,15 @@ export function webSetupUrl(): string | null {
   const web = process.env.EXPO_PUBLIC_WEB_URL?.trim().replace(/\/$/, "");
   return web ? `${web}/two-step-setup` : null;
 }
+
+/**
+ * Screens a 403 MFA_ENROLMENT_REQUIRED never navigates away from: the
+ * set-up screen itself (its own checks would loop) and the sign-in screens
+ * (expo-router pathnames, without the "(auth)" group).
+ */
+const NO_MFA_REDIRECT = new Set(["/two-step-required", "/two-step", "/login", "/verify", "/sso"]);
+
+export function shouldRouteToTwoStepRequired(pathname: string | null | undefined): boolean {
+  if (!pathname) return true;
+  return !NO_MFA_REDIRECT.has(pathname.replace(/\/+$/, "") || "/");
+}

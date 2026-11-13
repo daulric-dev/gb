@@ -15,12 +15,12 @@ CREATE TABLE public.notification_preference_opt_out (
 );
 
 INSERT INTO public.notification_preference_opt_out (user_profile_id, channel, category)
-SELECT preference.user_profile_id, 'push', opt_out.category
+SELECT DISTINCT preference.user_profile_id, 'push', opt_out.category
 FROM public.notification_preference AS preference
 CROSS JOIN LATERAL unnest(preference.push_off) AS opt_out(category);
 
 INSERT INTO public.notification_preference_opt_out (user_profile_id, channel, category)
-SELECT preference.user_profile_id, 'email', opt_out.category
+SELECT DISTINCT preference.user_profile_id, 'email', opt_out.category
 FROM public.notification_preference AS preference
 CROSS JOIN LATERAL unnest(preference.email_off) AS opt_out(category);
 

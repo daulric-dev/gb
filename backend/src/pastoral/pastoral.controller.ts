@@ -59,6 +59,8 @@ export class PastoralController {
     return this.pastoral.createCategory(req.user.id as string, dto);
   }
 
+  /** Changing the safeguarding flag moves notes into or out of the restricted set: confirm it's you. */
+  @RequireStepUp()
   @Patch('categories/:categoryId')
   updateCategory(
     @Req() req: any,
@@ -138,7 +140,8 @@ export class PastoralController {
     return this.pastoral.update(req.user.id as string, noteId, dto);
   }
 
-  /** Withhold from (or release to) subject access exports; audited. */
+  /** Withhold from (or release to) subject access exports; audited. Needs step-up. */
+  @RequireStepUp()
   @Patch('notes/:noteId/sar-withheld')
   setSarWithheld(
     @Req() req: any,

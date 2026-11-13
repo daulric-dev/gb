@@ -22,6 +22,7 @@ import {
   type OrganisationSchoolDetail,
 } from "@/lib/organisation";
 import { ORGANISATION_PATH } from "@/lib/routing";
+import { useProfile } from "@/providers/AuthProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,6 +34,7 @@ import { SchoolSingleSignOn } from "@/app/dashboard/email-domains/_components/Sc
 import { SchoolIntegrations } from "@/components/integrations/school-integrations";
 import { SignOutSessionsButton } from "../../_components/sign-out-sessions";
 import { ResetMfaButton } from "@/components/account/mfa/reset-mfa-button";
+import { DeleteUserAccountButton } from "@/components/account/delete-user-account-button";
 import { AppointAdminDialog, SchoolFormDialog } from "../_components/school-dialogs";
 import { toggleSchoolActive, useOpenSchoolDashboard } from "../_components/school-actions";
 import { PendingAdminInvite } from "../_components/pending-invite";
@@ -52,6 +54,7 @@ export default function OrganisationSchoolPage() {
   useSignals();
   const params = useParams<{ schoolId: string }>();
   const schoolId = params?.schoolId ?? "";
+  const { profile } = useProfile();
   const schoolSignal = useSignal<OrganisationSchoolDetail | null>(null);
   const school = schoolSignal.value;
   const missingSignal = useSignal(false);
@@ -158,6 +161,13 @@ export default function OrganisationSchoolPage() {
                   userId={school.admin.userId}
                   who={school.admin.name || school.admin.email}
                 />
+                {school.admin.userId !== profile.value?.id && (
+                  <DeleteUserAccountButton
+                    userId={school.admin.userId}
+                    who={school.admin.name || school.admin.email}
+                    onDeletedAction={reload}
+                  />
+                )}
               </>
             ) : school.pendingAdminInvite ? (
               <PendingAdminInvite invite={school.pendingAdminInvite} onChanged={reload} />

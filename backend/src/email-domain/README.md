@@ -41,7 +41,7 @@ Update validation (`PATCH`):
 `EmailDomainModule` exports `EmailDomainService`:
 
 - Admin: `list`, `add`, `update`, `remove`, `verify` (the caller's active school), and the same with an explicit school for the organisation console: `listForSchool(schoolId)`, `addToSchool(schoolId, actor, input)`, `updateInSchool(schoolId, id, patch, actor)`, `removeFromSchool(schoolId, id, actor)`, `verifyInSchool(schoolId, id, actor)` (`actor` = `SsoActor` `{ id, via: 'school_admin' | 'organisation_admin' }`, recorded in the audit log; the active-school forms pass `school_admin`); `listAll()` (every school's, with `schoolId` and `schoolName`). The explicit forms do not check the school exists - the caller does (`OrganisationService.requireSchool`). A domain of another school is a 404 either way.
-- Joining: `matchFor(userId, email)`, `join(userId, email)`, `tryAutoJoin(userId, email)` (never throws; returns `null` on no match or failure). Seating runs the SQL function `public.join_school_by_email_domain(user, school, audience, role)` and then clears the `profile:<user>`, `student-context:<user>`, `students:<school>` and permission cache keys.
+- Joining: `matchFor(userId, email)`, `join(userId, email)`, `tryAutoJoin(userId, email)` (never throws; returns `null` on no match or failure). Seating is one Prisma transaction (`seat`: a student record, or a school_management row with the domain's role, never admin; the profile bound by a compare-and-set on `school_id IS NULL`) and then clears the `profile:<user>`, `student-context:<user>`, `students:<school>` and permission cache keys.
 - Sign-in: `verifiedDomainFor(email)`, `verifiedDomainById(id)` (both return a `VerifiedDomain` with SSO settings), and `ssoRequirement(email)` - the `{ providerId, label }` an address must use, or `null` when SSO is not required, the provider is not available to the domain's school, or the adapter says the domain's setup is incomplete (so email codes keep working).
 
 Types: `DomainAudience` (`student`, `staff`, `any`), `AccountAudience`, `DomainStaffRole` (`teacher`, `member`), `VerifiedDomain`, `DomainMatch`, `DomainJoinResult`.
@@ -80,7 +80,7 @@ Types: `DomainAudience` (`student`, `staff`, `any`), `AccountAudience`, `DomainS
 - `public.sso_audit_log` - one row per change, in the change's transaction (`prisma/schema/sso.prisma`).
 - `public.school_join_request` - created for staff approval domains.
 - `public.user_profile`, `public.school` - read.
-- Seating is done inside the SQL function `public.join_school_by_email_domain` (defined in `prisma/migrations/0_baseline/migration.sql`).
+- Seating is done in `EmailDomainService.seat`; the SQL function `public.join_school_by_email_domain` it replaced was dropped by `20261207100000_portable_database_functions`.
 
 ## Configuration
 

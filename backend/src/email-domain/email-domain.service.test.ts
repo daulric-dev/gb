@@ -311,24 +311,88 @@ describe('EmailDomainService.join', () => {
     p.school_email_domain.findUnique.mockResolvedValue({ staff_role: 'member' });
   };
 
-  test('seats the user through the SQL function and clears caches', async () => {
+  test('seats staff with the domain role in one transaction and clears caches', async () => {
     const { service, prisma, cache } = build(joining);
+    prisma.user_profile.updateMany.mockResolvedValue({ count: 1 });
     await cache.set('profile:u1', { stale: true }, 60);
     const res = await service.join('u1', 'jo@riverside.edu');
     expect(res).toEqual({ status: 'joined', schoolId: SCHOOL, audience: 'staff' });
-    const [strings, ...values] = prisma.$queryRaw.mock.calls[0];
-    expect(strings.join('?')).toContain('public.join_school_by_email_domain(');
-    expect(values).toEqual(['u1', SCHOOL, 'staff', 'member']);
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.school_management.upsert.mock.calls[0][0]).toEqual({
+      where: { user_id_school_id: { user_id: 'u1', school_id: SCHOOL } },
+      create: { user_id: 'u1', school_id: SCHOOL, role: 'member' },
+      update: {},
+    });
+    expect(prisma.student.create).not.toHaveBeenCalled();
+    expect(prisma.user_profile.updateMany.mock.calls[0][0]).toEqual({
+      where: { id: 'u1', school_id: null },
+      data: { school_id: SCHOOL, account_type: 'staff', role: 'member', is_active: true },
+    });
     expect(cache._store.has('profile:u1')).toBe(false);
+  });
+
+  test('seats a student with a student record from the profile name', async () => {
+    const { service, prisma } = build((p) => {
+      joining(p);
+      p.user_profile.findUnique.mockResolvedValue({
+        school_id: null,
+        account_type: 'student',
+        first_name: 'Jo',
+        last_name: 'Bloggs',
+      });
+      p.school_email_domain.findFirst.mockResolvedValue({
+        id: match.domainId,
+        domain: match.domain,
+        audience: 'student',
+        auto_join: true,
+        school_id: SCHOOL,
+        school: { name: 'Riverside', is_active: true },
+      });
+    });
+    prisma.user_profile.updateMany.mockResolvedValue({ count: 1 });
+    const res = await service.join('u1', 'jo@riverside.edu');
+    expect(res).toEqual({ status: 'joined', schoolId: SCHOOL, audience: 'student' });
+    expect(prisma.student.create.mock.calls[0][0].data).toEqual({
+      school_id: SCHOOL,
+      first_name: 'Jo',
+      last_name: 'Bloggs',
+      user_profile_id: 'u1',
+      is_active: true,
+    });
+    expect(prisma.school_management.upsert).not.toHaveBeenCalled();
+    expect(prisma.user_profile.updateMany.mock.calls[0][0].data).toEqual({
+      school_id: SCHOOL,
+      account_type: 'student',
+      role: null,
+      is_active: true,
+    });
   });
 
   test('already in a school is a conflict', async () => {
     const { service, prisma } = build(joining);
-    prisma.$queryRaw.mockRejectedValue(
-      new Error('ERROR: already_in_a_school'),
-    );
+    // Seen at the read inside the transaction (after the match was found)...
+    prisma.user_profile.findUnique
+      .mockResolvedValueOnce({ school_id: null, account_type: 'staff', first_name: 'Jo' })
+      .mockResolvedValue({ school_id: 'other', first_name: 'Jo', last_name: null });
     await expect(service.join('u1', 'jo@riverside.edu')).rejects.toThrow(
       'This account already belongs to a school',
+    );
+    expect(prisma.user_profile.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('a profile settled concurrently between read and bind is a conflict', async () => {
+    const { service, prisma } = build(joining);
+    prisma.user_profile.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.join('u1', 'jo@riverside.edu')).rejects.toThrow(
+      'This account already belongs to a school',
+    );
+  });
+
+  test('any other failure is a generic error', async () => {
+    const { service, prisma } = build(joining);
+    prisma.school_management.upsert.mockRejectedValue(new Error('db down'));
+    await expect(service.join('u1', 'jo@riverside.edu')).rejects.toThrow(
+      'Failed to join the school',
     );
   });
 
@@ -349,7 +413,7 @@ describe('EmailDomainService.join', () => {
       status: 'requested',
       schoolId: SCHOOL,
     });
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.user_profile.updateMany).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { PrismaService } from '@/prisma/prisma.service';
+import { withJobLease } from '@/common/job-lease';
 import { isSealedWithCurrentDataKey, openSecret, sealSecret } from './secret-box';
 import type { RotationCount } from './secret-rotation';
 
@@ -8,6 +9,8 @@ import type { RotationCount } from './secret-rotation';
  * secret-box (AES-256-GCM; DATA_ENCRYPTION_KEY when set, else AUTH_SECRET):
  *
  * - student.pastoral_note.body (the note text);
+ * - student.pastoral_note.sar_withheld_reason (why a note is withheld from
+ *   subject access exports; its own `info`, same row-id AAD);
  * - grading.activity_accommodation.reason and
  *   grading.student_accommodation.reason (why a student has extra time).
  *
@@ -23,11 +26,17 @@ import type { RotationCount } from './secret-rotation';
  * secrets:reencrypt`) rewrites it. Nothing searches or sorts on these
  * columns.
  */
-export type SensitiveField = 'pastoral_note.body' | 'activity_accommodation.reason' | 'student_accommodation.reason';
+export type SensitiveField =
+  | 'pastoral_note.body'
+  | 'pastoral_note.sar_withheld_reason'
+  | 'activity_accommodation.reason'
+  | 'student_accommodation.reason';
 
 interface FieldSpec {
   /** Report name. */
   name: string;
+  /** Prisma model holding the column. */
+  model: 'pastoral_note' | 'activity_accommodation' | 'student_accommodation';
   table: string;
   column: string;
   aadPrefix: string;
@@ -37,13 +46,23 @@ interface FieldSpec {
 export const SENSITIVE_FIELDS: Record<SensitiveField, FieldSpec> = {
   'pastoral_note.body': {
     name: 'pastoralNotes',
+    model: 'pastoral_note',
     table: 'student.pastoral_note',
     column: 'body',
     aadPrefix: 'pastoral_note',
     info: 'gradebook:pastoral-note-body:v1',
   },
+  'pastoral_note.sar_withheld_reason': {
+    name: 'pastoralSarWithheldReasons',
+    model: 'pastoral_note',
+    table: 'student.pastoral_note',
+    column: 'sar_withheld_reason',
+    aadPrefix: 'pastoral_note',
+    info: 'gradebook:pastoral-note-sar-withheld-reason:v1',
+  },
   'activity_accommodation.reason': {
     name: 'activityAccommodations',
+    model: 'activity_accommodation',
     table: 'grading.activity_accommodation',
     column: 'reason',
     aadPrefix: 'activity_accommodation',
@@ -51,6 +70,7 @@ export const SENSITIVE_FIELDS: Record<SensitiveField, FieldSpec> = {
   },
   'student_accommodation.reason': {
     name: 'studentAccommodations',
+    model: 'student_accommodation',
     table: 'grading.student_accommodation',
     column: 'reason',
     aadPrefix: 'student_accommodation',
@@ -61,7 +81,7 @@ export const SENSITIVE_FIELDS: Record<SensitiveField, FieldSpec> = {
 /**
  * The exact shape secret-box writes: v1:<iv 12 bytes>:<tag 16 bytes>:<ct>
  * or v2:<12 hex key id>:<iv>:<tag>:<ct>, all base64. Plain text matching it
- * by accident is not realistic. Kept as a string so SQL can use it too.
+ * by accident is not realistic.
  */
 export const SEALED_PATTERN =
   '^(v1|v2:[0-9a-f]{12}):[A-Za-z0-9+/]{16}:[A-Za-z0-9+/]{22}==:[A-Za-z0-9+/]*={0,2}$';
@@ -107,19 +127,36 @@ export function openText(field: SensitiveField, rowId: string, stored: string | 
   return plain;
 }
 
-type Db = Pick<PrismaService, '$queryRawUnsafe' | '$executeRawUnsafe' | '$transaction'>;
+type Db = Pick<PrismaService, 'job_lease' | FieldSpec['model']>;
+
+/** The id + value page reader / compare-and-set writer, the same for each column. */
+interface SensitiveDelegate {
+  findMany(args: {
+    where: Record<string, unknown>;
+    orderBy: { id: 'asc' };
+    take: number;
+    select: Record<string, true>;
+  }): Promise<Array<Record<string, string>>>;
+  updateMany(args: { where: Record<string, unknown>; data: Record<string, string> }): Promise<{ count: number }>;
+}
 
 const BATCH = 200;
 const LOCK_KEY = 'gradebook:sensitive-text-backfill';
+/** How long one batch may hold the lease before another instance may take over. */
+const BATCH_LEASE_MS = 5 * 60_000;
 
 const empty = (): RotationCount => ({ scanned: 0, rewritten: 0, current: 0, failed: 0, raced: 0 });
 
 /**
  * Encrypt every plain-text value (and, with `rotate`, re-seal every value
- * not under the current DATA_ENCRYPTION_KEY). Batches of 200 by id, each in
- * its own transaction holding a transaction-level advisory lock, so two API
- * instances never work the same batch at once; each row is written only if
- * it still holds the value read, so concurrent edits win. Idempotent.
+ * not under the current DATA_ENCRYPTION_KEY). Batches of 200 by id, each
+ * under a `job_lease` claim, so two API instances never work the same batch
+ * at once; each row is written only if it still holds the value read (a
+ * compare-and-set `updateMany`), so concurrent edits win. Idempotent.
+ *
+ * Values already sealed are skipped in TypeScript (`isSealedText`) rather
+ * than with a database regex, so a plain run pages through every non-null
+ * value but only counts and rewrites the plain ones.
  */
 export async function encryptSensitiveText(
   db: Db,
@@ -129,25 +166,21 @@ export async function encryptSensitiveText(
   for (const field of Object.keys(SENSITIVE_FIELDS) as SensitiveField[]) {
     const spec = SENSITIVE_FIELDS[field];
     const count = (report[spec.name] = empty());
-    // Plain text only, unless rotating (then every non-null value).
-    const filter = opts.rotate ? '' : `AND ${spec.column} !~ $3`;
+    const delegate = db[spec.model] as unknown as SensitiveDelegate;
     let after = '00000000-0000-0000-0000-000000000000';
     for (;;) {
-      const rows = await db.$transaction(async (tx) => {
-        const lock = await tx.$queryRawUnsafe<{ locked: boolean }[]>(
-          'SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked',
-          LOCK_KEY,
-        );
-        if (!lock[0]?.locked) return null;
-        const batch = await tx.$queryRawUnsafe<{ id: string; value: string }[]>(
-          `SELECT id::text AS id, ${spec.column} AS value FROM ${spec.table}
-           WHERE ${spec.column} IS NOT NULL AND id > $1::uuid ${filter}
-           ORDER BY id LIMIT $2`,
-          after,
-          BATCH,
-          ...(opts.rotate ? [] : [SEALED_PATTERN]),
-        );
-        for (const row of batch) {
+      let page: Array<Record<string, string>> = [];
+      const ran = await withJobLease(db, LOCK_KEY, BATCH_LEASE_MS, async () => {
+        page = await delegate.findMany({
+          where: { [spec.column]: { not: null }, id: { gt: after } },
+          orderBy: { id: 'asc' },
+          take: BATCH,
+          select: { id: true, [spec.column]: true },
+        });
+        for (const raw of page) {
+          const row = { id: raw.id, value: raw[spec.column] };
+          // Plain text only, unless rotating (then every non-null value).
+          if (!opts.rotate && isSealedText(row.value)) continue;
           count.scanned++;
           let next: string;
           if (isSealedText(row.value)) {
@@ -168,21 +201,18 @@ export async function encryptSensitiveText(
             count.rewritten++;
             continue;
           }
-          const changed = await tx.$executeRawUnsafe(
-            `UPDATE ${spec.table} SET ${spec.column} = $1 WHERE id = $2::uuid AND ${spec.column} = $3`,
-            next,
-            row.id,
-            row.value,
-          );
-          if (changed === 1) count.rewritten++;
+          const changed = await delegate.updateMany({
+            where: { id: row.id, [spec.column]: row.value },
+            data: { [spec.column]: next },
+          });
+          if (changed.count === 1) count.rewritten++;
           else count.raced++;
         }
-        return batch;
       });
-      // Another instance holds the lock: it is doing this work.
-      if (rows === null) return report;
-      if (rows.length === 0) break;
-      after = rows[rows.length - 1].id;
+      // Another instance holds the lease: it is doing this work.
+      if (!ran) return report;
+      if (page.length === 0) break;
+      after = page[page.length - 1].id;
     }
   }
   return report;

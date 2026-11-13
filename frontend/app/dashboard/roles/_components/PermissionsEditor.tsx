@@ -39,7 +39,7 @@ const ACTION_LABEL: Record<CatalogEntry["action"], string> = {
   update: "Edit",
   delete: "Delete",
   safeguarding: "Safeguarding",
-  "read-all": "View all",
+  "read-all": "View all students",
   sensitive: "Sensitive details",
   export: "Export data",
   erase: "Erase",

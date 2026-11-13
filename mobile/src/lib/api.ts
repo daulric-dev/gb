@@ -108,6 +108,19 @@ export function setFeatureDisabledHandler(
 }
 
 /**
+ * Called on `403 { code: 'MFA_ENROLMENT_REQUIRED' }`: the organisation
+ * requires an authenticator app for this person and the session can do
+ * nothing else until one is set up. The root layout registers a handler that
+ * opens the "set up two-step verification" screen (not from the sign-in
+ * screens). The error is still thrown, so the caller stops.
+ */
+let mfaEnrolmentHandler: (() => void) | null = null;
+
+export function setMfaEnrolmentHandler(handler: (() => void) | null) {
+  mfaEnrolmentHandler = handler;
+}
+
+/**
  * A 401: the token this request carried is dead (expired, revoked, signed out
  * elsewhere) - or the request carried none.
  *
@@ -194,6 +207,7 @@ async function errorFrom(res: Response): Promise<ApiError> {
     setUpdateRequired(storeUrlFrom(error));
   const apiError = new ApiError(res.status, error?.message || res.statusText, error);
   if (apiError.code === "FEATURE_DISABLED") featureDisabledHandler?.(apiError);
+  if (res.status === 403 && apiError.code === "MFA_ENROLMENT_REQUIRED") mfaEnrolmentHandler?.();
   return apiError;
 }
 

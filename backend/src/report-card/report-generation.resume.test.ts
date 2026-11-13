@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createMockCacheService } from '@/test/mocks';
-import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { createMockPrisma, holdJobLeaseElsewhere, type MockPrisma } from '@/test/prisma-mock';
 import { FeatureService } from '@/features/feature.service';
 import { INTERRUPTED_ERROR, ReportGenerationService, type StaleReportRow } from './report-generation.service';
 import { ReportGenerationScheduler } from './report-generation.scheduler';
@@ -54,21 +54,59 @@ function build(opts: { queue?: Record<string, unknown> } = {}) {
   return { prisma, generation, generate, calls };
 }
 
+/** The stale pending rows the three lookups find (their terms published). */
 function staleRows(prisma: MockPrisma, rows: StaleReportRow[]) {
-  prisma.$queryRaw.mockResolvedValue(rows);
+  const pairs = [...new Map(rows.map((r) => [`${r.school_id}|${r.term_id}`, r])).values()];
+  prisma.report_document.groupBy.mockResolvedValue(
+    pairs.map((r) => ({ school_id: r.school_id, term_id: r.term_id })),
+  );
+  prisma.report_release.findMany.mockResolvedValue(
+    pairs.map((r) => ({ school_id: r.school_id, term_id: r.term_id, published_at: r.published_at })),
+  );
+  prisma.report_document.findMany.mockResolvedValue(
+    rows.map(({ published_at: _p, ...doc }) => doc),
+  );
 }
 
 describe('resuming interrupted report generation (inline mode)', () => {
-  test('selects only stale pending rows of published terms', async () => {
+  test('selects only stale pending rows of published terms, oldest first', async () => {
     const { prisma, generation } = build();
-    await generation.resumeStale(NOW);
-    const [strings, ...values] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
-    const sql = strings.join('?');
-    expect(sql).toContain("d.status = 'pending'");
-    expect(sql).toContain('d.updated_at < ?');
-    expect(sql).toContain('JOIN grading.report_release r');
-    expect(sql).toContain('r.published_at IS NOT NULL');
-    expect(values[0]).toEqual(new Date(NOW.getTime() - REPORT_RESUME_STALE_MS));
+    const cutoff = new Date(NOW.getTime() - REPORT_RESUME_STALE_MS);
+    const OTHER_TERM = '33333333-3333-4333-8333-333333333333';
+    prisma.report_document.groupBy.mockResolvedValue([
+      { school_id: SCHOOL, term_id: TERM },
+      { school_id: SCHOOL, term_id: OTHER_TERM },
+    ]);
+    // Only TERM is published.
+    prisma.report_release.findMany.mockResolvedValue([
+      { school_id: SCHOOL, term_id: TERM, published_at: PUBLISHED },
+    ]);
+    prisma.report_document.findMany.mockResolvedValue([
+      { id: 'doc-1', school_id: SCHOOL, term_id: TERM, student_id: S1, attempts: 0 },
+    ]);
+    expect(await generation.stalePending(cutoff)).toEqual([row(S1)].map((r) => ({ ...r, id: 'doc-1' })));
+
+    const stale = { status: 'pending', updated_at: { lt: cutoff } };
+    expect(prisma.report_document.groupBy.mock.calls[0][0]).toEqual({ by: ['school_id', 'term_id'], where: stale });
+    expect(prisma.report_release.findMany.mock.calls[0][0].where).toEqual({
+      published_at: { not: null },
+      OR: [
+        { school_id: SCHOOL, term_id: TERM },
+        { school_id: SCHOOL, term_id: OTHER_TERM },
+      ],
+    });
+    const docs = prisma.report_document.findMany.mock.calls[0][0];
+    expect(docs.where).toEqual({ ...stale, OR: [{ school_id: SCHOOL, term_id: TERM }] });
+    expect(docs.orderBy).toEqual([{ updated_at: 'asc' }, { id: 'asc' }]);
+  });
+
+  test('no stale rows, or none in a published term: nothing more is read', async () => {
+    const { prisma, generation } = build();
+    expect(await generation.resumeStale(NOW)).toEqual({ resumed: 0, failed: 0, skipped: 0 });
+    expect(prisma.report_release.findMany).not.toHaveBeenCalled();
+    prisma.report_document.groupBy.mockResolvedValue([{ school_id: SCHOOL, term_id: TERM }]);
+    expect(await generation.resumeStale(NOW)).toEqual({ resumed: 0, failed: 0, skipped: 0 });
+    expect(prisma.report_document.findMany).not.toHaveBeenCalled();
   });
 
   test('re-runs each row with the attempts it has left, after claiming it', async () => {
@@ -221,16 +259,17 @@ describe('ReportGenerationScheduler', () => {
 
   function setup(locked: boolean) {
     const prisma = createMockPrisma();
-    prisma.$queryRaw.mockResolvedValue([{ locked }]);
+    if (!locked) holdJobLeaseElsewhere(prisma);
     const generation = { resumeStale: mock(async () => ({ resumed: 0, failed: 0, skipped: 0 })) };
     return { prisma, generation, scheduler: new ReportGenerationScheduler(prisma as any, generation as any) };
   }
 
-  test('sweeps under the advisory lock', async () => {
+  test('sweeps under the job lease and releases it', async () => {
     const { prisma, generation, scheduler } = setup(true);
     await scheduler.tick(NOW);
-    expect((prisma.$queryRaw.mock.calls[0] as unknown[])[1]).toBe(REPORT_RESUME_LOCK);
+    expect(prisma.job_lease.create.mock.calls[0][0].data.key).toBe(REPORT_RESUME_LOCK);
     expect(generation.resumeStale).toHaveBeenCalledWith(NOW);
+    expect(prisma.job_lease.updateMany.mock.calls[0][0].where.key).toBe(REPORT_RESUME_LOCK);
   });
 
   test('another instance holding the lock: nothing runs here', async () => {

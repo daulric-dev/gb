@@ -1,4 +1,5 @@
 import type { PrismaService } from '@/prisma/prisma.service';
+import type { CacheService } from '@/cache/cache.service';
 import { defaultsForRole } from '@/permission/permission.catalog';
 import { isOrgAdmin } from '@/organisation/org-admin';
 
@@ -48,4 +49,20 @@ export async function holdsPrivilegedRole(prisma: PrismaService, userId: string)
 export async function mfaRequiredFor(prisma: PrismaService, userId: string): Promise<boolean> {
   if (!(await mfaRequiredForAdmins(prisma))) return false;
   return holdsPrivilegedRole(prisma, userId);
+}
+
+/** Per-user "required but not set up" answer, for sessions with no gate row. */
+export const MFA_NEED_PREFIX = 'mfa:need:';
+export const needKey = (userId: string) => `${MFA_NEED_PREFIX}${userId}`;
+
+/**
+ * Forget the cached enrolment answer for a user (their roles changed), or for
+ * everyone (the policy changed), so the next request re-checks it.
+ */
+export async function forgetMfaRequirement(
+  cache: Pick<CacheService, 'delete' | 'deleteByPrefix'>,
+  userId?: string,
+): Promise<void> {
+  if (userId) await cache.delete(needKey(userId));
+  else await cache.deleteByPrefix(MFA_NEED_PREFIX);
 }

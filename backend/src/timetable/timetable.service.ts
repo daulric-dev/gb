@@ -344,7 +344,8 @@ export class TimetableService {
       if (dto.schoolDays !== undefined) {
         await tx.timetable_school_day.deleteMany({ where: { school_id: schoolId } });
         await tx.timetable_school_day.createMany({
-          data: [...dto.schoolDays].sort().map((weekday) => ({ school_id: schoolId, weekday })),
+          // Repeated days would break the (school_id, weekday) primary key.
+          data: [...new Set(dto.schoolDays)].sort((a, b) => a - b).map((weekday) => ({ school_id: schoolId, weekday })),
         });
       }
     });

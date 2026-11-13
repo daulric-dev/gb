@@ -12,6 +12,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
@@ -148,8 +149,9 @@ export class ReportReleaseController {
     return this.releases.regenerate(req.user.id as string, termId, !!dto.failedOnly);
   }
 
-  /** Every generated PDF of the term, or of one course (a class), as a zip. */
+  /** Every generated PDF of the term, or of one course (a class), as a zip. Needs step-up; audited as an export. */
   @RequirePermission('report-card', 'read')
+  @RequireStepUp()
   @Get('terms/:termId/reports.zip')
   @ApiProduces('application/zip')
   async zip(

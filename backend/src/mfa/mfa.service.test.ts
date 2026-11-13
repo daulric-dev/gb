@@ -12,6 +12,7 @@ import {
   MFA_LOCKED,
   MFA_REQUIRED,
   MfaService,
+  forgetMfaRequirement,
 } from './mfa.service';
 import { base32Decode, totp } from './totp';
 
@@ -117,6 +118,13 @@ function setup(opts: { policy?: boolean; admin?: boolean } = {}) {
       });
       return token;
     },
+    revoked: [] as { userId: string; reason: string }[],
+    revokeAll: async (userId: string, reason: string) => {
+      sessions.revoked.push({ userId, reason });
+      const live = prisma.session.rows.filter((r: Row) => r.user_id === userId && !r.revoked_at);
+      live.forEach((r: Row) => (r.revoked_at = new Date()));
+      return live.length;
+    },
   };
   const audits: { action: string; event: unknown; actor: string }[] = [];
   const audit = {
@@ -130,7 +138,7 @@ function setup(opts: { policy?: boolean; admin?: boolean } = {}) {
     send: async (m: { subject: string }) => void mails.push(m.subject),
   };
   const service = new MfaService(prisma, cache as any, sessions as any, audit as any, mail as any);
-  return { service, prisma, cache, audits, mails };
+  return { service, prisma, cache, audits, mails, sessions };
 }
 
 const req: any = { ip: '203.0.113.9', headers: { 'user-agent': 'Mozilla/5.0 (Macintosh) Chrome/120' } };
@@ -380,13 +388,14 @@ describe('MfaService organisation requirement', () => {
   });
 
   test('an organisation admin reset removes the app and codes, audits and emails', async () => {
-    const { service, prisma, audits, mails } = setup();
+    const { service, prisma, audits, mails, sessions } = setup();
     await enrol(service);
     mails.length = 0;
     await service.adminReset(ADMIN, USER);
     expect(prisma.mfa_totp.rows).toHaveLength(0);
     expect(prisma.mfa_recovery_code.rows).toHaveLength(0);
     expect(audits.at(-1)).toMatchObject({ actor: ADMIN, action: 'delete', event: 'reset_by_admin' });
+    expect(sessions.revoked).toEqual([{ userId: USER, reason: 'mfa_reset' }]);
     await Bun.sleep(0);
     expect(mails).toEqual(['Your GradeBook two-step verification was reset']);
     // Nothing left to reset.
@@ -394,6 +403,54 @@ describe('MfaService organisation requirement', () => {
     // Signing in no longer asks for a code.
     await service.startSession(reply, req, USER, 'email-code');
     expect(prisma.session.rows).toHaveLength(1);
+  });
+
+  test('an organisation admin cannot reset their own two-step verification', async () => {
+    const { service, prisma, sessions } = setup();
+    await enrol(service);
+    const err = await expectRejection(service.adminReset(USER, USER));
+    expect((err as any).getStatus()).toBe(403);
+    expect(prisma.mfa_totp.rows).toHaveLength(1);
+    expect(sessions.revoked).toHaveLength(0);
+  });
+
+  test('single sign-on sessions are gated too when an authenticator is required and missing', async () => {
+    const { service, prisma } = setup({ policy: true, admin: true });
+    await service.startSession(reply, req, USER, 'google');
+    expect(prisma.mfa_enrolment_gate.rows).toHaveLength(1);
+    const user = { id: USER, sessionId: prisma.session.rows[0].id };
+    const blocked = await expectRejection(service.assertSessionAllowed({ url: '/api/courses', user }));
+    expect(codeOf(blocked)).toBe(MFA_ENROLMENT_REQUIRED);
+
+    const web = setup({ policy: true, admin: true });
+    await web.service.finishWebSignIn(reply, req, USER, 'microsoft', '/dashboard');
+    expect(web.prisma.mfa_enrolment_gate.rows).toHaveLength(1);
+  });
+
+  test('existing sessions are caught when the policy is switched on, without a gate row', async () => {
+    const { service, prisma } = setup({ policy: false, admin: true });
+    await service.startSession(reply, req, USER, 'email-code');
+    const user = { id: USER, sessionId: prisma.session.rows[0].id };
+    await service.assertSessionAllowed({ url: '/api/courses', user }); // caches "not needed"
+    await service.setPolicy(ADMIN, true);
+    expect(prisma.mfa_enrolment_gate.rows).toHaveLength(0);
+    const blocked = await expectRejection(service.assertSessionAllowed({ url: '/api/courses', user }));
+    expect(codeOf(blocked)).toBe(MFA_ENROLMENT_REQUIRED);
+    // Enrolment routes still work, and status says so.
+    await service.assertSessionAllowed({ url: '/api/auth/mfa/enrol', user });
+    expect((await service.status(user)).enrolmentRequired).toBe(true);
+    expect(await service.sessionUsable(USER, user.sessionId)).toBe(false);
+  });
+
+  test('a promoted user is caught once their cached answer is forgotten', async () => {
+    const { service, prisma, cache } = setup({ policy: true });
+    await service.startSession(reply, req, USER, 'email-code');
+    const user = { id: USER, sessionId: prisma.session.rows[0].id };
+    await service.assertSessionAllowed({ url: '/api/courses', user });
+    prisma.organisation_admin.rows.push({ user_id: USER });
+    await forgetMfaRequirement(cache as any, USER);
+    const blocked = await expectRejection(service.assertSessionAllowed({ url: '/api/courses', user }));
+    expect(codeOf(blocked)).toBe(MFA_ENROLMENT_REQUIRED);
   });
 
   test('regenerating recovery codes invalidates the old ones', async () => {

@@ -122,6 +122,83 @@ use per-process cache, realtime, presence, or queue state.
   set generous read timeouts. Allow request bodies up to at least 16 MB for
   backend API requests. File bytes themselves upload directly to S3.
 
+## Data protection requirements
+
+GradeBook holds children's records, pastoral and safeguarding notes, and
+health-related accommodation reasons. The application encrypts some of this
+itself (chat messages with `CHAT_ENCRYPTION_KEY`; pastoral note text,
+accommodation reasons, authenticator-app secrets and stored credentials with
+`DATA_ENCRYPTION_KEY`), but most of the database, the uploaded files and the
+logs are plain data on the hosting provider's disks. The hosting must protect
+them.
+
+### Database connections over TLS
+
+A database on another host must be reached over TLS. Add `sslmode` to
+`DATABASE_URL`:
+
+```env
+DATABASE_URL=postgresql://user:password@db.example.com:5432/gradebook?sslmode=verify-full
+```
+
+- `sslmode=verify-full` (recommended) encrypts the connection and checks that
+  the server's certificate is valid and issued for that host name.
+- `sslmode=require` is the minimum. With the `pg` driver GradeBook uses, it
+  is currently treated like `verify-full` (the driver prints a deprecation
+  warning); write `verify-full` so the intent is explicit.
+- If the provider signs its certificates with its own certificate authority,
+  download its CA bundle and add `&sslrootcert=/path/to/ca.pem`, or
+  verification fails.
+
+At startup the API logs a warning when `DATABASE_URL` points at another host
+without `sslmode=require`, `verify-ca` or `verify-full` (or `ssl=true`). The
+warning points here. A database on the same machine, a Unix socket, or a
+single-label host name on the same Compose or cluster network (`db`,
+`postgres`) is treated as local and does not trigger it. Run the backup
+service's `BACKUP_DATABASE_URL` with the same `sslmode`.
+
+### Encryption at rest
+
+- Use disks encrypted at rest for PostgreSQL (data directory, WAL and any
+  local dumps), Redis persistence if enabled, and any host that keeps
+  container or proxy logs. Managed databases usually offer this as a setting:
+  turn it on.
+- Turn on server-side encryption for the application bucket (`S3_BUCKET`).
+  Uploaded files, submissions, report card PDFs, data exports and the
+  erasure-log copy are stored there as they are; GradeBook does not encrypt
+  them itself.
+- Database backups are encrypted by the backup service before upload (age
+  public keys in `BACKUP_AGE_RECIPIENTS`; WAL-G with `WALG_LIBSODIUM_KEY`).
+  Keep the private keys offline. See [Backups & GDPR](./backups.md).
+
+### Where the data lives
+
+For schools in the EU or UK, choose EU or UK regions (or a country with an
+adequacy decision) for the database, the application bucket, the backup
+buckets, Redis and the servers running the API and frontend. Choose
+`BACKUP_S3_REGION` and `WALG_S3_REGION` deliberately: they have no default
+for this reason. Record each provider, region and contract in the supplier
+register; see [Sub-processors](./gdpr/sub-processors.md). Enter the hosting
+location under **Organisation → Privacy** so the privacy notice states it.
+
+### Strong sign-in for staff
+
+Staff can see many children's records. Make sure every staff account signs
+in with a second factor:
+
+- **Single sign-on** (Google, Microsoft, SAML or another OpenID Connect
+  provider) with multi-factor authentication enforced **at the identity
+  provider**. GradeBook does not see or check the provider's MFA, so enforce
+  it there with a policy that covers every staff account.
+- Or an **authenticator app (TOTP)** in GradeBook. The organisation setting
+  *Require an authenticator app for admins and safeguarding roles* is on by
+  default; it covers organisation admins, school admins and anyone holding
+  the safeguarding permission, not every teacher. Ask other staff to turn it
+  on themselves. See [Two-step verification](./guide/two-factor.md).
+
+Staff sessions are shorter than other accounts' by default
+(`STAFF_SESSION_IDLE_HOURS`, `STAFF_SESSION_MAX_DAYS`).
+
 ## Health, scaling, and operations
 
 - Configure the API load balancer's health check as `GET /health`. A healthy
@@ -149,8 +226,16 @@ use per-process cache, realtime, presence, or queue state.
 - [ ] S3 bucket, credentials, public endpoint, and CORS are configured and
   tested from a real browser and mobile device.
 - [ ] SMTP delivery is configured and a sign-in email has been received.
-- [ ] Production secrets are set: `AUTH_SECRET`, `CHAT_ENCRYPTION_KEY`, and
-  `STUDENT_CLAIM_CODE_PEPPER`; development login is disabled.
+- [ ] Production secrets are set: `AUTH_SECRET`, `DATA_ENCRYPTION_KEY`,
+  `CHAT_ENCRYPTION_KEY`, and `STUDENT_CLAIM_CODE_PEPPER`, with offline copies
+  of the encryption keys; development login is disabled.
+- [ ] `DATABASE_URL` (and `BACKUP_DATABASE_URL`) use `sslmode=verify-full`
+  for a remote database, and the API logs no TLS warning at startup.
+- [ ] Database, Redis, bucket and log disks are encrypted at rest, and every
+  store and backup bucket is in a region suitable for the schools (EU or UK
+  for EU or UK schools).
+- [ ] Staff sign in through single sign-on with MFA enforced at the identity
+  provider, or with an authenticator app.
 - [ ] `FRONTEND_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, and
   `NEXT_PUBLIC_STORAGE_URL` match the deployed origins.
 - [ ] Redis is shared and enabled if running multiple API instances.

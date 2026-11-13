@@ -36,6 +36,7 @@ import type {
   RepublishLibraryItemDto,
   UpdateLibraryItemDto,
 } from './library.dto';
+import { textSearch } from '@/common/text-search';
 
 /** Storage area of the library's own file copies. */
 export const LIBRARY_BUCKET = 'course-library';
@@ -122,18 +123,18 @@ export class LibraryService {
     if (text) {
       and.push({
         OR: [
-          { title: { contains: text, mode: 'insensitive' } },
-          { description: { contains: text, mode: 'insensitive' } },
-          { subject: { contains: text, mode: 'insensitive' } },
+          { title: textSearch.contains(text) },
+          { description: textSearch.contains(text) },
+          { subject: textSearch.contains(text) },
           { tags: { some: { tag: text.toLowerCase() } } },
         ],
       });
     }
     if (q.subject?.trim()) {
-      and.push({ subject: { equals: q.subject.trim(), mode: 'insensitive' } });
+      and.push({ subject: textSearch.equals(q.subject.trim()) });
     }
     if (q.gradeLevel?.trim()) {
-      and.push({ grade_level: { equals: q.gradeLevel.trim(), mode: 'insensitive' } });
+      and.push({ grade_level: textSearch.equals(q.gradeLevel.trim()) });
     }
     if (q.tag?.trim()) and.push({ tags: { some: { tag: q.tag.trim().toLowerCase() } } });
 

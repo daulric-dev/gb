@@ -495,7 +495,7 @@ export class DataExportService {
   /**
    * Delete expired ZIPs (and rows expired for EXPIRED_ROW_DAYS, failed rows
    * after 7 days), remove ZIPs no row points at, and resume exports a
-   * restart left behind. Run by DataExportScheduler under an advisory lock.
+   * restart left behind. Run by DataExportScheduler under a `job_lease` claim.
    */
   async sweep(now = new Date()) {
     const expired = await this.prisma.data_export.findMany({

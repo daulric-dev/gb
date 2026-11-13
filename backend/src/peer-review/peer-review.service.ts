@@ -681,11 +681,15 @@ export class PeerReviewService implements OnModuleInit {
     now: Date,
   ): Promise<string[]> {
     const submitters = await this.submitters(activity);
-    const added = await this.prisma.$transaction(async (tx) => {
-      const key = `peer-review:activity:${activity.id}`;
-      const ownerToken = await acquireJobLease(tx, key, 60_000, now);
-      if (!ownerToken) throw new ConflictException('Peer review allocation is busy');
-      try {
+    // The lease is taken outside the transaction: a failed insert (the lease
+    // row already exists) would abort a Postgres transaction, so the reclaim
+    // that follows it could never run inside one.
+    const key = `peer-review:activity:${activity.id}`;
+    const ownerToken = await acquireJobLease(this.prisma, key, 60_000);
+    if (!ownerToken) throw new ConflictException('Peer review allocation is busy');
+    let added: ReturnType<typeof allocate>;
+    try {
+      added = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.peer_review_allocation.findMany({
           where: { activity_id: activity.id },
           select: { reviewer_id: true, submission_id: true },
@@ -696,6 +700,12 @@ export class PeerReviewService implements OnModuleInit {
           setting.reviews_per_student,
           setting.seed,
         );
+        // The service-level form of the trigger peer_review_allocation_not_self
+        // (which stays as a backstop): the whole allocation fails, as the
+        // trigger would fail the insert.
+        if (fresh.some((a) => a.reviewerId === a.authorId)) {
+          throw new Error('A student cannot review their own submission');
+        }
         if (fresh.length > 0) {
           await tx.peer_review_allocation.createMany({
             data: fresh.map((a) => ({
@@ -713,10 +723,10 @@ export class PeerReviewService implements OnModuleInit {
           });
         }
         return fresh;
-      } finally {
-        await releaseJobLease(tx, key, ownerToken, now);
-      }
-    });
+      });
+    } finally {
+      await releaseJobLease(this.prisma, key, ownerToken);
+    }
     const reviewers = [...new Set(added.map((a) => a.reviewerId))];
     if (reviewers.length > 0) {
       void this.notifications?.peerReviewAssigned(activity.course_id, activity, reviewers);

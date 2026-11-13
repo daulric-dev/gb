@@ -22,6 +22,10 @@ import { AccommodationCard } from "../_components/AccommodationCard";
 import { ParentLinksCard } from "../_components/ParentLinksCard";
 import { PastoralTimelineCard } from "../_components/PastoralTimelineCard";
 import { useFeatures } from "@/hooks/use-features";
+import { usePermissions } from "@/providers/PermissionsProvider";
+import { DataExportCard } from "@/components/data-export/data-export-card";
+import { StudentRestrictionsCard } from "../_components/StudentRestrictionsCard";
+import { EraseStudentCard } from "../_components/EraseStudentCard";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -47,6 +51,7 @@ export default function StudentProfilePage() {
   const studentId = params?.studentId ?? "";
 
   const parentPortalOn = useFeatures().hasFeature("parent_portal");
+  const { can } = usePermissions();
   const profile = useSignal<StudentProfile | null>(null);
   const loading = useSignal(true);
 
@@ -82,7 +87,9 @@ export default function StudentProfilePage() {
     );
   }
 
-  const { student, courses = [], account, guardians } = profile.value;
+  // Null without `student:sensitive` (the API leaves guardian contacts out).
+  const { student, courses = [], account } = profile.value;
+  const guardians = profile.value.guardians ?? [];
   const name = `${student.first_name ?? ""} ${student.last_name ?? ""}`.trim();
   const current = courses.filter((c) => c.enrollmentStatus === "active");
   const past = courses.filter((c) => c.enrollmentStatus !== "active");
@@ -134,6 +141,8 @@ export default function StudentProfilePage() {
       <ParentLinksCard studentId={student.id} />
 
       <PastoralTimelineCard studentId={student.id} studentName={name} />
+
+      {can("student", "update") && <StudentRestrictionsCard studentId={student.id} />}
 
       <Card>
         <CardHeader className="pb-3">
@@ -224,6 +233,18 @@ export default function StudentProfilePage() {
             ))}
           </CardContent>
         </Card>
+      )}
+
+      {can("student", "export") && (
+        <DataExportCard kind="student" studentId={student.id} subjectName={name} />
+      )}
+
+      {can("student", "erase") && (
+        <EraseStudentCard
+          studentId={student.id}
+          studentName={name}
+          onErasedAction={() => router.replace("/dashboard/students")}
+        />
       )}
     </div>
   );

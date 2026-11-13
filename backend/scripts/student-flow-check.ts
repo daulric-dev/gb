@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { seedSchoolSystemRoles } from '../src/permission/system-roles';
 
 // API_URL is the API origin, as in .env.example; routes live under /api.
 const API = `${(process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '')}/api`;
@@ -114,6 +115,7 @@ async function main() {
       data: { name: `HTTP E2E ${stamp}` },
       select: { id: true },
     });
+    await seedSchoolSystemRoles(db, school.id);
     schoolId = school.id;
 
     await db.user_profile.upsert({

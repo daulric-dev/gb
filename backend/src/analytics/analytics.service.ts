@@ -53,7 +53,7 @@ export interface AnalyticsCourse {
   code: string | null;
 }
 
-interface CellRow {
+export interface CellRow {
   student_id: string;
   activity_id: string;
   status: 'draft' | 'submitted' | 'graded' | null;
@@ -65,10 +65,69 @@ interface CellRow {
   due_at: Date | null;
 }
 
-interface AttendanceRow {
+export interface AttendanceRow {
   student_id: string;
   attended: number;
   counted: number;
+}
+
+/**
+ * One cell per enrolled student × published activity, with the student's
+ * own due date (extension, else the activity's) and their submission, if
+ * any (at most one per student and activity). Submissions of students not
+ * on the roster are left out.
+ */
+export function courseCells(
+  activities: { id: string; due_at: Date | null }[],
+  roster: { student: { id: string } }[],
+  submissions: {
+    activity_id: string;
+    student_id: string;
+    status: string;
+    score: { toString(): string } | number | null;
+    excused: boolean | null;
+    submitted_at: Date | null;
+    graded_at: Date | null;
+    late_seconds: number | null;
+  }[],
+  extensions: { activity_id: string; student_id: string; due_at: Date }[],
+): CellRow[] {
+  const key = (activityId: string, studentId: string) => `${activityId}|${studentId}`;
+  const subs = new Map(submissions.map((s) => [key(s.activity_id, s.student_id), s]));
+  const ext = new Map(extensions.map((x) => [key(x.activity_id, x.student_id), x.due_at]));
+  const cells: CellRow[] = [];
+  for (const a of activities) {
+    for (const { student } of roster) {
+      const k = key(a.id, student.id);
+      const s = subs.get(k);
+      cells.push({
+        student_id: student.id,
+        activity_id: a.id,
+        status: (s?.status ?? null) as CellRow['status'],
+        score: s && s.score !== null ? Number(s.score.toString()) : null,
+        excused: s?.excused ?? false,
+        submitted_at: s?.submitted_at ?? null,
+        graded_at: s?.graded_at ?? null,
+        late_seconds: s?.late_seconds ?? 0,
+        due_at: ext.get(k) ?? a.due_at,
+      });
+    }
+  }
+  return cells;
+}
+
+/** Attended (present or late) and counted (not excused) records per student. */
+export function attendanceRows(
+  counts: { student_id: string; status: string; _count: { _all: number } }[],
+): AttendanceRow[] {
+  const byStudent = new Map<string, AttendanceRow>();
+  for (const row of counts) {
+    const r = byStudent.get(row.student_id) ?? { student_id: row.student_id, attended: 0, counted: 0 };
+    if (row.status === 'present' || row.status === 'late') r.attended += row._count._all;
+    if (row.status !== 'excused') r.counted += row._count._all;
+    byStudent.set(row.student_id, r);
+  }
+  return [...byStudent.values()];
 }
 
 export interface ActivityAnalytics extends SubmissionRates {
@@ -142,8 +201,8 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
  * Course and school analytics.
  *
  * A course's analytics are computed on request for that one course, in a
- * fixed handful of queries whatever its size (activities, groups, roster, one
- * joined cell query, one grouped attendance query, mastery evidence). The
+ * fixed handful of queries whatever its size (activities, groups, roster,
+ * submissions, extensions, one grouped attendance query, mastery evidence). The
  * school views read only `analytics_course_summary` / `analytics_at_risk`,
  * which `refreshSchool` (the sweep, or "refresh now") writes from the same
  * course computation.
@@ -245,7 +304,7 @@ export class AnalyticsService {
     const courseId = course.id;
     const since = new Date(now.getTime() - c.rules.windowWeeks * WEEK_MS);
 
-    const [groups, activities, roster, cells, attendance, evidence] = await Promise.all([
+    const [groups, activities, roster, submissions, extensions, attendanceCounts, evidence] = await Promise.all([
       this.prisma.assignment_group.findMany({
         where: { course_id: courseId },
         orderBy: [{ position: 'asc' }, { created_at: 'asc' }],
@@ -269,29 +328,36 @@ export class AnalyticsService {
         where: { course_id: courseId, status: { in: ['active', 'completed'] } },
         select: { student: { select: { id: true, first_name: true, last_name: true } } },
       }),
-      // One row per enrolled student × published activity, with the
-      // student's own due date (extension, else the activity's).
-      this.prisma.$queryRaw<CellRow[]>`
-        SELECT cs.student_id, a.id AS activity_id, s.status::text AS status,
-               s.score::float8 AS score, COALESCE(s.excused, false) AS excused,
-               s.submitted_at, s.graded_at, COALESCE(s.late_seconds, 0)::int AS late_seconds,
-               COALESCE(x.due_at, a.due_at) AS due_at
-        FROM grading.activity a
-        JOIN course.course_student cs
-          ON cs.course_id = a.course_id AND cs.status::text IN ('active', 'completed')
-        LEFT JOIN grading.submission s ON s.activity_id = a.id AND s.student_id = cs.student_id
-        LEFT JOIN grading.activity_extension x ON x.activity_id = a.id AND x.student_id = cs.student_id
-        WHERE a.course_id = ${courseId}::uuid AND a.status::text IN ('published', 'closed')`,
+      // The submissions and extensions of the course's published work; the
+      // roster × activity cells are put together below.
+      this.prisma.submission.findMany({
+        where: { activity: { course_id: courseId, status: { in: ['published', 'closed'] } } },
+        select: {
+          activity_id: true,
+          student_id: true,
+          status: true,
+          score: true,
+          excused: true,
+          submitted_at: true,
+          graded_at: true,
+          late_seconds: true,
+        },
+      }),
+      this.prisma.activity_extension.findMany({
+        where: { activity: { course_id: courseId, status: { in: ['published', 'closed'] } } },
+        select: { activity_id: true, student_id: true, due_at: true },
+      }),
+      // Attendance records per student and status in the window.
       c.attendance
-        ? this.prisma.$queryRaw<AttendanceRow[]>`
-            SELECT r.student_id,
-                   count(*) FILTER (WHERE r.status::text IN ('present', 'late'))::int AS attended,
-                   count(*) FILTER (WHERE r.status::text <> 'excused')::int AS counted
-            FROM course.attendance_record r
-            JOIN course.attendance_session s ON s.id = r.session_id
-            WHERE r.course_id = ${courseId}::uuid AND s.opened_at >= ${since} AND s.opened_at <= ${now}
-            GROUP BY r.student_id`
-        : Promise.resolve([] as AttendanceRow[]),
+        ? this.prisma.course_attendance_record.groupBy({
+            by: ['student_id', 'status'],
+            where: {
+              course_id: courseId,
+              attendance_session: { opened_at: { gte: since, lte: now } },
+            },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as { student_id: string; status: string; _count: { _all: number } }[]),
       c.mastery
         ? this.prisma.outcome_evidence.findMany({
             where: { course_id: courseId },
@@ -310,6 +376,9 @@ export class AnalyticsService {
           })
         : Promise.resolve([]),
     ]);
+
+    const cells = courseCells(activities, roster, submissions, extensions);
+    const attendance = attendanceRows(attendanceCounts);
 
     const acts = activities.map((a) => ({
       id: a.id,

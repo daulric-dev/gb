@@ -1,5 +1,8 @@
 import { api, ApiError } from "@/lib/api";
 import { NEXT_PARAM } from "@/lib/routing";
+import { TWO_STEP_SETUP_PATH } from "@/lib/mfa-redirect";
+
+export { MFA_ENROLMENT_REQUIRED, TWO_STEP_SETUP_PATH } from "@/lib/mfa-redirect";
 
 /**
  * Authenticator-app two-step verification (backend `src/mfa`): the calls,
@@ -9,11 +12,8 @@ import { NEXT_PARAM } from "@/lib/routing";
 export const MFA_CODE_LENGTH = 6;
 /** API codes. */
 export const MFA_REQUIRED = "MFA_REQUIRED";
-export const MFA_ENROLMENT_REQUIRED = "MFA_ENROLMENT_REQUIRED";
 /** The code step after the emailed code (or single sign-on). Signed-out page. */
 export const TWO_STEP_PATH = "/login/two-step";
-/** The forced set-up page for a session the organisation limits to it. Signed-in page. */
-export const TWO_STEP_SETUP_PATH = "/two-step-setup";
 /** sessionStorage: the pending sign-in challenge, kept out of the URL. */
 const CHALLENGE_KEY = "gb_mfa_challenge";
 

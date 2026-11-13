@@ -15,6 +15,7 @@ import { ErasureLogService } from '@/erasure/erasure-log.service';
 import { plan } from '@/erasure/erasure-plan';
 import { FileManagerService } from '@/file-manager/file-manager.service';
 import { loadEffectivePermissions } from '@/permission/permission.effective';
+import { scopedStudentWhere, studentScope } from '@/permission/student-access';
 import { csvCell } from '@/grading/gradebook.service';
 import { isUniqueViolation } from '@/common/db-values';
 import {
@@ -38,6 +39,9 @@ import type {
 } from './pastoral.dto';
 
 type Tx = Prisma.TransactionClient;
+
+/** What a restricted category is called to someone without the safeguarding key. */
+const RESTRICTED_LABEL = 'Restricted category';
 
 const NOTE_SELECT = {
   id: true,
@@ -129,7 +133,11 @@ export class PastoralService {
 
   // ── categories and settings ───────────────────────────────────────────────
 
-  /** The school's categories; safeguarding ones only for `safeguarding`. */
+  /**
+   * The school's categories; safeguarding ones only for `safeguarding`. A
+   * school admin without it still sees that restricted categories exist (to
+   * reorder or archive them) but not their labels (`labelHidden`).
+   */
   async categories(userId: string, includeArchived = false) {
     const c = await this.caller(userId);
     if (!hasAnyPastoralKey(c) && !c.admin) throw new ForbiddenException('Missing permission: pastoral-note:read');
@@ -142,14 +150,18 @@ export class PastoralService {
       },
       orderBy: [{ position: 'asc' }, { label: 'asc' }],
     });
-    return rows.map((r) => ({
-      id: r.id,
-      label: r.label,
-      kind: r.kind,
-      isSafeguarding: r.is_safeguarding,
-      position: r.position,
-      archived: !!r.archived_at,
-    }));
+    return rows.map((r) => {
+      const hidden = r.is_safeguarding && !c.safeguarding;
+      return {
+        id: r.id,
+        label: hidden ? RESTRICTED_LABEL : r.label,
+        kind: r.kind,
+        isSafeguarding: r.is_safeguarding,
+        position: r.position,
+        archived: !!r.archived_at,
+        labelHidden: hidden,
+      };
+    });
   }
 
   private async ensureCategories(schoolId: string) {
@@ -202,7 +214,11 @@ export class PastoralService {
 
   /**
    * Rename, reorder, archive, or change whether a category is safeguarding.
-   * Its notes follow the safeguarding flag in the same transaction.
+   * Its notes follow the safeguarding flag in the same transaction. Changing
+   * the flag (either way: it moves notes into or out of the restricted set)
+   * or renaming a restricted category needs `pastoral-note:safeguarding` on
+   * top of school:update; a flag change is also audited as a restricted
+   * change of its own. The route needs step-up.
    */
   async updateCategory(userId: string, categoryId: string, dto: UpdatePastoralCategoryDto) {
     const c = await this.requireAdmin(userId);
@@ -213,18 +229,38 @@ export class PastoralService {
     if (dto.isSafeguarding === false && cat.kind === 'safeguarding') {
       throw new BadRequestException('A safeguarding category is always restricted');
     }
+    const flagChanged = dto.isSafeguarding !== undefined && dto.isSafeguarding !== cat.is_safeguarding;
+    if (flagChanged && !c.safeguarding) {
+      throw new ForbiddenException('Missing permission: pastoral-note:safeguarding');
+    }
+    // The placeholder the caller was shown sent back unchanged is no rename.
+    const hidden = cat.is_safeguarding && !c.safeguarding;
+    const label = hidden && dto.label?.trim() === RESTRICTED_LABEL ? undefined : dto.label?.trim();
+    if (hidden && label !== undefined && label !== cat.label) {
+      throw new ForbiddenException('Missing permission: pastoral-note:safeguarding');
+    }
     const data: Prisma.pastoral_categoryUpdateInput = {};
-    if (dto.label !== undefined) data.label = dto.label.trim();
+    if (label !== undefined) data.label = label;
     if (dto.position !== undefined) data.position = dto.position;
     if (dto.archived !== undefined) data.archived_at = dto.archived ? (cat.archived_at ?? new Date()) : null;
     if (dto.isSafeguarding !== undefined) data.is_safeguarding = dto.isSafeguarding;
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.pastoral_category.update({ where: { id: cat.id }, data });
-        if (dto.isSafeguarding !== undefined && dto.isSafeguarding !== cat.is_safeguarding) {
-          await tx.pastoral_note.updateMany({
+        if (flagChanged) {
+          const moved = await tx.pastoral_note.updateMany({
             where: { category_id: cat.id },
             data: { is_safeguarding: dto.isSafeguarding },
+          });
+          // Stands out in the log like a safeguarding grant does.
+          await this.audit.record(tx, c.schoolId, { id: userId }, {
+            entity: 'pastoral_category_restricted',
+            entityId: cat.id,
+            action: 'update',
+            changes: {
+              is_safeguarding: { before: cat.is_safeguarding, after: dto.isSafeguarding },
+              notes_moved: { before: null, after: moved?.count ?? 0 },
+            },
           });
         }
         await this.audit.record(tx, c.schoolId, { id: userId }, {
@@ -234,7 +270,7 @@ export class PastoralService {
           changes: auditChanges(
             { label: cat.label, is_safeguarding: cat.is_safeguarding, archived: !!cat.archived_at, position: cat.position },
             {
-              label: dto.label?.trim() ?? cat.label,
+              label: label ?? cat.label,
               is_safeguarding: dto.isSafeguarding ?? cat.is_safeguarding,
               archived: dto.archived ?? !!cat.archived_at,
               position: dto.position ?? cat.position,
@@ -501,8 +537,7 @@ export class PastoralService {
   async setSarWithheld(userId: string, noteId: string, dto: SetSarWithheldDto) {
     const c = await this.caller(userId);
     const note = await this.requireVisible(c, noteId);
-    const effective = await loadEffectivePermissions(this.prisma, this.cache, userId, c.schoolId);
-    if (!canChangeNote(c, note) || !(c.safeguarding || effective.keys.includes('student:export'))) {
+    if (!canChangeNote(c, note) || !(c.safeguarding || c.exporter)) {
       throw new ForbiddenException('You cannot change whether this note is withheld');
     }
     const reason = dto.withheld ? (dto.reason ?? '').trim() : null;
@@ -516,7 +551,8 @@ export class PastoralService {
         where: { id: note.id },
         data: {
           sar_withheld: dto.withheld,
-          sar_withheld_reason: reason,
+          // Encrypted like the note text, against the note id.
+          sar_withheld_reason: reason === null ? null : sealText('pastoral_note.sar_withheld_reason', note.id, reason),
           sar_withheld_by: dto.withheld ? c.userId : null,
           sar_withheld_at: dto.withheld ? new Date() : null,
         },
@@ -526,7 +562,10 @@ export class PastoralService {
         entityId: note.id,
         action: 'update',
         changes: auditChanges(
-          { sar_withheld: before?.sar_withheld ?? false, sar_withheld_reason: before?.sar_withheld_reason ?? null },
+          {
+            sar_withheld: before?.sar_withheld ?? false,
+            sar_withheld_reason: openText('pastoral_note.sar_withheld_reason', note.id, before?.sar_withheld_reason ?? null),
+          },
           { sar_withheld: dto.withheld, sar_withheld_reason: reason },
         ),
       });
@@ -657,9 +696,20 @@ export class PastoralService {
     return row;
   }
 
+  /**
+   * A student of the school. Without `pastoral-note:read` (a teacher writing
+   * a note) only one in the caller's student scope (their courses and tutor
+   * group, permission/student-access.ts); anything else is 404.
+   */
   private async requireStudent(c: PastoralCaller, studentId: string) {
+    const base = { id: studentId, school_id: c.schoolId };
+    let where: Prisma.studentWhereInput = base;
+    if (!c.read) {
+      const effective = await loadEffectivePermissions(this.prisma, this.cache, c.userId, c.schoolId);
+      where = scopedStudentWhere(studentScope(effective, c.userId, c.schoolId), base);
+    }
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, school_id: c.schoolId },
+      where,
       select: { id: true },
     });
     if (!student) throw new NotFoundException('Student not found');
@@ -810,7 +860,9 @@ export class PastoralService {
       canDelete: c.update && (!r.is_safeguarding || c.safeguarding),
       // Withheld from subject access exports (src/data-export).
       sarWithheld: r.sar_withheld,
-      sarWithheldReason: r.sar_withheld_reason,
+      sarWithheldReason: openText('pastoral_note.sar_withheld_reason', r.id, r.sar_withheld_reason),
+      // May withhold or release it (setSarWithheld's rule).
+      canWithhold: canChangeNote(c, r) && (c.safeguarding || !!c.exporter),
       sarWithheldAt: r.sar_withheld_at?.toISOString() ?? null,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),

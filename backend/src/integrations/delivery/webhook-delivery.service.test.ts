@@ -228,12 +228,45 @@ describe('WebhookDeliveryService.attempt', () => {
 
   test('processOne claims by id and sends only what it claimed', async () => {
     const { service, prisma, calls } = setup();
-    prisma.$queryRaw.mockResolvedValueOnce([]);
+    // Not due (or not pending): nothing to claim.
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([]);
     await service.processOne(DELIVERY);
     expect(calls).toHaveLength(0);
-    prisma.$queryRaw.mockResolvedValueOnce([{ id: DELIVERY }]);
+    // Due, but another worker's claim won the compare-and-set.
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([{ id: DELIVERY }]);
+    prisma.webhook_delivery.updateMany.mockResolvedValueOnce({ count: 0 });
+    await service.processOne(DELIVERY);
+    expect(calls).toHaveLength(0);
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([{ id: DELIVERY }]);
+    prisma.webhook_delivery.updateMany.mockResolvedValueOnce({ count: 1 });
     await service.processOne(DELIVERY);
     expect(calls).toHaveLength(1);
+    expect(prisma.webhook_delivery.findMany.mock.calls[0][0].where).toMatchObject({
+      id: DELIVERY,
+      status: 'pending',
+    });
+  });
+
+  test('claim: due pending rows oldest first, each pushed out by a lease only while still due', async () => {
+    const { service, prisma } = setup();
+    const OTHER = '66666666-6666-4666-8666-666666666666';
+    prisma.webhook_delivery.findMany.mockResolvedValue([{ id: DELIVERY }, { id: OTHER }]);
+    prisma.webhook_delivery.updateMany.mockImplementation(async ({ where }: any) => ({
+      count: where.id === DELIVERY ? 1 : 0,
+    }));
+    const before = Date.now();
+    expect(await service.claim(10)).toEqual([DELIVERY]);
+
+    const read = prisma.webhook_delivery.findMany.mock.calls[0][0];
+    expect(read.where.status).toBe('pending');
+    const now = read.where.next_attempt_at.lte as Date;
+    expect(now.getTime()).toBeGreaterThanOrEqual(before);
+    expect(read.orderBy).toEqual([{ next_attempt_at: 'asc' }, { id: 'asc' }]);
+    expect(read.take).toBe(10);
+
+    const write = prisma.webhook_delivery.updateMany.mock.calls[0][0];
+    expect(write.where).toEqual({ id: DELIVERY, status: 'pending', next_attempt_at: { lte: now } });
+    expect(write.data.next_attempt_at.getTime()).toBeGreaterThan(now.getTime());
   });
 
   test('custom headers are sent as name: value on scheduled attempts and on sendNow (test, redeliver)', async () => {

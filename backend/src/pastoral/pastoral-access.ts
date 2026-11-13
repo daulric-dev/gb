@@ -18,6 +18,8 @@ export interface PastoralCaller {
   safeguarding: boolean;
   /** school:update - manages categories and the retention setting. */
   admin: boolean;
+  /** student:export - answers subject access requests (may withhold notes). */
+  exporter?: boolean;
 }
 
 export async function pastoralCaller(
@@ -40,6 +42,7 @@ export async function pastoralCaller(
     update: keys.has('pastoral-note:update'),
     safeguarding: keys.has('pastoral-note:safeguarding'),
     admin: keys.has('school:update'),
+    exporter: keys.has('student:export'),
   };
 }
 

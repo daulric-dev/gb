@@ -11,6 +11,7 @@ import { randomInt } from 'node:crypto';
 import { WebhookEvents } from '@/integrations/events';
 import { CacheService } from '@/cache/cache.service';
 import { loadEffectivePermissions } from '@/permission/permission.effective';
+import { scopedStudentWhere, studentScope } from '@/permission/student-access';
 import {
   COURSE_SELECT,
   CourseAccessService,
@@ -814,7 +815,13 @@ export class CourseService {
     }
   }
 
-  /** Enrol students from the school roster; re-enrolling revives a drop. */
+  /**
+   * Enrol students from the school roster; re-enrolling revives a drop.
+   * Unless the caller holds student:read-all or course:update in the school,
+   * the students must already be in their student scope (their courses and
+   * tutor group, permission/student-access.ts): enrolling is not a way to
+   * reach students they cannot otherwise see.
+   */
   async enrollStudents(userId: string, courseId: string, studentIds: string[]) {
     const { course } = await this.access.require(
       userId,
@@ -826,15 +833,18 @@ export class CourseService {
     }
     const unique = [...new Set(studentIds)];
 
+    const effective = await loadEffectivePermissions(this.prisma, this.cache, userId, course.school_id);
+    const schoolWide = effective.keys.includes('student:read-all') || effective.keys.includes('course:update');
+    const base: Prisma.studentWhereInput = { school_id: course.school_id, id: { in: unique } };
     const records = await this.prisma.student.findMany({
-      where: { school_id: course.school_id, id: { in: unique } },
+      where: schoolWide ? base : scopedStudentWhere(studentScope(effective, userId, course.school_id), base),
       select: { id: true },
     });
 
     const valid = records.map((r) => r.id);
     if (valid.length !== unique.length) {
       throw new NotFoundException(
-        'One or more students are not in this school',
+        'One or more students are not in this school or not among your students',
       );
     }
 

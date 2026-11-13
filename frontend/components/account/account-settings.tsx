@@ -37,6 +37,9 @@ import { Camera, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { SignedInDevices } from "@/components/account/signed-in-devices";
 import { TwoStepCard } from "@/components/account/mfa/two-step-card";
 import { userMessage } from "@/lib/errors";
+import { ChangeEmail } from "@/components/account/change-email";
+import { NotificationPreferencesCard } from "@/components/notifications/notification-preferences-card";
+import { DataExportCard } from "@/components/data-export/data-export-card";
 
 interface AccountProfile {
   id: string;
@@ -48,8 +51,9 @@ interface AccountProfile {
 }
 
 /**
- * The signed-in person's own account: picture, name, signed-in devices and
- * account deletion. Shared by the school settings page and the organisation
+ * The signed-in person's own account: picture, name, email address,
+ * signed-in devices, notifications, downloading their data and account
+ * deletion. Shared by the school settings page and the organisation
  * console, so it knows nothing about schools; `profileExtra` renders extra
  * fields inside the profile form (the school picker on /dashboard/settings).
  */
@@ -297,18 +301,13 @@ export function AccountSettings({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              value={profile.value?.email || ""}
-              disabled
-              className="opacity-60"
-            />
-            <p className="text-xs text-muted-foreground">
-              Email cannot be changed as it is used for authentication.
-            </p>
-          </div>
+          <ChangeEmail
+            current={profile.value?.email}
+            onChangedAction={(email) => {
+              if (profile.value) profile.value = { ...profile.value, email };
+              void refreshSilently();
+            }}
+          />
 
           {profile.value?.role && (
             <div className="space-y-2">
@@ -335,6 +334,10 @@ export function AccountSettings({
       <TwoStepCard />
 
       <SignedInDevices />
+
+      <NotificationPreferencesCard />
+
+      <DataExportCard kind="self" />
 
       <Separator />
 

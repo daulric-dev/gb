@@ -1,13 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ParentNotificationService } from './parent-notification.service';
+import { withJobLease } from '@/common/job-lease';
 
 const TICK_MS = 15 * 60 * 1000;
 const FIRST_TICK_MS = 2 * 60 * 1000;
 
 /**
  * Runs the parent notice sweep every 15 minutes in every API instance; a
- * Postgres advisory lock lets one instance sweep at a time (as the
+ * `job_lease` claim lets one instance sweep at a time (as the
  * retention scheduler does). Nothing runs under NODE_ENV=test or with
  * PARENT_NOTIFICATIONS_SWEEP=false.
  */
@@ -39,16 +40,10 @@ export class ParentNotificationScheduler implements OnModuleInit, OnModuleDestro
     if (this.running) return;
     this.running = true;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-            SELECT pg_try_advisory_xact_lock(hashtext(${'gradebook:parent-notices'})) AS locked`;
-          if (!rows?.[0]?.locked) return;
-          const sent = await this.notices.sweep(now);
-          if (sent > 0) this.logger.log(`Sent ${sent} parent notices`);
-        },
-        { maxWait: 10_000, timeout: 10 * 60_000 },
-      );
+      await withJobLease(this.prisma, 'gradebook:parent-notices', 10 * 60_000, async () => {
+        const sent = await this.notices.sweep(now);
+        if (sent > 0) this.logger.log(`Sent ${sent} parent notices`);
+      });
     } catch (err) {
       this.logger.error(`Parent notice sweep failed: ${(err as Error).message}`);
     } finally {

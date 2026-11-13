@@ -1,4 +1,5 @@
 import { loginPath } from "@/lib/routing";
+import { MFA_ENROLMENT_REQUIRED, mfaSetupRedirect } from "@/lib/mfa-redirect";
 
 const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api`;
 
@@ -102,11 +103,30 @@ async function fetchOrThrow(
   }
 }
 
+let redirectingToMfaSetup = false;
+
+/**
+ * A 403 MFA_ENROLMENT_REQUIRED: the organisation requires an authenticator
+ * app for this person and the session may do nothing else until one is set
+ * up. Send the browser to the set-up page once (any number of requests may
+ * fail together), never from that page or the sign-in pages. The error is
+ * still thrown, so the caller stops.
+ */
+function redirectToMfaSetup() {
+  if (typeof window === "undefined" || redirectingToMfaSetup) return;
+  const { pathname, search, origin } = window.location;
+  const target = mfaSetupRedirect(pathname, search);
+  if (!target) return;
+  redirectingToMfaSetup = true;
+  window.location.assign(new URL(target, origin));
+}
+
 /** The ApiError for a failed response, carrying the API's message. */
 async function errorFrom(res: Response): Promise<ApiError> {
   const error = await res.json().catch(() => ({ message: res.statusText }));
   const apiError = new ApiError(res.status, error?.message || res.statusText, error);
   if (apiError.code === "FEATURE_DISABLED") featureDisabledHandler?.(apiError);
+  if (res.status === 403 && apiError.code === MFA_ENROLMENT_REQUIRED) redirectToMfaSetup();
   return apiError;
 }
 

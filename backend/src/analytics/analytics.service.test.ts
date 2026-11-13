@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { createMockPrisma, holdJobLeaseElsewhere, type MockPrisma } from '@/test/prisma-mock';
 import { expectRejection } from '@/test/mocks';
 import { PERMISSION_KEY } from '@/permission/require-permission.decorator';
 import { FEATURE_KEY } from '@/features/require-feature.decorator';
-import { AnalyticsService, courseTableCsv } from './analytics.service';
-import { AnalyticsScheduler } from './analytics.scheduler';
+import { AnalyticsService, attendanceRows, courseCells, courseTableCsv } from './analytics.service';
+import { ANALYTICS_LOCK, AnalyticsScheduler } from './analytics.scheduler';
 import { AnalyticsController, CourseAnalyticsController } from './analytics.controller';
 
 const NOW = new Date('2026-11-10T12:00:00Z');
@@ -46,9 +46,18 @@ const CELLS = [
   c('gone', 'a1', { status: 'graded', score: 0 }),
 ];
 
+/** The submissions behind the cells (students without one have no row). */
+const SUBMISSIONS = CELLS.filter((x) => x.status !== null).map(({ due_at: _due, ...sub }) => sub);
+
+/** Attendance records grouped by student and status: s1 9/10, s3 5/10. */
 const ATTENDANCE = [
-  { student_id: 's1', attended: 9, counted: 10 },
-  { student_id: 's3', attended: 5, counted: 10 },
+  { student_id: 's1', status: 'present', _count: { _all: 8 } },
+  { student_id: 's1', status: 'late', _count: { _all: 1 } },
+  { student_id: 's1', status: 'absent', _count: { _all: 1 } },
+  // Excused records are not counted.
+  { student_id: 's1', status: 'excused', _count: { _all: 3 } },
+  { student_id: 's3', status: 'present', _count: { _all: 5 } },
+  { student_id: 's3', status: 'absent', _count: { _all: 5 } },
 ];
 
 type Perms = Record<string, { member: boolean; role: string; keys: string[] }>;
@@ -58,11 +67,9 @@ describe('AnalyticsService', () => {
   let perms: Perms;
   let features: Record<string, boolean>;
   let service: AnalyticsService;
-  let rawCalls: string[];
 
   beforeEach(() => {
     prisma = createMockPrisma();
-    rawCalls = [];
     perms = {
       'teacher:school-1': { member: true, role: 'teacher', keys: [] },
       'head:school-1': { member: true, role: 'member', keys: ['analytics:read'] },
@@ -82,13 +89,8 @@ describe('AnalyticsService', () => {
       { student: { id: 's2', first_name: '=Evil()', last_name: 'Abe' } },
       { student: { id: 's3', first_name: 'Cy', last_name: 'Cho' } },
     ]);
-    prisma.$queryRaw.mockImplementation(async (strings: TemplateStringsArray) => {
-      const sql = strings.join('?');
-      rawCalls.push(sql);
-      if (sql.includes('pg_try_advisory_xact_lock')) return [{ locked: true }];
-      if (sql.includes('attendance_record')) return ATTENDANCE;
-      return CELLS;
-    });
+    prisma.submission.findMany.mockResolvedValue(SUBMISSIONS);
+    prisma.course_attendance_record.groupBy.mockResolvedValue(ATTENDANCE);
     prisma.course.findUnique.mockImplementation(async ({ where }: any) =>
       ({
         c9: { id: 'c9', school_id: 'school-1', name: 'History', code: 'HI', is_template: false },
@@ -186,7 +188,7 @@ describe('AnalyticsService', () => {
   test('attendance off: no attendance query, rate or reason', async () => {
     features = { analytics: true, attendance: false, mastery: false };
     const v = await service.course('teacher', 'c1', NOW);
-    expect(rawCalls.some((s) => s.includes('attendance_record'))).toBe(false);
+    expect(prisma.course_attendance_record.groupBy).not.toHaveBeenCalled();
     expect(v.overview.attendanceRate).toBeNull();
     expect(v.features).toEqual({ attendance: false, mastery: false });
     expect(v.atRisk.flatMap((s) => s.reasons.map((r) => r.rule))).not.toContain('attendance');
@@ -216,14 +218,65 @@ describe('AnalyticsService', () => {
 
   test('the course view is a fixed number of queries (no per-student or per-activity queries)', async () => {
     await service.course('teacher', 'c1', NOW);
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.activity.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.course_student.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.submission.findMany).not.toHaveBeenCalled();
+    expect(prisma.submission.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.activity_extension.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.course_attendance_record.groupBy).toHaveBeenCalledTimes(1);
     expect(prisma.course_student.findMany.mock.calls[0][0].where).toEqual({
       course_id: 'c1',
       status: { in: ['active', 'completed'] },
     });
+    const published = { activity: { course_id: 'c1', status: { in: ['published', 'closed'] } } };
+    expect(prisma.submission.findMany.mock.calls[0][0].where).toEqual(published);
+    expect(prisma.activity_extension.findMany.mock.calls[0][0].where).toEqual(published);
+    expect(prisma.course_attendance_record.groupBy.mock.calls[0][0]).toEqual({
+      by: ['student_id', 'status'],
+      where: {
+        course_id: 'c1',
+        attendance_session: { opened_at: { gte: expect.any(Date), lte: NOW } },
+      },
+      _count: { _all: true },
+    });
+  });
+
+  test('cells: every roster student × activity, extension due dates win, off-roster submissions are dropped', () => {
+    const cells = courseCells(
+      [
+        { id: 'a1', due_at: d('2026-11-05T12:00:00Z') },
+        { id: 'a2', due_at: null },
+      ],
+      [{ student: { id: 's1' } }, { student: { id: 's2' } }],
+      [
+        { activity_id: 'a1', student_id: 's1', status: 'graded', score: { toString: () => '7.5' }, excused: false, submitted_at: d('2026-11-04T00:00:00Z'), graded_at: null, late_seconds: 0 },
+        { activity_id: 'a1', student_id: 'gone', status: 'graded', score: 1, excused: false, submitted_at: null, graded_at: null, late_seconds: 0 },
+      ],
+      [{ activity_id: 'a2', student_id: 's2', due_at: d('2026-12-01T00:00:00Z') }],
+    );
+    expect(cells).toHaveLength(4);
+    expect(cells.find((x) => x.activity_id === 'a1' && x.student_id === 's1')).toMatchObject({ status: 'graded', score: 7.5, excused: false, late_seconds: 0 });
+    expect(cells.find((x) => x.activity_id === 'a1' && x.student_id === 's2')).toEqual({
+      student_id: 's2',
+      activity_id: 'a1',
+      status: null,
+      score: null,
+      excused: false,
+      submitted_at: null,
+      graded_at: null,
+      late_seconds: 0,
+      due_at: d('2026-11-05T12:00:00Z'),
+    });
+    expect(cells.find((x) => x.activity_id === 'a2' && x.student_id === 's2')!.due_at).toEqual(d('2026-12-01T00:00:00Z'));
+    expect(cells.find((x) => x.activity_id === 'a2' && x.student_id === 's1')!.due_at).toBeNull();
+    expect(cells.some((x) => x.student_id === 'gone')).toBe(false);
+  });
+
+  test('attendance rows: present and late attend, everything but excused counts', () => {
+    expect(attendanceRows(ATTENDANCE)).toEqual([
+      { student_id: 's1', attended: 9, counted: 10 },
+      { student_id: 's3', attended: 5, counted: 10 },
+    ]);
   });
 
   // ── access ───────────────────────────────────────────────────────────────
@@ -373,14 +426,14 @@ describe('AnalyticsService', () => {
     expect(prisma.analytics_refresh.upsert).not.toHaveBeenCalled();
   });
 
-  test('the sweep runs under the advisory lock and skips when another instance holds it', async () => {
+  test('the sweep runs under the job lease and skips when another instance holds it', async () => {
     const scheduler = new AnalyticsScheduler(prisma as any, service);
     prisma.school.findMany.mockResolvedValue([{ id: 'school-1' }]);
     await scheduler.tick(NOW);
-    expect(rawCalls.some((s) => s.includes('pg_try_advisory_xact_lock'))).toBe(true);
+    expect(prisma.job_lease.create.mock.calls[0][0].data.key).toBe(ANALYTICS_LOCK);
     expect(prisma.analytics_refresh.upsert).toHaveBeenCalledTimes(1);
 
-    prisma.$queryRaw.mockImplementation(async () => [{ locked: false }]);
+    holdJobLeaseElsewhere(prisma);
     await scheduler.tick(NOW);
     expect(prisma.analytics_refresh.upsert).toHaveBeenCalledTimes(1);
   });

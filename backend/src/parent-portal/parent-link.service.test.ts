@@ -12,8 +12,11 @@ import { FeatureService } from '@/features/feature.service';
 import { FeatureDisabledException } from '@/features/feature-disabled.exception';
 import { createMockCacheService, expectRejection } from '@/test/mocks';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
+import { permCacheKey } from '@/permission/permission.effective';
 
 const STUDENT = '11111111-1111-4111-8111-111111111111';
+const ADMIN_KEYS = ['student:read', 'student:read-all', 'student:sensitive', 'student:update'];
+let inScope = true;
 const future = () => new Date(Date.now() + 86_400_000);
 
 function invite(over: Record<string, unknown> = {}) {
@@ -56,11 +59,15 @@ describe('ParentLinkService', () => {
   describe('staff', () => {
     beforeEach(() => {
       prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
-      prisma.student.findFirst.mockImplementation(async ({ where }: any) =>
-        where.id === STUDENT && where.school_id === 'school-1'
+      for (const school of ['school-1', 'school-2']) {
+        void cache.set(permCacheKey('staff-1', school), { member: true, role: 'admin', keys: ADMIN_KEYS }, 60);
+      }
+      prisma.student.findFirst.mockImplementation(async ({ where }: any) => {
+        const base = where.AND ? where.AND[0] : where;
+        return base.id === STUDENT && base.school_id === 'school-1' && (!where.AND || inScope)
           ? { id: STUDENT, first_name: 'Ada', last_name: 'L', school: { name: 'Riverside' } }
-          : null,
-      );
+          : null;
+      });
       prisma.parent_invite.create.mockResolvedValue({ id: 'inv-1' });
     });
 
@@ -102,6 +109,44 @@ describe('ParentLinkService', () => {
       const data = prisma.parent_invite.create.mock.calls[0][0].data;
       expect(data.kind).toBe('code');
       expect(data.token_hash).toBe(hashLinkCode(res.code));
+    });
+
+    test('a teacher sees only students in their scope (404 otherwise)', async () => {
+      await cache.set(permCacheKey('staff-1', 'school-1'), { member: true, role: 'teacher', keys: ['student:read'] }, 60);
+      inScope = false;
+      const err = await expectRejection(service.listForStudent('staff-1', STUDENT));
+      expect(err).toBeInstanceOf(NotFoundException);
+      const where = prisma.student.findFirst.mock.calls[0][0].where;
+      expect(where.AND[1].OR).toBeDefined();
+      inScope = true;
+      await service.listForStudent('staff-1', STUDENT);
+    });
+
+    test('parent and invitation emails need student:sensitive', async () => {
+      prisma.parent_student_link.findMany.mockResolvedValue([
+        {
+          id: 'l-1',
+          relationship: 'mother',
+          relationship_label: null,
+          created_at: new Date(),
+          user_profile: { id: 'p-1', first_name: 'M', last_name: 'L', email: 'mum@example.com' },
+        },
+      ]);
+      prisma.parent_invite.findMany.mockResolvedValue([
+        { ...invite(), created_at: new Date() },
+      ]);
+      const full = await service.listForStudent('staff-1', STUDENT);
+      expect(full.links[0].parent.email).toBe('mum@example.com');
+      expect(full.invites[0].email).toBe('mum@example.com');
+
+      await cache.set(
+        permCacheKey('staff-1', 'school-1'),
+        { member: true, role: 'teacher', keys: ['student:read', 'student:read-all'] },
+        60,
+      );
+      const plain = await service.listForStudent('staff-1', STUDENT);
+      expect(plain.links[0].parent.email).toBeNull();
+      expect(plain.invites[0].email).toBeNull();
     });
 
     test('removing a link is scoped to the student', async () => {

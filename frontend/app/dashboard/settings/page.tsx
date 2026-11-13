@@ -23,6 +23,7 @@ import { SchoolSsoSettings } from "./_components/school-sso-settings";
 import { SchoolIntegrationSettings } from "./_components/school-integration-settings";
 import { SchoolRecordRetentionSettings } from "./_components/school-record-retention-settings";
 import { AccountSettings } from "@/components/account/account-settings";
+import { PushContentSetting } from "@/components/notifications/push-content-setting";
 import { SchoolOwnership } from "@/components/account/school-ownership";
 import { useMySchools } from "@/hooks/use-my-schools";
 import { managingViaOrganisation } from "@/lib/active-school";
@@ -80,6 +81,8 @@ export default function SettingsPage() {
       <SchoolIntegrationSettings />
 
       <SchoolRecordRetentionSettings />
+
+      <PushContentSetting scope="school" />
 
       <SchoolOwnership
         schoolId={profile.value?.school?.id}

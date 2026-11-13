@@ -12,7 +12,8 @@ import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
 import { OfflineDataCard } from "@/features/offline/OfflineDataCard";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { offlineUsage } from "@/lib/offline-store";
-import { openPrivacyNotice } from "@/lib/privacy-link";
+import { openDataDownload, openPrivacyNotice } from "@/lib/privacy-link";
+import { NotificationPreferencesCard } from "@/features/notifications/NotificationPreferencesCard";
 
 /**
  * Student settings: identity, appearance, signed-in devices and sign-out. Deliberately narrower
@@ -82,12 +83,19 @@ export default function PortalSettingsScreen() {
 
       <SignedInDevices refreshKey={refreshKey} />
 
+      <NotificationPreferencesCard refreshKey={refreshKey} />
+
       <OfflineDataCard refreshKey={refreshKey} />
 
       <CheckForUpdates />
 
       <Button variant="ghost" onPress={openPrivacyNotice}>
         Privacy notice
+      </Button>
+
+      {/* Asked for and downloaded on the web: it needs "Confirm it's you". */}
+      <Button variant="ghost" onPress={() => openDataDownload("student")}>
+        Download my data (opens the website)
       </Button>
 
       <Button variant="outline" onPress={onLogout}>

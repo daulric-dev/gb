@@ -11,7 +11,7 @@ import { ToolKeyService } from './tool-key.service';
 import { LtiLaunchService, ltiRoles } from './lti-launch.service';
 import { LtiRateLimiter, LtiTokenService, OAuthError } from './lti-token.service';
 import { LtiAgsService, parseScore } from './lti-ags.service';
-import { LtiOrganisationFeatureGuard } from './lti.controllers';
+import { LtiOrganisationFeatureGuard, LtiPublicController } from './lti.controllers';
 import { checkClaims, decodeJwt, rsaKeyFromJwk, signJwt, verifySignature, JwtError } from './jwt';
 import { scaleScore, sha256 } from './lti-values';
 import { CLAIM, CLIENT_ASSERTION_TYPE, ROLE, SCOPE, platformEndpoints } from './lti.constants';
@@ -209,6 +209,7 @@ function launchWorld(opts: { role?: CourseRole | null; student?: boolean; featur
     where.client_id === CLIENT_ID ? tool : null,
   );
   prisma.organisation.findFirst.mockResolvedValue({ id: 'org-1', name: 'Org' });
+  prisma.user_profile.findUnique.mockResolvedValue({ is_active: true });
 
   const access = {
     roleIn: mock(async () => opts.role ?? null),
@@ -370,6 +371,42 @@ describe('LTI launch', () => {
     expect(other.status).toBe(400);
     // None of the refusals spent the ticket.
     expect((await service.authorize(authParams(url), USER_ID)).status).toBe(200);
+  });
+
+  test('a deactivated account, a blocked session or a missing required authenticator is refused', async () => {
+    const world = launchWorld({ role: 'teacher' });
+    const { url } = await world.service.start(USER_ID, COURSE_ID, ITEM_ID);
+    const blocked = await world.service.authorize(authParams(url), USER_ID, true);
+    expect(blocked.status).toBe(400);
+    expect(blocked.body).not.toContain('name="id_token"');
+
+    world.prisma.user_profile.findUnique.mockResolvedValue({ is_active: false });
+    const inactive = await world.service.authorize(authParams(url), null);
+    expect(inactive.status).toBe(400);
+    expect(inactive.body).toContain('deactivated');
+
+    world.prisma.user_profile.findUnique.mockResolvedValue({ is_active: true });
+    const mfa = { enrolmentRequired: async () => true } as any;
+    const gated = new LtiLaunchService(world.prisma as any, world.access, features(true), world.keys, mfa);
+    const page = await gated.authorize(authParams(url), null);
+    expect(page.status).toBe(400);
+    expect(page.body).toContain('two-step');
+  });
+
+  test('the public controller marks deactivated and enrolment-gated sessions as blocked', async () => {
+    const prisma = createMockPrisma();
+    const sessions = { resolve: async () => ({ userId: USER_ID, sessionId: 's-1', email: 'a@b.c', elevatedUntil: null }) };
+    let usable = true;
+    const mfa = { sessionUsable: async () => usable } as any;
+    const ctl = new LtiPublicController({} as any, {} as any, {} as any, sessions as any, prisma as any, mfa);
+    const req: any = { headers: {}, cookies: { gb_session: 'abc.def' } };
+    prisma.user_profile.findUnique.mockResolvedValue({ is_active: true });
+    expect(await ctl.sessionUser(req)).toEqual({ userId: USER_ID, blocked: false });
+    usable = false;
+    expect(await ctl.sessionUser(req)).toEqual({ userId: USER_ID, blocked: true });
+    usable = true;
+    prisma.user_profile.findUnique.mockResolvedValue({ is_active: false });
+    expect(await ctl.sessionUser(req)).toEqual({ userId: USER_ID, blocked: true });
   });
 
   test('a hint issued for another tool is refused', async () => {

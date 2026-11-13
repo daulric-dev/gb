@@ -401,6 +401,54 @@ describe('DiscussionService', () => {
   });
 });
 
+describe('DiscussionService.list counts', () => {
+  test('reply and unread counts come from grouped counts over the listed topics', async () => {
+    const prisma = createMockPrisma();
+    const read = new Date('2026-10-22T09:00:00.000Z');
+    const T2 = { ...TOPIC, id: 'topic-2', author_user_profile_id: 'student-1' };
+    prisma.discussion_topic.findMany.mockResolvedValue([TOPIC, T2]);
+    prisma.discussion_read.findMany.mockResolvedValue([{ topic_id: 'topic-1', last_read_at: read }]);
+    prisma.discussion_reply.groupBy.mockImplementation(async ({ where }: any) =>
+      where.AND
+        ? [{ topic_id: 'topic-2', _count: { _all: 2 } }]
+        : [
+            { topic_id: 'topic-1', _count: { _all: 4 } },
+            { topic_id: 'topic-2', _count: { _all: 3 } },
+          ],
+    );
+
+    const out = await service(prisma).list(ctx('student', 'student-1'));
+    const byId = new Map(out.topics.map((t: any) => [t.id, t]));
+    expect(byId.get('topic-1')).toMatchObject({ replyCount: 4, unreadCount: 0, isRead: true });
+    // Never opened, but the caller wrote it.
+    expect(byId.get('topic-2')).toMatchObject({ replyCount: 3, unreadCount: 2, isRead: true });
+
+    const live = { course_id: 'course-1', topic_id: { in: ['topic-1', 'topic-2'] }, deleted_at: null };
+    const calls = prisma.discussion_reply.groupBy.mock.calls.map((c: any[]) => c[0]);
+    expect(calls.find((c: any) => !c.where.AND).where).toEqual(live);
+    expect(calls.find((c: any) => c.where.AND).where).toEqual({
+      ...live,
+      AND: [
+        { OR: [{ author_user_profile_id: null }, { author_user_profile_id: { not: 'student-1' } }] },
+        {
+          OR: [
+            { topic_id: { notIn: ['topic-1'] } },
+            { topic_id: 'topic-1', created_at: { gt: read } },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('no topics: no counts are read', async () => {
+    const prisma = createMockPrisma();
+    const out = await service(prisma).list(ctx('teacher', 'teacher-1'));
+    expect(out.topics).toEqual([]);
+    expect(prisma.discussion_reply.groupBy).not.toHaveBeenCalled();
+    expect(prisma.discussion_read.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('DiscussionService notices', () => {
   function withNotices(prisma: MockPrisma) {
     const calls: { topic: any[]; reply: any[] } = { topic: [], reply: [] };

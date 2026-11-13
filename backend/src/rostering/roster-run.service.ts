@@ -33,6 +33,7 @@ import {
   type RosterJobData,
 } from './rostering.constants';
 import type { ListChangesQueryDto } from './dto/rostering.dto';
+import { textSearch } from '@/common/text-search';
 
 const ACTIVE = ['planning', 'queued', 'applying'];
 
@@ -466,8 +467,8 @@ export class RosterRunService {
       ...(q.search?.trim()
         ? {
             OR: [
-              { label: { contains: q.search.trim(), mode: 'insensitive' } },
-              { sourced_id: { contains: q.search.trim(), mode: 'insensitive' } },
+              { label: textSearch.contains(q.search.trim()) },
+              { sourced_id: textSearch.contains(q.search.trim()) },
             ],
           }
         : {}),

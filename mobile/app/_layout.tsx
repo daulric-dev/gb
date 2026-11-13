@@ -1,6 +1,6 @@
 import "react-native-gesture-handler";
-import { useEffect } from "react";
-import { Stack, useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
+import { Stack, usePathname, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -10,7 +10,8 @@ import { PermissionsProvider } from "@/providers/PermissionsProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
 import { NotificationRouter } from "@/providers/NotificationRouter";
 import { UpdateGate } from "@/features/app-update/UpdateGate";
-import { setUnauthorizedHandler } from "@/lib/api";
+import { setMfaEnrolmentHandler, setUnauthorizedHandler } from "@/lib/api";
+import { shouldRouteToTwoStepRequired } from "@/lib/mfa";
 import { clearOpenedFiles } from "@/lib/open-file";
 import { clearOfflineReads } from "@/lib/offline-store";
 import { ErrorScreen } from "@/components/layout/ErrorScreen";
@@ -36,6 +37,22 @@ function RootNavigator() {
       router.replace("/(auth)/login");
     });
     return () => setUnauthorizedHandler(null);
+  }, [router]);
+
+  // A session the organisation limits to setting up an authenticator app
+  // (403 MFA_ENROLMENT_REQUIRED): show the screen that explains it, once.
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
+  useEffect(() => {
+    setMfaEnrolmentHandler(() => {
+      if (!shouldRouteToTwoStepRequired(pathnameRef.current)) return;
+      pathnameRef.current = "/two-step-required";
+      router.replace("/(auth)/two-step-required" as never);
+    });
+    return () => setMfaEnrolmentHandler(null);
   }, [router]);
 
   return (

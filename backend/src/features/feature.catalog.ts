@@ -228,7 +228,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     key: 'analytics',
     label: 'Analytics',
     description:
-      'Course analytics for teachers (submission rates, grade distributions, group averages, weekly trend and students at risk) and school roll-ups per course and teacher for staff holding analytics:read. Counts and averages only; never shown to students or parents.',
+      "Course analytics for teachers (submission rates, grade distributions, group averages, weekly trend) and school roll-ups per course and teacher for staff holding analytics:read. The at-risk lists name the students who meet the school's rule-based criteria (low grade, missing work, low attendance or mastery), with the reasons: prompts for staff to look more closely, never automated decisions. A student restricted from analytics is left off those lists. Never shown to students or parents.",
     default: true,
     requires: [],
   },
@@ -236,7 +236,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     key: 'translation',
     label: 'Machine translation',
     description:
-      "Users can read the interface and course content in another language through the organisation's translation engine (Google, DeepL, LibreTranslate or Yandex), and teachers can make a translated draft copy of an assignment or quiz. Text the user views is sent to the engine; never form inputs. Off by default; the organisation chooses the engine and a school can switch it off.",
+      "Users can read the interface and course content in another language through the organisation's translation engine (LibreTranslate or DeepL; Google and Yandex only when the server sets TRANSLATION_ALLOW_UNCONTRACTED_ENGINES=true, as they offer no data processing agreement), and teachers can make a translated draft copy of an assignment or quiz. Text on the page the user views is sent to the engine; never form inputs, pages about individual people (chat, pastoral notes, student records, analytics, audit logs) or text marked private (names, marks, grades, feedback, email addresses). Off by default; the organisation chooses the engine and a school can switch it off.",
     default: false,
     requires: [],
   },

@@ -10,7 +10,7 @@ CREATE TABLE public.timetable_school_day (
 );
 
 INSERT INTO public.timetable_school_day (school_id, weekday)
-SELECT setting.school_id, open_day.weekday
+SELECT DISTINCT setting.school_id, open_day.weekday
 FROM public.timetable_setting AS setting
 CROSS JOIN LATERAL unnest(setting.school_days) AS open_day(weekday);
 

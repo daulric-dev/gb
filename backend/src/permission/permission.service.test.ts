@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, mock } from 'bun:test';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PermissionService } from './permission.service';
 import { expectRejection } from '@/test/mocks';
@@ -232,6 +232,23 @@ describe('PermissionService', () => {
     expect(
       await expectRejection(svc.assignRoleToMember(ADMIN, 'm1', 'r1')),
     ).toBeInstanceOf(ForbiddenException);
+  });
+
+  test('assignRoleToMember audits a role granting an explicit-only key on its own', async () => {
+    const prisma = prismaInSchool();
+    prisma.school_management.findUnique.mockResolvedValue({ id: 'm1', user_id: 'u2', school_id: 's1' });
+    prisma.school_role.findUnique.mockResolvedValue({ id: 'r1', school_id: 's1', is_system: false, name: 'DSL' });
+    prisma.school_role_permission.findMany.mockResolvedValue([
+      { permission_catalog: { key: 'pastoral-note:safeguarding' } },
+    ] as any);
+    prisma.school_management_role.findUnique.mockResolvedValue(null);
+    const auditLog = { record: mock(async () => {}) };
+    const { cache } = makeCache();
+    const svc = new PermissionService(cache, prisma as any, undefined, auditLog as any);
+    await svc.assignRoleToMember(ADMIN, 'm1', 'r1');
+    const entries = auditLog.record.mock.calls.map((c: any[]) => c[3]);
+    expect(entries.map((e: any) => e.entity)).toEqual(['school_membership', 'school_membership_restricted_permission']);
+    expect(entries[1].changes.granted.after).toEqual(['pastoral-note:safeguarding']);
   });
 
   test('changeMemberRole allows clearing a member default role to null', async () => {

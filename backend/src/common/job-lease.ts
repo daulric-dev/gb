@@ -44,3 +44,30 @@ export async function releaseJobLease(
     data: { owner_token: null, expires_at: null, updated_at: now },
   });
 }
+
+/**
+ * Run `work` while holding the lease `key`; false (and `work` not run) when
+ * another worker holds an unexpired lease. The portable replacement for a
+ * PostgreSQL transaction-scoped advisory lock: `leaseMs` plays the part of
+ * the old transaction timeout, after which another instance may take over.
+ *
+ * Uses the root client on purpose. Never call this inside an interactive
+ * transaction: the claim relies on a unique-violation insert, which aborts
+ * a PostgreSQL transaction.
+ */
+export async function withJobLease(
+  db: LeaseDb,
+  key: string,
+  leaseMs: number,
+  work: () => Promise<void>,
+): Promise<boolean> {
+  const ownerToken = await acquireJobLease(db, key, leaseMs);
+  if (!ownerToken) return false;
+  try {
+    await work();
+  } finally {
+    // A failed release only delays the next holder until the lease expires.
+    await releaseJobLease(db, key, ownerToken).catch(() => undefined);
+  }
+  return true;
+}

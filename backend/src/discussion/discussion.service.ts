@@ -194,15 +194,13 @@ export class DiscussionService {
     }
 
     const ids = topics.map((t) => t.id);
-    const [stats, reads] = ids.length
-      ? await Promise.all([
-          this.stats(ctx),
-          this.prisma.discussion_read.findMany({
-            where: { user_profile_id: ctx.userId, topic_id: { in: ids } },
-            select: { topic_id: true },
-          }),
-        ])
-      : [[] as TopicStats[], [] as { topic_id: string }[]];
+    const reads = ids.length
+      ? await this.prisma.discussion_read.findMany({
+          where: { user_profile_id: ctx.userId, topic_id: { in: ids } },
+          select: { topic_id: true, last_read_at: true },
+        })
+      : [];
+    const stats = ids.length ? await this.stats(ctx, ids, reads) : [];
 
     const byTopic = new Map(stats.map((s) => [s.topic_id, s]));
     const opened = new Set(reads.map((r) => r.topic_id));
@@ -765,21 +763,48 @@ export class DiscussionService {
     return reply;
   }
 
-  /** Live reply counts and the caller's unread counts, per topic in the course. */
-  private async stats(ctx: DiscussionCtx): Promise<TopicStats[]> {
-    return this.prisma.$queryRaw<TopicStats[]>`
-      SELECT r.topic_id,
-             count(*) FILTER (WHERE r.deleted_at IS NULL)::int AS reply_count,
-             count(*) FILTER (
-               WHERE r.deleted_at IS NULL
-                 AND r.author_user_profile_id IS DISTINCT FROM ${ctx.userId}::uuid
-                 AND (rd.last_read_at IS NULL OR r.created_at > rd.last_read_at)
-             )::int AS unread_count
-        FROM course.discussion_reply r
-        LEFT JOIN course.discussion_read rd
-          ON rd.topic_id = r.topic_id AND rd.user_profile_id = ${ctx.userId}::uuid
-       WHERE r.course_id = ${ctx.course.id}::uuid
-       GROUP BY r.topic_id`;
+  /**
+   * Live reply counts and the caller's unread counts for the listed topics,
+   * in two grouped counts. Unread: live replies by someone else (or by no
+   * one, an erased author) newer than the caller's read marker, or all of
+   * them in a topic the caller never opened.
+   */
+  private async stats(
+    ctx: DiscussionCtx,
+    topicIds: string[],
+    reads: { topic_id: string; last_read_at: Date }[],
+  ): Promise<TopicStats[]> {
+    const live = { course_id: ctx.course.id, topic_id: { in: topicIds }, deleted_at: null };
+    const [replies, unread] = await Promise.all([
+      this.prisma.discussion_reply.groupBy({
+        by: ['topic_id'],
+        where: live,
+        _count: { _all: true },
+      }),
+      this.prisma.discussion_reply.groupBy({
+        by: ['topic_id'],
+        where: {
+          ...live,
+          AND: [
+            // IS DISTINCT FROM the caller: `not` alone leaves out nulls.
+            { OR: [{ author_user_profile_id: null }, { author_user_profile_id: { not: ctx.userId } }] },
+            {
+              OR: [
+                { topic_id: { notIn: reads.map((r) => r.topic_id) } },
+                ...reads.map((r) => ({ topic_id: r.topic_id, created_at: { gt: r.last_read_at } })),
+              ],
+            },
+          ],
+        },
+        _count: { _all: true },
+      }),
+    ]);
+    const unreadBy = new Map(unread.map((u) => [u.topic_id, u._count._all]));
+    return replies.map((r) => ({
+      topic_id: r.topic_id,
+      reply_count: r._count._all,
+      unread_count: unreadBy.get(r.topic_id) ?? 0,
+    }));
   }
 
   private toTopicSummary(ctx: DiscussionCtx, t: TopicRecord) {

@@ -39,19 +39,6 @@ function db(): MockPrisma {
   return prisma;
 }
 
-/** An error as raised by a SQL function through $queryRaw. */
-const raised = (message: string, code = 'P0001') =>
-  Object.assign(new Error(`Raw query failed. Message: \`${message}\``), {
-    code: 'P2010',
-    meta: { code, message },
-  });
-
-/** The SQL text and bound values of the nth raw query. */
-function rawCall(prisma: MockPrisma, n = 0) {
-  const [strings, ...values] = prisma.$queryRaw.mock.calls[n];
-  return { sql: (strings as string[]).join('?'), values };
-}
-
 describe('StudentMembershipService codes', () => {
   test('issues a grouped code and stores only its hash', async () => {
     const prisma = db();
@@ -124,21 +111,53 @@ describe('StudentMembershipService codes', () => {
 });
 
 describe('StudentMembershipService.joinByCode', () => {
-  function joiner(result: unknown[] | Error) {
+  const CODE_HASH = /^[0-9a-f]{64}$/;
+
+  /** A live code for SCHOOL and an unbound profile, unless overridden. */
+  function joiner(
+    opts: {
+      code?: { school_id: string } | null;
+      profile?: Record<string, unknown> | null;
+      bound?: number;
+    } = {},
+  ) {
     const { deleted, cache } = recordingCache();
-    const prisma = db();
-    if (result instanceof Error) prisma.$queryRaw.mockRejectedValue(result);
-    else prisma.$queryRaw.mockResolvedValue(result);
+    const prisma = createMockPrisma();
+    const profile =
+      opts.profile === undefined
+        ? { first_name: 'Ada', last_name: 'Lovelace', school_id: null, account_type: 'student' }
+        : opts.profile;
+    prisma.user_profile.findUnique.mockResolvedValue(profile);
+    prisma.school_join_code.findFirst.mockResolvedValue(
+      opts.code === undefined ? { school_id: SCHOOL } : opts.code,
+    );
+    prisma.student.create.mockResolvedValue({ id: JOINED });
+    prisma.user_profile.updateMany.mockResolvedValue({ count: opts.bound ?? 1 });
     return { svc: service(prisma, cache), prisma, deleted };
   }
 
-  const ok = [{ student_id: JOINED, school_id: SCHOOL }];
-
-  test('joining drops every membership cache key', async () => {
-    const { svc, deleted } = joiner(ok);
+  test('joining creates the record, binds the profile and drops every membership cache key', async () => {
+    const { svc, prisma, deleted } = joiner();
 
     const out = await svc.joinByCode(USER, 'ABCD-EFGH-JKMN');
     expect(out).toEqual({ studentId: JOINED, schoolId: SCHOOL });
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.student.create.mock.calls[0][0].data).toEqual({
+      school_id: SCHOOL,
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      user_profile_id: USER,
+      is_active: true,
+    });
+    // Bound only while still unbound (compare-and-set).
+    expect(prisma.user_profile.updateMany.mock.calls[0][0]).toEqual({
+      where: { id: USER, school_id: null },
+      data: { school_id: SCHOOL, account_type: 'student', role: null, is_active: true },
+    });
+    // Students are not staff members.
+    expect(prisma.school_management.create).not.toHaveBeenCalled();
+    expect(prisma.school_management.upsert).not.toHaveBeenCalled();
 
     // The bug this service exists to prevent: profile and students hold for
     // thirty days, so a miss is effectively permanent.
@@ -147,64 +166,86 @@ describe('StudentMembershipService.joinByCode', () => {
     expect(deleted).toContain(`students:${SCHOOL}`);
   });
 
-  test('never sends the plaintext code to the database', async () => {
-    const { svc, prisma } = joiner(ok);
+  test('looks the code up by hash only, live and unrevoked, never by the plaintext', async () => {
+    const { svc, prisma } = joiner();
+    const before = Date.now();
     await svc.joinByCode(USER, 'ABCD-EFGH-JKMN');
 
-    const { sql, values } = rawCall(prisma);
-    expect(sql).toContain('redeem_school_join_code');
-    expect(values[0]).toBe(USER);
-    expect(values[1]).toMatch(/^[0-9a-f]{64}$/);
-    expect(JSON.stringify(values)).not.toContain('ABCD');
+    const where = prisma.school_join_code.findFirst.mock.calls[0][0].where;
+    expect(where.code_hash).toMatch(CODE_HASH);
+    expect(where.revoked_at).toBeNull();
+    expect(where.expires_at.gt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(JSON.stringify(prisma.school_join_code.findFirst.mock.calls)).not.toContain('ABCD');
   });
 
   test('accepts any case or dash formatting', async () => {
-    const a = joiner(ok);
+    const a = joiner();
     await a.svc.joinByCode(USER, 'abcd-efgh-jkmn');
-    const b = joiner(ok);
+    const b = joiner();
     await b.svc.joinByCode(USER, 'ABCDEFGHJKMN');
 
-    expect(rawCall(a.prisma).values[1]).toBe(rawCall(b.prisma).values[1]);
+    expect(a.prisma.school_join_code.findFirst.mock.calls[0][0].where.code_hash).toBe(
+      b.prisma.school_join_code.findFirst.mock.calls[0][0].where.code_hash,
+    );
   });
 
   test('a wrong-length code never reaches the database', async () => {
-    const { svc, prisma } = joiner(ok);
+    const { svc, prisma } = joiner();
     expect(await expectRejection(svc.joinByCode(USER, 'SHORT'))).toBeInstanceOf(
       BadRequestException,
     );
-    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.school_join_code.findFirst).not.toHaveBeenCalled();
+    expect(prisma.student.create).not.toHaveBeenCalled();
   });
 
-  test('no row back is an invalid code', async () => {
-    const { svc } = joiner([]);
-    expect(
-      await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
-    ).toBeInstanceOf(BadRequestException);
-  });
-
-  test('an account already in a school is refused', async () => {
-    const { svc } = joiner(raised('already_in_a_school', 'P0012'));
-    expect(
-      await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
-    ).toBeInstanceOf(ConflictException);
-  });
-
-  test('an unknown or expired code gives a generic error', async () => {
-    const { svc } = joiner(raised('invalid_join_code', 'P0011'));
+  test('an unknown, expired or revoked code gives a generic error and writes nothing', async () => {
+    const { svc, prisma } = joiner({ code: null });
     const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
     expect(err).toBeInstanceOf(BadRequestException);
     expect(String((err as Error).message)).toContain('Invalid or expired');
+    expect(prisma.student.create).not.toHaveBeenCalled();
   });
 
-  test('a missing migration is logged, and the user gets a plain message', async () => {
-    const { svc } = joiner(
-      raised('function public.redeem_school_join_code does not exist', '42883'),
-    );
+  test('a missing profile is asked to complete it', async () => {
+    const { svc } = joiner({ profile: null });
     const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
     expect(err).toBeInstanceOf(BadRequestException);
-    const message = String((err as Error).message);
-    expect(message).toBe('Joining by code is unavailable right now. Please try again later.');
-    expect(message).not.toContain('redeem_school_join_code');
-    expect(message).not.toContain('migration');
+    expect(String((err as Error).message)).toBe('Complete your profile first');
+  });
+
+  test('an account already in a school is refused', async () => {
+    const { svc, prisma } = joiner({
+      profile: { first_name: 'A', last_name: 'B', school_id: 'other', account_type: 'student' },
+    });
+    expect(
+      await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
+    ).toBeInstanceOf(ConflictException);
+    expect(prisma.student.create).not.toHaveBeenCalled();
+  });
+
+  test('a profile settled concurrently between read and bind is refused (the transaction rolls back)', async () => {
+    const { svc, deleted } = joiner({ bound: 0 });
+    expect(
+      await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
+    ).toBeInstanceOf(ConflictException);
+    expect(deleted).toEqual([]);
+  });
+
+  test('a database failure is logged, and the user gets a plain message', async () => {
+    const { svc, prisma } = joiner();
+    prisma.student.create.mockRejectedValue(new Error('duplicate key value violates unique constraint'));
+    const err = await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN'));
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(String((err as Error).message)).toBe('Failed to redeem join code');
+  });
+
+  test('a parent account cannot join as a student', async () => {
+    const { svc, prisma } = joiner({
+      profile: { first_name: 'P', last_name: 'Q', school_id: null, account_type: 'parent' },
+    });
+    expect(
+      await expectRejection(svc.joinByCode(USER, 'ABCD-EFGH-JKMN')),
+    ).toBeInstanceOf(ConflictException);
+    expect(prisma.school_join_code.findFirst).not.toHaveBeenCalled();
   });
 });

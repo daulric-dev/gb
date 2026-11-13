@@ -303,7 +303,10 @@ describe('people', () => {
   test('student.joined_school after redeeming the school join code', async () => {
     const webhooks = recorder();
     const prisma = createMockPrisma();
-    prisma.$queryRaw.mockResolvedValue([{ student_id: STUDENT, school_id: SCHOOL }]);
+    prisma.user_profile.findUnique.mockResolvedValue({ first_name: 'A', last_name: 'B', school_id: null });
+    prisma.school_join_code.findFirst.mockResolvedValue({ school_id: SCHOOL });
+    prisma.student.create.mockResolvedValue({ id: STUDENT });
+    prisma.user_profile.updateMany.mockResolvedValue({ count: 1 });
     const service = new StudentMembershipService(prisma as any, createMockCacheService() as any, webhooks as any);
     await service.joinByCode(USER, 'ABCD-EFGH-JKMN');
     await settle();
@@ -414,19 +417,27 @@ describe('grading', () => {
         graded_by: null,
         quiz_started_at: new Date('2026-11-04T09:00:00Z'),
       });
-      p.$queryRaw.mockImplementation(async (strings: string[]) => {
-        if (strings.join('?').includes('submit_quiz')) {
-          return [{ score: 8, points: 10, attempts_used: 1 }];
-        }
-        return [
-          {
-            attempt_count: 0,
-            graded_by: null,
-            quiz_started_at: new Date('2026-11-04T09:00:00Z'),
-            expired: false,
-          },
-        ];
+      // The attempt is claimed with a conditional update and scored in
+      // TypeScript (grading/quiz-rescore.ts): 8 of 10 question points.
+      p.submission.findUnique.mockResolvedValue({
+        id: SUBMISSION,
+        activity_id: ACTIVITY,
+        attempt_count: 0,
+        graded_by: null,
+        graded_at: null,
+        quiz_started_at: new Date('2026-11-04T09:00:00Z'),
+        quiz_expires_at: null,
+        activity: { points: 10 },
       });
+      p.submission.updateMany.mockResolvedValue({ count: 1 });
+      p.quiz_question.findMany.mockResolvedValue([
+        { id: 'q1', kind: 'numeric', points: 8, numeric_answer: 4, numeric_tolerance: 0, partial_credit: false },
+        { id: 'q2', kind: 'numeric', points: 2, numeric_answer: 7, numeric_tolerance: 0, partial_credit: false },
+      ]);
+      p.quiz_answer.findMany.mockResolvedValue([
+        { question_id: 'q1', option_id: null, option_ids: [], matches: null, text_answer: null, numeric_answer: 4, file_id: null, manual_points: null },
+        { question_id: 'q2', option_id: null, option_ids: [], matches: null, text_answer: null, numeric_answer: 1, file_id: null, manual_points: null },
+      ]);
     });
     await service.submitQuiz(STUDENT, ACTIVITY, []);
     await settle();

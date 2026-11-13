@@ -33,6 +33,7 @@ const USERS: Record<string, { role: string; keys: string[]; school?: string } | 
   teacher: { role: 'teacher', keys: [] },
   author: { role: 'teacher', keys: [] },
   member: { role: 'member', keys: [] },
+  sgadmin: { role: 'admin', keys: ['pastoral-note:safeguarding'] },
   outsider: { role: 'admin', keys: [], school: OTHER_SCHOOL },
   student: null,
 };
@@ -66,7 +67,11 @@ function note(over: Record<string, any> = {}) {
 const sgNote = (over: Record<string, any> = {}) =>
   note({ id: SG_NOTE, category_id: SG_CAT, is_safeguarding: true, author_id: 'dsl', category: { label: 'Safeguarding', kind: 'safeguarding' }, ...over });
 
+/** Whether STUDENT is in a scoped (course / tutor group) caller's scope. */
+const scope = { inScope: true };
+
 function db(): MockPrisma {
+  scope.inScope = true;
   const prisma = createMockPrisma();
   prisma.user_profile.findUnique.mockImplementation(async ({ where }: any) => {
     const u = USERS[where.id];
@@ -82,9 +87,11 @@ function db(): MockPrisma {
       ],
     };
   });
-  prisma.student.findFirst.mockImplementation(async ({ where }: any) =>
-    where.id === STUDENT && where.school_id === SCHOOL ? { id: STUDENT } : null,
-  );
+  prisma.student.findFirst.mockImplementation(async ({ where }: any) => {
+    const base = where.AND ? where.AND[0] : where;
+    if (where.AND && !scope.inScope) return null;
+    return base.id === STUDENT && base.school_id === SCHOOL ? { id: STUDENT } : null;
+  });
   prisma.pastoral_category.findFirst.mockImplementation(async ({ where }: any) => {
     if (where.school_id !== SCHOOL) return null;
     if (where.id === CAT) return { id: CAT, school_id: SCHOOL, kind: 'pastoral', is_safeguarding: false, archived_at: null };
@@ -392,8 +399,79 @@ describe('PastoralService', () => {
 
   test('making a category safeguarding moves its notes with it', async () => {
     const prisma = db();
-    await service(prisma).svc.updateCategory('admin', CAT, { isSafeguarding: true });
+    prisma.pastoral_note.updateMany.mockResolvedValue({ count: 3 });
+    await service(prisma).svc.updateCategory('sgadmin', CAT, { isSafeguarding: true });
     expect(prisma.pastoral_note.updateMany).toHaveBeenCalledWith({ where: { category_id: CAT }, data: { is_safeguarding: true } });
+    const restricted = auditRows(prisma).find((r: any) => r.entity === 'pastoral_category_restricted');
+    expect(restricted).toBeDefined();
+    expect(JSON.stringify(restricted)).toContain('notes_moved');
+  });
+
+  test('changing the safeguarding flag either way needs the safeguarding key, even for admins', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    expect(await expectRejection(svc.updateCategory('admin', CAT, { isSafeguarding: true }))).toBeInstanceOf(ForbiddenException);
+    prisma.pastoral_category.findFirst.mockResolvedValue({
+      id: CAT, school_id: SCHOOL, kind: 'pastoral', label: 'Secret', is_safeguarding: true, archived_at: null, position: 0,
+    });
+    expect(await expectRejection(svc.updateCategory('admin', CAT, { isSafeguarding: false }))).toBeInstanceOf(ForbiddenException);
+    // Nor rename a restricted one; the placeholder sent back is no rename.
+    expect(await expectRejection(svc.updateCategory('admin', CAT, { label: 'Other' }))).toBeInstanceOf(ForbiddenException);
+    prisma.pastoral_category.findMany.mockResolvedValue([]);
+    await svc.updateCategory('admin', CAT, { label: 'Restricted category', position: 2 });
+    const data = prisma.pastoral_category.update.mock.calls[0][0].data;
+    expect(data).toEqual({ position: 2 });
+    expect(prisma.pastoral_note.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('restricted category labels are shown only to safeguarding holders', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    prisma.pastoral_category.count.mockResolvedValue(6);
+    prisma.pastoral_category.findMany.mockResolvedValue([
+      { id: CAT, label: 'Pastoral', kind: 'pastoral', is_safeguarding: false, position: 0, archived_at: null },
+      { id: SG_CAT, label: 'Child protection', kind: 'safeguarding', is_safeguarding: true, position: 1, archived_at: null },
+    ]);
+    const forAdmin = await svc.categories('admin');
+    expect(forAdmin[1]).toMatchObject({ label: 'Restricted category', labelHidden: true, isSafeguarding: true });
+    expect(forAdmin[0]).toMatchObject({ label: 'Pastoral', labelHidden: false });
+    const forDsl = await svc.categories('sgadmin');
+    expect(forDsl[1]).toMatchObject({ label: 'Child protection', labelHidden: false });
+  });
+
+  test('without pastoral-note:read, notes can only be written about students in scope', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    scope.inScope = false;
+    const err = await expectRejection(svc.create('teacher', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: 'x' }));
+    expect(err).toBeInstanceOf(NotFoundException);
+    const where = prisma.student.findFirst.mock.calls[0][0].where;
+    expect(where.AND[0]).toEqual({ id: STUDENT, school_id: SCHOOL });
+    // A reader is not narrowed.
+    await svc.list('lead', { studentId: STUDENT });
+    expect(prisma.student.findFirst.mock.calls[1][0].where).toEqual({ id: STUDENT, school_id: SCHOOL });
+  });
+
+  test('the withheld reason is stored encrypted against the note id; notes carry canWithhold', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    prisma.pastoral_note.findUnique.mockImplementation(async ({ where, select }: any) => {
+      if (select && !select.id) return { sar_withheld: false, sar_withheld_reason: null };
+      return where.id === SG_NOTE ? sgNote() : null;
+    });
+    const res = await svc.setSarWithheld('dsl', SG_NOTE, { withheld: true, reason: 'Third-party data' });
+    const stored = prisma.pastoral_note.update.mock.calls[0][0].data.sar_withheld_reason;
+    expect(isSealedText(stored)).toBe(true);
+    expect(openText('pastoral_note.sar_withheld_reason', SG_NOTE, stored)).toBe('Third-party data');
+    expect(openText('pastoral_note.sar_withheld_reason', NOTE, stored)).not.toBe('Third-party data');
+    expect(res.canWithhold).toBe(true);
+
+    prisma.pastoral_note.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === NOTE ? note({ sar_withheld: true, sar_withheld_reason: sealText('pastoral_note.sar_withheld_reason', NOTE, 'Why') }) : null,
+    );
+    const shown = await svc.get('lead', NOTE);
+    expect(shown.sarWithheldReason).toBe('Why');
+    expect(shown.canWithhold).toBe(false);
   });
 
   test('only school admins change categories and retention', async () => {

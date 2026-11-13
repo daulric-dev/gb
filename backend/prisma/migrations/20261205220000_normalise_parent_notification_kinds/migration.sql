@@ -11,7 +11,7 @@ CREATE TABLE student.parent_notification_kind (
 );
 
 INSERT INTO student.parent_notification_kind (user_profile_id, kind)
-SELECT preference.user_profile_id, selected.kind
+SELECT DISTINCT preference.user_profile_id, selected.kind
 FROM student.parent_notification_pref AS preference
 CROSS JOIN LATERAL unnest(preference.kinds) AS selected(kind);
 

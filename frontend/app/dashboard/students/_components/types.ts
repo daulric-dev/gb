@@ -33,12 +33,13 @@ export interface StudentProfile {
     isActive: boolean;
     accountType: string;
   } | null;
+  /** Null when the caller lacks `student:sensitive` (guardian contacts are left out). */
   guardians: {
     id: string;
     name: string;
     email: string | null;
     relationship: string | null;
-  }[];
+  }[] | null;
 }
 
 export const selectClass =

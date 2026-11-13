@@ -54,8 +54,8 @@ const WEBHOOK_SELECT = {
 /**
  * Sends webhook deliveries and keeps their retry state. The database is the
  * queue: a delivery row is `pending` with a `next_attempt_at`, and whoever
- * claims it (an atomic UPDATE ... FOR UPDATE SKIP LOCKED that pushes
- * `next_attempt_at` out by a lease) sends it. The poller (WebhookWorker) and,
+ * claims it (a compare-and-set update that pushes `next_attempt_at` out
+ * by a lease) sends it. The poller (WebhookWorker) and,
  * with Redis, a BullMQ job per delivery both end up in `processDue` /
  * `processOne`; a delivery is only ever sent by the one that claimed it.
  *
@@ -108,30 +108,31 @@ export class WebhookDeliveryService {
   /**
    * Claim up to `limit` due deliveries (or just `onlyId`, when it is due):
    * pushes their `next_attempt_at` out by the lease, so another worker skips
-   * them and a crashed worker's are retried once it lapses.
+   * them and a crashed worker's are retried once it lapses. Each claim is a
+   * compare-and-set (`updateMany` still requiring the row to be pending and
+   * due): when two workers read the same candidates, the database lets only
+   * one update win and the other gets a count of 0 and skips that row.
    */
   async claim(limit = CLAIM_BATCH, onlyId?: string): Promise<string[]> {
-    const lease = new Date(Date.now() + CLAIM_LEASE_MS);
-    const rows = onlyId
-      ? await this.prisma.$queryRaw<{ id: string }[]>`
-          UPDATE public.webhook_delivery SET next_attempt_at = ${lease}
-          WHERE id IN (
-            SELECT id FROM public.webhook_delivery
-            WHERE id = ${onlyId}::uuid AND status = 'pending' AND next_attempt_at <= now()
-            FOR UPDATE SKIP LOCKED
-          )
-          RETURNING id`
-      : await this.prisma.$queryRaw<{ id: string }[]>`
-          UPDATE public.webhook_delivery SET next_attempt_at = ${lease}
-          WHERE id IN (
-            SELECT id FROM public.webhook_delivery
-            WHERE status = 'pending' AND next_attempt_at <= now()
-            ORDER BY next_attempt_at
-            LIMIT ${limit}
-            FOR UPDATE SKIP LOCKED
-          )
-          RETURNING id`;
-    return rows.map((r) => r.id);
+    const now = new Date();
+    const lease = new Date(now.getTime() + CLAIM_LEASE_MS);
+    const due = { status: 'pending' as const, next_attempt_at: { lte: now } };
+    const candidates = await this.prisma.webhook_delivery.findMany({
+      where: onlyId ? { id: onlyId, ...due } : due,
+      orderBy: [{ next_attempt_at: 'asc' }, { id: 'asc' }],
+      take: onlyId ? 1 : limit,
+      select: { id: true },
+    });
+    const claimed = await Promise.all(
+      candidates.map(async ({ id }) => {
+        const { count } = await this.prisma.webhook_delivery.updateMany({
+          where: { id, ...due },
+          data: { next_attempt_at: lease },
+        });
+        return count === 1 ? id : null;
+      }),
+    );
+    return claimed.filter((id): id is string => id !== null);
   }
 
   /** One round of the poller: claim what is due and send it. Returns how many. */

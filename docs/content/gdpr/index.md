@@ -16,6 +16,23 @@ apply in its jurisdiction.
 Use this page as a working pack with your data protection officer (DPO) or
 privacy adviser. It is a starting point, not a completed legal assessment.
 
+The pack has these parts:
+
+- this page: before go-live, the processing record, DPIA screening and
+  breach basics;
+- [Data inventory](./data-inventory.md): every table holding personal data,
+  with its categories, retention, erasure path and export coverage;
+- [Sub-processors](./sub-processors.md): every provider the privacy notice
+  can list, what it receives and what to check;
+- [Incident response](./incident-response.md): triage, logs, affected people,
+  notification and key rotation;
+- [Cookies and device storage](./cookies.md);
+- for staff: [Answering data requests](../guide/data-requests.md) and
+  [Two-step verification](../guide/two-factor.md);
+- for operators: [Hosting requirements](../hosting-requirements.md) (database
+  TLS, encryption at rest, regions, staff MFA) and
+  [Backups & GDPR](../backups.md).
+
 ## Before go-live
 
 - Identify who acts as controller for each use of GradeBook. The organisation
@@ -51,7 +68,7 @@ and configured. Record the owner, decision, date and evidence for each one.
 
 | Control | Where it is enforced | Deployment action |
 | --- | --- | --- |
-| Require authenticator-app MFA for organisation admins, school admins and safeguarding roles | **Organisation → Settings → Two-step verification**; the default is on and affects new sign-ins and privileged requests | Check privileged accounts are enrolled and review any policy exception. |
+| Require authenticator-app MFA for organisation admins, school admins and safeguarding roles | **Organisation → Settings → Two-step verification**; on by default. It is checked only when a session starts: a covered user with an app is asked for its code at each new sign-in (emailed code or single sign-on); a covered user without one who signs in with an emailed code can only set one up; a covered user without one who signs in with single sign-on is **not** stopped and relies on the identity provider's MFA. Sessions open before the setting (or the role) changed continue until they end. Step-up prompts use an emailed code. See [Two-step verification](../guide/two-factor.md). | Check privileged accounts are enrolled, enforce MFA at the identity provider for single sign-on, sign out existing sessions after turning the policy on, and review any exception. |
 | Student leaver and closed-year retention | **Dashboard → Settings → Student-record retention**; erasure runs only after a schedule is set and the due list is confirmed | Approve periods against the school's retention duties, configure every school, review the due list, and confirm. These schedules are off until configured. |
 | Soft-deleted content, audit history, exports and backups | Deployment environment and the scheduled retention jobs | Confirm the values in the live environment and include backups, object versions and provider-side copies in the schedule. The two-year audit setting retains event metadata after deletion, not deleted content. |
 | Privacy notice and recipient list | **Organisation → Privacy** plus the public `/privacy` page | Confirm controller details, purposes and lawful bases; compare generated recipients with actual suppliers and integrations. The generated list is only as complete as the configuration GradeBook can see. |
@@ -165,6 +182,9 @@ Revisit the assessment when purposes, data, recipients, technology, scale,
 people affected or safeguards materially change, and after a relevant incident.
 
 ## Personal data breach response
+
+The step-by-step runbook, with the logs to pull and a breach register
+template, is [Incident response](./incident-response.md). The summary:
 
 The controller remains responsible for deciding whether to notify the
 supervisory authority or affected people. A processor should notify its

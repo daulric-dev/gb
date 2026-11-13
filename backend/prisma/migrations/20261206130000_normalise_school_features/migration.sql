@@ -9,7 +9,7 @@ CREATE TABLE public.school_feature_disabled (
 );
 
 INSERT INTO public.school_feature_disabled (school_id, feature)
-SELECT school.id, selected.feature
+SELECT DISTINCT school.id, selected.feature
 FROM public.school AS school
 CROSS JOIN LATERAL unnest(school.disabled_features) AS selected(feature);
 

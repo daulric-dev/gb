@@ -12,7 +12,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { WebhookEvents } from '@/integrations/events';
 import type { Prisma } from '@/generated/prisma/client';
 import { userSchoolId } from '@/common/user-school';
-import { isoDate, isUniqueViolation, raisedMessage } from '@/common/db-values';
+import { isoDate, isUniqueViolation } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
 import { permCacheKey } from '@/permission/permission.effective';
 import { SsoRegistry, labelOf } from '@/sso/sso.registry';
@@ -755,18 +755,10 @@ export class EmailDomainService {
       (domainRow?.staff_role as DomainStaffRole | undefined) ?? 'teacher';
 
     try {
-      await this.prisma.$queryRaw`
-        SELECT * FROM public.join_school_by_email_domain(
-          ${userId}::uuid,
-          ${match.schoolId}::uuid,
-          ${match.audience}::public.email_domain_audience,
-          ${staffRole}::public.role
-        )`;
+      await this.seat(userId, match.schoolId, match.audience, staffRole);
     } catch (error) {
-      const message = raisedMessage(error);
-      if (message.includes('already_in_a_school')) {
-        throw new ConflictException('This account already belongs to a school');
-      }
+      if (error instanceof ConflictException) throw error;
+      const message = (error as Error).message;
       this.logger.error(`Domain join failed for ${userId}: ${message}`);
       throw new BadRequestException('Failed to join the school');
     }
@@ -799,6 +791,62 @@ export class EmailDomainService {
       schoolId: match.schoolId,
       audience: match.audience,
     };
+  }
+
+  /**
+   * Seat a user in a school by email domain, in one transaction (formerly
+   * the SQL function `public.join_school_by_email_domain`). A student gets a
+   * student record; staff get a school_management row with the domain's role
+   * (never admin) if they have none. The profile is bound with a
+   * compare-and-set on `school_id IS NULL`, so a concurrent join that
+   * settled it first rolls this one back with the same conflict.
+   */
+  private async seat(
+    userId: string,
+    schoolId: string,
+    audience: DomainMatch['audience'],
+    staffRole: DomainStaffRole,
+  ): Promise<void> {
+    const alreadyInASchool = () =>
+      new ConflictException('This account already belongs to a school');
+    await this.prisma.$transaction(async (tx) => {
+      const profile = await tx.user_profile.findUnique({
+        where: { id: userId },
+        select: { first_name: true, last_name: true, school_id: true },
+      });
+      if (!profile) throw new Error('profile_not_found');
+      if (profile.school_id) throw alreadyInASchool();
+
+      if (audience === 'student') {
+        await tx.student.create({
+          data: {
+            school_id: schoolId,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            user_profile_id: userId,
+            is_active: true,
+          },
+          select: { id: true },
+        });
+      } else {
+        if ((staffRole as string) === 'admin') throw new Error('admin_not_allowed');
+        // An existing membership is kept as it is.
+        await tx.school_management.upsert({
+          where: { user_id_school_id: { user_id: userId, school_id: schoolId } },
+          create: { user_id: userId, school_id: schoolId, role: staffRole },
+          update: {},
+        });
+      }
+
+      const bound = await tx.user_profile.updateMany({
+        where: { id: userId, school_id: null },
+        data:
+          audience === 'student'
+            ? { school_id: schoolId, account_type: 'student', role: null, is_active: true }
+            : { school_id: schoolId, account_type: 'staff', role: staffRole, is_active: true },
+      });
+      if (bound.count !== 1) throw alreadyInASchool();
+    });
   }
 
   // ── sign-in ───────────────────────────────────────────────────────────────
