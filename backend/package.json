@@ -60,7 +60,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "nodemailer": "10.1.7",
-    "openid-client": "6.8.8",
+    "openid-client": "6.8.9",
     "pg": "^8.23.1",
     "prisma": "7.10.1",
     "react": "^19.3.0",
