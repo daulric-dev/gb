@@ -70,8 +70,9 @@ GradeBook:
   tools and rostering records, and audit-log entries about them or made by
   them;
 - **records staff keep**: pastoral notes (see below), at-risk flags,
-  attendance alerts, similarity matches and report comments, including
-  drafts.
+  attendance alerts, similarity matches, AI grading drafts of their work
+  (the suggested mark, comments and quotes, and which files were read) and
+  report comments, including drafts.
 
 It does **not** contain messages other people sent to the student (they are
 the sender's personal data), files other people shared (listed by name only),

@@ -1,3 +1,4 @@
+import { clearAiGradingDrafts } from '@/ai/file-grading/draft-cleanup';
 import {
   BadRequestException,
   ConflictException,
@@ -715,6 +716,8 @@ export class RubricService {
         }
         // After the criterion marks: rubric rows aligned to outcomes read them.
         await refreshOutcomeEvidence(tx, activityId, [studentId]);
+        // A saved mark supersedes any AI grading draft for this work.
+        await clearAiGradingDrafts(tx, activityId, [studentId]);
         await this.auditLog?.record(
           tx,
           activity.school_id,

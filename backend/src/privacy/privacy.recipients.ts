@@ -300,7 +300,7 @@ export function buildRecipients(src: RecipientSources): Recipient[] {
       const url = p.baseUrl ?? AI_KIND_DEFAULT_HOST[p.kind] ?? null;
       if (!url) continue;
       out.push(
-        recipient('ai', url, 'Generates drafts and suggestions for staff. Names and contact details are removed first; student work is sent only where the school allowed it', {
+        recipient('ai', url, 'Generates drafts and suggestions for staff. Names and contact details are removed first; student work is sent only where the school allowed it, and the text read from uploaded files only where the school also allowed sending files', {
           name: providerName(hostOf(url) ?? '') ?? undefined,
         }),
       );

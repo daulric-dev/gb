@@ -927,6 +927,14 @@ describe('SubmissionService marking', () => {
     });
   });
 
+  test('saving a mark deletes the AI grading draft of that work, in the same transaction', async () => {
+    const { service, prisma } = build(markTables({ existing: { id: 'sub-1' } }));
+    await service.grade('user-1', 'act-1', 'stu-1', { score: 12 });
+    expect(prisma.ai_grading_draft.deleteMany.mock.calls[0][0]).toEqual({
+      where: { activity_id: 'act-1', student_id: { in: ['stu-1'] } },
+    });
+  });
+
   test('the score is checked against the points under a share lock', async () => {
     const { service, prisma } = build((p) => {
       markTables()(p);

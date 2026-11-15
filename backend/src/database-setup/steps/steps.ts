@@ -50,8 +50,30 @@ export const studentLeftAtBackfill: SetupStep = {
   },
 };
 
+/**
+ * Two-step verification is opt-in: nobody is made to set up an
+ * authenticator app unless their organisation chooses to require it. An
+ * unreleased build switched the requirement on for every organisation; this
+ * turns it off once, and removes the "set up an app first" limits that came
+ * from it. An organisation that wants the requirement turns it on again in
+ * its settings (later runs never touch it). No-op on a fresh database.
+ */
+export const adminMfaOptIn: SetupStep = {
+  key: 'admin-mfa-opt-in',
+  description: 'Make two-step verification opt-in (stop requiring it of admins by default)',
+  async run(tx) {
+    const orgs = await tx.organisation.updateMany({
+      where: { require_mfa_for_admins: true },
+      data: { require_mfa_for_admins: false, updated_at: new Date() },
+    });
+    const gates = await tx.mfa_enrolment_gate.deleteMany({});
+    return `${orgs.count} organisation(s) no longer require two-step verification; ${gates.count} limited session(s) freed`;
+  },
+};
+
 /** Every step, in the order they run. Append only; never reuse a key. */
 export const SETUP_STEPS: readonly SetupStep[] = [
   studentLeftAtBackfill,
   analyticsDefaultOffKeepExisting,
+  adminMfaOptIn,
 ];

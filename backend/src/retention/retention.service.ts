@@ -17,6 +17,7 @@ import {
   batchSize,
   maxRunMs,
   notificationRetentionDays,
+  aiGradingDraftRetentionDays,
   rosterHistoryRetentionDays,
   softDeleteRetentionDays,
   type PurgeKind,
@@ -78,6 +79,8 @@ export interface PurgeReport {
   sessionCoordinates: number;
   /** Student records erased under their school's retention periods. */
   studentRecords: number;
+  /** AI grading drafts (and finished batches) older than AI_GRADING_DRAFT_RETENTION_DAYS. */
+  aiGradingDrafts: number;
   exported: number;
   errors: string[];
 }
@@ -146,6 +149,7 @@ export class RetentionService {
       integrationAuditLogRows: 0,
       pastoralNotes: 0,
       notifications: 0,
+      aiGradingDrafts: 0,
       rosterChanges: 0,
       rosterLinksCleared: 0,
       attendanceCoordinates: 0,
@@ -174,6 +178,7 @@ export class RetentionService {
         ['webhook deliveries', () => this.purgeWebhookDeliveries(now, ctx)],
         ['audit logs', () => this.purgeAuditLogs(now, ctx)],
         ['notifications', () => this.purgeNotifications(now, ctx)],
+        ['AI grading drafts', () => this.purgeAiGradingDrafts(now, ctx)],
         ['roster history', () => this.purgeRosterHistory(now, ctx)],
         ['attendance coordinates', () => this.purgeAttendanceCoordinates(now, ctx)],
         ['school student-record retention', async () => {
@@ -645,6 +650,38 @@ export class RetentionService {
     // Composite key and its own sent_at index: one statement per run.
     this.checkTime(deadline);
     report.notifications += (await this.prisma.parent_notification_sent.deleteMany({ where: parent })).count;
+  }
+
+  /**
+   * AI grading drafts (src/ai/file-grading) AI_GRADING_DRAFT_RETENTION_DAYS
+   * (default 90; 0 = never) after they were made, whatever their status, and
+   * the batch rows of runs that finished that long ago. A fixed-period purge
+   * like notifications: not written to the erasure log (a restore only
+   * brings back drafts the next run removes again).
+   */
+  private async purgeAiGradingDrafts(now: Date, { opts, deadline, report }: Ctx) {
+    const days = aiGradingDraftRetentionDays();
+    if (days === 0) return;
+    const before = new Date(now.getTime() - days * DAY_MS);
+    const where = { created_at: { lt: before } };
+    if (opts.dryRun) {
+      report.aiGradingDrafts = await this.prisma.ai_grading_draft.count({ where });
+      return;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (
+        await this.prisma.ai_grading_draft.findMany({ where, select: { id: true }, take: batchSize() })
+      ).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.ai_grading_draft.deleteMany({ where: { id: { in: ids } } });
+      report.aiGradingDrafts += count;
+      if (count === 0) break;
+    }
+    this.checkTime(deadline);
+    await this.prisma.ai_grading_batch.deleteMany({
+      where: { created_at: { lt: before }, status: { not: 'running' } },
+    });
   }
 
   /**

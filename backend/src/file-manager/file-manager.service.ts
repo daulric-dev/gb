@@ -19,11 +19,13 @@ import { ChatSystemService } from '@/chat/chat-system.service';
 import { FileAccessService } from './file-access.service';
 import { FileShareService } from './file-share.service';
 import { FolderService } from './folder.service';
+import { stripPdfAttachments } from './pdf-attachments';
 import { FileListFilter } from './dto/list-files.filter';
 import type { ShareTargetDto } from './dto/share-file.dto';
 import {
   normalizeSubmissionContentType,
   verifyContent,
+  PDF_EMBEDDED_FILE_REASON,
   verifySubmissionContent,
   inspectsBytes,
   ALLOWED_CONTENT_TYPES,
@@ -641,7 +643,29 @@ export class FileManagerService {
         throw new BadRequestException('File is empty');
       }
 
-      const verdict = check(buffer);
+      let verdict = check(buffer);
+      // A PDF whose only problem is an attached file (LibreOffice hybrid PDF,
+      // PDF/A-3, Acrobat attachments): keep the document, drop the
+      // attachments, and check the rewritten bytes again from scratch.
+      if (
+        !verdict.ok &&
+        verdict.reason === PDF_EMBEDDED_FILE_REASON &&
+        record.content_type === 'application/pdf'
+      ) {
+        const stripped = await stripPdfAttachments(buffer);
+        if (stripped) {
+          const recheck = check(stripped.buffer);
+          if (recheck.ok) {
+            buffer = stripped.buffer;
+            verdict = recheck;
+            this.logger.log(
+              `Upload ${record.id}: removed ${stripped.removed} attachment(s) from the PDF`,
+            );
+          } else {
+            verdict = recheck;
+          }
+        }
+      }
       if (!verdict.ok) {
         await this.discardUpload(record, 'failed', verdict.reason);
         throw new BadRequestException(verdict.reason);

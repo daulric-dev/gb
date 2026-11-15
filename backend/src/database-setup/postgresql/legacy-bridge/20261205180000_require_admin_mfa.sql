@@ -1,10 +1,6 @@
--- Authenticator-app MFA is required for privileged roles by default.
--- Existing organisations receive the same baseline; the policy remains
--- explicitly configurable from the organisation settings endpoint.
-ALTER TABLE public.organisation
-    ALTER COLUMN require_mfa_for_admins SET DEFAULT true;
-
-UPDATE public.organisation
-SET require_mfa_for_admins = true,
-    updated_at = now()
-WHERE require_mfa_for_admins = false;
+-- Originally made authenticator-app MFA required for privileged roles and
+-- switched it on for every organisation. Superseded: two-step verification
+-- is opt-in (each person turns it on; an organisation may require it for
+-- admins from its settings), so this bridge step changes nothing. Kept so
+-- databases that ran the original are recorded consistently.
+SELECT 1;

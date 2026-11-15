@@ -61,3 +61,11 @@ export const attendanceLocationRetentionHours = () =>
 
 /** A school's retention list shows records due within this many days. */
 export const RETENTION_NOTICE_DAYS = 30;
+
+/**
+ * AI grading drafts (suggested marks and comments about a student's work,
+ * src/ai/file-grading) are deleted this many days after they were made
+ * (default 90; 0 = never). Saving a mark, the student's no_ai restriction
+ * and erasure delete them sooner.
+ */
+export const aiGradingDraftRetentionDays = () => envInt('AI_GRADING_DRAFT_RETENTION_DAYS', 90);

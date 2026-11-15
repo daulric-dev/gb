@@ -44,6 +44,19 @@ export (`Access check failed`, not retried).
 | `staff` (`student`) | One student record, in the student's school only, plus the student's own account if one is linked (`account_type` student) | Everything the school holds: the student record, the account's sign-in identities, sessions (with IP address and browser), devices, account security metadata, files, the chat messages the student sent (decrypted), discussions, notifications, AI requests, integrations, audit entries, and the staff-only collectors. Guardian contact details and accommodation reasons need `student:sensitive`. |
 | `parent` (`child`) | One linked child, that school only | What the school's parent portal shows (`parent_settings`): categories the school hides from parents are left out and named in README.txt. No messages, files, sign-in history or staff records. |
 
+### AI grading drafts in staff exports
+
+`staff-records` includes `aiGradingDrafts`: each AI grading draft of the
+student's work held by the school (`grading.ai_grading_draft`, see
+[src/ai/README.md](../ai/README.md#ai-grading-drafts-for-handed-in-files)):
+course, activity, status, rubric or score draft, the per-file read report,
+the suggested levels / score, comments and evidence quotes, provider and
+model, and dates. The text read from the files and the prompts are never
+stored, so they cannot be exported. Drafts are staff working notes and are
+not in a self-service or parent export (README.txt says how to ask the
+school). The teacher who asked for a draft (`created_by`) is excluded as a
+staff action.
+
 ### Pastoral notes in staff exports
 
 `pastoralCollector` uses the app's visibility rule (`pastoral-access.ts`):

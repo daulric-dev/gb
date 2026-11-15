@@ -24,6 +24,7 @@ import { SubmissionEventsModule } from '@/grading/submission-events';
 import { PeerReviewModule } from '@/peer-review/peer-review.module';
 import { SimilarityModule } from '@/similarity/similarity.module';
 import { AiModule } from '@/ai/ai.module';
+import { AiFileGradingModule } from '@/ai/file-grading/file-grading.module';
 import { TranslationModule } from '@/translation/translation.module';
 import { GradeScaleModule } from '@/grade-scale/grade-scale.module';
 import { PermissionModule } from '@/permission/permission.module';
@@ -168,6 +169,7 @@ import { HealthService } from '@/health/health.service';
     PeerReviewModule,
     SimilarityModule.forRoot(),
     AiModule,
+    AiFileGradingModule.forRoot(),
     TranslationModule,
     GradeScaleModule,
     PermissionModule,

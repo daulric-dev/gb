@@ -131,8 +131,9 @@ export class GradebookImportService {
     const now = new Date();
     let written: { id: string }[];
     try {
-      written = await this.prisma.$transaction(
-        plan.changes.map((c) => {
+      const marks = plan.changes.filter((c) => !c.to.excused);
+      const results = await this.prisma.$transaction([
+        ...plan.changes.map((c) => {
           // A number marks and lifts any excuse; EX excuses and keeps the
           // score. Feedback and the student's own work are left alone.
           const fields = c.to.excused
@@ -169,7 +170,14 @@ export class GradebookImportService {
             select: { id: true },
           });
         }),
-      );
+        // A saved mark supersedes any AI grading draft for this work.
+        ...marks.map((c) =>
+          this.prisma.ai_grading_draft.deleteMany({
+            where: { activity_id: c.activityId, student_id: c.studentId },
+          }),
+        ),
+      ]);
+      written = results.slice(0, plan.changes.length) as { id: string }[];
     } catch (error) {
       this.logger.error(
         `Failed to import marks: ${(error as Error).message}`,

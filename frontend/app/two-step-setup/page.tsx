@@ -57,8 +57,7 @@ function SetupForm() {
           <h1 className="text-2xl font-semibold tracking-tight">Set up two-step verification</h1>
           <p className="text-sm text-muted-foreground">
             Your organisation requires an authenticator app for your role. Set
-            one up to continue. First we will email you a code to confirm
-            it&apos;s you.
+            one up to continue.
           </p>
         </div>
         <MfaEnrolmentFlow

@@ -1,3 +1,4 @@
+import { clearAiGradingDrafts } from '@/ai/file-grading/draft-cleanup';
 import {
   BadRequestException,
   ConflictException,
@@ -2694,6 +2695,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         await tx.rubric_assessment.deleteMany({
           where: { submission_id: written.id },
         });
+        // A saved mark supersedes any AI grading draft for this work.
+        await clearAiGradingDrafts(tx, activityId, [studentId]);
         await this.auditLog?.record(
           tx,
           activity.school_id,

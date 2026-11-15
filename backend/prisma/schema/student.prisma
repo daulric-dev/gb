@@ -111,6 +111,7 @@ model student {
   attendance_record   course_attendance_record[]
   course_student      course_student[]
   submission          submission[]
+  ai_grading_draft    ai_grading_draft[]
   activity_extension  activity_extension[]
   activity_accommodation activity_accommodation[]
   student_accommodation  student_accommodation?

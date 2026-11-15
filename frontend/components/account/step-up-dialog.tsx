@@ -31,6 +31,13 @@ import {
 import { userMessage } from "@/lib/errors";
 
 const RESEND_COOLDOWN = 30;
+/**
+ * A code stays valid for five minutes (backend CODE_TTL_MS). Opening the
+ * dialog again within this time reuses the code already sent instead of
+ * mailing another, so several protected changes in a row cost one email
+ * (and don't run into the send limit).
+ */
+const REUSE_SENT_CODE_MS = 4 * 60_000;
 
 /**
  * "Confirm it's you": shown when an API call made with `{ stepUp: true }`
@@ -71,11 +78,14 @@ export function StepUpDialogHost() {
     }, 1000);
   }, [cooldown]);
 
+  const lastSentAt = useRef(0);
+
   const send = useCallback(async () => {
     sending.value = true;
     error.value = null;
     try {
       await sendStepUpCode();
+      lastSentAt.current = Date.now();
       startCooldown();
     } catch (err) {
       error.value = userMessage(err, "Failed to send the code");
@@ -89,8 +99,9 @@ export function StepUpDialogHost() {
       code.value = "";
       error.value = null;
       const answer = prompt.request();
-      // Auto-send as it opens: the code is the only thing they need.
-      void send();
+      // Auto-send as it opens, unless a code sent moments ago is still
+      // valid: then the one already in their inbox works.
+      if (Date.now() - lastSentAt.current > REUSE_SENT_CODE_MS) void send();
       return answer;
     });
     return () => {
@@ -132,8 +143,8 @@ export function StepUpDialogHost() {
             Confirm it&apos;s you
           </DialogTitle>
           <DialogDescription>
-            Single sign-on decides who can sign in to the school, so changes
-            need a code from your email.{" "}
+            This change affects security or people&apos;s data, so it needs a
+            code from your email.{" "}
             {email ? (
               <>
                 We sent one to <span className="font-medium text-foreground">{email}</span>.

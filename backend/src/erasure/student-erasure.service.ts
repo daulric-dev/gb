@@ -57,8 +57,8 @@ export interface StudentErasureOptions {
  * Erasing a student record (Art. 17): `DELETE /students/:id` and the
  * school's retention purge (src/retention). One transaction deletes the
  * student row - which cascades to enrolments, submissions (and their quiz
- * answers, rubric assessments, similarity fingerprints, peer-review
- * allocations), attendance records and alerts, extensions and
+ * answers, rubric assessments, similarity fingerprints, AI grading drafts,
+ * peer-review allocations), attendance records and alerts, extensions and
  * accommodations, report comments and report documents, pastoral notes,
  * parent links and invites, mastery evidence and analytics rows - plus the
  * rostering links that name the student, and writes a `student_record`
@@ -214,6 +214,8 @@ export class StudentErasureService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.roster_link.deleteMany({ where: { target_id: { in: rosterTargets } } });
+      // AI grading drafts of the student's work (also cascade with the row).
+      await tx.ai_grading_draft.deleteMany({ where: { student_id: studentId } });
       const { count } = await tx.student.deleteMany({ where: { id: studentId, school_id: schoolId } });
       if (count === 0) throw new NotFoundException('Student not found');
 
@@ -221,6 +223,7 @@ export class StudentErasureService {
       if (replayReportKeys.length > 0) steps.push(plan.prefixes(replayReportKeys));
       steps.push(
         plan.del('public.roster_link', { target_id: rosterTargets }),
+        plan.del('grading.ai_grading_draft', { student_id: [studentId] }),
         plan.del('student.student', { id: [studentId] }),
       );
 

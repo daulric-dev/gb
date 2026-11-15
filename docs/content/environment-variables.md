@@ -162,6 +162,8 @@ Only used while the organisation has the `translation` feature on (`backend/src/
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
+| `AI_MAX_SUBMISSION_CHARS` | No | `30000` | Most characters of one submission's work (typed text plus the text read from uploaded files) sent for an AI grading draft (1 000 to 200 000). Longer work is cut with a marker and the teacher is told. |
+| `AI_GRADING_DRAFT_RETENTION_DAYS` | No | `90` | Days AI grading drafts (suggested marks and comments about a student's work) are kept before the daily retention job deletes them. `0` keeps them until a mark is saved or the draft is discarded. |
 | `AI_REQUEST_TIMEOUT_MS` | No | `120000` | How long one AI request may take (5 000 to 600 000 ms) before it fails as a timeout. Providers, keys and models are set by organisation admins in the organisation console (stored encrypted), not in the environment. A model server on your own network (Ollama, vLLM, LM Studio, often plain `http`) is allowed per provider by ticking "This provider runs on our private network"; `WEBHOOK_ALLOW_PRIVATE` has no effect on AI providers. See `backend/src/ai/README.md`. |
 
 ### Rostering
@@ -228,7 +230,7 @@ USE_REDIS=false
 | `SESSION_IDLE_DAYS`, `STAFF_SESSION_*`              | `src/account/session.config.ts`    | Idle and absolute session lifetimes, shorter for staff       |
 | `MFA_ISSUER`                                        | `src/mfa/mfa.service.ts`           | Issuer name in authenticator apps                            |
 | `SENSITIVE_TEXT_BACKFILL`                           | `src/account/sensitive-text-backfill.service.ts` | Boot-time encryption of plain-text sensitive fields |
-| `NOTIFICATION_RETENTION_DAYS`, `ROSTER_HISTORY_RETENTION_DAYS`, `ATTENDANCE_LOCATION_RETENTION_HOURS`, `AUDIT_LOG_RETENTION_DAYS` | `src/retention/retention.config.ts` | Fixed-period purges in the daily retention job |
+| `NOTIFICATION_RETENTION_DAYS`, `ROSTER_HISTORY_RETENTION_DAYS`, `ATTENDANCE_LOCATION_RETENTION_HOURS`, `AUDIT_LOG_RETENTION_DAYS`, `AI_GRADING_DRAFT_RETENTION_DAYS` | `src/retention/retention.config.ts` | Fixed-period purges in the daily retention job |
 | `DATA_EXPORT_*`                                     | `src/data-export/data-export.constants.ts`, `src/data-export/data-export.scheduler.ts` | Export lifetime, size limits, sweep |
 | `TRANSLATION_*`                                     | `src/translation/translation.constants.ts`, `src/translation/engine-policy.ts` | Cache lifetime, engine timeout, Google/Yandex gate |
 | `WEBHOOK_*`                                         | `src/integrations/config/webhook.config.ts`, `src/integrations/delivery/webhook-destination.ts` | Webhook destination restrictions, retries, auto-disable, delivery retention, poll interval |
